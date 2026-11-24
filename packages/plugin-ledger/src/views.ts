@@ -1,10 +1,10 @@
 // What the ledger answers: data for --json and short Chinese text for agents. Pure.
 // ledger-design.md section 7.
 import { posix } from 'node:path'
-import { originalPath, regionOf, type Instant, type LibraryPath, type PluginHit } from '@pneuma-base/kernel'
+import { originalPath, regionOf, type Instant, type LibraryPath, type PluginHit, type PluginSection } from '@pneuma-base/kernel'
 import type { Fact, FactActor, ItemId, LedgerOrigin, SceneId } from './facts.js'
 import { actorKey, isArchived, type ItemRecord, type Ledger, type Said, type SceneRecord, type Version } from './fold.js'
-import { marksOf, type ItemState, type Mark } from './reconcile.js'
+import { marksOf, type ItemState, type Mark, type Standing } from './reconcile.js'
 
 export const when = (at: Instant) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`
 const who = (a: FactActor) => (a.kind === 'owner' ? '主人' : a.name)
@@ -209,6 +209,52 @@ export function sinceText(v: SinceView): string {
     ...s.facts.map((f) => `  ${f.text}`),
   ])
   return [head, ...scenes].join('\n')
+}
+
+// ---- check: how the library stands ----
+
+/**
+ * check's sections after full reconciliation, empty ones left out. An archived item is no subject
+ * of these lists, and an unowned file in the archive is not listed, unless `includeArchived`.
+ */
+export function standingSections(ledger: Ledger, standing: Standing, includeArchived: boolean): PluginSection[] {
+  const shown = (item: ItemRecord) => !item.removed && (includeArchived || !isArchived(item))
+  const items = [...ledger.items.values()].filter(shown)
+  const ref = (id: ItemId) => ({ item: id, path: pathOf(ledger, id) })
+  const withMark = (kind: Mark['kind']) =>
+    items.flatMap((item) => {
+      const sources = (standing.marks.get(item.id) ?? []).filter((m) => m.kind === kind).map((m) => ref(m.source))
+      return sources.length > 0 ? [{ ...ref(item.id), sources }] : []
+    })
+  const inState = (kind: ItemState['kind']) => items.filter((item) => standing.states.get(item.id)?.kind === kind).map((item) => ref(item.id))
+  const moved = [...ledger.items.values()].flatMap((item) => {
+    const state = standing.states.get(item.id)
+    return state?.kind === 'moved' ? [{ item: item.id, from: item.path, to: state.to }] : []
+  })
+
+  const stale = withMark('stale')
+  const gone = withMark('source-gone')
+  const upstream = items
+    .filter((item) => !standing.marks.has(item.id) && standing.upstream.has(item.id))
+    .map((item) => ({ ...ref(item.id), via: (standing.upstream.get(item.id) ?? []).map(ref) }))
+  const unowned = [
+    ...standing.unowned.filter((path) => includeArchived || regionOf(path) !== 'archive').map((path) => ({ path, adopted: false })),
+    ...items.filter((item) => item.unknownOrigin).map((item) => ({ ...ref(item.id), adopted: true })),
+  ]
+  const changed = inState('changed')
+  const missing = inState('missing')
+  const names = (rows: { path: string }[]) => rows.map((r) => r.path).join('、')
+
+  const sections: [string, unknown[], string[]][] = [
+    ['可能过期', stale, stale.map((r) => `  ${r.path} ← 依据 ${names(r.sources)} 变了`)],
+    ['来源不在', gone, gone.map((r) => `  ${r.path} ← 依据 ${names(r.sources)} 不在了`)],
+    ['上游有标记', upstream, upstream.map((r) => `  ${r.path} ← 上游 ${names(r.via)} 有标记`)],
+    ['没人登记过的', unowned, [...unowned.map((r) => `  ${r.path}${r.adopted ? '（入了册，来历不明）' : ''}`), '知道来历就用 put <库内路径> --brought 或 --made 补上。']],
+    ['被直接改过的', changed, [...changed.map((r) => `  ${r.path}`), '是你改的，就用 say revised <库内路径> 认下。']],
+    ['不在了的', missing, missing.map((r) => `  ${r.path}`)],
+    ['挪过的', moved, moved.map((r) => `  ${r.from} → ${r.to}，已接回`)],
+  ]
+  return sections.filter(([, data]) => data.length > 0).map(([title, data, lines]) => ({ title, body: lines.join('\n'), data }))
 }
 
 // ---- find ----

@@ -29,6 +29,76 @@ export function contentNow(item: ItemRecord, state: ItemState): Fingerprint | nu
   return state.kind === 'consistent' || state.kind === 'moved' ? item.fingerprint : null
 }
 
+/** A snapshot of the library's files outside the kernel's own: each one's size, and its fingerprint on demand. */
+export type Files = { sizes: ReadonlyMap<LibraryPath, number>; fingerprint(path: LibraryPath): Promise<Fingerprint> }
+
+export type Standing = {
+  states: Map<ItemId, ItemState>
+  unowned: LibraryPath[] // files no item holds, moved items' new files left out
+  marks: Map<ItemId, Mark[]> // items with a stale or gone source in their direct basis
+  upstream: Map<ItemId, ItemId[]> // items with marked things further up their basis: those things
+}
+
+/**
+ * Full reconciliation, for check and start. Takes the fingerprint of every item's file, and of the
+ * unowned files whose size matches an item that has no file at its path.
+ */
+export async function reconcile(ledger: Ledger, files: Files): Promise<Standing> {
+  const states = new Map<ItemId, ItemState>()
+  const missing: ItemRecord[] = []
+  for (const item of ledger.items.values()) {
+    if (!item.removed && !files.sizes.has(item.path)) missing.push(item)
+    else states.set(item.id, classify(item, item.removed ? null : await files.fingerprint(item.path), null))
+  }
+  const unowned = [...files.sizes.keys()].filter((path) => !ledger.pathIndex.has(path))
+
+  // Moved: exactly one unowned file holds the content, and no other missing item has that content.
+  const sizes = new Set(missing.map((item) => item.size))
+  const holders = new Map<Fingerprint, LibraryPath[]>()
+  for (const path of unowned) {
+    if (!sizes.has(files.sizes.get(path) ?? -1)) continue
+    const print = await files.fingerprint(path)
+    holders.set(print, [...(holders.get(print) ?? []), path])
+  }
+  const sharing = (print: Fingerprint) => missing.filter((item) => item.fingerprint === print).length
+  const taken = new Set<LibraryPath>()
+  for (const item of missing) {
+    const found = holders.get(item.fingerprint) ?? []
+    const to = found.length === 1 && sharing(item.fingerprint) === 1 ? (found[0] ?? null) : null
+    if (to !== null) taken.add(to)
+    states.set(item.id, classify(item, null, to))
+  }
+
+  const marks = new Map<ItemId, Mark[]>()
+  for (const item of ledger.items.values()) {
+    const found = item.removed ? [] : marksOf(item, ledger, (id) => states.get(id))
+    if (found.length > 0) marks.set(item.id, found)
+  }
+  const upstream = new Map<ItemId, ItemId[]>()
+  for (const item of ledger.items.values()) {
+    const flagged = item.removed ? [] : markedAncestors(ledger, item, marks)
+    if (flagged.length > 0) upstream.set(item.id, flagged)
+  }
+  return { states, unowned: unowned.filter((path) => !taken.has(path)), marks, upstream }
+}
+
+/** The things at any level above `item` in its basis that carry a mark. */
+function markedAncestors(ledger: Ledger, item: ItemRecord, marks: ReadonlyMap<ItemId, Mark[]>): ItemId[] {
+  const seen = new Set<ItemId>([item.id])
+  const found: ItemId[] = []
+  const climb = (from: ItemRecord) => {
+    for (const { item: id } of from.basis.items) {
+      if (seen.has(id)) continue
+      seen.add(id)
+      if (marks.has(id)) found.push(id)
+      const source = ledger.items.get(id)
+      if (source) climb(source)
+    }
+  }
+  climb(item)
+  return found
+}
+
 /** The marks on an item's direct basis, judged by what each source holds on disk now. */
 export function marksOf(item: ItemRecord, ledger: Ledger, stateOf: (id: ItemId) => ItemState | undefined): Mark[] {
   return item.basis.items.flatMap((row): Mark[] => {

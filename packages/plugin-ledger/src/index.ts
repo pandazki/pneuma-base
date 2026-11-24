@@ -5,6 +5,7 @@ import {
   abs,
   archivedPath,
   fingerprintOfFile,
+  libraryFiles,
   parseLibraryPath,
   pluginName,
   rankHits,
@@ -19,13 +20,13 @@ import {
   type SayAnswer,
   type SayRequest,
 } from '@pneuma-base/kernel'
-import { fact, factActor, newItemId, readFacts, sceneOf, writeFacts, type Basis, type Fact, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
+import { fact, factActor, LEDGER_ACTOR, newItemId, readFacts, sceneOf, writeFacts, type Basis, type Fact, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
 import { fold, type Ledger } from './fold.js'
-import { classify, type ItemState } from './reconcile.js'
-import { findableItems, findCandidates, itemText, itemView, originLabel, sceneText, sceneView, sinceText, sinceView } from './views.js'
+import { classify, reconcile, type Files, type ItemState } from './reconcile.js'
+import { findableItems, findCandidates, itemText, itemView, originLabel, sceneText, sceneView, sinceText, sinceView, standingSections } from './views.js'
 
 export { fold } from './fold.js'
-export { classify, marksOf } from './reconcile.js'
+export { classify, marksOf, reconcile } from './reconcile.js'
 
 const TEXT_LIMIT = 1024 * 1024
 
@@ -170,7 +171,39 @@ async function recordSay(w: Writing, req: SayRequest): Promise<SayAnswer> {
     w.facts.push(fact(ctx, 'reported', { kind: 'item.basis', item: subject.id, fingerprint, basis }))
     return heard(`已补上 ${input} 的依据${basisNote(basis)}`)
   }
+  if (req.kind === 'revised') {
+    const input = req.about ?? req.text
+    const path = input === null ? null : parseLibraryPath(ctx.library.root, input)
+    const item = w.ledger.items.get((path !== null && w.ledger.pathIndex.get(path)) || ('' as ItemId))
+    if (!item || path === null) return refused(`没人登记过这个文件：${input ?? '（没写）'}。要补来历，用 put <库内路径> --brought 或 --made。`)
+    const disk = await onDisk(ctx.library.root, path)
+    if (!disk) return refused(`文件不在：${input}`)
+    if (disk.fingerprint === item.fingerprint) return heard(`${input} 的内容和记录一致，没有要认的改动`)
+    w.facts.push(fact(ctx, 'reported', { kind: 'item.revise', item: item.id, base: item.fingerprint, fingerprint: disk.fingerprint, size: disk.size, held: null, claimed: true }))
+    return heard(`已认下 ${input} 的直接改动，记为新的一版`)
+  }
   return refused(`记账插件不认识这个种类：${req.kind}`)
+}
+
+/** The library's files outside the kernel's own, with sizes; fingerprints taken once each, on demand. */
+async function snapshot(root: string): Promise<Files> {
+  const sizes = new Map<LibraryPath, number>()
+  for (const path of await libraryFiles(root)) {
+    const s = await stat(abs(root, path)).catch(() => null)
+    if (s?.isFile()) sizes.set(path, s.size)
+  }
+  const prints = new Map<LibraryPath, Promise<Fingerprint>>()
+  const fingerprint = (path: LibraryPath) => {
+    const known = prints.get(path) ?? fingerprintOfFile(abs(root, path))
+    prints.set(path, known)
+    return known
+  }
+  return { sizes, fingerprint }
+}
+
+const archiveSide = (from: LibraryPath, to: LibraryPath) => {
+  const [a, b] = [regionOf(from) === 'archive', regionOf(to) === 'archive']
+  return a === b ? null : b ? ('in' as const) : ('out' as const)
 }
 
 /** Each item's state from its own file only; no search for moved files. */
@@ -188,7 +221,7 @@ export const ledger: Plugin = {
   name: pluginName('ledger'),
   cognition: { title: '记账与对账', text: readFileSync(new URL('../cognition/2-ledger-section.md', import.meta.url), 'utf8') },
   storage: [{ dir: 'facts', kind: 'body' }],
-  statements: ['doing', 'decided', 'note', 'from'],
+  statements: ['doing', 'decided', 'note', 'from', 'revised'],
   ownerCommands: [],
 
   async onPut(req, ctx) {
@@ -240,7 +273,14 @@ export const ledger: Plugin = {
 
   async onCheck(req, ctx) {
     const ledger = await load(ctx)
+    const standing = await reconcile(ledger, await snapshot(ctx.library.root))
+    // A moved file is taken back: its new path is recorded, as seen by the ledger itself.
+    const moves = [...standing.states].flatMap(([item, state]) => {
+      const from = ledger.items.get(item)?.path
+      return state.kind === 'moved' && from ? [fact(ctx, 'observed', { kind: 'item.move', item, from, to: state.to, archive: archiveSide(from, state.to) }, LEDGER_ACTOR)] : []
+    })
+    await writeFacts(ctx.dir, moves)
     const since = sinceView(ledger, factActor(ctx.actor), sceneOf(ctx), req.since)
-    return since.scenes.length > 0 ? [{ title: '自上次以来', body: sinceText(since), data: since }] : []
+    return [...(since.scenes.length > 0 ? [{ title: '自上次以来', body: sinceText(since), data: since }] : []), ...standingSections(ledger, standing, req.includeArchived)]
   },
 }
