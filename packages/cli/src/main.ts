@@ -68,6 +68,7 @@ const USAGE = `用法：
 主人：init <目录> [--bare] | plugin add|remove <名字> --library <目录>
       grant issue <名字> --library <目录> --agent <给谁> [--area <子文件夹>] [--read-only] | grant revoke <名字> --library <目录>
       skill install <授权名> --agent claude|codex --dir <目录> | archive purge --library <目录>（会丢数据，要当面确认）
+      记账插件：held list | held restore <库内路径|条目号> [--fingerprint <指纹>] --to <库内路径> | held drop（会丢数据，要当面确认），都带 --library <目录>
 加 --json 输出结果对象。`
 
 /** 0 answered; 2 refused; 3 accepted but a plugin reported a problem. Usage errors are 1. */

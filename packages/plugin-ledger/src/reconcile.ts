@@ -24,7 +24,7 @@ export function classify(item: ItemRecord, disk: Fingerprint | null, movedTo: Li
 }
 
 /** The content an item has on disk now; null when it has no file. */
-export function contentNow(item: ItemRecord, state: ItemState): Fingerprint | null {
+function contentNow(item: ItemRecord, state: ItemState): Fingerprint | null {
   if (state.kind === 'changed') return state.now
   return state.kind === 'consistent' || state.kind === 'moved' ? item.fingerprint : null
 }

@@ -1,17 +1,15 @@
 import { readFileSync } from 'node:fs'
-import { readFile, stat } from 'node:fs/promises'
-import { posix, relative } from 'node:path'
+import { stat } from 'node:fs/promises'
 import {
   abs,
   archivedPath,
-  fingerprintOfFile,
-  libraryFiles,
   parseLibraryPath,
   pluginName,
   rankHits,
   regionOf,
   searchTerms,
   type AcceptedPut,
+  type Event,
   type Fingerprint,
   type LibraryPath,
   type Plugin,
@@ -20,41 +18,12 @@ import {
   type SayAnswer,
   type SayRequest,
 } from '@pneuma-base/kernel'
-import { fact, factActor, LEDGER_ACTOR, newItemId, readFacts, sceneOf, writeFacts, type Basis, type Fact, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
-import { fold, type Ledger } from './fold.js'
-import { classify, reconcile, type Files, type ItemState } from './reconcile.js'
+import { itemNamed, load, onDisk, snapshot, statesOf, textOf, type Disk } from './disk.js'
+import { fact, factActor, LEDGER_ACTOR, newItemId, sceneOf, writeFacts, type Basis, type Fact, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
+import type { Ledger } from './fold.js'
+import { heldCommands, heldCopies, heldPath, keep } from './held.js'
+import { reconcile } from './reconcile.js'
 import { findableItems, findCandidates, itemText, itemView, originLabel, sceneText, sceneView, sinceText, sinceView, standingSections } from './views.js'
-
-export { fold } from './fold.js'
-export { classify, marksOf, reconcile } from './reconcile.js'
-
-const TEXT_LIMIT = 1024 * 1024
-
-async function load(ctx: PluginContext): Promise<Ledger> {
-  return fold(await readFacts(ctx.dir))
-}
-
-type Disk = { fingerprint: Fingerprint; size: number }
-
-/** The fingerprint and size of the regular file at `path`; null when there is none. */
-async function onDisk(root: string, path: LibraryPath): Promise<Disk | null> {
-  const file = abs(root, path)
-  const s = await stat(file).catch(() => null)
-  return s?.isFile() ? { fingerprint: await fingerprintOfFile(file), size: s.size } : null
-}
-
-/** The file's text when it is UTF-8 and at most 1 MB; otherwise empty. */
-async function textOf(root: string, path: LibraryPath): Promise<string> {
-  const file = abs(root, path)
-  const s = await stat(file).catch(() => null)
-  if (!s?.isFile() || s.size > TEXT_LIMIT) return ''
-  try {
-    const text = new TextDecoder('utf-8', { fatal: true }).decode(await readFile(file))
-    return text.includes('\u0000') ? '' : text
-  } catch {
-    return ''
-  }
-}
 
 /** One hook's writing: the ledger as read, and the facts it will write as one file. */
 type Writing = { ctx: PluginContext; ledger: Ledger; facts: Fact[]; adopted: Map<LibraryPath, ItemId> }
@@ -63,6 +32,7 @@ async function writing(ctx: PluginContext): Promise<Writing> {
   return { ctx, ledger: await load(ctx), facts: [], adopted: new Map() }
 }
 
+/** Enters a file nobody registered, origin unknown. */
 function adopt(w: Writing, path: LibraryPath, disk: Disk): ItemId {
   const item = newItemId()
   w.facts.push(fact(w.ctx, 'tool', { kind: 'item.enter', item, path, fingerprint: disk.fingerprint, size: disk.size, origin: { kind: 'adopted' } }))
@@ -142,11 +112,6 @@ async function recordPut(w: Writing, req: AcceptedPut): Promise<PluginNote> {
   return { text: `${text} · 条目 ${item.id}`, data: { item: item.id } }
 }
 
-/** Where `revise` keeps the content a new version replaced, relative to the library root. */
-function heldPath(ctx: PluginContext, item: ItemId, fingerprint: Fingerprint, path: LibraryPath): string {
-  return posix.join(relative(ctx.library.root, ctx.dir).split('\\').join('/'), 'held', item, fingerprint, posix.basename(path))
-}
-
 const heard = (note: string): SayAnswer => ({ outcome: 'heard', note })
 const refused = (note: string): SayAnswer => ({ outcome: 'not-heard', reason: 'refused', note })
 const SAID = { doing: '在做', decided: '决定', note: '备注' } as const
@@ -185,50 +150,44 @@ async function recordSay(w: Writing, req: SayRequest): Promise<SayAnswer> {
   return refused(`记账插件不认识这个种类：${req.kind}`)
 }
 
-/** The library's files outside the kernel's own, with sizes; fingerprints taken once each, on demand. */
-async function snapshot(root: string): Promise<Files> {
-  const sizes = new Map<LibraryPath, number>()
-  for (const path of await libraryFiles(root)) {
-    const s = await stat(abs(root, path)).catch(() => null)
-    if (s?.isFile()) sizes.set(path, s.size)
-  }
-  const prints = new Map<LibraryPath, Promise<Fingerprint>>()
-  const fingerprint = (path: LibraryPath) => {
-    const known = prints.get(path) ?? fingerprintOfFile(abs(root, path))
-    prints.set(path, known)
-    return known
-  }
-  return { sizes, fingerprint }
-}
-
 const archiveSide = (from: LibraryPath, to: LibraryPath) => {
   const [a, b] = [regionOf(from) === 'archive', regionOf(to) === 'archive']
   return a === b ? null : b ? ('in' as const) : ('out' as const)
 }
 
-/** Each item's state from its own file only; no search for moved files. */
-async function statesOf(root: string, ledger: Ledger, ids: ItemId[]): Promise<Map<ItemId, ItemState>> {
-  const states = new Map<ItemId, ItemState>()
-  for (const id of ids) {
-    const item = ledger.items.get(id)
-    if (item) states.set(id, classify(item, item.removed ? null : ((await onDisk(root, item.path))?.fingerprint ?? null), null))
-  }
-  return states
+/** The library paths an archive purge deleted, from its answer. */
+function purged(event: Extract<Event, { face: 'owner' }>): LibraryPath[] {
+  if (event.command !== 'archive purge' || event.result.outcome !== 'done') return []
+  const paths = (event.result.data as { paths?: unknown } | undefined)?.paths
+  return Array.isArray(paths) ? paths.filter((p): p is LibraryPath => typeof p === 'string') : []
 }
 
 /** 记账与对账. ledger-design.md. */
 export const ledger: Plugin = {
   name: pluginName('ledger'),
   cognition: { title: '记账与对账', text: readFileSync(new URL('../cognition/2-ledger-section.md', import.meta.url), 'utf8') },
-  storage: [{ dir: 'facts', kind: 'body' }],
+  storage: [
+    { dir: 'facts', kind: 'body' },
+    { dir: 'held', kind: 'body' },
+  ],
   statements: ['doing', 'decided', 'note', 'from', 'revised'],
-  ownerCommands: [],
+  ownerCommands: heldCommands,
 
   async onPut(req, ctx) {
     const w = await writing(ctx)
     const note = await recordPut(w, req)
     await writeFacts(ctx.dir, w.facts)
     return note
+  },
+
+  /** Keeps the bytes on disk in held/ before the kernel writes the new version; a file nobody registered is adopted first. */
+  async revise(req, ctx) {
+    const w = await writing(ctx)
+    const size = (await stat(abs(ctx.library.root, req.path))).size
+    const id = w.ledger.pathIndex.get(req.path) ?? adopt(w, req.path, { fingerprint: req.current, size })
+    if ((await keep(ctx, id, req.path, req.current)) === null) return { outcome: 'declined', reason: `${req.path} 正在被改动，没能留存旧的一版` }
+    await writeFacts(ctx.dir, w.facts)
+    return { outcome: 'held', note: null }
   },
 
   async onSay(req, ctx) {
@@ -254,20 +213,16 @@ export const ledger: Plugin = {
       const view = sceneView(ledger, scene)
       return [{ title: '场景', body: sceneText(view), data: view }]
     }
-    const path = parseLibraryPath(root, req.target)
-    const id = ledger.items.has(req.target as ItemId)
-      ? (req.target as ItemId)
-      : path === null
-        ? undefined
-        : (ledger.pathIndex.get(path) ?? (regionOf(path) === 'content' ? ledger.pathIndex.get(archivedPath(path)) : undefined))
-    const item = id === undefined ? undefined : ledger.items.get(id)
+    const item = itemNamed(ledger, root, req.target)
     if (!item) {
+      const path = parseLibraryPath(root, req.target)
       if (path === null || regionOf(path) === 'kernel' || !(await onDisk(root, path) ?? (regionOf(path) === 'content' ? await onDisk(root, archivedPath(path)) : null))) return []
       const body = '没人登记过这个文件，来历不明。知道它从哪来，就用 put <库内路径> --brought 或 --made 补上。'
       return [{ title: '来历', body, data: { kind: 'unowned', path } }]
     }
     const states = await statesOf(root, ledger, [item.id, ...item.basis.items.map((row) => row.item)])
-    const view = itemView(ledger, item, states, [])
+    const held = (await heldCopies(ctx, item.id)).map((c) => c.path)
+    const view = itemView(ledger, item, states, held)
     return [{ title: '来历', body: itemText(view), data: view }]
   },
 
@@ -282,5 +237,30 @@ export const ledger: Plugin = {
     await writeFacts(ctx.dir, moves)
     const since = sinceView(ledger, factActor(ctx.actor), sceneOf(ctx), req.since)
     return [...(since.scenes.length > 0 ? [{ title: '自上次以来', body: sinceText(since), data: since }] : []), ...standingSections(ledger, standing, req.includeArchived)]
+  },
+
+  async onArchive(req, ctx) {
+    if (!req.moved) return null
+    const w = await writing(ctx)
+    const known = w.ledger.pathIndex.get(req.from)
+    const disk = await onDisk(ctx.library.root, req.to)
+    const id = known ?? (disk ? adopt(w, req.from, disk) : undefined)
+    if (id === undefined) return null
+    w.facts.push(fact(ctx, 'tool', { kind: 'item.move', item: id, from: req.from, to: req.to, archive: req.kind === 'archive' ? 'in' : 'out' }))
+    await writeFacts(ctx.dir, w.facts)
+    const what = req.kind === 'archive' ? '已记下归档' : '已记下取回'
+    return { text: `${what}${known ? '' : '；这个文件以前没人登记过，已以来历不明入册'} · 条目 ${id}`, data: { item: id } }
+  },
+
+  /** Records each owner operation that was done, so agents see it in check; an archive purge removes the items it deleted. */
+  async observe(event, ctx) {
+    if (event.face !== 'owner' || event.result.outcome !== 'done') return
+    const w = await writing(ctx)
+    w.facts.push(fact(ctx, 'tool', { kind: 'owner.op', command: event.command, summary: event.result.text, destructive: event.destructive }))
+    for (const path of purged(event)) {
+      const id = w.ledger.pathIndex.get(path)
+      if (id !== undefined) w.facts.push(fact(ctx, 'tool', { kind: 'item.remove', item: id }))
+    }
+    await writeFacts(ctx.dir, w.facts)
   },
 }

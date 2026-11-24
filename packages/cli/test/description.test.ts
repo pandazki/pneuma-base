@@ -32,13 +32,14 @@ describe('the description', () => {
     expect(text).toContain('你的授权名在你的技能文件里')
   })
 
-  it('of a default library carries the ledger section and lists the plugin; with no revise the bare same-name sentence', () => {
+  it('of a default library carries the ledger section and lists the plugin; the ledger revises, so the new-version sentence', () => {
     const lib = join(root, 'default')
     expect(sb.run(['init', lib]).code).toBe(0)
     const text = description(lib)
     expect(text).toContain(LEDGER_SECTION)
     expect(text).toContain('- `ledger`：记账与对账')
-    expect(text).toContain(SAME_NAME_BARE)
+    expect(text).toContain(SAME_NAME_REVISE)
+    expect(text).not.toContain(SAME_NAME_BARE)
     expect(text).not.toContain('没有装任何插件')
     expect(JSON.parse(readFileSync(join(lib, '.pneuma-base/config.json'), 'utf8')).plugins).toEqual(['ledger'])
   })

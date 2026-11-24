@@ -1,0 +1,138 @@
+// Held copies: content a new version replaced, kept under held/ until the owner drops it, and the
+// owner commands over them. ledger-design.md section 5.
+import { randomBytes } from 'node:crypto'
+import { copyFile, link, mkdir, readdir, rename, rm, stat, unlink } from 'node:fs/promises'
+import { dirname, join, posix, relative, sep } from 'node:path'
+import {
+  abs,
+  fingerprintOfFile,
+  parseLibraryPath,
+  regionOf,
+  type Fingerprint,
+  type LibraryPath,
+  type OwnerAnswer,
+  type OwnerArgs,
+  type OwnerCommand,
+  type PluginContext,
+} from '@pneuma-base/kernel'
+import { itemNamed, load, onDisk } from './disk.js'
+import { fact, newItemId, writeFacts, type ItemId } from './facts.js'
+
+const HELD_DIR = 'held'
+
+const fromRoot = (ctx: PluginContext, ...parts: string[]) => posix.join(relative(ctx.library.root, ctx.dir).split(sep).join('/'), ...parts)
+
+/** Where the content `fingerprint` of `item` is kept, relative to the library root. */
+export function heldPath(ctx: PluginContext, item: ItemId, fingerprint: Fingerprint, path: LibraryPath): string {
+  return fromRoot(ctx, HELD_DIR, item, fingerprint, posix.basename(path))
+}
+
+/**
+ * Copies the file at `path` into the held copy of `fingerprint`: to a temporary name, then renamed.
+ * Null, and nothing kept, when the bytes copied are not that content because the file changed meanwhile.
+ */
+export async function keep(ctx: PluginContext, item: ItemId, path: LibraryPath, fingerprint: Fingerprint): Promise<string | null> {
+  const held = heldPath(ctx, item, fingerprint, path)
+  const target = join(ctx.library.root, held)
+  await mkdir(dirname(target), { recursive: true })
+  const tmp = join(dirname(target), `.tmp-${randomBytes(4).toString('hex')}`)
+  await copyFile(abs(ctx.library.root, path), tmp)
+  if ((await fingerprintOfFile(tmp)) !== fingerprint) {
+    await unlink(tmp)
+    return null
+  }
+  await rename(tmp, target)
+  return held
+}
+
+export type HeldCopy = { item: ItemId; fingerprint: Fingerprint; path: string; size: number }
+
+const names = async (dir: string) => (await readdir(dir).catch(() => [] as string[])).filter((n) => !n.startsWith('.')).sort()
+
+/** The held copies on disk, of one item or of all. `path` is relative to the library root. */
+export async function heldCopies(ctx: PluginContext, only?: ItemId): Promise<HeldCopy[]> {
+  const root = join(ctx.dir, HELD_DIR)
+  const out: HeldCopy[] = []
+  for (const item of only ? [only] : ((await names(root)) as ItemId[])) {
+    for (const fingerprint of (await names(join(root, item))) as Fingerprint[]) {
+      for (const name of await names(join(root, item, fingerprint))) {
+        const s = await stat(join(root, item, fingerprint, name))
+        out.push({ item, fingerprint, path: fromRoot(ctx, HELD_DIR, item, fingerprint, name), size: s.size })
+      }
+    }
+  }
+  return out
+}
+
+const done = (text: string, data?: unknown): OwnerAnswer => ({ outcome: 'done', text, ...(data === undefined ? {} : { data }) })
+const refused = (reason: string, text: string): OwnerAnswer => ({ outcome: 'refused', reason, text })
+const flag = (args: OwnerArgs, name: string) => {
+  const value = args.flags[name]
+  return Array.isArray(value) ? (value[0] ?? null) : null
+}
+
+const RESTORE_USAGE = '用法：held restore <库内路径或条目号> [--fingerprint <指纹>] --to <库内路径>'
+
+/** `held list`, `held restore`, `held drop`: the owner's commands over held copies. */
+export const heldCommands: OwnerCommand[] = [
+  {
+    name: 'held list',
+    summary: '列出留存：被新的一版换下来的旧内容',
+    destructive: false,
+    async run(_args, ctx) {
+      const ledger = await load(ctx)
+      const copies = (await heldCopies(ctx)).map((c) => ({ ...c, current: ledger.items.get(c.item)?.path ?? null }))
+      if (copies.length === 0) return done('没有留存。', { copies })
+      const lines = copies.map((c) => `${c.current ?? c.item}  旧版 ${c.fingerprint.slice(0, 8)}  ${c.size} 字节  ${c.path}`)
+      return done(lines.join('\n'), { copies })
+    },
+  },
+  {
+    name: 'held restore',
+    summary: '把一份留存取回到一个新路径',
+    destructive: false,
+    async run(args, ctx) {
+      const input = args.positional[0]
+      const to = flag(args, 'to')
+      if (input === undefined || to === null) return refused('usage', RESTORE_USAGE)
+      const { root } = ctx.library
+      const ledger = await load(ctx)
+      const item = itemNamed(ledger, root, input)
+      if (!item) return refused('no-such-item', `库里没有这样东西：${input}`)
+      const copies = await heldCopies(ctx, item.id)
+      const want = flag(args, 'fingerprint')
+      // Without --fingerprint, the content most recently replaced.
+      const latest = item.versions.flatMap((v) => (v.held ? [v.held] : [])).reverse().find((held) => copies.some((c) => c.path === held))
+      const chosen = want === null ? copies.filter((c) => c.path === latest) : copies.filter((c) => c.fingerprint.startsWith(want))
+      const copy = chosen[0]
+      if (!copy || chosen.length > 1) return refused('no-such-held', `${item.path} 没有${want === null ? '' : `指纹以 ${want} 开头的唯一一份`}留存`)
+      const target = parseLibraryPath(root, to)
+      if (target === null || regionOf(target) !== 'content') return refused('outside-library', `${to} 不在库的内容里`)
+      const there = await onDisk(root, target)
+      if (there?.fingerprint === copy.fingerprint) return done(`${target} 已经是这份内容，没有复制。`)
+      if (there) return refused('would-overwrite', `${target} 已有内容不同的文件，没有动它。换一个路径。`)
+      const tmp = join(ctx.dir, `.tmp-restore-${randomBytes(4).toString('hex')}`)
+      await copyFile(join(root, copy.path), tmp)
+      await mkdir(dirname(abs(root, target)), { recursive: true })
+      try {
+        await link(tmp, abs(root, target)) // fails rather than replace a file that appeared meanwhile
+      } finally {
+        await unlink(tmp)
+      }
+      const short = copy.fingerprint.slice(0, 8)
+      const origin = { kind: 'brought' as const, source: `留存：${item.path} 的旧版 ${short}`, by: 'owner' }
+      await writeFacts(ctx.dir, [fact(ctx, 'tool', { kind: 'item.enter', item: newItemId(), path: target, fingerprint: copy.fingerprint, size: copy.size, origin })])
+      return done(`已把 ${item.path} 的旧版 ${short} 取回到 ${target}。`, { item: item.id, fingerprint: copy.fingerprint, to: target })
+    },
+  },
+  {
+    name: 'held drop',
+    summary: '清掉全部留存（会丢数据）',
+    destructive: true,
+    async run(_args, ctx) {
+      const copies = await heldCopies(ctx)
+      await rm(join(ctx.dir, HELD_DIR), { recursive: true, force: true })
+      return done(`已清掉 ${copies.length} 份留存。`, { dropped: copies.length })
+    },
+  },
+]

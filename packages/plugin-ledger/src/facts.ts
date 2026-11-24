@@ -15,7 +15,7 @@ export type LedgerOrigin =
   | { kind: 'made'; basis: Basis }
   | { kind: 'adopted' } // nobody knew where it came from when it was entered
 
-export type SaidFlavor = 'doing' | 'decided' | 'note'
+type SaidFlavor = 'doing' | 'decided' | 'note'
 
 export type FactBody =
   | { kind: 'said'; flavor: SaidFlavor; text: string; about: ItemId | null }
@@ -40,7 +40,7 @@ export type Envelope = {
 
 export type Fact = Envelope & FactBody
 
-export const FACTS_DIR = 'facts'
+const FACTS_DIR = 'facts'
 
 /** The ledger plugin acting on its own, for what it observes. */
 export const LEDGER_ACTOR: FactActor = { kind: 'plugin', name: 'ledger', grant: null }
