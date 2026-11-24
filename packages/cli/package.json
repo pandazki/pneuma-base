@@ -1,0 +1,19 @@
+{
+  "name": "@pneuma-base/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "pneuma-base": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/main.d.ts",
+      "default": "./dist/main.js"
+    }
+  },
+  "files": ["dist"],
+  "dependencies": {
+    "@pneuma-base/kernel": "workspace:*"
+  }
+}
