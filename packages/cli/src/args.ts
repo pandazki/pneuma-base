@@ -81,3 +81,8 @@ export function flagList(parsed: Parsed, name: string): string[] {
 export function hasFlag(parsed: Parsed, name: string): boolean {
   return parsed.flags.has(name)
 }
+
+/** The flags a command gave besides the global ones. */
+export function ownFlags(parsed: Parsed): [string, string[] | true][] {
+  return [...parsed.flags].filter(([name]) => !(GLOBAL_FLAGS as readonly string[]).includes(name))
+}

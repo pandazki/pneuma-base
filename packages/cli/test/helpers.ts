@@ -8,7 +8,7 @@ const BIN = fileURLToPath(new URL('../dist/bin.js', import.meta.url))
 const BIN_WITH_TEST_PLUGINS = fileURLToPath(new URL('./fixtures/bin-with-test-plugins.ts', import.meta.url))
 
 export function tempDir(prefix = 'pb-'): string {
-  return realpathSync(mkdtempSync(join(tmpdir(), prefix)))
+  return realpathSync(mkdtempSync(join(process.env.PNEUMA_BASE_TEST_TMP ?? tmpdir(), prefix)))
 }
 
 export type Run = { code: number; stdout: string; stderr: string; json: () => any }

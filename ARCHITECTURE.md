@@ -79,7 +79,7 @@ type Context = { library: Library; actor: Actor; session: Session; now: Instant 
 interface AgentFace {
   put(req: PutRequest, ctx: Context): Promise<PutResult>
   find(req: FindRequest, ctx: Context): Promise<FindResult>
-  show(req: ShowRequest, ctx: Context): Promise<ShowResult>
+  inspect(req: InspectRequest, ctx: Context): Promise<InspectResult>
   say(req: SayRequest, ctx: Context): Promise<SayResult>
   check(req: CheckRequest, ctx: Context): Promise<CheckResult>
   archive(req: ArchiveRequest, ctx: Context): Promise<ArchiveResult>
@@ -114,6 +114,14 @@ type PutResult =
 
 接受之后，内核把请求交给每个插件的 `onPut`，把它们的答复收进 `notes`。
 
+「交给它」的分工：内核只问配置里排在最前、提供了 `revise` 的那个插件。插件把当前内容留到自己名下（`held`）或拒绝（`declined`）；答复 `held` 之后，由内核把新内容先写临时名再改名放到目标上。插件拒绝或出错，内核拒绝这次放入，目标不动，出错的插件列进 `problems`。这样不管插件写得对不对，目标上都不会出现半截内容。
+
+实现里的细化（形状在 `packages/kernel/src/types.ts`）：
+
+- 请求里的路径是调用方写的原样（相对库根，或库内的绝对路径），由内核在入口解析一次。「在库外」那一列就是解析不出库内路径的情形。`.pneuma-base/`、`PNEUMA-BASE.md` 和 `_archive/` 不算内容，放和挪到那里都按「在库外」拒绝；`_archive/` 只经归档和取回进出。
+- 放入的来源是 `{ kind: 'file'; path } | { kind: 'stdin'; content }`。
+- 每个结果都带 `problems`，拒绝的结果也带，并带 `subject`：拒绝针对的那个输入。
+
 ### 找、看、说、查、归档
 
 ```ts
@@ -121,8 +129,8 @@ type FindRequest = { text: string | null; filters: Record<string, string>; inclu
 type Hit = { path: LibraryPath | null; title: string; by: PluginName | 'kernel'; detail: string | null }
 type FindResult = { hits: Hit[]; problems: PluginProblem[] }
 
-type ShowRequest = { target: string }                    // 路径，或某个插件认得的标识
-type ShowResult = { file: FileFacts | null; sections: Section[]; problems: PluginProblem[] }
+type InspectRequest = { target: string }                    // 路径，或某个插件认得的标识
+type InspectResult = { file: FileFacts | null; sections: Section[]; problems: PluginProblem[] }
 
 type SayRequest = { kind: string; about: string | null; text: string | null; args: Record<string, string> }
 type SayResult =
@@ -151,6 +159,8 @@ type PluginProblem = { plugin: PluginName; message: string }
 | 归档 | 拒绝：没有这个文件 | 挪进归档区，接受。归档区里同一路径已有内容不同的文件时，新来的文件名后加指纹的前八位 | 接受，什么都不动 |
 | 取回 | 拒绝 | 接受，什么都不动 | 原路径空着：挪回去，接受。原路径被占：拒绝 |
 
+实现按四种状态判：两处都没有；只在主区；只在归档区（原路径空着）；两处都有（原路径被占）。两处都有时，归档按「在主区」办，取回按「原路径被占」拒绝。路径写成 `a.md` 或 `_archive/a.md` 都指同一样东西。接受的结果带 `moved`，什么都没动时为 `false`。
+
 找和查默认跳过归档区，`includeArchived` 打开才带上。看一样已归档的东西照常给出，并标明它已归档。命令行里除了 `find` 和 `check`，库的目录树本身也把归档的东西隔开了，agent 用自己的工具翻目录时同样看不到它们混在里面。
 
 命令行另有一个 `start "<一句话>"`，是「说：在做什么」「查」「找」三个动词的组合，不是第七个动词。
@@ -178,7 +188,7 @@ interface Plugin {
   onPut?(req: AcceptedPut, ctx: Context): Promise<Note | null>
   revise?(req: PlaceOverExisting, ctx: Context): Promise<ReviseOutcome>   // 可撤回的改
   onFind?(req: FindRequest, ctx: Context): Promise<Hit[]>
-  onShow?(req: ShowRequest, ctx: Context): Promise<Section[]>
+  onInspect?(req: InspectRequest, ctx: Context): Promise<Section[]>
   onSay?(req: SayRequest, ctx: Context): Promise<SayResult>
   onCheck?(req: CheckRequest, ctx: Context): Promise<Section[]>
   onArchive?(req: AcceptedArchive, ctx: Context): Promise<Note | null>
@@ -189,6 +199,8 @@ interface Plugin {
 ```
 
 一个只有名字、其余全空的对象是合法的插件。
+
+实现里的细化：钩子收到的上下文另带 `dir`，即这个插件名下的目录；钩子的答复不写插件名，由内核盖上（`PluginNote`、`PluginSection`、`PluginHit`）；`onSay` 答复 `SayAnswer`，处理它的插件出错时结果是 `not-heard`、`plugin-failed`。主人面命令 `OwnerCommand` 带 `destructive` 标志，由内核在同一处拦。插件名同时是目录名，用 `pluginName()` 解析。
 
 规矩：
 
@@ -260,9 +272,9 @@ interface Plugin {
 | 槽 | 它做什么 |
 | --- | --- |
 | `onPut` | 记入册；内容变了的记改 |
-| `revise` | 把旧内容挪进留存，再放新的，记改 |
+| `revise` | 把旧内容挪进留存；新的由内核放上去，`onPut` 收到的 `previous` 是被换下的指纹，记改 |
 | `onFind` | 按场景、来历、记录里的文字找 |
-| `onShow` | 一样东西的来历、现状、它来自什么、什么来自它；一个场景的卡 |
+| `onInspect` | 一样东西的来历、现状、它来自什么、什么来自它；一个场景的卡 |
 | `onSay` | 听得懂：在做什么、决定、备注、来自、改了 |
 | `onArchive` | 记下归档和取回；已归档的条目不出现在可能过期等清单里 |
 | `onCheck` | 自某时以来的变化；来历不明的；可能过期的；来源不在的 |

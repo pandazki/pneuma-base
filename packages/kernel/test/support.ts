@@ -14,7 +14,7 @@ import {
 } from '../src/index.js'
 
 export function tempDir(prefix = 'pb-k-'): string {
-  return realpathSync(mkdtempSync(join(tmpdir(), prefix)))
+  return realpathSync(mkdtempSync(join(process.env.PNEUMA_BASE_TEST_TMP ?? tmpdir(), prefix)))
 }
 
 export const session: Session = { id: 'test-session', source: 'flag', cwd: '/', machine: 'test', transcript: null }

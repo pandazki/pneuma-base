@@ -1,13 +1,28 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, realpath } from 'node:fs/promises'
+import { mkdir, realpath, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { exists } from './files.js'
-import { GRANT_NAME, readGrantFile, writeGrantFile } from './grants.js'
+import { skillText } from './cognition.js'
+import { exists, listFiles, writeAtomic } from './files.js'
+import { GRANT_NAME, readGrantFile, removeGrantFile, writeGrantFile } from './grants.js'
 import { CONFIG_FILE, newConfig, saveConfig } from './library.js'
-import { parseLibraryPath, regionOf } from './paths.js'
-import { makeContext, performOwner } from './pipeline.js'
+import { ARCHIVE_DIR, parseLibraryPath, regionOf } from './paths.js'
+import { makeContext, performOwner, pluginContext } from './pipeline.js'
 import { looksLikeAgentSession, type Env } from './session.js'
-import type { Actor, Context, Grant, GrantId, Library, OwnerAnswer, OwnerArgs, OwnerResult, PluginName, PluginTable, Session } from './types.js'
+import type {
+  Actor,
+  Context,
+  Grant,
+  GrantId,
+  Library,
+  OwnerAnswer,
+  OwnerArgs,
+  OwnerCommand,
+  OwnerResult,
+  Plugin,
+  PluginName,
+  PluginTable,
+  Session,
+} from './types.js'
 
 /** What every owner command needs besides its own arguments. */
 export type OwnerCall = {
@@ -26,7 +41,7 @@ type Body = () => Promise<{ answer: OwnerAnswer; library?: Library }>
  * and without a confirmation the person gives in person (K7). Refused or not, it ends at the
  * pipeline's single exit.
  */
-async function command(call: OwnerCall, name: string, destructive: boolean, args: OwnerArgs, body: Body): Promise<OwnerResult> {
+async function gated(call: OwnerCall, name: string, destructive: boolean, args: OwnerArgs, body: Body): Promise<OwnerResult> {
   return performOwner(call.ctx, name, args, async () => {
     if (destructive) {
       if (looksLikeAgentSession(call.env, call.viaGrant)) {
@@ -68,7 +83,7 @@ export const ownerFace = {
       positional: [req.name],
       flags: { agent: [req.agent], ...(req.area === null ? {} : { area: [req.area] }), ...(req.readOnly ? { 'read-only': true as const } : {}) },
     }
-    return command(call, 'grant issue', false, args, async () => {
+    return gated(call, 'grant issue', false, args, async () => {
       const { library } = call.ctx
       if (!GRANT_NAME.test(req.name)) return refused('bad-grant-name', `授权名只能用小写字母、数字和连字符，最长 41 个字符：${req.name}`)
       let area: Grant['area'] = null
@@ -89,6 +104,66 @@ export const ownerFace = {
       const file = await writeGrantFile(call.home, { name: grant.name, library: library.root, grant: grant.id })
       return done(`已发授权 ${grant.name} 给 ${grant.agent}。本机副本：${file}`, { grant, file }, updated)
     })
+  },
+
+  revokeGrant(call: OwnerCall, name: string): Promise<OwnerResult> {
+    return gated(call, 'grant revoke', false, { positional: [name], flags: {} }, async () => {
+      const { library } = call.ctx
+      const grant = library.config.grants.find((g) => g.name === name)
+      if (!grant) return refused('no-such-grant', `这个库没有叫 ${name} 的授权`)
+      const updated = await saveConfig(library.root, { ...library.config, grants: library.config.grants.filter((g) => g.id !== grant.id) }, call.table)
+      const local = await readGrantFile(call.home, name)
+      if (local?.library === library.root) await removeGrantFile(call.home, name)
+      return done(`已撤回授权 ${name}。`, { grant }, updated)
+    })
+  },
+
+  addPlugin(call: OwnerCall, name: string): Promise<OwnerResult> {
+    return gated(call, 'plugin add', false, { positional: [name], flags: {} }, async () => {
+      const { library } = call.ctx
+      if (library.config.plugins.includes(name as PluginName)) return done(`插件 ${name} 已经装了。`)
+      if (!call.table.has(name)) return refused('unknown-plugin', `没有这个插件：${name}。可用的：${[...call.table.keys()].join('、') || '无'}`)
+      const updated = await saveConfig(library.root, { ...library.config, plugins: [...library.config.plugins, name as PluginName] }, call.table)
+      return done(`已装上插件 ${name}，说明已重新生成。`, undefined, updated)
+    })
+  },
+
+  /** Takes the plugin out of the configuration. Its directory stays as it is. */
+  removePlugin(call: OwnerCall, name: string): Promise<OwnerResult> {
+    return gated(call, 'plugin remove', false, { positional: [name], flags: {} }, async () => {
+      const { library } = call.ctx
+      if (!library.config.plugins.includes(name as PluginName)) return refused('not-installed', `这个库没装插件 ${name}`)
+      const updated = await saveConfig(library.root, { ...library.config, plugins: library.config.plugins.filter((p) => p !== name) }, call.table)
+      return done(`已卸下插件 ${name}，说明已重新生成。它名下的目录 .pneuma-base/${name}/ 原样留着。`, undefined, updated)
+    })
+  },
+
+  /** Writes `<dir>/pneuma-base-<grant>/SKILL.md` for one agent product. */
+  installSkill(call: OwnerCall, req: { grantName: string; agent: 'claude' | 'codex'; dir: string }): Promise<OwnerResult> {
+    return gated(call, 'skill install', false, { positional: [req.grantName], flags: { agent: [req.agent], dir: [req.dir] } }, async () => {
+      const { library } = call.ctx
+      const grant = library.config.grants.find((g) => g.name === req.grantName)
+      if (!grant) return refused('no-such-grant', `这个库没有叫 ${req.grantName} 的授权`)
+      const folder = join(req.dir, `pneuma-base-${grant.name}`)
+      const file = join(folder, 'SKILL.md')
+      await writeAtomic(file, skillText(grant.name, library.root), folder)
+      return done(`已为 ${req.agent} 写好技能：${file}`, { file })
+    })
+  },
+
+  /** Deletes everything in `_archive/`. Destructive. */
+  purgeArchive(call: OwnerCall): Promise<OwnerResult> {
+    return gated(call, 'archive purge', true, { positional: [], flags: {} }, async () => {
+      const dir = join(call.ctx.library.root, ARCHIVE_DIR)
+      const removed = (await exists(dir)) ? (await listFiles(dir, new Set())).length : 0
+      await rm(dir, { recursive: true, force: true })
+      return done(`已清空归档区，删掉了 ${removed} 个文件。`, { removed })
+    })
+  },
+
+  /** Runs a command a plugin added to the owner face, through the same gate. */
+  run(call: OwnerCall, plugin: Plugin, command: OwnerCommand, args: OwnerArgs): Promise<OwnerResult> {
+    return gated(call, command.name, command.destructive, args, async () => ({ answer: await command.run(args, pluginContext(call.ctx, plugin.name)) }))
   },
 }
 

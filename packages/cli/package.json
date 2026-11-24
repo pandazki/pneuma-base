@@ -12,8 +12,11 @@
       "default": "./dist/main.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "dependencies": {
-    "@pneuma-base/kernel": "workspace:*"
+    "@pneuma-base/kernel": "workspace:*",
+    "@pneuma-base/plugin-ledger": "workspace:*"
   }
 }

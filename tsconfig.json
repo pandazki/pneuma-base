@@ -3,6 +3,7 @@
   "references": [
     { "path": "packages/kernel" },
     { "path": "packages/kernel/test" },
+    { "path": "packages/plugin-ledger" },
     { "path": "packages/cli" },
     { "path": "packages/cli/test" }
   ]

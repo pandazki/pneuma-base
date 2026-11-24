@@ -14,16 +14,18 @@ import {
   resolveGrant,
   type Context,
   type Env,
+  type Grant,
   type Instant,
   type Library,
   type Origin,
+  type OwnerArgs,
   type OwnerCall,
   type OwnerResult,
   type PluginProblem,
   type PluginTable,
   type PutRequest,
 } from '@pneuma-base/kernel'
-import { GLOBAL_FLAGS, UsageError, flagList, flagValue, hasFlag, parseArgs, type Parsed } from './args.js'
+import { GLOBAL_FLAGS, UsageError, flagList, flagValue, hasFlag, ownFlags, parseArgs, type Parsed } from './args.js'
 import { archiveText, checkText, findText, inspectText, ownerText, putText, sayText } from './format.js'
 
 export type Io = {
@@ -63,7 +65,9 @@ const USAGE = `用法：
       put <文件|-|库内路径> [--to <库内路径>] (--brought [--source <出处>] [--by owner] | --made [--from <库内路径…>] [--from-outside <一句话…>])
       say <种类> [<关于>] [<内容>] | check [--since <时间>|last] [--include-archived]
       archive <库内路径> | unarchive <库内路径>
-主人：init <目录> [--bare] | grant issue <名字> --library <目录> --agent <给谁> [--area <子文件夹>] [--read-only]
+主人：init <目录> [--bare] | plugin add|remove <名字> --library <目录>
+      grant issue <名字> --library <目录> --agent <给谁> [--area <子文件夹>] [--read-only] | grant revoke <名字> --library <目录>
+      skill install <授权名> --agent claude|codex --dir <目录> | archive purge --library <目录>（会丢数据，要当面确认）
 加 --json 输出结果对象。`
 
 /** 0 answered; 2 refused; 3 accepted but a plugin reported a problem. Usage errors are 1. */
@@ -195,10 +199,7 @@ const SPECS: Spec[] = [
     run: async ({ args, parsed }, { ctx }) => {
       const [kind, ...rest] = args as [string, ...string[]]
       const [about, text] = rest.length === 2 ? [rest[0] as string, rest[1] as string] : [null, rest[0] ?? null]
-      const sayArgs: Record<string, string[]> = {}
-      for (const [name, value] of parsed.flags) {
-        if (!(GLOBAL_FLAGS as readonly string[]).includes(name)) sayArgs[name] = value === true ? [] : value
-      }
+      const sayArgs = Object.fromEntries(ownFlags(parsed).map(([name, value]) => [name, value === true ? [] : value]))
       const r = await agentFace.say({ kind, about, text, args: sayArgs }, ctx)
       return answer(r, sayText(r))
     },
@@ -249,6 +250,51 @@ const SPECS: Spec[] = [
       return owner(await ownerFace.issueGrant(ownerCall(inv, bound), req))
     },
   },
+  {
+    words: ['grant', 'revoke'],
+    flags: [],
+    arity: [1, 1],
+    library: true,
+    run: async (inv, bound) => owner(await ownerFace.revokeGrant(ownerCall(inv, bound), inv.args[0] as string)),
+  },
+  {
+    words: ['plugin', 'add'],
+    flags: [],
+    arity: [1, 1],
+    library: true,
+    run: async (inv, bound) => owner(await ownerFace.addPlugin(ownerCall(inv, bound), inv.args[0] as string)),
+  },
+  {
+    words: ['plugin', 'remove'],
+    flags: [],
+    arity: [1, 1],
+    library: true,
+    run: async (inv, bound) => owner(await ownerFace.removePlugin(ownerCall(inv, bound), inv.args[0] as string)),
+  },
+  {
+    words: ['skill', 'install'],
+    flags: ['agent', 'dir'],
+    arity: [1, 1],
+    library: false,
+    run: async (inv) => {
+      const agent = flagValue(inv.parsed, 'agent')
+      const dir = flagValue(inv.parsed, 'dir')
+      if (agent !== 'claude' && agent !== 'codex') throw new UsageError('要写 --agent claude 或 --agent codex。')
+      if (dir === null) throw new UsageError('要写 --dir <放技能的目录>。')
+      const grantName = inv.args[0] as string
+      const resolved = await resolveGrant(inv.home, grantName, inv.table)
+      if (!resolved.ok) return refusal(resolved.reason, resolved.text)
+      const call = ownerCall(inv, contextFor(inv, resolved.library, null))
+      return owner(await ownerFace.installSkill(call, { grantName, agent, dir: resolve(inv.io.cwd, dir) }))
+    },
+  },
+  {
+    words: ['archive', 'purge'],
+    flags: [],
+    arity: [0, 0],
+    library: true,
+    run: async (inv, bound) => owner(await ownerFace.purgeArchive(ownerCall(inv, bound))),
+  },
 ]
 
 function matchSpec(positional: string[]): Spec | null {
@@ -259,28 +305,57 @@ function matchSpec(positional: string[]): Spec | null {
   return best
 }
 
+function refusal(reason: string, text: string): Answer {
+  return answer({ outcome: 'refused', reason, problems: [] }, [`拒绝（${reason}）：${text}`])
+}
+
 /** Which library and who: `@<grant>` fixes both; `--library` with an optional `--as` is for use without a grant file. */
 async function bind(inv: Invocation): Promise<Bound | Answer> {
   const { parsed, io, table, home } = inv
   const dir = flagValue(parsed, 'library')
   if (parsed.grant !== null && (dir !== null || hasFlag(parsed, 'as'))) throw new UsageError('@<授权名> 已经定了库和身份，不要再写 --library 或 --as。')
-  let library: Library
-  let grant = null
   if (parsed.grant !== null) {
     const r = await resolveGrant(home, parsed.grant, table)
-    if (!r.ok) return answer({ outcome: 'refused', reason: r.reason, problems: [] }, [`拒绝（${r.reason}）：${r.text}`])
-    library = r.library
-    grant = r.grant
-  } else if (dir !== null) {
-    const opened = await openLibrary(resolve(io.cwd, dir), table)
-    if (!opened) return answer({ outcome: 'refused', reason: 'not-a-library', problems: [] }, [`拒绝（not-a-library）：${dir} 不是一个库。先用 pneuma-base init <目录> 建库。`])
-    library = opened
-  } else {
-    throw new UsageError('要用 @<授权名> 或 --library <库的目录> 指明是哪个库。')
+    return r.ok ? contextFor(inv, r.library, r.grant) : refusal(r.reason, r.text)
   }
+  if (dir === null) throw new UsageError('要用 @<授权名> 或 --library <库的目录> 指明是哪个库。')
+  const library = await openLibrary(resolve(io.cwd, dir), table)
+  return library ? contextFor(inv, library, null) : refusal('not-a-library', `${dir} 不是一个库。先用 pneuma-base init <目录> 建库。`)
+}
+
+function contextFor({ parsed, io }: Invocation, library: Library, grant: Grant | null): Bound {
   const actor = identifyActor({ grant, as: flagValue(parsed, 'as'), env: io.env })
   const session = identifySession({ flag: flagValue(parsed, 'session'), env: io.env, cwd: io.cwd, machine: hostname() })
   return { library, ctx: makeContext(library, actor, session), viaGrant: grant !== null }
+}
+
+/** A command an installed plugin added to the owner face, matched by its words. */
+async function pluginCommand(inv: Invocation): Promise<Answer> {
+  const { parsed } = inv
+  const unknown = new UsageError(`不认识的命令：${parsed.positional.join(' ') || '（空）'}`)
+  if (parsed.grant === null && !hasFlag(parsed, 'library')) throw unknown
+  const bound = await bind(inv)
+  if ('exit' in bound) return bound
+  const words = (name: string) => name.split(' ')
+  const match = bound.library.plugins
+    .flatMap((plugin) => plugin.ownerCommands.map((command) => ({ plugin, command })))
+    .filter(({ command }) => words(command.name).every((w, i) => parsed.positional[i] === w))
+    .sort((a, b) => words(b.command.name).length - words(a.command.name).length)[0]
+  if (!match) throw unknown
+  const args: OwnerArgs = { positional: parsed.positional.slice(words(match.command.name).length), flags: Object.fromEntries(ownFlags(parsed)) }
+  return owner(await ownerFace.run(ownerCall(inv, bound), match.plugin, match.command, args))
+}
+
+async function runSpec(spec: Spec, inv: Invocation): Promise<Answer> {
+  const name = spec.words.join(' ')
+  if (inv.args.length < spec.arity[0] || inv.args.length > spec.arity[1]) throw new UsageError(`${name} 的参数个数不对`)
+  if (spec.flags !== 'any') {
+    const allowed = new Set<string>([...GLOBAL_FLAGS, ...spec.flags])
+    for (const flag of inv.parsed.flags.keys()) if (!allowed.has(flag)) throw new UsageError(`${name} 不认识 --${flag}`)
+  }
+  if (!spec.library) return spec.run(inv)
+  const bound = await bind(inv)
+  return 'exit' in bound ? bound : spec.run(inv, bound)
 }
 
 export async function main(argv: readonly string[], table: PluginTable, io: Io): Promise<number> {
@@ -290,22 +365,10 @@ export async function main(argv: readonly string[], table: PluginTable, io: Io):
       return argv.length === 0 ? 1 : 0
     }
     const parsed = parseArgs(argv)
-    const spec = matchSpec(parsed.positional)
-    if (!spec) throw new UsageError(`不认识的命令：${parsed.positional.join(' ') || '（空）'}`)
-    const args = parsed.positional.slice(spec.words.length)
-    if (args.length < spec.arity[0] || args.length > spec.arity[1]) throw new UsageError(`${spec.words.join(' ')} 的参数个数不对`)
-    if (spec.flags !== 'any') {
-      const allowed = new Set<string>([...GLOBAL_FLAGS, ...spec.flags])
-      for (const name of parsed.flags.keys()) if (!allowed.has(name)) throw new UsageError(`${spec.words.join(' ')} 不认识 --${name}`)
-    }
     const home = io.env.PNEUMA_BASE_HOME ?? join(homedir(), '.pneuma-base')
-    const inv: Invocation = { parsed, args, io, table, home }
-    let result: Answer
-    if (!spec.library) result = await spec.run(inv)
-    else {
-      const bound = await bind(inv)
-      result = 'exit' in bound ? bound : await spec.run(inv, bound)
-    }
+    const spec = matchSpec(parsed.positional)
+    const inv: Invocation = { parsed, args: parsed.positional.slice(spec?.words.length ?? 0), io, table, home }
+    const result = spec ? await runSpec(spec, inv) : await pluginCommand(inv)
     io.out(hasFlag(parsed, 'json') ? JSON.stringify(result.json, null, 2) : result.lines.join('\n'))
     return result.exit
   } catch (error) {

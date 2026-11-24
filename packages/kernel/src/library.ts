@@ -8,6 +8,14 @@ import type { Grant, GrantId, LibraryConfig, Library, LibraryPath, Plugin, Plugi
 
 export const CONFIG_FILE = join(KERNEL_DIR, 'config.json')
 
+/** A plugin's name is also the name of its directory under `.pneuma-base/`. */
+const PLUGIN_NAME = /^[a-z][a-z0-9-]{0,40}$/
+
+export function pluginName(name: string): PluginName {
+  if (!PLUGIN_NAME.test(name)) throw new Error(`not a plugin name (lowercase letters, digits, hyphens): ${name}`)
+  return name as PluginName
+}
+
 export function newConfig(plugins: PluginName[]): LibraryConfig {
   return { format: 1, id: randomUUID(), plugins, grants: [] }
 }
@@ -61,7 +69,7 @@ function parseConfig(raw: unknown): LibraryConfig {
   const r = raw as Record<string, unknown>
   if (r.format !== 1) return fail('format is not 1')
   if (typeof r.id !== 'string') return fail('id is not a string')
-  if (!Array.isArray(r.plugins) || !r.plugins.every((p) => typeof p === 'string')) return fail('plugins is not a list of names')
+  if (!Array.isArray(r.plugins) || !r.plugins.every((p) => typeof p === 'string' && PLUGIN_NAME.test(p))) return fail('plugins is not a list of plugin names')
   if (!Array.isArray(r.grants)) return fail('grants is not a list')
   const grants = r.grants.map((g: unknown): Grant => {
     const x = (typeof g === 'object' && g !== null ? g : {}) as Record<string, unknown>
