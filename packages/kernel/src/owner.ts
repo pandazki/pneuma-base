@@ -14,6 +14,7 @@ import type {
   Grant,
   GrantId,
   Library,
+  LibraryPath,
   OwnerAnswer,
   OwnerArgs,
   OwnerCommand,
@@ -42,7 +43,7 @@ type Body = () => Promise<{ answer: OwnerAnswer; library?: Library }>
  * pipeline's single exit.
  */
 async function gated(call: OwnerCall, name: string, destructive: boolean, args: OwnerArgs, body: Body): Promise<OwnerResult> {
-  return performOwner(call.ctx, name, args, async () => {
+  return performOwner(call.ctx, name, args, destructive, async () => {
     if (destructive) {
       if (looksLikeAgentSession(call.env, call.viaGrant)) {
         return { answer: { outcome: 'refused', reason: 'agent-session', text: `「${name}」会丢数据，只能由主人在自己的终端里做，不能在 agent 的会话里做。` } }
@@ -74,7 +75,7 @@ export async function initLibrary(
   const library = await saveConfig(await realpath(dir), newConfig(opts.plugins as PluginName[]), opts.table)
   const ctx = makeContext(library, opts.actor, opts.session)
   const args: OwnerArgs = { positional: [library.root], flags: opts.plugins.length === 0 ? { bare: true } : {} }
-  return performOwner(ctx, 'init', args, async () => done(`已把 ${library.root} 建成库。说明在 PNEUMA-BASE.md。`, { root: library.root }))
+  return performOwner(ctx, 'init', args, false, async () => done(`已把 ${library.root} 建成库。说明在 PNEUMA-BASE.md。`, { root: library.root }))
 }
 
 export const ownerFace = {
@@ -151,13 +152,13 @@ export const ownerFace = {
     })
   },
 
-  /** Deletes everything in `_archive/`. Destructive. */
+  /** Deletes everything in `_archive/`. Destructive. The answer's data names the library paths it deleted. */
   purgeArchive(call: OwnerCall): Promise<OwnerResult> {
     return gated(call, 'archive purge', true, { positional: [], flags: {} }, async () => {
       const dir = join(call.ctx.library.root, ARCHIVE_DIR)
-      const removed = (await exists(dir)) ? (await listFiles(dir, new Set())).length : 0
+      const paths = (await exists(dir)) ? (await listFiles(dir, new Set())).map((p) => `${ARCHIVE_DIR}/${p}` as LibraryPath) : []
       await rm(dir, { recursive: true, force: true })
-      return done(`已清空归档区，删掉了 ${removed} 个文件。`, { removed })
+      return done(`已清空归档区，删掉了 ${paths.length} 个文件。`, { removed: paths.length, paths })
     })
   },
 

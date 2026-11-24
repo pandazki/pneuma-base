@@ -48,6 +48,23 @@ describe('a destructive owner command', () => {
   })
 })
 
+describe('the owner event', () => {
+  it('says whether the command was destructive, and archive purge names the paths it deleted', async () => {
+    const events: Event[] = []
+    const recorder = plugin('recorder', { observe: async (e) => void events.push(e) })
+    const f = await fixture([recorder])
+    events.length = 0
+    f.write('_archive/a.md', 'a')
+    f.write('_archive/d/b.md', 'b')
+    await ownerFace.issueGrant(call(f, { table: new Map([['recorder', recorder]]) }), { name: 'g', agent: 'x', area: null, readOnly: false })
+    await ownerFace.purgeArchive(call(f))
+    expect(events).toMatchObject([
+      { face: 'owner', command: 'grant issue', destructive: false },
+      { face: 'owner', command: 'archive purge', destructive: true, result: { outcome: 'done', data: { removed: 2, paths: ['_archive/a.md', '_archive/d/b.md'] } } },
+    ])
+  })
+})
+
 describe('the single exit', () => {
   it('sends one failed event when the operation throws, then rethrows', async () => {
     const events: Event[] = []

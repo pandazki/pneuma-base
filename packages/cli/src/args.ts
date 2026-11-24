@@ -12,6 +12,8 @@ const FLAGS: Record<string, 'boolean' | 'value' | 'list'> = {
   from: 'list',
   'from-outside': 'list',
   'include-archived': 'boolean',
+  scene: 'value',
+  origin: 'value',
   since: 'value',
   bare: 'boolean',
   agent: 'value',

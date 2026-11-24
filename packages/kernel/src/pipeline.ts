@@ -68,9 +68,10 @@ export async function performOwner(
   ctx: Context,
   command: string,
   args: OwnerArgs,
+  destructive: boolean,
   body: () => Promise<{ answer: OwnerAnswer; library?: Library }>,
 ): Promise<OwnerResult> {
-  return finish(ctx, (result) => ({ face: 'owner', command, args, result }), async () => {
+  return finish(ctx, (result) => ({ face: 'owner', command, args, destructive, result }), async () => {
     const { answer, library } = await body()
     return { result: { ...answer, problems: [] }, ...(library ? { library } : {}) }
   })

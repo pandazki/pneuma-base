@@ -61,7 +61,7 @@ export function processIo(): Io {
 const USAGE = `用法：
   pneuma-base @<授权名> <动词> …
   pneuma-base --library <库的目录> [--as <agent 名>] <动词> …
-动词：start "<一句话>" | find <文字> [--include-archived] | inspect <库内路径>
+动词：start "<一句话>" | find <文字> [--include-archived] [--scene <场景号>] [--origin brought|made] | inspect <库内路径|条目号|场景号>
       put <文件|-|库内路径> [--to <库内路径>] (--brought [--source <出处>] [--by owner] | --made [--from <库内路径…>] [--from-outside <一句话…>])
       say <种类> [<关于>] [<内容>] | check [--since <时间>|last] [--include-archived]
       archive <库内路径> | unarchive <库内路径>
@@ -154,18 +154,20 @@ const SPECS: Spec[] = [
       const sentence = args.join(' ')
       const say = await agentFace.say({ kind: 'doing', about: null, text: sentence, args: {} }, ctx)
       const check = await agentFace.check({ since: 'last', includeArchived: false }, ctx)
-      const find = await agentFace.find({ text: sentence, filters: {}, includeArchived: false }, ctx)
-      const lines = ['【记下】', ...sayText(say), '【自上次以来的变化】', ...checkText(check), '【库里可能相关的】', ...findText(find)]
+      const find = await agentFace.find({ text: sentence, match: 'words', filters: {}, includeArchived: false }, ctx)
+      const lines = ['【记下】', ...sayText(say), '【库的变化与状况】', ...checkText(check), '【库里可能相关的】', ...findText(find)]
       return { json: { say, check, find }, lines, exit: exitOf(say, check, find) }
     },
   },
   {
     words: ['find'],
-    flags: ['include-archived'],
+    flags: ['include-archived', 'scene', 'origin'],
     arity: [0, Infinity],
     library: true,
     run: async ({ args, parsed }, { ctx }) => {
-      const r = await agentFace.find({ text: args.length === 0 ? null : args.join(' '), filters: {}, includeArchived: hasFlag(parsed, 'include-archived') }, ctx)
+      const filters = Object.fromEntries((['scene', 'origin'] as const).flatMap((name) => (hasFlag(parsed, name) ? [[name, flagValue(parsed, name) as string]] : [])))
+      const text = args.length === 0 ? null : args.join(' ')
+      const r = await agentFace.find({ text, match: 'terms', filters, includeArchived: hasFlag(parsed, 'include-archived') }, ctx)
       return { json: r, lines: findText(r), exit: exitOf(r) }
     },
   },

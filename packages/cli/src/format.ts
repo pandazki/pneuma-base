@@ -23,15 +23,26 @@ export function putText(req: PutRequest, r: PutResult): string[] {
   return [head, ...tail(r.notes, r.problems)]
 }
 
+/** One entry per path (or title): the kernel's mark beside it, each plugin's detail on its own line. */
 export function findText(r: FindResult): string[] {
-  const hits = r.hits.map((h) => `${h.path ?? h.title}${h.detail ? `（${h.detail}）` : ''}${h.by === 'kernel' ? '' : `  [${h.by}]`}`)
-  return [...(hits.length === 0 ? ['没有找到。'] : hits), ...tail([], r.problems)]
+  const entries = new Map<string, { marks: string[]; details: string[] }>()
+  for (const h of r.hits) {
+    const key = h.path ?? h.title
+    const entry = entries.get(key) ?? { marks: [], details: [] }
+    entries.set(key, entry)
+    if (h.detail === null) continue
+    if (h.by === 'kernel') entry.marks.push(h.detail)
+    else entry.details.push(`  ${h.detail}`)
+  }
+  const lines = [...entries].flatMap(([key, e]) => [`${key}${e.marks.map((m) => `（${m}）`).join('')}`, ...e.details])
+  return [...(lines.length === 0 ? ['没有找到。'] : lines), ...tail([], r.problems)]
 }
 
 export function inspectText(target: string, r: InspectResult): string[] {
+  // A target with no file may still be something a plugin knows, such as a scene.
   const file = r.file
     ? [`${r.file.path}${r.file.archived ? '（已归档）' : ''}`, `  ${r.file.size} 字节，改于 ${r.file.modifiedAt}`, `  指纹 ${r.file.fingerprint}`]
-    : [`库里没有这个文件：${target}`]
+    : r.sections.length > 0 ? [] : [`库里没有这个文件：${target}`]
   return [...file, ...sectionsText(r.sections), ...tail([], r.problems)]
 }
 

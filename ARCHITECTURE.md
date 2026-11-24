@@ -121,11 +121,12 @@ type PutResult =
 - 请求里的路径是调用方写的原样（相对库根，或库内的绝对路径），由内核在入口解析一次。「在库外」那一列就是解析不出库内路径的情形。`.pneuma-base/`、`PNEUMA-BASE.md` 和 `_archive/` 不算内容，放和挪到那里都按「在库外」拒绝；`_archive/` 只经归档和取回进出。
 - 放入的来源是 `{ kind: 'file'; path } | { kind: 'stdin'; content }`。
 - 每个结果都带 `problems`，拒绝的结果也带，并带 `subject`：拒绝针对的那个输入。
+- 做出来的来历里，`from` 的每个路径都要是库里在的文件（主区，或它在归档区的那份）。有一个不在，就以「没有这个文件」拒绝，`subject` 是那个路径，目标不动。
 
 ### 找、看、说、查、归档
 
 ```ts
-type FindRequest = { text: string | null; filters: Record<string, string>; includeArchived: boolean }   // 开关默认关
+type FindRequest = { text: string | null; match: 'terms' | 'words'; filters: Record<string, string>; includeArchived: boolean }   // 开关默认关
 type Hit = { path: LibraryPath | null; title: string; by: PluginName | 'kernel'; detail: string | null }
 type FindResult = { hits: Hit[]; problems: PluginProblem[] }
 
@@ -149,6 +150,8 @@ type Note    = { plugin: PluginName; text: string; data?: unknown }
 type Section = { plugin: PluginName; title: string; body: string; data?: unknown }
 type PluginProblem = { plugin: PluginName; message: string }
 ```
+
+找的两种匹配：`terms` 把文字按空白和常见标点切开，名字里含任一段就算；`words` 用 `Intl.Segmenter` 取一句话里两个字以上的词和拉丁词，按命中的不同词数排，至少命中一个，每个答复者最多给 5 条。`start` 用 `words`，`find` 用 `terms`。切词和排序是内核导出的 `searchTerms` 与 `rankHits`，插件用同一套。`filters` 是插件的用语，内核不懂，所以带了过滤时内核不按名字列文件。
 
 `problems` 是失败语义的落点：某个插件出错时，动词照样给出答复，同时如实说明哪个插件没做成。「已放入，但没有记下」是和「已放入并记下」不同的结果，命令行以非零退出码区分。
 
@@ -200,7 +203,7 @@ interface Plugin {
 
 一个只有名字、其余全空的对象是合法的插件。
 
-实现里的细化：钩子收到的上下文另带 `dir`，即这个插件名下的目录；钩子的答复不写插件名，由内核盖上（`PluginNote`、`PluginSection`、`PluginHit`）；`onSay` 答复 `SayAnswer`，处理它的插件出错时结果是 `not-heard`、`plugin-failed`。主人面命令 `OwnerCommand` 带 `destructive` 标志，由内核在同一处拦。插件名同时是目录名，用 `pluginName()` 解析。
+实现里的细化：钩子收到的上下文另带 `dir`，即这个插件名下的目录；钩子的答复不写插件名，由内核盖上（`PluginNote`、`PluginSection`、`PluginHit`）；`onSay` 答复 `SayAnswer`，处理它的插件出错时结果是 `not-heard`、`plugin-failed`。主人面命令 `OwnerCommand` 带 `destructive` 标志，由内核在同一处拦。插件名同时是目录名，用 `pluginName()` 解析。主人面的事件带 `destructive`，插件不用自己认哪些命令会丢数据；`archive purge` 的答复在 `data.paths` 里列出被删的库内路径，记账插件据此记「已除」。
 
 规矩：
 

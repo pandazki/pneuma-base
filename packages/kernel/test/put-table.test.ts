@@ -81,6 +81,18 @@ describe('place', () => {
     expect(refused(r)).toBe('no-such-file')
   })
 
+  it('a made origin naming a file that is not there: refused, no such file, nothing written', async () => {
+    const f = await fixture()
+    f.write('src.md', 's')
+    f.write('_archive/old.md', 'o')
+    const made = (from: string[]) => ({ kind: 'made' as const, from, outside: [] })
+    const src = { kind: 'file', path: outsideFile('a') } as const
+    const r = await agentFace.put({ kind: 'place', from: src, to: 'a.md', origin: made(['src.md', 'gone.md']) }, f.ctx)
+    expect(r).toMatchObject({ outcome: 'refused', reason: 'no-such-file', subject: 'gone.md' })
+    expect(() => f.read('a.md')).toThrow(/ENOENT/)
+    expect(refused(await agentFace.put({ kind: 'place', from: src, to: 'a.md', origin: made(['src.md', 'old.md']) }, f.ctx))).toBe('accepted:a.md')
+  })
+
   it('target missing: copied, accepted', async () => {
     const f = await fixture()
     const r = await agentFace.put({ kind: 'place', from: { kind: 'file', path: outsideFile('a') }, to: 'deep/dir/a.md', origin: brought }, f.ctx)

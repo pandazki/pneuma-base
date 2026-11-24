@@ -34,28 +34,59 @@ export const agentFace: AgentFace = {
   archive: (req, ctx) => performVerb('archive', req, ctx, () => archive(req, ctx)),
 }
 
-/** Splits find text into terms: on white space and common punctuation, compared case-insensitively. */
-export function termsOf(text: string | null): string[] {
+/** How many hits each answerer gives at most when a find matches the words of a sentence. */
+export const SENTENCE_HITS = 5
+
+const segmenter = new Intl.Segmenter('zh', { granularity: 'word' })
+
+/**
+ * The terms a find request matches, lower-cased. `terms`: the text split on white space and common
+ * punctuation. `words`: the sentence's words by Intl.Segmenter, kept when two characters or longer, or Latin.
+ */
+export function searchTerms(text: string | null, match: FindRequest['match']): string[] {
   if (text === null) return []
-  return text
-    .toLowerCase()
-    .split(/[\s,.;:!?，。、；：！？"'“”‘’「」『』()（）]+/u)
-    .filter((t) => t !== '')
+  const lower = text.toLowerCase()
+  if (match === 'terms') return lower.split(/[\s,.;:!?，。、；：！？"'“”‘’「」『』()（）]+/u).filter((t) => t !== '')
+  const words = [...segmenter.segment(lower)]
+    .filter((s) => s.isWordLike && ([...s.segment].length >= 2 || /\p{Script=Latin}/u.test(s.segment)))
+    .map((s) => s.segment)
+  return [...new Set(words)]
+}
+
+/**
+ * The hits to give, from candidates scored by how many distinct terms they matched. With no terms,
+ * `terms` gives every candidate and `words` none. Otherwise at least one term must match; best
+ * first; `words` keeps the best `SENTENCE_HITS`.
+ */
+export function rankHits<T>(candidates: { hit: T; haystack: string }[], terms: string[], match: FindRequest['match']): T[] {
+  if (terms.length === 0) return match === 'terms' ? candidates.map((c) => c.hit) : []
+  const scored = candidates
+    .map((c) => ({ hit: c.hit, score: terms.filter((t) => c.haystack.includes(t)).length }))
+    .filter((c) => c.score > 0)
+    .sort((a, b) => b.score - a.score)
+  return (match === 'words' ? scored.slice(0, SENTENCE_HITS) : scored).map((c) => c.hit)
 }
 
 async function find(req: FindRequest, ctx: Context): Promise<FindResult> {
-  const skip = new Set([KERNEL_DIR, DESCRIPTION_FILE, ...(req.includeArchived ? [] : [ARCHIVE_DIR])])
-  const terms = termsOf(req.text)
-  const hits: Hit[] = []
-  for (const file of await listFiles(ctx.library.root, skip)) {
-    const path = file as LibraryPath
-    const archived = regionOf(path) === 'archive'
-    const name = (archived ? originalPath(path) ?? path : path).toLowerCase()
-    if (terms.length > 0 && !terms.some((t) => name.includes(t))) continue
-    hits.push({ path, title: posix.basename(path), by: 'kernel', detail: archived ? '已归档' : null })
-  }
+  const hits = Object.keys(req.filters).length === 0 ? await nameHits(req, ctx.library.root) : []
   const heard = await eachPlugin(ctx, (plugin, pctx) => plugin.onFind?.(req, pctx))
   return { hits: [...hits, ...heard.values.flatMap(({ plugin, value }) => value.map((h) => ({ ...h, by: plugin })))], problems: heard.problems }
+}
+
+async function nameHits(req: FindRequest, root: string): Promise<Hit[]> {
+  const skip = new Set([KERNEL_DIR, DESCRIPTION_FILE, ...(req.includeArchived ? [] : [ARCHIVE_DIR])])
+  const candidates = (await listFiles(root, skip)).map((file) => {
+    const path = file as LibraryPath
+    const archived = regionOf(path) === 'archive'
+    const hit: Hit = { path, title: posix.basename(path), by: 'kernel', detail: archived ? '已归档' : null }
+    return { hit, haystack: (archived ? originalPath(path) ?? path : path).toLowerCase() }
+  })
+  return rankHits(candidates, searchTerms(req.text, req.match), req.match)
+}
+
+/** Every file of the library outside the kernel's own: the content and the archive. */
+export async function libraryFiles(root: string): Promise<LibraryPath[]> {
+  return (await listFiles(root, new Set([KERNEL_DIR, DESCRIPTION_FILE]))) as LibraryPath[]
 }
 
 async function inspect(req: InspectRequest, ctx: Context): Promise<InspectResult> {

@@ -1,7 +1,7 @@
 import { copyFile, writeFile } from 'node:fs/promises'
 import { writableContent } from './access.js'
 import { discard, exists, fingerprintOfFile, moveInto, regularFile, scratchName } from './files.js'
-import { abs, parseLibraryPath, regionOf, scratchDir } from './paths.js'
+import { abs, archivedPath, parseLibraryPath, regionOf, scratchDir } from './paths.js'
 import { eachPlugin, messageOf, pluginContext } from './pipeline.js'
 import type {
   AcceptedPut,
@@ -53,7 +53,7 @@ const refuse = (refused: PutRefusal, subject: string, problems: PluginProblem[] 
 async function register(req: Extract<PutRequest, { kind: 'register' }>, ctx: Context): Promise<Accepted | Refused> {
   const target = writableContent(ctx, req.path)
   if (!target.ok) return refuse(target.reason, req.path)
-  const origin = parseOrigin(ctx, req.origin)
+  const origin = await parseOrigin(ctx, req.origin)
   if ('refused' in origin) return origin
   const file = abs(ctx.library.root, target.path)
   const current = (await regularFile(file)) ? await fingerprintOfFile(file) : null
@@ -65,7 +65,7 @@ async function place(req: Extract<PutRequest, { kind: 'place' }>, ctx: Context):
   const { root } = ctx.library
   const target = writableContent(ctx, req.to)
   if (!target.ok) return refuse(target.reason, req.to)
-  const origin = parseOrigin(ctx, req.origin)
+  const origin = await parseOrigin(ctx, req.origin)
   if ('refused' in origin) return origin
   if (req.from.kind === 'file' && !(await regularFile(req.from.path))) return refuse('no-such-file', req.from.path)
 
@@ -133,12 +133,16 @@ async function currentContent(file: string): Promise<Fingerprint | null | 'not-a
   return (await exists(file)) ? 'not-a-file' : null
 }
 
-function parseOrigin(ctx: Context, origin: Origin<string>): Origin | Refused {
+/** A made origin names files of the library that are there, in the main area or archived. */
+async function parseOrigin(ctx: Context, origin: Origin<string>): Promise<Origin | Refused> {
   if (origin.kind === 'brought') return origin
+  const { root } = ctx.library
   const from: LibraryPath[] = []
   for (const input of origin.from) {
-    const path = parseLibraryPath(ctx.library.root, input)
+    const path = parseLibraryPath(root, input)
     if (path === null || regionOf(path) === 'kernel') return refuse('outside-library', input)
+    const there = (await regularFile(abs(root, path))) ?? (regionOf(path) === 'content' ? await regularFile(abs(root, archivedPath(path))) : null)
+    if (!there) return refuse('no-such-file', input)
     from.push(path)
   }
   return { kind: 'made', from, outside: origin.outside }

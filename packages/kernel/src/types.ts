@@ -102,7 +102,12 @@ export type ReviseOutcome = { outcome: 'held'; note: string | null } | { outcome
 
 // ---- find, inspect, say, check ----
 
-export type FindRequest = { text: string | null; filters: Record<string, string>; includeArchived: boolean }
+/**
+ * `match`: `terms` matches any of the text's terms as written; `words` takes the words of a
+ * sentence, ranks by how many distinct words matched, and each answerer gives its best few.
+ * `filters` are words of a plugin's vocabulary; the kernel lists no file by name when any is given.
+ */
+export type FindRequest = { text: string | null; match: 'terms' | 'words'; filters: Record<string, string>; includeArchived: boolean }
 export type Hit = { path: LibraryPath | null; title: string; by: PluginName | 'kernel'; detail: string | null }
 export type FindResult = { hits: Hit[]; problems: PluginProblem[] }
 
@@ -171,7 +176,7 @@ export type Failure = { outcome: 'failed'; message: string }
 /** One per operation of either face, sent to every plugin's `observe` after the operation. */
 export type Event =
   | { [V in Verb]: { face: 'agent'; verb: V; request: Parameters<AgentFace[V]>[0]; result: Awaited<ReturnType<AgentFace[V]>> | Failure } }[Verb]
-  | { face: 'owner'; command: string; args: OwnerArgs; result: OwnerResult | Failure }
+  | { face: 'owner'; command: string; args: OwnerArgs; destructive: boolean; result: OwnerResult | Failure }
 
 // ---- the extension point ----
 
