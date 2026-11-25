@@ -1,6 +1,6 @@
 <!--
-  The plugin's section of the library's description (PNEUMA-BASE.md) and of the skill an agent gets.
-  An agent reads it, not a person, so it says what the agent can do and what it should leave alone.
+  The plugin's section of the library's description (PNEUMA-BASE.md), which an agent's skill points
+  it to. An agent reads it, not a person, so it says what the agent can do and what it should leave alone.
   src/index.ts takes these comments out before the text is used; conformance checks the form.
 -->
 <!-- The heading: what the plugin brings, a full-width colon, then how it is used. -->

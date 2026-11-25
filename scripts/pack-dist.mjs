@@ -1,6 +1,7 @@
 // Builds the two package files a plugin project depends on, from the workspace as built:
 //   pneuma-base-<version>.tgz      the command line, with the kernel, the built-in plugins and the
-//                                  viewer bundled inside, so `npm install <tgz>` needs nothing else
+//                                  viewer bundled inside, so `npm install <tgz>` needs nothing else,
+//                                  and the plugin standard PLUGINS.md
 //   pneuma-base-sdk-<version>.tgz  @pneuma-base/sdk: the contract, the kit and the test kit
 // Nothing is published. usage: node scripts/pack-dist.mjs [--out <directory>]   (default dist-packages/)
 import { execFileSync } from 'node:child_process'
@@ -68,7 +69,10 @@ try {
     exports: { ...m.exports, './package.json': './package.json' },
     dependencies: Object.fromEntries(Object.keys(inside).map((name) => [name, version])),
     bundleDependencies: Object.keys(inside),
+    // The plugin standard, which `plugin new` names and a plugin project finds in node_modules/pneuma-base/.
+    files: [...m.files, 'PLUGINS.md'],
   }))
+  cpSync(join(repo, 'PLUGINS.md'), join(cli, 'PLUGINS.md'))
   for (const [name, dir] of Object.entries(inside)) stage(pkg(dir), join(cli, 'node_modules', name), (m) => m)
 
   for (const file of [pack(sdk), pack(cli)]) console.log(file)
