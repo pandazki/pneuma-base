@@ -11,6 +11,8 @@
     { "path": "packages/plugin-sync/test" },
     { "path": "packages/plugin-deploy" },
     { "path": "packages/plugin-deploy/test" },
+    { "path": "packages/plugin-search" },
+    { "path": "packages/plugin-search/test" },
     { "path": "packages/viewer" },
     { "path": "packages/viewer/web" },
     { "path": "packages/viewer/test" },

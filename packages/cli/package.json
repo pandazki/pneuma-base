@@ -21,6 +21,7 @@
     "@pneuma-base/plugin-ledger": "workspace:*",
     "@pneuma-base/plugin-version": "workspace:*",
     "@pneuma-base/plugin-sync": "workspace:*",
+    "@pneuma-base/plugin-search": "workspace:*",
     "@pneuma-base/viewer": "workspace:*"
   }
 }
