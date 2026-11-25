@@ -44,6 +44,7 @@ import {
   ambiguousText,
   findableItems,
   findCandidates,
+  itemHit,
   itemText,
   itemView,
   originLabel,
@@ -303,6 +304,17 @@ export const ledger: Plugin = {
     const content = new Map<ItemId, string>()
     if (terms.length > 0) for (const item of findableItems(ledger, scope)) content.set(item.id, await textOf(ctx.library.root, item.path))
     return rankHits(findCandidates(ledger, { ...scope, content }), terms, req.match)
+  },
+
+  /**
+   * The scene and origin of each found path that is an item this find would give: start's own
+   * session stays left out, as in `onFind`. A file nobody registered gets nothing.
+   */
+  async onFound(paths, req, ctx) {
+    const ledger = await load(ctx)
+    const asked = new Set(paths)
+    const scope = { ...req, skip: req.skipOwnSession ? sceneOf(ctx) : null }
+    return findableItems(ledger, scope).flatMap((item) => (asked.has(item.path) ? [itemHit(ledger, item)] : []))
   },
 
   /** The target is a scene id, an item id or path, a file nobody registered, else a scene id prefix: exact names first. */
