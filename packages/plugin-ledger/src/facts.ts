@@ -24,7 +24,7 @@ export type FactBody =
   | { kind: 'item.move'; item: ItemId; from: LibraryPath; to: LibraryPath; archive: 'in' | 'out' | null }
   | { kind: 'item.basis'; item: ItemId; fingerprint: Fingerprint; basis: Basis }
   | { kind: 'item.remove'; item: ItemId }
-  | { kind: 'owner.op'; command: string; summary: string; destructive: boolean; readOnly?: true }
+  | { kind: 'owner.op'; command: string; summary: string; destructive: boolean; readOnly?: true; setup?: true }
 
 export type FactActor = { kind: 'agent' | 'owner' | 'plugin'; name: string; grant: string | null }
 export type How = 'tool' | 'reported' | 'observed' // the tool did it; the actor said so; seen mechanically

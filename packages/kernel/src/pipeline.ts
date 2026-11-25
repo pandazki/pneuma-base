@@ -70,10 +70,10 @@ export async function performOwner(
   ctx: Context,
   command: string,
   args: OwnerArgs,
-  how: { destructive: boolean; readOnly: boolean },
+  how: { destructive: boolean; readOnly: boolean; setup?: boolean },
   body: () => Promise<{ answer: OwnerAnswer; library?: Library }>,
 ): Promise<OwnerResult> {
-  return finish(ctx, (result) => ({ face: 'owner', command, args, destructive: how.destructive, readOnly: how.readOnly, result }), async () => {
+  return finish(ctx, (result) => ({ face: 'owner', command, args, destructive: how.destructive, readOnly: how.readOnly, setup: how.setup ?? false, result }), async () => {
     const { answer, library } = await body()
     return { result: { ...answer, problems: [] }, ...(library ? { library } : {}) }
   })

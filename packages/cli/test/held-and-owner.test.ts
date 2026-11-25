@@ -116,6 +116,45 @@ describe('owner operations (C7)', () => {
     expect(text).toContain('主人面的操作 plugin remove')
     expect(text).not.toContain('grant')
   })
+
+  it('omits setup commands that ran before an agent’s first visit, while keeping content and online state changes', () => {
+    const deployDir = join(tempDir('pb-www-'), 'www')
+    const syncDir = tempDir('pb-sync-')
+    for (const name of ['version', 'deploy', 'sync', 'search']) ok(owner(['plugin', 'add', name]))
+    ok(owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', deployDir]))
+    ok(owner(['sync', 'target', 'set', '--kind', 'dir', '--to', syncDir]))
+    ok(owner(['search', 'embedder', 'set', '--kind', 'hash']))
+    ok(owner(['search', 'embedder', 'clear']))
+
+    writeFileSync(join(outside, 'brief.md'), 'brief\n')
+    ok(agent(['put', 'brief.md', '--to', 'brief.md', '--brought'], undefined, 'claude-1'))
+    ok(agent(['say', 'deployable', 'brief.md'], undefined, 'claude-1'))
+    ok(owner(['deploy', 'on', 'brief.md']))
+
+    // A brand-new agent arriving via start or check sees the put, say and deploy on, not the prior setup noise.
+    const started = ok(sb.run(['--library', lib, '--as', 'codex', '--session', 'codex-1', 'start', '接着做'], { cwd: outside })).stdout
+    for (const setupOp of ['plugin add', 'deploy target set', 'sync target set', 'search embedder set', 'search embedder clear']) {
+      expect(started).not.toContain(setupOp)
+    }
+    expect(started).toContain('放入 brief.md')
+    expect(started).toContain('主人面的操作 deploy on')
+
+    const firstCheck = ok(sb.run(['--library', lib, '--as', 'antigravity', '--session', 'agy-1', 'check'], { cwd: outside })).stdout
+    for (const setupOp of ['plugin add', 'deploy target set', 'sync target set', 'search embedder set', 'search embedder clear']) {
+      expect(firstCheck).not.toContain(setupOp)
+    }
+    expect(firstCheck).toContain('主人面的操作 deploy on')
+
+    // Explicit --since asks for everything since that moment, including setup operations.
+    const explicit = ok(sb.run(['--library', lib, '--as', 'antigravity', '--session', 'agy-1', 'check', '--since', '2000-01-01T00:00:00Z'], { cwd: outside })).stdout
+    expect(explicit).toContain('主人面的操作 plugin add')
+    expect(explicit).toContain('主人面的操作 deploy target set')
+
+    // Once codex has visited, a later setup change by the owner IS news on codex's next visit.
+    ok(owner(['search', 'embedder', 'set', '--kind', 'hash']))
+    const returning = ok(sb.run(['--library', lib, '--as', 'codex', '--session', 'codex-2', 'check'], { cwd: outside })).stdout
+    expect(returning).toContain('主人面的操作 search embedder set')
+  })
 })
 
 describe('archive with the ledger (C15)', () => {

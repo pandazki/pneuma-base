@@ -22,6 +22,7 @@ export type KernelCommand = {
   readonly usage?: string
   readonly destructive: boolean
   readonly ownerOnly: boolean
+  readonly setup?: boolean
   run(args: OwnerArgs, call: OwnerCall): Promise<Outcome>
 }
 
@@ -113,6 +114,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
     usage: '<插件名>',
     destructive: false,
     ownerOnly: true,
+    setup: true,
     async run(args, call) {
       const a = read('plugin add', args, 1, [])
       if (typeof a === 'string') return usage(a)
@@ -134,6 +136,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
     usage: '<插件名>',
     destructive: false,
     ownerOnly: true,
+    setup: true,
     async run(args, call) {
       const a = read('plugin remove', args, 1, [])
       if (typeof a === 'string') return usage(a)

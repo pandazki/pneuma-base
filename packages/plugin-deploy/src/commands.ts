@@ -15,8 +15,8 @@ const usage = (text: string) => refused('usage', text)
 /** Who may run a command: the owner alone, anyone, or anyone, as it only reads. */
 type Who = 'owner' | 'anyone' | 'reader'
 
-function command(name: string, summary: string, who: Who, run: OwnerCommand['run'], args?: string): OwnerCommand {
-  return { name, summary, ...(args === undefined ? {} : { usage: args }), destructive: false, ownerOnly: who === 'owner', readOnly: who === 'reader', run }
+function command(name: string, summary: string, who: Who, run: OwnerCommand['run'], args?: string, setup?: boolean): OwnerCommand {
+  return { name, summary, ...(args === undefined ? {} : { usage: args }), destructive: false, ownerOnly: who === 'owner', readOnly: who === 'reader', ...(setup ? { setup: true } : {}), run }
 }
 
 type Read = { positional: string[]; value(flag: string): string | null; values(flag: string): string[] }
@@ -154,6 +154,6 @@ const targetSet = command('deploy target set', '配部署目标：一个本地�
     const notes = [...(on > 0 ? [`开着的 ${on} 样还没发到新目标：运行 deploy sync。`] : []), ...(left > 0 ? [`旧目标上的 ${left} 个站点没有撤下。`] : [])]
     return done([head, ...notes].join(''), { target: config })
   })
-}, '--kind dir --to <目录> | --kind command --publish "<命令>" --unpublish "<命令>" [--url <模板>] [--timeout <秒>]')
+}, '--kind dir --to <目录> | --kind command --publish "<命令>" --unpublish "<命令>" [--url <模板>] [--timeout <秒>]', true)
 
 export const COMMANDS: readonly OwnerCommand[] = [switchCommand(true), switchCommand(false), sync, list, targetSet]

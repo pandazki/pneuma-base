@@ -241,7 +241,7 @@ interface Plugin {
 
 视图槽（第 6 节「只读的一面」）：插件声明它的视图，每个视图返回带类型的块，界面只渲染块，不知道块来自哪个插件。编号不以插件名加点开头的视图不列出，记成问题。`onView` 或 `onItemView` 抛错、或答复的不是一个视图或一节，内核在那一页或那一节里给出说明出错的块，并把问题列进结果（K8）。视图不是操作：插件在这两个钩子里不写东西，内核也不为它们发事件。
 
-实现里的细化：钩子收到的上下文另带 `dir`，即这个插件名下的目录，和 `cacheDir`，即这个插件在库外的缓存目录（见下面「库外的插件与缓存」）；钩子的答复不写插件名，由内核盖上（`PluginNote`、`PluginSection`、`PluginHit`）；`onSay` 答复 `SayAnswer`，处理它的插件出错时结果是 `not-heard`、`plugin-failed`。主人面命令 `OwnerCommand` 带 `destructive` 和 `ownerOnly` 两个标志，由内核在同一处拦（第 6 节）；可选的 `usage` 是它的参数怎么写，给帮助看；可选的 `readOnly` 说它什么都不改（列清单、看状态），它的事件带着这个标志，记账插件不把它当成给 agent 的消息。`keeps` 定说明里同名时的那句话（第 7 节）：记账插件是 `every`，版本插件是 `some`。插件名同时是目录名，用 `pluginName()` 解析。主人面的事件带 `destructive` 和 `readOnly`，插件不用自己认哪些命令会丢数据、哪些什么都不改；`archive purge` 的答复在 `data.paths` 里列出被删的库内路径，记账插件据此记「已除」。
+实现里的细化：钩子收到的上下文另带 `dir`，即这个插件名下的目录，和 `cacheDir`，即这个插件在库外的缓存目录（见下面「库外的插件与缓存」）；钩子的答复不写插件名，由内核盖上（`PluginNote`、`PluginSection`、`PluginHit`）；`onSay` 答复 `SayAnswer`，处理它的插件出错时结果是 `not-heard`、`plugin-failed`。主人面命令 `OwnerCommand` 带 `destructive` 和 `ownerOnly` 两个标志，由内核在同一处拦（第 6 节）；可选的 `usage` 是它的参数怎么写，给帮助看；可选的 `readOnly` 说它什么都不改（列清单、看状态），它的事件带着这个标志，记账插件不把它当成给 agent 的消息；可选的 `setup` 说它只改插件、目标或嵌入器这类配置而不动条目，agent 第一次来时说明里已经是最新配置，只在它来过之后再改才算消息。`keeps` 定说明里同名时的那句话（第 7 节）：记账插件是 `every`，版本插件是 `some`。插件名同时是目录名，用 `pluginName()` 解析。主人面的事件带 `destructive`、`readOnly` 和 `setup`，插件不用自己认哪些命令会丢数据、哪些什么都不改、哪些只是前期配置；`archive purge` 的答复在 `data.paths` 里列出被删的库内路径，记账插件据此记「已除」。
 
 ### 库外的插件与缓存
 
@@ -273,7 +273,7 @@ interface Plugin {
 
 ### 主人面的一个入口
 
-主人面的命令都是数据：名字、一句说明、参数怎么写（可选）、是否破坏性、是否只给主人、是否只读（可选）、`run`。内核自己的六条（`grant issue`、`grant revoke`、`plugin add`、`plugin remove`、`skill install`、`archive purge`）在 `owner-commands.ts`，和插件的 `OwnerCommand` 同形，只是 `run` 收到整个主人调用（上下文、插件表、环境、是否带授权、怎么问当面确认；本机的家目录就是上下文的 `home`），并可交回重开的库。
+主人面的命令都是数据：名字、一句说明、参数怎么写（可选）、是否破坏性、是否只给主人、是否只读（可选）、是否配置（可选）、`run`。内核自己的六条（`grant issue`、`grant revoke`、`plugin add`、`plugin remove`、`skill install`、`archive purge`）在 `owner-commands.ts`，和插件的 `OwnerCommand` 同形，只是 `run` 收到整个主人调用（上下文、插件表、环境、是否带授权、怎么问当面确认；本机的家目录就是上下文的 `home`），并可交回重开的库。
 
 - `ownerFace.commands(插件表)` 列出可用的命令：先内核的，后各插件的，按配置次序；名字已被占的不再列，插件盖不住内核的命令。命令行的 `--help` 用它列出主人命令：带 `--library` 或 `@<授权名>` 时是那个库的，否则是内核的。
 - 门：破坏性的和只给主人的，在 agent 的会话里都以 `agent-session` 拒绝；破坏性的另要当面确认。内核自己的命令里，`grant issue`、`grant revoke`、`plugin add`、`plugin remove` 只给主人，`archive purge` 是破坏性的，`skill install` 谁都能跑。
@@ -414,7 +414,7 @@ $PNEUMA_BASE_HOME/
 - `put --made --from` 写了被换掉的东西自己时，依据里不记它自己：换内容本身就是 `item.revise`，它不是自己的依据。
 - 给来历不明的条目补来历的那条 `item.enter` 是它的别名，不多一份内容；它带的 `note` 由 `fold` 放到它登记的那份内容上，那份已有一句时不盖掉。
 - `say revised <库内路径>` 认下一个被直接改过的文件的现内容，记一条 `claimed` 的 `item.revise`。主人说是自己改的，agent 加 `--by owner`：事实体带 `by: 'owner'`，信封的 `actor` 仍是这个 agent，显示时两个人都出现；主人自己说时不带 `by`。信封的 `actor` 是库从授权和会话认出来的，调用方说什么都不改它。
-- 主人面操作的事实里，答复写成一行：几行连起来，绝对路径和 `file://` 地址只留最后的名字。它在 `check`、场景卡和动态里给人读，名字就够了。只读的命令（事件的 `readOnly`）照样记，但不算「自上次以来」的消息。
+- 主人面操作的事实里，答复写成一行：几行连起来，绝对路径和 `file://` 地址只留最后的名字。它在 `check`、场景卡和动态里给人读，名字就够了。只读的命令（事件的 `readOnly`）照样记，但不算「自上次以来」的消息；只设插件、目标或嵌入器的命令（事件的 `setup`）在某个行动者第一次来之前发生的不算消息（说明里已是最新配置），在它来过之后再改才列出。
 - 「一次命令行调用写一个文件」落成「每个钩子写一个文件」：`start` 里「说」和「查」各写一个，`put` 盖掉无主文件时 `revise` 写入册、`onPut` 写改。每个文件照样是新文件、写完不动。
 - 发布事实文件用硬链接到最终名再删临时名，最终名已存在时失败重试，而不是覆盖。
 - `check` 比设计多一节「不在了的」，验收 C4 要求报告不在；「上游有标记」也单列一节，直接带标记的条目不重复列在里面。
