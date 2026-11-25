@@ -1,6 +1,6 @@
 {
   "name": "@pneuma-base/sdk",
-  "version": "0.1.0",
+  "version": "0.9.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -11,7 +11,13 @@
     "./kit": {
       "types": "./dist/kit/index.d.ts",
       "default": "./dist/kit/index.js"
+    },
+    "./testkit": {
+      "types": "./dist/testkit/index.d.ts",
+      "default": "./dist/testkit/index.js"
     }
   },
-  "files": ["dist"]
+  "files": [
+    "dist"
+  ]
 }

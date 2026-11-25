@@ -9,6 +9,12 @@ export { defineCommand, formOf, usageOf, type FixedValue } from './params.js'
 /** The version of the plugin contract this package describes. A plugin declares it as `contract`. */
 export const CONTRACT = 1
 
+/**
+ * The version of Pneuma Base this package belongs to. The command line, this package and the built-in
+ * plugins carry it; `pnpm pack:dist` stamps it on both package files. A plugin of your own has its own version.
+ */
+export const PNEUMA_BASE_VERSION = '0.9.0'
+
 /** Returns its argument, typed, so a plugin's hooks are checked against the contract where it is written. */
 export function definePlugin(plugin: Plugin): Plugin {
   return plugin
@@ -16,6 +22,46 @@ export function definePlugin(plugin: Plugin): Plugin {
 
 /** A plugin's name is also the name of its directory under `.pneuma-base/` and under `$PNEUMA_BASE_HOME/plugins/`. */
 export const PLUGIN_NAME = /^[a-z][a-z0-9-]{0,40}$/
+
+/** The kernel's own owner commands. No plugin command takes one of these names. */
+export const KERNEL_COMMAND_NAMES = [
+  'grant issue',
+  'grant revoke',
+  'plugin add',
+  'plugin remove',
+  'skill install',
+  'archive purge',
+  'plugin install',
+  'plugin uninstall',
+  'plugin list',
+  'secret set',
+  'secret list',
+  'secret remove',
+] as const
+
+/**
+ * Names no plugin takes. A plugin's commands start with its name, so it is none of the command line's
+ * own words or the first words of the kernel's commands; and its directory sits beside the kernel's
+ * scratch directory `.pneuma-base/tmp/`.
+ */
+export const RESERVED_PLUGIN_NAMES: readonly string[] = [
+  'tmp',
+  'start',
+  'find',
+  'inspect',
+  'put',
+  'say',
+  'check',
+  'archive',
+  'unarchive',
+  'init',
+  'view',
+  'help',
+  'grant',
+  'plugin',
+  'skill',
+  'secret',
+]
 
 /** The name of a secret a plugin declares; it is also a file name under `$PNEUMA_BASE_HOME/secrets/<plugin>/`. */
 export const SECRET_NAME = /^[a-z][a-z0-9-]{0,40}$/

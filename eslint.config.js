@@ -93,7 +93,8 @@ const pluginBoundary = {
 }
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/node_modules/**', 'tmp/**'] },
+  // The plugin project templates are checked where they run: the scaffold's test builds and tests a generated project.
+  { ignores: ['**/dist/**', '**/node_modules/**', 'tmp/**', 'dist-packages/**', 'packages/cli/templates/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

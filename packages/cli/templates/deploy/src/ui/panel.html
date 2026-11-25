@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <!--
+      A page the plugin draws itself, shown in a custom block on its page (target.ts, view.page). The
+      viewer serves these two files: frame.css lays out the UI's colours, fonts and components and
+      follows light and dark; frame.js hands over the block's data.
+    -->
+    <link rel="stylesheet" href="/plugin-kit/frame.css" />
+    <script src="/plugin-kit/frame.js"></script>
+    <style>
+      .panel {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card panel">
+      <span class="tag tone-good" id="online">…</span>
+      <span class="muted" id="where"></span>
+    </div>
+    <script>
+      pneuma.onData((data) => {
+        document.getElementById('online').textContent = `${data.online} / ${data.declared} 在线`
+        document.getElementById('where').textContent = `发布到 ${data.to}`
+      })
+    </script>
+  </body>
+</html>

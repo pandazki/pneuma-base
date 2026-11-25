@@ -5,6 +5,7 @@ import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { PNEUMA_BASE_VERSION } from '@pneuma-base/kernel'
 import { pager, VAULT, writePlugin } from './fixtures/machine-plugins.js'
 import { sandbox, tempDir, type Sandbox } from './helpers.js'
 
@@ -98,13 +99,16 @@ describe('plugin list', () => {
     const machine = sb.run(['plugin', 'list'])
     expect(machine.code, machine.stderr).toBe(0)
     expect(machine.stdout).toContain('pager 0.1.0  契约 1 · 装上来的\n    一页字')
-    expect(machine.stdout).toMatch(/ledger — {2}契约 1 · 自带/)
+    expect(machine.stdout).toMatch(/ledger 0\.9\.0 {2}契约 1 · 自带\n {4}记下每样东西/)
     expect(machine.stdout).not.toContain('这个库装了')
     sb.run(['plugin', 'add', 'pager', '--library', lib])
     const listed = sb.run(['plugin', 'list', '--library', lib, '--json']).json().data.plugins
     expect(listed).toContainEqual({ name: 'pager', version: '0.1.0', contract: 1, summary: '一页字', origin: 'machine', installed: true, failed: null })
     expect(listed).toContainEqual(expect.objectContaining({ name: 'ledger', origin: 'built-in', installed: true }))
     expect(listed).toContainEqual(expect.objectContaining({ name: 'deploy', origin: 'built-in', installed: false }))
+    for (const name of ['ledger', 'version', 'sync', 'deploy', 'search']) {
+      expect(listed).toContainEqual(expect.objectContaining({ name, version: PNEUMA_BASE_VERSION, summary: expect.stringMatching(/^[^\n。]+。$/u) }))
+    }
   })
 })
 

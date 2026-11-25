@@ -31,6 +31,7 @@ import {
 } from '@pneuma-base/kernel'
 import { UsageError, flagList, flagValue, hasFlag, leadingWords, ownFlags, parseCommand, splitLine, type FlagKind, type Line, type Parsed } from './args.js'
 import { archiveText, checkText, findText, inspectText, ownerText, putText, sayText, startText } from './format.js'
+import { KINDS, scaffold, type Kind } from './scaffold.js'
 import { view } from './view.js'
 
 export type Io = {
@@ -116,6 +117,7 @@ const USAGE = `用法：
       archive <库内路径> | unarchive <库内路径>
 主人：view [<目录>] [--port <端口>] [--no-open]（在浏览器里打开管理界面；pneuma-base <目录> 也一样）
       init <目录> [--bare]
+插件作者：plugin new <目录> [--kind blank|deploy] [--name <插件名>] [--packages <两个包文件所在的目录>]（生成一个插件项目）
 加 --json 输出结果对象。`
 
 /**
@@ -315,6 +317,27 @@ const SPECS: Spec[] = [
       const session = identifySession({ flag: flagValue(parsed, 'session'), env: io.env, cwd: io.cwd, machine: hostname() })
       const plugins = hasFlag(parsed, 'bare') ? [] : ['ledger']
       return owner(await initLibrary(resolve(io.cwd, args[0] as string), { plugins, table, actor, session, home }))
+    },
+  },
+  {
+    words: ['plugin', 'new'],
+    flags: { kind: 'value', name: 'value', packages: 'value' },
+    arity: [1, 1],
+    library: false,
+    run: async ({ args, parsed, io }) => {
+      const kind = flagValue(parsed, 'kind') ?? 'blank'
+      if (!(KINDS as readonly string[]).includes(kind)) throw new UsageError(`--kind 只能是 ${KINDS.join(' 或 ')}：${kind}`)
+      const packages = flagValue(parsed, 'packages')
+      const dir = resolve(io.cwd, args[0] as string)
+      const r = scaffold({ dir, kind: kind as Kind, name: flagValue(parsed, 'name'), packages: packages === null ? null : resolve(io.cwd, packages) })
+      if (!r.ok) {
+        if (r.reason === 'usage') throw new UsageError(r.text)
+        return refusal(r.reason, r.text)
+      }
+      const where = r.packages === null ? ['没找到两个包文件，package.json 按包名依赖它们，发布之后才装得上；要现在用，加 --packages <目录> 指向 pnpm pack:dist 打出的包文件。'] : []
+      const next = [`cd ${dir}`, 'npm install', 'npm test', 'npm run install-local', `npx -- pneuma-base plugin add ${r.name} --library <库的目录>`]
+      const lines = [`已在 ${dir} 生成插件 ${r.name}（${r.kind}），${r.files.length} 个文件，README.md 说每个是什么。`, ...where, '接着：', ...next.map((l) => `  ${l}`)]
+      return { json: { outcome: 'done', problems: [], ...r }, lines, exit: 0 }
     },
   },
   {

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <!--
+      A page the plugin draws itself, shown in a custom block of its view. The viewer serves these two
+      files: frame.css lays out the UI's colours, fonts and components (card, btn, tag, muted …) and
+      follows light and dark; frame.js hands over the block's data and runs its named actions.
+    -->
+    <link rel="stylesheet" href="/plugin-kit/frame.css" />
+    <script src="/plugin-kit/frame.js"></script>
+    <style>
+      .panel {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 14px 16px;
+      }
+      .count {
+        font-size: 26px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      .latest {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card panel">
+      <span class="count" id="count">…</span>
+      <span class="muted latest" id="latest"></span>
+      <button type="button" class="btn" id="list">列出全部</button>
+    </div>
+    <script>
+      const $ = (id) => document.getElementById(id)
+      // The block's data, now and each time the view is fetched again.
+      pneuma.onData((data, { actions }) => {
+        $('count').textContent = `${data.count} 条标记`
+        $('latest').textContent = data.latest === null ? '还没有' : `最近一条：${data.latest}`
+        $('list').textContent = actions.list ? actions.list.label : '列出全部'
+      })
+      // A named action of the block: the UI confirms and runs it, as for any button.
+      $('list').onclick = () => pneuma.run('list')
+    </script>
+  </body>
+</html>
