@@ -68,7 +68,7 @@ export function scaffold(opts: { dir: string; kind: Kind; name: string | null; p
     engines: { node: `>=${NODE_FLOOR}` },
     scripts: {
       build: 'tsc && node scripts/build.mjs',
-      test: 'npm run build && node --test "test/*.test.ts"',
+      test: 'npm run build && node --test --test-reporter=spec "test/*.test.ts"',
       'install-local': 'npm run build && pneuma-base plugin install dist',
     },
     devDependencies: { '@pneuma-base/sdk': dependency('@pneuma-base/sdk'), 'pneuma-base': dependency('pneuma-base'), ...TOOLS },
