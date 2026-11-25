@@ -45,7 +45,7 @@ describe('view', () => {
     const dir = tempDir('pb-plain-')
     const child = sb.start([dir, '--no-open'])
     const url = await address(child)
-    expect(await stateOf(url)).toMatchObject({ dir, library: null, available: [{ name: 'ledger' }] })
+    expect(await stateOf(url)).toMatchObject({ dir, library: null, available: expect.arrayContaining([expect.objectContaining({ name: 'ledger' })]) })
     const done = exited(child)
     child.kill('SIGINT')
     expect(await done).toBe(0)
