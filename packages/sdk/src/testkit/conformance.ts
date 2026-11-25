@@ -2,7 +2,7 @@
 // temporary libraries. Each check reports what is wrong in Chinese, with the rule it breaks.
 import { createHash } from 'node:crypto'
 import { chmod, lstat, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { join, relative, sep } from 'node:path'
+import { join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { KERNEL_COMMAND_NAMES, RESERVED_PLUGIN_NAMES } from '../index.js'
 import type { Block, Plugin } from '../types.js'
@@ -69,16 +69,17 @@ export async function conformance(subject: Subject, options: ConformanceOptions 
   const found: Problems = new Map(CHECKS.map((c) => [c, []]))
   const fail = (check: CheckName, what: string) => (found.get(check) as string[]).push(what)
   const reminders: string[] = []
-  const loaded = typeof subject === 'string' ? await importPlugin(subject) : subject.builtin
+  const dir = typeof subject === 'string' ? resolve(subject) : null
+  const loaded = dir === null ? (subject as { builtin: Plugin }).builtin : await importPlugin(dir)
   if (typeof loaded === 'string') {
     fail('loads', loaded)
     for (const c of CHECKS.slice(1)) fail(c, '没有查：插件没装上')
-    return report('?', found, reminders)
+    return report(dir ?? '?', found, reminders)
   }
   const plugin = loaded
   checkNames(plugin, fail)
   checkCognition(plugin, fail, reminders)
-  const install = typeof subject === 'string' ? { plugins: [subject] } : { builtins: [plugin.name] }
+  const install = dir === null ? { builtins: [plugin.name] } : { plugins: [dir] }
   try {
     await checkLibrary(plugin, install, options, fail, reminders)
     if ((found.get('loads') as string[]).length === 0) await checkExamples(plugin, install, options, fail, reminders)
@@ -215,14 +216,14 @@ async function checkLibrary(p: Plugin, install: Install, options: ConformanceOpt
 
     const own = `.pneuma-base/${p.name}`
     const mine = (r: { problems?: { plugin: string; message: string }[] } | null) => (r?.problems ?? []).filter((x) => x.plugin === p.name).map((x) => x.message)
-    const hooksOn = async (what: string, r: { problems?: { plugin: string; message: string }[] } | null) => {
+    const hooksOn = (what: string, r: { problems?: { plugin: string; message: string }[] } | null) => {
       for (const m of mine(r)) fail('hooks', `${what}：${m}`)
     }
     const agent = (args: string[], input?: string) => sb.agent(AGENT, SESSION, [...args, '--json'], input === undefined ? {} : { input }).then((r) => jsonOf(r))
     const owner = (args: string[]) => sb.owner([...args, '--json']).then((r) => jsonOf(r))
 
     // On the empty library: being added and removed, and every hook that needs no content.
-    await hooksOn('plugin add（onAdd）', await expectDone(owner(['plugin', 'add', p.name]), 'plugin add', fail))
+    hooksOn('plugin add（onAdd）', await expectDone(owner(['plugin', 'add', p.name]), 'plugin add', fail))
     const viewer = await sb.viewer()
     const empty: Step[] = [
       { what: '空库上的 find', touches: [], run: () => agent(['find', '符合性']) },
@@ -235,8 +236,8 @@ async function checkLibrary(p: Plugin, install: Install, options: ConformanceOpt
     ]
     await runSteps(sb.library, empty, own, p, options, fail, hooksOn)
     await checkViews(p, viewer, ['conformance/nothing.md'], '空库上', fail)
-    await hooksOn('空库上的 plugin remove（onRemove）', await removeIt(owner, p.name, fail))
-    await hooksOn('空库上再 plugin add（onAdd）', await expectDone(owner(['plugin', 'add', p.name]), 'plugin add', fail))
+    hooksOn('空库上的 plugin remove（onRemove）', await removeIt(owner, p.name, fail))
+    hooksOn('空库上再 plugin add（onAdd）', await expectDone(owner(['plugin', 'add', p.name]), 'plugin add', fail))
 
     await options.setup?.({ sandbox: sb, cwd: sb.work, bin: join(sb.work, '.bin') })
 
@@ -317,12 +318,12 @@ async function runSteps(
   p: Plugin,
   options: ConformanceOptions,
   fail: (c: CheckName, what: string) => void,
-  hooksOn: (what: string, r: { problems?: { plugin: string; message: string }[] } | null) => Promise<void>,
+  hooksOn: (what: string, r: { problems?: { plugin: string; message: string }[] } | null) => void,
 ): Promise<void> {
   const rewritable = [...(options.configuration ?? []), ...p.storage.filter((s) => s.kind === 'cache').map((s) => s.dir)]
   for (const step of steps) {
     const before = await snapshot(root)
-    await hooksOn(step.what, await step.run())
+    hooksOn(step.what, await step.run())
     for (const c of changes(before, await snapshot(root))) {
       if (within(c.path, own)) {
         const rel = c.path === own ? '.' : c.path.slice(own.length + 1)

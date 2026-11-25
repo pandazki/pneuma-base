@@ -50,3 +50,19 @@ jobs:
           sudo apt-get install -y --no-install-recommends fonts-noto-cjk
           pnpm exec playwright install --with-deps chrome
       - run: pnpm test:e2e
+
+  scaffold:
+    # Generates a plugin project of each kind, installs it from the two package files and the
+    # registry, builds it, runs its own tests, and installs it into a library. Needs the network.
+    name: Plugin scaffold (Node 22.18)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:slow
+        timeout-minutes: 15

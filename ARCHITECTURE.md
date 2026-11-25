@@ -61,7 +61,7 @@ packages/cli ──▶ packages/viewer ──▶ packages/kernel ◀── packa
 | `packages/plugin-deploy` | 部署：sdk 的部署库加「本地目录」「命令」两种目标（第 13 节）。只依赖 sdk | 同上 |
 | `packages/plugin-search` | 查找：正文和按意思，索引是缓存（第 14 节） | 同上 |
 | `packages/viewer` | 管理界面。`src/server/` 是只听本机的 HTTP 服务，用内核的三个面；`web/` 是网页，只渲染块。自带的插件表由调用方传进 `startServer`，服务每次请求再并上本机的插件 | 导入任何插件包或命令行；网页导入内核的代码（只取类型） |
-| `packages/cli` | 命令 `pneuma-base`：把命令行翻译成对内核的调用，把结果打印出来；内置插件表（记账、版本、同步、部署、查找，`init` 缺省只装记账）；`view` 把内置插件表交给界面的服务 | 含领域逻辑 |
+| `packages/cli` | 命令 `pneuma-base`：把命令行翻译成对内核的调用，把结果打印出来；内置插件表（记账、版本、同步、部署、查找，`init` 缺省只装记账）；`view` 把内置插件表交给界面的服务；`plugin new` 从 `templates/` 生成插件项目 | 含领域逻辑 |
 
 插件只经契约的类型和上下文对象接触内核：自带的插件从 `packages/kernel` 导入（它再导出 sdk），部署插件和库外的插件只依赖 `packages/sdk`，运行时不导入内核，要用内核的工具就用上下文的 `tools`。插件之间不直接调用，也不互相导入。内核不导入界面，界面不导入任何插件，sdk 不导入内核、命令行、界面和任何插件；lint 的导入规则守这几条，`packages/kernel/test/dependency-direction.test.ts` 在故意违反的例子上看它们变红。
 
@@ -323,6 +323,7 @@ type FlagParam = { name: string; hint: string; kind: 'value' | 'list' | 'boolean
 - 两个包文件，`pnpm pack:dist` 打进 `dist-packages/`（不进 git，不发布）：`pneuma-base-<版本>.tgz` 是命令行，内核、五个自带插件、界面的服务和网页都作为捆绑的依赖在里面，`npm install` 它不用别的包，也不用联网；`pneuma-base-sdk-<版本>.tgz` 是 `@pneuma-base/sdk`，不依赖这个仓库的别的包，声明文件自成一体。两个的版本都是 sdk 的 `PNEUMA_BASE_VERSION`，自带的五个插件的 `version` 也是它，每个工作区包的 `package.json` 和它不一样时打包拒绝。实现在 `scripts/pack-dist.mjs`。
 - 测试工具 `@pneuma-base/sdk/testkit` 跑真的命令行：插件项目依赖的 `pneuma-base` 包，或 `PNEUMA_BASE_CLI`。`sandbox({ plugins })` 建临时的家目录和库、装上给的插件目录；调用的环境从空的建起，只带 `PATH` 这几样，所以没有任何 agent 产品的会话变量；每次调用有时限、标准输入关着；`owner`、`agent` 交回退出码、两路输出和 `--json` 的结果；`viewer()` 起界面的服务，给 `view`、`item`、`act`（像人填好表单、确认那样做一个块的动作）；`cleanup` 收尾。
 - `conformance(插件目录 | { builtin }, { setup, configuration })` 把标准里行为上的规矩跑成检查，每条有名字，不通过时用中文说哪里不对、规矩是什么：`loads`（装得上，契约认识）、`names`（命名）、`cognition`（认知段的形式；查不了的列成提醒）、`examples`（认知段的每条命令示例在新库上做完 `setup` 照原样能跑）、`hooks`（空库上和每个动词之后钩子都不出问题）、`writes`（一遍脚本跑过六个动词和清空归档区，库只在它名下变，那里已有的文件不改写，`configuration` 里的和缓存目录除外；视图和条目面板什么都不写）、`cache`（删掉缓存前后找、看、查答得一样）、`blocks`（视图答的都是合法的块，`custom` 的页取得到）、`remove`（卸下后库照常用）。仓库自己的测试拿它查自带的五个插件，也拿故意违规的插件看每条检查都会变红（`packages/cli/test/conformance.test.ts`）。
+- 脚手架 `pneuma-base plugin new <目录> [--kind blank|deploy] [--name <插件名>] [--packages <目录>]` 是命令行的命令，不是内核的：它只从命令行包里的 `templates/` 写一个项目目录，不碰库，不碰 `$PNEUMA_BASE_HOME`，不发事件。生成的项目按路径依赖两个包文件（`--packages` 给的目录；没给时用构建这个命令行的仓库里 `dist-packages/` 的，都没有就按包名，发布之后能装）；esbuild 打成一个 `dist/index.js`，旁边是 `cognition.md` 和 `ui/`；测试用 Node 自己的测试运行器，直接导入 `src/` 的源码；`npm test` 先构建，再跑符合性检查和插件自己的测试；`install-local` 是构建再 `plugin install dist`。`blank` 带一种「说」的种类、一条带参数表的命令、一个带类型的块的视图和一个自己画的块；`deploy` 是部署库加一个发布到本地目录的目标。两种都不改一行就通过自己的测试，`packages/cli/test/scaffold.slow.test.ts`（`pnpm test:slow`，要联网）从生成一直走到装进库、调命令、开视图。
 
 规矩：
 

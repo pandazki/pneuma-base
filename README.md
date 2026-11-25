@@ -57,6 +57,22 @@ alias pneuma-base="node $PWD/packages/cli/dist/bin.js"
 
 `pneuma-base --help --library ~/base` 列出这个库能用的全部命令。
 
+## 写一个插件
+
+插件在这个仓库外面写，只依赖两个包文件：
+
+```sh
+pnpm pack:dist                                    # 在这个仓库里：打出 dist-packages/ 里的两个包文件
+pneuma-base plugin new ~/my-plugin --kind blank --packages <仓库>/dist-packages   # 或 --kind deploy
+cd ~/my-plugin && npm install
+npm run build                                     # 类型检查，再打包成 dist/
+npm test                                          # 插件自己的测试和符合性检查，跑在真的命令行和临时的库上
+npm run install-local                             # 装到这台机器
+pneuma-base plugin add my-plugin --library ~/base
+```
+
+生成的项目里 `README.md` 说每个文件是什么。规矩写在 `ARCHITECTURE.md` 第 5 节；`@pneuma-base/sdk/testkit` 的 `conformance` 把能跑的规矩跑成检查。
+
 ## 开发者怎么跑检查
 
 ```sh
@@ -65,6 +81,7 @@ pnpm typecheck    # 类型检查
 pnpm lint         # lint，含包之间的导入方向
 pnpm test         # 单元测试和命令行的端到端测试（vitest）
 pnpm test:e2e     # 界面的端到端测试（Playwright，用本机的 Chrome）
+pnpm test:slow    # 脚手架：生成两种插件项目，装依赖、构建、跑它们自己的测试、装进库（要联网装 esbuild、typescript）
 ```
 
-测试都用临时目录和临时的 `PNEUMA_BASE_HOME`，不碰 `~/.pneuma-base`，不联网。`scripts/agent-relay/` 和 `scripts/agent-site/` 用真的 Claude 和 Codex 走一遍故事，会花主人的模型额度，不在 `pnpm test` 里。
+测试都用临时目录和临时的 `PNEUMA_BASE_HOME`，不碰 `~/.pneuma-base`；除了 `pnpm test:slow` 从 npm 装生成项目的开发依赖，都不联网。`scripts/agent-relay/` 和 `scripts/agent-site/` 用真的 Claude 和 Codex 走一遍故事，会花主人的模型额度，不在 `pnpm test` 里。
