@@ -105,9 +105,11 @@ export const test = base.extend<{ pb: Cli }>({
 
 export { expect } from '@playwright/test'
 
-/** The navigation's entries, in order. */
+/** The navigation's entries, in order, once the navigation has rendered. */
 export async function navTitles(page: Page): Promise<string[]> {
-  return page.getByRole('navigation', { name: '导航' }).getByRole('button').allInnerTexts()
+  const buttons = page.getByRole('navigation', { name: '导航' }).getByRole('button')
+  await buttons.first().waitFor()
+  return buttons.allInnerTexts()
 }
 
 /** The texts inside `table` matching `cells` that are cut short on screen. */
