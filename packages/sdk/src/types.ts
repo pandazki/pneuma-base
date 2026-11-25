@@ -64,8 +64,12 @@ export interface PluginSecrets {
   get(name: string): Promise<string | null>
 }
 
-/** A credential a plugin reads, so the configuration page can show whether it is set and offer to set it. */
-export type SecretDecl = { name: string; description: string }
+/**
+ * A credential a plugin reads, so the configuration page can show whether it is set and offer to set
+ * it. `optional`: the plugin works without it, such as a token only some servers ask for; the page,
+ * `secret list` and a deploy target's `target set` then do not ask for it as missing.
+ */
+export type SecretDecl = { name: string; description: string; optional?: boolean }
 
 /** Where a library path lies: the content anyone may arrange, the archive, or the kernel's own files. */
 export type Region = 'content' | 'archive' | 'kernel'

@@ -4,23 +4,46 @@ import { formOf } from '../../params.js'
 import type { Action, Block, Call, Cell, ItemSection, LibraryPath, TableRow, ViewAnswer, ViewDecl } from '../../types.js'
 import { kindFlag, SWITCH_PARAMS, switchName, targetSetName } from './commands.js'
 import { look, looks, onlyTarget, type Kit, type Run } from './reconcile.js'
-import type { Look } from './target.js'
+import type { Look, TargetPage } from './target.js'
 import { MEANING, STATUS } from './words.js'
 
 export const sitesView = (kit: Kit) => `${kit.name}.sites`
-export const viewDecls = (kit: Kit, icon: string): ViewDecl[] => [{ id: sitesView(kit), title: kit.title, icon, nav: true, filters: [] }]
+
+/** Seconds after which a page asks again when its target reports what it serves and says nothing else. */
+const REFRESH = 30
+
+/** The targets' own pages, each with its view: `<plugin>.<name>`. */
+export const targetPages = (kit: Kit): (TargetPage & { id: string })[] => kit.targets.flatMap((t) => (t.views ?? []).map((v) => ({ ...v, id: `${kit.name}.${v.name}` })))
+
+export const viewDecls = (kit: Kit, icon: string): ViewDecl[] => [
+  { id: sitesView(kit), title: kit.title, icon, nav: true, filters: [] },
+  ...targetPages(kit).map((p) => ({ id: p.id, title: p.title, icon: p.icon, nav: true, filters: [] })),
+]
 
 const action = (label: string, call: Call, inputs: Action['inputs'] = []): Action => ({ label, tone: 'default', confirm: null, inputs, call })
-const switchAction = (kit: Kit, on: boolean, path: string): Action => {
-  const { inputs, call } = formOf({ name: switchName(kit, on), params: SWITCH_PARAMS }, { fixed: { path } })
+
+/**
+ * The owner's switch for a thing, as the plugin `plugin`'s page offers it: turn off a switch that is
+ * on, turn on one that is off. Null for an archived thing switched off: it is offline whatever its
+ * switch says, so it offers no "turn on".
+ */
+export function switchAction(plugin: string, l: Look): Action | null {
+  if (!l.thing.on && l.status === 'archived') return null
+  const on = !l.thing.on
+  const { inputs, call } = formOf({ name: switchName(plugin, on), params: SWITCH_PARAMS }, { fixed: { path: l.thing.path } })
   return action(on ? '打开' : '关上', call, inputs)
 }
 
-/** An archived thing is offline whatever its switch says, so it offers no "turn on"; a switch left on can still be turned off. */
-function switchActions(kit: Kit, l: Look): Action[] {
-  if (l.thing.on) return [switchAction(kit, false, l.thing.path)]
-  return l.status === 'archived' ? [] : [switchAction(kit, true, l.thing.path)]
+const switchActions = (kit: Kit, l: Look): Action[] => [switchAction(kit.name, l)].filter((a) => a !== null)
+
+/** A page's `refresh`: the target's own, else 30 seconds when it reports what it serves; none without a target. */
+function refreshOf(run: Run): { refresh?: number } {
+  const t = run.target
+  const refresh = t?.view?.refresh !== undefined ? t.view.refresh : t?.serving ? REFRESH : null
+  return refresh === null ? {} : { refresh }
 }
+
+const subtitleOf = (all: readonly Look[]) => `${all.filter((l) => l.status === 'online').length} 样在线，共 ${all.length} 样`
 
 const stateCell = (l: Look): Cell => ({ text: '', tag: STATUS[l.status] })
 /** The address opens in a new tab when it is a web address, and can always be copied. */
@@ -64,8 +87,20 @@ export async function sitesPage(run: Run): Promise<ViewAnswer> {
     blocks: [{ kind: 'table', columns: [{ key: 'path', label: '路径' }, { key: 'state', label: '状态' }, { key: 'address', label: '地址' }, ...(view?.columns ?? [])], rows, empty: '还没有声明过可以部署的东西' }],
     actions: [action('对一遍', { face: 'owner', command: `${kit.name} sync`, args: { positional: [], flags: {} } })],
   }
-  const online = all.filter((l) => l.status === 'online').length
-  return { title: kit.title, subtitle: `${online} 样在线，共 ${all.length} 样`, blocks: [target, things, ...(view?.page?.(all) ?? [])] }
+  return { title: kit.title, subtitle: subtitleOf(all), blocks: [...(view?.before?.(all) ?? []), target, things, ...(view?.page?.(all) ?? [])], ...refreshOf(run) }
+}
+
+/** One of the target's own pages, from the same looks as the kit's page; it says so when the configured target does not draw it. */
+export async function targetPage(run: Run, page: TargetPage): Promise<ViewAnswer> {
+  const draw = run.target?.view?.pages?.[page.name]
+  if (run.target === null || draw === undefined) {
+    const text = run.target === null ? '还没配部署目标，这一页要等配了目标才有。' : `现在的部署目标（${run.target.label}）不画这一页。`
+    return { title: page.title, subtitle: null, blocks: [{ kind: 'text', tone: 'warn', text }] }
+  }
+  const all = await looks(run)
+  const unreachable = all.find((l) => l.unreachable !== null)?.unreachable
+  const warning: Block[] = unreachable ? [{ kind: 'text', tone: 'bad', text: `读不到目标：${unreachable}` }] : []
+  return { title: page.title, subtitle: subtitleOf(all), blocks: [...warning, ...draw(all)], ...refreshOf(run) }
 }
 
 /** The item panel's section for a declared thing at `path`; null for anything else. */

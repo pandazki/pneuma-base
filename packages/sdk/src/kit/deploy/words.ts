@@ -6,6 +6,7 @@ import type { Skipped } from '../records.js'
 import { onlyTarget, type Kit, type Settled } from './reconcile.js'
 import type { Look, Status, TargetAdapter } from './target.js'
 
+/** Each state as the tag the kit's pages show, so a target's own blocks can say the same. */
 export const STATUS: Record<Status, Tag> = {
   online: { text: '在线', tone: 'good' },
   pending: { text: '待发布', tone: 'warn' },

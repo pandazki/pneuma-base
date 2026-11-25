@@ -21,7 +21,7 @@ import {
   type Plugin,
   type Session,
 } from '@pneuma-base/kernel'
-import { defineTarget, deployPlugin, siteName, type ContentId, type SiteName, type Target, type TargetAdapter } from '@pneuma-base/sdk/kit'
+import { defineTarget, deployPlugin, siteName, STATUS, switchAction, type ContentId, type Served, type ServingAsk, type SiteName, type Target, type TargetAdapter, type TargetView } from '@pneuma-base/sdk/kit'
 import { describe, expect, it } from 'vitest'
 
 const owner: Actor = { kind: 'owner' }
@@ -480,5 +480,198 @@ describe('the plugin the kit makes', () => {
     expect(await l.cmd('vault sync')).toMatchObject({ outcome: 'done' })
     expect(tokens).toEqual(['tok-1'])
     expect(await l.list()).toMatchObject([{ path: P, status: 'online' }])
+  })
+})
+
+// ---- what a target shows ----
+
+/** What the target tells of a site beside content and address, for its views. */
+type Note = { note: string }
+
+/**
+ * A target that reports what it serves and tells a note of every site it knows: one it serves, and one
+ * taken down whose name it keeps (as a service keeps a removed app's releases). `asks`: each call to
+ * `serving`. `view` adds to its views; `reports: false` drops `serving`.
+ */
+function notingTarget(opts: { view?: (env: { plugin: string }) => TargetView<Note>; views?: TargetAdapter['views']; reports?: boolean } = {}) {
+  const served = new Map<string, ContentId>()
+  const kept = new Set<string>()
+  const asks: { sites: string[]; detail: boolean }[] = []
+  const adapter = defineTarget({
+    kind: 'noting',
+    label: '一个会说明的目标',
+    params: [{ name: 'where', hint: '名字', kind: 'value', required: true }],
+    ...(opts.views ? { views: opts.views } : {}),
+    configure: async ({ where }) => ({ ok: true, config: { where } }),
+    open(_config, env): Target<Note> {
+      return {
+        key: 'noting',
+        label: '会说明的目标',
+        async publish(site, _dir, meta) {
+          served.set(site, meta.content)
+          kept.delete(site)
+          return { url: url(site) }
+        },
+        async remove(site) {
+          if (served.delete(site)) kept.add(site)
+        },
+        ...(opts.reports === false
+          ? {}
+          : {
+              async serving(sites: readonly SiteName[], ask: ServingAsk) {
+                asks.push({ sites: [...sites], detail: ask.detail })
+                return new Map(
+                  sites.flatMap((s): [SiteName, Served<Note>][] => {
+                    const content = served.get(s)
+                    if (content !== undefined) return [[s, { content, url: url(s), detail: { note: `在服务 ${s}` } }]]
+                    return kept.has(s) ? [[s, { content: null, url: null, detail: { note: `撤下了 ${s}` } }]] : []
+                  }),
+                )
+              },
+            }),
+        view: {
+          columns: [{ key: 'note', label: '说明' }],
+          cells: (l) => ({ note: { text: l.detail?.note ?? '—' } }),
+          fields: (l) => [{ label: '说明', value: { text: l.detail?.note ?? '—' } }],
+          ...opts.view?.(env),
+        },
+      }
+    },
+  })
+  return { adapter, asks, served }
+}
+
+const tableOf = (blocks: Block[]) => blocks.flatMap((b) => (b.kind === 'section' ? b.blocks : [])).find((b): b is Extract<Block, { kind: 'table' }> => b.kind === 'table')
+
+describe('what a target shows', () => {
+  const R = 'c/r.html' as LibraryPath
+
+  it('hands every view the detail its serving told, an archived thing’s too, asking once for a page and for details only when drawn', async () => {
+    const { adapter, asks } = notingTarget()
+    const plugin = deployPlugin('fake', adapter)
+    const l = await library(plugin)
+    for (const path of [P, R]) {
+      await l.put(path, path)
+      await l.say(path)
+      await l.cmd('fake on', [path])
+    }
+    await l.archive(R)
+    const [a, r] = [siteName(P), siteName(R)]
+
+    asks.length = 0
+    const page = await plugin.onView?.({ view: 'fake.sites', params: {} }, l.pctx())
+    expect(asks).toEqual([{ sites: expect.arrayContaining([a, r]), detail: true }])
+    const notes = Object.fromEntries(tableOf(page?.blocks ?? [])?.rows.map((row) => [row.cells.path?.text, row.cells.note?.text]) ?? [])
+    expect(notes).toEqual({ [P]: `在服务 ${a}`, [`_archive/${R}`]: `撤下了 ${r}` })
+
+    const section = await plugin.onItemView?.(`_archive/${R}` as LibraryPath, l.pctx())
+    const fields = section?.blocks.find((b): b is Extract<Block, { kind: 'fields' }> => b.kind === 'fields')?.fields ?? []
+    expect(fields.find((f) => f.label === '说明')?.value.text).toBe(`撤下了 ${r}`)
+
+    asks.length = 0
+    await l.list()
+    await l.put(P, 'v2')
+    expect(asks.length).toBeGreaterThan(0)
+    expect(asks.every((ask) => !ask.detail)).toBe(true)
+  })
+
+  it('adds pages of its own to the navigation, drawn from the same looks with the kit’s states and switch, and blocks before the kit’s sections', async () => {
+    const { adapter } = notingTarget({
+      views: [{ name: 'board', title: '看板', icon: 'layout-grid' }],
+      view: (env) => ({
+        before: () => [{ kind: 'text', tone: 'info', text: '在最前面' }],
+        pages: {
+          board: (all) => [
+            {
+              kind: 'custom',
+              entry: 'board.html',
+              height: 100,
+              data: all.map((l) => ({ path: l.thing.path, state: STATUS[l.status], note: l.detail?.note ?? null })),
+              actions: Object.fromEntries(
+                all.flatMap((l) => {
+                  const a = switchAction(env.plugin, l)
+                  return a === null ? [] : [[l.thing.id, a]]
+                }),
+              ),
+            },
+          ],
+        },
+      }),
+    })
+    const plugin = deployPlugin('fake', adapter, { ui: '/plugins/fake/ui' })
+    expect(plugin.views).toEqual([expect.objectContaining({ id: 'fake.sites', nav: true }), { id: 'fake.board', title: '看板', icon: 'layout-grid', nav: true, filters: [] }])
+
+    const l = await library(plugin, true)
+    const unset = await plugin.onView?.({ view: 'fake.board', params: {} }, l.pctx())
+    expect(unset?.blocks).toEqual([{ kind: 'text', tone: 'warn', text: expect.stringContaining('还没配部署目标') }])
+
+    expect(await l.cmd('fake target set', [], { where: ['w'] })).toMatchObject({ outcome: 'done' })
+    for (const path of [P, Q]) {
+      await l.put(path, path)
+      await l.say(path)
+    }
+    await l.cmd('fake on', [P])
+    const board = await plugin.onView?.({ view: 'fake.board', params: {} }, l.pctx())
+    expect(board).toMatchObject({ title: '看板', subtitle: '1 样在线，共 2 样' })
+    const custom = board?.blocks[0]
+    expect(custom?.kind).toBe('custom')
+    if (custom?.kind !== 'custom') return
+    expect(custom.data).toEqual([
+      { path: P, state: { text: '在线', tone: 'good' }, note: `在服务 ${siteName(P)}` },
+      { path: Q, state: { text: '离线', tone: 'neutral' }, note: null },
+    ])
+
+    const page = await plugin.onView?.({ view: 'fake.sites', params: {} }, l.pctx())
+    expect(page?.blocks[0]).toEqual({ kind: 'text', tone: 'info', text: '在最前面' })
+    const rows = tableOf(page?.blocks ?? [])?.rows ?? []
+    expect(Object.values(custom.actions)).toEqual(rows.map((row) => row.actions[0]))
+    expect(rows.map((row) => row.cells.state?.tag)).toEqual([STATUS.online, STATUS.offline])
+  })
+
+  it('makes its pages ask again every 30 seconds when it reports what it serves, or as often as it says', async () => {
+    const pages = [{ name: 'board', title: '看板', icon: 'layout-grid' }]
+    const cases: [reports: boolean, refresh: number | null | undefined, expected: number | undefined][] = [
+      [true, undefined, 30],
+      [true, 10, 10],
+      [true, null, undefined],
+      [false, undefined, undefined],
+    ]
+    for (const [reports, refresh, expected] of cases) {
+      const { adapter } = notingTarget({ reports, views: pages, view: () => ({ pages: { board: () => [] }, ...(refresh === undefined ? {} : { refresh }) }) })
+      const plugin = deployPlugin('fake', adapter)
+      const l = await library(plugin)
+      for (const view of ['fake.sites', 'fake.board']) expect((await plugin.onView?.({ view, params: {} }, l.pctx()))?.refresh, `${view} ${reports} ${refresh}`).toBe(expected)
+    }
+  })
+
+  it('declares an optional secret as optional: target set mentions it without asking, and the target reads null until it is set', async () => {
+    const tokens: (string | null)[] = []
+    const adapter = defineTarget({
+      kind: 'open',
+      label: '令牌可有可无的目标',
+      params: [],
+      secrets: [{ name: 'token', description: '服务要求登录时的令牌', optional: true }],
+      configure: async () => ({ ok: true, config: {} }),
+      open: (_config, env) => ({
+        key: 'open',
+        label: '令牌可有可无的目标',
+        async publish(site) {
+          tokens.push(await env.secret('token'))
+          return { url: url(site) }
+        },
+        async remove() {},
+      }),
+    })
+    const plugin = deployPlugin('open', adapter)
+    expect(plugin.secrets).toEqual([{ name: 'token', description: '服务要求登录时的令牌', optional: true }])
+    const l = await library(plugin, true)
+    const set = await l.cmd('open target set')
+    expect(set).toMatchObject({ outcome: 'done', text: '部署目标已设为 令牌可有可无的目标。可选的密钥 token 没设（服务要求登录时的令牌）；要用时：pneuma-base secret set open token。' })
+    await l.put(P, 'v1')
+    await l.say(P)
+    expect(await l.cmd('open on', [P])).toMatchObject({ outcome: 'done' })
+    expect(await l.secret('token', 'tok-1')).toMatchObject({ outcome: 'done' })
+    await l.put(P, 'v2')
+    expect(tokens).toEqual([null, 'tok-1'])
   })
 })

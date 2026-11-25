@@ -32,6 +32,7 @@ import {
   type PluginName,
   type PluginProblem,
   type PluginTable,
+  type SecretDecl,
 } from '@pneuma-base/sdk'
 
 export type Outcome = { answer: OwnerAnswer; library?: Library; problems?: PluginProblem[] }
@@ -328,9 +329,10 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       const set = await secretNames(call.ctx.home, plugin)
       const known = await declaredSecrets(call, plugin)
       const declared = (typeof known === 'string' ? [] : known).map((s) => ({ ...s, set: set.includes(s.name) }))
-      const unset = declared.filter((s) => !s.set).map((s) => s.name)
+      const unset = (optional: boolean) => declared.filter((s) => !s.set && (s.optional === true) === optional).map((s) => s.name)
       const lines = [set.length === 0 ? `插件 ${plugin} 在这台机器上没设密钥。` : `插件 ${plugin} 设了的密钥：${set.join('、')}`]
-      if (unset.length > 0) lines.push(`它用、还没设的：${unset.join('、')}`)
+      if (unset(false).length > 0) lines.push(`它用、还没设的：${unset(false).join('、')}`)
+      if (unset(true).length > 0) lines.push(`可以不设、还没设的：${unset(true).join('、')}`)
       return done(lines.join('\n'), { plugin, set, declared })
     },
   }),
@@ -353,7 +355,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
 const named = (p: Plugin) => (p.version === undefined ? `${p.name}（没写版本）` : `${p.name} ${p.version}`)
 
 /** The secrets a plugin of this machine declares; or, when this machine has no such plugin, why. */
-async function declaredSecrets(call: OwnerCall, plugin: string): Promise<readonly { name: string; description: string }[] | string> {
+async function declaredSecrets(call: OwnerCall, plugin: string): Promise<readonly SecretDecl[] | string> {
   const p = call.table.get(plugin)
   if (p) return p.secrets ?? []
   const why = await whyNotLoaded(call.ctx.home, plugin)

@@ -196,7 +196,7 @@ async function secretsSection(ctx: Context): Promise<Block | null> {
           plugin: { text: plugin.name, mono: true },
           name: { text: secret.name, mono: true },
           description: { text: secret.description },
-          state: { text: '', tag: has ? { text: '已设', tone: 'good' } : { text: '没设', tone: 'warn' } },
+          state: { text: '', tag: has ? { text: '已设', tone: 'good' } : secret.optional === true ? { text: '没设（可选）', tone: 'neutral' } : { text: '没设', tone: 'warn' } },
         },
         link: null,
         actions: [
