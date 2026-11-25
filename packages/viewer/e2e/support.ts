@@ -43,8 +43,8 @@ export type Cli = {
   home: string
   /** Runs the built `pneuma-base`, or with `testPlugins` the same command line with the test-only plugins added. */
   run(args: string[], opts?: { cwd?: string; env?: Record<string, string>; input?: string; testPlugins?: boolean; codes?: number[] }): { code: number; stdout: string; stderr: string }
-  /** Starts `pneuma-base view <dir> --no-open` and resolves with its address once it printed it. */
-  view(dir: string, opts?: { testPlugins?: boolean }): Promise<{ url: string; stop(): Promise<void> }>
+  /** Starts `pneuma-base view <dir> --no-open` and resolves with its address once it printed it. `env` adds to its environment. */
+  view(dir: string, opts?: { testPlugins?: boolean; env?: Record<string, string> }): Promise<{ url: string; stop(): Promise<void> }>
 }
 
 export function cli(): Cli {
@@ -60,7 +60,7 @@ export function cli(): Cli {
       return { code: r.status ?? -1, stdout: r.stdout, stderr: r.stderr }
     },
     view(dir, opts = {}) {
-      const child = spawn(process.execPath, [opts.testPlugins ? BIN_WITH_TEST_PLUGINS : BIN, 'view', dir, '--no-open'], { cwd: home, env: env() })
+      const child = spawn(process.execPath, [opts.testPlugins ? BIN_WITH_TEST_PLUGINS : BIN, 'view', dir, '--no-open'], { cwd: home, env: env(opts.env) })
       children.push(child)
       return new Promise((resolve, reject) => {
         let out = ''

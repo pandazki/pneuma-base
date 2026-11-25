@@ -73,6 +73,8 @@ export type ItemView = {
   held: string[]
   archived: boolean
   absorbedInto: LibraryPath | null // the bundle it is part of now
+  unknownOrigin: boolean // adopted, and nobody said where it came from since
+  bundle: boolean
 }
 
 const saidRow = (ledger: Ledger, s: Said): SaidRow => ({
@@ -113,6 +115,8 @@ export function itemView(ledger: Ledger, item: ItemRecord, states: ReadonlyMap<I
     held,
     archived: isArchived(item),
     absorbedInto: item.absorbedInto === null ? null : (ledger.items.get(item.absorbedInto)?.path ?? null),
+    unknownOrigin: item.unknownOrigin,
+    bundle: item.bundle,
   }
 }
 

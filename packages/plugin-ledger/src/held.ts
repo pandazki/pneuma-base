@@ -78,9 +78,10 @@ export async function heldCopies(ctx: PluginContext, only?: ItemId): Promise<Hel
 
 const done = (text: string, data?: unknown): OwnerAnswer => ({ outcome: 'done', text, ...(data === undefined ? {} : { data }) })
 const refused = (reason: string, text: string): OwnerAnswer => ({ outcome: 'refused', reason, text })
+/** A flag's value; an empty one, as a form sends for a field left empty, is not given. */
 const flag = (args: OwnerArgs, name: string) => {
   const value = args.flags[name]
-  return Array.isArray(value) ? (value[0] ?? null) : null
+  return Array.isArray(value) && value[0] !== undefined && value[0] !== '' ? value[0] : null
 }
 
 const RESTORE_USAGE = '用法：held restore <库内路径或条目号> [--fingerprint <指纹>] --to <库内路径>'

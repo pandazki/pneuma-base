@@ -1,17 +1,17 @@
 // The viewer face: the read-only side the management UI uses. ARCHITECTURE.md section 6.
 // Views are not operations: they change nothing and send no event.
 import { readdir } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { join, posix } from 'node:path'
 import { fileFacts } from './agent.js'
-import { exists, regularFile } from './files.js'
-import { listThings, thingAt } from './things.js'
+import { exists } from './files.js'
+import { bundleFiles, enclosingBundle, kindAt, listThings, thingAt, type Thing } from './things.js'
 import { codexHint } from './owner-commands.js'
 import { ARCHIVE_DIR, DESCRIPTION_FILE, KERNEL_DIR, abs, archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
 import { messageOf, pluginContext } from './pipeline.js'
 import type {
   Action,
   Block,
+  Cell,
   Context,
   FileFacts,
   Library,
@@ -21,6 +21,7 @@ import type {
   PluginProblem,
   PluginTable,
   TableRow,
+  Tag,
   ViewAnswer,
   ViewDecl,
   ViewList,
@@ -69,7 +70,21 @@ const FILE_COLUMNS = [
   { key: 'modified', label: '改于' },
 ]
 
-/** One folder of the library's content: its folders first, then its files. The kernel's files and the archive are left out. */
+const IMAGE = /\.(png|jpe?g|gif|webp|avif|svg)$/i
+
+/** A thing's name cell: a bundle with its own icon and how many files it holds, an image or a file with theirs. */
+function thingName(text: string, kind: Thing['kind'], files: number): Cell {
+  if (kind === 'bundle') return { text, mono: true, icon: 'package', tag: { text: `${files} 个文件`, tone: 'neutral' } }
+  return { text, mono: true, icon: IMAGE.test(text) ? 'image' : 'file' }
+}
+
+const modified = (thing: Thing | null): Cell => (thing ? { text: when(thing.modifiedAt), muted: true, at: thing.modifiedAt } : { text: '' })
+const blank: Cell = { text: '' }
+
+/**
+ * One folder of the library's content: its folders first, then its things, a bundle as one row that
+ * opens the item panel. The kernel's files and the archive are left out.
+ */
 async function filesPage(params: Record<string, string>, { ctx }: ViewerCall): Promise<Shown> {
   const { root } = ctx.library
   const input = params.dir ?? ''
@@ -77,27 +92,30 @@ async function filesPage(params: Record<string, string>, { ctx }: ViewerCall): P
   if (input !== '' && (dir === null || regionOf(dir) !== 'content')) {
     return shown('文件', input, [{ kind: 'empty', title: '这个文件夹不在库的内容里', hint: null }])
   }
-  const entries = await readdir(dir === null ? root : abs(root, dir), { withFileTypes: true }).catch(() => null)
+  const folder = dir === null ? root : abs(root, dir)
+  const entries = await readdir(folder, { withFileTypes: true }).catch(() => null)
   if (entries === null) return shown('文件', input, [{ kind: 'empty', title: '没有这个文件夹', hint: input }])
   const hidden = new Set(dir === null ? [KERNEL_DIR, DESCRIPTION_FILE, ARCHIVE_DIR] : [])
   const named = entries.filter((e) => !hidden.has(e.name)).sort((a, b) => (a.name < b.name ? -1 : 1))
   const pathOf = (name: string) => (dir === null ? name : `${dir}/${name}`)
+  const kinds = await Promise.all(named.map(async (e) => ({ name: e.name, kind: await kindAt(join(folder, e.name)) })))
   const rows: TableRow[] = []
   if (dir !== null) {
     const parent = posix.dirname(dir)
-    rows.push({ key: '..', cells: { name: { text: '..', mono: true, link: folderLink(parent === '.' ? '' : parent) }, size: { text: '' }, modified: { text: '' } }, link: null, actions: [] })
+    rows.push({ key: '..', cells: { name: { text: '..', mono: true, icon: 'corner-left-up', link: folderLink(parent === '.' ? '' : parent) }, size: blank, modified: blank }, link: null, actions: [] })
   }
-  for (const e of named.filter((e) => e.isDirectory())) {
-    const path = pathOf(e.name)
-    rows.push({ key: path, cells: { name: { text: `${e.name}/`, mono: true, link: folderLink(path) }, size: { text: '' }, modified: { text: '' } }, link: folderLink(path), actions: [] })
+  for (const { name } of kinds.filter((k) => k.kind === 'folder')) {
+    const path = pathOf(name)
+    rows.push({ key: path, cells: { name: { text: `${name}/`, mono: true, icon: 'folder', link: folderLink(path) }, size: blank, modified: blank }, link: folderLink(path), actions: [] })
   }
-  for (const e of named.filter((e) => e.isFile())) {
-    const path = pathOf(e.name)
-    const facts = await regularFile(abs(root, path as LibraryPath))
-    const cells = { name: { text: e.name, mono: true }, size: { text: facts ? sizeText(facts.size) : '', muted: true }, modified: { text: facts ? when(facts.modifiedAt) : '', muted: true } }
+  for (const { name, kind } of kinds) {
+    if (kind !== 'file' && kind !== 'bundle') continue
+    const path = pathOf(name)
+    const thing = await thingAt(abs(root, path as LibraryPath))
+    const cells = { name: thingName(name, kind, thing?.files ?? 0), size: { text: thing ? sizeText(thing.size) : '', muted: true }, modified: modified(thing) }
     rows.push({ key: path, cells, link: itemLink(path), actions: [] })
   }
-  const table: Block = { kind: 'table', columns: FILE_COLUMNS, rows, empty: '这个文件夹是空的' }
+  const table: Block = { kind: 'table', columns: FILE_COLUMNS, rows, empty: '这个文件夹是空的。把文件放进这个文件夹，或者让 agent 用 put 放进来。' }
   return shown('文件', dir ?? '库的根目录', [table])
 }
 
@@ -107,17 +125,18 @@ async function filesPage(params: Record<string, string>, { ctx }: ViewerCall): P
 async function archivePage(_params: Record<string, string>, { ctx }: ViewerCall): Promise<Shown> {
   const { root } = ctx.library
   const dir = join(root, ARCHIVE_DIR)
-  const paths = (await exists(dir)) ? (await listThings(dir, new Set())).map((t) => archivedPath(t.path as LibraryPath)) : []
+  const things = (await exists(dir)) ? (await listThings(dir, new Set())).map((t) => ({ path: archivedPath(t.path as LibraryPath), kind: t.kind })) : []
+  const paths = things.map((t) => t.path)
   const rows: TableRow[] = []
-  for (const path of paths) {
+  for (const { path, kind } of things) {
     const facts = await thingAt(abs(root, path))
     rows.push({
       key: path,
       cells: {
-        original: { text: originalPath(path) ?? path, mono: true },
+        original: thingName(originalPath(path) ?? path, kind, facts?.files ?? 0),
         at: { text: path, mono: true, muted: true },
         size: { text: facts ? sizeText(facts.size) : '', muted: true },
-        modified: { text: facts ? when(facts.modifiedAt) : '', muted: true },
+        modified: modified(facts),
       },
       link: itemLink(path),
       actions: [archiveAction('unarchive', path)],
@@ -126,7 +145,7 @@ async function archivePage(_params: Record<string, string>, { ctx }: ViewerCall)
   const purge: Action = {
     label: '清空归档区',
     tone: 'danger',
-    confirm: `归档区里的 ${paths.length} 个文件会被删掉，不能撤回。`,
+    confirm: `归档区里的 ${paths.length} 样东西会被删掉，不能撤回。`,
     inputs: [],
     call: { face: 'owner', command: 'archive purge', args: { positional: [], flags: {} } },
   }
@@ -141,7 +160,7 @@ async function archivePage(_params: Record<string, string>, { ctx }: ViewerCall)
     title: '归档的东西',
     note: '归档的东西不删；默认的找和查不带它们。',
     count: paths.length,
-    blocks: [{ kind: 'table', columns, rows, empty: '归档区是空的' }],
+    blocks: [{ kind: 'table', columns, rows, empty: '归档区是空的。在文件页或一样东西的详情里点「归档」，它会挪到这里，不会被删掉。' }],
     actions: paths.length > 0 ? [purge] : [],
   }
   return shown('归档区', null, [section])
@@ -172,41 +191,42 @@ async function configPage(_params: Record<string, string>, { ctx, table }: Viewe
     ],
   }
 
-  const pluginRows: TableRow[] = config.plugins.map((name) => {
-    const plugin = library.plugins.find((p) => p.name === name)
-    return {
-      key: name,
-      cells: {
-        name: { text: name, mono: true },
-        title: plugin?.cognition ? { text: plugin.cognition.title } : { text: '—', muted: true },
-        state: { text: '', tag: plugin ? { text: '已装', tone: 'good' } : { text: '这个 pneuma-base 里没有', tone: 'warn' } },
-      },
-      link: null,
-      actions: [{ label: '卸下', tone: 'default', confirm: null, inputs: [], call: owner('plugin remove', [name]) }],
-    }
-  })
-  const addable = [...table.keys()].filter((name) => !config.plugins.some((p) => p === name))
-  const addPlugin: Action = {
-    label: '装上插件',
-    tone: 'default',
-    confirm: null,
-    inputs: [input('plugin', '插件', { value: addable[0] ?? null, options: addable.map((name) => ({ value: name, label: table.get(name)?.cognition?.title ? `${name}（${table.get(name)?.cognition?.title}）` : name })) })],
-    call: owner('plugin add', ['{plugin}']),
+  // Every plugin this pneuma-base knows, and every one the library has installed: 卸下 for the installed, 装上 for the rest.
+  const titleOf = (name: string): Cell => {
+    const title = (library.plugins.find((p) => p.name === name) ?? table.get(name))?.cognition?.title
+    return title ? { text: title } : { text: '—', muted: true }
   }
+  const pluginRow = (name: string, state: Tag, action: Action): TableRow => ({
+    key: name,
+    cells: { name: { text: name, mono: true }, title: titleOf(name), state: { text: '', tag: state } },
+    link: null,
+    actions: [action],
+  })
+  const installed = config.plugins.map((name) =>
+    pluginRow(name, library.plugins.some((p) => p.name === name) ? { text: '已装', tone: 'good' } : { text: '这个 pneuma-base 里没有', tone: 'warn' }, {
+      label: '卸下',
+      tone: 'default',
+      confirm: null,
+      inputs: [],
+      call: owner('plugin remove', [name]),
+    }),
+  )
+  const addable = [...table.keys()].filter((name) => !config.plugins.some((p) => p === name))
+  const offered = addable.map((name) => pluginRow(name, { text: '没装', tone: 'neutral' }, { label: '装上', tone: 'default', confirm: null, inputs: [], call: owner('plugin add', [name]) }))
   const plugins: Block = {
     kind: 'section',
     title: '插件',
-    note: '卸下插件时，它名下的目录原样留着。',
+    note: '装上一个插件，库就多了它的本事和它的页；卸下时，它名下的目录原样留着。',
     count: config.plugins.length,
-    blocks: [{ kind: 'table', columns: [{ key: 'name', label: '名字' }, { key: 'title', label: '做什么' }, { key: 'state', label: '状态' }], rows: pluginRows, empty: '没装任何插件。库照样能放、找、看、归档。' }],
-    actions: addable.length > 0 ? [addPlugin] : [],
+    blocks: [{ kind: 'table', columns: [{ key: 'name', label: '名字' }, { key: 'title', label: '做什么' }, { key: 'state', label: '状态' }], rows: [...installed, ...offered], empty: '这个 pneuma-base 不认识任何插件。库照样能放、找、看、归档。' }],
+    actions: [],
   }
 
   const skillAction = (grant: string, agent: 'claude' | 'codex', dir: string): Action => ({
     label: agent === 'claude' ? '为 Claude 生成技能' : '为 Codex 生成技能',
     tone: 'default',
     confirm: null,
-    inputs: [input('dir', '放技能的目录', { value: dir })],
+    inputs: [input('dir', '放技能的目录', { value: dir, placeholder: '绝对路径，或以 ~/ 开头' })],
     call: owner('skill install', [grant], { agent: [agent], dir: ['{dir}'] }),
   })
   const grantRows: TableRow[] = config.grants.map((g) => ({
@@ -219,8 +239,8 @@ async function configPage(_params: Record<string, string>, { ctx, table }: Viewe
     },
     link: null,
     actions: [
-      skillAction(g.name, 'claude', join(homedir(), '.claude', 'skills')),
-      skillAction(g.name, 'codex', join(homedir(), '.agents', 'skills')),
+      skillAction(g.name, 'claude', '~/.claude/skills'),
+      skillAction(g.name, 'codex', '~/.agents/skills'),
       { label: '撤回', tone: 'danger', confirm: `撤回后，拿着授权 ${g.name} 的 agent 就不能再用这个库。`, inputs: [], call: owner('grant revoke', [g.name]) },
     ],
   }))
@@ -246,7 +266,7 @@ async function configPage(_params: Record<string, string>, { ctx, table }: Viewe
         kind: 'table',
         columns: [{ key: 'name', label: '授权名' }, { key: 'agent', label: '给谁' }, { key: 'area', label: '区域' }, { key: 'access', label: '权限' }],
         rows: grantRows,
-        empty: '还没发授权',
+        empty: '还没发授权。点「发授权」给一个 agent 一份，再在它那一行为它生成技能。',
       },
       { kind: 'text', tone: 'info', text: codexHint(root) },
     ],
@@ -290,7 +310,11 @@ async function pluginSections(ctx: Context, path: LibraryPath): Promise<{ blocks
   return { blocks, problems }
 }
 
-/** One thing of the library: the file's facts, archive or take back, a preview; then what each plugin knows about it. */
+/**
+ * One thing of the library: archive or take back; what each plugin knows about it; then its own
+ * facts, and a bundle's files or a file's preview. A file inside a bundle names the bundle and
+ * offers no archive: the bundle changes only as a whole.
+ */
 async function itemPage(params: Record<string, string>, { ctx }: ViewerCall): Promise<Shown> {
   const { root } = ctx.library
   const target = params.path ?? ''
@@ -302,22 +326,47 @@ async function itemPage(params: Record<string, string>, { ctx }: ViewerCall): Pr
     return shown(posix.basename(target) || '一样东西', target || null, [missing, ...known.blocks], known.problems)
   }
   const original = facts.archived ? (originalPath(facts.path) ?? facts.path) : facts.path
-  return shown(posix.basename(original), facts.path, [...fileBlocks(facts, original), ...known.blocks], known.problems)
+  const bundle = facts.kind === 'file' ? await enclosingBundle(root, facts.path) : null
+  const archive: Block[] = bundle === null ? [{ kind: 'actions', actions: [facts.archived ? archiveAction('unarchive', facts.path) : archiveAction('archive', original)] }] : []
+  return shown(posix.basename(original), facts.path, [...archive, ...known.blocks, ...(await thingSections(root, facts, bundle))], known.problems)
 }
 
-/** The file's own facts, the archive or take-back button, and its preview. */
-function fileBlocks(facts: FileFacts, original: LibraryPath): Block[] {
+/** How many files of a bundle the panel lists. */
+const INNER_LIMIT = 500
+
+/** The thing's own facts, then a bundle's files, each opening its own panel, or a file's preview, which folds. */
+async function thingSections(root: string, facts: FileFacts, bundle: LibraryPath | null): Promise<Block[]> {
   const fields: Block = {
     kind: 'fields',
     fields: [
       { label: '路径', value: { text: facts.path, mono: true, ...(facts.archived ? { tag: { text: '已归档', tone: 'neutral' as const } } : {}) } },
+      ...(bundle !== null ? [{ label: '在', value: { text: bundle, mono: true, icon: 'package', link: itemLink(bundle) } }] : []),
+      { label: '种类', value: { text: facts.kind === 'bundle' ? '一样东西（带标记的目录）' : '文件' } },
+      ...(facts.kind === 'bundle' ? [{ label: '文件数', value: { text: String(facts.files) } }] : []),
       { label: '大小', value: { text: sizeText(facts.size) } },
-      { label: '改于', value: { text: when(facts.modifiedAt) } },
+      { label: '改于', value: { text: when(facts.modifiedAt), at: facts.modifiedAt } },
       { label: '指纹', value: { text: facts.fingerprint.slice(0, 16), mono: true, muted: true } },
     ],
   }
-  const actions: Block = { kind: 'actions', actions: [facts.archived ? archiveAction('unarchive', facts.path) : archiveAction('archive', original)] }
-  return [fields, actions, { kind: 'preview', path: facts.path }]
+  const partOf: Block[] = bundle === null ? [] : [{ kind: 'text', tone: 'neutral', text: `它是 ${bundle} 的一部分。${bundle} 是一样东西，只能整个一起放、挪、归档。` }]
+  const own = section('文件', [fields, ...partOf])
+  if (facts.kind === 'file') return [own, { kind: 'section', title: '预览', note: null, count: null, blocks: [{ kind: 'preview', path: facts.path }], actions: [], collapse: 'open' }]
+  const files = await bundleFiles(abs(root, facts.path))
+  const rows: TableRow[] = files.slice(0, INNER_LIMIT).map((f) => ({
+    key: f.path,
+    cells: { path: { text: f.path, mono: true, icon: IMAGE.test(f.path) ? 'image' : 'file' }, size: { text: sizeText(f.size), muted: true } },
+    link: itemLink(`${facts.path}/${f.path}`),
+    actions: [],
+  }))
+  const inner: Block = {
+    kind: 'section',
+    title: '里面的文件',
+    note: files.length > INNER_LIMIT ? `只列出了前 ${INNER_LIMIT} 个。` : null,
+    count: files.length,
+    blocks: [{ kind: 'table', columns: [{ key: 'path', label: '文件' }, { key: 'size', label: '大小' }], rows, empty: '这个目录里没有算进来的文件。' }],
+    actions: [],
+  }
+  return [own, inner]
 }
 
 // ---- the face ----

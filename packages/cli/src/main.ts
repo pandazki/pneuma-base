@@ -160,7 +160,7 @@ function sinceOf(value: string | null): Instant | 'last' | null {
 }
 
 function ownerCall(inv: Invocation, bound: Bound): OwnerCall {
-  return { ctx: bound.ctx, table: inv.table, home: inv.home, env: inv.io.env, viaGrant: bound.viaGrant, confirm: (q) => inv.io.confirm(q) }
+  return { ctx: bound.ctx, table: inv.table, env: inv.io.env, viaGrant: bound.viaGrant, confirm: (q) => inv.io.confirm(q) }
 }
 
 const SPECS: Spec[] = [

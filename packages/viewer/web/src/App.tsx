@@ -226,7 +226,7 @@ export function App() {
   const [main, setMain] = useState<ViewRequest | null>(null)
   const [panel, setPanel] = useState<ViewRequest[]>([])
   const [pending, setPending] = useState<Action | null>(null)
-  const [toasts, toast] = useToasts()
+  const [toasts, toast, closeToast] = useToasts()
   const refresh = useCallback(() => setTick((t) => t + 1), [])
   const cancel = useCallback(() => setPending(null), [])
 
@@ -262,10 +262,17 @@ export function App() {
   const top = panel.at(-1) ?? null
   const detail = useLoad(keyOf(top), tick, () => api.view(top as ViewRequest))
 
+  // Escape closes the panel; an open dialog takes Escape for itself first.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setPanel([])
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   const run = useCallback(
     async (action: Action, values: Record<string, string>, confirmed: boolean) => {
       try {
-        const reply = await api.call(fill(action.call, values), confirmed)
+        const reply = await api.call(fill(action.call, values, action.inputs), confirmed)
         toast(reply.tone, reply.text)
       } catch (error) {
         toast('bad', error instanceof Error ? error.message : String(error))
@@ -306,7 +313,7 @@ export function App() {
             refresh()
           }}
         />
-        <Toasts toasts={toasts} />
+        <Toasts toasts={toasts} onClose={closeToast} />
       </>
     )
   }
@@ -358,7 +365,7 @@ export function App() {
           }}
         />
       ) : null}
-      <Toasts toasts={toasts} />
+      <Toasts toasts={toasts} onClose={closeToast} />
     </BlockEnvContext.Provider>
   )
 }

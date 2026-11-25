@@ -176,22 +176,25 @@ function overlapsLibrary(root: string, source: string): boolean {
   return within(dir, root) || within(root, dir)
 }
 
+/** A form's field left empty means not given, as for owner commands. */
+const given = (text: string | null) => (text === null || text.trim() === '' ? null : text.trim())
+
 /**
  * A made origin names things of the library that are there, in the main area or archived. A path
- * inside a bundle names the bundle, which is the thing.
+ * inside a bundle names the bundle, which is the thing. Empty fields count as not given.
  */
 async function parseOrigin(ctx: Context, origin: Origin<string>): Promise<Origin | Refused> {
-  if (origin.kind === 'brought') return origin
+  if (origin.kind === 'brought') return { kind: 'brought', source: given(origin.source), by: given(origin.by) }
   const { root } = ctx.library
   const from: LibraryPath[] = []
-  for (const input of origin.from) {
+  for (const input of origin.from.flatMap((f) => given(f) ?? [])) {
     const path = parseLibraryPath(root, input)
     if (path === null || regionOf(path) === 'kernel') return refuse('outside-library', input)
     const thing = await thingNamed(root, path)
     if (thing === null) return refuse('no-such-file', input)
     from.push(thing)
   }
-  return { kind: 'made', from, outside: origin.outside }
+  return { kind: 'made', from, outside: origin.outside.flatMap((o) => given(o) ?? []) }
 }
 
 /** The thing at `path`, or the bundle it lies in, looked for in the main area and then archived; named as `path` is. */

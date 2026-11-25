@@ -28,5 +28,12 @@ export function identifyActor(input: { grant: Grant | null; as: string | null; e
 
 /** The second line of defence for destructive owner commands (K7). */
 export function looksLikeAgentSession(env: Env, viaGrant: boolean): boolean {
-  return viaGrant || SESSION_VARIABLES.some((name) => Boolean(env[name]))
+  return agentSessionSign(env, viaGrant) !== null
+}
+
+/** What shows the call comes from an agent session, in words for the refusal; null when nothing does. */
+export function agentSessionSign(env: Env, viaGrant: boolean): string | null {
+  if (viaGrant) return '调用带着授权'
+  const name = SESSION_VARIABLES.find((n) => Boolean(env[n]))
+  return name === undefined ? null : `环境里有 ${name}`
 }

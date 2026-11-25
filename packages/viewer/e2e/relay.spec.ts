@@ -51,7 +51,7 @@ test('the items page and the provenance chain of a relayed library', async ({ pa
   await expect(title).toHaveText('stripe-pricing.html')
   await expect(provenance).toContainText('带进来的')
   await expect(provenance).toContainText('https://stripe.com/pricing')
-  await expect(panel.getByLabel('预览')).toContainText('Stripe pricing')
+  await expect(panel.getByRole('figure', { name: '预览' })).toContainText('Stripe pricing')
 
   // Back goes up the chain again.
   await panel.getByRole('button', { name: '返回' }).click()

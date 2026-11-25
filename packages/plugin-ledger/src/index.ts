@@ -37,7 +37,8 @@ import {
   scenesAnswer,
   STANDING_VIEW,
   standingAnswer,
-  UNOWNED_SECTION,
+  partOfSection,
+  unownedSection,
 } from './ui.js'
 import {
   ambiguousText,
@@ -360,9 +361,13 @@ export const ledger: Plugin = {
   /** The item panel's provenance section, from the same view inspect gives; a file nobody registered says so. */
   async onItemView(path, ctx) {
     const ledger = await load(ctx)
+    const { root } = ctx.library
+    // A file inside a bundle that was never an item of its own has the bundle's provenance.
+    const bundle = itemNamed(ledger, root, path) ? null : await enclosingBundle(root, path)
+    if (bundle !== null) return partOfSection(bundle)
     const view = await panelView(ctx, ledger, path)
     if (view) return itemSection(view)
-    return (await fileAt(ctx.library.root, path)) ? UNOWNED_SECTION : null
+    return (await fileAt(root, path)) ? unownedSection(path) : null
   },
 
   /** Records each owner operation that was done, so agents see it in check; an archive purge removes the items it deleted. */

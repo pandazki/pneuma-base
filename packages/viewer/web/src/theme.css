@@ -139,6 +139,29 @@
   button {
     cursor: pointer;
   }
+  /* Keyboard focus is always visible; a field shows it with its own ring. */
+  :focus-visible {
+    outline: 2px solid color-mix(in oklch, var(--accent) 75%, transparent);
+    outline-offset: 2px;
+  }
+  .field:focus-visible,
+  tr:focus-visible {
+    outline-offset: -2px;
+  }
+  .field:focus-visible {
+    outline: none;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @layer components {
@@ -200,6 +223,17 @@
   }
   .field:focus {
     box-shadow: var(--shadow-inset-field), 0 0 0 2px color-mix(in oklch, var(--accent) 45%, transparent);
+  }
+  .field-area {
+    height: auto;
+    min-height: 76px;
+    padding: 6px 10px;
+    line-height: 1.5;
+    resize: vertical;
+  }
+  .dialog-in,
+  .toast-in {
+    animation: pop-in 0.15s cubic-bezier(0.23, 1, 0.32, 1);
   }
   .tag {
     --tone: var(--ink-3);

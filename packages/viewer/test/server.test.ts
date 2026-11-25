@@ -129,6 +129,21 @@ describe('the file endpoint (C8)', () => {
     expect((await http(server, '/api/file?path=_archive/old.txt')).text).toBe('old')
   })
 
+  it('gives a file inside a bundle, in the content or archived, but not the bundle itself or its marker’s escape', async () => {
+    const lib = await library()
+    lib.write('site/.pneuma-item', '{"format":1}\n')
+    lib.write('site/index.html', '<h1>hi</h1>')
+    lib.write('_archive/old-site/.pneuma-item', '{"format":1}\n')
+    lib.write('_archive/old-site/a.txt', 'archived inner')
+    const server = await serve(lib.root)
+    const inner = await http(server, `/api/file?path=${encodeURIComponent('site/index.html')}`)
+    expect(inner).toMatchObject({ status: 200, text: '<h1>hi</h1>' })
+    expect(inner.type).toBe('text/plain; charset=utf-8')
+    expect((await http(server, `/api/file?path=${encodeURIComponent('_archive/old-site/a.txt')}`)).text).toBe('archived inner')
+    expect((await http(server, '/api/file?path=site')).status).toBe(404)
+    expect((await http(server, `/api/file?path=${encodeURIComponent('site/../../x')}`)).status).toBe(404)
+  })
+
   it('refuses paths outside the library, the kernel’s files, folders and links that lead out', async () => {
     const lib = await library()
     lib.write('a.md', 'a')

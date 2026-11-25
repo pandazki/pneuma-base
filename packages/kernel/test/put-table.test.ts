@@ -14,7 +14,7 @@ function refused(r: PutResult) {
 /** Issues a grant on `area` and reopens the fixture as the agent holding it. */
 async function asGrantee(f: Fixture, area: string | null, readOnly = false) {
   const r = await ownerFace.dispatch(
-    { ctx: f.ctx, table: new Map(), home: f.home, env: {}, viaGrant: false, confirm: async () => false },
+    { ctx: f.ctx, table: new Map(), env: {}, viaGrant: false, confirm: async () => false },
     'grant issue',
     { positional: ['claude'], flags: { agent: ['claude-code'], ...(area === null ? {} : { area: [area] }), ...(readOnly ? { 'read-only': true as const } : {}) } },
   )
@@ -22,6 +22,22 @@ async function asGrantee(f: Fixture, area: string | null, readOnly = false) {
   const grant = (r.data as { grant: { id: GrantId } }).grant
   await f.reopen({ kind: 'agent', name: 'claude-code', grant: grant.id })
 }
+
+describe('an origin from a form', () => {
+  it('treats empty fields as not given: no source, no by, no empty basis lines', async () => {
+    const seen: AcceptedPut[] = []
+    const f = await fixture([plugin('watcher', { onPut: async (req) => (seen.push(req), null) })])
+    f.write('src.md', 's')
+    f.write('a.md', 'a')
+    f.write('b.md', 'b')
+    await agentFace.put({ kind: 'register', path: 'a.md', origin: { kind: 'brought', source: '  ', by: '' } }, f.ctx)
+    await agentFace.put({ kind: 'register', path: 'b.md', origin: { kind: 'made', from: ['src.md', ''], outside: ['', ' 主人说的 '] } }, f.ctx)
+    expect(seen.map((r) => r.kind === 'register' && r.origin)).toEqual([
+      { kind: 'brought', source: null, by: null },
+      { kind: 'made', from: ['src.md'], outside: ['主人说的'] },
+    ])
+  })
+})
 
 describe('register', () => {
   it('outside the library: refused', async () => {

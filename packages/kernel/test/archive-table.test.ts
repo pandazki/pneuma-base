@@ -59,7 +59,7 @@ describe('archive', () => {
     expect(outcome(await agentFace.archive({ kind: 'archive', path: 'PNEUMA-BASE.md' }, f.ctx))).toBe('outside-library')
     expect(outcome(await agentFace.archive({ kind: 'archive', path: '.pneuma-base/config.json' }, f.ctx))).toBe('outside-library')
     const r = await ownerFace.dispatch(
-      { ctx: f.ctx, table: new Map(), home: f.home, env: {}, viaGrant: false, confirm: async () => false },
+      { ctx: f.ctx, table: new Map(), env: {}, viaGrant: false, confirm: async () => false },
       'grant issue',
       { positional: ['claude'], flags: { agent: ['claude-code'], area: ['work'] } },
     )

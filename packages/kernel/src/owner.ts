@@ -4,14 +4,13 @@ import { exists } from './files.js'
 import { CONFIG_FILE, newConfig, saveConfig } from './library.js'
 import { KERNEL_COMMANDS, type Outcome } from './owner-commands.js'
 import { makeContext, performOwner, pluginContext } from './pipeline.js'
-import { looksLikeAgentSession, type Env } from './session.js'
+import { agentSessionSign, type Env } from './session.js'
 import type { Actor, Context, OwnerArgs, OwnerResult, Plugin, PluginName, PluginTable, Session } from './types.js'
 
-/** What every owner command needs besides its own arguments. */
+/** What every owner command needs besides its own arguments. This machine's home is `ctx.home`. */
 export type OwnerCall = {
   ctx: Context
   table: PluginTable
-  home: string
   env: Env
   viaGrant: boolean
   confirm: (question: string) => Promise<boolean>
@@ -28,8 +27,10 @@ export type OwnerCommandInfo = { name: string; summary: string; destructive: boo
 async function gated(call: OwnerCall, name: string, destructive: boolean, args: OwnerArgs, body: () => Promise<Outcome>): Promise<OwnerResult> {
   return performOwner(call.ctx, name, args, destructive, async () => {
     if (destructive) {
-      if (looksLikeAgentSession(call.env, call.viaGrant)) {
-        return { answer: { outcome: 'refused', reason: 'agent-session', text: `「${name}」会丢数据，只能由主人在自己的终端里做，不能在 agent 的会话里做。` } }
+      const sign = agentSessionSign(call.env, call.viaGrant)
+      if (sign !== null) {
+        const text = `「${name}」会丢数据，不能在 agent 的会话里做（${sign}）。在你自己的终端里做；要用界面，就在自己的终端里运行 pneuma-base view。`
+        return { answer: { outcome: 'refused', reason: 'agent-session', text } }
       }
       if (!(await call.confirm(`「${name}」会丢数据，不能撤回。确认要做吗？`))) {
         return { answer: { outcome: 'refused', reason: 'not-confirmed', text: '没有得到当面确认，什么都没做。' } }

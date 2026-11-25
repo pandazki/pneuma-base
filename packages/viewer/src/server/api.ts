@@ -57,7 +57,7 @@ export async function view(served: Served, query: URLSearchParams): Promise<Repl
 async function perform(call: Call, confirmed: boolean, library: Library, served: Served): Promise<{ result: unknown; summary: Summary }> {
   const ctx = ownerContext(library, served)
   if (call.face === 'owner') {
-    const ownerCall = { ctx, table: served.table, home: served.home, env: served.env, viaGrant: false, confirm: async () => confirmed }
+    const ownerCall = { ctx, table: served.table, env: served.env, viaGrant: false, confirm: async () => confirmed }
     const r = await ownerFace.dispatch(ownerCall, call.command, call.args)
     return { result: r, summary: ownerSummary(r) }
   }

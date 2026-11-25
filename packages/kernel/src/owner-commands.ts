@@ -1,6 +1,7 @@
 // The kernel's own owner commands, as data shaped like a plugin's OwnerCommand. ARCHITECTURE.md section 6.
 import { randomUUID } from 'node:crypto'
 import { rm } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { skillText } from './cognition.js'
 import { exists, writeAtomic } from './files.js'
@@ -70,7 +71,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
         if (parsed === null || regionOf(parsed) !== 'content') return refused('bad-area', `区域要是库里的一个子文件夹：${areaInput}`)
         area = parsed
       }
-      const local = await readGrantFile(call.home, name)
+      const local = await readGrantFile(call.ctx.home, name)
       if (local && local.library !== library.root) return refused('grant-name-taken', `本机已有叫 ${name} 的授权，指向另一个库：${local.library}`)
       const existing = library.config.grants.find((g) => g.name === name)
       if (existing && (existing.agent !== agent || existing.area !== area || existing.readOnly !== readOnly)) {
@@ -79,7 +80,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       // Issuing the same grant again keeps its id and rewrites the local copy.
       const grant: Grant = existing ?? { id: randomUUID() as GrantId, name, agent, area, readOnly }
       const updated = existing ? library : await saveConfig(library.root, { ...library.config, grants: [...library.config.grants, grant] }, call.table)
-      const file = await writeGrantFile(call.home, { name: grant.name, library: library.root, grant: grant.id })
+      const file = await writeGrantFile(call.ctx.home, { name: grant.name, library: library.root, grant: grant.id })
       return done(`已发授权 ${grant.name} 给 ${grant.agent}。本机副本：${file}`, { grant, file }, updated)
     },
   },
@@ -95,8 +96,8 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       const grant = library.config.grants.find((g) => g.name === name)
       if (!grant) return refused('no-such-grant', `这个库没有叫 ${name} 的授权`)
       const updated = await saveConfig(library.root, { ...library.config, grants: library.config.grants.filter((g) => g.id !== grant.id) }, call.table)
-      const local = await readGrantFile(call.home, name)
-      if (local?.library === library.root) await removeGrantFile(call.home, name)
+      const local = await readGrantFile(call.ctx.home, name)
+      if (local?.library === library.root) await removeGrantFile(call.ctx.home, name)
       return done(`已撤回授权 ${name}。`, { grant }, updated)
     },
   },
@@ -111,7 +112,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       const { library } = call.ctx
       if (library.config.plugins.includes(name as PluginName)) return done(`插件 ${name} 已经装了。`)
       if (!call.table.has(name)) {
-        const why = await whyNotLoaded(call.home, name)
+        const why = await whyNotLoaded(call.ctx.home, name)
         if (why !== null) return refused('plugin-failed-to-load', `插件 ${name} 没能加载：${why}`)
         return refused('unknown-plugin', `没有这个插件：${name}。可用的：${[...call.table.keys()].join('、') || '无'}`)
       }
@@ -137,7 +138,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
     name: 'skill install',
     summary: '为一个 agent 产品写一份指向说明的技能',
     destructive: false,
-    /** Writes `<dir>/pneuma-base-<grant>/SKILL.md`. A relative `--dir` is taken from the caller's working directory. */
+    /** Writes `<dir>/pneuma-base-<grant>/SKILL.md`. A relative `--dir` is taken from the caller's working directory; `~` is the home directory. */
     async run(args, call) {
       const a = read('skill install', args, 1, ['agent', 'dir'])
       if (typeof a === 'string') return usage(a)
@@ -149,7 +150,8 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       const { library } = call.ctx
       const grant = library.config.grants.find((g) => g.name === grantName)
       if (!grant) return refused('no-such-grant', `这个库没有叫 ${grantName} 的授权`)
-      const folder = join(resolve(call.ctx.session.cwd, dir), `pneuma-base-${grant.name}`)
+      const typed = dir === '~' || dir.startsWith('~/') ? join(homedir(), dir.slice(1)) : dir
+      const folder = join(resolve(call.ctx.session.cwd, typed), `pneuma-base-${grant.name}`)
       const file = join(folder, 'SKILL.md')
       await writeAtomic(file, skillText(grant.name, library.root), folder)
       const text = `已为 ${agent} 写好技能：${file}`

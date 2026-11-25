@@ -29,7 +29,7 @@ test('a bare library: three pages, folders, text and image preview, archive and 
   await page.getByRole('row', { name: /hello\.md/ }).click()
   const panel = page.getByRole('complementary', { name: '详情' })
   await expect(panel.getByTestId('panel-title')).toHaveText('hello.md')
-  await expect(panel.getByLabel('预览')).toContainText('一段笔记，写给以后的自己。')
+  await expect(panel.getByRole('figure', { name: '预览' })).toContainText('一段笔记，写给以后的自己。')
   await shoot(page, 'c1-files-text-preview')
 
   // Back up, into another folder, and an image preview.
@@ -64,7 +64,9 @@ test('a bare library: three pages, folders, text and image preview, archive and 
 
   // The config page of a bare library.
   await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '配置' }).click()
-  await expect(page.getByRole('region', { name: '插件' })).toContainText('没装任何插件')
+  // Nothing installed; the ledger this pneuma-base knows is offered.
+  await expect(page.getByRole('region', { name: '插件' }).getByRole('row', { name: /ledger/ })).toContainText('没装')
+  await expect(page.getByRole('region', { name: '插件' }).getByRole('row', { name: /ledger/ }).getByRole('button', { name: '装上' })).toBeVisible()
   await expect(page.getByRole('region', { name: '授权与技能' })).toContainText('codex --add-dir')
   await page.getByRole('complementary', { name: '详情' }).getByRole('button', { name: '关闭详情' }).click()
   await shoot(page, 'c1-config')

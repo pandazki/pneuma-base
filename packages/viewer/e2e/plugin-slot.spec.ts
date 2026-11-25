@@ -31,7 +31,7 @@ test('a plugin’s page appears when installed, renders each kind of block, and 
   await expect(main.getByText('一项的说明')).toBeVisible()
   await expect(main.getByText('时间线的一条')).toBeVisible() // timeline
   await expect(main.locator('time[datetime="2026-11-25T01:00:00.000Z"]')).toBeVisible()
-  await expect(main.getByLabel('预览')).toContainText('pager 预览的内容') // preview
+  await expect(main.getByRole('figure', { name: '预览' })).toContainText('pager 预览的内容') // preview
   await expect(main.getByText('空状态的标题')).toBeVisible() // empty
   await expect(main.getByText('这一块界面还不认识：sparkle')).toBeVisible() // a kind this page does not know
   await shoot(page, 'c2-plugin-blocks')
@@ -67,7 +67,7 @@ test('a plugin that throws in its view does not blank the UI', async ({ page, pb
   await nav.getByRole('button', { name: '文件' }).click()
   await page.getByRole('row', { name: /a\.md/ }).click()
   const panel = page.getByRole('complementary', { name: '详情' })
-  await expect(panel.getByLabel('预览')).toContainText('a')
+  await expect(panel.getByRole('figure', { name: '预览' })).toContainText('a')
   await expect(panel.getByText('插件 thrower 出错了，没能给出它知道的')).toBeVisible()
   await expect(panel.getByText('thrower failed in onItemView').first()).toBeVisible()
 })

@@ -117,7 +117,7 @@ describe('the item panel’s provenance section', () => {
   it('says a file nobody registered has no known origin, and gives no section where neither file nor item is', async () => {
     const { root, show } = await relayed()
     writeFileSync(join(root, 'dropped.md'), 'by hand')
-    expect(sectionNamed(shown(await show('item', { path: 'dropped.md' })).blocks, '来历').blocks).toMatchObject([{ kind: 'text', text: expect.stringContaining('来历不明') }])
+    expect(sectionNamed(shown(await show('item', { path: 'dropped.md' })).blocks, '来历').blocks).toMatchObject([{ kind: 'text', text: expect.stringContaining('来历不明') }, { kind: 'actions' }])
     expect(shown(await show('item', { path: 'nothing.md' })).blocks.filter((b) => b.kind === 'section')).toEqual([])
   })
 
@@ -264,5 +264,99 @@ describe('the activity view', () => {
     const rows = tableIn(shown(await show('ledger.activity', { who: 'owner' })).blocks).rows
     expect(rows.map((row) => row.cells.who?.text)).toEqual(['主人'])
     expect(tableIn(shown(await show('ledger.activity', { who: 'agent' })).blocks).rows.every((row) => row.cells.who?.text === 'claude-code')).toBe(true)
+  })
+})
+
+describe('the owner’s operations on the ledger’s blocks', () => {
+  const actionsIn = (blocks: Block[]) => flat(blocks).flatMap((b) => (b.kind === 'actions' ? b.actions : []))
+
+  it('a held copy can be taken back to a new path, as the owner command held restore', async () => {
+    const { show, codex } = await relayed()
+    await agentFace.put({ kind: 'place', from: text('cmp v2'), to: 'comparison.md', origin: { kind: 'made', from: ['src/stripe.html'], outside: [] } }, codex())
+    const held = sectionNamed(sectionNamed(shown(await show('item', { path: 'comparison.md' })).blocks, '来历').blocks, '留存的旧版')
+    expect(held.blocks.find((b) => b.kind === 'list')).toMatchObject({
+      items: [
+        {
+          actions: [
+            {
+              label: '取回到新路径',
+              inputs: [{ name: 'to', value: expect.stringMatching(/^comparison\.[0-9a-f]{8}\.md$/) }],
+              call: { face: 'owner', command: 'held restore', args: { positional: [expect.stringMatching(/^i_/)], flags: { fingerprint: [expect.stringMatching(/^[0-9a-f]{64}$/)], to: ['{to}'] } } },
+            },
+          ],
+        },
+      ],
+    })
+  })
+
+  it('a file nobody registered can be given its provenance: brought in, or made from things of the library', async () => {
+    const { root, show } = await relayed()
+    writeFileSync(join(root, 'dropped.md'), 'by hand')
+    const provenance = sectionNamed(shown(await show('item', { path: 'dropped.md' })).blocks, '来历')
+    expect(actionsIn(provenance.blocks)).toMatchObject([
+      {
+        label: '记为带进来的',
+        inputs: [{ name: 'source' }, { name: 'by', options: [{ value: 'owner' }, { value: '' }] }],
+        call: { face: 'agent', verb: 'put', request: { kind: 'register', path: 'dropped.md', origin: { kind: 'brought', source: '{source}', by: '{by}' } } },
+      },
+      {
+        label: '记为做出来的',
+        inputs: [{ name: 'from', multiple: true }, { name: 'outside', multiple: true }],
+        call: { face: 'agent', verb: 'put', request: { kind: 'register', path: 'dropped.md', origin: { kind: 'made', from: ['{from}'], outside: ['{outside}'] } } },
+      },
+    ])
+  })
+
+  it('a thing changed directly can be accepted as a new version, as say revised', async () => {
+    const { root, show } = await relayed()
+    writeFileSync(join(root, 'src/stripe.html'), 'stripe, new prices')
+    const provenance = sectionNamed(shown(await show('item', { path: 'src/stripe.html' })).blocks, '来历')
+    expect(actionsIn(provenance.blocks)).toMatchObject([{ label: '认下这次改动', call: { face: 'agent', verb: 'say', request: { kind: 'revised', about: 'src/stripe.html', text: null, args: {} } } }])
+    expect(actionsIn(sectionNamed(shown(await show('item', { path: 'comparison.md' })).blocks, '来历').blocks)).toEqual([])
+  })
+
+  it('the standing page offers the same on its rows: provenance for things nobody registered, accepting a direct change', async () => {
+    const { root, show, codex } = await relayed()
+    writeFileSync(join(root, 'dropped.md'), 'by hand')
+    writeFileSync(join(root, 'src/stripe.html'), 'stripe, new prices')
+    // A file nobody registered that an archive adopted: in the ledger, origin unknown.
+    writeFileSync(join(root, 'adopted.md'), 'adopted')
+    await agentFace.archive({ kind: 'archive', path: 'adopted.md' }, codex())
+    await agentFace.archive({ kind: 'unarchive', path: '_archive/adopted.md' }, codex())
+    const r = shown(await show('ledger.standing'))
+    const rows = (title: string) => tableIn([sectionNamed(r.blocks, title)]).rows
+    expect(rows('没人登记过的').map((row) => [row.cells.path?.text, row.actions.map((a) => a.label), row.actions.map((a) => a.call.face === 'agent' && a.call.verb === 'put' && a.call.request.kind === 'register' && a.call.request.path)])).toEqual([
+      ['dropped.md', ['记为带进来的', '记为做出来的'], ['dropped.md', 'dropped.md']],
+      ['adopted.md', ['记为带进来的', '记为做出来的'], ['adopted.md', 'adopted.md']],
+    ])
+    expect(rows('被直接改过的')[0]?.actions).toMatchObject([{ label: '认下这次改动', call: { verb: 'say', request: { kind: 'revised', about: 'src/stripe.html' } } }])
+    expect(rows('可能过期')[0]?.actions).toEqual([])
+  })
+})
+
+describe('bundles in the ledger’s blocks', () => {
+  it('the items table marks a bundle and leaves out the things it absorbed', async () => {
+    const { root, show, codex } = await relayed()
+    mkdirSync(join(root, 'site'))
+    writeFileSync(join(root, 'site/index.html'), '<h1>hi</h1>')
+    await agentFace.put({ kind: 'register', path: 'site/index.html', origin: { kind: 'brought', source: null, by: null } }, codex())
+    await agentFace.put({ kind: 'register', path: 'site', origin: { kind: 'made', from: ['comparison.md'], outside: [] } }, codex())
+    const rows = rowsOf(await show('ledger.items'))
+    expect(rows.map((r) => r.cells.path?.text)).not.toContain('site/index.html')
+    expect(rows.find((r) => r.cells.path?.text === 'site')?.cells.path).toMatchObject({ icon: 'package' })
+    expect(rows.find((r) => r.cells.path?.text === 'comparison.md')?.cells.path).toMatchObject({ icon: 'file' })
+  })
+
+  it('the panel of a file inside a bundle says what it is part of, absorbed or never registered', async () => {
+    const { root, show, codex } = await relayed()
+    mkdirSync(join(root, 'site'))
+    writeFileSync(join(root, 'site/index.html'), '<h1>hi</h1>')
+    await agentFace.put({ kind: 'register', path: 'site/index.html', origin: { kind: 'brought', source: null, by: null } }, codex())
+    await agentFace.put({ kind: 'register', path: 'site', origin: { kind: 'brought', source: null, by: null } }, codex())
+    writeFileSync(join(root, 'site/later.css'), 'h1{}')
+    const absorbed = sectionNamed(shown(await show('item', { path: 'site/index.html' })).blocks, '来历').blocks[0]
+    expect(absorbed?.kind === 'fields' && absorbed.fields.find((f) => f.label === '并入')?.value).toMatchObject({ text: 'site', link: { view: 'item', params: { path: 'site' }, target: 'panel' } })
+    const part = sectionNamed(shown(await show('item', { path: 'site/later.css' })).blocks, '来历').blocks
+    expect(part).toMatchObject([{ kind: 'fields', fields: [{ label: '是谁的一部分', value: { text: 'site', link: { params: { path: 'site' } } } }] }, { kind: 'text' }])
   })
 })

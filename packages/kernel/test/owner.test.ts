@@ -9,7 +9,7 @@ import { fixture, plugin, type Fixture } from './support.js'
 const NO_ARGS = { positional: [], flags: {} }
 
 function call(f: Fixture, overrides: Partial<OwnerCall> = {}): OwnerCall {
-  return { ctx: f.ctx, table: new Map(), home: f.home, env: {}, viaGrant: false, confirm: async () => true, ...overrides }
+  return { ctx: f.ctx, table: new Map(), env: {}, viaGrant: false, confirm: async () => true, ...overrides }
 }
 
 describe('a destructive owner command', () => {
@@ -28,8 +28,9 @@ describe('a destructive owner command', () => {
     f.write('_archive/old.md', 'old')
     let asked = false
     const confirm = async () => (asked = true)
-    expect(await ownerFace.dispatch(call(f, { env: { CODEX_THREAD_ID: 't' }, confirm }), 'archive purge', NO_ARGS)).toMatchObject({ outcome: 'refused', reason: 'agent-session' })
-    expect(await ownerFace.dispatch(call(f, { viaGrant: true, confirm }), 'archive purge', NO_ARGS)).toMatchObject({ outcome: 'refused', reason: 'agent-session' })
+    // The refusal says why, so a person who started the server inside an agent session knows what to change.
+    expect(await ownerFace.dispatch(call(f, { env: { CODEX_THREAD_ID: 't' }, confirm }), 'archive purge', NO_ARGS)).toMatchObject({ outcome: 'refused', reason: 'agent-session', text: expect.stringContaining('CODEX_THREAD_ID') })
+    expect(await ownerFace.dispatch(call(f, { viaGrant: true, confirm }), 'archive purge', NO_ARGS)).toMatchObject({ outcome: 'refused', reason: 'agent-session', text: expect.stringContaining('授权') })
     expect(asked).toBe(false)
     expect(f.read('_archive/old.md')).toBe('old')
   })
@@ -113,5 +114,22 @@ describe('the owner face’s one entry', () => {
     const f = await fixture()
     const r = await ownerFace.dispatch(call(f), 'grant issue', { positional: ['g'], flags: { agent: ['x'], area: [''], 'read-only': ['yes'] } })
     expect(r).toMatchObject({ outcome: 'done', data: { grant: { area: null, readOnly: true } } })
+  })
+})
+
+describe('skill install', () => {
+  it('takes ~ in the directory as the home directory, as a shell would', async () => {
+    const f = await fixture()
+    await ownerFace.dispatch(call(f), 'grant issue', { positional: ['claude'], flags: { agent: ['claude-code'] } })
+    await f.reopen()
+    const home = process.env.HOME
+    process.env.HOME = f.home
+    try {
+      const r = await ownerFace.dispatch(call(f), 'skill install', { positional: ['claude'], flags: { agent: ['claude'], dir: ['~/skills'] } })
+      expect(r).toMatchObject({ outcome: 'done', data: { file: join(f.home, 'skills', 'pneuma-base-claude', 'SKILL.md') } })
+      expect(existsSync(join(f.home, 'skills', 'pneuma-base-claude', 'SKILL.md'))).toBe(true)
+    } finally {
+      process.env.HOME = home
+    }
   })
 })

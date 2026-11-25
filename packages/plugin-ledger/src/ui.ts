@@ -1,6 +1,6 @@
 // What the ledger shows in the management UI: its pages, and its section of the kernel's item
 // panel. Pure: built from the same fold, reconcile and views that inspect and check answer from.
-import { originalPath, shortDir, type Block, type Cell, type Instant, type ItemSection, type Link, type Tag, type TableRow, type ViewAnswer, type ViewDecl } from '@pneuma-base/kernel'
+import { originalPath, shortDir, withSuffix, type Action, type ActionInput, type Block, type Cell, type Instant, type ItemSection, type LibraryPath, type Link, type Tag, type TableRow, type ViewAnswer, type ViewDecl } from '@pneuma-base/kernel'
 import type { Fact, LedgerOrigin, SceneId } from './facts.js'
 import { isArchived, type ItemRecord, type Ledger, type SceneRecord } from './fold.js'
 import type { ItemState, Mark, Standing } from './reconcile.js'
@@ -57,6 +57,64 @@ const sceneLink = (scene: SceneId): Link => ({ view: SCENE_VIEW, params: { scene
 const moment = (at: Instant): Cell => ({ text: when(at), muted: true, at })
 const none: Cell = { text: '—', muted: true }
 
+// ---- the owner's operations: each a call to one of the two faces ----
+
+const input = (name: string, label: string, opts: Partial<Omit<ActionInput, 'name' | 'label'>> = {}): ActionInput => ({
+  name,
+  label,
+  placeholder: opts.placeholder ?? null,
+  value: opts.value ?? null,
+  options: opts.options ?? null,
+  ...(opts.multiple ? { multiple: true } : {}),
+})
+
+/** Giving a thing nobody registered its provenance: put register, brought in or made. Empty fields count as not given. */
+export function provenanceActions(path: string): Action[] {
+  return [
+    {
+      label: '记为带进来的',
+      tone: 'default',
+      confirm: null,
+      inputs: [
+        input('source', '出处', { placeholder: '网址、书名或别的出处；不知道就留空' }),
+        input('by', '谁带来的', { value: 'owner', options: [{ value: 'owner', label: '主人' }, { value: '', label: '不知道' }] }),
+      ],
+      call: { face: 'agent', verb: 'put', request: { kind: 'register', path, origin: { kind: 'brought', source: '{source}', by: '{by}' } } },
+    },
+    {
+      label: '记为做出来的',
+      tone: 'default',
+      confirm: null,
+      inputs: [
+        input('from', '依据库里的哪些', { placeholder: '库内路径，一行一个', multiple: true }),
+        input('outside', '库外的依据', { placeholder: '一行一句，比如：主人在对话里说的', multiple: true }),
+      ],
+      call: { face: 'agent', verb: 'put', request: { kind: 'register', path, origin: { kind: 'made', from: ['{from}'], outside: ['{outside}'] } } },
+    },
+  ]
+}
+
+/** Accepting a direct change as the new version: say revised. */
+export const acceptAction = (path: string): Action => ({
+  label: '认下这次改动',
+  tone: 'default',
+  confirm: null,
+  inputs: [],
+  call: { face: 'agent', verb: 'say', request: { kind: 'revised', about: path, text: null, args: {} } },
+})
+
+/** Taking a held copy back to a new path: held restore. The suggested path is the item's with the old version's fingerprint in its name. */
+function restoreAction(v: ItemView, held: string, fingerprint: string): Action {
+  const base = v.archived ? (originalPath(v.path) ?? v.path) : v.path
+  return {
+    label: '取回到新路径',
+    tone: 'default',
+    confirm: null,
+    inputs: [input('to', '取回到', { value: withSuffix(base, fingerprint.slice(0, 8)), placeholder: `库里一个空着的路径；留存在 ${held}` })],
+    call: { face: 'owner', command: 'held restore', args: { positional: [v.item], flags: { fingerprint: [fingerprint], to: ['{to}'] } } },
+  }
+}
+
 const ORIGIN_TONE: Record<LedgerOrigin['kind'], Tag['tone']> = { made: 'info', brought: 'neutral', adopted: 'warn' }
 const STATE_TONE: Record<ItemState['kind'], Tag['tone']> = { consistent: 'good', changed: 'warn', moved: 'info', missing: 'bad', removed: 'neutral', absorbed: 'neutral' }
 const MARK_TONE: Record<Mark['kind'], Tag['tone']> = { stale: 'warn', 'source-gone': 'bad' }
@@ -73,6 +131,12 @@ function standingCell(state: ItemState, marks: Mark[]): Cell {
 
 /** The path as people know it: an archived item by the path it came from. */
 const shownPath = (item: ItemRecord) => (isArchived(item) ? (originalPath(item.path) ?? item.path) : item.path)
+const pathCell = (item: ItemRecord): Cell => ({
+  text: shownPath(item),
+  mono: true,
+  icon: item.bundle ? 'package' : 'file',
+  ...(isArchived(item) ? { tag: { text: '已归档', tone: 'neutral' as const } } : {}),
+})
 const lastAt = (item: ItemRecord) => item.versions.at(-1)?.at ?? item.entered.at
 
 const COLUMNS = [
@@ -91,7 +155,7 @@ export function itemsAnswer(ledger: Ledger, standing: Standing, params: Record<s
   const withArchived = params.archived === 'yes'
   const stateOf = (item: ItemRecord): ItemState => standing.states.get(item.id) ?? { kind: 'missing' }
   const items = [...ledger.items.values()]
-    .filter((item) => !item.removed && (withArchived || !isArchived(item)))
+    .filter((item) => !item.removed && item.absorbedInto === null && (withArchived || !isArchived(item)))
     .filter((item) => origin === '' || item.origin.kind === origin)
     .filter((item) => state === '' || (state === 'marked' ? standing.marks.has(item.id) : stateOf(item).kind === state))
     .sort((a, b) => (lastAt(a) === lastAt(b) ? (a.path < b.path ? -1 : 1) : lastAt(a) > lastAt(b) ? -1 : 1))
@@ -100,7 +164,7 @@ export function itemsAnswer(ledger: Ledger, standing: Standing, params: Record<s
     return {
       key: item.id,
       cells: {
-        path: { text: shownPath(item), mono: true, ...(isArchived(item) ? { tag: { text: '已归档', tone: 'neutral' as const } } : {}) },
+        path: pathCell(item),
         origin: { text: '', tag: originTag(item.origin) },
         who: { text: who(item.entered.actor) },
         doing: doing === null ? none : { text: doing },
@@ -132,10 +196,13 @@ export function itemSection(v: ItemView): ItemSection {
       { label: '场景', value: { text: shortScene(entered.scene), mono: true } },
       ...(v.doing ? [{ label: '当时在做', value: { text: v.doing } }] : []),
       { label: '现状', value: { text: v.archived ? '已归档' : '', muted: true, tag: stateTag(v.state) } },
+      ...(v.absorbedInto !== null ? [{ label: '并入', value: { text: v.absorbedInto, mono: true, icon: 'package', link: itemLink(v.absorbedInto) } }] : []),
       { label: '条目号', value: { text: v.item, mono: true, muted: true } },
     ],
   }
-  const blocks: Block[] = [fields]
+  // Provenance for a thing nobody gave one; a direct change accepted. An archived thing is changed only once taken back.
+  const actions = v.archived ? [] : [...(v.unknownOrigin ? provenanceActions(v.path) : []), ...(v.state.kind === 'changed' ? [acceptAction(v.path)] : [])]
+  const blocks: Block[] = [...(actions.length > 0 ? [{ kind: 'actions' as const, actions }] : []), fields]
 
   if (v.basis.length > 0 || v.outside.length > 0) {
     const items = [
@@ -173,17 +240,33 @@ export function itemSection(v: ItemView): ItemSection {
   blocks.push(counted('版本', versions.length, [{ kind: 'timeline', entries: versions }]))
 
   if (v.held.length > 0) {
-    const items = v.held.map((path) => ({ cell: { text: path, mono: true, muted: true }, note: null, actions: [] }))
-    blocks.push(counted('留存的旧版', items.length, [{ kind: 'text', text: '被新的一版换下来的旧内容，主人可以取回。', tone: 'neutral' }, { kind: 'list', items }]))
+    // A held copy lies at held/<item>/<fingerprint>/<name>.
+    const items = v.held.map((path) => {
+      const fingerprint = path.split('/').at(-2) ?? ''
+      return { cell: { text: `旧版 ${fingerprint.slice(0, 8)}`, mono: true }, note: path, actions: [restoreAction(v, path, fingerprint)] }
+    })
+    blocks.push(counted('留存的旧版', items.length, [{ kind: 'text', text: '被新的一版换下来的旧内容。取回时复制到一个新路径，现在的这一版不动。', tone: 'neutral' }, { kind: 'list', items }]))
   }
   return { title: '来历', blocks }
 }
 
-/** A file nobody registered. */
-export const UNOWNED_SECTION: ItemSection = { title: '来历', blocks: [{ kind: 'text', tone: 'warn', text: '没人登记过这个文件，来历不明。' }] }
+/** A file nobody registered, with the ways to give it its provenance. */
+export function unownedSection(path: LibraryPath): ItemSection {
+  return { title: '来历', blocks: [{ kind: 'text', tone: 'warn', text: '没人登记过这个文件，来历不明。知道它从哪来，就给它补上。' }, { kind: 'actions', actions: provenanceActions(path) }] }
+}
+
+/** A file inside a bundle that the ledger knows nothing of on its own: its provenance is the bundle's. */
+export function partOfSection(bundle: LibraryPath): ItemSection {
+  return {
+    title: '来历',
+    blocks: [
+      { kind: 'fields', fields: [{ label: '是谁的一部分', value: { text: bundle, mono: true, icon: 'package', link: itemLink(bundle) } }] },
+      { kind: 'text', tone: 'neutral', text: `它的来历记在 ${bundle} 上：${bundle} 是一样东西，整个一起记账。` },
+    ],
+  }
+}
 
 const table = (columns: [key: string, label: string][], rows: TableRow[], empty: string): Block => ({ kind: 'table', columns: columns.map(([key, label]) => ({ key, label })), rows, empty })
-const pathCell = (item: ItemRecord): Cell => ({ text: shownPath(item), mono: true, ...(isArchived(item) ? { tag: { text: '已归档', tone: 'neutral' as const } } : {}) })
 
 // ---- scenes ----
 
@@ -274,13 +357,13 @@ export function sceneAnswer(ledger: Ledger, params: Record<string, string>): Vie
 export function standingAnswer(ledger: Ledger, standing: Standing): ViewAnswer {
   const d = standingData(ledger, standing, false)
   const names = (refs: { path: string }[]) => refs.map((r) => r.path).join('、')
-  const row = (key: string, path: string, what: string, open: string): TableRow => ({ key, cells: { path: { text: path, mono: true }, what: { text: what, muted: true } }, link: itemLink(open), actions: [] })
+  const row = (key: string, path: string, what: string, open: string, actions: Action[] = []): TableRow => ({ key, cells: { path: { text: path, mono: true }, what: { text: what, muted: true } }, link: itemLink(open), actions })
   const sections: [title: string, note: string, rows: TableRow[]][] = [
     ['可能过期', '它依据的东西变了，可能要重做。让 agent 看一下。', d.stale.map((r) => row(r.item, r.path, `依据 ${names(r.sources)} 变了`, r.path))],
     ['来源不在', '它依据的东西不在了。', d.gone.map((r) => row(r.item, r.path, `依据 ${names(r.sources)} 不在了`, r.path))],
     ['上游有标记', '它更上游的依据可能过期或不在了。', d.upstream.map((r) => row(r.item, r.path, `上游 ${names(r.via)} 有标记`, r.path))],
-    ['没人登记过的', '不知道从哪来的东西。知道来历，就给它补上。', d.unowned.map((r) => row(r.path, r.path, r.adopted ? '入了册，来历不明' : '没人登记过', r.path))],
-    ['被直接改过的', '有人绕过工具改了它。是你改的，就认下这次改动。', d.changed.map((r) => row(r.item, r.path, '内容和记录的不一样', r.path))],
+    ['没人登记过的', '不知道从哪来的东西。知道来历，就给它补上。', d.unowned.map((r) => row(r.path, r.path, r.adopted ? '入了册，来历不明' : '没人登记过', r.path, provenanceActions(r.path)))],
+    ['被直接改过的', '有人绕过工具改了它。是你改的，就认下这次改动。', d.changed.map((r) => row(r.item, r.path, '内容和记录的不一样', r.path, [acceptAction(r.path)]))],
     ['不在了的', '可能被删掉了，或挪到了认不出的地方。', d.missing.map((r) => row(r.item, r.path, '账上有，磁盘上找不到', r.path))],
     ['挪过的', '东西挪到了新的位置。agent 下次 check 时，记账会把新位置接上。', d.moved.map((r) => row(r.item, r.from, `在 ${r.to}`, r.to))],
   ]

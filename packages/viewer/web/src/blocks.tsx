@@ -1,8 +1,9 @@
 // The block renderer: one component per kind of block. It knows the kernel's block types and no plugin.
 import type { Action, Block, Cell, Link, Tag, TableRow, Tone } from '@pneuma-base/kernel'
-import { CircleAlert, CircleCheck, Info, TriangleAlert } from 'lucide-react'
+import { ChevronRight, CircleAlert, CircleCheck, Info, TriangleAlert } from 'lucide-react'
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { api } from './api'
+import { ViewIcon } from './chrome'
 import { fullTime, shortTime } from './time'
 
 /** What a block can do besides showing itself: follow a link, start an action, and know what the panel shows. */
@@ -65,6 +66,7 @@ export function CellView({ cell, line = false }: { cell: Cell; line?: boolean })
     )
   const content = (
     <span className={`items-center gap-x-2 align-middle ${line ? 'flex max-w-full min-w-0' : 'inline-flex flex-wrap gap-y-1'}`} title={line && cell.text !== '' && !cell.at ? cell.text : undefined}>
+      {cell.icon ? <ViewIcon name={cell.icon} className="size-4 shrink-0 text-ink-3" /> : null}
       {text}
       {cell.tag ? <TagView tag={cell.tag} /> : null}
     </span>
@@ -113,17 +115,29 @@ function ActionRow({ actions, small = false }: { actions: Action[]; small?: bool
 }
 
 function SectionView({ block }: { block: Extract<Block, { kind: 'section' }> }) {
+  const [open, setOpen] = useState(block.collapse !== 'closed')
+  const count = block.count !== null ? <span className="rounded-chip bg-inset px-1.5 text-[11.5px] font-medium tabular-nums text-ink-2 shadow-(--shadow-hairline)">{block.count}</span> : null
+  const heading = block.collapse ? (
+    <h3>
+      <button type="button" className="-ml-1 flex items-center gap-1 rounded-chip px-1 text-[13px] font-semibold text-ink hover:bg-hover" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <ChevronRight className={`size-3.5 text-ink-3 transition-transform ${open ? 'rotate-90' : ''}`} strokeWidth={2} aria-hidden />
+        {block.title}
+      </button>
+    </h3>
+  ) : (
+    <h3 className="text-[13px] font-semibold text-ink">{block.title}</h3>
+  )
   return (
     <section className="flex flex-col gap-2.5" aria-label={block.title}>
       <div className="flex min-h-7 flex-wrap items-center gap-x-2 gap-y-1">
-        <h3 className="text-[13px] font-semibold text-ink">{block.title}</h3>
-        {block.count !== null ? <span className="rounded-chip bg-inset px-1.5 text-[11.5px] font-medium tabular-nums text-ink-2">{block.count}</span> : null}
+        {heading}
+        {count}
         <div className="ml-auto">
           <ActionRow actions={block.actions} />
         </div>
       </div>
-      {block.note ? <p className="-mt-1 text-[12.5px] text-ink-2">{block.note}</p> : null}
-      <Blocks blocks={block.blocks} />
+      {open && block.note ? <p className="-mt-1 text-[12.5px] text-ink-2">{block.note}</p> : null}
+      {open ? <Blocks blocks={block.blocks} /> : null}
     </section>
   )
 }

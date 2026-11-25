@@ -235,22 +235,29 @@ export type Tag = { text: string; tone: Tone }
 export type Link = { view: string; params: Record<string, string>; target: 'main' | 'panel' }
 /**
  * `at`: the cell is a moment. The page shows it in the viewer's local time, short, with the whole
- * time on hover; `text` is what a reader without a clock shows.
+ * time on hover; `text` is what a reader without a clock shows. `icon`: a lucide icon name shown
+ * before the text, such as `folder`, `file` or `package` for a bundle.
  */
-export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; link?: Link; at?: Instant }
+export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; link?: Link; at?: Instant; icon?: string }
 
-/** What a button does: one verb of the agent face, or one owner command. Strings may hold `{input}`, replaced by that input's value. */
+/**
+ * What a button does: one verb of the agent face, or one owner command. Strings may hold `{input}`,
+ * replaced by that input's value. A `multiple` input's values, one per line, replace a list element
+ * that is exactly `{input}`, one element each. An input left empty gives an empty string, which the
+ * faces take as not given.
+ */
 export type Call =
   | { [V in Verb]: { face: 'agent'; verb: V; request: Parameters<AgentFace[V]>[0] } }[Verb]
   | { face: 'owner'; command: string; args: OwnerArgs }
-export type ActionInput = { name: string; label: string; placeholder: string | null; value: string | null; options: { value: string; label: string }[] | null }
+export type ActionInput = { name: string; label: string; placeholder: string | null; value: string | null; options: { value: string; label: string }[] | null; multiple?: boolean }
 /** `confirm`: a question the person answers before the call; the answer is the in-person confirmation a destructive command needs. */
 export type Action = { label: string; tone: 'default' | 'danger'; confirm: string | null; inputs: ActionInput[]; call: Call }
 
 export type TableRow = { key: string; cells: Record<string, Cell>; link: Link | null; actions: Action[] }
 
+/** A section with `collapse` can be folded by the viewer; the value is how it starts. */
 export type Block =
-  | { kind: 'section'; title: string; note: string | null; count: number | null; blocks: Block[]; actions: Action[] }
+  | { kind: 'section'; title: string; note: string | null; count: number | null; blocks: Block[]; actions: Action[]; collapse?: 'open' | 'closed' }
   | { kind: 'table'; columns: { key: string; label: string }[]; rows: TableRow[]; empty: string }
   | { kind: 'fields'; fields: { label: string; value: Cell }[] }
   | { kind: 'list'; items: { cell: Cell; note: string | null; actions: Action[] }[] }
