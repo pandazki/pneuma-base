@@ -33,6 +33,9 @@ export async function openLibrary(dir: string, table: PluginTable): Promise<Libr
     if (plugin) plugins.push(plugin)
     else unavailable.push(name)
   }
+  // A plugin's directory exists whenever its hooks run, also when a synced configuration came without
+  // it. A library this caller cannot write still opens; the hook that writes there reports the problem.
+  await Promise.all(plugins.map((p) => mkdir(pluginDir(root, p.name), { recursive: true }).catch(() => undefined)))
   return { root, config, plugins, unavailable }
 }
 

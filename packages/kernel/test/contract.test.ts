@@ -1,10 +1,12 @@
 // The plugin contract as a third party builds against it: the sdk's root export, re-exported by the kernel.
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as sdk from '@pneuma-base/sdk'
 import { describe, expect, it } from 'vitest'
 import * as kernel from '../src/index.js'
-import { tempDir } from './support.js'
+import { fixture, outsideFile, plugin, tempDir } from './support.js'
+
+const brought = { kind: 'brought' as const, source: null, by: null }
 
 describe('the sdk', () => {
   it('names the contract version, types a plugin as it is, and builds the branded values a plugin makes', () => {
@@ -94,5 +96,17 @@ describe('the loader of a plugin outside the repository', () => {
     const command = '{ name: "plugin add", summary: "", destructive: false, ownerOnly: false, run: async () => ({ outcome: "done", text: "" }) }'
     writeFileSync(join(home, 'plugins', 'plugin', 'index.js'), `export default { contract: 1, name: 'plugin', cognition: null, storage: [], statements: [], ownerCommands: [${command}] }\n`)
     expect(await kernel.whyNotLoaded(home, 'plugin')).toMatch(/主人命令「plugin add」是内核自己的/)
+  })
+})
+
+describe('a plugin’s own directory', () => {
+  it('exists whenever a hook runs, also in a library that arrived by sync before this machine had the plugin', async () => {
+    const p = plugin('keeper', { onPut: async (_req, ctx) => ({ text: existsSync(ctx.dir) ? 'there' : 'missing' }) })
+    const f = await fixture([p])
+    // A synced library carries the configuration; an empty plugin directory may not come with it.
+    rmSync(join(f.root, '.pneuma-base', 'keeper'), { recursive: true })
+    await f.reopen()
+    const r = await kernel.agentFace.put({ kind: 'place', from: { kind: 'file', path: outsideFile('a') }, to: 'a.md', origin: brought }, f.ctx)
+    expect(r).toMatchObject({ outcome: 'accepted', notes: [{ plugin: 'keeper', text: 'there' }] })
   })
 })
