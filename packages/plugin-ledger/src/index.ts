@@ -399,7 +399,7 @@ export const ledger: Plugin = {
   async observe(event, ctx) {
     if (event.face !== 'owner' || event.result.outcome !== 'done') return
     const w = await writing(ctx)
-    w.facts.push(fact(ctx, 'tool', { kind: 'owner.op', command: event.command, summary: ownerSummary(event.result.text), destructive: event.destructive, ...(event.readOnly ? { readOnly: true as const } : {}) }))
+    w.facts.push(fact(ctx, 'tool', { kind: 'owner.op', command: event.command, summary: ownerSummary(event.result.text), destructive: event.destructive, ...(event.readOnly ? { readOnly: true as const } : {}), ...(event.setup ? { setup: true as const } : {}) }))
     for (const path of purged(event)) {
       const id = w.ledger.pathIndex.get(path)
       if (id !== undefined) w.facts.push(fact(ctx, 'tool', { kind: 'item.remove', item: id }))

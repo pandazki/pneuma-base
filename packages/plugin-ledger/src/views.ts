@@ -197,19 +197,23 @@ export const SINCE_LIMIT = 20
 /** Owner commands that change neither the content nor the capabilities: recorded as facts, but no news to an agent. */
 export const QUIET_OWNER_COMMANDS: ReadonlySet<string> = new Set(['init', 'grant issue', 'grant revoke', 'skill install'])
 
-/** A read-only owner command, such as a listing, is no news either; its fact says so. */
-const isNews = (f: Fact) => f.kind !== 'owner.op' || !(QUIET_OWNER_COMMANDS.has(f.command) || f.readOnly)
-
 export type SinceFact = { kind: Fact['kind']; at: Instant; actor: string; text: string }
 export type SinceView = { since: Instant | null; scenes: { scene: SceneId; actors: string[]; cwds: string[]; facts: SinceFact[] }[] }
 
 /**
  * What others did since this actor was last here: from its latest fact in another scene, else
- * from the start, at most the latest `SINCE_LIMIT` facts that are news, by scene.
+ * from the start, at most the latest `SINCE_LIMIT` facts that are news, by scene. Read-only owner
+ * commands are never news; setup commands (installing plugins, setting targets or an embedder) are
+ * already reflected in PNEUMA-BASE.md when an agent first comes, so they are news only once they
+ * happened after this actor's earliest visit.
  */
 export function sinceView(ledger: Ledger, me: FactActor, current: SceneId, since: Instant | 'last' | null): SinceView {
   const mine = actorKey(me)
-  const start = since === null || since === 'last' ? (ledger.facts.filter((f) => actorKey(f.actor) === mine && f.scene !== current).at(-1)?.at ?? null) : since
+  const explicit = since !== null && since !== 'last'
+  const start = explicit ? since : (ledger.facts.filter((f) => actorKey(f.actor) === mine && f.scene !== current).at(-1)?.at ?? null)
+  const firstSeen = ledger.facts.find((f) => actorKey(f.actor) === mine)?.at ?? null
+  const isNews = (f: Fact) =>
+    f.kind !== 'owner.op' || !(QUIET_OWNER_COMMANDS.has(f.command) || f.readOnly || (!explicit && f.setup && (firstSeen === null || f.at <= firstSeen)))
   const recent = ledger.facts.filter((f) => actorKey(f.actor) !== mine && f.scene !== current && (start === null || f.at > start) && isNews(f)).slice(-SINCE_LIMIT)
   const scenes = new Map<SceneId, SinceView['scenes'][number]>()
   for (const f of recent) {

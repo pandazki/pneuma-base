@@ -73,6 +73,7 @@ export const searchCommands: OwnerCommand[] = [
     usage: '--kind hash | --kind http --url <地址> --model <模型名> [--key-env <存密钥的环境变量名>]',
     destructive: false,
     ownerOnly: true,
+    setup: true,
     async run(args, ctx) {
       const flag = flagsOf('search embedder set', args, ['kind', 'url', 'model', 'key-env'])
       if (typeof flag === 'string') return usage(flag)
@@ -92,6 +93,7 @@ export const searchCommands: OwnerCommand[] = [
     summary: '清除嵌入器，find 只按文字找',
     destructive: false,
     ownerOnly: true,
+    setup: true,
     async run(args, ctx) {
       const flag = flagsOf('search embedder clear', args, [])
       if (typeof flag === 'string') return usage(flag)

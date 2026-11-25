@@ -139,7 +139,7 @@ function targetConfig(a: Read, ctx: PluginContext): TargetConfig | OwnerAnswer {
   return { kind: 'command', publish, unpublish, url: a.value('url'), timeout: timeout === null ? DEFAULT_TIMEOUT : Number(timeout) }
 }
 
-const targetSet = command('deploy target set', '配部署目标：一个本地目录，或一对发布和下线的命令', 'owner', async (args, ctx) => {
+const targetSet: OwnerCommand = { setup: true, ...command('deploy target set', '配部署目标：一个本地目录，或一对发布和下线的命令', 'owner', async (args, ctx) => {
   const a = read('deploy target set', args, 0, ['kind', 'to', 'publish', 'unpublish', 'url', 'timeout'])
   if (typeof a === 'string') return usage(a)
   const config = targetConfig(a, ctx)
@@ -154,6 +154,6 @@ const targetSet = command('deploy target set', '配部署目标：一个本地�
     const notes = [...(on > 0 ? [`开着的 ${on} 样还没发到新目标：运行 deploy sync。`] : []), ...(left > 0 ? [`旧目标上的 ${left} 个站点没有撤下。`] : [])]
     return done([head, ...notes].join(''), { target: config })
   })
-}, '--kind dir --to <目录> | --kind command --publish "<命令>" --unpublish "<命令>" [--url <模板>] [--timeout <秒>]')
+}, '--kind dir --to <目录> | --kind command --publish "<命令>" --unpublish "<命令>" [--url <模板>] [--timeout <秒>]') }
 
 export const COMMANDS: readonly OwnerCommand[] = [switchCommand(true), switchCommand(false), sync, list, targetSet]

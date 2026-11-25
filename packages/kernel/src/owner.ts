@@ -19,8 +19,8 @@ export type OwnerCall = {
 /** An owner command as the owner face lists it, and who provides it. */
 export type OwnerCommandInfo = { name: string; summary: string; usage: string | null; destructive: boolean; ownerOnly: boolean; by: PluginName | 'kernel' }
 
-/** How a command is gated: destructive ones lose data; owner-only ones decide for the owner. Read-only ones change nothing. */
-type Gate = { destructive: boolean; ownerOnly: boolean; readOnly?: boolean }
+/** How a command is gated: destructive ones lose data; owner-only ones decide for the owner. Read-only ones change nothing; setup ones configure plugins or targets. */
+type Gate = { destructive: boolean; ownerOnly: boolean; readOnly?: boolean; setup?: boolean }
 
 /**
  * What shows the call comes from an agent: a grant or an agent session variable (the second line of
@@ -38,7 +38,7 @@ function agentSign(call: OwnerCall): string | null {
  * the person gives in person (K7). Refused or not, it ends at the pipeline's single exit.
  */
 async function gated(call: OwnerCall, name: string, gate: Gate, args: OwnerArgs, body: () => Promise<Outcome>): Promise<OwnerResult> {
-  return performOwner(call.ctx, name, args, { destructive: gate.destructive, readOnly: gate.readOnly ?? false }, async () => {
+  return performOwner(call.ctx, name, args, { destructive: gate.destructive, readOnly: gate.readOnly ?? false, setup: gate.setup ?? false }, async () => {
     const sign = gate.destructive || gate.ownerOnly ? agentSign(call) : null
     if (sign !== null) {
       const why = gate.destructive ? '会丢数据' : '是替主人做的决定'

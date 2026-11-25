@@ -28,6 +28,7 @@ const targetSet: OwnerCommand = {
   usage: '--kind dir --to <目录>',
   destructive: false,
   ownerOnly: true,
+  setup: true,
   async run(args, ctx) {
     const f = flags('sync target set', args, ['kind', 'to'])
     if (isAnswer(f)) return f
