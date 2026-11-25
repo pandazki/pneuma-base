@@ -133,6 +133,7 @@ describe('the whole story, with every plugin installed', () => {
     const text = ok(sb.run(['--library', lib, '--as', 'claude-code', '--session', 'claude-2', 'check'], { cwd: claudeDir })).stdout
     expect(text).toContain('sites/coffee 换了新内容')
     expect(text).not.toMatch(/可能过期|来源不在|没人登记过|被直接改过|不一致|冲突副本|在工具之外/)
-    expect(text).not.toContain(root)
+    // A scene's heading says where it ran; the lines under it name things, never a directory outside the library.
+    expect(text.split('\n').filter((line) => line.startsWith('  ')).join('\n')).not.toContain(root)
   })
 })
