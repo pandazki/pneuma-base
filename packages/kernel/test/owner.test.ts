@@ -63,6 +63,8 @@ describe('an owner-only command', () => {
     const agent = { ...f.ctx, actor: { kind: 'agent' as const, name: 'codex', grant: null } }
     for (const [overrides, sign] of [
       [{ env: { CLAUDE_CODE_SESSION_ID: 'c' } }, 'CLAUDE_CODE_SESSION_ID'],
+      [{ env: { ANTIGRAVITY_CONVERSATION_ID: 'a' } }, 'ANTIGRAVITY_CONVERSATION_ID'],
+      [{ env: { ANTIGRAVITY_AGENT: '1' } }, 'ANTIGRAVITY_AGENT'],
       [{ viaGrant: true }, '授权'],
       [{ ctx: agent }, 'agent codex'],
     ] as const) {
