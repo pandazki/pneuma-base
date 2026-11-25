@@ -3,7 +3,17 @@
 `@pneuma-base/sdk/kit` 里的部署库：给它一个插件名和一个或几个**目标**，它交回一个完整的部署插件。agent 用 `say deployable <库内路径>` 声明一样东西可以部署；主人用 `<名字> on` / `<名字> off` 开关决定它在不在线；开着的东西，目标上跟着库里当前的内容。和目标无关的都在库里：声明和它跟着挪、归档、取回、清掉，主人的开关，对账，记录，命令，页面和条目面板里的一节，说明里的一段。一个部署插件只写它的目标。
 
 ```ts
-import { deployPlugin } from '@pneuma-base/sdk/kit'
+import { defineTarget, deployPlugin } from '@pneuma-base/sdk/kit'
+
+const spaceTarget = defineTarget({
+  kind: 'space',
+  label: 'PneumaSpace',
+  params: [{ name: 'project', hint: '项目名', kind: 'value', required: true }],
+  secrets: [{ name: 'token', description: 'PneumaSpace 的令牌' }],
+  configure: async ({ project }) => ({ ok: true, config: { project } }),
+  open: (config, env) => ({ /* key, label, publish, remove；publish 里 await env.secret('token') */ }),
+})
+
 export default deployPlugin('space', spaceTarget, { title: 'PneumaSpace' })
 ```
 
@@ -15,11 +25,10 @@ export default deployPlugin('space', spaceTarget, { title: 'PneumaSpace' })
 
 - `kind`：`<名字> target set --kind <kind>` 选它，也随它的配置存下。只有一种目标时可以不写 `--kind`。
 - `label`：给人看的「发布到哪种地方」，拼成命令的说明 `配部署目标：<label>`。
-- `usage`、`flags`：`target set` 在 `--kind` 之后的参数，可选的写在方括号里。没配目标时的提示只列必填的那些。
-- `form`：页面上设这种目标的按钮，每个输入和一个参数同名。
-- `secrets`：它要用的密钥，只是名字和给人看的说明，库现在不读。
-- `configure(参数, 上下文)`：把参数变成要存的配置（一个 JSON 对象），或者说哪里不对；理由是 `usage` 的算用法错误。
-- `open(配置, { ctx, scratch })`：在边界上解析存下的配置，交回这次钩子或命令用的 `Target`；读不懂就抛错。
+- `params`：`target set` 在 `--kind` 之后的开关，一份 `FlagParam[]`（`@pneuma-base/sdk` 的参数表）。命令的参数表由各种目标的拼成，所以命令行、帮助、页面上设这种目标的表单和 `configure` 之前的核对都从这里来；没配目标时的提示只列必填的那些。有几种目标时，几种都有的开关意思要一样；选定的那种必填的开关、不收别的种类的开关，由库核对。
+- `secrets`：它读的密钥，`{ name, description }`。库把它们声明成插件的 `secrets`，所以 `pneuma-base secret set <名字> <密钥名>` 和配置页认得。目标从不在开关里要密钥。
+- `configure(值, 上下文)`：把核过的值变成要存的配置（一个 JSON 对象），或者说哪里不对；理由是 `usage` 的算用法错误。用 `defineTarget` 写，值按 `params` 定好类型。
+- `open(配置, { ctx, scratch, secret })`：在边界上解析存下的配置，交回这次钩子或命令用的 `Target`；读不懂就抛错。`secret(名字)` 读主人在这台机器上设的密钥；没设时它拒绝，说用哪条命令设，这次发布或下线就以这句话失败。
 
 `Target` 是配好的一个目标：
 
@@ -106,14 +115,14 @@ export default deployPlugin('space', spaceTarget, { title: 'PneumaSpace' })
 | --- | --- | --- |
 | `<名字> on <库内路径>` | 只有主人 | 打开开关并发布 |
 | `<名字> off <库内路径>` | 只有主人 | 关上开关并下线 |
-| `<名字> target set [--kind <kind>] <目标的参数>` | 只有主人 | 配目标 |
+| `<名字> target set [--kind <kind>] <目标的开关>` | 只有主人 | 配目标 |
 | `<名字> sync` | 主人和 agent | 把全部声明过的东西对一遍 |
 | `<名字> list` | 主人和 agent | 列出声明过的东西、状态和地址 |
 
-都不是破坏性的。对外发布是对外的动作，所以开关和目标只给主人：这几条声明 `ownerOnly`，内核的门在 agent 的会话里以 `agent-session` 拒绝。开关在目标失败时照样记下，答复以 `publish-failed` / `unpublish-failed` 或 `no-target` 拒绝并说明现在的状态。agent 的放入、挪、归档让目标失败时，放入照样成功，答复的 `problems` 里说这不是它的放入出了问题、上线等主人运行 `<名字> sync`。
+每条都有参数表。都不是破坏性的。对外发布是对外的动作，所以开关和目标只给主人：这几条声明 `ownerOnly`，内核的门在 agent 的会话里以 `agent-session` 拒绝。开关在目标失败时照样记下，答复以 `publish-failed` / `unpublish-failed` 或 `no-target` 拒绝并说明现在的状态。agent 的放入、挪、归档让目标失败时，放入照样成功，答复的 `problems` 里说这不是它的放入出了问题、上线等主人运行 `<名字> sync`。
 
-`plugin remove <名字>` 在目标上还有它的站点时拒绝，说有几样在线、先用 `<名字> off` 关上；主人用 `--anyway` 照样卸下时，答复列出留在线上的那些。
+`plugin remove <名字>` 在目标上还有它的站点时拒绝，说有几样在线、先用 `<名字> off` 关上；主人用 `--anyway`（界面里是提示上的「仍然卸下」）照样卸下时，答复列出留在线上的那些。
 
 ## 页面
 
-页 `<名字>.sites`：目标和配每种目标的按钮；可部署的东西一张表，路径、状态、地址（网址可以点开，都可以复制）、目标加的列，每行一个开关，「对一遍」；目标加的块在最后。条目面板里的一节：状态、开关、地址、站点名、目标加的字段，状态的意思，开关按钮，目标加的块。
+页 `<名字>.sites`：目标和配每种目标的按钮（只有一种时是「设部署目标」，几种时是「设为<label>」，表单由 `formOf` 从那种目标的开关生成）；可部署的东西一张表，路径、状态、地址（网址可以点开，都可以复制）、目标加的列，每行一个开关，「对一遍」；目标加的块在最后。条目面板里的一节：状态、开关、地址、站点名、目标加的字段，状态的意思，开关按钮，目标加的块。

@@ -2,7 +2,7 @@
 // owner's switch decides whether it is online, and what is switched on follows the library's
 // current content. README.md in this folder.
 import { CONTRACT, pluginName } from '../../index.js'
-import type { Plugin, SayAnswer } from '../../types.js'
+import type { Plugin, SayAnswer, SecretDecl } from '../../types.js'
 import { commands } from './commands.js'
 import { newThingId } from './facts.js'
 import { declaredAt, look, looks, record, settle, thingPath, withRun, type Kit } from './reconcile.js'
@@ -25,6 +25,12 @@ export type DeployOptions = {
   readonly ui?: string
 }
 
+/** The secrets its kinds of target read, each name once: the plugin declares them, so `secret set` and the configuration page know them. */
+function secretsOf(kit: Kit): { secrets?: SecretDecl[] } {
+  const all = new Map(kit.targets.flatMap((t) => t.secrets ?? []).map((s) => [s.name, s]))
+  return all.size === 0 ? {} : { secrets: [...all.values()] }
+}
+
 const heard = (note: string): SayAnswer => ({ outcome: 'heard', note })
 const refused = (note: string): SayAnswer => ({ outcome: 'not-heard', reason: 'refused', note })
 
@@ -42,6 +48,7 @@ export function deployPlugin(name: string, targets: TargetAdapter | readonly Tar
     storage: [{ dir: '.', kind: 'body' }],
     statements: ['deployable'],
     ownerCommands: commands(kit),
+    ...secretsOf(kit),
     views: viewDecls(kit, options.icon ?? 'globe'),
 
     /** `say deployable <path> [一句话]`: a thing in the library may go online. Declaring puts nothing online. */

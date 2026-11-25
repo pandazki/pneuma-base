@@ -1,14 +1,14 @@
 // An owner command's declared arguments, turned into what people read and fill in: the usage line
 // and a form. The kernel checks a call by the same declaration, so the command line, help and the
 // form in the UI cannot disagree.
-import type { ActionInput, Call, FlagParam, OwnerAnswer, OwnerCommand, OwnerParams, ParamValues, PluginContext, PositionalParam } from './types.js'
+import type { ActionInput, Call, FlagParam, OwnerAnswer, OwnerCommand, OwnerParams, ParamOption, ParamValues, PluginContext, PositionalParam } from './types.js'
 
 /**
- * An owner command with `params`, whose `run` gets the values typed by them: each by name, a
- * required one a string, an optional one possibly null, a list or `many` a list, a boolean true or false.
+ * An owner command whose `run` gets the values typed by its `params`: each by name, a required one a
+ * string, an optional one possibly null, a list or `many` a list, a boolean true or false.
  */
 export function defineCommand<const P extends OwnerParams>(
-  command: Omit<OwnerCommand, 'params' | 'usage' | 'run'> & { readonly params: P; readonly run: (values: ParamValues<P>, ctx: PluginContext) => Promise<OwnerAnswer> },
+  command: Omit<OwnerCommand, 'params' | 'run'> & { readonly params: P; readonly run: (values: ParamValues<P>, ctx: PluginContext) => Promise<OwnerAnswer> },
 ): OwnerCommand {
   const { run, ...rest } = command
   // The kernel calls `run` only with values it checked against `params`.
@@ -35,25 +35,26 @@ export function usageOf(params: OwnerParams): string {
 export type FixedValue = string | readonly string[] | boolean
 
 /**
- * The inputs and call of a form for an owner command with `params`. Each argument not in `fixed` is
- * one input, labelled with its hint, with its pattern and options; a list or `many` one takes a value
- * per line, a boolean is a choice of 否 or 是. `values` fills inputs before the person sees them.
+ * The inputs and call of a form for an owner command. Each argument not in `fixed` is one input,
+ * labelled with its hint, with its pattern and options; a list or `many` one takes a value per line,
+ * a boolean is a choice of 否 or 是. `values` fills inputs before the person sees them; `choices`
+ * makes an input a choice of the values that make sense on this page, such as the versions a thing has.
  */
 export function formOf(
-  command: { readonly name: string; readonly params?: OwnerParams },
-  opts: { fixed?: Readonly<Record<string, FixedValue>>; values?: Readonly<Record<string, string>> } = {},
+  command: { readonly name: string; readonly params: OwnerParams },
+  opts: { fixed?: Readonly<Record<string, FixedValue>>; values?: Readonly<Record<string, string>>; choices?: Readonly<Record<string, readonly ParamOption[]>> } = {},
 ): { inputs: ActionInput[]; call: Extract<Call, { face: 'owner' }> } {
-  const params = command.params
-  if (params === undefined) throw new Error(`formOf: ${command.name} declares no params`)
+  const { params } = command
   const fixed = opts.fixed ?? {}
   const inputs: ActionInput[] = []
   const ask = (p: PositionalParam | FlagParam, many: boolean, options: ActionInput['options']): string => {
+    const choices = opts.choices?.[p.name]
     inputs.push({
       name: p.name,
       label: p.hint,
       placeholder: null,
       value: opts.values?.[p.name] ?? null,
-      options,
+      options: choices === undefined ? options : choices.map((o) => ({ ...o })),
       ...(many ? { multiple: true } : {}),
       ...(p.pattern === undefined ? {} : { pattern: p.pattern }),
     })

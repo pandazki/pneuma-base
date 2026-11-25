@@ -149,13 +149,7 @@ async function archivePage(_params: Record<string, string>, { ctx }: ViewerCall)
       actions: [archiveAction('unarchive', path)],
     })
   }
-  const purge: Action = {
-    label: '清空归档区',
-    tone: 'danger',
-    confirm: `归档区里的 ${paths.length} 样东西会被删掉，不能撤回。`,
-    inputs: [],
-    call: { face: 'owner', command: 'archive purge', args: { positional: [], flags: {} } },
-  }
+  const purge = kernelAction('archive purge', '清空归档区', { tone: 'danger', confirm: `归档区里的 ${paths.length} 样东西会被删掉，不能撤回。` })
   const columns = [
     { key: 'original', label: '原来的路径' },
     { key: 'at', label: '在归档区的位置' },
@@ -238,16 +232,23 @@ async function configPage(_params: Record<string, string>, { ctx, table }: Viewe
   }
 
   // Every plugin this pneuma-base knows, and every one the library has installed: 卸下 for the installed, 装上 for the rest.
-  const titleOf = (name: string): Cell => {
-    const title = (library.plugins.find((p) => p.name === name) ?? table.get(name))?.cognition?.title
-    return title ? { text: title } : { text: '—', muted: true }
+  // Its version and what it brings, as plugin list shows them: the summary, else its cognition's title.
+  const dash: Cell = { text: '—', muted: true }
+  const pluginRow = (name: string, state: Tag, action: Action): TableRow => {
+    const p = library.plugins.find((q) => q.name === name) ?? table.get(name)
+    const summary = p?.summary ?? p?.cognition?.title
+    return {
+      key: name,
+      cells: {
+        name: { text: name, mono: true },
+        version: p?.version === undefined ? dash : { text: p.version, mono: true },
+        title: summary === undefined ? dash : { text: summary },
+        state: { text: '', tag: state },
+      },
+      link: null,
+      actions: [action],
+    }
   }
-  const pluginRow = (name: string, state: Tag, action: Action): TableRow => ({
-    key: name,
-    cells: { name: { text: name, mono: true }, title: titleOf(name), state: { text: '', tag: state } },
-    link: null,
-    actions: [action],
-  })
   const installed = config.plugins.map((name) =>
     pluginRow(name, library.plugins.some((p) => p.name === name) ? { text: '已装', tone: 'good' } : { text: '这个 pneuma-base 里没有', tone: 'warn' }, kernelAction('plugin remove', '卸下', { fixed: { plugin: name, anyway: false } })),
   )
@@ -258,7 +259,14 @@ async function configPage(_params: Record<string, string>, { ctx, table }: Viewe
     title: '插件',
     note: '装上一个插件，库就多了它的本事和它的页；卸下时，它名下的目录原样留着。',
     count: config.plugins.length,
-    blocks: [{ kind: 'table', columns: [{ key: 'name', label: '名字' }, { key: 'title', label: '做什么' }, { key: 'state', label: '状态' }], rows: [...installed, ...offered], empty: '这个 pneuma-base 不认识任何插件。库照样能放、找、看、归档。' }],
+    blocks: [
+      {
+        kind: 'table',
+        columns: [{ key: 'name', label: '名字' }, { key: 'version', label: '版本', optional: true }, { key: 'title', label: '做什么' }, { key: 'state', label: '状态' }],
+        rows: [...installed, ...offered],
+        empty: '这个 pneuma-base 不认识任何插件。库照样能放、找、看、归档。',
+      },
+    ],
     actions: [],
   }
 

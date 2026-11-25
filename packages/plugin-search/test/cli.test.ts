@@ -158,8 +158,7 @@ describe('find by meaning (C7)', () => {
 
 describe('the http embedder (C7)', () => {
   let server: FakeEmbedder
-  const KEY_ENV = 'PB_TEST_EMBED_KEY'
-  const withKey = { env: { [KEY_ENV]: 'test-key-123' } }
+  const setKey = async (key: string) => ok(await sb.run(['secret', 'set', 'search', 'key'], { input: key }))
 
   beforeEach(async () => {
     server = await fakeEmbedder()
@@ -170,33 +169,37 @@ describe('the http embedder (C7)', () => {
   })
   afterEach(() => server.close())
 
-  it('finds by meaning through an OpenAI-compatible server; the key stays in the environment', async () => {
-    const set = ok(await owner(['search', 'embedder', 'set', '--kind', 'http', '--url', `${server.url}/v1`, '--model', 'concepts-1', '--key-env', KEY_ENV], withKey))
+  it('finds by meaning through an OpenAI-compatible server; the key is a secret of this machine, never in the library', async () => {
+    const unset = ok(await owner(['search', 'embedder', 'set', '--kind', 'http', '--url', `${server.url}/v1`, '--model', 'concepts-1']))
+    expect(unset.stdout).toContain('pneuma-base secret set search key')
+    await setKey('test-key-123')
+    const set = ok(await owner(['search', 'embedder', 'set', '--kind', 'http', '--url', `${server.url}/v1`, '--model', 'concepts-1']))
     expect(set.stdout).toContain('concepts-1')
-    const r = ok(await agent(['find', '想喝点提神的饮料', '--json'], withKey))
+    expect(set.stdout).toContain('密钥已设')
+    expect(set.stdout).not.toContain('test-key-123')
+    const r = ok(await agent(['find', '想喝点提神的饮料', '--json']))
     expect(r.json().hits[0]).toMatchObject({ path: 'shops/coffee.md', by: 'search', detail: '按意思：# 豆子与烘焙' })
     expect(server.requests.length).toBeGreaterThan(0)
-    expect(server.requests.every((q) => q.authorization === 'Bearer test-key-123' && q.model === 'concepts-1')).toBe(true)
+    expect(server.requests.slice(1).every((q) => q.authorization === 'Bearer test-key-123' && q.model === 'concepts-1')).toBe(true)
     const sent = server.requests.flatMap((q) => q.input)
     expect(sent).toContain('想喝点提神的饮料')
     expect(sent.some((text) => text.includes('拿铁'))).toBe(true)
 
     const written = readdirSync(lib, { recursive: true, withFileTypes: true }).filter((e) => e.isFile()).map((e) => readFileSync(join(e.parentPath, e.name), 'utf8'))
     expect(written.some((text) => text.includes('test-key-123'))).toBe(false)
-    expect(written.some((text) => text.includes(KEY_ENV))).toBe(true)
   })
 
   it('embeds each piece once, and again when the embedder changes', async () => {
     ok(await owner(['search', 'embedder', 'set', '--kind', 'hash']))
     await hits('咖啡')
-    ok(await owner(['search', 'embedder', 'set', '--kind', 'http', '--url', server.url, '--model', 'concepts-1', '--key-env', KEY_ENV], withKey))
+    ok(await owner(['search', 'embedder', 'set', '--kind', 'http', '--url', server.url, '--model', 'concepts-1']))
     const afterProbe = server.requests.length
-    ok(await agent(['find', '咖啡'], withKey))
+    ok(await agent(['find', '咖啡']))
     const pieces = server.requests.slice(afterProbe).flatMap((q) => q.input)
     expect(pieces.filter((text) => text.startsWith('# '))).toHaveLength(3)
 
     const before = server.requests.length
-    ok(await agent(['find', '猫'], withKey))
+    ok(await agent(['find', '猫']))
     expect(server.requests.slice(before).flatMap((q) => q.input)).toEqual(['猫'])
   })
 
@@ -219,12 +222,23 @@ describe('the http embedder (C7)', () => {
     server = await fakeEmbedder() // afterEach closes it
   })
 
-  it('a key variable that is not set is a problem, not a failed find', async () => {
-    ok(await owner(['search', 'embedder', 'set', '--kind', 'http', '--url', server.url, '--model', 'concepts-1', '--key-env', KEY_ENV]))
-    const r = await agent(['find', '拿铁', '--json'])
-    expect(r.code).toBe(3)
-    expect(r.json().hits.map((h: any) => h.path)).toEqual(['shops/coffee.md'])
-    expect(r.json().problems[0].message).toContain(KEY_ENV)
+  it('an embedder recorded with a key variable still loads; the variable is not read, and status says the key is a secret now and how to set it', async () => {
+    const KEY_ENV = 'PB_TEST_EMBED_KEY'
+    const record = { format: 1, at: '2026-11-01T00:00:00.000Z', embedder: { kind: 'http', url: server.url, model: 'concepts-1', keyEnv: KEY_ENV } }
+    mkdirSync(join(lib, '.pneuma-base', 'search', 'embedder'), { recursive: true })
+    writeFileSync(join(lib, '.pneuma-base', 'search', 'embedder', '20261101000000000-aaaaaaaa.json'), `${JSON.stringify(record)}\n`)
+    const env = { env: { [KEY_ENV]: 'from-the-environment' } }
+    const before = ok(await owner(['search', 'status'], env)).stdout
+    expect(before).toContain(`密钥原来取自环境变量 ${KEY_ENV}`)
+    expect(before).toContain('pneuma-base secret set search key')
+    ok(await agent(['find', '想喝点提神的饮料'], env))
+    expect(server.requests.length).toBeGreaterThan(0)
+    expect(server.requests.every((q) => q.authorization === undefined)).toBe(true)
+    await setKey('test-key-123')
+    expect(ok(await owner(['search', 'status'])).stdout).toContain('密钥已设')
+    const sent = server.requests.length
+    ok(await agent(['find', '猫']))
+    expect(server.requests.slice(sent).map((q) => q.authorization)).toEqual(['Bearer test-key-123'])
   })
 })
 
@@ -254,10 +268,11 @@ describe('the owner commands', () => {
     expect((await searchHits('退款')).map((h) => h.path)).toEqual(['a.md'])
   })
 
-  it('refuses an http embedder without an address or a model, and a key written in the open', async () => {
+  it('refuses an http embedder without an address or a model, and a key or key variable written in a flag', async () => {
     refusedAsUsage(await owner(['search', 'embedder', 'set', '--kind', 'http', '--model', 'm']), '--url')
     refusedAsUsage(await owner(['search', 'embedder', 'set', '--kind', 'http', '--url', 'http://127.0.0.1:9']), '--model')
-    refusedAsUsage(await owner(['search', 'embedder', 'set', '--kind', 'http', '--url', 'http://127.0.0.1:9', '--model', 'm', '--key', 'sk-secret']), '--key-env')
+    refusedAsUsage(await owner(['search', 'embedder', 'set', '--kind', 'http', '--url', 'http://127.0.0.1:9', '--model', 'm', '--key', 'sk-secret']), '不认识 --key')
+    refusedAsUsage(await owner(['search', 'embedder', 'set', '--kind', 'http', '--url', 'http://127.0.0.1:9', '--model', 'm', '--key-env', 'MY_KEY']), '不认识 --key-env')
     refusedAsUsage(await owner(['search', 'embedder', 'set', '--kind', 'magic']), 'hash')
     expect(existsSync(join(lib, '.pneuma-base', 'search', 'embedder'))).toBe(false)
   })

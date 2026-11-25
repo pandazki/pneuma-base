@@ -1,7 +1,7 @@
 // What a deploy target is to the deploy kit: everything about publishing that depends on where the
 // sites go. The kit does the rest (declarations, the owner's switch, the plan, records, commands,
 // views, cognition). README.md in this folder.
-import type { ActionInput, Block, Cell, Instant, LibraryPath, PluginContext, TableColumn } from '../../types.js'
+import type { Block, Cell, FlagParam, Instant, LibraryPath, OwnerValues, ParamValues, PluginContext, SecretDecl, TableColumn } from '../../types.js'
 import type { ContentId, Held, SiteName, Standing, State } from './model.js'
 import type { Declared } from './facts.js'
 
@@ -17,17 +17,18 @@ export type PublishMeta = { readonly content: ContentId; readonly path: LibraryP
 /** A site a target serves now: the content it serves and where. */
 export type Served = { readonly content: ContentId; readonly url: string | null }
 
-/** The flags of `<name> target set`, read: a flag given empty, as a form's empty field, counts as not given. */
-export type TargetFlags = { value(flag: string): string | null; values(flag: string): string[] }
-
 /** A target's configuration as stored: a JSON object. The kit stores it with the adapter's `kind`. */
 export type TargetConfig = { readonly [key: string]: unknown }
 
 /** The configuration to store, or why the flags cannot give one: reason `usage` for a malformed call. */
 export type Configured = { ok: true; config: TargetConfig } | { ok: false; reason: string; text: string }
 
-/** What an opened target may use: the hook's or command's context, and a directory outside the library for its scratch. */
-export type TargetEnv = { readonly ctx: PluginContext; readonly scratch: string }
+/**
+ * What an opened target may use: the hook's or command's context, a directory outside the library for
+ * its scratch, and `secret(name)`, the value of a secret it declares, set by the owner on this
+ * machine. It rejects, naming the command that sets it, while the secret is not set.
+ */
+export type TargetEnv = { readonly ctx: PluginContext; readonly scratch: string; readonly secret: (name: string) => Promise<string> }
 
 /** One kind of target: how the owner configures it, and how a stored configuration opens. */
 export interface TargetAdapter {
@@ -35,16 +36,27 @@ export interface TargetAdapter {
   readonly kind: string
   /** What it publishes to, for people, as in `配部署目标：<label>`: `一个本地目录`. */
   readonly label: string
-  /** Its flags after `<name> target set` (and `--kind`), for help; optional ones in brackets: `--to <目录>`. */
-  readonly usage: string
-  readonly flags: readonly string[]
-  /** The page's button that sets it: one input per flag, named as the flag. */
-  readonly form: { readonly label: string; readonly inputs: readonly ActionInput[] }
-  /** The secrets it needs, by name, for the owner to set. Declared only: nothing reads them yet. */
-  readonly secrets?: readonly { readonly name: string; readonly label: string }[]
-  readonly configure: (flags: TargetFlags, ctx: PluginContext) => Promise<Configured>
+  /**
+   * Its flags after `<name> target set` and `--kind`. The command's params are made from them, so the
+   * command line, help, the page's form and the check before `configure` all come from here. With
+   * several kinds, a required flag is required once its kind is chosen.
+   */
+  readonly params: readonly FlagParam[]
+  /** The secrets it reads through `TargetEnv.secret`. The plugin declares them, so `secret set` and the configuration page know them. */
+  readonly secrets?: readonly SecretDecl[]
+  /** The configuration to store from the values of its flags, checked against `params`. */
+  readonly configure: (values: OwnerValues, ctx: PluginContext) => Promise<Configured>
   /** Parses a stored configuration at the boundary and opens it for one hook or command. Throws when it is not one of its configurations. */
   readonly open: (config: TargetConfig, env: TargetEnv) => Target
+}
+
+/** A target adapter whose `configure` gets the values typed by its `params`, as `defineCommand` gives a command's `run`. */
+export function defineTarget<const P extends readonly FlagParam[]>(
+  adapter: Omit<TargetAdapter, 'params' | 'configure'> & { readonly params: P; readonly configure: (values: ParamValues<{ flags: P }>, ctx: PluginContext) => Promise<Configured> },
+): TargetAdapter {
+  const { configure, ...rest } = adapter
+  // The kit calls `configure` only with values checked against `params`, the required ones given.
+  return { ...rest, configure: (values, ctx) => configure(values as ParamValues<{ flags: P }>, ctx) }
 }
 
 /** A configured target, opened for one hook or command. */

@@ -22,6 +22,28 @@ beforeEach(() => {
 const source = (files: Record<string, string>) => writePlugin(join(tempDir('pb-src-'), 'dist'), files)
 const install = (dir: string, env: Record<string, string> = {}) => sb.run(['plugin', 'install', dir, '--json'], { env })
 
+describe('an outside plugin whose command declares no params', () => {
+  const LOOSE = {
+    'package.json': '{ "type": "module" }\n',
+    'index.js': `export default { contract: 1, name: 'loose', cognition: null, storage: [], statements: [], ownerCommands: [
+  { name: 'loose go', summary: '', destructive: false, ownerOnly: false, run: async () => ({ outcome: 'done', text: '' }) },
+] }\n`,
+  }
+
+  it('is refused at install, and at add when put in place by hand, saying every command declares its arguments', () => {
+    const installed = install(source(LOOSE))
+    expect(installed.json()).toMatchObject({ outcome: 'refused', reason: 'plugin-failed-to-load' })
+    expect(installed.json().text).toContain('主人命令「loose go」没有 params：每条命令都声明它的参数，什么都不带的写 params: {}')
+    expect(existsSync(join(home, 'plugins', 'loose'))).toBe(false)
+
+    writePlugin(join(home, 'plugins', 'loose'), LOOSE)
+    const added = sb.run(['plugin', 'add', 'loose', '--library', lib, '--json'])
+    expect(added.json()).toMatchObject({ outcome: 'refused', reason: 'plugin-failed-to-load' })
+    expect(added.json().text).toContain('主人命令「loose go」没有 params')
+    expect(JSON.parse(readFileSync(join(lib, '.pneuma-base', 'config.json'), 'utf8')).plugins).toEqual(['ledger'])
+  })
+})
+
 describe('plugin install', () => {
   it('copies a plugin directory, with the modules it imports and its ui, onto this machine, and says its version', () => {
     const r = install(source(pager('第一版', '0.1.0')))

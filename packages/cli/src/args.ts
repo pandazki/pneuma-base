@@ -11,8 +11,8 @@ const GLOBAL: Record<string, FlagKind> = { library: 'value', as: 'value', sessio
 export const GLOBAL_FLAGS = Object.keys(GLOBAL)
 
 /**
- * How flags take values for owner commands that declare no `params`, and for `say`, whose arguments
- * are the plugins'. A flag this table does not know takes what follows it up to the next flag.
+ * How flags take values for `say`, whose arguments are the plugins', and for a flag written ahead of
+ * the command's words. A flag this table does not know takes what follows it up to the next flag.
  */
 export const UNDECLARED_FLAGS: Readonly<Record<string, FlagKind>> = {
   to: 'value',
@@ -120,7 +120,7 @@ export function leadingWords(line: Line): string[] {
 /**
  * The arguments after a command's `words`, read by the command's flags. `kinds` gives each flag the
  * command declares; a flag it does not declare is read as `undeclared` says: a switch the command
- * then refuses, a usage error, or, for a command that declares nothing, as the undeclared table says.
+ * then refuses, a usage error, or, for `say`, as the undeclared table says.
  */
 export function parseCommand(line: Line, words: number, kinds: Readonly<Record<string, FlagKind>>, undeclared: 'switch' | 'error' | 'table', command: string): Parsed {
   const flags: Flags = new Map(line.global)

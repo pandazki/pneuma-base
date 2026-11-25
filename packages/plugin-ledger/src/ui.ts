@@ -1,7 +1,8 @@
 // What the ledger shows in the management UI: its pages, and its section of the kernel's item
 // panel. Pure: built from the same fold, reconcile and views that inspect and check answer from.
-import { originalPath, shortDir, withSuffix, type Action, type ActionInput, type Block, type Cell, type Instant, type ItemSection, type LibraryPath, type Link, type Tag, type TableRow, type ViewAnswer, type ViewDecl } from '@pneuma-base/kernel'
+import { formOf, originalPath, shortDir, withSuffix, type Action, type ActionInput, type Block, type Cell, type Instant, type ItemSection, type LibraryPath, type Link, type Tag, type TableRow, type ViewAnswer, type ViewDecl } from '@pneuma-base/kernel'
 import type { Fact, LedgerOrigin, SceneId } from './facts.js'
+import { HELD_RESTORE } from './held.js'
 import { isArchived, type ItemRecord, type Ledger, type SceneRecord } from './fold.js'
 import type { ItemState, Mark, Standing } from './reconcile.js'
 import { actorNames, doingAt, factLine, MARK_LABEL, originLabel, SAID_LABEL, scenesNamed, shortScene, standingData, STATE_LABEL, when, who, type ItemView } from './views.js'
@@ -103,16 +104,11 @@ export const acceptAction = (path: string): Action => ({
   call: { face: 'agent', verb: 'say', request: { kind: 'revised', about: path, text: null, args: {} } },
 })
 
-/** Taking a held copy back to a new path: held restore. The suggested path is the item's with the old version's fingerprint in its name. */
-function restoreAction(v: ItemView, held: string, fingerprint: string): Action {
+/** Taking a held copy back to a new path: ledger held restore. The suggested path is the item's with the old version's fingerprint in its name. */
+function restoreAction(v: ItemView, fingerprint: string): Action {
   const base = v.archived ? (originalPath(v.path) ?? v.path) : v.path
-  return {
-    label: '取回到新路径',
-    tone: 'default',
-    confirm: null,
-    inputs: [input('to', '取回到', { value: withSuffix(base, fingerprint.slice(0, 8)), placeholder: `库里一个空着的路径；留存在 ${held}` })],
-    call: { face: 'owner', command: 'held restore', args: { positional: [v.item], flags: { fingerprint: [fingerprint], to: ['{to}'] } } },
-  }
+  const form = formOf(HELD_RESTORE, { fixed: { item: v.item, fingerprint }, values: { to: withSuffix(base, fingerprint.slice(0, 8)) } })
+  return { label: '取回到新路径', tone: 'default', confirm: null, ...form }
 }
 
 const ORIGIN_TONE: Record<LedgerOrigin['kind'], Tag['tone']> = { made: 'info', brought: 'neutral', adopted: 'warn' }
@@ -248,7 +244,7 @@ export function itemSection(v: ItemView): ItemSection {
       // Whose content it was, as the changes above show it; where it lies is the plugin's business.
       const ver = v.versions.find((x) => x.fingerprint === fingerprint)
       const note = !ver ? null : ver.by === 'owner' ? `主人直接改的那份内容，${who(ver.actor)} 代记` : `${who(ver.actor)} 放进来的那份内容`
-      return { cell: { text: `留存 ${fingerprint.slice(0, 8)}`, mono: true }, note, actions: [restoreAction(v, path, fingerprint)] }
+      return { cell: { text: `留存 ${fingerprint.slice(0, 8)}`, mono: true }, note, actions: [restoreAction(v, fingerprint)] }
     })
     blocks.push(counted('留存', items.length, [{ kind: 'text', text: '被新内容换下来的旧内容，给主人的保险。取回时复制到一个新路径，现在的内容不动。', tone: 'neutral' }, { kind: 'list', items }]))
   }

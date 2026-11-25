@@ -3,8 +3,16 @@
 import { createHash } from 'node:crypto'
 import { searchTerms } from '@pneuma-base/kernel'
 
-/** What the owner sets. `keyEnv` is the name of the environment variable that holds the key, never the key. */
-export type EmbedderConfig = { kind: 'hash' } | { kind: 'http'; url: string; model: string; keyEnv: string | null }
+/**
+ * What the owner sets. An http embedder's key is the plugin's secret `key`, on this machine and never
+ * in the library. `keyEnv`: the environment variable a record written before named for the key; it is
+ * read only to tell the owner the key now lives in the secret.
+ */
+export type EmbedderConfig = { kind: 'hash' } | { kind: 'http'; url: string; model: string; keyEnv?: string | null }
+
+/** The secret an http embedder sends as its bearer token, when the owner set it. */
+export const KEY_SECRET = 'key'
+export const SET_KEY = `pneuma-base secret set search ${KEY_SECRET}`
 
 export interface Embedder {
   /** Vectors from embedders with different ids are not compared; changing the embedder makes all vectors anew. */
@@ -12,8 +20,6 @@ export interface Embedder {
   /** One unit vector per text, in order. Rejects with a message that names what went wrong. */
   embed(texts: readonly string[]): Promise<Float32Array[]>
 }
-
-export type Env = Readonly<Record<string, string | undefined>>
 
 export const HASH_DIMENSIONS = 256
 const HTTP_TIMEOUT_MS = 30_000
@@ -80,14 +86,13 @@ function vectorsOf(body: unknown, count: number): Float32Array[] {
   return out
 }
 
-export function httpEmbedder(config: Extract<EmbedderConfig, { kind: 'http' }>, env: Env, timeoutMs = HTTP_TIMEOUT_MS): Embedder {
+/** `key`: the secret sent as the bearer token; null sends none. */
+export function httpEmbedder(config: Extract<EmbedderConfig, { kind: 'http' }>, key: string | null, timeoutMs = HTTP_TIMEOUT_MS): Embedder {
   const base = baseUrl(config.url)
   return {
     id: `http-${createHash('sha256').update(`${base}\n${config.model}`).digest('hex').slice(0, 16)}`,
     async embed(texts) {
       if (texts.length === 0) return []
-      const key = config.keyEnv === null ? null : env[config.keyEnv]
-      if (config.keyEnv !== null && !key) throw new Error(`环境变量 ${config.keyEnv} 没有设置，嵌入服务要用它作密钥`)
       let response: Response
       try {
         response = await fetch(`${base}/v1/embeddings`, {
@@ -106,13 +111,20 @@ export function httpEmbedder(config: Extract<EmbedderConfig, { kind: 'http' }>, 
   }
 }
 
-export function embedderFor(config: EmbedderConfig, env: Env): Embedder {
-  return config.kind === 'hash' ? hashEmbedder : httpEmbedder(config, env)
+export function embedderFor(config: EmbedderConfig, key: string | null): Embedder {
+  return config.kind === 'hash' ? hashEmbedder : httpEmbedder(config, key)
 }
 
-/** How the owner reads the embedder. */
-export function embedderLabel(config: EmbedderConfig | null): string {
+/** For a record that named an environment variable for the key while the secret is not set: where the key lives now. */
+export function movedKey(config: EmbedderConfig | null, key: boolean): string | null {
+  if (key || config?.kind !== 'http' || !config.keyEnv) return null
+  return `密钥原来取自环境变量 ${config.keyEnv}，现在放在这个插件的密钥里，不再读环境变量：用 ${SET_KEY} 设，值从标准输入读`
+}
+
+/** How the owner reads the embedder; `key`: whether its secret is set on this machine. */
+export function embedderLabel(config: EmbedderConfig | null, key: boolean): string {
   if (config === null) return '没配嵌入器，find 只按文字找'
   if (config.kind === 'hash') return 'hash：特征哈希，不用模型'
-  return `http：${config.model} @ ${baseUrl(config.url)}${config.keyEnv ? `，密钥在环境变量 ${config.keyEnv}` : ''}`
+  const moved = movedKey(config, key)
+  return `http：${config.model} @ ${baseUrl(config.url)}${key ? '，密钥已设' : moved ? `。${moved}` : ''}`
 }

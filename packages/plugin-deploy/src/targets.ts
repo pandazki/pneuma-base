@@ -5,12 +5,11 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { cp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import type { ActionInput, Instant, LibraryPath, PluginContext } from '@pneuma-base/sdk'
-import type { Configured, ContentId, SiteName, Target, TargetAdapter, TargetEnv } from '@pneuma-base/sdk/kit'
+import type { Instant, LibraryPath, PluginContext } from '@pneuma-base/sdk'
+import { defineTarget, type Configured, type ContentId, type SiteName, type Target, type TargetAdapter, type TargetEnv } from '@pneuma-base/sdk/kit'
 
 export const DEFAULT_TIMEOUT = 120
 
-const input = (name: string, label: string, placeholder: string): ActionInput => ({ name, label, placeholder, value: null, options: null })
 /** A malformed call; the command line shows it as a usage error. */
 const usage = (text: string): Configured => ({ ok: false, reason: 'usage', text })
 
@@ -31,15 +30,11 @@ async function overlaps(ctx: PluginContext, dir: string): Promise<boolean> {
 }
 
 /** `<to>/<site>/…` and `<to>/index.json`. A site is copied to a dot-named temporary name and swapped in. */
-export const dirTarget: TargetAdapter = {
+export const dirTarget: TargetAdapter = defineTarget({
   kind: 'dir',
   label: '一个本地目录',
-  usage: '--to <目录>',
-  flags: ['to'],
-  form: { label: '部署到本地目录', inputs: [input('to', '目录', '库外的一个目录')] },
-  async configure(flags, ctx) {
-    const to = flags.value('to')
-    if (to === null) return usage('--kind dir 要写 --to <目录>。')
+  params: [{ name: 'to', hint: '目录', kind: 'value', required: true }],
+  async configure({ to }, ctx) {
     const dir = resolve(ctx.session.cwd, to)
     if (await overlaps(ctx, dir)) return { ok: false, reason: 'inside-library', text: `部署目标不能在库里，也不能包含库：${dir}` }
     return { ok: true, config: { to: dir } }
@@ -48,7 +43,7 @@ export const dirTarget: TargetAdapter = {
     if (typeof config.to !== 'string') throw new Error('a dir target names its directory')
     return dirAt(config.to)
   },
-}
+})
 
 function dirAt(to: string): Target {
   const scratchName = (site: SiteName, kind: 'tmp' | 'old') => join(to, `.${kind}-${site}-${randomBytes(4).toString('hex')}`)
@@ -98,40 +93,28 @@ async function updateIndex(to: string, change: (sites: Index['sites']) => Index[
 type CommandConfig = { publish: string[]; unpublish: string[]; url: string | null; timeout: number }
 
 /** A command given as one string is split like a shell would; given as several words it is already argv. */
-function argv(values: string[]): string[] | null {
-  if (values.length === 0) return null
-  return values.length === 1 ? words(values[0] as string) : values
+function argv(values: readonly string[]): string[] {
+  return values.length === 1 ? words(values[0] as string) : [...values]
 }
 
 const strings = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.every((w) => typeof w === 'string')
 
 /** Runs the owner's commands without a shell, `{dir}` and `{name}` replaced in each word. Taking down gets an empty directory as `{dir}`. */
-export const commandTarget: TargetAdapter = {
+export const commandTarget: TargetAdapter = defineTarget({
   kind: 'command',
   label: '一对发布和下线的命令',
-  usage: '--publish "<命令>" --unpublish "<命令>" [--url <模板>] [--timeout <秒>]',
-  flags: ['publish', 'unpublish', 'url', 'timeout'],
-  form: {
-    label: '用命令部署',
-    inputs: [
-      input('publish', '发布命令', '比如 wrangler pages deploy {dir} --project-name {name}'),
-      input('unpublish', '下线命令', '比如 wrangler pages project delete {name} --yes'),
-      input('url', '地址模板（可不填）', '比如 https://{name}.pages.dev'),
-    ],
-  },
-  async configure(flags) {
-    let publish: string[] | null
-    let unpublish: string[] | null
+  params: [
+    { name: 'publish', hint: '发布命令，可用 {dir} {name}', kind: 'list', required: true },
+    { name: 'unpublish', hint: '下线命令，可用 {name}', kind: 'list', required: true },
+    { name: 'url', hint: '地址模板，可用 {name}', kind: 'value' },
+    { name: 'timeout', hint: '超时秒数', kind: 'value', pattern: '[1-9][0-9]*' },
+  ],
+  async configure({ publish, unpublish, url, timeout }) {
     try {
-      publish = argv(flags.values('publish'))
-      unpublish = argv(flags.values('unpublish'))
+      return { ok: true, config: { publish: argv(publish), unpublish: argv(unpublish), url, timeout: timeout === null ? DEFAULT_TIMEOUT : Number(timeout) } }
     } catch (error) {
       return usage(error instanceof Error ? error.message : String(error))
     }
-    if (publish === null || unpublish === null) return usage('--kind command 要写 --publish "<发布命令>" 和 --unpublish "<下线命令>"，命令里用 {dir} 和 {name}。')
-    const timeout = flags.value('timeout')
-    if (timeout !== null && !/^[1-9]\d*$/.test(timeout)) return usage(`--timeout 要写一个正整数，单位是秒：${timeout}`)
-    return { ok: true, config: { publish, unpublish, url: flags.value('url'), timeout: timeout === null ? DEFAULT_TIMEOUT : Number(timeout) } }
   },
   open(config, env) {
     if (!strings(config.publish) || !strings(config.unpublish)) throw new Error('a command target names its two commands')
@@ -139,7 +122,7 @@ export const commandTarget: TargetAdapter = {
     const timeout = typeof config.timeout === 'number' && config.timeout > 0 ? config.timeout : DEFAULT_TIMEOUT
     return commandsAt({ publish: config.publish, unpublish: config.unpublish, url, timeout }, env)
   },
-}
+})
 
 function commandsAt(config: CommandConfig, env: TargetEnv): Target {
   const run = (argv: string[], dir: string, site: SiteName) => runCommand(argv.map((w) => w.replaceAll('{dir}', dir).replaceAll('{name}', site)), env.ctx.library.root, config.timeout)

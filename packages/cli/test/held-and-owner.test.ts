@@ -48,15 +48,15 @@ describe('a new version over an old one (C6)', () => {
     expect(readFileSync(join(lib, data.held[0]))).toEqual(OLD)
   })
 
-  it('held list shows it; held restore gives the owner the same bytes at a new path, and refuses to overwrite', () => {
+  it('ledger held list shows it; ledger held restore gives the owner the same bytes at a new path, and refuses to overwrite', () => {
     ok(agent(['put', 'report.bin', '--to', 'report.bin', '--made']))
-    const list = ok(owner(['held', 'list']))
+    const list = ok(owner(['ledger', 'held', 'list']))
     expect(list.stdout).toContain('report.bin')
-    const refusedOver = owner(['held', 'restore', 'report.bin', '--to', 'report.bin'])
+    const refusedOver = owner(['ledger', 'held', 'restore', 'report.bin', '--to', 'report.bin'])
     expect(refusedOver.code).toBe(2)
     expect(readFileSync(join(lib, 'report.bin'))).toEqual(NEW)
 
-    ok(owner(['held', 'restore', 'report.bin', '--to', 'restored/report.bin']))
+    ok(owner(['ledger', 'held', 'restore', 'report.bin', '--to', 'restored/report.bin']))
     expect(readFileSync(join(lib, 'restored/report.bin'))).toEqual(OLD)
     const restored = sections(ok(agent(['inspect', 'restored/report.bin', '--json'])))[0]?.data
     expect(restored.origin).toMatchObject({ kind: 'brought', by: 'owner' })
@@ -80,17 +80,17 @@ describe('a new version over an old one (C6)', () => {
     expect(readFileSync(join(lib, 'report.bin'))).toEqual(OLD)
   })
 
-  it('held drop is refused in an agent session, through a grant, and without in-person confirmation', () => {
+  it('ledger held drop is refused in an agent session, through a grant, and without in-person confirmation', () => {
     ok(agent(['put', 'report.bin', '--to', 'report.bin', '--made']))
     const heldDir = join(lib, '.pneuma-base/ledger/held')
     for (const variable of ['PNEUMA_BASE_SESSION', 'CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID']) {
-      const r = owner(['held', 'drop'], { [variable]: 'x' })
+      const r = owner(['ledger', 'held', 'drop'], { [variable]: 'x' })
       expect(r.code).toBe(2)
       expect(r.stdout).toContain('agent-session')
     }
     ok(owner(['grant', 'issue', 'claude', '--agent', 'claude-code']))
-    expect(sb.run(['@claude', 'held', 'drop'], { cwd: outside }).stdout).toContain('agent-session')
-    const unconfirmed = owner(['held', 'drop'])
+    expect(sb.run(['@claude', 'ledger', 'held', 'drop'], { cwd: outside }).stdout).toContain('agent-session')
+    const unconfirmed = owner(['ledger', 'held', 'drop'])
     expect(unconfirmed.code).toBe(2)
     expect(unconfirmed.stdout).toContain('not-confirmed')
     expect(readdirSync(heldDir)).toHaveLength(1)

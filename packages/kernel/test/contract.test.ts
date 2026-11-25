@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import * as sdk from '@pneuma-base/sdk'
 import { describe, expect, it } from 'vitest'
 import * as kernel from '../src/index.js'
-import { fixture, outsideFile, plugin, tempDir } from './support.js'
+import { fixture, outsideFile, owner, plugin, session, tempDir } from './support.js'
 
 const brought = { kind: 'brought' as const, source: null, by: null }
 
@@ -48,7 +48,7 @@ describe('the loader of a plugin outside the repository', () => {
     cognition: { title: '回声', text: '## 回声' },
     storage: [{ dir: 'state', kind: 'body' }],
     statements: ['echo'],
-    ownerCommands: [{ name: 'echo now', summary: '', destructive: false, ownerOnly: false, run: 'RUN' }],
+    ownerCommands: [{ name: 'echo now', summary: '', params: {}, destructive: false, ownerOnly: false, run: 'RUN' }],
     views: [{ id: 'echo.page', title: '回声', icon: 'repeat', nav: true, filters: [] }],
     onSay: 'HOOK',
   }
@@ -84,11 +84,17 @@ describe('the loader of a plugin outside the repository', () => {
       [{ views: [{ id: 'other.page', title: '', icon: '', nav: true, filters: [] }] }, /视图 other\.page 不以 echo\. 开头/],
       [{ ownerCommands: [{ ...GOOD.ownerCommands[0], name: 'now' }] }, /主人命令「now」不以「echo 」开头/],
       [{ ownerCommands: [{ ...GOOD.ownerCommands[0], run: 'not a function' }] }, /run/],
+      [{ ownerCommands: [{ name: 'echo now', summary: '', destructive: false, ownerOnly: false, run: 'RUN' }] }, /主人命令「echo now」没有 params/],
       [{ onSay: 'not a function' }, /onSay 不是函数/],
       [{ statements: ['echo', 'echo'] }, /echo.*写了两次/],
       [{ version: 1 }, /version 不是文字/],
     ]
     for (const [parts, reason] of cases) expect(await why(parts), JSON.stringify(parts)).toMatch(reason)
+  })
+
+  it('checks a built-in plugin as it checks one of this machine: one that breaks a rule is a fault of this pneuma-base, and throws', async () => {
+    const odd = plugin('odd', { ownerCommands: [{ name: 'held list', summary: '', params: {}, destructive: false, ownerOnly: false, run: async () => ({ outcome: 'done', text: '' }) }] })
+    await expect(kernel.loadPlugins(tempDir('pb-k-home-'), new Map([['odd', odd]]))).rejects.toThrow(/自带插件 odd 过不了插件的核对：主人命令「held list」不以「odd 」开头/)
   })
 
   it('refuses a command name the kernel uses', async () => {
@@ -216,14 +222,14 @@ describe('the tools on a plugin’s context', () => {
 })
 
 describe('a name a plugin claims', () => {
-  const command = (name: string, text: string): sdk.OwnerCommand => ({ name, summary: '', destructive: false, ownerOnly: false, run: async () => ({ outcome: 'done', text }) })
+  const command = (name: string, text: string): sdk.OwnerCommand => ({ name, summary: '', params: {}, destructive: false, ownerOnly: false, run: async () => ({ outcome: 'done', text }) })
   const first = plugin('first', {
     statements: ['deployable'],
     onSay: async () => ({ outcome: 'heard', note: 'first heard' }),
     ownerCommands: [command('first on', 'first on')],
     views: [{ id: 'first.sites', title: '网站', icon: 'globe', nav: true, filters: [] }],
   })
-  // A built-in plugin is not checked by the loader, so it can share a command or view name with another.
+  // A table made without the loader can hold a plugin that shares a command or view name with another.
   const second = Object.freeze(plugin('second', {
     statements: ['deployable', 'second-only'],
     onSay: async () => ({ outcome: 'heard', note: 'second heard' }),
@@ -243,8 +249,23 @@ describe('a name a plugin claims', () => {
     expect(JSON.parse(f.read('.pneuma-base/config.json')).plugins).toEqual(['first'])
   })
 
+  it('cannot be taken at init either: init with two plugins that claim one name refuses, as plugin add would, and makes no library', async () => {
+    const root = join(tempDir(), 'lib')
+    const table = new Map<string, sdk.Plugin>([['first', first], ['second', second]])
+    const r = await kernel.initLibrary(root, { plugins: ['first', 'second'], table, actor: owner, session, home: tempDir('pb-k-home-') })
+    expect(r).toMatchObject({ outcome: 'refused', reason: 'name-taken' })
+    expect(r.text).toContain('插件 second 的「说」的种类「deployable」已归插件 first')
+    expect(existsSync(join(root, '.pneuma-base'))).toBe(false)
+  })
+
   it('in a configuration that already has a clash stays with the earlier plugin; the later one’s is left out and listed', async () => {
-    const f = await fixture([first, second])
+    const f = await fixture([first])
+    // Edited by hand, or synced from machines that installed one each.
+    f.write('.pneuma-base/config.json', JSON.stringify({ ...JSON.parse(f.read('.pneuma-base/config.json')), plugins: ['first', 'second'] }))
+    const library = await kernel.openLibrary(f.root, new Map<string, sdk.Plugin>([['first', first], ['second', second]]))
+    if (library === null) throw new Error('no library')
+    f.library = library
+    f.ctx = kernel.makeContext(library, owner, session, f.home)
     const said = await kernel.agentFace.say({ kind: 'deployable', about: null, text: null, args: {} }, f.ctx)
     expect(said).toMatchObject({ outcome: 'heard', by: 'first' })
     const listed = said.problems.filter((p) => p.plugin === 'second').map((p) => p.message)
@@ -306,8 +327,19 @@ describe('a plugin’s own lifecycle', () => {
     expect(refused).toMatchObject({ outcome: 'refused', reason: 'plugin-refused' })
     expect(refused.text).toContain(warning)
     expect(refused.text).toContain('--anyway')
+    // What the page offers beside the refusal: the same command with --anyway, asking first with the plugin's sentence.
+    if (refused.outcome !== 'refused') return
+    expect(refused.offer).toEqual({
+      label: '仍然卸下',
+      tone: 'danger',
+      confirm: `插件 holder 说：${warning}\n仍然卸下吗？`,
+      inputs: [],
+      call: { face: 'owner', command: 'plugin remove', args: { positional: ['holder'], flags: { anyway: true } } },
+    })
     expect(configured(f)).toEqual(['holder', 'thrower'])
-    const anyway = await remove('holder', { anyway: true })
+    const offered = refused.offer?.call
+    if (offered?.face !== 'owner') throw new Error('no owner call offered')
+    const anyway = await kernel.ownerFace.dispatch(calls(f, table), offered.command, offered.args)
     expect(anyway).toMatchObject({ outcome: 'done' })
     expect(anyway.text).toContain(warning)
     expect(configured(f)).toEqual(['thrower'])

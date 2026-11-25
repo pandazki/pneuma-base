@@ -13,6 +13,7 @@ export function describeEvent(event: Event): string {
 const clear: OwnerCommand = {
   name: 'recorder clear',
   summary: 'Forget every recorded event.',
+  params: {},
   destructive: true,
   ownerOnly: true,
   run: async (_args, ctx) => {
@@ -119,10 +120,11 @@ export const pager: Plugin = {
   statements: [],
   ui: fileURLToPath(new URL('./pager-ui/', import.meta.url)),
   ownerCommands: [
-    { name: 'pager ping', summary: 'Answer pong.', destructive: false, ownerOnly: false, run: async () => ({ outcome: 'done', text: 'pong' }) },
+    { name: 'pager ping', summary: 'Answer pong.', params: {}, destructive: false, ownerOnly: false, run: async () => ({ outcome: 'done', text: 'pong' }) },
     {
       name: 'pager bump',
       summary: 'Count one more.',
+      params: {},
       destructive: false,
       ownerOnly: false,
       run: async (_args, ctx) => {
@@ -131,8 +133,8 @@ export const pager: Plugin = {
         return { outcome: 'done', text: `计数是 ${next}` }
       },
     },
-    { name: 'pager restore', summary: 'Pretend to put a release back.', destructive: false, ownerOnly: false, run: async (args) => ({ outcome: 'done', text: `已放回第 ${String(args.flags.release)} 版` }) },
-    { name: 'pager prefix', summary: 'Pretend to set a prefix.', destructive: false, ownerOnly: false, run: async (args) => ({ outcome: 'done', text: `前缀是 ${args.positional[0] ?? ''}` }) },
+    { name: 'pager restore', summary: 'Pretend to put a release back.', params: { flags: [{ name: 'release', hint: '第几版', kind: 'value' }] }, destructive: false, ownerOnly: false, run: async (args) => ({ outcome: 'done', text: `已放回第 ${String(args.flags.release)} 版` }) },
+    { name: 'pager prefix', summary: 'Pretend to set a prefix.', params: { positional: [{ name: 'prefix', hint: '前缀' }] }, destructive: false, ownerOnly: false, run: async (args) => ({ outcome: 'done', text: `前缀是 ${args.positional[0] ?? ''}` }) },
   ],
   views: [
     { id: 'pager.blocks', title: '块的样例', icon: 'flask-conical', nav: true, filters: [] },

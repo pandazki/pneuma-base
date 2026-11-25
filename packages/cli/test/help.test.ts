@@ -19,7 +19,7 @@ describe('--help', () => {
   })
 
   it('with a library lists its plugins’ commands, and follows plugin add', () => {
-    expect(sb.run(['--help', '--library', lib]).stdout).toMatch(/ {2}held restore <库内路径\|条目号> \[--fingerprint <指纹>\] --to <库内路径>\n {6}把一份留存取回到一个新路径；只有主人能做（ledger）/)
+    expect(sb.run(['--help', '--library', lib]).stdout).toMatch(/ {2}ledger held restore <库内路径或条目号> \[--fingerprint <指纹>\] --to <新的库内路径>\n {6}把一份留存取回到一个新路径；只有主人能做（ledger）/)
     expect(sb.run(['--help', '--library', lib]).stdout).not.toContain('deploy on')
     expect(sb.run(['plugin', 'add', 'deploy', '--library', lib]).code).toBe(0)
     const r = sb.run(['--library', lib, '--help'])

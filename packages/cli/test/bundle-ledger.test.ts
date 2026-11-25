@@ -74,7 +74,7 @@ describe('a bundle with the ledger', () => {
     expect(changed.data).toMatchObject([{ path: 'sites/a' }])
   })
 
-  it('a new tree over it keeps the old tree; held restore gives it back byte for byte', () => {
+  it('a new tree over it keeps the old tree; ledger held restore gives it back byte for byte', () => {
     const old = filesOf(join(lib, 'sites/a'))
     write(outside, { 'site/index.html': '<h1>v2</h1>', 'site/about.html': 'about' })
     rmSync(join(outside, 'site/img'), { recursive: true })
@@ -83,8 +83,8 @@ describe('a bundle with the ledger', () => {
     expect(r.json().notes.map((n: any) => n.text).join('\n')).toContain('留存')
     expect(Object.keys(filesOf(join(lib, 'sites/a'))).sort()).toEqual(['.pneuma-item', 'about.html', 'css/site.css', 'index.html'])
 
-    expect(ok(owner(['held', 'list'])).stdout).toContain('sites/a')
-    ok(owner(['held', 'restore', 'sites/a', '--to', 'restored/a']))
+    expect(ok(owner(['ledger', 'held', 'list'])).stdout).toContain('sites/a')
+    ok(owner(['ledger', 'held', 'restore', 'sites/a', '--to', 'restored/a']))
     expect(filesOf(join(lib, 'restored/a'))).toEqual(old)
     const restored = ok(agent(['inspect', 'restored/a', '--json']))
     expect(restored.json().file).toMatchObject({ kind: 'bundle', files: 3 })

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { CONTRACT, pluginName, type Plugin } from '@pneuma-base/kernel'
 import { searchCommands } from './commands.js'
+import { KEY_SECRET } from './embed.js'
 import { findHits } from './search.js'
 import { itemSection, STATUS_VIEW, statusView } from './views.js'
 
@@ -16,6 +17,7 @@ export const search: Plugin = {
   storage: [{ dir: 'embedder', kind: 'body' }],
   statements: [],
   ownerCommands: searchCommands,
+  secrets: [{ name: KEY_SECRET, description: 'http 嵌入服务的密钥，作 Bearer 令牌发给它；服务不要密钥就不用设' }],
   views: [{ id: STATUS_VIEW, title: '查找', icon: 'search', nav: true, filters: [] }],
 
   onFind: findHits,
