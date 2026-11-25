@@ -74,9 +74,9 @@ describe('an owner-only command', () => {
     expect(ran).toBe(1)
   })
 
-  it('covers the kernel’s grant and plugin commands, but not skill install', () => {
+  it('covers the kernel’s grant, plugin and secret commands, but not skill install or plugin list', () => {
     const owners = ownerFace.commands([]).filter((c) => c.ownerOnly).map((c) => c.name)
-    expect(owners).toEqual(['grant issue', 'grant revoke', 'plugin add', 'plugin remove', 'archive purge'])
+    expect(owners).toEqual(['grant issue', 'grant revoke', 'plugin add', 'plugin remove', 'archive purge', 'plugin install', 'plugin uninstall', 'secret set', 'secret list', 'secret remove'])
   })
 })
 
@@ -121,7 +121,8 @@ describe('the owner face’s one entry', () => {
     })
     const f = await fixture([shadow])
     const names = ownerFace.commands(f.library.plugins).map((c) => `${c.by}:${c.name}`)
-    expect(names).toEqual(['kernel:grant issue', 'kernel:grant revoke', 'kernel:plugin add', 'kernel:plugin remove', 'kernel:skill install', 'kernel:archive purge', 'shadow:shadow list'])
+    const kernel = ['grant issue', 'grant revoke', 'plugin add', 'plugin remove', 'skill install', 'archive purge', 'plugin install', 'plugin uninstall', 'plugin list', 'secret set', 'secret list', 'secret remove']
+    expect(names).toEqual([...kernel.map((n) => `kernel:${n}`), 'shadow:shadow list'])
     expect(await ownerFace.dispatch(call(f), 'shadow list', NO_ARGS)).toMatchObject({ outcome: 'done', text: 'listed' })
     expect(await ownerFace.dispatch(call(f, { confirm: async () => false }), 'archive purge', NO_ARGS)).toMatchObject({ outcome: 'refused', reason: 'not-confirmed' })
   })
@@ -134,11 +135,14 @@ describe('the owner face’s one entry', () => {
     expect(events).toEqual([])
   })
 
-  it('answers a malformed call with a usage refusal', async () => {
+  it('answers a malformed call with a usage refusal that ends with the usage line made from the params', async () => {
     const f = await fixture()
-    expect(await ownerFace.dispatch(call(f), 'grant issue', { positional: ['g'], flags: {} })).toMatchObject({ outcome: 'refused', reason: 'usage', text: expect.stringContaining('--agent') })
-    expect(await ownerFace.dispatch(call(f), 'grant issue', { positional: ['g'], flags: { agent: ['x'], color: ['red'] } })).toMatchObject({ reason: 'usage', text: 'grant issue 不认识 --color' })
-    expect(await ownerFace.dispatch(call(f), 'plugin add', NO_ARGS)).toMatchObject({ reason: 'usage', text: 'plugin add 的参数个数不对' })
+    const usage = '用法：grant issue <授权名> --agent <给谁> [--area <子文件夹>] [--read-only]'
+    expect(await ownerFace.dispatch(call(f), 'grant issue', { positional: ['g'], flags: {} })).toMatchObject({ outcome: 'refused', reason: 'usage', text: `要写 --agent <给谁>。\n${usage}` })
+    expect(await ownerFace.dispatch(call(f), 'grant issue', { positional: ['g'], flags: { agent: ['x'], color: ['red'] } })).toMatchObject({ reason: 'usage', text: `grant issue 不认识 --color。\n${usage}` })
+    expect(await ownerFace.dispatch(call(f), 'grant issue', { positional: ['G!'], flags: { agent: ['x'] } })).toMatchObject({ reason: 'usage', text: expect.stringContaining('<授权名> 写的「G!」不对') })
+    expect(await ownerFace.dispatch(call(f), 'plugin add', NO_ARGS)).toMatchObject({ reason: 'usage', text: 'plugin add 少了 <插件名>。\n用法：plugin add <插件名>' })
+    expect(await ownerFace.dispatch(call(f), 'plugin add', { positional: ['a', 'b'], flags: {} })).toMatchObject({ reason: 'usage', text: expect.stringContaining('plugin add 多了参数：b。') })
   })
 
   it('takes a form’s empty area as the whole library and its read-only choice as a value', async () => {

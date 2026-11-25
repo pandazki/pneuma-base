@@ -225,6 +225,8 @@ export function ActionDialog({ action, preset = {}, onCancel, onSubmit }: { acti
                       <input
                         className="field font-normal"
                         name={input.name}
+                        type={input.secret ? 'password' : 'text'}
+                        autoComplete={input.secret ? 'off' : undefined}
                         value={values[input.name] ?? ''}
                         placeholder={input.placeholder ?? undefined}
                         aria-invalid={wrong.has(input.name) || undefined}

@@ -7,14 +7,17 @@ import type { AddressInfo } from 'node:net'
 import { extname, isAbsolute, join, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openLibrary, type Env, type PluginTable } from '@pneuma-base/kernel'
-import { call, init, state, view, type Reply, type Served } from './api.js'
+import { call, init, state, tableOf, view, type Reply, type Served } from './api.js'
 import { libraryFile, pluginUiFile, revision } from './files.js'
 
 export type ServerOptions = {
   dir: string
-  /** The plugins this pneuma-base knows. The server imports none itself. */
-  table: PluginTable
-  /** Where local grant copies live, as for the command line. */
+  /**
+   * The plugins built into the caller. The server imports none itself; this machine's own plugins in
+   * `home/plugins/` join them on every request, so a changed plugin is used without a restart.
+   */
+  builtins: PluginTable
+  /** This machine's `$PNEUMA_BASE_HOME`: grant copies, plugins, caches and secrets, as for the command line. */
   home: string
   env: Env
   /** 0 or absent: a free port. */
@@ -86,7 +89,7 @@ const sameToken = (given: string | null, token: string) => given !== null && giv
 
 /** A library file as it is, typed so the browser never runs it: no HTML, no scripts, sandboxed. */
 async function sendLibraryFile(res: ServerResponse, served: Served, query: URLSearchParams): Promise<void> {
-  const library = await openLibrary(served.dir, served.table)
+  const library = await openLibrary(served.dir, await tableOf(served))
   if (!library) return sendJson(res, { status: 409, json: { error: 'not-a-library' } })
   const file = await libraryFile(library.root, query.get('path') ?? '')
   if (!file) return sendJson(res, { status: 404, json: { error: 'no such file in the content or the archive' } })
@@ -144,7 +147,7 @@ async function staticFile(res: ServerResponse, webRoot: string, pathname: string
 /** A file of an installed plugin's `ui` directory, for its `custom` blocks' frames. No token: a frame never holds it. */
 async function pluginUi(res: ServerResponse, served: Served, pathname: string): Promise<void> {
   const [name = '', ...rest] = pathname.slice(PLUGIN_UI.length).split('/')
-  const library = await openLibrary(served.dir, served.table)
+  const library = await openLibrary(served.dir, await tableOf(served))
   const ui = library?.plugins.find((p) => p.name === name)?.ui
   const file = typeof ui === 'string' && isAbsolute(ui) ? await pluginUiFile(ui, rest.join('/')) : null
   if (file === null) return sendJson(res, { status: 404, json: { error: 'not found' } })
@@ -165,7 +168,7 @@ async function pluginUi(res: ServerResponse, served: Served, pathname: string): 
  */
 export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const token = randomBytes(16).toString('hex')
-  const served: Served = { dir: opts.dir, table: opts.table, home: opts.home, env: opts.env }
+  const served: Served = { dir: opts.dir, builtins: opts.builtins, home: opts.home, env: opts.env }
   const webRoot = opts.webRoot ?? WEB_ROOT
   let hosts: ReadonlySet<string> = new Set()
 

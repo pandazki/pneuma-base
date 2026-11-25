@@ -1,6 +1,7 @@
 // What the owner and the UI see of the index: its status, and what it has of one thing. These only
 // read; nothing here builds or changes the index.
-import { abs, bundleFiles, thingAt, type Action, type Block, type Instant, type ItemSection, type LibraryPath, type OwnerArgs, type PluginContext, type ViewAnswer } from '@pneuma-base/kernel'
+import { abs, bundleFiles, formOf, thingAt, type Action, type Block, type Instant, type ItemSection, type LibraryPath, type OwnerArgs, type PluginContext, type ViewAnswer } from '@pneuma-base/kernel'
+import { SET_EMBEDDER } from './commands.js'
 import { currentEmbedder } from './config.js'
 import { embedderFor, embedderLabel, type EmbedderConfig } from './embed.js'
 import { freshness, type Stamp } from './fresh.js'
@@ -52,15 +53,12 @@ const owner = (command: string, flags: OwnerArgs['flags'] = {}) => ({ face: 'own
 const action = (label: string, call: Action['call'], inputs: Action['inputs'] = []): Action => ({ label, tone: 'default', confirm: null, inputs, call })
 const field = (label: string, text: string, mono = false) => ({ label, value: mono ? { text, mono } : { text } })
 
+/** The form of `search embedder set`, made from its params, filled with the embedder in force. */
 function setAction(current: EmbedderConfig | null): Action {
   const http = current?.kind === 'http' ? current : null
-  const input = (name: string, label: string, placeholder: string, value: string | null) => ({ name, label, placeholder, value, options: null })
-  return action('设嵌入器', owner('search embedder set', { kind: ['{kind}'], url: ['{url}'], model: ['{model}'], 'key-env': ['{keyEnv}'] }), [
-    { name: 'kind', label: '种类', placeholder: null, value: current?.kind ?? 'hash', options: [{ value: 'hash', label: 'hash：特征哈希，不用模型' }, { value: 'http', label: 'http：OpenAI 兼容的 /v1/embeddings' }] },
-    input('url', '地址（http）', 'http://127.0.0.1:11434', http?.url ?? null),
-    input('model', '模型（http）', 'nomic-embed-text', http?.model ?? null),
-    input('keyEnv', '存密钥的环境变量名（http，可不填）', 'OPENAI_API_KEY', http?.keyEnv ?? null),
-  ])
+  const values = { kind: current?.kind ?? 'hash', ...(http ? { url: http.url, model: http.model, ...(http.keyEnv ? { 'key-env': http.keyEnv } : {}) } : {}) }
+  const { inputs, call } = formOf(SET_EMBEDDER, { values })
+  return action('设嵌入器', call, inputs)
 }
 
 export async function statusView(ctx: PluginContext): Promise<ViewAnswer> {
