@@ -451,13 +451,14 @@ export type TableRow = { key: string; cells: Record<string, Cell>; link: Link | 
 export type TableColumn = { key: string; label: string; optional?: boolean }
 
 /**
- * A section with `collapse` can be folded by the viewer; the value is how it starts. `embed`: an
+ * A section with `collapse` can be folded by the viewer; the value is how it starts. A section of the
+ * item panel carries `plugin`, the plugin whose part it is, stamped by the kernel. `embed`: an
  * outside http or https page in a sandboxed frame. `custom`: a page of the plugin's own, `entry`
  * relative to its `ui` directory, sent `data` and the names of `actions`, which it may ask to run;
  * `plugin` is stamped by the kernel.
  */
 export type Block =
-  | { kind: 'section'; title: string; note: string | null; count: number | null; blocks: Block[]; actions: Action[]; collapse?: 'open' | 'closed' }
+  | { kind: 'section'; title: string; note: string | null; count: number | null; blocks: Block[]; actions: Action[]; collapse?: 'open' | 'closed'; plugin?: PluginName }
   | { kind: 'table'; columns: TableColumn[]; rows: TableRow[]; empty: string }
   | { kind: 'fields'; fields: { label: string; value: Cell }[] }
   | { kind: 'list'; items: { cell: Cell; note: string | null; actions: Action[] }[] }

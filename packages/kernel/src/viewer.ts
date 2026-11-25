@@ -24,6 +24,7 @@ import {
   type LibraryPath,
   type Link,
   type Plugin,
+  type PluginName,
   type PluginProblem,
   type PluginTable,
   type TableRow,
@@ -320,7 +321,8 @@ async function takenBack(root: string, target: string) {
 const answered = (a: unknown): a is { title: string; blocks: Block[] } =>
   typeof a === 'object' && a !== null && typeof (a as { title?: unknown }).title === 'string' && Array.isArray((a as { blocks?: unknown }).blocks)
 
-const section = (title: string, blocks: Block[]): Block => ({ kind: 'section', title, note: null, count: null, blocks, actions: [] })
+/** A section of the item panel; a plugin's part is stamped with the plugin's name. */
+const section = (title: string, blocks: Block[], plugin?: PluginName): Block => ({ kind: 'section', title, note: null, count: null, blocks, actions: [], ...(plugin === undefined ? {} : { plugin }) })
 
 /** Each installed plugin's section about `path`, in configuration order. A plugin that fails gets a section that says so (K8). */
 async function pluginSections(ctx: Context, path: LibraryPath): Promise<{ blocks: Block[]; problems: PluginProblem[] }> {
@@ -333,12 +335,12 @@ async function pluginSections(ctx: Context, path: LibraryPath): Promise<{ blocks
       if (answer === null) continue
       if (!answered(answer)) throw new Error('onItemView answered something that is not a section')
       const checked = checkBlocks(answer.blocks, plugin)
-      blocks.push(section(answer.title, checked.blocks))
+      blocks.push(section(answer.title, checked.blocks, plugin.name))
       problems.push(...checked.problems)
     } catch (error) {
       const message = messageOf(error)
       problems.push({ plugin: plugin.name, message })
-      blocks.push(section(`插件 ${plugin.name}`, [{ kind: 'empty', title: `插件 ${plugin.name} 出错了，没能给出它知道的`, hint: message }]))
+      blocks.push(section(`插件 ${plugin.name}`, [{ kind: 'empty', title: `插件 ${plugin.name} 出错了，没能给出它知道的`, hint: message }], plugin.name))
     }
   }
   return { blocks, problems }
