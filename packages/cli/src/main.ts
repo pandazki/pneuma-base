@@ -345,7 +345,8 @@ const SPECS: Spec[] = [
       }
       const where = r.packages === null ? ['没找到两个包文件，package.json 按包名依赖它们，发布之后才装得上；要现在用，加 --packages <目录> 指向 pnpm pack:dist 打出的包文件。'] : []
       const next = [`cd ${dir}`, 'npm install', 'npm test', 'npm run install-local', `npx -- pneuma-base plugin add ${r.name} --library <库的目录>`]
-      const lines = [`已在 ${dir} 生成插件 ${r.name}（${r.kind}），${r.files.length} 个文件，README.md 说每个是什么。`, ...where, '接着：', ...next.map((l) => `  ${l}`)]
+      const standard = `插件规范：${r.standard ?? 'npm install 之后在 node_modules/pneuma-base/PLUGINS.md'}`
+      const lines = [`已在 ${dir} 生成插件 ${r.name}（${r.kind}），${r.files.length} 个文件，README.md 说每个是什么。`, standard, ...where, '接着：', ...next.map((l) => `  ${l}`)]
       return { json: { outcome: 'done', problems: [], ...r }, lines, exit: 0 }
     },
   },

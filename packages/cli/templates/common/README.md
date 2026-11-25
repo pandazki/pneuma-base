@@ -41,4 +41,4 @@ async setup({ sandbox }) {
 
 ## 标准在哪
 
-插件要守的规矩写在 `PLUGINS.md` 里，它随命令行的包装在这个项目的 `node_modules/pneuma-base/PLUGINS.md`。能跑的规矩在 `test/conformance.test.ts` 里跑成检查，每条的规矩写在它不通过时的报告里；查不了的列在报告最后，要自己看。
+插件规范是命令行包里的 `PLUGINS.md`：`npm install` 之后在 `node_modules/pneuma-base/PLUGINS.md`。它说插件必须做什么、可以依赖什么，每件能做的事都有一个能跑的例子。能跑的规矩在 `test/conformance.test.ts` 里跑成检查，不通过时报告说哪里不对、规则是什么；查不了的列在报告最后，要自己看。

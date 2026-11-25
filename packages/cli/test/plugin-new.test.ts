@@ -2,6 +2,7 @@
 // build and tests run in scaffold.slow.test.ts.
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { PNEUMA_BASE_VERSION } from '@pneuma-base/kernel'
 import { sandbox, tempDir } from './helpers.js'
@@ -25,6 +26,17 @@ describe('plugin new', () => {
     expect(index).not.toContain('{{name}}')
     expect(readFileSync(join(project, 'src/cognition.md'), 'utf8')).toContain('pneuma-base @{{授权的名字}} say marks notes/plan.md')
     expect(readFileSync(join(project, 'README.md'), 'utf8')).toContain('| `src/ui/panel.html` |')
+    expect(readFileSync(join(project, 'README.md'), 'utf8')).toContain('node_modules/pneuma-base/PLUGINS.md')
+  })
+
+  it('names the plugin standard that ships with this command line, in its answer and in --json', () => {
+    const standard = fileURLToPath(new URL('../../../PLUGINS.md', import.meta.url))
+    const project = join(tempDir('pb-new-'), 'named')
+    const r = sb.run(['plugin', 'new', project, '--packages', packages])
+    expect(r.code, r.stderr).toBe(0)
+    expect(r.stdout).toContain(`插件规范：${standard}`)
+    const again = sb.run(['plugin', 'new', join(tempDir('pb-new-'), 'named'), '--packages', packages, '--json'])
+    expect(again.json().standard).toBe(standard)
   })
 
   it('writes the deploy kind with its target', () => {

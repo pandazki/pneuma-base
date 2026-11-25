@@ -14,11 +14,17 @@ const TEMPLATES = fileURLToPath(new URL('../templates/', import.meta.url))
 const OWN_PACKAGES = fileURLToPath(new URL('../../../dist-packages/', import.meta.url))
 const PACKAGE_FILES = { 'pneuma-base': `pneuma-base-${PNEUMA_BASE_VERSION}.tgz`, '@pneuma-base/sdk': `pneuma-base-sdk-${PNEUMA_BASE_VERSION}.tgz` }
 
+/**
+ * The plugin standard: at the root of the package file this command line was installed from, or at
+ * the root of the repository it was built in. A project finds it in node_modules/pneuma-base/.
+ */
+export const STANDARD = ['../PLUGINS.md', '../../../PLUGINS.md'].map((p) => fileURLToPath(new URL(p, import.meta.url))).find((p) => existsSync(p)) ?? null
+
 /** What a project needs from the registry: the bundler, the type checker, and Node's types. */
 const TOOLS = { esbuild: '0.28.2', typescript: '6.0.3', '@types/node': '26.6.10' }
 
 export type Scaffolded =
-  | { ok: true; dir: string; name: string; kind: Kind; files: string[]; packages: string | null }
+  | { ok: true; dir: string; name: string; kind: Kind; files: string[]; packages: string | null; standard: string | null }
   | { ok: false; reason: 'usage' | 'not-empty' | 'no-package-files'; text: string }
 
 const hasPackageFiles = (dir: string) => Object.values(PACKAGE_FILES).every((file) => existsSync(join(dir, file)))
@@ -62,7 +68,7 @@ export function scaffold(opts: { dir: string; kind: Kind; name: string | null; p
     engines: { node: `>=${NODE_FLOOR}` },
     scripts: {
       build: 'tsc && node scripts/build.mjs',
-      test: 'npm run build && node --test "test/*.test.ts"',
+      test: 'npm run build && node --test --test-reporter=spec "test/*.test.ts"',
       'install-local': 'npm run build && pneuma-base plugin install dist',
     },
     devDependencies: { '@pneuma-base/sdk': dependency('@pneuma-base/sdk'), 'pneuma-base': dependency('pneuma-base'), ...TOOLS },
@@ -76,5 +82,5 @@ export function scaffold(opts: { dir: string; kind: Kind; name: string | null; p
     mkdirSync(dirname(join(opts.dir, path)), { recursive: true })
     writeFileSync(join(opts.dir, path), text)
   }
-  return { ok: true, dir: opts.dir, name, kind: opts.kind, files: [...written.keys()].sort(), packages }
+  return { ok: true, dir: opts.dir, name, kind: opts.kind, files: [...written.keys()].sort(), packages, standard: STANDARD }
 }
