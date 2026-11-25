@@ -1,10 +1,10 @@
 // What a library path holds as one thing: a regular file, or a directory with the marker (a
 // bundle). ARCHITECTURE "一个目录算一样东西". The kernel owns the marker and the fingerprint.
 import { createHash } from 'node:crypto'
-import { copyFile, mkdir, readdir, stat, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fingerprintOfFile } from './files.js'
-import { abs, DESCRIPTION_FILE, KERNEL_DIR } from './paths.js'
+import { abs, canonical, DESCRIPTION_FILE, KERNEL_DIR } from './paths.js'
 import type { BundleFile, Fingerprint, Instant, LibraryPath, ManifestEntry, Thing, ThingKind } from '@pneuma-base/sdk'
 
 /** The file that makes a directory one thing. */
@@ -14,13 +14,19 @@ const MARKER_TEXT = `${JSON.stringify({ format: 1 })}\n`
 /** Names a bundle's fingerprint never counts and a put never copies in, at any depth. */
 const LEFT_OUT: ReadonlySet<string> = new Set([BUNDLE_MARKER, '.git', 'node_modules', '.DS_Store'])
 
-/** What is at a path on disk: a thing, a directory without the marker, something else, or nothing. */
+/**
+ * What is at a path on disk: a thing, a directory without the marker, something else, or nothing.
+ * A symbolic link is something else, and so is whatever lies behind one: no listing of the library
+ * descends into a link, so no thing of it is one or lies behind one. `path` is a real path but for
+ * the links this looks for.
+ */
 export async function kindAt(path: string): Promise<ThingKind | 'folder' | 'other' | null> {
-  const s = await stat(path).catch(() => null)
+  if (canonical(dirname(path)) !== dirname(path)) return 'other'
+  const s = await lstat(path).catch(() => null)
   if (s === null) return null
   if (s.isFile()) return 'file'
   if (!s.isDirectory()) return 'other'
-  return (await stat(join(path, BUNDLE_MARKER)).catch(() => null))?.isFile() ? 'bundle' : 'folder'
+  return (await lstat(join(path, BUNDLE_MARKER)).catch(() => null))?.isFile() ? 'bundle' : 'folder'
 }
 
 /** The thing at `path`; null when there is no regular file and no bundle there. */

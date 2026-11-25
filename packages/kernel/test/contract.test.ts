@@ -1,6 +1,6 @@
 // The plugin contract as a third party builds against it: the sdk's root export, re-exported by the kernel.
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as sdk from '@pneuma-base/sdk'
 import { describe, expect, it } from 'vitest'
@@ -207,6 +207,53 @@ describe('the tools on a plugin’s context', () => {
     await expect(t.copyOut('notes/a.md' as sdk.LibraryPath, join(f.root, 'copied'))).rejects.toThrow()
     expect(existsSync(join(f.root, 'copied'))).toBe(false)
     expect(await t.copyOut('gone.md' as sdk.LibraryPath, join(tempDir('pb-k-stage-'), 'x'))).toBeNull()
+  })
+
+  it('answer what a path names without asking whether something is there', async () => {
+    const { f, ctx } = await probe()
+    const t = ctx.tools
+    expect(await t.resolve('notes/absent.md')).toEqual({ path: 'notes/absent.md', region: 'content', bundle: null })
+    expect(await t.thing('notes/absent.md' as sdk.LibraryPath)).toBeNull()
+    for (const input of ['', '.', '..', '../x.md', f.root, join(f.root, '..', 'x.md')]) expect(await t.resolve(input), input).toBeNull()
+  })
+
+  it('agree with each other and with the verbs that a symbolic link in the library is no thing: none follows one', async () => {
+    const { f, ctx } = await probe()
+    const t = ctx.tools
+    const outside = tempDir('pb-k-outside-')
+    writeFileSync(join(outside, 'o.md'), 'outside')
+    mkdirSync(join(outside, 'dir'))
+    writeFileSync(join(outside, 'dir', 'x.md'), 'x')
+    symlinkSync(join(f.root, 'notes', 'a.md'), join(f.root, 'alias.md'))
+    symlinkSync(join(outside, 'o.md'), join(f.root, 'out.md'))
+    symlinkSync(join(outside, 'dir'), join(f.root, 'outdir'))
+    symlinkSync(join(f.root, 'notes'), join(f.root, 'notelink'))
+    symlinkSync(join(f.root, 'site'), join(f.root, 'sitelink'))
+    symlinkSync(join(f.root, 'notes', 'a.md'), join(f.root, 'site', 'inlink.md'))
+
+    expect(await t.things()).toEqual(['_archive/old.md', 'notes/a.md', 'site'])
+    expect((await t.files('site' as sdk.LibraryPath))?.map((file) => file.path)).toEqual(['index.html'])
+    const linked = ['alias.md', 'out.md', 'outdir', 'outdir/x.md', 'notelink/a.md', 'sitelink', 'site/inlink.md'] as sdk.LibraryPath[]
+    for (const path of linked) {
+      expect(await t.thing(path), path).toBeNull()
+      expect(await t.fingerprint(path), path).toBeNull()
+      expect(await t.files(path), path).toBeNull()
+      expect(await t.manifest(path), path).toBeNull()
+      expect(await t.copyOut(path, join(tempDir('pb-k-stage-'), 'copy')), path).toBeNull()
+    }
+    for (const path of ['alias.md', 'notelink/a.md', 'outdir/x.md']) {
+      expect(await t.resolve(path), path).toMatchObject({ path })
+      expect(await t.resolve(join(f.root, path)), path).toMatchObject({ path })
+    }
+
+    const put = (req: sdk.PutRequest) => kernel.agentFace.put(req, ctx)
+    expect(await put({ kind: 'register', path: 'alias.md', origin: brought })).toMatchObject({ outcome: 'refused', reason: 'no-such-file' })
+    expect(await put({ kind: 'register', path: 'notelink/a.md', origin: brought })).toMatchObject({ outcome: 'refused', reason: 'no-such-file' })
+    expect(await put({ kind: 'move', from: 'out.md', to: 'moved.md' })).toMatchObject({ outcome: 'refused', reason: 'no-such-file' })
+    expect(await put({ kind: 'place', from: { kind: 'file', path: outsideFile('new') }, to: 'outdir/new.md', origin: brought })).toMatchObject({ outcome: 'refused', reason: 'would-overwrite' })
+    expect(existsSync(join(outside, 'dir', 'new.md'))).toBe(false)
+    expect(await kernel.agentFace.archive({ kind: 'archive', path: 'alias.md' }, ctx)).toMatchObject({ outcome: 'refused', reason: 'no-such-file' })
+    expect(await kernel.agentFace.inspect({ target: 'out.md' }, ctx)).toMatchObject({ file: null })
   })
 
   it('split and rank find terms as the kernel does, and put through the agent face so every plugin hears it', async () => {

@@ -94,7 +94,7 @@ async function place(req: Extract<PutRequest, { kind: 'place' }>, ctx: Context):
   const from = req.from
   if (from.kind === 'file' && !(await regularFile(from.path))) return refuse('no-such-file', from.path)
   if (from.kind === 'directory') {
-    const kind = await kindAt(from.path)
+    const kind = await kindAt(canonical(resolve(from.path)))
     if (kind !== 'folder' && kind !== 'bundle') return refuse('no-such-file', from.path)
     if (overlapsLibrary(root, from.path)) return refuse('outside-library', from.path)
   }
