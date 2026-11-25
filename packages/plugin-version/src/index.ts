@@ -3,6 +3,7 @@ import {
   abs,
   archivedPath,
   CONTRACT,
+  PNEUMA_BASE_VERSION,
   pluginName,
   regionOf,
   thingAt,
@@ -94,6 +95,8 @@ function purged(event: Event): LibraryPath[] {
 export const version: Plugin = {
   contract: CONTRACT,
   name: pluginName('version'),
+  version: PNEUMA_BASE_VERSION,
+  summary: '声明了有版本的东西，每一版的内容都留着，能列出、导出、放回。',
   cognition: { title: '版本', text: readFileSync(new URL('../cognition/version-section.md', import.meta.url), 'utf8') },
   keeps: 'some',
   storage: [

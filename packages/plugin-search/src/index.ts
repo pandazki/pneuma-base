@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { CONTRACT, pluginName, type Plugin } from '@pneuma-base/kernel'
+import { CONTRACT, PNEUMA_BASE_VERSION, pluginName, type Plugin } from '@pneuma-base/kernel'
 import { searchCommands } from './commands.js'
 import { KEY_SECRET } from './embed.js'
 import { findHits } from './search.js'
@@ -13,6 +13,8 @@ import { itemSection, STATUS_VIEW, statusView } from './views.js'
 export const search: Plugin = {
   contract: CONTRACT,
   name: pluginName('search'),
+  version: PNEUMA_BASE_VERSION,
+  summary: '在文本文件的正文里找，按相关度排；主人配了嵌入器时也按意思找。',
   cognition: { title: '查找', text: readFileSync(new URL('../cognition/search-section.md', import.meta.url), 'utf8') },
   storage: [{ dir: 'embedder', kind: 'body' }],
   statements: [],

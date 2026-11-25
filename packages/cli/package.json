@@ -1,6 +1,6 @@
 {
   "name": "@pneuma-base/cli",
-  "version": "0.1.0",
+  "version": "0.9.0",
   "private": true,
   "type": "module",
   "bin": {
@@ -23,5 +23,8 @@
     "@pneuma-base/plugin-sync": "workspace:*",
     "@pneuma-base/plugin-search": "workspace:*",
     "@pneuma-base/viewer": "workspace:*"
+  },
+  "devDependencies": {
+    "@pneuma-base/sdk": "workspace:*"
   }
 }

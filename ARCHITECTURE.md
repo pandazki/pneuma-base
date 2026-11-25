@@ -53,7 +53,7 @@ packages/cli ──▶ packages/viewer ──▶ packages/kernel ◀── packa
 
 | 包 | 职责 | 不许 |
 | --- | --- | --- |
-| `packages/sdk` | 插件契约（`@pneuma-base/sdk`）：全部类型、契约版本 `CONTRACT`、`definePlugin`、`defineCommand`，从命令的参数表生成用法和表单的 `usageOf`、`formOf`，和插件自己造带品牌的值用的 `pluginName`、`instant`、`PLUGIN_NAME`、`SECRET_NAME`。另一个入口 `@pneuma-base/sdk/kit` 是插件打进自己包里的库：只新增文件的记录库 `recordStore`、配置文件助手 `configFile`、部署库 `deployPlugin` 和写目标用的 `defineTarget`（第 13 节）。库外的插件只依赖它 | 导入内核、命令行、界面或任何插件；含内核的逻辑（内核的工具经上下文的 `tools` 给，库也只用 `tools`） |
+| `packages/sdk` | 插件契约（`@pneuma-base/sdk`）：全部类型、契约版本 `CONTRACT`、`definePlugin`、`defineCommand`，从命令的参数表生成用法和表单的 `usageOf`、`formOf`，和插件自己造带品牌的值用的 `pluginName`、`instant`、`PLUGIN_NAME`、`SECRET_NAME`，插件不能用的名字 `KERNEL_COMMAND_NAMES`、`RESERVED_PLUGIN_NAMES`，这一版的版本号 `PNEUMA_BASE_VERSION`。另一个入口 `@pneuma-base/sdk/kit` 是插件打进自己包里的库：只新增文件的记录库 `recordStore`、配置文件助手 `configFile`、部署库 `deployPlugin` 和写目标用的 `defineTarget`（第 13 节）。第三个入口 `@pneuma-base/sdk/testkit` 是测试工具和符合性检查（第 5 节「写一个库外的插件」）。库外的插件只依赖它 | 导入内核、命令行、界面或任何插件；含内核的逻辑（内核的工具经上下文的 `tools` 给，库也只用 `tools`） |
 | `packages/kernel` | 打开库、解析配置、识别行动者和会话、六个动词的管线、授权的门、事件、认知的拼装、技能的生成、装载和安装库外的插件、本机的密钥。依赖 sdk，并把它原样再导出 | 依赖 sdk 以外的任何包；认识任何插件的事实或目录 |
 | `packages/plugin-ledger` | 记账与对账：事实、场景、条目、对账、来历、过期、变化，留存（第 10 节） | 读写别的插件的目录；绕过内核的公开接口；导入别的插件 |
 | `packages/plugin-version` | 版本：声明了有版本的东西，每一版都留着（第 11 节） | 同上 |
@@ -306,7 +306,7 @@ type FlagParam = { name: string; hint: string; kind: 'value' | 'list' | 'boolean
 - 插件表 = 命令行自带的插件 + 本机的 `$PNEUMA_BASE_HOME/plugins/<名字>/`。加载在内核导出的 `loadPlugins(home, 自带的表)` 里，命令行每次调用用它建表，界面的服务每次请求用它建表。自带插件的名字不会被本机的插件占用。
 - 一个插件目录：`index.js` 是 ESM，缺省导出一个 `Plugin`，名字和目录名相同；它导入的别的文件放在它旁边，依赖打包进来或放在目录里的 `node_modules/`；可选的 `ui/` 放它自己画的页。它是普通的 JS，运行时不必导入内核。装载器不替插件设 `ui`：插件自己写，比如 `new URL('./ui/', import.meta.url)`。可选的 `package.json`，没有时 `plugin install` 写一个 `{ "type": "module" }`，让 `.js` 怎么载不取决于 `$PNEUMA_BASE_HOME` 上面有什么。
 - 改了就重新载入：装载器按目录里每个文件的名字、大小、修改时间算一个戳，`index.js` 带着戳导入，一个模块钩子让它从目录里导入的每个模块带上同一个戳。目录里任何文件一变，下一次 `loadPlugins` 就载入整套新的；没变就用进程里已有的。所以一直开着的界面服务在插件的文件变了之后的下一次请求就用新代码，不用重启。同一个目录的两份副本、装之前核对的那份，各是各的模块，互不影响。
-- 装载时核对不必调钩子就能核对的一切：`contract` 写了、是这个内核跑的版本（现在只有 1）；名字是目录名；`version`、`summary` 是文字，`keeps` 是 `every` 或 `some`；`cognition` 是 `null` 或 `{ title, text }`；`storage`、`statements`、`ownerCommands` 是列表，`views`、`secrets` 没有或是列表，每一项的形状对；同一个种类、命令名、视图编号、密钥名不写两次；命令名以 `<名字> ` 开头且不是内核自己的命令；命令的参数表形状对（上面「命令的参数表」）；视图编号以 `<名字>.` 开头；给出的每个钩子是函数。内核自己不听任何「说」的种类，所以种类只会和别的插件撞，那由 `plugin add` 管。留到调用时的：钩子和命令的 `run` 答什么、抛不抛错（K8），插件往哪里写。自带插件过同一道检查，没有例外：过不了是这个 pneuma-base 自己的错，`loadPlugins` 抛错。
+- 装载时核对不必调钩子就能核对的一切：`contract` 写了、是这个内核跑的版本（现在只有 1）；名字是目录名，不是 `RESERVED_PLUGIN_NAMES` 里的词（命令行的动词、内核命令的头一个词，和内核的临时目录 `tmp`）；`version`、`summary` 是文字，`keeps` 是 `every` 或 `some`；`cognition` 是 `null` 或 `{ title, text }`；`storage`、`statements`、`ownerCommands` 是列表，`views`、`secrets` 没有或是列表，每一项的形状对；同一个种类、命令名、视图编号、密钥名不写两次；命令名以 `<名字> ` 开头且不是内核自己的命令；命令的参数表形状对（上面「命令的参数表」）；视图编号以 `<名字>.` 开头；给出的每个钩子是函数。内核自己不听任何「说」的种类，所以种类只会和别的插件撞，那由 `plugin add` 管。留到调用时的：钩子和命令的 `run` 答什么、抛不抛错（K8），插件往哪里写。自带插件过同一道检查，没有例外：过不了是这个 pneuma-base 自己的错，`loadPlugins` 抛错。
 - 装、列、卸本机的插件，都只给主人（`plugin list` 谁都能跑），都不用指明库：
   - `plugin install <目录>` 按装载器的办法载入那个目录、过同样的核对，名字取插件自己写的；再把目录复制到 `plugins/` 里的一个临时名，换到 `plugins/<名字>/`。自带插件的名字以 `built-in-name` 拒绝；过不了核对以 `plugin-failed-to-load` 拒绝，已装的那份不动。装在已有的上面就换掉它，答复说哪一版换了哪一版。
   - `plugin uninstall <名字>` 把目录挪出 `plugins/` 再删。自带的以 `built-in` 拒绝；带 `--library` 而那个库还装着它，以 `still-installed` 拒绝；答复提醒这台机器上装着它的库会报它不可用。它在库里名下的目录和它的密钥都不动。
@@ -317,6 +317,12 @@ type FlagParam = { name: string; hint: string; kind: 'value' | 'list' | 'boolean
 - 缓存目录：`PluginContext.cacheDir` 是 `$PNEUMA_BASE_HOME/cache/<库的 id>/<插件名>/`。放在库外，因为库会被同步工具整个同步，而索引这类文件经不起同步。插件第一次用时自己建，内核不建。删掉它什么都不丢。库的 id 因此只能是字母、数字、连字符和下划线。
 - `Context` 带 `home`，即本机的 `$PNEUMA_BASE_HOME`，由建上下文的地方传进来；`cacheDir` 由它算出。
 - 密钥：插件读的凭证，比如部署目标的令牌。放在 `$PNEUMA_BASE_HOME/secrets/<插件名>/<密钥名>`，一个密钥一个文件，内容就是值；目录是 `0700`，文件是 `0600`，先写临时名再改名。放在库外，所以任何同步都带不走；值不出现在任何答复、事件、视图里。插件在 `secrets` 里声明它用的名字（`SECRET_NAME`：小写字母开头，小写字母、数字、连字符），各带一句说明，用 `ctx.secrets.get(名字)` 读自己的。主人用 `secret set <插件名> <密钥名>` 设：值从标准输入读（去掉最后一个换行），在终端里就不回显地问，从不取命令行的参数；只收插件声明了的名字。`secret list <插件名>` 只列名字，`secret remove` 删掉一个，没有也算做完。三条都只给主人、不用指明库。界面的配置页列出已装插件声明的每个密钥设没设，带一个设它的表单，值作为命令的标准输入送去（`Call` 的 `stdin`）；界面的服务读写同一处，所以在哪边设，两边都能用。插件从这台机器卸掉，密钥留着。
+
+### 写一个库外的插件
+
+- 两个包文件，`pnpm pack:dist` 打进 `dist-packages/`（不进 git，不发布）：`pneuma-base-<版本>.tgz` 是命令行，内核、五个自带插件、界面的服务和网页都作为捆绑的依赖在里面，`npm install` 它不用别的包，也不用联网；`pneuma-base-sdk-<版本>.tgz` 是 `@pneuma-base/sdk`，不依赖这个仓库的别的包，声明文件自成一体。两个的版本都是 sdk 的 `PNEUMA_BASE_VERSION`，自带的五个插件的 `version` 也是它，每个工作区包的 `package.json` 和它不一样时打包拒绝。实现在 `scripts/pack-dist.mjs`。
+- 测试工具 `@pneuma-base/sdk/testkit` 跑真的命令行：插件项目依赖的 `pneuma-base` 包，或 `PNEUMA_BASE_CLI`。`sandbox({ plugins })` 建临时的家目录和库、装上给的插件目录；调用的环境从空的建起，只带 `PATH` 这几样，所以没有任何 agent 产品的会话变量；每次调用有时限、标准输入关着；`owner`、`agent` 交回退出码、两路输出和 `--json` 的结果；`viewer()` 起界面的服务，给 `view`、`item`、`act`（像人填好表单、确认那样做一个块的动作）；`cleanup` 收尾。
+- `conformance(插件目录 | { builtin }, { setup, configuration })` 把标准里行为上的规矩跑成检查，每条有名字，不通过时用中文说哪里不对、规矩是什么：`loads`（装得上，契约认识）、`names`（命名）、`cognition`（认知段的形式；查不了的列成提醒）、`examples`（认知段的每条命令示例在新库上做完 `setup` 照原样能跑）、`hooks`（空库上和每个动词之后钩子都不出问题）、`writes`（一遍脚本跑过六个动词和清空归档区，库只在它名下变，那里已有的文件不改写，`configuration` 里的和缓存目录除外；视图和条目面板什么都不写）、`cache`（删掉缓存前后找、看、查答得一样）、`blocks`（视图答的都是合法的块，`custom` 的页取得到）、`remove`（卸下后库照常用）。仓库自己的测试拿它查自带的五个插件，也拿故意违规的插件看每条检查都会变红（`packages/cli/test/conformance.test.ts`）。
 
 规矩：
 

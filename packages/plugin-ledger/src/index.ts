@@ -3,6 +3,7 @@ import {
   abs,
   archivedPath,
   CONTRACT,
+  PNEUMA_BASE_VERSION,
   enclosingBundle,
   parseLibraryPath,
   pluginName,
@@ -265,6 +266,8 @@ async function panelView(ctx: PluginContext, ledger: Ledger, path: LibraryPath):
 export const ledger: Plugin = {
   contract: CONTRACT,
   name: pluginName('ledger'),
+  version: PNEUMA_BASE_VERSION,
+  summary: '记下每样东西是哪次会话、哪个 agent 为了什么放进来的，依据了什么，谁读过、改过它。',
   cognition: { title: '记账与对账', text: readFileSync(new URL('../cognition/2-ledger-section.md', import.meta.url), 'utf8') },
   keeps: 'every',
   storage: [

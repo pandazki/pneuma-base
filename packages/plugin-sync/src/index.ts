@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { CONTRACT, pluginName, type Plugin } from '@pneuma-base/kernel'
+import { CONTRACT, PNEUMA_BASE_VERSION, pluginName, type Plugin } from '@pneuma-base/kernel'
 import { syncCommands } from './commands.js'
 import { SCRATCH } from './facts.js'
 import { recordDeletions } from './sync.js'
@@ -9,6 +9,8 @@ import { checkSections, itemSection, STATUS_VIEW, statusView } from './views.js'
 export const sync: Plugin = {
   contract: CONTRACT,
   name: pluginName('sync'),
+  version: PNEUMA_BASE_VERSION,
+  summary: '和主人设的目标双向同步，只整份地复制文件，不合并内容，也不丢内容。',
   cognition: { title: '同步', text: readFileSync(new URL('../cognition/2-sync-section.md', import.meta.url), 'utf8') },
   storage: [
     { dir: 'facts', kind: 'body' },

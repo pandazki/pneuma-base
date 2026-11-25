@@ -5,8 +5,7 @@ import { cp, mkdir, readdir, realpath, rename, rm, stat, writeFile } from 'node:
 import * as nodeModule from 'node:module'
 import { join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { CONTRACT, PLUGIN_NAME, SECRET_NAME, type Plugin, type PluginTable } from '@pneuma-base/sdk'
-import { KERNEL_COMMAND_NAMES } from './claims.js'
+import { CONTRACT, KERNEL_COMMAND_NAMES, PLUGIN_NAME, RESERVED_PLUGIN_NAMES, SECRET_NAME, type Plugin, type PluginTable } from '@pneuma-base/sdk'
 import { exists, regularFile, replaceWith } from './files.js'
 
 /** The plugin contract versions this kernel runs. */
@@ -223,7 +222,7 @@ function eachOf(items: unknown, what: string, wrong: string[], entry: (v: unknow
 /**
  * What the loader finds wrong with a plugin, built-in or default-exported, in Chinese; empty when it is
  * a plugin it runs. Checked here, at load, is everything that needs no hook called: the contract
- * version, the name, the optional fields' types, the cognition section, the lists and each entry's
+ * version, the name (none of the reserved ones), the optional fields' types, the cognition section, the lists and each entry's
  * shape, each `say` kind, command name, view id and secret name given once, command names starting
  * with `<name> ` and none of them the kernel's own, each command's `params`, view ids starting with
  * `<name>.`, and every hook given being a function. The kernel hears no `say` kind itself, so a kind can clash only with
@@ -242,6 +241,7 @@ function whatIsWrong(p: unknown, name: string | null): string[] {
   if (name !== null) check(p.name === name, `名字是 ${JSON.stringify(p.name)}，不是目录名 ${name}`)
   else check(isText(p.name) && PLUGIN_NAME.test(p.name), `名字 ${JSON.stringify(p.name)} 不是插件名：小写字母开头，只用小写字母、数字和连字符`)
   const own = isText(p.name) ? p.name : String(name)
+  check(!RESERVED_PLUGIN_NAMES.includes(own), `名字 ${own} 是命令行或内核自己用的词，插件不能叫这个`)
   for (const key of ['version', 'summary']) check(optional(p[key], isText), `${key} 不是文字`)
   check(optional(p.keeps, (v) => v === 'every' || v === 'some'), 'keeps 只能是 every 或 some')
   const c = p.cognition

@@ -53,6 +53,10 @@ importers:
       '@pneuma-base/viewer':
         specifier: workspace:*
         version: link:../viewer
+    devDependencies:
+      '@pneuma-base/sdk':
+        specifier: workspace:*
+        version: link:../sdk
 
   packages/kernel:
     dependencies:
