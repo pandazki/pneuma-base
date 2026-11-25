@@ -1,42 +1,56 @@
-// Deploy targets: where published sites go. A target publishes a directory under a site name and
-// takes a site name down. Two kinds: a local directory, and the owner's own pair of commands.
+// The built-in deploy plugin's two kinds of target: a local directory, and the owner's own pair of
+// commands. Everything else a deploy plugin does is the kit's.
 import { execFile } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { cp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import type { Fingerprint, Instant, LibraryPath } from '@pneuma-base/kernel'
-import type { TargetKey } from './facts.js'
-import type { SiteName } from './model.js'
-
-export type TargetConfig =
-  | { kind: 'dir'; to: string }
-  | { kind: 'command'; publish: string[]; unpublish: string[]; url: string | null; timeout: number }
-
-/** What a publish is: the content's fingerprint and library path, recorded in a dir target's index. */
-type Entry = { fingerprint: Fingerprint; path: LibraryPath; at: Instant }
-
-export interface Target {
-  readonly key: TargetKey
-  /** One line for people: what kind and where. */
-  readonly label: string
-  publish(site: SiteName, dir: string, entry: Entry): Promise<{ url: string | null }>
-  unpublish(site: SiteName): Promise<void>
-}
+import type { ActionInput, Instant, LibraryPath, PluginContext } from '@pneuma-base/sdk'
+import type { Configured, ContentId, SiteName, Target, TargetAdapter, TargetEnv } from '@pneuma-base/sdk/kit'
 
 export const DEFAULT_TIMEOUT = 120
-const CONFIG_FILE = 'config.json'
 
-export function targetOf(config: TargetConfig, opts: { cwd: string; scratch: string }): Target {
-  return config.kind === 'dir' ? dirTarget(config.to) : commandTarget(config, opts)
-}
+const input = (name: string, label: string, placeholder: string): ActionInput => ({ name, label, placeholder, value: null, options: null })
+/** A malformed call; the command line shows it as a usage error. */
+const usage = (text: string): Configured => ({ ok: false, reason: 'usage', text })
 
 // ---- dir ----
 
+/** What a dir target's index says of each site: the content's fingerprint and library path. */
+type Entry = { fingerprint: ContentId; path: LibraryPath; at: Instant }
 type Index = { format: 1; sites: ({ name: SiteName } & Entry)[] }
 
+/** Whether `dir` lies in the library or holds it: a target there would publish into the library itself. */
+async function overlaps(ctx: PluginContext, dir: string): Promise<boolean> {
+  const root = ctx.library.root
+  const within = (inner: string, outer: string) => {
+    const rel = relative(outer, inner)
+    return rel === '' || (!isAbsolute(rel) && rel.split(sep)[0] !== '..')
+  }
+  return within(dir, root) || within(root, dir) || (await ctx.tools.resolve(dir)) !== null
+}
+
 /** `<to>/<site>/…` and `<to>/index.json`. A site is copied to a dot-named temporary name and swapped in. */
-function dirTarget(to: string): Target {
+export const dirTarget: TargetAdapter = {
+  kind: 'dir',
+  label: '一个本地目录',
+  usage: '--to <目录>',
+  flags: ['to'],
+  form: { label: '部署到本地目录', inputs: [input('to', '目录', '库外的一个目录')] },
+  async configure(flags, ctx) {
+    const to = flags.value('to')
+    if (to === null) return usage('--kind dir 要写 --to <目录>。')
+    const dir = resolve(ctx.session.cwd, to)
+    if (await overlaps(ctx, dir)) return { ok: false, reason: 'inside-library', text: `部署目标不能在库里，也不能包含库：${dir}` }
+    return { ok: true, config: { to: dir } }
+  },
+  open(config) {
+    if (typeof config.to !== 'string') throw new Error('a dir target names its directory')
+    return dirAt(config.to)
+  },
+}
+
+function dirAt(to: string): Target {
   const scratchName = (site: SiteName, kind: 'tmp' | 'old') => join(to, `.${kind}-${site}-${randomBytes(4).toString('hex')}`)
   const takeDown = async (site: SiteName) => {
     const aside = scratchName(site, 'old')
@@ -46,9 +60,9 @@ function dirTarget(to: string): Target {
     await rm(aside, { recursive: true, force: true })
   }
   return {
-    key: `dir:${to}` as TargetKey,
+    key: `dir:${to}`,
     label: `本地目录 ${to}`,
-    async publish(site, dir, entry) {
+    async publish(site, dir, meta) {
       await mkdir(to, { recursive: true })
       const tmp = scratchName(site, 'tmp')
       try {
@@ -58,10 +72,10 @@ function dirTarget(to: string): Target {
       } finally {
         await rm(tmp, { recursive: true, force: true })
       }
-      await updateIndex(to, (sites) => [...sites.filter((s) => s.name !== site), { name: site, ...entry }])
+      await updateIndex(to, (sites) => [...sites.filter((s) => s.name !== site), { name: site, fingerprint: meta.content, path: meta.path, at: meta.at }])
       return { url: `${pathToFileURL(join(to, site)).href}/` }
     },
-    async unpublish(site) {
+    async remove(site) {
       await takeDown(site)
       await updateIndex(to, (sites) => sites.filter((s) => s.name !== site))
     },
@@ -81,18 +95,63 @@ async function updateIndex(to: string, change: (sites: Index['sites']) => Index[
 
 // ---- command ----
 
+type CommandConfig = { publish: string[]; unpublish: string[]; url: string | null; timeout: number }
+
+/** A command given as one string is split like a shell would; given as several words it is already argv. */
+function argv(values: string[]): string[] | null {
+  if (values.length === 0) return null
+  return values.length === 1 ? words(values[0] as string) : values
+}
+
+const strings = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.every((w) => typeof w === 'string')
+
 /** Runs the owner's commands without a shell, `{dir}` and `{name}` replaced in each word. Taking down gets an empty directory as `{dir}`. */
-function commandTarget(config: Extract<TargetConfig, { kind: 'command' }>, opts: { cwd: string; scratch: string }): Target {
-  const run = (argv: string[], dir: string, site: SiteName) => runCommand(argv.map((w) => w.replaceAll('{dir}', dir).replaceAll('{name}', site)), opts.cwd, config.timeout)
+export const commandTarget: TargetAdapter = {
+  kind: 'command',
+  label: '一对发布和下线的命令',
+  usage: '--publish "<命令>" --unpublish "<命令>" [--url <模板>] [--timeout <秒>]',
+  flags: ['publish', 'unpublish', 'url', 'timeout'],
+  form: {
+    label: '用命令部署',
+    inputs: [
+      input('publish', '发布命令', '比如 wrangler pages deploy {dir} --project-name {name}'),
+      input('unpublish', '下线命令', '比如 wrangler pages project delete {name} --yes'),
+      input('url', '地址模板（可不填）', '比如 https://{name}.pages.dev'),
+    ],
+  },
+  async configure(flags) {
+    let publish: string[] | null
+    let unpublish: string[] | null
+    try {
+      publish = argv(flags.values('publish'))
+      unpublish = argv(flags.values('unpublish'))
+    } catch (error) {
+      return usage(error instanceof Error ? error.message : String(error))
+    }
+    if (publish === null || unpublish === null) return usage('--kind command 要写 --publish "<发布命令>" 和 --unpublish "<下线命令>"，命令里用 {dir} 和 {name}。')
+    const timeout = flags.value('timeout')
+    if (timeout !== null && !/^[1-9]\d*$/.test(timeout)) return usage(`--timeout 要写一个正整数，单位是秒：${timeout}`)
+    return { ok: true, config: { publish, unpublish, url: flags.value('url'), timeout: timeout === null ? DEFAULT_TIMEOUT : Number(timeout) } }
+  },
+  open(config, env) {
+    if (!strings(config.publish) || !strings(config.unpublish)) throw new Error('a command target names its two commands')
+    const url = typeof config.url === 'string' ? config.url : null
+    const timeout = typeof config.timeout === 'number' && config.timeout > 0 ? config.timeout : DEFAULT_TIMEOUT
+    return commandsAt({ publish: config.publish, unpublish: config.unpublish, url, timeout }, env)
+  },
+}
+
+function commandsAt(config: CommandConfig, env: TargetEnv): Target {
+  const run = (argv: string[], dir: string, site: SiteName) => runCommand(argv.map((w) => w.replaceAll('{dir}', dir).replaceAll('{name}', site)), env.ctx.library.root, config.timeout)
   return {
-    key: `command:${JSON.stringify(config.publish)}` as TargetKey,
+    key: `command:${JSON.stringify(config.publish)}`,
     label: `命令 ${config.publish.join(' ')}`,
     async publish(site, dir) {
       await run(config.publish, dir, site)
       return { url: config.url === null ? null : config.url.replaceAll('{name}', site) }
     },
-    async unpublish(site) {
-      const empty = join(opts.scratch, randomUUID())
+    async remove(site) {
+      const empty = join(env.scratch, randomUUID())
       await mkdir(empty, { recursive: true })
       try {
         await run(config.unpublish, empty, site)
@@ -150,30 +209,4 @@ export function words(command: string): string[] {
   if (started) out.push(word)
   if (out.length === 0) throw new Error('命令是空的')
   return out
-}
-
-// ---- configuration ----
-
-/** The configured target, parsed at the boundary; null when none is set. */
-export async function readTargetConfig(dir: string): Promise<TargetConfig | null> {
-  const text = await readFile(join(dir, CONFIG_FILE), 'utf8').catch((error: NodeJS.ErrnoException) => {
-    if (error.code === 'ENOENT') return null
-    throw error
-  })
-  if (text === null) return null
-  const raw = (JSON.parse(text) as { target?: Partial<TargetConfig> }).target
-  const strings = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.every((w) => typeof w === 'string')
-  if (raw?.kind === 'dir' && typeof raw.to === 'string') return { kind: 'dir', to: raw.to }
-  if (raw?.kind === 'command' && strings(raw.publish) && strings(raw.unpublish)) {
-    return { kind: 'command', publish: raw.publish, unpublish: raw.unpublish, url: typeof raw.url === 'string' ? raw.url : null, timeout: typeof raw.timeout === 'number' && raw.timeout > 0 ? raw.timeout : DEFAULT_TIMEOUT }
-  }
-  throw new Error(`部署目标的配置读不懂：.pneuma-base/deploy/${CONFIG_FILE}`)
-}
-
-/** Writes the configuration to a temporary name, then renames it into place. */
-export async function writeTargetConfig(dir: string, target: TargetConfig): Promise<void> {
-  await mkdir(dir, { recursive: true })
-  const tmp = join(dir, `.tmp-${randomBytes(4).toString('hex')}-${CONFIG_FILE}`)
-  await writeFile(tmp, `${JSON.stringify({ format: 1, target }, null, 2)}\n`)
-  await rename(tmp, join(dir, CONFIG_FILE))
 }
