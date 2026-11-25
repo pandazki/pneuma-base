@@ -38,9 +38,7 @@ describe('confirmed destructive owner commands', () => {
     expect(replaced).toMatchObject({ outcome: 'accepted', copied: true })
     expect(existsSync(join(lib.root, '.pneuma-base/ledger/held'))).toBe(true)
 
-    const drop = ledger.ownerCommands.find((c) => c.name === 'held drop')
-    if (!drop) throw new Error('no held drop')
-    expect(await ownerFace.run(call(), ledger, drop, { positional: [], flags: {} })).toMatchObject({ outcome: 'done', text: '已清掉 1 份留存。' })
+    expect(await ownerFace.dispatch(call(), 'held drop', { positional: [], flags: {} })).toMatchObject({ outcome: 'done', text: '已清掉 1 份留存。' })
     expect(existsSync(join(lib.root, '.pneuma-base/ledger/held'))).toBe(false)
 
     const { lines } = await sinceLines(as(claude, 's2'))
@@ -52,7 +50,7 @@ describe('confirmed destructive owner commands', () => {
     await agentFace.put({ kind: 'place', from: text('s'), to: 's.md', origin: { kind: 'brought', source: null, by: null } }, as(claude, 's1'))
     await agentFace.put({ kind: 'place', from: text('a'), to: 'a.md', origin: { kind: 'made', from: ['s.md'], outside: [] } }, as(claude, 's1'))
     await agentFace.archive({ kind: 'archive', path: 's.md' }, as(claude, 's1'))
-    expect(await ownerFace.purgeArchive(call())).toMatchObject({ outcome: 'done' })
+    expect(await ownerFace.dispatch(call(), 'archive purge', { positional: [], flags: {} })).toMatchObject({ outcome: 'done' })
 
     const { r, lines } = await sinceLines(as(claude, 's2'))
     expect(lines).toContain('  _archive/s.md 随归档区一起清掉了')

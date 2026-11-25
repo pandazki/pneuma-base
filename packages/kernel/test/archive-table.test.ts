@@ -58,9 +58,10 @@ describe('archive', () => {
     expect(outcome(await agentFace.archive({ kind: 'archive', path: '../a.md' }, f.ctx))).toBe('outside-library')
     expect(outcome(await agentFace.archive({ kind: 'archive', path: 'PNEUMA-BASE.md' }, f.ctx))).toBe('outside-library')
     expect(outcome(await agentFace.archive({ kind: 'archive', path: '.pneuma-base/config.json' }, f.ctx))).toBe('outside-library')
-    const r = await ownerFace.issueGrant(
+    const r = await ownerFace.dispatch(
       { ctx: f.ctx, table: new Map(), home: f.home, env: {}, viaGrant: false, confirm: async () => false },
-      { name: 'claude', agent: 'claude-code', area: 'work', readOnly: false },
+      'grant issue',
+      { positional: ['claude'], flags: { agent: ['claude-code'], area: ['work'] } },
     )
     if (r.outcome !== 'done') throw new Error(r.text)
     await f.reopen({ kind: 'agent', name: 'claude-code', grant: (r.data as { grant: { id: GrantId } }).grant.id })

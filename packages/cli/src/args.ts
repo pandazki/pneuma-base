@@ -20,6 +20,8 @@ const FLAGS: Record<string, 'boolean' | 'value' | 'list'> = {
   area: 'value',
   'read-only': 'boolean',
   dir: 'value',
+  port: 'value',
+  'no-open': 'boolean',
 }
 
 /** Flags every command accepts. */

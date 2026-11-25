@@ -96,7 +96,7 @@ async function inspect(req: InspectRequest, ctx: Context): Promise<InspectResult
 }
 
 /** The file a target names: the main file, else its archived copy. `_archive/…` names the archived copy. */
-async function fileFacts(root: string, target: string): Promise<FileFacts | null> {
+export async function fileFacts(root: string, target: string): Promise<FileFacts | null> {
   const path = parseLibraryPath(root, target)
   if (path === null || regionOf(path) === 'kernel') return null
   const candidates = regionOf(path) === 'archive' ? [path] : [path, archivedPath(path)]

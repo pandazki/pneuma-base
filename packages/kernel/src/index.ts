@@ -1,6 +1,7 @@
 export * from './types.js'
 export { agentFace, libraryFiles, rankHits, searchTerms, SENTENCE_HITS } from './agent.js'
-export { ownerFace, initLibrary, type OwnerCall } from './owner.js'
+export { ownerFace, initLibrary, type OwnerCall, type OwnerCommandInfo } from './owner.js'
+export { viewerFace, type ViewerCall } from './viewer.js'
 export { openLibrary, pluginName } from './library.js'
 export { makeContext } from './pipeline.js'
 export { identifySession, identifyActor, looksLikeAgentSession, type Env } from './session.js'

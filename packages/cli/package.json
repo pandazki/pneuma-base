@@ -17,6 +17,7 @@
   ],
   "dependencies": {
     "@pneuma-base/kernel": "workspace:*",
-    "@pneuma-base/plugin-ledger": "workspace:*"
+    "@pneuma-base/plugin-ledger": "workspace:*",
+    "@pneuma-base/viewer": "workspace:*"
   }
 }

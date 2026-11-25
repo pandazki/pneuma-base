@@ -1,5 +1,6 @@
-// C11, K4: the kernel imports no plugin and not the command line; plugins reach the kernel only
-// through its package. The lint rule goes red on deliberate violations.
+// C11, K4: the kernel imports no plugin, not the command line and not the viewer; plugins reach the
+// kernel only through its package. Run 2 C9: the viewer imports no plugin package, and its page
+// takes only types from the kernel. The lint rules go red on deliberate violations.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,7 +12,7 @@ const root = fileURLToPath(new URL('../../..', import.meta.url))
 async function restrictedImports(code: string, file: string): Promise<string[]> {
   const eslint = new ESLint({ cwd: root })
   const [result] = await eslint.lintText(code, { filePath: join(root, file) })
-  return (result?.messages ?? []).filter((m) => m.ruleId === 'no-restricted-imports').map((m) => m.message)
+  return (result?.messages ?? []).filter((m) => m.ruleId === 'no-restricted-imports' || m.ruleId === '@typescript-eslint/no-restricted-imports').map((m) => m.message)
 }
 
 describe('dependency direction', () => {
@@ -39,6 +40,33 @@ describe('dependency direction', () => {
   it('allows a plugin to import the kernel package', async () => {
     const messages = await restrictedImports(`export type { Plugin } from '@pneuma-base/kernel'\n`, 'packages/plugin-ledger/src/ok.ts')
     expect(messages).toEqual([])
+  })
+
+  it('flags the kernel importing the viewer, by package or by path', async () => {
+    expect(await restrictedImports(`export { startServer } from '@pneuma-base/viewer'\n`, 'packages/kernel/src/violation.ts')).toHaveLength(1)
+    expect(await restrictedImports(`export * from '../../viewer/src/server/index.js'\n`, 'packages/kernel/src/violation.ts')).toHaveLength(1)
+  })
+
+  it('flags the viewer importing a plugin, by package or by path, or the kernel by path', async () => {
+    expect(await restrictedImports(`export { ledger } from '@pneuma-base/plugin-ledger'\n`, 'packages/viewer/src/server/violation.ts')).toHaveLength(1)
+    expect(await restrictedImports(`export * from '../../../plugin-ledger/src/index.js'\n`, 'packages/viewer/src/server/violation.ts')).toHaveLength(1)
+    expect(await restrictedImports(`export * from '../../../kernel/src/types.js'\n`, 'packages/viewer/src/server/violation.ts')).toHaveLength(1)
+    expect(await restrictedImports(`import type { Plugin } from '@pneuma-base/plugin-ledger'\nexport type P = Plugin\n`, 'packages/viewer/web/src/violation.tsx')).toHaveLength(1)
+  })
+
+  it('flags the page importing the kernel’s code, and allows its types', async () => {
+    expect(await restrictedImports(`import { agentFace } from '@pneuma-base/kernel'\nexport const f = agentFace\n`, 'packages/viewer/web/src/violation.tsx')).toHaveLength(1)
+    expect(await restrictedImports(`import type { Block } from '@pneuma-base/kernel'\nexport type B = Block\n`, 'packages/viewer/web/src/ok.tsx')).toEqual([])
+  })
+
+  it('flags a plugin importing the viewer', async () => {
+    expect(await restrictedImports(`export { startServer } from '@pneuma-base/viewer'\n`, 'packages/plugin-ledger/src/violation.ts')).toHaveLength(1)
+  })
+
+  it('the viewer package depends on the kernel and on no plugin', () => {
+    const pkg = JSON.parse(readFileSync(join(root, 'packages/viewer/package.json'), 'utf8'))
+    expect(Object.keys(pkg.dependencies ?? {})).toEqual(['@pneuma-base/kernel'])
+    expect(Object.keys(pkg.devDependencies ?? {}).filter((d) => d.startsWith('@pneuma-base/'))).toEqual([])
   })
 
   it('the kernel package declares no dependency at all', () => {

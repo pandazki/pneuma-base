@@ -13,9 +13,10 @@ function refused(r: PutResult) {
 
 /** Issues a grant on `area` and reopens the fixture as the agent holding it. */
 async function asGrantee(f: Fixture, area: string | null, readOnly = false) {
-  const r = await ownerFace.issueGrant(
+  const r = await ownerFace.dispatch(
     { ctx: f.ctx, table: new Map(), home: f.home, env: {}, viaGrant: false, confirm: async () => false },
-    { name: 'claude', agent: 'claude-code', area, readOnly },
+    'grant issue',
+    { positional: ['claude'], flags: { agent: ['claude-code'], ...(area === null ? {} : { area: [area] }), ...(readOnly ? { 'read-only': true as const } : {}) } },
   )
   if (r.outcome !== 'done') throw new Error(r.text)
   const grant = (r.data as { grant: { id: GrantId } }).grant

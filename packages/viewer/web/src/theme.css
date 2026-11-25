@@ -1,0 +1,247 @@
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/jetbrains-mono';
+@import 'tailwindcss';
+
+/*
+ * The visual tokens, once. Values from research_notes/UI 风格参考/beautifului_dev.md section 3:
+ * near-neutral cool greys, one blue accent, green, orange and red for states, borders drawn as
+ * 1px box-shadow rings. Light by default; the system's dark scheme swaps every token.
+ */
+:root {
+  color-scheme: light dark;
+
+  --page: oklch(98.5% 0.001 286.376);
+  --canvas: oklch(96.1% 0.002 247.84);
+  --surface: oklch(100% 0 0);
+  --inset: oklch(97.9% 0.002 247.839);
+  --hover: oklch(97% 0.002 247.839);
+  --hover-2: oklch(93.3% 0.003 247.86);
+  --ink: oklch(24.7% 0.006 258.361);
+  --ink-2: oklch(50.6% 0.01 264.477);
+  --ink-3: oklch(69.5% 0.009 264.505);
+  --line: oklch(94.6% 0.003 264.542);
+  --line-strong: oklch(91.2% 0.005 258.326);
+  --line-soft: oklch(96.6% 0.002 264.542);
+  --field: oklch(96.1% 0.001 286.375);
+  --accent: oklch(62.6% 0.205 254.947);
+  --accent-ink: oklch(55.6% 0.187 255.617);
+  --accent-tint: oklch(96% 0.019 252.878);
+  --green: oklch(60.3% 0.155 150.883);
+  --green-tint: oklch(95.8% 0.017 159.118);
+  --orange: oklch(68.9% 0.179 49.902);
+  --orange-tint: oklch(96.4% 0.021 67.581);
+  --red: oklch(62.1% 0.192 23.042);
+  --red-tint: oklch(95.6% 0.017 17.462);
+  --tooltip-bg: oklch(27.2% 0.008 264.435);
+  --tooltip-fg: oklch(97.6% 0.002 247.839);
+  /* How much of a tag's colour goes into its background and its ring. */
+  --tag-fill: 14%;
+  --tag-ring: 32%;
+
+  --shadow-xs: 0 0 4px 0 #0000000a;
+  --shadow-sm: 0 18px 47px 0 #00000008, 0 7.5px 19.6px 0 #00000005, 0 4px 10.5px 0 #00000005, 0 2.25px 5.9px 0 #00000003, 0 1.2px 3.1px 0 #00000003, 0 0.5px 1.3px 0 #00000003;
+  --shadow-lg: 0 25px 50px 0 #0000000d, 0 10px 20px 0 #00000008;
+  --shadow-hairline: 0 0 0 1px var(--line);
+  --shadow-btn: 0 0 0 1px var(--line-strong), var(--shadow-xs);
+  --shadow-card: 0 0 0 1px var(--line), var(--shadow-sm);
+  --shadow-overlay: 0 0 0 1px var(--line), var(--shadow-lg);
+  --shadow-inset-field: inset 0 1px 2px oklch(0% 0 0 / 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: oklch(20.9% 0.004 264.477);
+    --canvas: oklch(23.1% 0.004 264.487);
+    --surface: oklch(26% 0.006 271.191);
+    --inset: oklch(24.3% 0.004 264.492);
+    --hover: oklch(28.9% 0.006 271.22);
+    --hover-2: oklch(31.8% 0.007 274.747);
+    --ink: oklch(96.4% 0.002 247.839);
+    --ink-2: oklch(73.1% 0.008 260.731);
+    --ink-3: oklch(54.1% 0.01 264.484);
+    --line: oklch(30.8% 0.006 258.354);
+    --line-strong: oklch(35.6% 0.007 264.474);
+    --line-soft: oklch(27.8% 0.006 258.354);
+    --field: oklch(29.3% 0.006 271.223);
+    --accent: oklch(68% 0.173 253.301);
+    --accent-ink: oklch(78.8% 0.113 248.33);
+    --accent-tint: oklch(68% 0.173 253.301 / 0.16);
+    --green: oklch(70.5% 0.154 153.814);
+    --green-tint: oklch(70.5% 0.154 153.814 / 0.14);
+    --orange: oklch(74.6% 0.156 55.642);
+    --orange-tint: oklch(74.6% 0.156 55.642 / 0.14);
+    --red: oklch(66.6% 0.18 21.433);
+    --red-tint: oklch(66.6% 0.18 21.433 / 0.14);
+    --tooltip-bg: oklch(18.2% 0.004 264.459);
+    --tooltip-fg: oklch(96.4% 0.002 247.839);
+    --tag-fill: 22%;
+    --tag-ring: 34%;
+
+    --shadow-btn: 0 0 0 1px oklch(100% 0 0 / 0.11), 0 1px 2px oklch(0% 0 0 / 0.2);
+    --shadow-card: 0 0 0 1px oklch(100% 0 0 / 0.11), 0 1px 2px oklch(0% 0 0 / 0.2), 0 2px 6px oklch(0% 0 0 / 0.2);
+    --shadow-overlay: 0 0 0 1px oklch(100% 0 0 / 0.15), 0 8px 28px oklch(0% 0 0 / 0.34);
+    --shadow-inset-field: inset 0 1px 2px oklch(0% 0 0 / 0.4);
+  }
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-inset: var(--inset);
+  --color-hover: var(--hover);
+  --color-hover-2: var(--hover-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-line-soft: var(--line-soft);
+  --color-field: var(--field);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-tint: var(--accent-tint);
+  --color-green: var(--green);
+  --color-green-tint: var(--green-tint);
+  --color-orange: var(--orange);
+  --color-orange-tint: var(--orange-tint);
+  --color-red: var(--red);
+  --color-red-tint: var(--red-tint);
+
+  --radius-chip: 6px;
+  --radius-control: 8px;
+  --radius-card: 10px;
+  --radius-window: 14px;
+
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --default-transition-duration: 0.15s;
+  --default-transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    letter-spacing: -0.01em;
+    font-feature-settings: 'cv11', 'ss01';
+    -webkit-font-smoothing: antialiased;
+  }
+  button {
+    cursor: pointer;
+  }
+}
+
+@layer components {
+  .card {
+    background: var(--surface);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: var(--radius-control);
+    background: var(--surface);
+    box-shadow: var(--shadow-btn);
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .btn:hover {
+    background: var(--hover);
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .btn-danger {
+    color: var(--red);
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: oklch(100% 0 0);
+    box-shadow: none;
+  }
+  .btn-primary:hover {
+    background: color-mix(in oklch, var(--accent) 88%, black);
+  }
+  .btn-primary.btn-danger {
+    background: var(--red);
+    color: oklch(100% 0 0);
+  }
+  .btn-primary.btn-danger:hover {
+    background: color-mix(in oklch, var(--red) 88%, black);
+  }
+  .field {
+    height: 30px;
+    width: 100%;
+    padding: 0 10px;
+    border-radius: var(--radius-control);
+    background: var(--field);
+    box-shadow: var(--shadow-inset-field);
+    color: var(--ink);
+    font-size: 13px;
+    outline: none;
+  }
+  .field:focus {
+    box-shadow: var(--shadow-inset-field), 0 0 0 2px color-mix(in oklch, var(--accent) 45%, transparent);
+  }
+  .tag {
+    --tone: var(--ink-3);
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 7px;
+    border-radius: var(--radius-chip);
+    background: color-mix(in srgb, var(--tone) var(--tag-fill), var(--surface));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone) var(--tag-ring), transparent);
+    color: color-mix(in srgb, var(--tone) 70%, var(--ink));
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .tone-good {
+    --tone: var(--green);
+  }
+  .tone-warn {
+    --tone: var(--orange);
+  }
+  .tone-bad {
+    --tone: var(--red);
+  }
+  .tone-info {
+    --tone: var(--accent);
+  }
+  .link {
+    color: var(--accent-ink);
+    text-align: left;
+  }
+  .link:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

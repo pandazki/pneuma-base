@@ -7,13 +7,15 @@
     "node": ">=26"
   },
   "scripts": {
-    "build": "tsc -b packages/cli",
+    "build": "tsc -b packages/cli && pnpm --filter @pneuma-base/viewer build:web",
     "typecheck": "tsc -b",
     "lint": "eslint .",
-    "test": "pnpm build && vitest run"
+    "test": "pnpm build && vitest run",
+    "test:e2e": "pnpm build && playwright test -c packages/viewer/e2e/playwright.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@playwright/test": "1.65.1",
     "@types/node": "26.6.6",
     "eslint": "10.15.0",
     "typescript": "6.0.3",

@@ -5,6 +5,10 @@
     { "path": "packages/kernel/test" },
     { "path": "packages/plugin-ledger" },
     { "path": "packages/plugin-ledger/test" },
+    { "path": "packages/viewer" },
+    { "path": "packages/viewer/web" },
+    { "path": "packages/viewer/test" },
+    { "path": "packages/viewer/e2e" },
     { "path": "packages/cli" },
     { "path": "packages/cli/test" }
   ]

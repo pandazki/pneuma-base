@@ -208,3 +208,45 @@ export interface Plugin {
 }
 
 export type PluginTable = ReadonlyMap<string, Plugin>
+
+// ---- the viewer face: read-only, sends no event ----
+// A view is a page the management UI shows: typed blocks, rendered without knowing which plugin
+// gave them. Changes from the UI go through the two faces above, never through a view.
+
+export type Tone = 'neutral' | 'good' | 'warn' | 'bad' | 'info'
+export type Tag = { text: string; tone: Tone }
+/** Where a click goes: another view, opened in the main area or the side panel. */
+export type Link = { view: string; params: Record<string, string>; target: 'main' | 'panel' }
+export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; link?: Link }
+
+/** What a button does: one verb of the agent face, or one owner command. Strings may hold `{input}`, replaced by that input's value. */
+export type Call =
+  | { [V in Verb]: { face: 'agent'; verb: V; request: Parameters<AgentFace[V]>[0] } }[Verb]
+  | { face: 'owner'; command: string; args: OwnerArgs }
+export type ActionInput = { name: string; label: string; placeholder: string | null; value: string | null; options: { value: string; label: string }[] | null }
+/** `confirm`: a question the person answers before the call; the answer is the in-person confirmation a destructive command needs. */
+export type Action = { label: string; tone: 'default' | 'danger'; confirm: string | null; inputs: ActionInput[]; call: Call }
+
+export type TableRow = { key: string; cells: Record<string, Cell>; link: Link | null; actions: Action[] }
+
+export type Block =
+  | { kind: 'section'; title: string; note: string | null; count: number | null; blocks: Block[]; actions: Action[] }
+  | { kind: 'table'; columns: { key: string; label: string }[]; rows: TableRow[]; empty: string }
+  | { kind: 'fields'; fields: { label: string; value: Cell }[] }
+  | { kind: 'list'; items: { cell: Cell; note: string | null; actions: Action[] }[] }
+  | { kind: 'timeline'; entries: { at: Instant; title: Cell; lines: string[]; tag: Tag | null }[] }
+  | { kind: 'text'; text: string; tone: Tone }
+  | { kind: 'preview'; path: LibraryPath }
+  | { kind: 'actions'; actions: Action[] }
+  | { kind: 'empty'; title: string; hint: string | null }
+
+export type ViewFilter = { name: string; label: string; options: { value: string; label: string }[]; default: string }
+/** `icon` is a lucide icon name. A view with `nav` false is reached only through links, as a detail. */
+export type ViewDecl = { id: string; title: string; icon: string; nav: boolean; filters: ViewFilter[] }
+export type ViewRequest = { view: string; params: Record<string, string> }
+export type ViewAnswer = { title: string; subtitle: string | null; blocks: Block[] }
+export type ViewResult =
+  | ({ outcome: 'shown' } & ViewAnswer & { problems: PluginProblem[] })
+  | { outcome: 'no-such-view'; problems: PluginProblem[] }
+/** Every view of a library: the plugins' first, in configuration order, then the kernel's. */
+export type ViewList = { views: ViewDecl[]; problems: PluginProblem[] }

@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest'
 import { agentFace, ownerFace, type Event, type OwnerCall } from '../src/index.js'
 import { fixture, plugin, type Fixture } from './support.js'
 
+const NO_ARGS = { positional: [], flags: {} }
+
 function call(f: Fixture, overrides: Partial<OwnerCall> = {}): OwnerCall {
   return { ctx: f.ctx, table: new Map(), home: f.home, env: {}, viaGrant: false, confirm: async () => true, ...overrides }
 }
@@ -15,7 +17,7 @@ describe('a destructive owner command', () => {
     const f = await fixture()
     f.write('_archive/old.md', 'old')
     const questions: string[] = []
-    const r = await ownerFace.purgeArchive(call(f, { confirm: async (q) => (questions.push(q), true) }))
+    const r = await ownerFace.dispatch(call(f, { confirm: async (q) => (questions.push(q), true) }), 'archive purge', NO_ARGS)
     expect(r).toMatchObject({ outcome: 'done', problems: [] })
     expect(questions).toHaveLength(1)
     expect(existsSync(join(f.root, '_archive'))).toBe(false)
@@ -26,8 +28,8 @@ describe('a destructive owner command', () => {
     f.write('_archive/old.md', 'old')
     let asked = false
     const confirm = async () => (asked = true)
-    expect(await ownerFace.purgeArchive(call(f, { env: { CODEX_THREAD_ID: 't' }, confirm }))).toMatchObject({ outcome: 'refused', reason: 'agent-session' })
-    expect(await ownerFace.purgeArchive(call(f, { viaGrant: true, confirm }))).toMatchObject({ outcome: 'refused', reason: 'agent-session' })
+    expect(await ownerFace.dispatch(call(f, { env: { CODEX_THREAD_ID: 't' }, confirm }), 'archive purge', NO_ARGS)).toMatchObject({ outcome: 'refused', reason: 'agent-session' })
+    expect(await ownerFace.dispatch(call(f, { viaGrant: true, confirm }), 'archive purge', NO_ARGS)).toMatchObject({ outcome: 'refused', reason: 'agent-session' })
     expect(asked).toBe(false)
     expect(f.read('_archive/old.md')).toBe('old')
   })
@@ -38,12 +40,10 @@ describe('a destructive owner command', () => {
       ownerCommands: [{ name: 'wiper wipe', summary: '', destructive: true, run: async () => (ran++, { outcome: 'done', text: 'wiped' }) }],
     })
     const f = await fixture([p])
-    const command = p.ownerCommands[0]!
-    const args = { positional: [], flags: {} }
-    expect(await ownerFace.run(call(f, { confirm: async () => false }), p, command, args)).toMatchObject({ outcome: 'refused', reason: 'not-confirmed' })
-    expect(await ownerFace.run(call(f, { env: { PNEUMA_BASE_SESSION: 's' } }), p, command, args)).toMatchObject({ outcome: 'refused', reason: 'agent-session' })
+    expect(await ownerFace.dispatch(call(f, { confirm: async () => false }), 'wiper wipe', NO_ARGS)).toMatchObject({ outcome: 'refused', reason: 'not-confirmed' })
+    expect(await ownerFace.dispatch(call(f, { env: { PNEUMA_BASE_SESSION: 's' } }), 'wiper wipe', NO_ARGS)).toMatchObject({ outcome: 'refused', reason: 'agent-session' })
     expect(ran).toBe(0)
-    expect(await ownerFace.run(call(f), p, command, args)).toMatchObject({ outcome: 'done', text: 'wiped' })
+    expect(await ownerFace.dispatch(call(f), 'wiper wipe', NO_ARGS)).toMatchObject({ outcome: 'done', text: 'wiped' })
     expect(ran).toBe(1)
   })
 })
@@ -56,8 +56,8 @@ describe('the owner event', () => {
     events.length = 0
     f.write('_archive/a.md', 'a')
     f.write('_archive/d/b.md', 'b')
-    await ownerFace.issueGrant(call(f, { table: new Map([['recorder', recorder]]) }), { name: 'g', agent: 'x', area: null, readOnly: false })
-    await ownerFace.purgeArchive(call(f))
+    await ownerFace.dispatch(call(f, { table: new Map([['recorder', recorder]]) }), 'grant issue', { positional: ['g'], flags: { agent: ['x'] } })
+    await ownerFace.dispatch(call(f), 'archive purge', NO_ARGS)
     expect(events).toMatchObject([
       { face: 'owner', command: 'grant issue', destructive: false },
       { face: 'owner', command: 'archive purge', destructive: true, result: { outcome: 'done', data: { removed: 2, paths: ['_archive/a.md', '_archive/d/b.md'] } } },
@@ -76,5 +76,42 @@ describe('the single exit', () => {
     await expect(put).rejects.toThrow()
     expect(events).toHaveLength(1)
     expect(events[0]).toMatchObject({ face: 'agent', verb: 'put', result: { outcome: 'failed' } })
+  })
+})
+
+describe('the owner face’s one entry', () => {
+  it('lists the kernel’s commands, then each installed plugin’s; a plugin cannot take a kernel name', async () => {
+    const shadow = plugin('shadow', {
+      ownerCommands: [
+        { name: 'archive purge', summary: '', destructive: false, run: async () => ({ outcome: 'done', text: 'shadowed' }) },
+        { name: 'shadow list', summary: '', destructive: false, run: async () => ({ outcome: 'done', text: 'listed' }) },
+      ],
+    })
+    const f = await fixture([shadow])
+    const names = ownerFace.commands(f.library.plugins).map((c) => `${c.by}:${c.name}`)
+    expect(names).toEqual(['kernel:grant issue', 'kernel:grant revoke', 'kernel:plugin add', 'kernel:plugin remove', 'kernel:skill install', 'kernel:archive purge', 'shadow:shadow list'])
+    expect(await ownerFace.dispatch(call(f), 'shadow list', NO_ARGS)).toMatchObject({ outcome: 'done', text: 'listed' })
+    expect(await ownerFace.dispatch(call(f, { confirm: async () => false }), 'archive purge', NO_ARGS)).toMatchObject({ outcome: 'refused', reason: 'not-confirmed' })
+  })
+
+  it('refuses an unknown command before any operation, so no event is sent', async () => {
+    const events: Event[] = []
+    const f = await fixture([plugin('recorder', { observe: async (e) => void events.push(e) })])
+    events.length = 0
+    expect(await ownerFace.dispatch(call(f), 'delete everything', NO_ARGS)).toMatchObject({ outcome: 'refused', reason: 'unknown-command' })
+    expect(events).toEqual([])
+  })
+
+  it('answers a malformed call with a usage refusal', async () => {
+    const f = await fixture()
+    expect(await ownerFace.dispatch(call(f), 'grant issue', { positional: ['g'], flags: {} })).toMatchObject({ outcome: 'refused', reason: 'usage', text: expect.stringContaining('--agent') })
+    expect(await ownerFace.dispatch(call(f), 'grant issue', { positional: ['g'], flags: { agent: ['x'], color: ['red'] } })).toMatchObject({ reason: 'usage', text: 'grant issue 不认识 --color' })
+    expect(await ownerFace.dispatch(call(f), 'plugin add', NO_ARGS)).toMatchObject({ reason: 'usage', text: 'plugin add 的参数个数不对' })
+  })
+
+  it('takes a form’s empty area as the whole library and its read-only choice as a value', async () => {
+    const f = await fixture()
+    const r = await ownerFace.dispatch(call(f), 'grant issue', { positional: ['g'], flags: { agent: ['x'], area: [''], 'read-only': ['yes'] } })
+    expect(r).toMatchObject({ outcome: 'done', data: { grant: { area: null, readOnly: true } } })
   })
 })

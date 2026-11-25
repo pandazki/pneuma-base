@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { existsSync, statSync } from 'node:fs'
 import { homedir, hostname } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
@@ -20,6 +21,7 @@ import {
   type Origin,
   type OwnerArgs,
   type OwnerCall,
+  type OwnerCommandInfo,
   type OwnerResult,
   type PluginProblem,
   type PluginTable,
@@ -27,6 +29,7 @@ import {
 } from '@pneuma-base/kernel'
 import { GLOBAL_FLAGS, UsageError, flagList, flagValue, hasFlag, ownFlags, parseArgs, type Parsed } from './args.js'
 import { archiveText, checkText, findText, inspectText, ownerText, putText, sayText, startText } from './format.js'
+import { view } from './view.js'
 
 export type Io = {
   env: Env
@@ -35,6 +38,9 @@ export type Io = {
   err(text: string): void
   readStdin(): Promise<Uint8Array>
   confirm(question: string): Promise<boolean>
+  /** Resolves when the person stops a long-running command, such as view, with Ctrl+C. */
+  untilStopped(): Promise<void>
+  openBrowser(url: string): void
 }
 
 export function processIo(): Io {
@@ -55,6 +61,15 @@ export function processIo(): Io {
       rl.close()
       return answer.trim() === 'yes'
     },
+    untilStopped: () =>
+      new Promise((resolve) => {
+        process.once('SIGINT', () => resolve())
+        process.once('SIGTERM', () => resolve())
+      }),
+    openBrowser: (url) => {
+      const [command, args] = process.platform === 'darwin' ? ['open', [url]] : process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : ['xdg-open', [url]]
+      spawn(command as string, args as string[], { detached: true, stdio: 'ignore' }).on('error', () => undefined).unref()
+    },
   }
 }
 
@@ -65,7 +80,8 @@ const USAGE = `用法：
       put <文件|-|库内路径> [--to <库内路径>] (--brought [--source <出处>] [--by owner] | --made [--from <库内路径…>] [--from-outside <一句话…>])
       say <种类> [<关于>] [<内容>] | check [--since <时间>|last] [--include-archived]
       archive <库内路径> | unarchive <库内路径>
-主人：init <目录> [--bare] | plugin add|remove <名字> --library <目录>
+主人：view [<目录>] [--port <端口>] [--no-open]（在浏览器里打开管理界面；pneuma-base <目录> 也一样）
+      init <目录> [--bare] | plugin add|remove <名字> --library <目录>
       grant issue <名字> --library <目录> --agent <给谁> [--area <子文件夹>] [--read-only] | grant revoke <名字> --library <目录>
       skill install <授权名> --agent claude|codex --dir <目录> | archive purge --library <目录>（会丢数据，要当面确认）
       记账插件：held list | held restore <库内路径|条目号> [--fingerprint <指纹>] --to <库内路径> | held drop（会丢数据，要当面确认），都带 --library <目录>
@@ -241,61 +257,17 @@ const SPECS: Spec[] = [
     },
   },
   {
-    words: ['grant', 'issue'],
-    flags: ['agent', 'area', 'read-only'],
-    arity: [1, 1],
-    library: true,
-    run: async (inv, bound) => {
-      const agent = flagValue(inv.parsed, 'agent')
-      if (agent === null) throw new UsageError('要写 --agent <给谁>，比如 --agent claude-code。')
-      const req = { name: inv.args[0] as string, agent, area: flagValue(inv.parsed, 'area'), readOnly: hasFlag(inv.parsed, 'read-only') }
-      return owner(await ownerFace.issueGrant(ownerCall(inv, bound), req))
-    },
-  },
-  {
-    words: ['grant', 'revoke'],
-    flags: [],
-    arity: [1, 1],
-    library: true,
-    run: async (inv, bound) => owner(await ownerFace.revokeGrant(ownerCall(inv, bound), inv.args[0] as string)),
-  },
-  {
-    words: ['plugin', 'add'],
-    flags: [],
-    arity: [1, 1],
-    library: true,
-    run: async (inv, bound) => owner(await ownerFace.addPlugin(ownerCall(inv, bound), inv.args[0] as string)),
-  },
-  {
-    words: ['plugin', 'remove'],
-    flags: [],
-    arity: [1, 1],
-    library: true,
-    run: async (inv, bound) => owner(await ownerFace.removePlugin(ownerCall(inv, bound), inv.args[0] as string)),
-  },
-  {
-    words: ['skill', 'install'],
-    flags: ['agent', 'dir'],
-    arity: [1, 1],
+    words: ['view'],
+    flags: ['port', 'no-open'],
+    arity: [0, 1],
     library: false,
-    run: async (inv) => {
-      const agent = flagValue(inv.parsed, 'agent')
-      const dir = flagValue(inv.parsed, 'dir')
-      if (agent !== 'claude' && agent !== 'codex') throw new UsageError('要写 --agent claude 或 --agent codex。')
-      if (dir === null) throw new UsageError('要写 --dir <放技能的目录>。')
-      const grantName = inv.args[0] as string
-      const resolved = await resolveGrant(inv.home, grantName, inv.table)
-      if (!resolved.ok) return refusal(resolved.reason, resolved.text)
-      const call = ownerCall(inv, contextFor(inv, resolved.library, null))
-      return owner(await ownerFace.installSkill(call, { grantName, agent, dir: resolve(inv.io.cwd, dir) }))
+    run: async ({ args, parsed, io, table, home }) => {
+      const port = flagValue(parsed, 'port')
+      if (port !== null && !/^\d{1,5}$/.test(port)) throw new UsageError(`--port 要写一个端口号：${port}`)
+      const dir = resolve(io.cwd, args[0] ?? '.')
+      const stopped = await view({ dir, table, home, io, port: port === null ? 0 : Number(port), open: !hasFlag(parsed, 'no-open') })
+      return { json: stopped, lines: ['界面已关闭。'], exit: 0 }
     },
-  },
-  {
-    words: ['archive', 'purge'],
-    flags: [],
-    arity: [0, 0],
-    library: true,
-    run: async (inv, bound) => owner(await ownerFace.purgeArchive(ownerCall(inv, bound))),
   },
 ]
 
@@ -331,21 +303,41 @@ function contextFor({ parsed, io }: Invocation, library: Library, grant: Grant |
   return { library, ctx: makeContext(library, actor, session), viaGrant: grant !== null }
 }
 
-/** A command an installed plugin added to the owner face, matched by its words. */
-async function pluginCommand(inv: Invocation): Promise<Answer> {
+/** Owner commands whose library comes from the local grant their first argument names, not from --library. */
+const GRANT_BOUND: ReadonlySet<string> = new Set(['skill install'])
+
+const words = (name: string) => name.split(' ')
+
+/** The owner command with the most words that start the positional arguments. */
+function matchCommand(commands: OwnerCommandInfo[], positional: string[]): OwnerCommandInfo | undefined {
+  return commands.filter((c) => words(c.name).every((w, i) => positional[i] === w)).sort((a, b) => words(b.name).length - words(a.name).length)[0]
+}
+
+/** The library of a grant-bound command: the one its grant points at, used by the owner. */
+async function bindByGrant(inv: Invocation, grantName: string | undefined, command: string): Promise<Bound | Answer> {
+  if (grantName === undefined) throw new UsageError(`${command} 的参数个数不对`)
+  const resolved = await resolveGrant(inv.home, grantName, inv.table)
+  return resolved.ok ? contextFor(inv, resolved.library, null) : refusal(resolved.reason, resolved.text)
+}
+
+/** An owner command, the kernel's or an installed plugin's, run through the owner face's one entry. */
+async function ownerCommand(inv: Invocation): Promise<Answer> {
   const { parsed } = inv
-  const unknown = new UsageError(`不认识的命令：${parsed.positional.join(' ') || '（空）'}`)
-  if (parsed.grant === null && !hasFlag(parsed, 'library')) throw unknown
-  const bound = await bind(inv)
+  const unknown = () => new UsageError(`不认识的命令：${parsed.positional.join(' ') || '（空）'}`)
+  let bound: Bound | Answer
+  if (parsed.grant === null && !hasFlag(parsed, 'library')) {
+    const kernel = matchCommand(ownerFace.commands([]), parsed.positional)
+    if (!kernel) throw unknown()
+    if (!GRANT_BOUND.has(kernel.name)) throw new UsageError('要用 @<授权名> 或 --library <库的目录> 指明是哪个库。')
+    bound = await bindByGrant(inv, parsed.positional[words(kernel.name).length], kernel.name)
+  } else bound = await bind(inv)
   if ('exit' in bound) return bound
-  const words = (name: string) => name.split(' ')
-  const match = bound.library.plugins
-    .flatMap((plugin) => plugin.ownerCommands.map((command) => ({ plugin, command })))
-    .filter(({ command }) => words(command.name).every((w, i) => parsed.positional[i] === w))
-    .sort((a, b) => words(b.command.name).length - words(a.command.name).length)[0]
-  if (!match) throw unknown
-  const args: OwnerArgs = { positional: parsed.positional.slice(words(match.command.name).length), flags: Object.fromEntries(ownFlags(parsed)) }
-  return owner(await ownerFace.run(ownerCall(inv, bound), match.plugin, match.command, args))
+  const command = matchCommand(ownerFace.commands(bound.library.plugins), parsed.positional)
+  if (!command) throw unknown()
+  const args: OwnerArgs = { positional: parsed.positional.slice(words(command.name).length), flags: Object.fromEntries(ownFlags(parsed)) }
+  const r = await ownerFace.dispatch(ownerCall(inv, bound), command.name, args)
+  if (r.outcome === 'refused' && r.reason === 'usage') throw new UsageError(r.text)
+  return owner(r)
 }
 
 async function runSpec(spec: Spec, inv: Invocation): Promise<Answer> {
@@ -360,17 +352,31 @@ async function runSpec(spec: Spec, inv: Invocation): Promise<Answer> {
   return 'exit' in bound ? bound : spec.run(inv, bound)
 }
 
+/** The command line's own command these words name, unless a kernel owner command with more words does, as `archive purge` over `archive`. */
+function verbSpec(positional: string[]): Spec | null {
+  const spec = matchSpec(positional)
+  const command = matchCommand(ownerFace.commands([]), positional)
+  return spec && !(command && words(command.name).length > spec.words.length) ? spec : null
+}
+
+/** `pneuma-base <directory>`, with nothing else, is `pneuma-base view <directory>`. */
+function impliedView(parsed: Parsed, cwd: string): Parsed {
+  const [first, ...rest] = parsed.positional
+  if (parsed.grant !== null || first === undefined || rest.length > 0 || matchSpec(parsed.positional)) return parsed
+  return statSync(resolve(cwd, first), { throwIfNoEntry: false })?.isDirectory() ? { ...parsed, positional: ['view', first] } : parsed
+}
+
 export async function main(argv: readonly string[], table: PluginTable, io: Io): Promise<number> {
   try {
     if (argv.length === 0 || argv[0] === '--help' || argv[0] === 'help') {
       io.out(USAGE)
       return argv.length === 0 ? 1 : 0
     }
-    const parsed = parseArgs(argv)
+    const parsed = impliedView(parseArgs(argv), io.cwd)
     const home = io.env.PNEUMA_BASE_HOME ?? join(homedir(), '.pneuma-base')
-    const spec = matchSpec(parsed.positional)
+    const spec = verbSpec(parsed.positional)
     const inv: Invocation = { parsed, args: parsed.positional.slice(spec?.words.length ?? 0), io, table, home }
-    const result = spec ? await runSpec(spec, inv) : await pluginCommand(inv)
+    const result = spec ? await runSpec(spec, inv) : await ownerCommand(inv)
     io.out(hasFlag(parsed, 'json') ? JSON.stringify(result.json, null, 2) : result.lines.join('\n'))
     return result.exit
   } catch (error) {
