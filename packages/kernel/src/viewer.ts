@@ -376,7 +376,7 @@ async function thingSections(root: string, facts: FileFacts, bundle: LibraryPath
     kind: 'fields',
     fields: [
       { label: '路径', value: { text: facts.path, mono: true, ...(facts.archived ? { tag: { text: '已归档', tone: 'neutral' as const } } : {}) } },
-      ...(bundle !== null ? [{ label: '在', value: { text: bundle, mono: true, icon: 'package', link: itemLink(bundle) } }] : []),
+      ...(bundle !== null ? [{ label: '在', value: { text: bundle, mono: true, icon: 'package' as const, link: itemLink(bundle) } }] : []),
       { label: '种类', value: { text: facts.kind === 'bundle' ? '一样东西（带标记的目录）' : '文件' } },
       ...(facts.kind === 'bundle' ? [{ label: '文件数', value: { text: String(facts.files) } }] : []),
       { label: '大小', value: { text: sizeText(facts.size) } },

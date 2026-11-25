@@ -305,7 +305,7 @@ describe('the view slot over HTTP (C2)', () => {
     storage: [],
     statements: [],
     ownerCommands: [],
-    views: [{ id: 'thrower.page', title: '出错的页', icon: 'x', nav: true, filters: [] }],
+    views: [{ id: 'thrower.page', title: '出错的页', icon: 'triangle-alert', nav: true, filters: [] }],
     onView: async () => {
       throw new Error('boom in onView')
     },

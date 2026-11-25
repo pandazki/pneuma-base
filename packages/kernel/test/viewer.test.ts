@@ -201,12 +201,12 @@ describe('showing a view', () => {
 
 describe('the view slot', () => {
   const pager = plugin('pager', {
-    views: [{ id: 'pager.page', title: '测试页', icon: 'flask', nav: true, filters: [] }],
+    views: [{ id: 'pager.page', title: '测试页', icon: 'flask-conical', nav: true, filters: [] }],
     onView: async (req) => ({ title: '测试页', subtitle: req.params.q ?? null, blocks: [{ kind: 'text', text: 'from pager', tone: 'info' }] }),
     onItemView: async (path) => ({ title: '测试插件知道的', blocks: [{ kind: 'text', text: `pager knows ${path}`, tone: 'neutral' }] }),
   })
   const thrower = plugin('thrower', {
-    views: [{ id: 'thrower.page', title: '出错的页', icon: 'x', nav: true, filters: [] }],
+    views: [{ id: 'thrower.page', title: '出错的页', icon: 'triangle-alert', nav: true, filters: [] }],
     onView: async () => {
       throw new Error('thrower failed in onView')
     },
@@ -216,7 +216,7 @@ describe('the view slot', () => {
   })
 
   it('lists plugin views first, in configuration order, then the kernel’s; a view outside the plugin’s name is a problem', async () => {
-    const stray = plugin('stray', { views: [{ id: 'files', title: '冒名的页', icon: 'x', nav: true, filters: [] }] })
+    const stray = plugin('stray', { views: [{ id: 'files', title: '冒名的页', icon: 'triangle-alert', nav: true, filters: [] }] })
     const f = await fixture([pager, thrower, stray])
     const { views, problems } = viewerFace.views(f.library)
     expect(views.map((v) => v.id)).toEqual(['pager.page', 'thrower.page', 'files', 'archive', 'config', 'item'])
@@ -238,7 +238,7 @@ describe('the view slot', () => {
   })
 
   it('a plugin that answers no view at all is failing too', async () => {
-    const broken = plugin('broken', { views: [{ id: 'broken.page', title: '坏页', icon: 'x', nav: true, filters: [] }], onView: async () => ({ title: 'x' }) as never })
+    const broken = plugin('broken', { views: [{ id: 'broken.page', title: '坏页', icon: 'triangle-alert', nav: true, filters: [] }], onView: async () => ({ title: 'x' }) as never })
     const f = await fixture([broken])
     expect(shown(await show(f, 'broken.page')).problems).toMatchObject([{ plugin: 'broken' }])
   })
@@ -272,7 +272,7 @@ describe('the view slot', () => {
 describe('what a plugin’s view answers is checked (D7)', () => {
   const answering = (name: string, answer: unknown, extra: Partial<Parameters<typeof plugin>[1]> = {}) =>
     plugin(name, {
-      views: [{ id: `${name}.page`, title: '一页', icon: 'x', nav: true, filters: [] }],
+      views: [{ id: `${name}.page`, title: '一页', icon: 'triangle-alert', nav: true, filters: [] }],
       onView: async () => answer as never,
       onItemView: async () => ({ title: '它知道的', blocks: (answer as { blocks: Block[] }).blocks }),
       ...extra,

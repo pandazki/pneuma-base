@@ -2,6 +2,7 @@
 // owner's switch decides whether it is online, and what is switched on follows the library's
 // current content. README.md in this folder.
 import { CONTRACT, pluginName } from '../../index.js'
+import type { IconName } from '../../icons.js'
 import type { Plugin, SayAnswer, SecretDecl } from '../../types.js'
 import { commands } from './commands.js'
 import { newThingId } from './facts.js'
@@ -17,8 +18,8 @@ export type DeployOptions = {
   readonly heading?: string
   /** A paragraph added to the cognition section, for what agents should know about this target. */
   readonly cognition?: string
-  /** The page's lucide icon. Defaults to globe. */
-  readonly icon?: string
+  /** The page's icon. Defaults to globe. */
+  readonly icon?: IconName
   readonly version?: string
   readonly summary?: string
   /** The directory of the plugin's own pages, for `custom` blocks a target adds. */

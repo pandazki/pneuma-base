@@ -1,6 +1,7 @@
 // What a deploy target is to the deploy kit: everything about publishing that depends on where the
 // sites go. The kit does the rest (declarations, the owner's switch, the plan, records, commands,
 // views, cognition). README.md in this folder.
+import type { IconName } from '../../icons.js'
 import type { Block, Cell, FlagParam, Instant, LibraryPath, OwnerValues, ParamValues, PluginContext, PluginName, SecretDecl, TableColumn } from '../../types.js'
 import type { ContentId, Held, SiteName, Standing, State } from './model.js'
 import type { Declared } from './facts.js'
@@ -51,7 +52,7 @@ export type TargetEnv<S extends SecretDecl = SecretDecl> = {
 }
 
 /** A page of a target's own in the navigation, after the kit's: its view is `<plugin>.<name>`, drawn by the opened target's `view.pages[name]`. */
-export type TargetPage = { readonly name: string; readonly title: string; readonly icon: string }
+export type TargetPage = { readonly name: string; readonly title: string; readonly icon: IconName }
 
 /**
  * One kind of target: how the owner configures it, and how a stored configuration opens. `D` is what

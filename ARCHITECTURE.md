@@ -300,7 +300,7 @@ type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems: string
 - 插件表 = 命令行自带的插件 + 本机的 `$PNEUMA_BASE_HOME/plugins/<名字>/`。加载在内核导出的 `loadPlugins(home, 自带的表)` 里，命令行每次调用用它建表，界面的服务每次请求用它建表。自带插件的名字不会被本机的插件占用。
 - 装载器不替插件设 `ui`：插件自己写，比如 `new URL('./ui/', import.meta.url)`。没有 `package.json` 的目录，`plugin install` 写一个 `{ "type": "module" }`，让 `.js` 怎么载不取决于 `$PNEUMA_BASE_HOME` 上面有什么。
 - 改了就重新载入：装载器按目录里每个文件的名字、大小、修改时间算一个戳，`index.js` 带着戳导入，一个模块钩子（`registerHooks`）让它从目录里导入的每个模块带上同一个戳。目录里任何文件一变，下一次 `loadPlugins` 就载入整套新的；没变就用进程里已有的。所以一直开着的界面服务在插件的文件变了之后的下一次请求就用新代码，不用重启。同一个目录的两份副本、装之前核对的那份，各是各的模块，互不影响。
-- 装载时核对不必调钩子就能核对的一切（`whatIsWrong`，清单在 `PLUGINS.md` 第 2 节）；留到调用时的是钩子和命令的 `run` 答什么、抛不抛错（K8），插件往哪里写。自带插件过同一道检查，没有例外：过不了是这个 pneuma-base 自己的错，`loadPlugins` 抛错。内核自己不听任何「说」的种类，所以种类只会和别的插件撞，那由 `plugin add` 管。
+- 装载时核对不必调钩子就能核对的一切（`whatIsWrong`，清单在 `PLUGINS.md` 第 8 节）；留到调用时的是钩子和命令的 `run` 答什么、抛不抛错（K8），插件往哪里写。自带插件过同一道检查，没有例外：过不了是这个 pneuma-base 自己的错，`loadPlugins` 抛错。内核自己不听任何「说」的种类，所以种类只会和别的插件撞，那由 `plugin add` 管。
 - `plugin add` 和 `plugin remove` 是一个库里的启用和停用，`plugin install` 和 `plugin uninstall` 是这台机器上有没有；装、卸都先写临时名再改名，没有装了一半的插件被载入。库的配置里只写名字。
 - 本机的插件加载失败，它不进插件表；装了它的库照「装了但这台机器不认识」处理（K8）：每个答复的 `problems` 里有它，消息是加载失败的原因（`whyNotLoaded`，中文）。
 - 缓存目录 `PluginContext.cacheDir` 是 `$PNEUMA_BASE_HOME/cache/<库的 id>/<插件名>/`。放在库外，因为库会被同步工具整个同步，而索引这类文件经不起同步。内核不建它。库的 id 因此只能是字母、数字、连字符和下划线。`Context` 带 `home`，即本机的 `$PNEUMA_BASE_HOME`，由建上下文的地方传进来；`cacheDir` 由它算出。
@@ -368,7 +368,7 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable }): P
 块的字段只加不改，新加的都是可选的，所以已经写好的插件不用跟着改：
 
 - 单元格的 `at`：这一格是一个时刻。界面按看的人的本地时间给短的写法，悬停给完整的时间；`text` 是不认识时刻的读者看到的。
-- 单元格的 `icon`：文字前面的一个 lucide 图标名，比如文件夹 `folder`、文件 `file`、带标记的目录 `package`。
+- 单元格的 `icon`：文字前面的一个 lucide 图标名，比如文件夹 `folder`、文件 `file`、带标记的目录 `package`。视图的 `icon` 也是。能用的名字是 sdk 的 `ICON_NAMES`，类型 `IconName`；网页的图标表按这个类型写，所以清单和网页画得出的一样。别的名字（不经 sdk 的类型写的插件才给得出）画成拼图。
 - 动作输入的 `multiple`：可以填几个值，一行一个。`call` 的列表里正好是 `{输入名}` 的那一项，换成每行一项。
 - 分节的 `collapse`：这一节可以折起来，值是开始时开着还是折着。
 - 表格列的 `optional`：放不下每一列的全部时，这一列先让开，后面的先让；别的列只在可让的都让开了之后才截短。

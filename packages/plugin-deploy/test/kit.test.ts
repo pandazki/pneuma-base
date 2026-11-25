@@ -629,7 +629,7 @@ describe('what a target shows', () => {
   })
 
   it('makes its pages ask again every 30 seconds when it reports what it serves, or as often as it says', async () => {
-    const pages = [{ name: 'board', title: '看板', icon: 'layout-grid' }]
+    const pages = [{ name: 'board', title: '看板', icon: 'layout-grid' as const }]
     const cases: [reports: boolean, refresh: number | null | undefined, expected: number | undefined][] = [
       [true, undefined, 30],
       [true, 10, 10],

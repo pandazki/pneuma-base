@@ -1,5 +1,6 @@
 // What a deploy plugin shows: its sites page and its part of the item panel, as the kernel's blocks,
 // with the places a target adds columns, fields and blocks of its own.
+import type { IconName } from '../../icons.js'
 import { formOf } from '../../params.js'
 import type { Action, Block, Call, Cell, ItemSection, LibraryPath, TableRow, ViewAnswer, ViewDecl } from '../../types.js'
 import { kindFlag, SWITCH_PARAMS, switchName, targetSetName } from './commands.js'
@@ -15,7 +16,7 @@ const REFRESH = 30
 /** The targets' own pages, each with its view: `<plugin>.<name>`. */
 export const targetPages = (kit: Kit): (TargetPage & { id: string })[] => kit.targets.flatMap((t) => (t.views ?? []).map((v) => ({ ...v, id: `${kit.name}.${v.name}` })))
 
-export const viewDecls = (kit: Kit, icon: string): ViewDecl[] => [
+export const viewDecls = (kit: Kit, icon: IconName): ViewDecl[] => [
   { id: sitesView(kit), title: kit.title, icon, nav: true, filters: [] },
   ...targetPages(kit).map((p) => ({ id: p.id, title: p.title, icon: p.icon, nav: true, filters: [] })),
 ]

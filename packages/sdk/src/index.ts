@@ -4,6 +4,7 @@
 import type { Instant, Plugin, PluginName } from './types.js'
 
 export * from './types.js'
+export { ICON_NAMES, type IconName } from './icons.js'
 export { defineCommand, formOf, usageOf, type FixedValue } from './params.js'
 
 /** The version of the plugin contract this package describes. A plugin declares it as `contract`. */

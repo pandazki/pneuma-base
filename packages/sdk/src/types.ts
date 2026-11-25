@@ -1,4 +1,5 @@
 // The plugin contract's shapes, which a plugin and the kernel exchange. ARCHITECTURE.md sections 4 and 5.
+import type { IconName } from './icons.js'
 
 // Semantic primitives. Parsed once at the kernel's boundary.
 export type LibraryPath = string & { readonly __brand: 'LibraryPath' } // library-relative, '/'-separated
@@ -412,11 +413,11 @@ export type Tag = { text: string; tone: Tone }
 export type Link = { view: string; params: Record<string, string>; target: 'main' | 'panel' }
 /**
  * `at`: the cell is a moment. The page shows it in the viewer's local time, short, with the whole
- * time on hover; `text` is what a reader without a clock shows. `icon`: a lucide icon name shown
+ * time on hover; `text` is what a reader without a clock shows. `icon`: one of `ICON_NAMES`, shown
  * before the text, such as `folder`, `file` or `package` for a bundle. `href`: an outside address the
  * cell opens in a new tab; only http and https are links. `copy`: a button that copies `href`, else `text`.
  */
-export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; link?: Link; at?: Instant; icon?: string; href?: string; copy?: true }
+export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; link?: Link; at?: Instant; icon?: IconName; href?: string; copy?: true }
 
 /**
  * What a button does: one verb of the agent face, or one owner command. Strings may hold `{input}`,
@@ -471,8 +472,8 @@ export type Block =
   | { kind: 'custom'; entry: string; height: number; data: unknown; actions: Record<string, Action>; plugin?: PluginName }
 
 export type ViewFilter = { name: string; label: string; options: { value: string; label: string }[]; default: string }
-/** `icon` is a lucide icon name. A view with `nav` false is reached only through links, as a detail. */
-export type ViewDecl = { id: string; title: string; icon: string; nav: boolean; filters: ViewFilter[] }
+/** `icon` is one of `ICON_NAMES`. A view with `nav` false is reached only through links, as a detail. */
+export type ViewDecl = { id: string; title: string; icon: IconName; nav: boolean; filters: ViewFilter[] }
 export type ViewRequest = { view: string; params: Record<string, string> }
 /** `refresh`: seconds after which the page asks again, for a view showing state from outside the library; at least 5. */
 export type ViewAnswer = { title: string; subtitle: string | null; blocks: Block[]; refresh?: number }

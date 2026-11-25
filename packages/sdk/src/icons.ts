@@ -1,0 +1,47 @@
+/**
+ * The lucide icon names the management UI draws, for a view's navigation entry and a cell. The UI
+ * draws any other name, which only a plugin written without these types can give, as `puzzle`.
+ */
+export const ICON_NAMES = [
+  'activity',
+  'archive',
+  'bookmark',
+  'box',
+  'clock',
+  'cloud',
+  'cloud-upload',
+  'code',
+  'corner-left-up',
+  'database',
+  'download',
+  'eye',
+  'file',
+  'file-text',
+  'flask-conical',
+  'folder',
+  'gauge',
+  'git-branch',
+  'globe',
+  'history',
+  'image',
+  'key',
+  'layers',
+  'layout-grid',
+  'link',
+  'list',
+  'package',
+  'refresh-cw',
+  'rocket',
+  'scroll-text',
+  'search',
+  'server',
+  'settings',
+  'shield',
+  'tag',
+  'terminal',
+  'triangle-alert',
+  'upload',
+  'users',
+] as const
+
+export type IconName = (typeof ICON_NAMES)[number]

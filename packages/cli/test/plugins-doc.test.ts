@@ -2,7 +2,8 @@
 // named with the rule its report states; every TypeScript example compiles against the sdk with the
 // scaffold's compiler options, and every example plugin passes the loader; every shell block runs as
 // written from the state the five minutes leave (the blocks that install from the registry run in
-// plugins-doc.slow.test.ts); and the friction appendix accounts for all 55 entries.
+// plugins-doc.slow.test.ts); the icon, frame class and frame token lists are the sdk's; and the
+// friction appendix accounts for all 55 entries of the first plugin and the 13 of its rebuild.
 import { spawnSync } from 'node:child_process'
 import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -10,6 +11,8 @@ import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { CONTRACT, PNEUMA_BASE_VERSION } from '@pneuma-base/kernel'
+import { ICON_NAMES } from '@pneuma-base/sdk'
+import { FRAME_CLASSES, FRAME_TOKENS } from '@pneuma-base/sdk/frame'
 import { CHECKS, RULES } from '@pneuma-base/sdk/testkit'
 import { BROWSER_SHIMS, OUTPUT, SLOW, STANDARD, fences, runBlock, unprinted } from './plugins-doc.js'
 import { tempDir } from './helpers.js'
@@ -61,10 +64,25 @@ describe('PLUGINS.md', () => {
     expect(rows).toEqual(CHECKS.map((name) => [name, RULES[name]]))
   })
 
-  it('accounts for all 55 friction entries by label', () => {
+  it('accounts for the 55 friction entries of the first plugin and the 13 of its rebuild, by label', () => {
     const labels = [...section('## 附').matchAll(/^\| ([A-Z]\d+) \|/gm)].map((m) => m[1])
-    const expected = Object.entries({ C: 10, K: 8, B: 7, P: 10, D: 11, V: 9 }).flatMap(([group, n]) => Array.from({ length: n }, (_, i) => `${group}${i + 1}`))
+    const expected = Object.entries({ C: 10, K: 8, B: 7, P: 10, D: 11, V: 9, N: 13 }).flatMap(([group, n]) => Array.from({ length: n }, (_, i) => `${group}${i + 1}`))
     expect(labels).toEqual(expected)
+  })
+
+  /** The backticked names in the table row whose first cell is `cell`. */
+  const rowNames = (cell: string, name: RegExp) => {
+    const row = text.split('\n').find((l) => l.startsWith(`| ${cell} |`)) ?? ''
+    return [...row.matchAll(name)].map((m) => m[1])
+  }
+
+  it('lists every icon name a view or a cell may use, as the sdk gives them', () => {
+    expect(rowNames('`IconName`', /`([a-z][a-z-]*)`/g)).toEqual([...ICON_NAMES])
+  })
+
+  it('lists every class and token the frame kit gives, as the sdk gives them', () => {
+    expect(rowNames('`frame.css` 的类（`FRAME_CLASSES`）', /`([a-z][a-z-]*)`/g)).toEqual([...FRAME_CLASSES])
+    expect(rowNames('`frame.css` 的变量（`FRAME_TOKENS`）', /`(--[a-z0-9-]+)`/g)).toEqual([...FRAME_TOKENS])
   })
 
   it('names this version and contract, and points into no source file of this repository', () => {
