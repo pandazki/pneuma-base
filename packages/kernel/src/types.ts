@@ -42,10 +42,15 @@ export type Library = {
   readonly unavailable: readonly PluginName[] // installed but absent from the plugin table
 }
 
-export type Context = { library: Library; actor: Actor; session: Session; now: Instant }
+/** `home` is this machine's `$PNEUMA_BASE_HOME`: local grant files, external plugins, plugin caches. */
+export type Context = { library: Library; actor: Actor; session: Session; now: Instant; home: string }
 
-/** The context a plugin's hook receives: the operation's context plus the plugin's own directory. */
-export type PluginContext = Context & { dir: string }
+/**
+ * The context a plugin's hook receives: the operation's context, the plugin's own directory in the
+ * library, and its cache directory outside the library (`<home>/cache/<library id>/<plugin>/`).
+ * The kernel does not create the cache directory; deleting it must lose nothing.
+ */
+export type PluginContext = Context & { dir: string; cacheDir: string }
 
 export type Note = { plugin: PluginName; text: string; data?: unknown }
 export type Section = { plugin: PluginName; title: string; body: string; data?: unknown }
@@ -63,7 +68,8 @@ export type Origin<P = LibraryPath> =
   | { kind: 'brought'; source: string | null; by: string | null }
   | { kind: 'made'; from: P[]; outside: string[] }
 
-export type PlaceSource = { kind: 'file'; path: string } | { kind: 'stdin'; content: Uint8Array }
+/** `directory`: a directory outside the library, placed as one thing (a bundle). */
+export type PlaceSource = { kind: 'file'; path: string } | { kind: 'directory'; path: string } | { kind: 'stdin'; content: Uint8Array }
 
 /** Paths are as the caller wrote them: library-relative or absolute. The kernel parses them. */
 export type PutRequest =
@@ -71,7 +77,8 @@ export type PutRequest =
   | { kind: 'place'; from: PlaceSource; to: string; origin: Origin<string> }
   | { kind: 'move'; from: string; to: string }
 
-export type PutRefusal = 'outside-library' | 'outside-grant' | 'no-such-file' | 'would-overwrite'
+/** `inside-bundle`: the path lies inside a bundle, which changes only as a whole; `subject` is the bundle. */
+export type PutRefusal = 'outside-library' | 'outside-grant' | 'no-such-file' | 'would-overwrite' | 'inside-bundle'
 
 export type PutResult =
   | { outcome: 'accepted'; path: LibraryPath; fingerprint: Fingerprint; copied: boolean; notes: Note[]; problems: PluginProblem[] }
@@ -85,7 +92,7 @@ export type AcceptedPut =
       path: LibraryPath
       fingerprint: Fingerprint
       origin: Origin
-      source: { kind: 'file'; path: string } | { kind: 'stdin' }
+      source: { kind: 'file'; path: string } | { kind: 'directory'; path: string } | { kind: 'stdin' }
       copied: boolean
       previous: Fingerprint | null // the content it replaced through `revise`, if any
     }
@@ -118,7 +125,10 @@ export type Hit = { path: LibraryPath | null; title: string; by: PluginName | 'k
 export type FindResult = { hits: Hit[]; problems: PluginProblem[] }
 
 export type InspectRequest = { target: string }
-export type FileFacts = { path: LibraryPath; size: number; modifiedAt: Instant; fingerprint: Fingerprint; archived: boolean }
+/** One thing of the library: a regular file, or a directory with the marker `.pneuma-item`. */
+export type ThingKind = 'file' | 'bundle'
+/** A bundle's `size` and `files` count the files its fingerprint counts; `modifiedAt` is the latest of theirs. */
+export type FileFacts = { path: LibraryPath; kind: ThingKind; files: number; size: number; modifiedAt: Instant; fingerprint: Fingerprint; archived: boolean }
 export type InspectResult = { file: FileFacts | null; sections: Section[]; problems: PluginProblem[] }
 
 export type SayRequest = { kind: string; about: string | null; text: string | null; args: Record<string, string[]> }
@@ -137,7 +147,7 @@ export type CheckResult = { sections: Section[]; problems: PluginProblem[] }
 // ---- archive ----
 
 export type ArchiveRequest = { kind: 'archive' | 'unarchive'; path: string }
-export type ArchiveRefusal = 'outside-library' | 'outside-grant' | 'no-such-file' | 'original-path-taken'
+export type ArchiveRefusal = 'outside-library' | 'outside-grant' | 'no-such-file' | 'original-path-taken' | 'inside-bundle'
 export type ArchiveResult =
   | { outcome: 'accepted'; from: LibraryPath; to: LibraryPath; moved: boolean; notes: Note[]; problems: PluginProblem[] }
   | { outcome: 'refused'; reason: ArchiveRefusal; subject: string; problems: PluginProblem[] }
@@ -205,6 +215,12 @@ export interface Plugin {
   onCheck?(req: CheckRequest, ctx: PluginContext): Promise<PluginSection[]>
   onArchive?(req: AcceptedArchive, ctx: PluginContext): Promise<PluginNote | null>
   observe?(event: Event, ctx: PluginContext): Promise<void>
+
+  /** The views it adds to the management UI. Each id starts with `<name>.`. */
+  readonly views?: readonly ViewDecl[]
+  onView?(req: ViewRequest, ctx: PluginContext): Promise<ViewAnswer>
+  /** What it knows about one library path, as one section of the kernel's item panel: onInspect's counterpart in the UI. */
+  onItemView?(path: LibraryPath, ctx: PluginContext): Promise<ItemSection | null>
 }
 
 export type PluginTable = ReadonlyMap<string, Plugin>
@@ -250,3 +266,5 @@ export type ViewResult =
   | { outcome: 'no-such-view'; problems: PluginProblem[] }
 /** Every view of a library: the plugins' first, in configuration order, then the kernel's. */
 export type ViewList = { views: ViewDecl[]; problems: PluginProblem[] }
+/** A plugin's part of the item panel: its own section title and blocks. */
+export type ItemSection = { title: string; blocks: Block[] }

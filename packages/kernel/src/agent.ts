@@ -1,9 +1,9 @@
 import { posix } from 'node:path'
 import { archive } from './archive.js'
-import { fingerprintOfFile, listFiles, regularFile } from './files.js'
 import { ARCHIVE_DIR, DESCRIPTION_FILE, KERNEL_DIR, abs, archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
 import { eachPlugin, messageOf, performVerb, pluginContext, type Collected } from './pipeline.js'
 import { put } from './put.js'
+import { fingerprintOf, listThings, thingAt } from './things.js'
 import type {
   AgentFace,
   CheckRequest,
@@ -39,17 +39,24 @@ export const SENTENCE_HITS = 5
 
 const segmenter = new Intl.Segmenter('zh', { granularity: 'word' })
 
+const singleHan = (s: Intl.SegmentData) => s.isWordLike === true && /^\p{Script=Han}$/u.test(s.segment)
+
 /**
  * The terms a find request matches, lower-cased. `terms`: the text split on white space and common
- * punctuation. `words`: the sentence's words by Intl.Segmenter, kept when two characters or longer, or Latin.
+ * punctuation. `words`: the sentence's words by Intl.Segmenter, kept when two characters or longer, or
+ * Latin. The segmenter cuts some two-character words such as 下单 into single characters, so two
+ * adjacent single Chinese characters also give their join.
  */
 export function searchTerms(text: string | null, match: FindRequest['match']): string[] {
   if (text === null) return []
   const lower = text.toLowerCase()
   if (match === 'terms') return lower.split(/[\s,.;:!?，。、；：！？"'“”‘’「」『』()（）]+/u).filter((t) => t !== '')
-  const words = [...segmenter.segment(lower)]
-    .filter((s) => s.isWordLike && ([...s.segment].length >= 2 || /\p{Script=Latin}/u.test(s.segment)))
-    .map((s) => s.segment)
+  const segments = [...segmenter.segment(lower)]
+  const words = segments.flatMap((s, i) => {
+    const before = segments[i - 1]
+    if (singleHan(s)) return before && singleHan(before) ? [before.segment + s.segment] : []
+    return s.isWordLike && ([...s.segment].length >= 2 || /\p{Script=Latin}/u.test(s.segment)) ? [s.segment] : []
+  })
   return [...new Set(words)]
 }
 
@@ -73,20 +80,22 @@ async function find(req: FindRequest, ctx: Context): Promise<FindResult> {
   return { hits: [...hits, ...heard.values.flatMap(({ plugin, value }) => value.map((h) => ({ ...h, by: plugin })))], problems: heard.problems }
 }
 
+/** A bundle is one hit, marked 目录; the files inside it are none. */
 async function nameHits(req: FindRequest, root: string): Promise<Hit[]> {
   const skip = new Set([KERNEL_DIR, DESCRIPTION_FILE, ...(req.includeArchived ? [] : [ARCHIVE_DIR])])
-  const candidates = (await listFiles(root, skip)).map((file) => {
-    const path = file as LibraryPath
+  const candidates = (await listThings(root, skip)).map((thing) => {
+    const path = thing.path as LibraryPath
     const archived = regionOf(path) === 'archive'
-    const hit: Hit = { path, title: posix.basename(path), by: 'kernel', group: null, detail: archived ? '已归档' : null }
+    const marks = [...(thing.kind === 'bundle' ? ['目录'] : []), ...(archived ? ['已归档'] : [])]
+    const hit: Hit = { path, title: posix.basename(path), by: 'kernel', group: null, detail: marks.length > 0 ? marks.join('，') : null }
     return { hit, haystack: (archived ? originalPath(path) ?? path : path).toLowerCase() }
   })
   return rankHits(candidates, searchTerms(req.text, req.match), req.match)
 }
 
-/** Every file of the library outside the kernel's own: the content and the archive. */
+/** Every thing of the library outside the kernel's own, in the content and the archive: its files outside bundles, and its bundles. */
 export async function libraryFiles(root: string): Promise<LibraryPath[]> {
-  return (await listFiles(root, new Set([KERNEL_DIR, DESCRIPTION_FILE]))) as LibraryPath[]
+  return (await listThings(root, new Set([KERNEL_DIR, DESCRIPTION_FILE]))).map((thing) => thing.path as LibraryPath)
 }
 
 async function inspect(req: InspectRequest, ctx: Context): Promise<InspectResult> {
@@ -95,16 +104,14 @@ async function inspect(req: InspectRequest, ctx: Context): Promise<InspectResult
   return { file, sections: stamp(heard), problems: heard.problems }
 }
 
-/** The file a target names: the main file, else its archived copy. `_archive/…` names the archived copy. */
+/** The thing a target names: the main one, else its archived copy. `_archive/…` names the archived copy. */
 export async function fileFacts(root: string, target: string): Promise<FileFacts | null> {
   const path = parseLibraryPath(root, target)
   if (path === null || regionOf(path) === 'kernel') return null
   const candidates = regionOf(path) === 'archive' ? [path] : [path, archivedPath(path)]
   for (const candidate of candidates) {
-    const facts = await regularFile(abs(root, candidate))
-    if (facts) {
-      return { path: candidate, ...facts, fingerprint: await fingerprintOfFile(abs(root, candidate)), archived: regionOf(candidate) === 'archive' }
-    }
+    const thing = await thingAt(abs(root, candidate))
+    if (thing) return { path: candidate, ...thing, fingerprint: await fingerprintOf(abs(root, candidate)), archived: regionOf(candidate) === 'archive' }
   }
   return null
 }

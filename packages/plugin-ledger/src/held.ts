@@ -1,13 +1,16 @@
 // Held copies: content a new version replaced, kept under held/ until the owner drops it, and the
 // owner commands over them. ledger-design.md section 5.
 import { randomBytes } from 'node:crypto'
-import { copyFile, link, mkdir, readdir, rename, rm, stat, unlink } from 'node:fs/promises'
+import { copyFile, link, mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
 import { dirname, join, posix, relative, sep } from 'node:path'
 import {
   abs,
-  fingerprintOfFile,
+  copyBundle,
+  enclosingBundle,
+  fingerprintOf,
   parseLibraryPath,
   regionOf,
+  thingAt,
   type Fingerprint,
   type LibraryPath,
   type OwnerAnswer,
@@ -27,25 +30,34 @@ export function heldPath(ctx: PluginContext, item: ItemId, fingerprint: Fingerpr
   return fromRoot(ctx, HELD_DIR, item, fingerprint, posix.basename(path))
 }
 
+/** Copies the file or the bundle at `from` to `to`, which must not exist. */
+async function copyThing(from: string, to: string): Promise<void> {
+  if ((await thingAt(from))?.kind === 'bundle') await copyBundle(from, to)
+  else await copyFile(from, to)
+}
+
 /**
- * Copies the file at `path` into the held copy of `fingerprint`: to a temporary name, then renamed.
- * Null, and nothing kept, when the bytes copied are not that content because the file changed meanwhile.
+ * Copies the thing at `path`, a file or a whole bundle, into the held copy of `fingerprint`: to a
+ * temporary name, then renamed. Null, and nothing kept, when what was copied is not that content
+ * because it changed meanwhile. A copy already held is kept as it is.
  */
 export async function keep(ctx: PluginContext, item: ItemId, path: LibraryPath, fingerprint: Fingerprint): Promise<string | null> {
   const held = heldPath(ctx, item, fingerprint, path)
   const target = join(ctx.library.root, held)
+  if (await thingAt(target)) return held
   await mkdir(dirname(target), { recursive: true })
   const tmp = join(dirname(target), `.tmp-${randomBytes(4).toString('hex')}`)
-  await copyFile(abs(ctx.library.root, path), tmp)
-  if ((await fingerprintOfFile(tmp)) !== fingerprint) {
-    await unlink(tmp)
-    return null
+  try {
+    await copyThing(abs(ctx.library.root, path), tmp)
+    if ((await fingerprintOf(tmp)) !== fingerprint) return null
+    await rename(tmp, target)
+    return held
+  } finally {
+    await rm(tmp, { recursive: true, force: true })
   }
-  await rename(tmp, target)
-  return held
 }
 
-export type HeldCopy = { item: ItemId; fingerprint: Fingerprint; path: string; size: number }
+export type HeldCopy = { item: ItemId; fingerprint: Fingerprint; path: string; size: number; bundle: boolean }
 
 const names = async (dir: string) => (await readdir(dir).catch(() => [] as string[])).filter((n) => !n.startsWith('.')).sort()
 
@@ -56,8 +68,8 @@ export async function heldCopies(ctx: PluginContext, only?: ItemId): Promise<Hel
   for (const item of only ? [only] : ((await names(root)) as ItemId[])) {
     for (const fingerprint of (await names(join(root, item))) as Fingerprint[]) {
       for (const name of await names(join(root, item, fingerprint))) {
-        const s = await stat(join(root, item, fingerprint, name))
-        out.push({ item, fingerprint, path: fromRoot(ctx, HELD_DIR, item, fingerprint, name), size: s.size })
+        const thing = await thingAt(join(root, item, fingerprint, name))
+        if (thing) out.push({ item, fingerprint, path: fromRoot(ctx, HELD_DIR, item, fingerprint, name), size: thing.size, bundle: thing.kind === 'bundle' })
       }
     }
   }
@@ -108,20 +120,25 @@ export const heldCommands: OwnerCommand[] = [
       if (!copy || chosen.length > 1) return refused('no-such-held', `${item.path} 没有${want === null ? '' : `指纹以 ${want} 开头的唯一一份`}留存`)
       const target = parseLibraryPath(root, to)
       if (target === null || regionOf(target) !== 'content') return refused('outside-library', `${to} 不在库的内容里`)
+      const bundle = await enclosingBundle(root, target)
+      if (bundle !== null) return refused('inside-bundle', `${target} 在 ${bundle} 里面，${bundle} 是一样东西。换一个路径。`)
       const there = await onDisk(root, target)
       if (there?.fingerprint === copy.fingerprint) return done(`${target} 已经是这份内容，没有复制。`)
-      if (there) return refused('would-overwrite', `${target} 已有内容不同的文件，没有动它。换一个路径。`)
+      if (there || (await stat(abs(root, target)).catch(() => null))) return refused('would-overwrite', `${target} 已有东西，没有动它。换一个路径。`)
       const tmp = join(ctx.dir, `.tmp-restore-${randomBytes(4).toString('hex')}`)
-      await copyFile(join(root, copy.path), tmp)
+      await copyThing(join(root, copy.path), tmp)
       await mkdir(dirname(abs(root, target)), { recursive: true })
       try {
-        await link(tmp, abs(root, target)) // fails rather than replace a file that appeared meanwhile
+        // A file is linked, which fails rather than replace one that appeared meanwhile; a tree is renamed into place.
+        if (copy.bundle) await rename(tmp, abs(root, target))
+        else await link(tmp, abs(root, target))
       } finally {
-        await unlink(tmp)
+        await rm(tmp, { recursive: true, force: true })
       }
       const short = copy.fingerprint.slice(0, 8)
       const origin = { kind: 'brought' as const, source: `留存：${item.path} 的旧版 ${short}`, by: 'owner' }
-      await writeFacts(ctx.dir, [fact(ctx, 'tool', { kind: 'item.enter', item: newItemId(), path: target, fingerprint: copy.fingerprint, size: copy.size, origin })])
+      const enter = { kind: 'item.enter' as const, item: newItemId(), path: target, fingerprint: copy.fingerprint, size: copy.size, origin, ...(copy.bundle ? { bundle: true as const } : {}) }
+      await writeFacts(ctx.dir, [fact(ctx, 'tool', enter)])
       return done(`已把 ${item.path} 的旧版 ${short} 取回到 ${target}。`, { item: item.id, fingerprint: copy.fingerprint, to: target })
     },
   },

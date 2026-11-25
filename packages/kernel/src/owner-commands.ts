@@ -3,7 +3,9 @@ import { randomUUID } from 'node:crypto'
 import { rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { skillText } from './cognition.js'
-import { exists, listFiles, writeAtomic } from './files.js'
+import { exists, writeAtomic } from './files.js'
+import { whyNotLoaded } from './plugin-table.js'
+import { listThings } from './things.js'
 import { GRANT_NAME, readGrantFile, removeGrantFile, writeGrantFile } from './grants.js'
 import { saveConfig } from './library.js'
 import type { OwnerCall } from './owner.js'
@@ -108,7 +110,11 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       const name = a.positional[0] as string
       const { library } = call.ctx
       if (library.config.plugins.includes(name as PluginName)) return done(`插件 ${name} 已经装了。`)
-      if (!call.table.has(name)) return refused('unknown-plugin', `没有这个插件：${name}。可用的：${[...call.table.keys()].join('、') || '无'}`)
+      if (!call.table.has(name)) {
+        const why = await whyNotLoaded(call.home, name)
+        if (why !== null) return refused('plugin-failed-to-load', `插件 ${name} 没能加载：${why}`)
+        return refused('unknown-plugin', `没有这个插件：${name}。可用的：${[...call.table.keys()].join('、') || '无'}`)
+      }
       const updated = await saveConfig(library.root, { ...library.config, plugins: [...library.config.plugins, name as PluginName] }, call.table)
       return done(`已装上插件 ${name}，说明已重新生成。`, undefined, updated)
     },
@@ -161,9 +167,9 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       const a = read('archive purge', args, 0, [])
       if (typeof a === 'string') return usage(a)
       const dir = join(call.ctx.library.root, ARCHIVE_DIR)
-      const paths = (await exists(dir)) ? (await listFiles(dir, new Set())).map((p) => `${ARCHIVE_DIR}/${p}` as LibraryPath) : []
+      const paths = (await exists(dir)) ? (await listThings(dir, new Set())).map((t) => `${ARCHIVE_DIR}/${t.path}` as LibraryPath) : []
       await rm(dir, { recursive: true, force: true })
-      return done(`已清空归档区，删掉了 ${paths.length} 个文件。`, { removed: paths.length, paths })
+      return done(`已清空归档区，删掉了 ${paths.length} 样东西。`, { removed: paths.length, paths })
     },
   },
 ]

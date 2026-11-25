@@ -1,6 +1,6 @@
 // The ledger's reads of the disk: the facts, the files of the library, what an input names.
 import { readFile, stat } from 'node:fs/promises'
-import { abs, archivedPath, fingerprintOfFile, libraryFiles, parseLibraryPath, regionOf, type Fingerprint, type LibraryPath, type PluginContext } from '@pneuma-base/kernel'
+import { abs, archivedPath, fingerprintOf, libraryFiles, parseLibraryPath, regionOf, thingAt, type Fingerprint, type LibraryPath, type PluginContext } from '@pneuma-base/kernel'
 import { readFacts, type ItemId } from './facts.js'
 import { fold, type ItemRecord, type Ledger } from './fold.js'
 import { classify, type Files, type ItemState } from './reconcile.js'
@@ -11,13 +11,13 @@ export async function load(ctx: PluginContext): Promise<Ledger> {
   return fold(await readFacts(ctx.dir))
 }
 
-export type Disk = { fingerprint: Fingerprint; size: number }
+export type Disk = { fingerprint: Fingerprint; size: number; bundle: boolean }
 
-/** The fingerprint and size of the regular file at `path`; null when there is none. */
+/** The fingerprint and size of the thing at `path`, a file or a bundle; null when there is none. */
 export async function onDisk(root: string, path: LibraryPath): Promise<Disk | null> {
   const file = abs(root, path)
-  const s = await stat(file).catch(() => null)
-  return s?.isFile() ? { fingerprint: await fingerprintOfFile(file), size: s.size } : null
+  const thing = await thingAt(file)
+  return thing ? { fingerprint: await fingerprintOf(file), size: thing.size, bundle: thing.kind === 'bundle' } : null
 }
 
 /** The file's text when it is UTF-8 and at most 1 MB; otherwise empty. */
@@ -33,16 +33,16 @@ export async function textOf(root: string, path: LibraryPath): Promise<string> {
   }
 }
 
-/** The library's files outside the kernel's own, with sizes; fingerprints taken once each, on demand. */
+/** The library's things outside the kernel's own, with sizes; fingerprints taken once each, on demand. */
 export async function snapshot(root: string): Promise<Files> {
   const sizes = new Map<LibraryPath, number>()
   for (const path of await libraryFiles(root)) {
-    const s = await stat(abs(root, path)).catch(() => null)
-    if (s?.isFile()) sizes.set(path, s.size)
+    const thing = await thingAt(abs(root, path))
+    if (thing) sizes.set(path, thing.size)
   }
-  const prints = new Map<LibraryPath, Promise<Fingerprint>>()
+  const prints = new Map<LibraryPath, Promise<Fingerprint | null>>()
   const fingerprint = (path: LibraryPath) => {
-    const known = prints.get(path) ?? fingerprintOfFile(abs(root, path))
+    const known = prints.get(path) ?? onDisk(root, path).then((disk) => disk?.fingerprint ?? null)
     prints.set(path, known)
     return known
   }

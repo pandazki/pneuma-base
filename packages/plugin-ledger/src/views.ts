@@ -49,7 +49,7 @@ export function originLabel(origin: LedgerOrigin): string {
   return origin.by === 'owner' ? '带进来的，主人给的' : '带进来的'
 }
 
-export const STATE_LABEL: Record<ItemState['kind'], string> = { consistent: '一致', changed: '已变', moved: '已搬', missing: '不在', removed: '已除' }
+export const STATE_LABEL: Record<ItemState['kind'], string> = { consistent: '一致', changed: '已变', moved: '已搬', missing: '不在', removed: '已除', absorbed: '并入' }
 const MARK_LABEL: Record<Mark['kind'], string> = { stale: '可能过期', 'source-gone': '来源不在' }
 
 const pathOf = (ledger: Ledger, id: ItemId) => ledger.items.get(id)?.path ?? id
@@ -80,6 +80,7 @@ export type ItemView = {
   versions: Version[]
   held: string[]
   archived: boolean
+  absorbedInto: LibraryPath | null // the bundle it is part of now
 }
 
 const saidRow = (ledger: Ledger, s: Said): SaidRow => ({
@@ -119,6 +120,7 @@ export function itemView(ledger: Ledger, item: ItemRecord, states: ReadonlyMap<I
     versions: item.versions,
     held,
     archived: isArchived(item),
+    absorbedInto: item.absorbedInto === null ? null : (ledger.items.get(item.absorbedInto)?.path ?? null),
   }
 }
 
@@ -136,11 +138,13 @@ export function itemText(v: ItemView): string {
   }
   if (v.dependents.length > 0) lines.push(`被依据：${v.dependents.map((d) => d.path).join('、')}`)
   for (const s of v.said) lines.push(`${SAID_LABEL[s.flavor]}：${s.text}${s.about !== null && s.about !== v.path ? `（关于 ${s.about}）` : ''}`)
-  const state = v.state.kind === 'moved' ? `已搬到 ${v.state.to}` : STATE_LABEL[v.state.kind]
+  const state = v.state.kind === 'moved' ? `已搬到 ${v.state.to}` : v.absorbedInto !== null ? `并入了 ${v.absorbedInto}，是它的一部分` : STATE_LABEL[v.state.kind]
   lines.push(`现状：${state}${v.archived ? ' · 已归档' : ''} · ${v.versions.length} 个版本，${v.held.length} 份留存 · 条目 ${v.item}`)
   if (v.versions.length > 1) {
+    // A held copy lies at held/<item>/<fingerprint>/<name>, so the version it keeps is the one with that fingerprint.
+    const kept = new Set(v.held.flatMap((path) => path.split('/').slice(-2, -1)))
     for (const ver of v.versions) {
-      const how = ver.claimed ? '认了直接改动' : ver.held ? '换下的旧版留存了' : ''
+      const how = [...(ver.claimed ? ['认了直接改动'] : []), ...(kept.has(ver.fingerprint) ? ['被换下，留存着'] : [])].join('，')
       lines.push(`  ${ver.fingerprint.slice(0, 8)}  ${when(ver.at)}  ${who(ver.actor)}${how ? `  ${how}` : ''}`)
     }
   }
@@ -257,7 +261,7 @@ export function sinceText(v: SinceView): string {
  * of these lists, and an unowned file in the archive is not listed, unless `includeArchived`.
  */
 export function standingSections(ledger: Ledger, standing: Standing, includeArchived: boolean): PluginSection[] {
-  const shown = (item: ItemRecord) => !item.removed && (includeArchived || !isArchived(item))
+  const shown = (item: ItemRecord) => !item.removed && item.absorbedInto === null && (includeArchived || !isArchived(item))
   const items = [...ledger.items.values()].filter(shown)
   const ref = (id: ItemId) => ({ item: id, path: pathOf(ledger, id) })
   const withMark = (kind: Mark['kind']) =>
@@ -342,6 +346,7 @@ export function findableItems(ledger: Ledger, opts: FindScope): ItemRecord[] {
   return [...ledger.items.values()].filter(
     (item) =>
       !item.removed &&
+      item.absorbedInto === null &&
       item.entered.scene !== opts.skip &&
       (opts.includeArchived || !isArchived(item)) &&
       (origin === undefined || item.origin.kind === origin) &&

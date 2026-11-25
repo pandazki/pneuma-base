@@ -4,7 +4,8 @@ import { readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, posix } from 'node:path'
 import { fileFacts } from './agent.js'
-import { exists, listFiles, regularFile } from './files.js'
+import { exists, regularFile } from './files.js'
+import { listThings, thingAt } from './things.js'
 import { codexHint } from './owner-commands.js'
 import { ARCHIVE_DIR, DESCRIPTION_FILE, KERNEL_DIR, abs, archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
 import type { Action, Block, Context, LibraryPath, Link, PluginProblem, PluginTable, TableRow, ViewAnswer, ViewDecl, ViewList, ViewRequest, ViewResult } from './types.js'
@@ -88,10 +89,10 @@ async function filesPage(params: Record<string, string>, { ctx }: ViewerCall): P
 async function archivePage(_params: Record<string, string>, { ctx }: ViewerCall): Promise<Shown> {
   const { root } = ctx.library
   const dir = join(root, ARCHIVE_DIR)
-  const paths = (await exists(dir)) ? (await listFiles(dir, new Set())).map((p) => archivedPath(p as LibraryPath)) : []
+  const paths = (await exists(dir)) ? (await listThings(dir, new Set())).map((t) => archivedPath(t.path as LibraryPath)) : []
   const rows: TableRow[] = []
   for (const path of paths) {
-    const facts = await regularFile(abs(root, path))
+    const facts = await thingAt(abs(root, path))
     rows.push({
       key: path,
       cells: {

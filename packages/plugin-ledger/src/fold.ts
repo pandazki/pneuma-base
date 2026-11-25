@@ -19,6 +19,8 @@ export type ItemRecord = {
   versions: Version[]
   removed: boolean
   said: Said[] // notes and decisions about it, from any scene
+  bundle: boolean // a marked directory
+  absorbedInto: ItemId | null // the bundle entered later around its path; it moves and goes with that bundle
 }
 
 export type SceneRecord = {
@@ -106,8 +108,11 @@ function apply(ledger: Ledger, f: Fact): void {
         versions: [version(f, null, false)],
         removed: false,
         said: [],
+        bundle: f.bundle === true,
+        absorbedInto: null,
       })
       ledger.pathIndex.set(f.path, f.item)
+      if (f.bundle) absorb(ledger, f.item, f.path)
       return
     case 'item.revise':
       if (!item) return
@@ -115,19 +120,14 @@ function apply(ledger: Ledger, f: Fact): void {
       item.versions.push(version(f, f.held, f.claimed))
       return
     case 'item.move':
-      if (!item) return
-      if (ledger.pathIndex.get(item.path) === item.id) ledger.pathIndex.delete(item.path)
-      item.path = f.to
-      ledger.pathIndex.set(f.to, item.id)
+      if (item) relocate(ledger, item, f.to)
       return
     case 'item.basis':
       if (!item) return
       Object.assign(item, { basis: f.basis, unknownOrigin: false })
       return
     case 'item.remove':
-      if (!item) return
-      item.removed = true
-      if (ledger.pathIndex.get(item.path) === item.id) ledger.pathIndex.delete(item.path)
+      if (item) remove(ledger, item)
       return
     case 'said':
       ledger.scenes.get(f.scene)?.said.push(f)
@@ -137,6 +137,31 @@ function apply(ledger: Ledger, f: Fact): void {
       ledger.ownerOps.push(f)
       return
   }
+}
+
+/** The items under `path` that no bundle absorbed yet are absorbed into the bundle `id` entered there. */
+function absorb(ledger: Ledger, id: ItemId, path: LibraryPath): void {
+  for (const other of ledger.items.values()) {
+    if (other.id !== id && !other.removed && other.absorbedInto === null && other.path.startsWith(`${path}/`)) other.absorbedInto = id
+  }
+}
+
+const absorbedBy = (ledger: Ledger, bundle: ItemRecord) => [...ledger.items.values()].filter((other) => other.absorbedInto === bundle.id)
+
+/** Moves an item to `to`, and the items a bundle absorbed along with it. */
+function relocate(ledger: Ledger, item: ItemRecord, to: LibraryPath): void {
+  const from = item.path
+  if (ledger.pathIndex.get(from) === item.id) ledger.pathIndex.delete(from)
+  item.path = to
+  ledger.pathIndex.set(to, item.id)
+  for (const other of absorbedBy(ledger, item)) relocate(ledger, other, `${to}${other.path.slice(from.length)}` as LibraryPath)
+}
+
+/** Marks an item removed, and the items a bundle absorbed with it. */
+function remove(ledger: Ledger, item: ItemRecord): void {
+  item.removed = true
+  if (ledger.pathIndex.get(item.path) === item.id) ledger.pathIndex.delete(item.path)
+  for (const other of absorbedBy(ledger, item)) remove(ledger, other)
 }
 
 function touchScene(ledger: Ledger, f: Fact): void {
