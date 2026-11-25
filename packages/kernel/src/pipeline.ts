@@ -80,18 +80,19 @@ export async function performVerb<V extends Verb>(verb: V, request: RequestOf<V>
 
 /**
  * Runs one owner-face operation and ends it at the single exit. A command that changes the
- * configuration hands back the reopened library, so the event reaches the plugins installed after it.
+ * configuration hands back the reopened library, so the event reaches the plugins installed after it;
+ * a kernel command that called plugins' hooks hands back their problems.
  */
 export async function performOwner(
   ctx: Context,
   command: string,
   args: OwnerArgs,
   how: { destructive: boolean; readOnly: boolean; setup?: boolean },
-  body: () => Promise<{ answer: OwnerAnswer; library?: Library }>,
+  body: () => Promise<{ answer: OwnerAnswer; library?: Library; problems?: PluginProblem[] }>,
 ): Promise<OwnerResult> {
   return finish(ctx, (result) => ({ face: 'owner', command, args, destructive: how.destructive, readOnly: how.readOnly, setup: how.setup ?? false, result }), async () => {
-    const { answer, library } = await body()
-    return { result: { ...answer, problems: [] }, ...(library ? { library } : {}) }
+    const { answer, library, problems } = await body()
+    return { result: { ...answer, problems: problems ?? [] }, ...(library ? { library } : {}) }
   })
 }
 

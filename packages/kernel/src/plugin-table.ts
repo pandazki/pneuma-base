@@ -59,6 +59,9 @@ const HOOKS: Record<Hook, true> = {
   onCheck: true,
   onArchive: true,
   observe: true,
+  onPurged: true,
+  onAdd: true,
+  onRemove: true,
   onView: true,
   onItemView: true,
 }

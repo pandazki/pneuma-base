@@ -314,6 +314,15 @@ export interface Plugin {
   readonly onCheck?: (req: CheckRequest, ctx: PluginContext) => Promise<PluginSection[]>
   readonly onArchive?: (req: AcceptedArchive, ctx: PluginContext) => Promise<PluginNoteAnswer | null>
   readonly observe?: (event: Event, ctx: PluginContext) => Promise<void>
+  /** After `archive purge` deleted things, with their library paths as they were in the archive. */
+  readonly onPurged?: (paths: readonly LibraryPath[], ctx: PluginContext) => Promise<void>
+  /** Once, after `plugin add` installed it. A problem it answers, or a throw, is shown in the answer of `plugin add`, which still succeeds. */
+  readonly onAdd?: (ctx: PluginContext) => Promise<void | { problems: string[] }>
+  /**
+   * Before `plugin remove` takes it out. It may refuse with a Chinese sentence saying why and what to
+   * do first. `plugin remove <name> --anyway` removes it all the same, and the answer repeats the sentence.
+   */
+  readonly onRemove?: (ctx: PluginContext) => Promise<void | { refuse: string }>
 
   /** The views it adds to the management UI. Each id starts with `<name>.`. */
   readonly views?: readonly ViewDecl[]

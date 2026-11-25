@@ -255,3 +255,64 @@ describe('a name a plugin claims', () => {
     expect(kernel.viewerFace.views(f.library).problems.map((p) => p.plugin)).toEqual(['second', 'second'])
   })
 })
+
+describe('a plugin’s own lifecycle', () => {
+  const calls = (f: Awaited<ReturnType<typeof fixture>>, table: Map<string, sdk.Plugin>): kernel.OwnerCall => ({ ctx: f.ctx, table, env: {}, viaGrant: false, confirm: async () => true })
+  const configured = (f: Awaited<ReturnType<typeof fixture>>) => JSON.parse(f.read('.pneuma-base/config.json')).plugins
+
+  it('hears archive purge through onPurged, with the paths as they were in the archive', async () => {
+    const heard: string[][] = []
+    const f = await fixture([plugin('keeper', { onPurged: async (paths) => void heard.push([...paths]) }), plugin('broken', { onPurged: async () => { throw new Error('purge broke') } })])
+    const r1 = await kernel.ownerFace.dispatch(calls(f, new Map()), 'archive purge', { positional: [], flags: {} })
+    expect(r1).toMatchObject({ outcome: 'done', problems: [] })
+    expect(heard).toEqual([])
+    f.write('_archive/a.md', 'a')
+    f.write('_archive/site/.pneuma-item', '{"format":1}\n')
+    f.write('_archive/site/index.html', '<h1>')
+    const r2 = await kernel.ownerFace.dispatch(calls(f, new Map()), 'archive purge', { positional: [], flags: {} })
+    expect(r2).toMatchObject({ outcome: 'done', problems: [{ plugin: 'broken', message: 'purge broke' }] })
+    expect(heard).toEqual([['_archive/a.md', '_archive/site']])
+  })
+
+  it('hears its own plugin add once through onAdd; what it reports shows in the answer, which still succeeds', async () => {
+    const f = await fixture()
+    const seen: string[] = []
+    const reporter = plugin('reporter', {
+      onAdd: async (ctx) => {
+        seen.push(`${ctx.library.plugins.map((p) => p.name).join(',')} ${existsSync(ctx.dir)}`)
+        return { problems: ['目标还没设：运行 reporter target set'] }
+      },
+    })
+    const thrower = plugin('thrower', { onAdd: async () => { throw new Error('add broke') } })
+    const table = new Map<string, sdk.Plugin>([['reporter', reporter], ['thrower', thrower]])
+    const add = (name: string) => kernel.ownerFace.dispatch(calls(f, table), 'plugin add', { positional: [name], flags: {} })
+    expect(await add('reporter')).toMatchObject({ outcome: 'done', problems: [{ plugin: 'reporter', message: '目标还没设：运行 reporter target set' }] })
+    expect(seen).toEqual(['reporter true'])
+    f.ctx = { ...f.ctx, library: (await kernel.openLibrary(f.root, table)) as sdk.Library }
+    expect(await add('reporter')).toMatchObject({ outcome: 'done', problems: [] })
+    expect(seen).toHaveLength(1)
+    expect(await add('thrower')).toMatchObject({ outcome: 'done', problems: [{ plugin: 'thrower', message: 'add broke' }] })
+    expect(configured(f)).toEqual(['reporter', 'thrower'])
+  })
+
+  it('may refuse plugin remove through onRemove, saying why; --anyway removes it and repeats the warning', async () => {
+    const warning = '还有 3 个网站在线；先运行 holder off，网站才会下线。'
+    const holder = plugin('holder', { onRemove: async () => ({ refuse: warning }) })
+    const thrower = plugin('thrower', { onRemove: async () => { throw new Error('remove broke') } })
+    const f = await fixture([holder, thrower])
+    const table = new Map<string, sdk.Plugin>([['holder', holder], ['thrower', thrower]])
+    const remove = (name: string, flags: sdk.OwnerArgs['flags'] = {}) => kernel.ownerFace.dispatch(calls(f, table), 'plugin remove', { positional: [name], flags })
+    const refused = await remove('holder')
+    expect(refused).toMatchObject({ outcome: 'refused', reason: 'plugin-refused' })
+    expect(refused.text).toContain(warning)
+    expect(refused.text).toContain('--anyway')
+    expect(configured(f)).toEqual(['holder', 'thrower'])
+    const anyway = await remove('holder', { anyway: true })
+    expect(anyway).toMatchObject({ outcome: 'done' })
+    expect(anyway.text).toContain(warning)
+    expect(configured(f)).toEqual(['thrower'])
+    await f.reopen()
+    expect(await remove('thrower')).toMatchObject({ outcome: 'done', problems: [{ plugin: 'thrower', message: 'remove broke' }] })
+    expect(configured(f)).toEqual([])
+  })
+})

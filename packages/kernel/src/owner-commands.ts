@@ -12,9 +12,10 @@ import { GRANT_NAME, readGrantFile, removeGrantFile, writeGrantFile } from './gr
 import { saveConfig } from './library.js'
 import type { OwnerCall } from './owner.js'
 import { ARCHIVE_DIR, parseLibraryPath, regionOf } from './paths.js'
-import type { Grant, GrantId, Library, LibraryPath, OwnerAnswer, OwnerArgs, Plugin, PluginName } from '@pneuma-base/sdk'
+import { eachPlugin, messageOf, pluginContext } from './pipeline.js'
+import type { Context, Grant, GrantId, Library, LibraryPath, OwnerAnswer, OwnerArgs, Plugin, PluginContext, PluginName, PluginProblem } from '@pneuma-base/sdk'
 
-export type Outcome = { answer: OwnerAnswer; library?: Library }
+export type Outcome = { answer: OwnerAnswer; library?: Library; problems?: PluginProblem[] }
 
 /** Like a plugin's OwnerCommand, but it runs with the whole owner call and may hand back the reopened library. */
 export type KernelCommand = {
@@ -28,9 +29,10 @@ export type KernelCommand = {
 }
 
 const refused = (reason: string, text: string): Outcome => ({ answer: { outcome: 'refused', reason, text } })
-const done = (text: string, data?: unknown, library?: Library): Outcome => ({
+const done = (text: string, data?: unknown, library?: Library, problems: PluginProblem[] = []): Outcome => ({
   answer: { outcome: 'done', text, ...(data === undefined ? {} : { data }) },
   ...(library ? { library } : {}),
+  problems,
 })
 
 type Read = { positional: string[]; value(flag: string): string | null }
@@ -134,24 +136,35 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
         return refused('name-taken', `没有装上插件 ${name}：${what}。一个名字只归一个插件；要换用 ${name}，先卸下 ${holders}。`)
       }
       const updated = await saveConfig(library.root, { ...library.config, plugins: [...library.config.plugins, name as PluginName] }, call.table)
-      return done(`已装上插件 ${name}，说明已重新生成。`, undefined, updated)
+      const added = updated.plugins.find((p) => p.name === name)
+      const heard = await hear(added, (p, pctx) => p.onAdd?.(pctx), { ...call.ctx, library: updated })
+      const problems = [...heard.problems, ...(heard.answer ? heard.answer.problems.map((message) => ({ plugin: name as PluginName, message })) : [])]
+      return done(`已装上插件 ${name}，说明已重新生成。`, undefined, updated, problems)
     },
   },
   {
     name: 'plugin remove',
     summary: '卸下一个插件；它名下的目录原样留着',
-    usage: '<插件名>',
+    usage: '<插件名> [--anyway]',
     destructive: false,
     ownerOnly: true,
     setup: true,
+    /** Asks the plugin first; it may refuse, saying why. `--anyway` removes it all the same: the owner may always drop a plugin. */
     async run(args, call) {
-      const a = read('plugin remove', args, 1, [])
+      const a = read('plugin remove', args, 1, ['anyway'])
       if (typeof a === 'string') return usage(a)
       const name = a.positional[0] as string
       const { library } = call.ctx
       if (!library.config.plugins.includes(name as PluginName)) return refused('not-installed', `这个库没装插件 ${name}`)
+      const heard = await hear(library.plugins.find((p) => p.name === name), (p, pctx) => p.onRemove?.(pctx), call.ctx)
+      const warning = heard.answer ? heard.answer.refuse : null
+      const flag = args.flags.anyway
+      if (warning !== null && !(flag === true || (Array.isArray(flag) && flag[0] === 'yes'))) {
+        return { ...refused('plugin-refused', `插件 ${name} 没有卸下，它说：${warning}\n照样要卸，用 plugin remove ${name} --anyway。`), problems: heard.problems }
+      }
       const updated = await saveConfig(library.root, { ...library.config, plugins: library.config.plugins.filter((p) => p !== name) }, call.table)
-      return done(`已卸下插件 ${name}，说明已重新生成。它名下的目录 .pneuma-base/${name}/ 原样留着。`, undefined, updated)
+      const text = `已卸下插件 ${name}，说明已重新生成。它名下的目录 .pneuma-base/${name}/ 原样留着。${warning === null ? '' : `\n它卸下前提醒过：${warning}`}`
+      return done(text, undefined, updated, heard.problems)
     },
   },
   {
@@ -187,17 +200,28 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
     summary: '清空归档区',
     destructive: true,
     ownerOnly: true,
-    /** Deletes everything in `_archive/`. The answer's data names the library paths it deleted. */
+    /** Deletes everything in `_archive/`, then tells each plugin's onPurged. The answer's data names the library paths it deleted. */
     async run(args, call) {
       const a = read('archive purge', args, 0, [])
       if (typeof a === 'string') return usage(a)
       const dir = join(call.ctx.library.root, ARCHIVE_DIR)
       const paths = (await exists(dir)) ? (await listThings(dir, new Set())).map((t) => `${ARCHIVE_DIR}/${t.path}` as LibraryPath) : []
       await rm(dir, { recursive: true, force: true })
-      return done(`已清空归档区，删掉了 ${paths.length} 样东西。`, { removed: paths.length, paths })
+      const heard = paths.length === 0 ? { problems: [] } : await eachPlugin(call.ctx, (plugin, pctx) => plugin.onPurged?.(paths, pctx))
+      return done(`已清空归档区，删掉了 ${paths.length} 样东西。`, { removed: paths.length, paths }, undefined, heard.problems)
     },
   },
 ]
+
+/** One plugin's lifecycle hook, if it is installed here and has it: what it answered, or the problem it threw (K8). */
+async function hear<T>(plugin: Plugin | undefined, call: (p: Plugin, pctx: PluginContext) => Promise<T> | undefined, ctx: Context): Promise<{ answer: T | undefined; problems: PluginProblem[] }> {
+  if (!plugin) return { answer: undefined, problems: [] }
+  try {
+    return { answer: await call(plugin, pluginContext(ctx, plugin.name)), problems: [] }
+  } catch (error) {
+    return { answer: undefined, problems: [{ plugin: plugin.name, message: messageOf(error) }] }
+  }
+}
 
 /** What Codex needs before it can write the library from its sandbox. */
 export function codexHint(root: string): string {

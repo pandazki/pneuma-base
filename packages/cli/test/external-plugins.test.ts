@@ -113,3 +113,42 @@ describe('a plugin that fails to load', () => {
     expect(run(['find']).json().problems).toEqual([])
   })
 })
+
+describe('plugin add and plugin remove through the command line', () => {
+  const SPACE = `export default {
+  contract: 1,
+  name: 'space',
+  cognition: null,
+  storage: [],
+  statements: ['deployable'],
+  ownerCommands: [],
+  async onSay() { return { outcome: 'heard', note: '记下了' } },
+  async onRemove() { return { refuse: '还有网站在线；先 space off，它们才会下线。' } },
+}
+`
+  const installed = () => JSON.parse(readFileSync(join(lib, '.pneuma-base/config.json'), 'utf8')).plugins
+
+  it('refuses a plugin whose say kind an installed plugin holds, naming the holder', () => {
+    plugin('space', SPACE)
+    expect(run(['plugin', 'add', 'deploy']).code).toBe(0)
+    const r = run(['plugin', 'add', 'space'])
+    expect(r.code).toBe(2)
+    expect(r.json()).toMatchObject({ outcome: 'refused', reason: 'name-taken' })
+    expect(r.json().text).toContain('「说」的种类「deployable」已归插件 deploy')
+    expect(installed()).toEqual(['deploy'])
+  })
+
+  it('lets a plugin refuse its removal, and removes it with --anyway, repeating what it warned about', () => {
+    plugin('space', SPACE)
+    expect(run(['plugin', 'add', 'space']).code).toBe(0)
+    const refused = run(['plugin', 'remove', 'space'])
+    expect(refused.code).toBe(2)
+    expect(refused.json()).toMatchObject({ outcome: 'refused', reason: 'plugin-refused' })
+    expect(refused.json().text).toContain('还有网站在线')
+    expect(installed()).toEqual(['space'])
+    const anyway = sb.run(['--library', lib, 'plugin', 'remove', '--anyway', 'space'], { cwd: tempDir('pb-outside-') })
+    expect(anyway.code, anyway.stderr).toBe(0)
+    expect(anyway.stdout).toContain('它卸下前提醒过：还有网站在线')
+    expect(installed()).toEqual([])
+  })
+})
