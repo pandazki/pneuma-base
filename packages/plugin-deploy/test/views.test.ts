@@ -105,6 +105,11 @@ describe('the deploy section of the item panel', () => {
     expect(fields.find((f) => f.label === '状态')?.value.tag?.text).toBe('已归档')
   })
 
+  it('offers no "turn on" for an archived thing whose switch is off', async () => {
+    const section = await deploy.onItemView?.('_archive/sites/s2' as LibraryPath, pctx)
+    expect(section?.blocks.some((b) => b.kind === 'actions')).toBe(false)
+  })
+
   it('for a thing nobody declared: nothing', async () => {
     expect(await deploy.onItemView?.('sites/other' as LibraryPath, pctx)).toBeNull()
   })

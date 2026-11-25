@@ -11,8 +11,11 @@ ROOT=${1:-$(mktemp -d "${TMPDIR:-/tmp}/pneuma-site-XXXXXX")}
 MODEL_A=${RELAY_CLAUDE_MODEL:-opus}
 MODEL_B=${RELAY_CODEX_MODEL:-gpt-6.2-astra}
 LIMIT=${RELAY_TIMEOUT_SECONDS:-900}
-DIR_A=$(mktemp -d "${TMPDIR:-/tmp}/reading-club-XXXXXX")
-DIR_B=$(mktemp -d "${TMPDIR:-/tmp}/quick-fix-XXXXXX")
+# Each agent works several levels down its own random parent, so neither finds the other's
+# files by looking around its working directory; only the library links them.
+DIR_A=$(mktemp -d "${TMPDIR:-/tmp}/a-XXXXXX")/projects/reading-club
+DIR_B=$(mktemp -d "${TMPDIR:-/tmp}/b-XXXXXX")/work/quick-fix
+mkdir -p "$DIR_A" "$DIR_B"
 mkdir -p "$ROOT/bin" "$ROOT/home" "$ROOT/online"
 printf '%s\n%s\n' "$DIR_A" "$DIR_B" > "$ROOT/dirs.txt"
 printf '#!/bin/sh\nexec node "%s/packages/cli/dist/bin.js" "$@"\n' "$REPO" > "$ROOT/bin/pneuma-base"

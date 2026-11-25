@@ -49,7 +49,11 @@ const owner = (command: string, positional: string[], flags: Record<string, stri
 const action = (label: string, call: Call, inputs: Action['inputs'] = []): Action => ({ label, tone: 'default', confirm: null, inputs, call })
 const input = (name: string, label: string, placeholder: string): Action['inputs'][number] => ({ name, label, placeholder, value: null, options: null })
 
-const switchAction = (l: Look): Action => (l.thing.on ? action('关上', owner('deploy off', [l.thing.path])) : action('打开', owner('deploy on', [l.thing.path])))
+/** An archived thing is offline whatever its switch says, so it offers no "turn on"; a switch left on can still be turned off. */
+const switchActions = (l: Look): Action[] => {
+  if (l.thing.on) return [action('关上', owner('deploy off', [l.thing.path]))]
+  return l.status === 'archived' ? [] : [action('打开', owner('deploy on', [l.thing.path]))]
+}
 const stateCell = (l: Look) => ({ text: '', tag: STATUS[l.status] })
 const addressCell = (l: Look) => (l.url ? { text: l.url, mono: true } : { text: '—', muted: true })
 
@@ -74,7 +78,7 @@ export async function sitesView(run: Run): Promise<ViewAnswer> {
     key: l.thing.id,
     cells: { path: { text: l.thing.path, mono: true }, state: stateCell(l), address: addressCell(l) },
     link: { view: 'item', params: { path: l.thing.path }, target: 'panel' },
-    actions: [switchAction(l)],
+    actions: switchActions(l),
   }))
   const things: Block = {
     kind: 'section',
@@ -100,5 +104,5 @@ export async function itemSection(run: Run, path: LibraryPath): Promise<ItemSect
     ...(l.site ? [{ label: '站点名', value: { text: l.site, mono: true } }] : []),
   ]
   const meaning = MEANING[l.status](l)
-  return { title: '部署', blocks: [{ kind: 'fields', fields }, ...(meaning ? [{ kind: 'text' as const, tone: 'neutral' as const, text: meaning }] : []), { kind: 'actions', actions: [switchAction(l)] }] }
+  return { title: '部署', blocks: [{ kind: 'fields', fields }, ...(meaning ? [{ kind: 'text' as const, tone: 'neutral' as const, text: meaning }] : []), ...(switchActions(l).length > 0 ? [{ kind: 'actions' as const, actions: switchActions(l) }] : [])] }
 }
