@@ -117,3 +117,42 @@ export async function shoot(page: Page, name: string): Promise<void> {
   }
   await page.emulateMedia({ colorScheme: 'light' })
 }
+
+// ---- the relay of packages/cli/test/relay.test.ts, as a library to look at ----
+
+export const DOING = '给电子书小店选支付服务'
+export const DECIDED = '主人决定用 Paddle，因为它替他处理欧洲的税'
+export const SOURCES = {
+  'payments/sources/stripe-pricing.html': 'https://stripe.com/pricing',
+  'payments/sources/paddle-pricing.html': 'https://www.paddle.com/pricing',
+  'payments/sources/lemonsqueezy-pricing.html': 'https://www.lemonsqueezy.com/pricing',
+}
+
+/** Session A (claude-code) brings four sources and makes two things; session B (codex) makes one from A's output. */
+export function relay(pb: Cli): string {
+  const lib = join(tempDir(), 'lib')
+  const dirA = tempDir('pb-e2e-a-')
+  const dirB = tempDir('pb-e2e-b-')
+  pb.run(['init', lib])
+  pb.run(['grant', 'issue', 'claude', '--library', lib, '--agent', 'claude-code'])
+  pb.run(['grant', 'issue', 'codex', '--library', lib, '--agent', 'codex'])
+  writeFileSync(join(dirA, 'stripe.html'), '<html>Stripe pricing: 2.9% + 30c</html>')
+  writeFileSync(join(dirA, 'paddle.html'), '<html>Paddle pricing: 5% + 50c, merchant of record</html>')
+  writeFileSync(join(dirA, 'eu-vat.txt'), 'EU VAT applies to e-books sold to EU customers.')
+  writeFileSync(join(dirA, 'comparison.md'), '# 支付服务对比\n\nStripe、Paddle、Lemon Squeezy 的费率和欧洲增值税的处理。\n')
+  writeFileSync(join(dirA, 'recommendation.md'), '# 建议\n\n电子书小店的支付用 Paddle。\n')
+  writeFileSync(join(dirB, 'integration.md'), '# 接入 Paddle\n')
+  const A = (args: string[], input?: string) => pb.run(['@claude', ...args, '--session', 'sess-a'], { cwd: dirA, ...(input === undefined ? {} : { input }) })
+  const B = (args: string[]) => pb.run(['@codex', ...args], { cwd: dirB, env: { PNEUMA_BASE_SESSION: 'sess-b' } })
+  A(['start', DOING])
+  A(['put', 'stripe.html', '--to', 'payments/sources/stripe-pricing.html', '--brought', '--source', SOURCES['payments/sources/stripe-pricing.html']])
+  A(['put', 'paddle.html', '--to', 'payments/sources/paddle-pricing.html', '--brought', '--source', SOURCES['payments/sources/paddle-pricing.html']])
+  A(['put', '-', '--to', 'payments/sources/lemonsqueezy-pricing.html', '--brought', '--source', SOURCES['payments/sources/lemonsqueezy-pricing.html']], '<html>Lemon Squeezy: 5% + 50c</html>')
+  A(['put', 'eu-vat.txt', '--to', 'payments/sources/eu-vat-note.txt', '--brought', '--by', 'owner'])
+  A(['put', 'comparison.md', '--to', 'payments/comparison.md', '--made', '--from', ...Object.keys(SOURCES), '--from-outside', '主人在对话里说：客户主要在欧洲'])
+  A(['put', 'recommendation.md', '--to', 'payments/recommendation.md', '--made', '--from', 'payments/comparison.md', 'payments/sources/eu-vat-note.txt'])
+  A(['say', 'decided', DECIDED])
+  B(['start', '把支付服务接进电子书小店'])
+  B(['put', 'integration.md', '--to', 'payments/integration-notes.md', '--made', '--from', 'payments/recommendation.md'])
+  return lib
+}

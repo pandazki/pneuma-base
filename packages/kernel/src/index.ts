@@ -6,7 +6,7 @@ export { openLibrary, pluginName } from './library.js'
 export { makeContext } from './pipeline.js'
 export { identifySession, identifyActor, looksLikeAgentSession, type Env } from './session.js'
 export { resolveGrant, GRANT_NAME, type ResolvedGrant } from './grants.js'
-export { abs, archivedPath, originalPath, parseLibraryPath, regionOf, type Region } from './paths.js'
+export { abs, archivedPath, originalPath, parseLibraryPath, regionOf, shortDir, type Region } from './paths.js'
 export { fingerprintOfFile } from './files.js'
 export {
   BUNDLE_MARKER,

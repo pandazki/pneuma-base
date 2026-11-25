@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, type State } from './api'
 import { BlockEnvContext, Blocks, sameLink, type BlockEnv } from './blocks'
 import { ActionDialog, fill, Toasts, useToasts, ViewIcon } from './chrome'
+import { Choice } from './controls'
 
 /** How often the page asks whether the library changed. */
 export const POLL_MS = 2000
@@ -92,18 +93,14 @@ function Nav({ state, current, onSelect }: { state: State; current: string | nul
 function Filters({ decl, params, onChange }: { decl: ViewDecl | undefined; params: Record<string, string>; onChange(name: string, value: string): void }) {
   if (!decl || decl.filters.length === 0) return null
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-2" role="toolbar" aria-label="过滤">
       {decl.filters.map((f) => (
-        <label key={f.name} className="flex items-center gap-1.5 text-[12.5px] text-ink-2">
-          {f.label}
-          <select className="field !h-7 !w-auto !pr-7 text-[12.5px]" value={params[f.name] ?? f.default} onChange={(e) => onChange(f.name, e.target.value)}>
-            {f.options.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div key={f.name} className="flex items-center gap-2">
+          <span className="text-[12.5px] font-medium text-ink-3" aria-hidden>
+            {f.label}
+          </span>
+          <Choice label={f.label} options={f.options} value={params[f.name] ?? f.default} onChange={(value) => onChange(f.name, value)} />
+        </div>
       ))}
     </div>
   )
@@ -333,14 +330,12 @@ export function App() {
             }}
           />
           <main className="min-w-0 flex-1 overflow-auto bg-page">
-            <header className="flex flex-wrap items-end gap-x-6 gap-y-3 px-6 pt-5 pb-4">
+            <header className="flex flex-col gap-3 px-6 pt-5 pb-4">
               <div className="min-w-0">
                 <h1 className="text-[19px] font-semibold tracking-[-0.015em]">{result?.title ?? decl?.title ?? ''}</h1>
-                {result?.subtitle ? <p className="truncate font-mono text-[12px] text-ink-2">{result.subtitle}</p> : null}
+                {result?.subtitle ? <p className="truncate text-[12.5px] text-ink-2">{result.subtitle}</p> : null}
               </div>
-              <div className="ml-auto">
-                <Filters decl={decl} params={request?.params ?? {}} onChange={(name, value) => current && setMain({ view: current.view, params: { ...current.params, [name]: value } })} />
-              </div>
+              <Filters decl={decl} params={request?.params ?? {}} onChange={(name, value) => current && setMain({ view: current.view, params: { ...current.params, [name]: value } })} />
             </header>
             <div className="flex flex-col gap-4 px-6 pb-12">
               <Problems problems={state.data.problems} />

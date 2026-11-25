@@ -1,4 +1,5 @@
 import { realpathSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, posix, relative, sep } from 'node:path'
 import type { LibraryPath, PluginName } from './types.js'
 
@@ -56,6 +57,16 @@ export function withSuffix(path: LibraryPath, suffix: string): LibraryPath {
 
 export function isWithin(path: LibraryPath, area: LibraryPath): boolean {
   return path === area || path.startsWith(`${area}/`)
+}
+
+/**
+ * A directory as people read it: the home directory as ~, and when longer than `max` characters,
+ * only its last `max - 3` after …. Text answers use the default; a narrow place in the UI, less.
+ */
+export function shortDir(dir: string, max = 48, home = homedir()): string {
+  const tilde = dir === home ? '~' : dir.startsWith(`${home}/`) ? `~${dir.slice(home.length)}` : dir
+  const chars = [...tilde]
+  return chars.length > max ? `…${chars.slice(-(max - 3)).join('')}` : tilde
 }
 
 export function abs(root: string, path: LibraryPath): string {

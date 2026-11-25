@@ -227,6 +227,59 @@
   .tone-info {
     --tone: var(--accent);
   }
+  /* A few options side by side: a sunken track, the chosen one raised. */
+  .segmented {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    height: 28px;
+    padding: 2px;
+    border-radius: var(--radius-control);
+    background: var(--field);
+    box-shadow: var(--shadow-inset-field);
+  }
+  .segmented > button {
+    height: 24px;
+    padding: 0 10px;
+    border-radius: var(--radius-chip);
+    color: var(--ink-2);
+    font-size: 12.5px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition:
+      background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+      color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .segmented > button:hover {
+    color: var(--ink);
+  }
+  .segmented > button[aria-checked='true'] {
+    background: var(--surface);
+    box-shadow: var(--shadow-btn);
+    color: var(--ink);
+  }
+  /* More options: a button-like select with the system's chevron. */
+  .select {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+  .select > select {
+    appearance: none;
+    height: 28px;
+    padding: 0 28px 0 10px;
+    border-radius: var(--radius-control);
+    background: var(--surface);
+    box-shadow: var(--shadow-btn);
+    color: var(--ink);
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .select > select:hover {
+    background: var(--hover);
+  }
   .link {
     color: var(--accent-ink);
     text-align: left;
