@@ -38,9 +38,11 @@ alias pneuma-base="node $PWD/packages/cli/dist/bin.js"
 
    ```sh
    pneuma-base grant issue claude --agent claude-code --library ~/base
-   pneuma-base skill install claude --agent claude --dir ~/.claude/skills
+   pneuma-base skill install claude --dir ~/.claude/skills
    pneuma-base grant issue codex --agent codex --library ~/base
-   pneuma-base skill install codex --agent codex --dir ~/.agents/skills
+   pneuma-base skill install codex --dir ~/.agents/skills
+   pneuma-base grant issue agy --agent antigravity --library ~/base
+   pneuma-base skill install agy --dir ~/.agents/skills
    ```
 
    Codex 在沙箱里运行，启动时要把库加进可写目录：`codex --add-dir ~/base`。
