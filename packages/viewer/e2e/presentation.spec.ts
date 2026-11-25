@@ -143,9 +143,14 @@ test('a plugin’s own page gets its data and the scheme, runs a declared action
   await expect(page.getByRole('status')).toContainText('计数是 1')
   await expect(frame.locator('#count')).toHaveText('1')
   expect(calls.map((c) => JSON.parse(c))).toMatchObject([{ call: { face: 'owner', command: 'pager bump' }, confirmed: true }])
-  const held = await page.frames().find((f) => f.url().includes('/plugin-ui/pager/counter.html'))?.evaluate(() => JSON.stringify((window as unknown as { lastMessage: unknown }).lastMessage))
+  const inside = page.frames().find((f) => f.url().includes('/plugin-ui/pager/counter.html'))
+  const held = await inside?.evaluate(() => JSON.stringify((window as unknown as { lastMessage: unknown }).lastMessage))
   expect(held).toContain('"label":"加一"')
   expect(held).not.toContain('pager bump')
+  // Nor the API's token: not in its address, not in its referrer.
+  const seen = await inside?.evaluate(() => `${location.href} ${document.referrer}`)
+  expect(seen).toContain('/plugin-ui/pager/counter.html')
+  expect(seen).not.toContain(new URL(url).searchParams.get('token') ?? 'no token')
 
   // It may open a view.
   await frame.getByRole('button', { name: '打开文件页' }).click()
