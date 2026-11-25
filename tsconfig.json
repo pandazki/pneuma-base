@@ -7,6 +7,8 @@
     { "path": "packages/plugin-ledger/test" },
     { "path": "packages/plugin-version" },
     { "path": "packages/plugin-version/test" },
+    { "path": "packages/plugin-sync" },
+    { "path": "packages/plugin-sync/test" },
     { "path": "packages/viewer" },
     { "path": "packages/viewer/web" },
     { "path": "packages/viewer/test" },
