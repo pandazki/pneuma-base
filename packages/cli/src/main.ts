@@ -19,6 +19,7 @@ import {
   type Grant,
   type Instant,
   type Library,
+  type MachineContext,
   type Origin,
   type OwnerArgs,
   type OwnerCall,
@@ -28,7 +29,7 @@ import {
   type PluginTable,
   type PutRequest,
 } from '@pneuma-base/kernel'
-import { GLOBAL_FLAGS, UsageError, flagList, flagValue, hasFlag, ownFlags, parseArgs, type Parsed } from './args.js'
+import { UsageError, flagList, flagValue, hasFlag, leadingWords, ownFlags, parseCommand, splitLine, type FlagKind, type Line, type Parsed } from './args.js'
 import { archiveText, checkText, findText, inspectText, ownerText, putText, sayText, startText } from './format.js'
 import { view } from './view.js'
 
@@ -38,10 +39,45 @@ export type Io = {
   out(text: string): void
   err(text: string): void
   readStdin(): Promise<Uint8Array>
+  /** A value given besides the arguments: standard input, less one final newline; in a terminal, typed without echo. Null when none was given. */
+  readSecret(question: string): Promise<string | null>
   confirm(question: string): Promise<boolean>
   /** Resolves when the person stops a long-running command, such as view, with Ctrl+C. */
   untilStopped(): Promise<void>
   openBrowser(url: string): void
+}
+
+async function readStdin(): Promise<Uint8Array> {
+  const chunks: Buffer[] = []
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer)
+  return Buffer.concat(chunks)
+}
+
+/** What the person types in the terminal after `question`, shown as nothing; null when they stop with Ctrl+C or Ctrl+D. */
+function hiddenAnswer(question: string): Promise<string | null> {
+  const stdin = process.stdin
+  return new Promise((resolve) => {
+    let typed: string[] = []
+    const finish = (answer: string | null) => {
+      stdin.off('data', onData)
+      stdin.setRawMode(false)
+      stdin.pause()
+      process.stderr.write('\n')
+      resolve(answer)
+    }
+    const onData = (chunk: string) => {
+      for (const ch of chunk) {
+        if (ch === '\r' || ch === '\n') return finish(typed.join(''))
+        if (ch === '\u0003' || ch === '\u0004') return finish(null)
+        typed = ch === '\u007f' || ch === '\b' ? typed.slice(0, -1) : [...typed, ch]
+      }
+    }
+    process.stderr.write(question)
+    stdin.setEncoding('utf8')
+    stdin.setRawMode(true)
+    stdin.on('data', onData)
+    stdin.resume()
+  })
 }
 
 export function processIo(): Io {
@@ -50,11 +86,8 @@ export function processIo(): Io {
     cwd: process.cwd(),
     out: (text) => void process.stdout.write(`${text}\n`),
     err: (text) => void process.stderr.write(`${text}\n`),
-    readStdin: async () => {
-      const chunks: Buffer[] = []
-      for await (const chunk of process.stdin) chunks.push(chunk as Buffer)
-      return Buffer.concat(chunks)
-    },
+    readStdin,
+    readSecret: async (question) => (process.stdin.isTTY ? hiddenAnswer(question) : Buffer.from(await readStdin()).toString('utf8').replace(/\r?\n$/, '')),
     confirm: async (question) => {
       if (!process.stdin.isTTY) return false
       const rl = createInterface({ input: process.stdin, output: process.stderr })
@@ -92,20 +125,21 @@ const USAGE = `用法：
 function ownerHelp(commands: OwnerCommandInfo[], library: Library | null): string {
   const lines = commands.map((c) => {
     const gate = c.destructive ? '；会丢数据，只有主人能做，要当面确认' : c.ownerOnly ? '；只有主人能做' : ''
-    return `  ${[c.name, ...(c.usage === null ? [] : [c.usage])].join(' ')}\n      ${c.summary}${gate}${c.by === 'kernel' ? '' : `（${c.by}）`}`
+    const machine = c.machine ? '；不用指明库' : ''
+    return `  ${[c.name, ...(c.usage === null ? [] : [c.usage])].join(' ')}\n      ${c.summary}${gate}${machine}${c.by === 'kernel' ? '' : `（${c.by}）`}`
   })
-  const head = `主人命令${library === null ? '' : `（${library.root} 能用的）`}，都带 --library <库的目录>，skill install 除外：`
+  const head = `主人命令${library === null ? '' : `（${library.root} 能用的）`}，都带 --library <库的目录>，skill install 和不用指明库的除外：`
   const more = library === null ? ['库里装的插件各带自己的命令，pneuma-base --help --library <库的目录> 列出那个库能用的全部。'] : []
   return [head, ...lines, ...more].join('\n')
 }
 
 /** Help, with the owner commands of the library `--library` or `@<grant>` names, if any. */
 async function help(argv: readonly string[], io: Io, table: PluginTable, home: string): Promise<string> {
-  const parsed = parseArgs(argv.filter((a) => a !== '--help' && a !== 'help'))
-  const dir = flagValue(parsed, 'library')
+  const line = splitLine(argv.filter((a) => a !== '--help' && a !== 'help'))
+  const dir = flagValue({ flags: line.global }, 'library')
   const library =
-    parsed.grant !== null
-      ? await resolveGrant(home, parsed.grant, table).then((r) => (r.ok ? r.library : null))
+    line.grant !== null
+      ? await resolveGrant(home, line.grant, table).then((r) => (r.ok ? r.library : null))
       : dir === null ? null : await openLibrary(resolve(io.cwd, dir), table)
   return `${USAGE}\n${ownerHelp(ownerFace.commands(library?.plugins ?? []), library)}`
 }
@@ -114,9 +148,11 @@ async function help(argv: readonly string[], io: Io, table: PluginTable, home: s
 type Answer = { json: unknown; lines: string[]; exit: number }
 
 type Bound = { library: Library; ctx: Context; viaGrant: boolean }
-type Invocation = { parsed: Parsed; args: string[]; io: Io; table: PluginTable; home: string }
+/** `table`: every plugin this machine has; `builtins`: the command line's own, which the UI's server joins with the machine's on each request. */
+type Invocation = { parsed: Parsed; args: string[]; io: Io; table: PluginTable; builtins: PluginTable; home: string }
 
-type Spec = { words: string[]; flags: readonly string[] | 'any'; arity: [min: number, max: number] } & (
+/** `flags`: how each of its own flags takes values; `any` for say, whose flags are the plugins'. */
+type Spec = { words: string[]; flags: Readonly<Record<string, FlagKind>> | 'any'; arity: [min: number, max: number] } & (
   | { library: true; run: (inv: Invocation, bound: Bound) => Promise<Answer> }
   | { library: false; run: (inv: Invocation) => Promise<Answer> }
 )
@@ -183,13 +219,13 @@ function sinceOf(value: string | null): Instant | 'last' | null {
 }
 
 function ownerCall(inv: Invocation, bound: Bound): OwnerCall {
-  return { ctx: bound.ctx, table: inv.table, env: inv.io.env, viaGrant: bound.viaGrant, confirm: (q) => inv.io.confirm(q) }
+  return { ctx: bound.ctx, table: inv.table, env: inv.io.env, viaGrant: bound.viaGrant, confirm: (q) => inv.io.confirm(q), readSecret: (q) => inv.io.readSecret(q) }
 }
 
 const SPECS: Spec[] = [
   {
     words: ['start'],
-    flags: [],
+    flags: {},
     arity: [1, Infinity],
     library: true,
     run: async ({ args }, { ctx }) => {
@@ -202,7 +238,7 @@ const SPECS: Spec[] = [
   },
   {
     words: ['find'],
-    flags: ['include-archived', 'scene', 'origin'],
+    flags: { 'include-archived': 'boolean', scene: 'value', origin: 'value' },
     arity: [0, Infinity],
     library: true,
     run: async ({ args, parsed }, { ctx }) => {
@@ -214,7 +250,7 @@ const SPECS: Spec[] = [
   },
   {
     words: ['inspect'],
-    flags: [],
+    flags: {},
     arity: [1, 1],
     library: true,
     run: async ({ args }, { ctx }) => {
@@ -225,7 +261,7 @@ const SPECS: Spec[] = [
   },
   {
     words: ['put'],
-    flags: ['to', 'brought', 'made', 'source', 'by', 'from', 'from-outside', 'note'],
+    flags: { to: 'value', brought: 'boolean', made: 'boolean', source: 'value', by: 'value', from: 'list', 'from-outside': 'list', note: 'value' },
     arity: [1, 1],
     library: true,
     run: async (inv, { library, ctx }) => {
@@ -249,7 +285,7 @@ const SPECS: Spec[] = [
   },
   {
     words: ['check'],
-    flags: ['since', 'include-archived'],
+    flags: { since: 'value', 'include-archived': 'boolean' },
     arity: [0, 0],
     library: true,
     run: async ({ parsed }, { ctx }) => {
@@ -260,7 +296,7 @@ const SPECS: Spec[] = [
   ...(['archive', 'unarchive'] as const).map(
     (kind): Spec => ({
       words: [kind],
-      flags: [],
+      flags: {},
       arity: [1, 1],
       library: true,
       run: async ({ args }, { ctx }) => {
@@ -271,7 +307,7 @@ const SPECS: Spec[] = [
   ),
   {
     words: ['init'],
-    flags: ['bare'],
+    flags: { bare: 'boolean' },
     arity: [1, 1],
     library: false,
     run: async ({ args, parsed, io, table, home }) => {
@@ -283,23 +319,23 @@ const SPECS: Spec[] = [
   },
   {
     words: ['view'],
-    flags: ['port', 'no-open'],
+    flags: { port: 'value', 'no-open': 'boolean' },
     arity: [0, 1],
     library: false,
-    run: async ({ args, parsed, io, table, home }) => {
+    run: async ({ args, parsed, io, builtins, home }) => {
       const port = flagValue(parsed, 'port')
       if (port !== null && !/^\d{1,5}$/.test(port)) throw new UsageError(`--port 要写一个端口号：${port}`)
       const dir = resolve(io.cwd, args[0] ?? '.')
-      const stopped = await view({ dir, table, home, io, port: port === null ? 0 : Number(port), open: !hasFlag(parsed, 'no-open') })
+      const stopped = await view({ dir, builtins, home, io, port: port === null ? 0 : Number(port), open: !hasFlag(parsed, 'no-open') })
       return { json: stopped, lines: ['界面已关闭。'], exit: 0 }
     },
   },
 ]
 
-function matchSpec(positional: string[]): Spec | null {
+function matchSpec(typed: readonly string[]): Spec | null {
   let best: Spec | null = null
   for (const spec of SPECS) {
-    if (spec.words.every((w, i) => positional[i] === w) && spec.words.length > (best?.words.length ?? 0)) best = spec
+    if (spec.words.every((w, i) => typed[i] === w) && spec.words.length > (best?.words.length ?? 0)) best = spec
   }
   return best
 }
@@ -333,62 +369,82 @@ const GRANT_BOUND: ReadonlySet<string> = new Set(['skill install'])
 
 const words = (name: string) => name.split(' ')
 
-/** The owner command with the most words that start the positional arguments. */
-function matchCommand(commands: OwnerCommandInfo[], positional: string[]): OwnerCommandInfo | undefined {
-  return commands.filter((c) => words(c.name).every((w, i) => positional[i] === w)).sort((a, b) => words(b.name).length - words(a.name).length)[0]
+/** The owner command with the most words that start the typed words. */
+function matchCommand(commands: OwnerCommandInfo[], typed: readonly string[]): OwnerCommandInfo | undefined {
+  return commands.filter((c) => words(c.name).every((w, i) => typed[i] === w)).sort((a, b) => words(b.name).length - words(a.name).length)[0]
+}
+
+/**
+ * The arguments after the command's name, read by its `params`: a flag it does not declare is a
+ * switch, which the owner face then refuses with the usage line. A command without `params` reads
+ * flags as the command line always has.
+ */
+function argsOf(command: OwnerCommandInfo, line: Line): OwnerArgs {
+  const kinds = Object.fromEntries((command.params?.flags ?? []).map((f) => [f.name, f.kind]))
+  const parsed = parseCommand(line, words(command.name).length, kinds, command.params ? 'switch' : 'table', command.name)
+  return { positional: parsed.positional, flags: Object.fromEntries(ownFlags(parsed)) }
 }
 
 /** The library of a grant-bound command: the one its grant points at, used by the owner. */
 async function bindByGrant(inv: Invocation, grantName: string | undefined, command: string): Promise<Bound | Answer> {
-  if (grantName === undefined) throw new UsageError(`${command} 的参数个数不对`)
+  if (grantName === undefined) throw new UsageError(`${command} 要写授权名`)
   const resolved = await resolveGrant(inv.home, grantName, inv.table)
   return resolved.ok ? contextFor(inv, resolved.library, null) : refusal(resolved.reason, resolved.text)
 }
 
+/** A command that needs no library, run with none: the owner's, in the session the environment shows. */
+function machineCall(inv: Invocation): OwnerCall {
+  const { parsed, io, home } = inv
+  const actor = identifyActor({ grant: null, as: flagValue(parsed, 'as'), env: io.env })
+  const session = identifySession({ flag: flagValue(parsed, 'session'), env: io.env, cwd: io.cwd, machine: hostname() })
+  const ctx: MachineContext = { library: null, actor, session, now: new Date().toISOString() as Instant, home }
+  return { ctx, table: inv.table, env: io.env, viaGrant: false, confirm: (q) => io.confirm(q), readSecret: (q) => io.readSecret(q) }
+}
+
 /** An owner command, the kernel's or an installed plugin's, run through the owner face's one entry. */
-async function ownerCommand(inv: Invocation): Promise<Answer> {
-  const { parsed } = inv
-  const unknown = () => new UsageError(`不认识的命令：${parsed.positional.join(' ') || '（空）'}`)
+async function ownerCommand(inv: Invocation, line: Line): Promise<Answer> {
+  const typed = leadingWords(line)
+  const unknown = () => new UsageError(`不认识的命令：${typed.join(' ') || '（空）'}`)
+  const answer = (r: OwnerResult): Answer => {
+    if (r.outcome === 'refused' && r.reason === 'usage') throw new UsageError(r.text)
+    return owner(r)
+  }
   let bound: Bound | Answer
-  if (parsed.grant === null && !hasFlag(parsed, 'library')) {
-    const kernel = matchCommand(ownerFace.commands([]), parsed.positional)
+  if (line.grant === null && !hasFlag(inv.parsed, 'library')) {
+    const kernel = matchCommand(ownerFace.commands([]), typed)
     if (!kernel) throw unknown()
+    const args = argsOf(kernel, line)
+    if (kernel.machine) return answer(await ownerFace.dispatch(machineCall(inv), kernel.name, args))
     if (!GRANT_BOUND.has(kernel.name)) throw new UsageError('要用 @<授权名> 或 --library <库的目录> 指明是哪个库。')
-    bound = await bindByGrant(inv, parsed.positional[words(kernel.name).length], kernel.name)
+    bound = await bindByGrant(inv, args.positional[0], kernel.name)
   } else bound = await bind(inv)
   if ('exit' in bound) return bound
-  const command = matchCommand(ownerFace.commands(bound.library.plugins), parsed.positional)
+  const command = matchCommand(ownerFace.commands(bound.library.plugins), typed)
   if (!command) throw unknown()
-  const args: OwnerArgs = { positional: parsed.positional.slice(words(command.name).length), flags: Object.fromEntries(ownFlags(parsed)) }
-  const r = await ownerFace.dispatch(ownerCall(inv, bound), command.name, args)
-  if (r.outcome === 'refused' && r.reason === 'usage') throw new UsageError(r.text)
-  return owner(r)
+  return answer(await ownerFace.dispatch(ownerCall(inv, bound), command.name, argsOf(command, line)))
 }
 
 async function runSpec(spec: Spec, inv: Invocation): Promise<Answer> {
   const name = spec.words.join(' ')
   if (inv.args.length < spec.arity[0] || inv.args.length > spec.arity[1]) throw new UsageError(`${name} 的参数个数不对`)
-  if (spec.flags !== 'any') {
-    const allowed = new Set<string>([...GLOBAL_FLAGS, ...spec.flags])
-    for (const flag of inv.parsed.flags.keys()) if (!allowed.has(flag)) throw new UsageError(`${name} 不认识 --${flag}`)
-  }
   if (!spec.library) return spec.run(inv)
   const bound = await bind(inv)
   return 'exit' in bound ? bound : spec.run(inv, bound)
 }
 
 /** The command line's own command these words name, unless a kernel owner command with more words does, as `archive purge` over `archive`. */
-function verbSpec(positional: string[]): Spec | null {
-  const spec = matchSpec(positional)
-  const command = matchCommand(ownerFace.commands([]), positional)
+function verbSpec(typed: readonly string[]): Spec | null {
+  const spec = matchSpec(typed)
+  const command = matchCommand(ownerFace.commands([]), typed)
   return spec && !(command && words(command.name).length > spec.words.length) ? spec : null
 }
 
-/** `pneuma-base <directory>`, with nothing else, is `pneuma-base view <directory>`. */
-function impliedView(parsed: Parsed, cwd: string): Parsed {
-  const [first, ...rest] = parsed.positional
-  if (parsed.grant !== null || first === undefined || rest.length > 0 || matchSpec(parsed.positional)) return parsed
-  return statSync(resolve(cwd, first), { throwIfNoEntry: false })?.isDirectory() ? { ...parsed, positional: ['view', first] } : parsed
+/** `pneuma-base <directory>`, with nothing else but flags, is `pneuma-base view <directory>`. */
+function impliedView(line: Line, cwd: string): Line {
+  const typed = leadingWords(line)
+  const [first] = typed
+  if (line.grant !== null || first === undefined || typed.length > 1 || matchSpec(typed)) return line
+  return statSync(resolve(cwd, first), { throwIfNoEntry: false })?.isDirectory() ? { ...line, rest: ['view', ...line.rest] } : line
 }
 
 /** `builtins` is the command line's own plugin table; the owner's plugins in `$PNEUMA_BASE_HOME/plugins/` join it. */
@@ -400,16 +456,19 @@ export async function main(argv: readonly string[], builtins: PluginTable, io: I
       io.out(await help(argv, io, table, home))
       return argv.length === 0 ? 1 : 0
     }
-    const parsed = impliedView(parseArgs(argv), io.cwd)
-    const spec = verbSpec(parsed.positional)
-    const inv: Invocation = { parsed, args: parsed.positional.slice(spec?.words.length ?? 0), io, table, home }
-    const result = spec ? await runSpec(spec, inv) : await ownerCommand(inv)
+    const line = impliedView(splitLine(argv), io.cwd)
+    const spec = verbSpec(leadingWords(line))
+    const name = spec?.words.join(' ') ?? ''
+    const parsed = spec ? parseCommand(line, spec.words.length, spec.flags === 'any' ? {} : spec.flags, spec.flags === 'any' ? 'table' : 'error', name) : { grant: line.grant, positional: [], flags: new Map(line.global) }
+    const inv: Invocation = { parsed, args: parsed.positional, io, table, builtins, home }
+    const result = spec ? await runSpec(spec, inv) : await ownerCommand(inv, line)
     io.out(hasFlag(parsed, 'json') ? JSON.stringify(result.json, null, 2) : result.lines.join('\n'))
     return result.exit
   } catch (error) {
     if (error instanceof UsageError) {
       io.err(`用法错误：${error.message}`)
-      io.err(`${USAGE}\n主人命令：pneuma-base --help --library <库的目录> 列出一个库能用的全部。`)
+      // A command's own usage line, when the message ends with one, says more than the general one.
+      io.err(`${error.message.includes('\n用法：') ? '' : `${USAGE}\n`}主人命令：pneuma-base --help --library <库的目录> 列出一个库能用的全部。`)
       return 1
     }
     io.err(`出错：${error instanceof Error ? error.message : String(error)}`)

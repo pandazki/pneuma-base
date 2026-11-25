@@ -60,7 +60,7 @@ describe('the search.status view', () => {
     const calls = actions(view?.blocks ?? []).map((a) => a.call)
     expect(calls).toEqual([
       { face: 'owner', command: 'search rebuild', args: { positional: [], flags: {} } },
-      { face: 'owner', command: 'search embedder set', args: { positional: [], flags: { kind: ['{kind}'], url: ['{url}'], model: ['{model}'], 'key-env': ['{keyEnv}'] } } },
+      { face: 'owner', command: 'search embedder set', args: { positional: [], flags: { kind: ['{kind}'], url: ['{url}'], model: ['{model}'], 'key-env': ['{key-env}'] } } },
     ])
     const set = actions(view?.blocks ?? [])[1]
     expect(set?.inputs.find((i) => i.name === 'kind')?.options?.map((o) => o.value)).toEqual(['hash', 'http'])

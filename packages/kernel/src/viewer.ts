@@ -6,29 +6,34 @@ import { fileFacts } from './agent.js'
 import { checkBlocks, checkRefresh } from './blocks.js'
 import { exists } from './files.js'
 import { bundleFiles, enclosingBundle, kindAt, listThings, thingAt } from './things.js'
-import { codexHint } from './owner-commands.js'
+import { codexHint, KERNEL_COMMANDS } from './owner-commands.js'
+import type { KernelCommandName } from './claims.js'
+import { secretNames } from './secrets.js'
 import { ARCHIVE_DIR, DESCRIPTION_FILE, KERNEL_DIR, abs, archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
 import { messageOf, pluginContext } from './pipeline.js'
-import type {
-  Action,
-  Block,
-  Cell,
-  Context,
-  FileFacts,
-  Library,
-  LibraryPath,
-  Link,
-  Plugin,
-  PluginProblem,
-  PluginTable,
-  TableRow,
-  Tag,
-  Thing,
-  ViewAnswer,
-  ViewDecl,
-  ViewList,
-  ViewRequest,
-  ViewResult,
+import {
+  formOf,
+  type Action,
+  type ActionInput,
+  type Block,
+  type FixedValue,
+  type Cell,
+  type Context,
+  type FileFacts,
+  type Library,
+  type LibraryPath,
+  type Link,
+  type Plugin,
+  type PluginProblem,
+  type PluginTable,
+  type TableRow,
+  type Tag,
+  type Thing,
+  type ViewAnswer,
+  type ViewDecl,
+  type ViewList,
+  type ViewRequest,
+  type ViewResult,
 } from '@pneuma-base/sdk'
 
 /** What showing a view needs besides the request: the operation's context and the plugins this pneuma-base knows. */
@@ -170,16 +175,55 @@ async function archivePage(_params: Record<string, string>, { ctx }: ViewerCall)
 
 // ---- config ----
 
-const owner = (command: string, positional: string[], flags: Record<string, string[] | true> = {}) => ({ face: 'owner' as const, command, args: { positional, flags } })
-const input = (name: string, label: string, opts: Partial<Pick<Action['inputs'][number], 'placeholder' | 'value' | 'options'>> = {}) => ({
-  name,
-  label,
-  placeholder: opts.placeholder ?? null,
-  value: opts.value ?? null,
-  options: opts.options ?? null,
-})
+type FormOptions = { fixed?: Record<string, FixedValue>; values?: Record<string, string> }
 
-/** The installed plugins, the grants, and the skills, each with the owner commands that change them. */
+/** The form of the kernel's command `name`, made from its `params`, so it asks for what the command line takes. */
+const kernelForm = (name: KernelCommandName, opts: FormOptions) => formOf(KERNEL_COMMANDS.find((c) => c.name === name) ?? { name, params: {} }, opts)
+
+function kernelAction(name: KernelCommandName, label: string, opts: FormOptions & { tone?: Action['tone']; confirm?: string } = {}): Action {
+  const { inputs, call } = kernelForm(name, opts)
+  return { label, tone: opts.tone ?? 'default', confirm: opts.confirm ?? null, inputs, call }
+}
+
+/** The secrets each installed plugin declares, whether this machine has each, and a form to set it: the value goes to the command as its standard input. */
+async function secretsSection(ctx: Context): Promise<Block | null> {
+  const rows: TableRow[] = []
+  for (const plugin of ctx.library.plugins) {
+    const set = await secretNames(ctx.home, plugin.name)
+    for (const secret of plugin.secrets ?? []) {
+      const has = set.includes(secret.name)
+      const fixed = { plugin: plugin.name, name: secret.name }
+      const value: ActionInput = { name: 'value', label: '值', placeholder: null, value: null, options: null, secret: true }
+      const form = kernelForm('secret set', { fixed })
+      const setter: Action = { label: has ? '换一个' : '设', tone: 'default', confirm: null, inputs: [...form.inputs, value], call: { ...form.call, stdin: '{value}' } }
+      rows.push({
+        key: `${plugin.name}/${secret.name}`,
+        cells: {
+          plugin: { text: plugin.name, mono: true },
+          name: { text: secret.name, mono: true },
+          description: { text: secret.description },
+          state: { text: '', tag: has ? { text: '已设', tone: 'good' } : { text: '没设', tone: 'warn' } },
+        },
+        link: null,
+        actions: [
+          setter,
+          ...(has ? [kernelAction('secret remove', '删掉', { fixed, tone: 'danger', confirm: `删掉后，插件 ${plugin.name} 在这台机器上读不到 ${secret.name}，要用时得再设。` })] : []),
+        ],
+      })
+    }
+  }
+  if (rows.length === 0) return null
+  return {
+    kind: 'section',
+    title: '密钥',
+    note: `插件用的凭证，只存在这台机器上（${join(ctx.home, 'secrets')}），不进库，不会同步，界面和命令行都不显示它的值。`,
+    count: rows.length,
+    blocks: [{ kind: 'table', columns: [{ key: 'plugin', label: '插件' }, { key: 'name', label: '密钥' }, { key: 'description', label: '做什么用' }, { key: 'state', label: '状态' }], rows, empty: '' }],
+    actions: [],
+  }
+}
+
+/** The installed plugins, the grants, the skills and the plugins' secrets, each with the owner commands that change them. */
 async function configPage(_params: Record<string, string>, { ctx, table }: ViewerCall): Promise<Shown> {
   const { library } = ctx
   const { root, config } = library
@@ -205,16 +249,10 @@ async function configPage(_params: Record<string, string>, { ctx, table }: Viewe
     actions: [action],
   })
   const installed = config.plugins.map((name) =>
-    pluginRow(name, library.plugins.some((p) => p.name === name) ? { text: '已装', tone: 'good' } : { text: '这个 pneuma-base 里没有', tone: 'warn' }, {
-      label: '卸下',
-      tone: 'default',
-      confirm: null,
-      inputs: [],
-      call: owner('plugin remove', [name]),
-    }),
+    pluginRow(name, library.plugins.some((p) => p.name === name) ? { text: '已装', tone: 'good' } : { text: '这个 pneuma-base 里没有', tone: 'warn' }, kernelAction('plugin remove', '卸下', { fixed: { plugin: name, anyway: false } })),
   )
   const addable = [...table.keys()].filter((name) => !config.plugins.some((p) => p === name))
-  const offered = addable.map((name) => pluginRow(name, { text: '没装', tone: 'neutral' }, { label: '装上', tone: 'default', confirm: null, inputs: [], call: owner('plugin add', [name]) }))
+  const offered = addable.map((name) => pluginRow(name, { text: '没装', tone: 'neutral' }, kernelAction('plugin add', '装上', { fixed: { plugin: name } })))
   const plugins: Block = {
     kind: 'section',
     title: '插件',
@@ -224,13 +262,8 @@ async function configPage(_params: Record<string, string>, { ctx, table }: Viewe
     actions: [],
   }
 
-  const skillAction = (grant: string, agent: 'claude' | 'codex', dir: string): Action => ({
-    label: agent === 'claude' ? '为 Claude 生成技能' : '为 Codex 生成技能',
-    tone: 'default',
-    confirm: null,
-    inputs: [input('dir', '放技能的目录', { value: dir, placeholder: '绝对路径，或以 ~/ 开头' })],
-    call: owner('skill install', [grant], { agent: [agent], dir: ['{dir}'] }),
-  })
+  const skillAction = (grant: string, agent: 'claude' | 'codex', dir: string): Action =>
+    kernelAction('skill install', agent === 'claude' ? '为 Claude 生成技能' : '为 Codex 生成技能', { fixed: { grant, agent }, values: { dir } })
   const grantRows: TableRow[] = config.grants.map((g) => ({
     key: g.id,
     cells: {
@@ -243,25 +276,13 @@ async function configPage(_params: Record<string, string>, { ctx, table }: Viewe
     actions: [
       skillAction(g.name, 'claude', '~/.claude/skills'),
       skillAction(g.name, 'codex', '~/.agents/skills'),
-      { label: '撤回', tone: 'danger', confirm: `撤回后，拿着授权 ${g.name} 的 agent 就不能再用这个库。`, inputs: [], call: owner('grant revoke', [g.name]) },
+      kernelAction('grant revoke', '撤回', { fixed: { name: g.name }, tone: 'danger', confirm: `撤回后，拿着授权 ${g.name} 的 agent 就不能再用这个库。` }),
     ],
   }))
-  const issue: Action = {
-    label: '发授权',
-    tone: 'default',
-    confirm: null,
-    inputs: [
-      input('name', '授权名', { placeholder: '小写字母、数字和连字符，比如 claude' }),
-      input('agent', '给谁', { placeholder: '比如 claude-code 或 codex' }),
-      input('area', '区域', { placeholder: '库里的一个子文件夹；留空是整个库' }),
-      input('access', '权限', { value: 'no', options: [{ value: 'no', label: '读写' }, { value: 'yes', label: '只读' }] }),
-    ],
-    call: owner('grant issue', ['{name}'], { agent: ['{agent}'], area: ['{area}'], 'read-only': ['{access}'] }),
-  }
   const grants: Block = {
     kind: 'section',
     title: '授权与技能',
-    note: '没发任何授权时，谁都能用整个库。技能是一个指向说明的短文件，在授权那一行为 Claude 或 Codex 生成。',
+    note: '没发任何授权时，谁都能用整个库；区域留空也是整个库。技能是一个指向说明的短文件，在授权那一行为 Claude 或 Codex 生成。',
     count: config.grants.length,
     blocks: [
       {
@@ -272,9 +293,10 @@ async function configPage(_params: Record<string, string>, { ctx, table }: Viewe
       },
       { kind: 'text', tone: 'info', text: codexHint(root) },
     ],
-    actions: [issue],
+    actions: [kernelAction('grant issue', '发授权')],
   }
-  return shown('配置', null, [about, plugins, grants])
+  const secrets = await secretsSection(ctx)
+  return shown('配置', null, [about, plugins, grants, ...(secrets ? [secrets] : [])])
 }
 
 // ---- item ----

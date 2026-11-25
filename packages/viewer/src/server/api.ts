@@ -4,6 +4,7 @@ import {
   agentFace,
   identifySession,
   initLibrary,
+  loadPlugins,
   makeContext,
   openLibrary,
   ownerFace,
@@ -19,8 +20,11 @@ import {
 import { parseCall } from './call.js'
 import { archiveSummary, ownerSummary, putSummary, readSummary, saySummary, type Summary } from './summary.js'
 
-/** What the server was started with. */
-export type Served = { dir: string; table: PluginTable; home: string; env: Env }
+/** What the server was started with. `builtins` are the caller's plugins; this machine's own join them on each request, as their files are then. */
+export type Served = { dir: string; builtins: PluginTable; home: string; env: Env }
+
+/** Every plugin this machine has, as their files are now: a plugin changed since the last request is loaded afresh. */
+export const tableOf = (served: Served): Promise<PluginTable> => loadPlugins(served.home, served.builtins)
 
 export type Reply = { status: number; json: unknown }
 
@@ -38,29 +42,35 @@ function ownerContext(library: Library, served: Served): Context {
 const available = (table: PluginTable) => [...table.values()].map((p) => ({ name: p.name, title: p.cognition?.title ?? null }))
 
 export async function state(served: Served): Promise<Reply> {
-  const library = await openLibrary(served.dir, served.table)
-  if (!library) return reply({ dir: served.dir, library: null, views: [], problems: [], available: available(served.table) })
+  const table = await tableOf(served)
+  const library = await openLibrary(served.dir, table)
+  if (!library) return reply({ dir: served.dir, library: null, views: [], problems: [], available: available(table) })
   const { views, problems } = viewerFace.views(library)
   // `shown`: the root as people read it, the home directory as ~; the page cuts it to its room.
   const shown = shortDir(library.root, Number.POSITIVE_INFINITY)
-  return reply({ dir: served.dir, library: { root: library.root, shown, id: library.config.id }, views, problems, available: available(served.table) })
+  return reply({ dir: served.dir, library: { root: library.root, shown, id: library.config.id }, views, problems, available: available(table) })
 }
 
 /** `query` holds the view's id under `view`; every other entry is a parameter of the view. */
 export async function view(served: Served, query: URLSearchParams): Promise<Reply> {
-  const library = await openLibrary(served.dir, served.table)
+  const table = await tableOf(served)
+  const library = await openLibrary(served.dir, table)
   if (!library) return NOT_A_LIBRARY
   const id = query.get('view')
   if (id === null) return failure(400, 'view is missing')
   const params = Object.fromEntries([...query].filter(([name]) => name !== 'view' && name !== 'token'))
-  return reply(await viewerFace.show({ view: id, params }, { ctx: ownerContext(library, served), table: served.table }))
+  return reply(await viewerFace.show({ view: id, params }, { ctx: ownerContext(library, served), table }))
 }
 
-/** The call's result, and a line saying how it went. The page's confirmation is the in-person confirmation. */
-async function perform(call: Call, confirmed: boolean, library: Library, served: Served): Promise<{ result: unknown; summary: Summary }> {
+/**
+ * The call's result, and a line saying how it went. The page's confirmation is the in-person
+ * confirmation; an owner call's `stdin` is what the command reads as the person's answer.
+ */
+async function perform(call: Call, confirmed: boolean, library: Library, table: PluginTable, served: Served): Promise<{ result: unknown; summary: Summary }> {
   const ctx = ownerContext(library, served)
   if (call.face === 'owner') {
-    const ownerCall = { ctx, table: served.table, env: served.env, viaGrant: false, confirm: async () => confirmed }
+    const stdin = call.stdin ?? null
+    const ownerCall = { ctx, table, env: served.env, viaGrant: false, confirm: async () => confirmed, readSecret: async () => stdin }
     const r = await ownerFace.dispatch(ownerCall, call.command, call.args)
     return { result: r, summary: ownerSummary(r) }
   }
@@ -93,12 +103,13 @@ async function perform(call: Call, confirmed: boolean, library: Library, served:
 }
 
 export async function call(served: Served, body: unknown): Promise<Reply> {
-  const library = await openLibrary(served.dir, served.table)
+  const table = await tableOf(served)
+  const library = await openLibrary(served.dir, table)
   if (!library) return NOT_A_LIBRARY
   const raw = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
   const parsed = parseCall(raw.call)
   if (typeof parsed === 'string') return failure(400, parsed)
-  const { result, summary } = await perform(parsed, raw.confirmed === true, library, served)
+  const { result, summary } = await perform(parsed, raw.confirmed === true, library, table, served)
   return reply({ ...summary, result })
 }
 
@@ -107,6 +118,6 @@ export async function init(served: Served, body: unknown): Promise<Reply> {
   const plugins = typeof body === 'object' && body !== null ? (body as Record<string, unknown>).plugins : undefined
   if (!Array.isArray(plugins) || !plugins.every((p) => typeof p === 'string')) return failure(400, 'plugins is not a list of names')
   const session = identifySession({ flag: null, env: served.env, cwd: process.cwd(), machine: hostname() })
-  const r = await initLibrary(served.dir, { plugins, table: served.table, actor: OWNER, session, home: served.home })
+  const r = await initLibrary(served.dir, { plugins, table: await tableOf(served), actor: OWNER, session, home: served.home })
   return reply({ ...ownerSummary(r), result: r })
 }
