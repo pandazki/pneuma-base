@@ -7,17 +7,27 @@ import { fileURLToPath } from 'node:url'
 
 const BIN = fileURLToPath(new URL('../../cli/dist/bin.js', import.meta.url))
 
+/** The command line as bin.js runs it, with a person who answers yes when it asks to confirm a destructive command. */
+const CONFIRMING = `
+import { main, processIo } from ${JSON.stringify(new URL('../../cli/dist/main.js', import.meta.url).href)}
+import { builtinPlugins } from ${JSON.stringify(new URL('../../cli/dist/plugins.js', import.meta.url).href)}
+process.exitCode = await main(process.argv.slice(1), builtinPlugins, { ...processIo(), confirm: async () => true })
+`
+
 export function tempDir(prefix = 'pb-sync-'): string {
   return realpathSync(mkdtempSync(join(process.env.PNEUMA_BASE_TEST_TMP ?? tmpdir(), prefix)))
 }
 
 export type Run = { code: number; stdout: string; stderr: string; json: () => any }
 
-/** One machine: a temp home, and the real `pneuma-base` run with no agent session variable unless `env` adds one. */
+/**
+ * One machine: a temp home, and the real `pneuma-base` run with no agent session variable unless
+ * `env` adds one. `confirm`: the person confirms a destructive command in person.
+ */
 export function machine() {
   const home = tempDir('pb-sync-home-')
-  const run = (args: string[], opts: { env?: Record<string, string>; input?: string; cwd?: string } = {}): Run => {
-    const r = spawnSync(process.execPath, [BIN, ...args], {
+  const run = (args: string[], opts: { env?: Record<string, string>; input?: string; cwd?: string; confirm?: boolean } = {}): Run => {
+    const r = spawnSync(process.execPath, opts.confirm ? ['--input-type=module', '-e', CONFIRMING, ...args] : [BIN, ...args], {
       cwd: opts.cwd ?? home,
       env: { PATH: process.env.PATH ?? '', HOME: home, PNEUMA_BASE_HOME: join(home, '.pneuma-base'), ...opts.env },
       input: opts.input ?? '',

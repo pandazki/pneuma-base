@@ -2,7 +2,7 @@
 // saw, so a file changed during the sync is skipped, never overwritten.
 import { createHash } from 'node:crypto'
 import type { Fingerprint, LibraryPath } from '@pneuma-base/kernel'
-import { stepPath, type Files, type Plan, type Side, type Step } from './rules.js'
+import { stepPath, type Deletion, type Files, type Plan, type Side, type Step } from './rules.js'
 
 /**
  * Where a library is synced to, and the library itself seen the same way. Paths are library
@@ -69,15 +69,29 @@ async function current(side: SyncTarget, path: LibraryPath): Promise<Fingerprint
   }
 }
 
+/** The paths of the plan's steps that are not in `done`. */
+function unrun(plan: Plan, done: readonly Step[]): Set<LibraryPath> {
+  const ran = new Set(done.map(stepPath))
+  return new Set(plan.steps.map(stepPath).filter((path) => !ran.has(path)))
+}
+
 /** What both sides hold after `done`: the plan's end state, except the paths whose step did not run, which keep their base. */
 export function baselineAfter(plan: Plan, base: Files, done: readonly Step[]): Map<LibraryPath, Fingerprint> {
   const after = new Map(plan.end)
-  const settled = new Set(done.map(stepPath))
-  for (const path of plan.steps.map(stepPath)) {
-    if (settled.has(path)) continue
+  for (const path of unrun(plan, done)) {
     const before = base.get(path)
     if (before === undefined) after.delete(path)
     else after.set(path, before)
   }
   return after
+}
+
+/**
+ * The ids of the deletion records a run settled: each whose every path had its step run, or had no
+ * step. A settled record no longer applies, so content put back at its paths later follows the
+ * ordinary rules; one with a step left undone applies again on the next run.
+ */
+export function settledBy(plan: Plan, done: readonly Step[], records: readonly { id: string; deleted: readonly Deletion[] }[]): string[] {
+  const open = unrun(plan, done)
+  return records.filter((r) => r.deleted.every((d) => !open.has(d.path))).map((r) => r.id)
 }

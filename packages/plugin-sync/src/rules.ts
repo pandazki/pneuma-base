@@ -23,15 +23,19 @@ export function decide(local: Fingerprint | null, target: Fingerprint | null, ba
   return 'conflict'
 }
 
+/** A content the owner deleted on purpose: a destructive owner command removed `fingerprint` from `path`. */
+export type Deletion = { path: LibraryPath; fingerprint: Fingerprint }
+
 /**
  * One change to the sides. `copy` writes the file at `path` to the other side, over `over`.
  * `keep` copies the content at `path` to `to` on both sides before anything replaces it: a
- * conflict copy, an archived copy, or the same path restored. `remove` deletes one side's copy.
+ * conflict copy, an archived copy, or the same path restored. `remove` deletes one side's copy:
+ * `elsewhere` when its content stays on both sides, `deleted` when the owner deleted it on purpose.
  */
 export type Step =
   | { kind: 'copy'; from: Side; path: LibraryPath; fingerprint: Fingerprint; over: Fingerprint | null }
   | { kind: 'keep'; from: Side; path: LibraryPath; fingerprint: Fingerprint; to: LibraryPath; as: 'conflict' | 'archive' | 'restore' }
-  | { kind: 'remove'; side: Side; path: LibraryPath; fingerprint: Fingerprint }
+  | { kind: 'remove'; side: Side; path: LibraryPath; fingerprint: Fingerprint; as: 'elsewhere' | 'deleted' }
 
 /** `copy`: where the target's version of `path` is kept, on both sides. */
 export type Conflict = { path: LibraryPath; copy: LibraryPath }
@@ -47,11 +51,19 @@ const byPath = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
  * The decisions for every path, then every content either side held that the end state would not
  * hold anywhere is kept: a conflict's target version as a conflict copy; a file the other side
  * deleted outside the content (archive, records) restored where it was; anything else under
- * `_archive/`. So every content found on either side before the sync is on both sides after it.
- * Keeps run first, then copies, then removals.
+ * `_archive/`. So every content found on either side before the sync is on both sides after it,
+ * with one exception: the content the owner deleted on purpose. A deletion counts when its
+ * fingerprint is the path's base, that is, the content both sides held at the last sync: that
+ * content at that path is not kept, so the decisions delete it on the side that still has it. Any
+ * other content at the path (changed since, or put back after the deletion reached the base) and
+ * every path without a base follow the rules above. Keeps run first, then copies, then removals.
  */
-export function plan(files: { local: Files; target: Files; base: Files }, conflictName: (path: LibraryPath, n: number) => LibraryPath): Plan {
+export function plan(
+  files: { local: Files; target: Files; base: Files; deleted: readonly Deletion[] },
+  conflictName: (path: LibraryPath, n: number) => LibraryPath,
+): Plan {
   const { local, target, base } = files
+  const deleted = new Set(files.deleted.filter((d) => base.get(d.path) === d.fingerprint).map((d) => d.path))
   const end = new Map<LibraryPath, Fingerprint>()
   const copies: Step[] = []
   const removes: Extract<Step, { kind: 'remove' }>[] = []
@@ -76,8 +88,10 @@ export function plan(files: { local: Files; target: Files; base: Files }, confli
         copies.push({ kind: 'copy', from: 'local', path, fingerprint: l as Fingerprint, over: t })
         theirs.push({ path, fingerprint: t as Fingerprint })
         break
-      case 'drop':
-        removes.push(l !== null ? { kind: 'remove', side: 'local', path, fingerprint: l } : { kind: 'remove', side: 'target', path, fingerprint: t as Fingerprint })
+      case 'drop': {
+        const as = deleted.has(path) ? 'deleted' : 'elsewhere'
+        removes.push(l !== null ? { kind: 'remove', side: 'local', path, fingerprint: l, as } : { kind: 'remove', side: 'target', path, fingerprint: t as Fingerprint, as })
+      }
     }
   }
 
@@ -100,7 +114,7 @@ export function plan(files: { local: Files; target: Files; base: Files }, confli
 
   for (const [from, side] of [['local', local], ['target', target]] as const) {
     for (const [path, fingerprint] of [...side].sort(([a], [b]) => byPath(a, b))) {
-      if (kept.has(fingerprint)) continue
+      if (kept.has(fingerprint) || (deleted.has(path) && base.get(path) === fingerprint)) continue
       if (regionOf(path) !== 'content' && !end.has(path)) keep({ kind: 'keep', from, path, fingerprint, to: path, as: 'restore' })
       else keep({ kind: 'keep', from, path, fingerprint, to: archiveName(path, fingerprint, taken), as: 'archive' })
     }

@@ -31,6 +31,7 @@ const PENDING_ROWS = [
   ['pushed', '推上去'],
   ['pulled', '拉下来'],
   ['removed', '删掉（内容别处还有）'],
+  ['deleted', '删掉（主人用会丢数据的命令删的）'],
   ['kept', '留下（进 _archive/ 或留在原处）'],
   ['conflicts', '冲突（两份都留）'],
 ] as const

@@ -3,15 +3,33 @@ import { createHash } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { join, sep } from 'node:path'
 import { regionOf, type Fingerprint, type LibraryPath, type PluginContext } from '@pneuma-base/kernel'
-import { baselineAfter, execute, type Execution, type Sides } from './execute.js'
-import { countsOf, currentTarget, envelope, lastRun, readBaseline, readFacts, SCRATCH, writeBaseline, writeFact, type Counts, type RunFact, type TargetFact } from './facts.js'
+import { baselineAfter, execute, settledBy, type Execution, type Sides } from './execute.js'
+import {
+  countsOf,
+  currentTarget,
+  deletionRecords,
+  envelope,
+  lastRun,
+  readBaseline,
+  readFacts,
+  SCRATCH,
+  writeBaseline,
+  writeFact,
+  type Counts,
+  type DeletedFact,
+  type RunFact,
+  type TargetFact,
+} from './facts.js'
 import { conflictName, conflictOrigin, machineSlug, moment, plan, type Files, type Plan } from './rules.js'
 import { scopeOf, TARGET_DIR } from './scope.js'
 import { dirSide, filesUnder, giveTargetId, targetId } from './sides.js'
 
-/** A plan ready to run, or why there is none. */
+/**
+ * A plan ready to run, or why there is none. `settled`: the deletion records the baseline already
+ * settled; `deletions`: the others, which the plan applies.
+ */
 export type Prepared =
-  | { kind: 'ready'; record: TargetFact; sides: Sides; id: string | null; base: Files; plan: Plan }
+  | { kind: 'ready'; record: TargetFact; sides: Sides; id: string | null; base: Files; settled: ReadonlySet<string>; deletions: DeletedFact[]; plan: Plan }
   | { kind: 'no-target' }
   | { kind: 'target-missing' | 'target-overlaps'; record: TargetFact }
   | { kind: 'target-failed'; record: TargetFact; message: string }
@@ -31,9 +49,13 @@ export async function prepare(ctx: PluginContext, record: TargetFact | null): Pr
   const sides: Sides = { local: dirSide(root, join(ctx.dir, SCRATCH), keep), target: dirSide(path, join(path, TARGET_DIR, 'tmp'), keep) }
   try {
     const id = await targetId(sides.target)
-    const [local, target, base] = await Promise.all([sides.local.list(), sides.target.list(), readBaseline(ctx.cacheDir, id)])
+    const [local, target, saved] = await Promise.all([sides.local.list(), sides.target.list(), readBaseline(ctx.cacheDir)])
+    const baseline = id !== null && saved?.target === id ? saved : null
+    const base = baseline?.files ?? new Map()
+    const settled = baseline?.settled ?? new Set<string>()
+    const deletions = (await deletionRecords(ctx, sides.target, local, target)).filter((f) => !settled.has(f.id))
     const name = (p: LibraryPath, n: number) => conflictName(p, machineSlug(ctx.session.machine), moment(ctx.now), n)
-    return { kind: 'ready', record, sides, id, base, plan: plan({ local, target, base }, name) }
+    return { kind: 'ready', record, sides, id, base, settled, deletions, plan: plan({ local, target, base, deleted: deletions.flatMap((f) => f.deleted) }, name) }
   } catch (error) {
     return { kind: 'target-failed', record, message: error instanceof Error ? error.message : String(error) }
   }
@@ -75,8 +97,22 @@ export async function run(ctx: PluginContext, ready: Extract<Prepared, { kind: '
       // The record stays here; the next run pushes it.
     }
   }
-  await writeBaseline(ctx.cacheDir, id, after)
+  await writeBaseline(ctx.cacheDir, { target: id, files: after, settled: new Set([...ready.settled, ...settledBy(p, done.done, ready.deletions)]) })
   return fact
+}
+
+/**
+ * After a destructive owner command was done: records the paths of this machine's baseline that
+ * are gone from the library now, with the content each held, so sync now deletes them on the
+ * other side instead of bringing them back. Without a baseline nothing is recorded, and the
+ * ordinary rules apply.
+ */
+export async function recordDeletions(ctx: PluginContext, command: string): Promise<void> {
+  const baseline = await readBaseline(ctx.cacheDir)
+  if (baseline === null) return
+  const present = new Set(await filesUnder(ctx.library.root, scopeOf(ctx.library.plugins)))
+  const deleted = [...baseline.files].filter(([path]) => !present.has(path)).map(([path, fingerprint]) => ({ path, fingerprint }))
+  if (deleted.length > 0) await writeFact(ctx, { ...envelope(ctx), kind: 'deleted', command, deleted })
 }
 
 /** Conflict copies outside the archive, each with the path it was made for. Names only; nothing is read. */
@@ -99,8 +135,10 @@ export async function status(ctx: PluginContext) {
 /** What a plan would do, by kind, and how many steps in all. */
 export const pendingOf = (p: Plan) => ({ ...countsOf(p.steps, p.conflicts.length, 0), steps: p.steps.length })
 
+/** Deletions the owner made on purpose show only when there are some; a run recorded before they existed has none. */
 export function countsText(c: Omit<Counts, 'skipped'>): string {
-  return `推上去 ${c.pushed} · 拉下来 ${c.pulled} · 删掉 ${c.removed}（内容别处还有） · 留下 ${c.kept} · 冲突 ${c.conflicts}`
+  const deleted = c.deleted > 0 ? ` · 删掉 ${c.deleted}（主人用会丢数据的命令删的）` : ''
+  return `推上去 ${c.pushed} · 拉下来 ${c.pulled} · 删掉 ${c.removed}（内容别处还有）${deleted} · 留下 ${c.kept} · 冲突 ${c.conflicts}`
 }
 
 export const when = (at: string) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`

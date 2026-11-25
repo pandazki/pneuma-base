@@ -5,12 +5,17 @@ import { randomBytes } from 'node:crypto'
 import { link, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 import type { Fingerprint, Instant, LibraryPath, PluginContext } from '@pneuma-base/kernel'
-import { moment, type Conflict, type Files, type Step } from './rules.js'
+import type { SyncTarget } from './execute.js'
+import { moment, type Conflict, type Deletion, type Files, type Step } from './rules.js'
 
 export type TargetSpec = { kind: 'dir'; path: string }
 
-/** What one run did. `kept`: contents that would have vanished, archived or restored. */
-export type Counts = { pushed: number; pulled: number; removed: number; kept: number; conflicts: number; skipped: number }
+/**
+ * What one run did. `removed`: copies whose content stays elsewhere; `deleted`: what the owner
+ * deleted on purpose (absent from records written before it existed); `kept`: contents that
+ * would have vanished, archived or restored.
+ */
+export type Counts = { pushed: number; pulled: number; removed: number; deleted: number; kept: number; conflicts: number; skipped: number }
 
 type Envelope = { id: string; at: Instant; machine: string; by: string }
 export type TargetFact = Envelope & { kind: 'target.set'; target: TargetSpec }
@@ -23,7 +28,12 @@ export type RunFact = Envelope & {
   kept: { path: LibraryPath; to: LibraryPath }[]
   message: string | null
 }
-export type SyncFact = TargetFact | RunFact
+/**
+ * The owner deleted these contents on purpose: right after the destructive owner command
+ * `command` was done, they were in this machine's baseline and gone from the library.
+ */
+export type DeletedFact = Envelope & { kind: 'deleted'; command: string; deleted: Deletion[] }
+export type SyncFact = TargetFact | RunFact | DeletedFact
 
 const FACTS = 'facts'
 /** The plugin's temporary folder, declared as a cache so it is never synced. */
@@ -63,22 +73,46 @@ export async function readFacts(ctx: PluginContext): Promise<SyncFact[]> {
   const out: SyncFact[] = []
   for (const name of await readdir(folder).catch(() => [] as string[])) {
     if (name.startsWith('.') || !name.endsWith('.jsonl')) continue
-    for (const line of (await readFile(join(folder, name), 'utf8')).split('\n')) {
-      const fact = parseFact(line)
-      if (fact) out.push(fact)
-    }
+    out.push(...parseFacts(await readFile(join(folder, name), 'utf8')))
   }
   return out.sort((a, b) => (a.at === b.at ? (a.id < b.id ? -1 : 1) : a.at < b.at ? -1 : 1))
 }
 
-function parseFact(line: string): SyncFact | null {
-  try {
-    const raw = JSON.parse(line) as Partial<SyncFact>
-    const ok = typeof raw.id === 'string' && typeof raw.at === 'string' && typeof raw.machine === 'string' && raw.target?.kind === 'dir' && typeof raw.target.path === 'string'
-    return ok && (raw.kind === 'target.set' || (raw.kind === 'run' && typeof raw.counts === 'object')) ? (raw as SyncFact) : null
-  } catch {
-    return null
-  }
+/**
+ * The deletion records here and those in the target's facts that have not arrived yet: a record
+ * made on another machine counts in the very sync that brings it.
+ */
+export async function deletionRecords(ctx: PluginContext, target: SyncTarget, here: Files, there: Files): Promise<DeletedFact[]> {
+  const folder = `${relative(ctx.library.root, join(ctx.dir, FACTS)).split(sep).join('/')}/`
+  const arriving = [...there.keys()].filter((path) => path.startsWith(folder) && path.endsWith('.jsonl') && !here.has(path))
+  const out = await readFacts(ctx)
+  for (const path of arriving) out.push(...parseFacts(Buffer.from(await target.read(path)).toString('utf8')))
+  return out.filter((f): f is DeletedFact => f.kind === 'deleted')
+}
+
+type Raw = { id?: unknown; at?: unknown; machine?: unknown; kind?: unknown; target?: { kind?: unknown; path?: unknown }; counts?: unknown; deleted?: unknown }
+
+const isDeletion = (value: unknown): boolean => {
+  const { path, fingerprint } = (value ?? {}) as { path?: unknown; fingerprint?: unknown }
+  return typeof path === 'string' && typeof fingerprint === 'string'
+}
+
+function parseFacts(text: string): SyncFact[] {
+  return text.split('\n').flatMap((line) => {
+    try {
+      const value: unknown = JSON.parse(line)
+      const raw = (value ?? {}) as Raw
+      if (typeof raw.id !== 'string' || typeof raw.at !== 'string' || typeof raw.machine !== 'string') return []
+      const targeted = raw.target?.kind === 'dir' && typeof raw.target.path === 'string'
+      const ok =
+        raw.kind === 'deleted' ? Array.isArray(raw.deleted) && raw.deleted.every(isDeletion)
+        : raw.kind === 'run' ? targeted && typeof raw.counts === 'object'
+        : raw.kind === 'target.set' && targeted
+      return ok ? [value as SyncFact] : []
+    } catch {
+      return []
+    }
+  })
 }
 
 /** The target this machine set last; a machine that set none uses the one set last on any machine. */
@@ -96,7 +130,8 @@ export function countsOf(steps: readonly Step[], conflicts: number, skipped: num
   return {
     pushed: count((s) => s.kind === 'copy' && s.from === 'local'),
     pulled: count((s) => s.kind === 'copy' && s.from === 'target'),
-    removed: count((s) => s.kind === 'remove'),
+    removed: count((s) => s.kind === 'remove' && s.as === 'elsewhere'),
+    deleted: count((s) => s.kind === 'remove' && s.as === 'deleted'),
     kept: count((s) => s.kind === 'keep' && s.as !== 'conflict'),
     conflicts,
     skipped,
@@ -105,25 +140,32 @@ export function countsOf(steps: readonly Step[], conflicts: number, skipped: num
 
 // ---- the baseline ----
 
-type Baseline = { format: 1; target: string; files: Record<string, string> }
+/**
+ * The files this machine saw at the end of its last sync with the target whose id is `target`,
+ * and the ids of the deletion records already settled against it.
+ */
+export type Baseline = { target: string; files: Files; settled: ReadonlySet<string> }
+
+type BaselineFile = { format: 1; target: string; files: Record<string, string>; settled?: string[] }
 const BASELINE = 'baseline.json'
 
-/** The files this machine saw at the end of its last sync with the target `id`; empty for another target or none. */
-export async function readBaseline(cacheDir: string, id: string | null): Promise<Files> {
-  if (id === null) return new Map()
+/** This machine's baseline, whatever its target; null when there is none or it cannot be read. */
+export async function readBaseline(cacheDir: string): Promise<Baseline | null> {
   try {
-    const raw = JSON.parse(await readFile(join(cacheDir, BASELINE), 'utf8')) as Partial<Baseline>
-    if (raw.format !== 1 || raw.target !== id || typeof raw.files !== 'object' || raw.files === null) return new Map()
-    return new Map(Object.entries(raw.files).flatMap(([path, print]) => (typeof print === 'string' ? [[path as LibraryPath, print as Fingerprint]] : [])))
+    const raw = JSON.parse(await readFile(join(cacheDir, BASELINE), 'utf8')) as Partial<BaselineFile>
+    if (raw.format !== 1 || typeof raw.target !== 'string' || typeof raw.files !== 'object' || raw.files === null) return null
+    const files = new Map(Object.entries(raw.files).flatMap(([path, print]) => (typeof print === 'string' ? [[path as LibraryPath, print as Fingerprint]] : [])))
+    const settled = new Set(Array.isArray(raw.settled) ? raw.settled.filter((id) => typeof id === 'string') : [])
+    return { target: raw.target, files, settled }
   } catch {
-    return new Map()
+    return null
   }
 }
 
-export async function writeBaseline(cacheDir: string, id: string, files: ReadonlyMap<LibraryPath, Fingerprint>): Promise<void> {
+export async function writeBaseline(cacheDir: string, baseline: Baseline): Promise<void> {
   await mkdir(cacheDir, { recursive: true })
   const tmp = join(cacheDir, `.${BASELINE}.${randomBytes(4).toString('hex')}`)
-  const baseline: Baseline = { format: 1, target: id, files: Object.fromEntries(files) }
-  await writeFile(tmp, JSON.stringify(baseline))
+  const file: BaselineFile = { format: 1, target: baseline.target, files: Object.fromEntries(baseline.files), settled: [...baseline.settled] }
+  await writeFile(tmp, JSON.stringify(file))
   await rename(tmp, join(cacheDir, BASELINE))
 }

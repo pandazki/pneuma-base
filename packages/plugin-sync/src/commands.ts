@@ -1,5 +1,6 @@
-// The owner commands: sync target set, sync now, sync status. None can make content unrecoverable,
-// so none is destructive and an agent may run them.
+// The owner commands: sync target set, sync now, sync status. None makes content unrecoverable on
+// its own: sync now deletes on the other side only what the owner deleted with a destructive
+// command, already confirmed in person. So none is destructive and an agent may run them.
 import { mkdir, realpath } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { OwnerAnswer, OwnerArgs, OwnerCommand } from '@pneuma-base/kernel'
@@ -47,7 +48,7 @@ const targetSet: OwnerCommand = {
 
 function runText(fact: RunFact): string[] {
   const { counts, conflicts, kept } = fact
-  const moved = counts.pushed + counts.pulled + counts.removed + counts.kept + counts.conflicts
+  const moved = counts.pushed + counts.pulled + counts.removed + counts.deleted + counts.kept + counts.conflicts
   const head =
     fact.outcome === 'failed'
       ? `同步到 ${fact.target.path} 时中断：${fact.message}`

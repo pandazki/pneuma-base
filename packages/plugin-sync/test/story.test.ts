@@ -20,15 +20,24 @@ beforeEach(() => {
   outside = tempDir('pb-sync-outside-')
 })
 
+type Library = {
+  dir: string
+  agent: (args: string[], input?: string) => ReturnType<typeof m.run>
+  owner: (args: string[]) => ReturnType<typeof m.run>
+  /** The owner in their own terminal, confirming a destructive command in person. */
+  confirmed: (args: string[]) => ReturnType<typeof m.run>
+}
+
 /** A library with the ledger (init's default) and the sync plugin, synced to the shared target. */
-function library(name: string): { dir: string; agent: (args: string[], input?: string) => ReturnType<typeof m.run>; owner: (args: string[]) => ReturnType<typeof m.run> } {
+function library(name: string): Library {
   const dir = join(root, name)
   ok(m.run(['init', dir]))
   const owner = (args: string[]) => m.run([...args, '--library', dir], { cwd: outside })
   ok(owner(['plugin', 'add', 'sync']))
   ok(owner(['sync', 'target', 'set', '--kind', 'dir', '--to', target]))
   const agent = (args: string[], input?: string) => m.run(['--library', dir, '--as', 'claude-code', '--session', `s-${name}`, ...args], { cwd: outside, ...(input === undefined ? {} : { input }) })
-  return { dir, agent, owner }
+  const confirmed = (args: string[]) => m.run([...args, '--library', dir], { cwd: outside, confirm: true })
+  return { dir, agent, owner, confirmed }
 }
 
 const factFiles = (lib: string) => readdirSync(join(lib, '.pneuma-base/ledger/facts'), { recursive: true, encoding: 'utf8' }).filter((n) => n.endsWith('.jsonl')).sort()
@@ -79,6 +88,102 @@ describe('two libraries, one target (C6)', () => {
     expect(ok(b.agent(['check'])).stdout).toContain(`${copy}（plan.md 的另一份）`)
     ok(b.agent(['archive', copy]))
     expect(ok(b.agent(['check', '--json'])).json().sections.find((s: any) => s.title === '同步冲突')).toBeUndefined()
+  })
+})
+
+describe('what the owner deletes with a destructive command stays deleted (CONTEXT 2.14)', () => {
+  /** A and B synced through the one target; `setup` runs on A first. */
+  function synced(setup: (a: Library) => void): { a: Library; b: Library } {
+    const a = library('a')
+    setup(a)
+    ok(a.owner(['sync', 'now']))
+    const b = library('b')
+    ok(b.owner(['sync', 'now']))
+    ok(a.owner(['sync', 'now']))
+    return { a, b }
+  }
+  const texts = (dir: string) => [...contents(dir).values()]
+  const both = (a: Library, b: Library) => {
+    ok(a.owner(['sync', 'now']))
+    return ok(b.owner(['sync', 'now', '--json'])).json().data
+  }
+
+  it('archive purge on A: the purged files leave the target and B, and stay gone', () => {
+    const { a, b } = synced((a) => {
+      ok(a.agent(['put', '-', '--to', 'notes/keep.md', '--made'], 'kept'))
+      ok(a.agent(['put', '-', '--to', 'notes/old.md', '--made'], 'archived before the sync'))
+      ok(a.agent(['put', '-', '--to', 'notes/late.md', '--made'], 'archived after the sync'))
+      ok(a.agent(['archive', 'notes/old.md']))
+    })
+    expect(read(b.dir, '_archive/notes/old.md')).toBe('archived before the sync')
+    ok(a.agent(['archive', 'notes/late.md']))
+    ok(a.confirmed(['archive', 'purge']))
+
+    for (let round = 0; round < 2; round++) {
+      const run = both(a, b)
+      if (round === 0) expect(run.counts).toMatchObject({ deleted: 2, kept: 0 })
+      for (const dir of [a.dir, b.dir, target]) {
+        expect(texts(dir), `${dir} round ${round}`).not.toContain('archived before the sync')
+        expect(texts(dir), `${dir} round ${round}`).not.toContain('archived after the sync')
+        expect(read(dir, 'notes/keep.md')).toBe('kept')
+        expect([...contents(dir).keys()].filter((k) => k.startsWith('_archive/'))).toEqual([])
+      }
+    }
+  })
+
+  it('held drop on A: the held copies leave the target and B, and stay gone', () => {
+    const { a, b } = synced((a) => {
+      ok(a.agent(['put', '-', '--to', 'doc.md', '--made'], 'first version'))
+      ok(a.agent(['put', '-', '--to', 'doc.md', '--made'], 'second version'))
+    })
+    expect(texts(b.dir)).toContain('first version')
+    ok(a.confirmed(['held', 'drop']))
+
+    for (let round = 0; round < 2; round++) {
+      both(a, b)
+      for (const dir of [a.dir, b.dir, target]) {
+        expect(texts(dir), `${dir} round ${round}`).not.toContain('first version')
+        expect(read(dir, 'doc.md')).toBe('second version')
+      }
+    }
+  })
+
+  it('a file removed by hand is kept as before, even when a destructive command was refused', () => {
+    const { a, b } = synced((a) => {
+      ok(a.agent(['put', '-', '--to', 'notes/n.md', '--made'], 'removed by hand'))
+      ok(a.agent(['put', '-', '--to', 'notes/o.md', '--made'], 'archived, then removed by hand'))
+      ok(a.agent(['archive', 'notes/o.md']))
+    })
+    rmSync(join(a.dir, 'notes/n.md'))
+    rmSync(join(a.dir, '_archive/notes/o.md'))
+    const refused = a.owner(['archive', 'purge'])
+    expect(refused.code).toBe(2)
+    expect(refused.stdout).toContain('not-confirmed')
+
+    both(a, b)
+    for (const dir of [a.dir, b.dir, target]) {
+      expect(read(dir, '_archive/notes/o.md')).toBe('archived, then removed by hand')
+      expect(read(dir, '_archive/notes/n.md')).toBe('removed by hand')
+    }
+  })
+
+  it('content put back at a purged path is not deleted again, and removing it by hand later keeps it as usual', () => {
+    const { a, b } = synced((a) => {
+      ok(a.agent(['put', '-', '--to', 'notes/old.md', '--made'], 'old'))
+      ok(a.agent(['archive', 'notes/old.md']))
+    })
+    ok(a.confirmed(['archive', 'purge']))
+    both(a, b)
+    expect(existsSync(join(b.dir, '_archive/notes/old.md'))).toBe(false)
+
+    // The same content at the same path again: the record of the purge no longer applies to it.
+    ok(a.agent(['put', '-', '--to', 'notes/old.md', '--made'], 'old'))
+    ok(a.agent(['archive', 'notes/old.md']))
+    both(a, b)
+    expect(read(b.dir, '_archive/notes/old.md')).toBe('old')
+    rmSync(join(b.dir, '_archive/notes/old.md'))
+    both(a, b)
+    for (const dir of [a.dir, b.dir, target]) expect(read(dir, '_archive/notes/old.md')).toBe('old')
   })
 })
 

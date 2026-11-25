@@ -31,12 +31,12 @@ function sync(): any {
   for (const content of before) expect([...after.values()], `lost: ${content}`).toContain(content)
   expect(contents(target)).toEqual(after)
   const again = ok(owner(['sync', 'now', '--json'])).json().data
-  expect(again.counts).toEqual({ pushed: 0, pulled: 0, removed: 0, kept: 0, conflicts: 0, skipped: 0 })
+  expect(again.counts).toEqual({ pushed: 0, pulled: 0, removed: 0, deleted: 0, kept: 0, conflicts: 0, skipped: 0 })
   expect(contents(target)).toEqual(contents(lib))
   return r.json().data
 }
 
-const counts = (partial: Record<string, number>) => ({ pushed: 0, pulled: 0, removed: 0, kept: 0, conflicts: 0, skipped: 0, ...partial })
+const counts = (partial: Record<string, number>) => ({ pushed: 0, pulled: 0, removed: 0, deleted: 0, kept: 0, conflicts: 0, skipped: 0, ...partial })
 
 beforeEach(() => {
   m = machine()
