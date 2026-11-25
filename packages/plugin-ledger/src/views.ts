@@ -1,21 +1,13 @@
 // What the ledger answers: data for --json and short Chinese text for agents. Pure, except that
-// text reads the home directory to show it as ~. ledger-design.md section 7.
-import { homedir } from 'node:os'
+// text reads the home directory to show it as ~ (the kernel's shortDir). ledger-design.md section 7.
 import { posix } from 'node:path'
-import { originalPath, regionOf, type Instant, type LibraryPath, type PluginHit, type PluginSection } from '@pneuma-base/kernel'
+import { originalPath, regionOf, shortDir, type Instant, type LibraryPath, type PluginHit, type PluginSection } from '@pneuma-base/kernel'
 import { ADHOC_SCENE, type Fact, type FactActor, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
 import { actorKey, isArchived, type ItemRecord, type Ledger, type Said, type SceneRecord, type Version } from './fold.js'
 import { marksOf, type ItemState, type Mark, type Standing } from './reconcile.js'
 
 export const when = (at: Instant) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`
 export const who = (a: FactActor) => (a.kind === 'owner' ? '主人' : a.name)
-
-/** A working directory as text shows it: the home directory as ~, and only the last 45 characters after … when longer than 48. */
-export function shortDir(dir: string, home = homedir()): string {
-  const tilde = dir === home ? '~' : dir.startsWith(`${home}/`) ? `~${dir.slice(home.length)}` : dir
-  const chars = [...tilde]
-  return chars.length > 48 ? `…${chars.slice(-45).join('')}` : tilde
-}
 
 /** A scene id as text shows it: its first 8 characters; an ad hoc scene's id whole. */
 export const shortScene = (id: SceneId) => (id.startsWith(ADHOC_SCENE) ? id : id.slice(0, 8))
@@ -218,7 +210,8 @@ export function sinceView(ledger: Ledger, me: FactActor, current: SceneId, since
   return { since: start, scenes: [...scenes.values()] }
 }
 
-function factLine(ledger: Ledger, f: Fact): string {
+/** One fact as one line of text, paths as they are now where they moved since. */
+export function factLine(ledger: Ledger, f: Fact): string {
   const now = (id: ItemId, then: LibraryPath) => {
     const path = pathOf(ledger, id)
     return path === then ? then : `${then}（现在在 ${path}）`
@@ -256,38 +249,56 @@ export function sinceText(v: SinceView): string {
 
 // ---- check: how the library stands ----
 
+type Ref = { item: ItemId; path: LibraryPath | ItemId }
+
+/** What needs looking at after full reconciliation, by kind. The data of check's sections and of the standing page. */
+export type StandingData = {
+  stale: (Ref & { sources: Ref[] })[]
+  gone: (Ref & { sources: Ref[] })[]
+  upstream: (Ref & { via: Ref[] })[]
+  unowned: ({ path: LibraryPath; adopted: false } | (Ref & { adopted: true }))[]
+  changed: Ref[]
+  missing: Ref[]
+  moved: { item: ItemId; from: LibraryPath; to: LibraryPath }[]
+}
+
 /**
- * check's sections after full reconciliation, empty ones left out. An archived item is no subject
- * of these lists, and an unowned file in the archive is not listed, unless `includeArchived`.
+ * An archived item is no subject of these lists, and an unowned file in the archive is not
+ * listed, unless `includeArchived`.
  */
-export function standingSections(ledger: Ledger, standing: Standing, includeArchived: boolean): PluginSection[] {
+export function standingData(ledger: Ledger, standing: Standing, includeArchived: boolean): StandingData {
   const shown = (item: ItemRecord) => !item.removed && item.absorbedInto === null && (includeArchived || !isArchived(item))
   const items = [...ledger.items.values()].filter(shown)
-  const ref = (id: ItemId) => ({ item: id, path: pathOf(ledger, id) })
+  const ref = (id: ItemId): Ref => ({ item: id, path: pathOf(ledger, id) })
   const withMark = (kind: Mark['kind']) =>
     items.flatMap((item) => {
       const sources = (standing.marks.get(item.id) ?? []).filter((m) => m.kind === kind).map((m) => ref(m.source))
       return sources.length > 0 ? [{ ...ref(item.id), sources }] : []
     })
   const inState = (kind: ItemState['kind']) => items.filter((item) => standing.states.get(item.id)?.kind === kind).map((item) => ref(item.id))
-  const moved = [...ledger.items.values()].flatMap((item) => {
-    const state = standing.states.get(item.id)
-    return state?.kind === 'moved' ? [{ item: item.id, from: item.path, to: state.to }] : []
-  })
+  return {
+    stale: withMark('stale'),
+    gone: withMark('source-gone'),
+    upstream: items
+      .filter((item) => !standing.marks.has(item.id) && standing.upstream.has(item.id))
+      .map((item) => ({ ...ref(item.id), via: (standing.upstream.get(item.id) ?? []).map(ref) })),
+    unowned: [
+      ...standing.unowned.filter((path) => includeArchived || regionOf(path) !== 'archive').map((path) => ({ path, adopted: false as const })),
+      ...items.filter((item) => item.unknownOrigin).map((item) => ({ ...ref(item.id), adopted: true as const })),
+    ],
+    changed: inState('changed'),
+    missing: inState('missing'),
+    moved: [...ledger.items.values()].flatMap((item) => {
+      const state = standing.states.get(item.id)
+      return state?.kind === 'moved' ? [{ item: item.id, from: item.path, to: state.to }] : []
+    }),
+  }
+}
 
-  const stale = withMark('stale')
-  const gone = withMark('source-gone')
-  const upstream = items
-    .filter((item) => !standing.marks.has(item.id) && standing.upstream.has(item.id))
-    .map((item) => ({ ...ref(item.id), via: (standing.upstream.get(item.id) ?? []).map(ref) }))
-  const unowned = [
-    ...standing.unowned.filter((path) => includeArchived || regionOf(path) !== 'archive').map((path) => ({ path, adopted: false })),
-    ...items.filter((item) => item.unknownOrigin).map((item) => ({ ...ref(item.id), adopted: true })),
-  ]
-  const changed = inState('changed')
-  const missing = inState('missing')
+/** check's sections, empty ones left out. */
+export function standingSections(ledger: Ledger, standing: Standing, includeArchived: boolean): PluginSection[] {
+  const { stale, gone, upstream, unowned, changed, missing, moved } = standingData(ledger, standing, includeArchived)
   const names = (rows: { path: string }[]) => rows.map((r) => r.path).join('、')
-
   const sections: [string, unknown[], string[]][] = [
     ['可能过期', stale, stale.map((r) => `  ${r.path} ← 依据 ${names(r.sources)} 变了`)],
     ['来源不在', gone, gone.map((r) => `  ${r.path} ← 依据 ${names(r.sources)} 不在了`)],

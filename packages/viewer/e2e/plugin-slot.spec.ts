@@ -30,7 +30,7 @@ test('a plugin’s page appears when installed, renders each kind of block, and 
   await expect(main.getByText('列表的一项')).toBeVisible() // list
   await expect(main.getByText('一项的说明')).toBeVisible()
   await expect(main.getByText('时间线的一条')).toBeVisible() // timeline
-  await expect(main.getByText('2026-11-25 01:00Z')).toBeVisible()
+  await expect(main.locator('time[datetime="2026-11-25T01:00:00.000Z"]')).toBeVisible()
   await expect(main.getByLabel('预览')).toContainText('pager 预览的内容') // preview
   await expect(main.getByText('空状态的标题')).toBeVisible() // empty
   await expect(main.getByText('这一块界面还不认识：sparkle')).toBeVisible() // a kind this page does not know

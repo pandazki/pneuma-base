@@ -233,7 +233,11 @@ export type Tone = 'neutral' | 'good' | 'warn' | 'bad' | 'info'
 export type Tag = { text: string; tone: Tone }
 /** Where a click goes: another view, opened in the main area or the side panel. */
 export type Link = { view: string; params: Record<string, string>; target: 'main' | 'panel' }
-export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; link?: Link }
+/**
+ * `at`: the cell is a moment. The page shows it in the viewer's local time, short, with the whole
+ * time on hover; `text` is what a reader without a clock shows.
+ */
+export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; link?: Link; at?: Instant }
 
 /** What a button does: one verb of the agent face, or one owner command. Strings may hold `{input}`, replaced by that input's value. */
 export type Call =

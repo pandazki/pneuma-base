@@ -24,7 +24,21 @@ import { fact, factActor, LEDGER_ACTOR, newItemId, sceneOf, writeFacts, type Bas
 import type { ItemRecord, Ledger, SceneRecord } from './fold.js'
 import { heldCommands, heldCopies, heldPath, keep } from './held.js'
 import { reconcile } from './reconcile.js'
-import { itemSection, itemsAnswer, ITEMS_VIEW, LEDGER_VIEWS, UNOWNED_SECTION } from './ui.js'
+import {
+  ACTIVITY_VIEW,
+  activityAnswer,
+  itemSection,
+  itemsAnswer,
+  ITEMS_VIEW,
+  LEDGER_VIEWS,
+  SCENE_VIEW,
+  sceneAnswer,
+  SCENES_VIEW,
+  scenesAnswer,
+  STANDING_VIEW,
+  standingAnswer,
+  UNOWNED_SECTION,
+} from './ui.js'
 import {
   ambiguousText,
   findableItems,
@@ -200,6 +214,26 @@ async function fileAt(root: string, path: LibraryPath): Promise<boolean> {
   return (await onDisk(root, path)) !== null || (regionOf(path) === 'content' && (await onDisk(root, archivedPath(path))) !== null)
 }
 
+/**
+ * The item the panel at `path` is about: the one recorded there, or the one that moved there.
+ * Only full reconciliation tells a move, so it runs only when the item has no file or the file at
+ * `path` has no item; it writes nothing, unlike check.
+ */
+async function panelView(ctx: PluginContext, ledger: Ledger, path: LibraryPath): Promise<ItemView | null> {
+  const { root } = ctx.library
+  const named = itemNamed(ledger, root, path)
+  const known = named ? await viewOfItem(ctx, ledger, named) : null
+  if (known ? known.state.kind !== 'missing' : !(await fileAt(root, path))) return known
+  const standing = await reconcile(ledger, await snapshot(root))
+  const moved = named ?? [...ledger.items.values()].find((item) => {
+    const state = standing.states.get(item.id)
+    return state?.kind === 'moved' && state.to === path
+  })
+  const state = moved ? standing.states.get(moved.id) : undefined
+  if (!moved || state?.kind !== 'moved') return known
+  return { ...(known ?? (await viewOfItem(ctx, ledger, moved))), state }
+}
+
 /** 记账与对账. ledger-design.md. */
 export const ledger: Plugin = {
   name: pluginName('ledger'),
@@ -303,18 +337,31 @@ export const ledger: Plugin = {
     return { text: `${what}${known ? '' : '；这个文件以前没人登记过，已以来历不明入册'} · 条目 ${id}`, data: { item: id } }
   },
 
-  /** The items view: every item with its provenance and how it stands after full reconciliation. Writes nothing. */
+  /** The ledger's pages, from the same fold and reconciliation check uses. Writes nothing: a move it sees stays for check to record. */
   async onView(req, ctx) {
-    if (req.view !== ITEMS_VIEW) throw new Error(`the ledger has no view ${req.view}`)
     const ledger = await load(ctx)
-    return itemsAnswer(ledger, await reconcile(ledger, await snapshot(ctx.library.root)), req.params)
+    const standing = async () => reconcile(ledger, await snapshot(ctx.library.root))
+    switch (req.view) {
+      case ITEMS_VIEW:
+        return itemsAnswer(ledger, await standing(), req.params)
+      case STANDING_VIEW:
+        return standingAnswer(ledger, await standing())
+      case SCENES_VIEW:
+        return scenesAnswer(ledger)
+      case SCENE_VIEW:
+        return sceneAnswer(ledger, req.params)
+      case ACTIVITY_VIEW:
+        return activityAnswer(ledger, req.params)
+      default:
+        throw new Error(`the ledger has no view ${req.view}`)
+    }
   },
 
   /** The item panel's provenance section, from the same view inspect gives; a file nobody registered says so. */
   async onItemView(path, ctx) {
     const ledger = await load(ctx)
-    const item = itemNamed(ledger, ctx.library.root, path)
-    if (item) return itemSection(await viewOfItem(ctx, ledger, item))
+    const view = await panelView(ctx, ledger, path)
+    if (view) return itemSection(view)
     return (await fileAt(ctx.library.root, path)) ? UNOWNED_SECTION : null
   },
 

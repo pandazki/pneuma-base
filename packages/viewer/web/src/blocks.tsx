@@ -3,6 +3,7 @@ import type { Action, Block, Cell, Link, Tag, TableRow, Tone } from '@pneuma-bas
 import { CircleAlert, CircleCheck, Info, TriangleAlert } from 'lucide-react'
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { api } from './api'
+import { fullTime, shortTime } from './time'
 
 /** What a block can do besides showing itself: follow a link, start an action, and know what the panel shows. */
 export type BlockEnv = {
@@ -24,8 +25,14 @@ function useEnv(): BlockEnv {
 export const sameLink = (a: Link | null, b: { view: string; params: Record<string, string> } | null) =>
   a !== null && b !== null && a.view === b.view && JSON.stringify(Object.entries(a.params).sort()) === JSON.stringify(Object.entries(b.params).sort())
 
-/** An instant as the library's texts write it: the minute, in UTC. */
-export const minute = (at: string) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`
+/** A moment in the viewer's local time, short, the whole of it on hover. */
+export function Moment({ at }: { at: string }) {
+  return (
+    <time dateTime={at} title={fullTime(at)} className="tabular-nums">
+      {shortTime(at)}
+    </time>
+  )
+}
 
 const TONE_CLASS: Record<Tone, string> = { neutral: '', good: 'tone-good', warn: 'tone-warn', bad: 'tone-bad', info: 'tone-info' }
 
@@ -39,8 +46,11 @@ export function CellView({ cell, line = false }: { cell: Cell; line?: boolean })
   const style = `${cell.mono ? 'font-mono text-[12.5px]' : ''} ${cell.muted ? 'text-ink-2' : ''}`
   // On one line, a path-like text is cut in its folders, so its last part stays readable.
   const cut = line && cell.mono ? cell.text.lastIndexOf('/') : -1
-  const text =
-    cell.text === '' ? null : cut > 0 && cut < cell.text.length - 1 ? (
+  const text = cell.at ? (
+    <span className={`${style} ${line ? 'min-w-0 truncate' : ''}`}>
+      <Moment at={cell.at} />
+    </span>
+  ) : cell.text === '' ? null : cut > 0 && cut < cell.text.length - 1 ? (
       <span className={`flex min-w-0 ${style}`}>
         <span className="sr-only">{cell.text}</span>
         <span className="min-w-0 truncate" aria-hidden>
@@ -54,7 +64,7 @@ export function CellView({ cell, line = false }: { cell: Cell; line?: boolean })
       <span className={`${style} ${line ? 'min-w-0 truncate' : 'break-words'}`}>{cell.text}</span>
     )
   const content = (
-    <span className={`items-center gap-x-2 align-middle ${line ? 'flex max-w-full min-w-0' : 'inline-flex flex-wrap gap-y-1'}`} title={line && cell.text !== '' ? cell.text : undefined}>
+    <span className={`items-center gap-x-2 align-middle ${line ? 'flex max-w-full min-w-0' : 'inline-flex flex-wrap gap-y-1'}`} title={line && cell.text !== '' && !cell.at ? cell.text : undefined}>
       {text}
       {cell.tag ? <TagView tag={cell.tag} /> : null}
     </span>
@@ -222,7 +232,7 @@ function TimelineView({ block }: { block: Extract<Block, { kind: 'timeline' }> }
         <li key={`${e.at}-${i}`} className="relative pb-3 pl-4 last:pb-0">
           <span className="absolute top-[7px] -left-[4.5px] size-2 rounded-full bg-ink-3 ring-2 ring-[var(--surface)]" aria-hidden />
           <div className="flex flex-wrap items-center gap-2 text-[12px] text-ink-3 tabular-nums">
-            <span>{minute(e.at)}</span>
+            <Moment at={e.at} />
             {e.tag ? <TagView tag={e.tag} /> : null}
           </div>
           <div className="text-[13px]">
