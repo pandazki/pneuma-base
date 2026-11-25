@@ -417,7 +417,7 @@ export const viewerFace = {
   views(library: Library): ViewList {
     const missing: PluginProblem[] = library.unavailable.map((plugin) => ({ plugin, message: 'installed in this library but not known to this pneuma-base' }))
     const own = pluginViews(library)
-    return { views: [...own.views.map((v) => v.decl), ...KERNEL_VIEWS], problems: [...missing, ...own.problems] }
+    return { views: [...own.views.map((v) => v.decl), ...KERNEL_VIEWS], problems: [...missing, ...library.clashes, ...own.problems] }
   },
 
   /** One view. Showing changes nothing and sends no event. */

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
+import { settle } from './claims.js'
 import { assembleDescription } from './cognition.js'
 import { writeAtomic } from './files.js'
 import { DESCRIPTION_FILE, KERNEL_DIR, pluginDir, scratchDir } from './paths.js'
@@ -36,7 +37,7 @@ export async function openLibrary(dir: string, table: PluginTable): Promise<Libr
   // A plugin's directory exists whenever its hooks run, also when a synced configuration came without
   // it. A library this caller cannot write still opens; the hook that writes there reports the problem.
   await Promise.all(plugins.map((p) => mkdir(pluginDir(root, p.name), { recursive: true }).catch(() => undefined)))
-  return { root, config, plugins, unavailable }
+  return { root, config, ...settle(plugins), unavailable }
 }
 
 /**

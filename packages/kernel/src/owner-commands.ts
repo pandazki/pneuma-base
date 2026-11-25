@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
-import type { KernelCommandName } from './claims.js'
+import { said, takenBy, type KernelCommandName } from './claims.js'
 import { skillText } from './cognition.js'
 import { exists, writeAtomic } from './files.js'
 import { whyNotLoaded } from './plugin-table.js'
@@ -12,7 +12,7 @@ import { GRANT_NAME, readGrantFile, removeGrantFile, writeGrantFile } from './gr
 import { saveConfig } from './library.js'
 import type { OwnerCall } from './owner.js'
 import { ARCHIVE_DIR, parseLibraryPath, regionOf } from './paths.js'
-import type { Grant, GrantId, Library, LibraryPath, OwnerAnswer, OwnerArgs, PluginName } from '@pneuma-base/sdk'
+import type { Grant, GrantId, Library, LibraryPath, OwnerAnswer, OwnerArgs, Plugin, PluginName } from '@pneuma-base/sdk'
 
 export type Outcome = { answer: OwnerAnswer; library?: Library }
 
@@ -126,6 +126,12 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
         const why = await whyNotLoaded(call.ctx.home, name)
         if (why !== null) return refused('plugin-failed-to-load', `插件 ${name} 没能加载：${why}`)
         return refused('unknown-plugin', `没有这个插件：${name}。可用的：${[...call.table.keys()].join('、') || '无'}`)
+      }
+      const taken = takenBy(call.table.get(name) as Plugin, library.plugins)
+      if (taken.length > 0) {
+        const holders = [...new Set(taken.map((t) => t.holder))].join('、')
+        const what = taken.map((t) => `${said(t.claim)}已归插件 ${t.holder}`).join('；')
+        return refused('name-taken', `没有装上插件 ${name}：${what}。一个名字只归一个插件；要换用 ${name}，先卸下 ${holders}。`)
       }
       const updated = await saveConfig(library.root, { ...library.config, plugins: [...library.config.plugins, name as PluginName] }, call.table)
       return done(`已装上插件 ${name}，说明已重新生成。`, undefined, updated)

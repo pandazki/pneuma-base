@@ -214,3 +214,44 @@ describe('the tools on a plugin’s context', () => {
     expect(heard).toEqual(['b.md'])
   })
 })
+
+describe('a name a plugin claims', () => {
+  const command = (name: string, text: string): sdk.OwnerCommand => ({ name, summary: '', destructive: false, ownerOnly: false, run: async () => ({ outcome: 'done', text }) })
+  const first = plugin('first', {
+    statements: ['deployable'],
+    onSay: async () => ({ outcome: 'heard', note: 'first heard' }),
+    ownerCommands: [command('first on', 'first on')],
+    views: [{ id: 'first.sites', title: '网站', icon: 'globe', nav: true, filters: [] }],
+  })
+  // A built-in plugin is not checked by the loader, so it can share a command or view name with another.
+  const second = Object.freeze(plugin('second', {
+    statements: ['deployable', 'second-only'],
+    onSay: async () => ({ outcome: 'heard', note: 'second heard' }),
+    ownerCommands: [command('first on', 'second on'), command('second off', 'second off')],
+  }))
+  const owners = (f: Awaited<ReturnType<typeof fixture>>, table: Map<string, sdk.Plugin>): kernel.OwnerCall => ({ ctx: f.ctx, table, env: {}, viaGrant: false, confirm: async () => true })
+
+  it('cannot be taken by a plugin added later: plugin add refuses it and says which plugin holds it', async () => {
+    const f = await fixture([first])
+    const table = new Map<string, sdk.Plugin>([['first', first], ['second', second]])
+    const r = await kernel.ownerFace.dispatch(owners(f, table), 'plugin add', { positional: ['second'], flags: {} })
+    expect(r).toMatchObject({ outcome: 'refused', reason: 'name-taken' })
+    if (r.outcome !== 'refused') return
+    expect(r.text).toContain('「说」的种类「deployable」已归插件 first')
+    expect(r.text).toContain('主人命令「first on」已归插件 first')
+    expect(r.text).not.toContain('second-only')
+    expect(JSON.parse(f.read('.pneuma-base/config.json')).plugins).toEqual(['first'])
+  })
+
+  it('in a configuration that already has a clash stays with the earlier plugin; the later one’s is left out and listed', async () => {
+    const f = await fixture([first, second])
+    const said = await kernel.agentFace.say({ kind: 'deployable', about: null, text: null, args: {} }, f.ctx)
+    expect(said).toMatchObject({ outcome: 'heard', by: 'first' })
+    const listed = said.problems.filter((p) => p.plugin === 'second').map((p) => p.message)
+    expect(listed).toEqual([expect.stringContaining('「说」的种类「deployable」已归插件 first'), expect.stringContaining('主人命令「first on」已归插件 first')])
+    expect(await kernel.agentFace.say({ kind: 'second-only', about: null, text: null, args: {} }, f.ctx)).toMatchObject({ outcome: 'heard', by: 'second' })
+    const commands = kernel.ownerFace.commands(f.library.plugins).filter((c) => c.by !== 'kernel').map((c) => `${c.by}: ${c.name}`)
+    expect(commands).toEqual(['first: first on', 'second: second off'])
+    expect(kernel.viewerFace.views(f.library).problems.map((p) => p.plugin)).toEqual(['second', 'second'])
+  })
+})

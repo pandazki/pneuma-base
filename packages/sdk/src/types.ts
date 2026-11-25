@@ -40,6 +40,8 @@ export type Library = {
   readonly config: LibraryConfig
   readonly plugins: readonly Plugin[] // installed and present in the plugin table, in config order
   readonly unavailable: readonly PluginName[] // installed but absent from the plugin table
+  /** Names a later plugin claims that an earlier one holds, left out of the later one: a problem in every answer (K8). */
+  readonly clashes: readonly PluginProblem[]
 }
 
 /** `home` is this machine's `$PNEUMA_BASE_HOME`: local grant files, external plugins, plugin caches. */

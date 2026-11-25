@@ -98,7 +98,8 @@ export async function performOwner(
 /**
  * The single exit of both faces (K5). Every operation, accepted, refused or failed, ends here by
  * sending exactly one event to every installed plugin's `observe`. Problems from installed plugins
- * that are missing from the plugin table and from `observe` itself join the result (K8).
+ * that are missing from the plugin table, from names a later plugin could not claim, and from
+ * `observe` itself join the result (K8).
  */
 async function finish<R extends { problems: PluginProblem[] }>(
   before: Context,
@@ -117,7 +118,7 @@ async function finish<R extends { problems: PluginProblem[] }>(
   for (const plugin of ctx.library.unavailable) {
     missing.push({ plugin, message: (await whyNotLoaded(ctx.home, plugin)) ?? 'installed in this library but not known to this pneuma-base' })
   }
-  const answered = { ...done.result, problems: [...missing, ...done.result.problems] }
+  const answered = { ...done.result, problems: [...missing, ...ctx.library.clashes, ...done.result.problems] }
   const observed = await eachPlugin(ctx, (plugin, pctx) => plugin.observe?.(toEvent(answered), pctx))
   return { ...answered, problems: [...answered.problems, ...observed.problems] }
 }
