@@ -43,12 +43,22 @@ describe('skill install', () => {
     })
   }
 
-  it('refuses an unknown grant and an unknown agent product', () => {
+  it('accepts any agent name, defaults --agent to the grant’s agent, and refuses an unknown grant or missing --dir', () => {
     const target = tempDir('pb-skills-')
     expect(sb.run(['skill', 'install', 'nobody', '--agent', 'claude', '--dir', target]).code).toBe(2)
-    sb.run(['grant', 'issue', 'claude', '--library', lib, '--agent', 'claude-code'])
-    expect(sb.run(['skill', 'install', 'claude', '--agent', 'cursor', '--dir', target]).code).toBe(1)
-    expect(existsSync(join(target, 'pneuma-base-claude'))).toBe(false)
+    sb.run(['grant', 'issue', 'agy', '--library', lib, '--agent', 'antigravity'])
+    expect(sb.run(['skill', 'install', 'agy']).code).toBe(1)
+
+    const defaulted = sb.run(['skill', 'install', 'agy', '--dir', target, '--json'])
+    expect(defaulted.code, defaulted.stderr).toBe(0)
+    expect(defaulted.json().text).toContain('已为 antigravity 写好技能')
+    expect(existsSync(join(target, 'pneuma-base-agy', 'SKILL.md'))).toBe(true)
+
+    const custom = tempDir('pb-skills-cursor-')
+    const explicit = sb.run(['skill', 'install', 'agy', '--agent', 'cursor', '--dir', custom, '--json'])
+    expect(explicit.code, explicit.stderr).toBe(0)
+    expect(explicit.json().text).toContain('已为 cursor 写好技能')
+    expect(existsSync(join(custom, 'pneuma-base-agy', 'SKILL.md'))).toBe(true)
   })
 })
 
