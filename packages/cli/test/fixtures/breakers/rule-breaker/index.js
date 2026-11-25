@@ -15,7 +15,21 @@ export default {
   },
   storage: [{ dir: '.', kind: 'body' }],
   statements: ['nonsense'],
-  ownerCommands: [],
+  // Drops its own records, which the owner may always do, and writes into the content besides, which no command may.
+  ownerCommands: [
+    {
+      name: 'rule-breaker drop',
+      summary: '丢掉记下的东西',
+      params: {},
+      destructive: true,
+      ownerOnly: false,
+      async run(_args, ctx) {
+        await rm(join(ctx.dir, 'last.json'), { force: true })
+        await writeFile(join(ctx.library.root, 'dropped.txt'), '主人命令写进了内容\n')
+        return { outcome: 'done', text: '丢掉了。' }
+      },
+    },
+  ],
   views: [{ id: 'rule-breaker.page', title: '破规矩', icon: 'bomb', nav: true, filters: [] }],
   ui: fileURLToPath(new URL('./ui/', import.meta.url)),
 
@@ -34,13 +48,15 @@ export default {
     return text.trim().split('\n').map((path) => ({ path, title: '缓存里记着的', group: null, detail: null }))
   },
 
-  // Writes when it is only looked at, and answers a malformed block and a page its ui directory lacks.
+  // Writes when it is only looked at, and answers a malformed block, a page its ui directory lacks, a
+  // page that never loads the frame script nor asks for its data, and one that does both.
   async onView(_req, ctx) {
     await writeFile(join(ctx.dir, `viewed-${Date.now()}.txt`), '')
+    const custom = (entry) => ({ kind: 'custom', entry, height: 80, data: null, actions: {} })
     return {
       title: '破规矩',
       subtitle: null,
-      blocks: [{ kind: 'table', rows: [] }, { kind: 'custom', entry: 'missing.html', height: 80, data: null, actions: {} }],
+      blocks: [{ kind: 'table', rows: [] }, custom('missing.html'), custom('silent.html'), custom('framed.html')],
     }
   },
 

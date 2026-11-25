@@ -5,7 +5,7 @@ import { chmod, lstat, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/p
 import { join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { KERNEL_COMMAND_NAMES, RESERVED_PLUGIN_NAMES } from '../index.js'
-import type { Block, Plugin } from '../types.js'
+import type { Action, Block, Plugin } from '../types.js'
 import { runProcess, type Result } from './run.js'
 import { sandbox, type Sandbox, type SandboxOptions, type Viewer } from './sandbox.js'
 
@@ -19,9 +19,9 @@ export const RULES: Record<CheckName, string> = {
   cognition: '认知段以「## <它带来什么>：<怎么用>」开头，第一句是「这个库装了**<标题>**插件。」，命令示例写成 pneuma-base @{{授权的名字}} …，只用 {{授权的名字}} 这一个占位，不重复内核管的规矩',
   examples: '认知段里的每条命令示例，在一个新库上做完准备步骤之后，照原样在 agent 的会话里能跑，退出码是 0',
   hooks: '每个钩子在空库上、在每个动词之后都不抛错，答复里没有这个插件的问题',
-  writes: '插件只往库里自己名下的 .pneuma-base/<插件名>/ 写；那里已有的文件不改写、不删（声明为配置的文件和缓存目录除外）；视图和条目面板里的一节什么都不写',
+  writes: '插件只往库里自己名下的 .pneuma-base/<插件名>/ 写；那里已有的文件不改写、不删（声明为配置的文件、缓存目录和破坏性的主人命令除外）；视图和条目面板里的一节什么都不写',
   cache: '缓存删掉什么都不丢：删掉它在本机的缓存目录和声明为缓存的目录前后，找、看、查的答复一样',
-  blocks: '视图和条目面板里的一节答复的都是合法的块，钩子不抛错；custom 块指向的页面在插件的 ui 目录里，取得到',
+  blocks: '视图和条目面板里的一节答复的都是合法的块，钩子不抛错；custom 块指向的页面在插件的 ui 目录里，取得到，载入 /plugin-kit/frame.js，脚本里调用 pneuma.onData',
   remove: '卸下插件之后库照常能用：配置和说明里没有它，动词照常答复、没有问题，界面没有它的视图，内容一样不少',
 }
 
@@ -199,8 +199,12 @@ function changes(before: Snapshot, after: Snapshot): Change[] {
 
 const within = (path: string, prefix: string) => prefix === '.' || path === prefix || path.startsWith(`${prefix}/`)
 
-/** A step of the scripted run: what it is, for the report; the library paths the verb itself changes; and the call. */
-type Step = { what: string; touches: readonly string[]; run: () => Promise<{ problems?: { plugin: string; message: string }[] } | null> }
+/**
+ * A step of the scripted run: what it is, for the report; the library paths the verb itself changes;
+ * whether it may delete and rewrite files of the plugin's own directory, as a destructive owner
+ * command may; and the call.
+ */
+type Step = { what: string; touches: readonly string[]; dropsOwn?: true; run: () => Promise<{ problems?: { plugin: string; message: string }[] } | null> }
 
 async function checkLibrary(p: Plugin, install: Install, options: ConformanceOptions, fail: (c: CheckName, what: string) => void, reminders: string[]): Promise<void> {
   const sb = await sandbox({ bare: true, ...pick(options) })
@@ -264,10 +268,11 @@ async function checkLibrary(p: Plugin, install: Install, options: ConformanceOpt
       { what: 'unarchive', touches: ['conformance/moved.md', '_archive/conformance/moved.md'], run: () => agent(['unarchive', 'conformance/moved.md']) },
       { what: '归档一个目录', touches: ['conformance/site', '_archive/conformance/site'], run: () => agent(['archive', 'conformance/site']) },
       { what: 'archive purge（onPurged）', touches: ['_archive'], run: purge },
-      ...p.ownerCommands
-        .filter((c) => c.readOnly === true && [...(c.params.positional ?? []), ...(c.params.flags ?? [])].every((x) => x.required !== true))
-        .map((c): Step => ({ what: `主人命令 ${c.name}`, touches: [], run: () => owner(c.name.split(' ')) })),
+      ...p.ownerCommands.filter((c) => c.readOnly === true && callable(c)).map((c): Step => ({ what: `主人命令 ${c.name}`, touches: [], run: () => owner(c.name.split(' ')) })),
+      // Confirmed as a person confirms on the page, the one confirmation a sandbox can give.
+      ...p.ownerCommands.filter((c) => c.destructive && callable(c)).map((c): Step => ({ what: `主人命令 ${c.name}`, touches: [], dropsOwn: true, run: async () => (await viewer.act(confirmedCall(c.name))).result })),
     ]
+    for (const c of p.ownerCommands.filter((c) => c.destructive && !callable(c))) reminders.push(`破坏性的主人命令 ${c.name} 要参数，没有跑：它只该删、改写插件自己目录里的文件，别处什么都不动。`)
     await runSteps(sb.library, script, own, p, options, fail, hooksOn)
     const before = await snapshot(sb.library)
     await checkViews(p, viewer, ['conformance/moved.md', 'conformance/site', '_archive/conformance/site'], '', fail)
@@ -281,6 +286,12 @@ async function checkLibrary(p: Plugin, install: Install, options: ConformanceOpt
 }
 
 const WORD: Record<Change['change'], string> = { added: '多了出来', changed: '被改写了', removed: '被删掉了' }
+
+/** An owner command every argument of which may be left out, so the check can run it as it is. */
+const callable = (c: Plugin['ownerCommands'][number]) => [...(c.params.positional ?? []), ...(c.params.flags ?? [])].every((x) => x.required !== true)
+
+/** The owner command `name` with no arguments, as a button whose question the person confirms. */
+const confirmedCall = (name: string): Action => ({ label: name, tone: 'danger', confirm: `${name}？`, inputs: [], call: { face: 'owner', command: name, args: { positional: [], flags: {} } } })
 
 const pick = (o: ConformanceOptions): Pick<SandboxOptions, 'env' | 'timeout' | 'cli'> => ({
   ...(o.env === undefined ? {} : { env: o.env }),
@@ -327,7 +338,7 @@ async function runSteps(
     for (const c of changes(before, await snapshot(root))) {
       if (within(c.path, own)) {
         const rel = c.path === own ? '.' : c.path.slice(own.length + 1)
-        if (c.change === 'added' || rel === '.' || rewritable.some((r) => within(rel, r))) continue
+        if (c.change === 'added' || rel === '.' || step.dropsOwn || rewritable.some((r) => within(rel, r))) continue
         fail('writes', `${step.what}时，它自己目录里已有的 ${c.path} ${WORD[c.change]}`)
       } else if (!step.touches.some((t) => within(c.path, t) || t.startsWith(`${c.path}/`))) {
         fail('writes', `${step.what}时，${c.path} ${WORD[c.change]}，它不在插件自己的目录 ${own}/ 下`)
@@ -380,10 +391,43 @@ async function checkViews(p: Plugin, viewer: Viewer, paths: readonly string[], w
     }
     for (const b of allBlocks(r.blocks)) {
       if (b.kind !== 'custom' || b.plugin !== p.name) continue
-      const reply = await viewer.get(`/plugin-ui/${p.name}/${b.entry.split('/').map(encodeURIComponent).join('/')}`)
-      if (!reply.ok) fail('blocks', `${page.what}里的 custom 块指向 ${b.entry}，取它答复 ${reply.status}`)
+      const entry = `/plugin-ui/${p.name}/${b.entry.split('/').map(encodeURIComponent).join('/')}`
+      const reply = await viewer.get(entry)
+      if (!reply.ok) {
+        fail('blocks', `${page.what}里的 custom 块指向 ${b.entry}，取它答复 ${reply.status}`)
+        continue
+      }
+      for (const wrong of await pageFaults(viewer, p.name, entry, await reply.text())) fail('blocks', `${page.what}里的 custom 块指向 ${b.entry}：${wrong}`)
     }
   }
+}
+
+const FRAME_SCRIPT = '/plugin-kit/frame.js'
+
+/**
+ * What can be told of a plugin's page without running it: whether it loads the frame script the
+ * server gives, and whether its scripts ask for the block's data. Its scripts are the inline ones and
+ * those it names in its own ui directory; what they import is not read.
+ */
+async function pageFaults(viewer: Viewer, plugin: string, entry: string, html: string): Promise<string[]> {
+  const page = new URL(entry, 'http://viewer')
+  const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)].map((m) => {
+    const src = /\bsrc\s*=\s*["']([^"']*)["']/i.exec(m[1] as string)?.[1]
+    return src === undefined ? { at: null, inline: m[2] as string } : { at: new URL(src, page), inline: '' }
+  })
+  const framed = scripts.some(({ at }) => at?.origin === page.origin && at.pathname === FRAME_SCRIPT)
+  const texts = await Promise.all(
+    scripts.map(async ({ at, inline }) => {
+      if (at === null) return inline
+      if (at.origin !== page.origin || !at.pathname.startsWith(`/plugin-ui/${plugin}/`)) return ''
+      const reply = await viewer.get(at.pathname)
+      return reply.ok ? reply.text() : ''
+    }),
+  )
+  return [
+    ...(framed ? [] : [`页没有载入 ${FRAME_SCRIPT}，pneuma 不在：要写 <script src="${FRAME_SCRIPT}"></script>`]),
+    ...(texts.some((t) => /\bonData\b/.test(t)) ? [] : ['页的脚本没有调用 pneuma.onData，收不到块的数据']),
+  ]
 }
 
 /** The answers of find, inspect and check before and after its caches are deleted. */

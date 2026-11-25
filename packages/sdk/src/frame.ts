@@ -89,7 +89,11 @@ export type FrameToken = (typeof FRAME_TOKENS)[number]
 /** One of the block's actions as the frame knows it: what its button says and asks for, never its call. */
 export type FrameAction = { label: string; tone: 'default' | 'danger'; inputs: ActionInput[] }
 
-/** What `onData` gets beside the block's data: the colour scheme now, and the block's actions by name. */
+/**
+ * What `onData` gets beside the block's data: the colour scheme now, and the block's actions by name.
+ * The scheme is all the page learns from the UI of the person looking; their time zone and language
+ * are the browser's own, such as `Intl.DateTimeFormat().resolvedOptions().timeZone`.
+ */
 export type FrameInfo = { scheme: 'light' | 'dark'; actions: Record<string, FrameAction> }
 
 /**

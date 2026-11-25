@@ -179,6 +179,15 @@ describe('bundles in the views', () => {
     ])
   })
 
+  it('a plugin’s section of the panel of a file inside a bundle is asked about that file, not the bundle', async () => {
+    const asked: string[] = []
+    const f = await fixture([plugin('knower', { onItemView: async (path) => (asked.push(path), { title: '知道的', blocks: [] }) })])
+    site(f)
+    const r = shown(await show(f, 'item', { path: 'site/css/main.css' }))
+    expect(asked).toEqual(['site/css/main.css'])
+    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['section:知道的', 'section:文件', 'section:预览'])
+  })
+
   it('archive lists an archived bundle as one row', async () => {
     const f = await fixture()
     site(f, '_archive/site')
