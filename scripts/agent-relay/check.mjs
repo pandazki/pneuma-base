@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Reads the ledger's fact files and decides whether the relay happened:
 // agent B put in something made on the basis of something agent A put in.
-import { readdirSync, readFileSync, existsSync } from 'node:fs'
+import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 const [library, nameA, nameB] = process.argv.slice(2)
@@ -28,6 +28,9 @@ const byA = enters.filter((f) => f.actor.name === nameA)
 const byB = enters.filter((f) => f.actor.name === nameB)
 const itemsOfA = new Set(byA.map((f) => f.item))
 const broughtByA = byA.filter((f) => f.origin.kind === 'brought')
+// A directory brought in as one thing counts by the files in it: three quotes in one folder are still three quotes.
+const filesIn = (dir) => (existsSync(dir) ? readdirSync(dir).flatMap((n) => (n === '.pneuma-item' ? [] : statSync(join(dir, n)).isDirectory() ? filesIn(join(dir, n)) : [n])) : [])
+const broughtFiles = broughtByA.reduce((n, f) => n + (f.bundle ? filesIn(join(library, f.path)).length : 1), 0)
 const madeByA = byA.filter((f) => f.origin.kind === 'made')
 const basisOf = (f) => (f.origin?.kind === 'made' ? f.origin.basis.items : f.basis?.items ?? []).map((b) => b.item)
 const bWrites = facts.filter((f) => f.actor.name === nameB && (f.kind === 'item.enter' || f.kind === 'item.revise' || f.kind === 'item.basis'))
@@ -37,7 +40,7 @@ const doingB = facts.filter((f) => f.kind === 'said' && f.flavor === 'doing' && 
 const decided = facts.filter((f) => f.kind === 'said' && f.flavor === 'decided')
 
 const rows = [
-  ['A 带进来的条目不少于 3', broughtByA.length >= 3, broughtByA.length],
+  ['A 带进来的资料不少于 3 份', broughtFiles >= 3, `${broughtFiles} 份，${broughtByA.length} 样东西`],
   ['A 做出来的条目不少于 1', madeByA.length >= 1, madeByA.length],
   ['A 说了在做什么', doingA.length >= 1, doingA.map((f) => f.text).join(' / ')],
   ['B 说了在做什么', doingB.length >= 1, doingB.map((f) => f.text).join(' / ')],
