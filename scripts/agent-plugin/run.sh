@@ -22,7 +22,7 @@ PROMPT_CLAUDE="这个目录里有两个包文件：pneuma-base-0.9.0.tgz 是一�
 
 prepare() { # $1 = agent
   W="$ROOT/$1/work"
-  mkdir -p "$W" "$ROOT/$1/home" "$ROOT/$1/tmp" "$ROOT/$1/npm-cache"
+  mkdir -p "$W" "$ROOT/$1/tmp" "$ROOT/$1/npm-cache"
   cp "$PACKAGES"/pneuma-base-0.9.0.tgz "$PACKAGES"/pneuma-base-sdk-0.9.0.tgz "$W/"
 }
 
@@ -30,7 +30,7 @@ run_codex() {
   prepare codex; W="$ROOT/codex/work"
   printf '%s' "$PROMPT_CODEX" > "$ROOT/codex/prompt.txt"
   echo "== Codex（${MODEL_CODEX}）在 ${W}"
-  ( cd "$W" && PNEUMA_BASE_HOME="$ROOT/codex/home" TMPDIR="$ROOT/codex/tmp" npm_config_cache="$ROOT/codex/npm-cache" \
+  ( cd "$W" && PNEUMA_BASE_HOME="$W/.pneuma-home" TMPDIR="$ROOT/codex/tmp" npm_config_cache="$ROOT/codex/npm-cache" \
       perl -e 'alarm shift; exec @ARGV' "$LIMIT" codex exec -m "$MODEL_CODEX" -s workspace-write --skip-git-repo-check \
       --add-dir "$ROOT/codex" -c sandbox_workspace_write.network_access=true -c shell_environment_policy.inherit=all \
       -o "$ROOT/codex/reply.md" "$PROMPT_CODEX" < /dev/null > "$ROOT/codex/log.txt" 2>&1 )
@@ -41,7 +41,7 @@ run_claude() {
   prepare claude; W="$ROOT/claude/work"
   printf '%s' "$PROMPT_CLAUDE" > "$ROOT/claude/prompt.txt"
   echo "== Claude（${MODEL_CLAUDE}）在 ${W}"
-  ( cd "$W" && PNEUMA_BASE_HOME="$ROOT/claude/home" TMPDIR="$ROOT/claude/tmp" npm_config_cache="$ROOT/claude/npm-cache" \
+  ( cd "$W" && PNEUMA_BASE_HOME="$W/.pneuma-home" TMPDIR="$ROOT/claude/tmp" npm_config_cache="$ROOT/claude/npm-cache" \
       perl -e 'alarm shift; exec @ARGV' "$LIMIT" claude -p --model "$MODEL_CLAUDE" --setting-sources project \
       --add-dir "$ROOT/claude" --allowedTools "Bash,Read,Write,Edit,Glob,Grep" \
       < "$ROOT/claude/prompt.txt" > "$ROOT/claude/reply.md" 2> "$ROOT/claude/log.txt" )
