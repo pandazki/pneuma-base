@@ -80,7 +80,8 @@ describe('dependency direction', () => {
   it('the viewer package depends on the kernel and on no plugin', () => {
     const pkg = JSON.parse(readFileSync(join(root, 'packages/viewer/package.json'), 'utf8'))
     expect(Object.keys(pkg.dependencies ?? {})).toEqual(['@pneuma-base/kernel'])
-    expect(Object.keys(pkg.devDependencies ?? {}).filter((d) => d.startsWith('@pneuma-base/'))).toEqual([])
+    // The page builds with the sdk, the contract alone, for the frame kit's list of tokens.
+    expect(Object.keys(pkg.devDependencies ?? {}).filter((d) => d.startsWith('@pneuma-base/'))).toEqual(['@pneuma-base/sdk'])
   })
 
   it('the kernel package depends on the sdk and nothing else; the sdk on nothing', () => {
