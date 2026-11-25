@@ -91,7 +91,24 @@ export function splitLine(argv: readonly string[]): Line {
     if (read === null) line.rest.push(argv[i] as string)
     else i = read
   }
+  line.rest = wordsFirst(line.rest)
   return line
+}
+
+/**
+ * The tokens with the command's words in front. A command is named by the words before the first
+ * flag, yet people and agents also write a verb's flag ahead of the verb. Leading flags whose size
+ * the undeclared table knows (a switch, or one value) go behind the rest; any other stays put.
+ */
+function wordsFirst(rest: string[]): string[] {
+  let end = 0
+  while (isFlag(rest[end])) {
+    const kind = rest[end]?.includes('=') ? 'boolean' : UNDECLARED_FLAGS[(rest[end] as string).slice(2)]
+    if (kind === 'boolean') end += 1
+    else if (kind === 'value' && rest[end + 1] !== undefined && !isFlag(rest[end + 1])) end += 2
+    else break
+  }
+  return end === 0 || end === rest.length ? rest : [...rest.slice(end), ...rest.slice(0, end)]
 }
 
 /** The words that may name a command: the tokens before the first flag. */
