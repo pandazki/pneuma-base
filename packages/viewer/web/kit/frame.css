@@ -1,0 +1,85 @@
+/*
+ * The frame kit's stylesheet: what a plugin's own page loads, by <link rel="stylesheet"
+ * href="/plugin-kit/frame.css">, to look like the management UI around it. The UI sends its tokens
+ * (--surface, --ink, --accent, ...) and frame.js sets them on the root, so the page follows light
+ * and dark without a colour of its own. The UI's components follow this base.
+ */
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(./inter.woff2) format('woff2-variations');
+}
+@font-face {
+  font-family: 'JetBrains Mono Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url(./mono.woff2) format('woff2-variations');
+}
+
+:root {
+  color-scheme: light dark;
+}
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+/* A pixel all round, so a card's ring at the edge is not cut by the frame; the page sets the frame a pixel wider each side. */
+body {
+  margin: 0;
+  padding: 1px;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+  font-feature-settings: 'cv11', 'ss01';
+  -webkit-font-smoothing: antialiased;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  border: 0;
+}
+button {
+  cursor: pointer;
+  background: none;
+  padding: 0;
+}
+:focus-visible {
+  outline: 2px solid color-mix(in oklch, var(--accent) 75%, transparent);
+  outline-offset: 2px;
+}
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+h2 {
+  font-size: 15px;
+  font-weight: 600;
+}
+h3 {
+  font-size: 13px;
+  font-weight: 600;
+}
+code,
+.mono {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+.muted {
+  color: var(--ink-2);
+}
+.faint {
+  color: var(--ink-3);
+}

@@ -3,6 +3,7 @@
 import { readdir } from 'node:fs/promises'
 import { join, posix } from 'node:path'
 import { fileFacts } from './agent.js'
+import { checkBlocks, checkRefresh } from './blocks.js'
 import { exists } from './files.js'
 import { bundleFiles, enclosingBundle, kindAt, listThings, thingAt } from './things.js'
 import { codexHint } from './owner-commands.js'
@@ -301,7 +302,9 @@ async function pluginSections(ctx: Context, path: LibraryPath): Promise<{ blocks
       const answer = await plugin.onItemView(path, pluginContext(ctx, plugin.name))
       if (answer === null) continue
       if (!answered(answer)) throw new Error('onItemView answered something that is not a section')
-      blocks.push(section(answer.title, answer.blocks))
+      const checked = checkBlocks(answer.blocks, plugin)
+      blocks.push(section(answer.title, checked.blocks))
+      problems.push(...checked.problems)
     } catch (error) {
       const message = messageOf(error)
       problems.push({ plugin: plugin.name, message })
@@ -405,7 +408,9 @@ async function pluginPage(plugin: Plugin, decl: ViewDecl, req: ViewRequest, ctx:
     if (!plugin.onView) throw new Error(`declares the view ${decl.id} but has no onView`)
     const answer = await plugin.onView(req, pluginContext(ctx, plugin.name))
     if (!answered(answer)) throw new Error(`onView answered something that is not a view for ${decl.id}`)
-    return shown(answer.title, answer.subtitle ?? null, answer.blocks)
+    const { blocks, problems } = checkBlocks(answer.blocks, plugin)
+    const { refresh, problems: refreshProblems } = checkRefresh((answer as ViewAnswer).refresh, plugin)
+    return { ...shown(answer.title, answer.subtitle ?? null, blocks, [...problems, ...refreshProblems]), ...(refresh === undefined ? {} : { refresh }) }
   } catch (error) {
     const message = messageOf(error)
     return shown(decl.title, null, [{ kind: 'empty', title: `插件 ${plugin.name} 出错了，没能给出这一页`, hint: message }], [{ plugin: plugin.name, message }])

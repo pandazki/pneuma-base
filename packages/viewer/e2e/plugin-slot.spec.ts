@@ -1,5 +1,5 @@
-// C2: a test plugin that declares one view gets a page in the navigation once installed, its blocks
-// render by kind, and the page goes when it is removed. A plugin that throws in its view does not
+// C2: a test plugin that declares views gets pages in the navigation once installed, its blocks
+// render by kind, and the pages go when it is removed. A plugin that throws in its view does not
 // blank the UI: its page says it failed and every other page carries on.
 import { join } from 'node:path'
 import { cutTexts, expect, navTitles, shoot, tempDir, test, write } from './support.ts'
@@ -21,7 +21,7 @@ test('a plugin’s page appears when installed, renders each kind of block, and 
   pb.run(['plugin', 'add', 'pager', '--library', lib], { testPlugins: true })
   const nav = page.getByRole('navigation', { name: '导航' })
   await expect(nav.getByRole('button', { name: '块的样例' })).toBeVisible({ timeout: 5_000 })
-  expect(await navTitles(page)).toEqual(['块的样例', '文件', '归档区', '配置'])
+  expect(await navTitles(page)).toEqual(['块的样例', '新的块', '文件', '归档区', '配置'])
 
   await nav.getByRole('button', { name: '块的样例' }).click()
   const main = page.getByRole('main')
@@ -39,7 +39,8 @@ test('a plugin’s page appears when installed, renders each kind of block, and 
   await expect(main.locator('time[datetime="2026-11-25T01:00:00.000Z"]')).toBeVisible()
   await expect(main.getByRole('figure', { name: '预览' })).toContainText('pager 预览的内容') // preview
   await expect(main.getByText('空状态的标题')).toBeVisible() // empty
-  await expect(main.getByText('这一块界面还不认识：sparkle')).toBeVisible() // a kind this page does not know
+  await expect(main.getByText('插件 pager 的一块没法显示：blocks[7] 是不认识的块：sparkle')).toBeVisible() // a kind no one knows, caught by the kernel
+  await expect(main.getByRole('alert')).toContainText('插件 pager 出了问题：一块没法显示')
   await shoot(page, 'c2-plugin-blocks')
   await main.getByRole('button', { name: '再打个招呼' }).click() // actions
   await expect(page.getByRole('status')).toContainText('pong')

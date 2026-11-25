@@ -332,3 +332,82 @@ describe('the view slot over HTTP (C2)', () => {
     expect((await http(server, '/api/view?view=files')).json()).toMatchObject({ outcome: 'shown', problems: [] })
   })
 })
+
+describe('a plugin’s own pages and the kit they load (custom blocks)', () => {
+  const name = (n: string) => n as Plugin['name']
+  /** A ui directory with a page, a script in a folder, and beside it a file that must stay out of reach. */
+  function uiDir(): string {
+    const dir = tempDir('pb-v-ui-')
+    mkdirSync(join(dir, 'ui', 'js'), { recursive: true })
+    writeFileSync(join(dir, 'ui', 'page.html'), '<!doctype html><p>drawn page</p>')
+    writeFileSync(join(dir, 'ui', 'js', 'app.js'), 'console.log(1)')
+    writeFileSync(join(dir, 'secret.txt'), 'outside the ui directory')
+    symlinkSync(join(dir, 'secret.txt'), join(dir, 'ui', 'out.txt'))
+    return join(dir, 'ui')
+  }
+  const drawn = (ui: string): Plugin => ({ contract: 1, name: name('drawn'), cognition: null, storage: [], statements: [], ownerCommands: [], ui })
+
+  it('serves an installed plugin’s ui files without the token, as pages that cannot reach the viewer’s origin', async () => {
+    const plugin = drawn(uiDir())
+    const lib = await library([plugin])
+    const server = await serve(lib.root, { table: new Map([['drawn', plugin]]) })
+    const page = await http(server, '/plugin-ui/drawn/page.html', { token: null })
+    expect(page.status).toBe(200)
+    expect(page.type).toContain('text/html')
+    expect(page.text).toContain('drawn page')
+    expect(page.headers['content-security-policy']).toContain('sandbox allow-scripts')
+    expect(page.headers['content-security-policy']).not.toContain('allow-same-origin')
+    expect(page.headers['referrer-policy']).toBe('no-referrer')
+    expect(page.headers['x-content-type-options']).toBe('nosniff')
+    const script = await http(server, '/plugin-ui/drawn/js/app.js', { token: null })
+    expect(script.status).toBe(200)
+    expect(script.type).toContain('text/javascript')
+    expect((await http(server, '/plugin-ui/drawn/page.html', { token: null, host: 'evil.example' })).status).toBe(403)
+  })
+
+  it('serves nothing for a plugin the library has not installed, or one without ui, and nothing outside the ui directory', async () => {
+    const plugin = drawn(uiDir())
+    const bare: Plugin = { contract: 1, name: name('bare'), cognition: null, storage: [], statements: [], ownerCommands: [] }
+    const lib = await library([bare])
+    const server = await serve(lib.root, { table: new Map([['drawn', plugin], ['bare', bare]]) })
+    expect((await http(server, '/plugin-ui/drawn/page.html', { token: null })).status).toBe(404)
+    expect((await http(server, '/plugin-ui/bare/page.html', { token: null })).status).toBe(404)
+
+    const installed = await library([plugin])
+    const s2 = await serve(installed.root, { table: new Map([['drawn', plugin]]) })
+    for (const path of ['/plugin-ui/drawn/..%2Fsecret.txt', '/plugin-ui/drawn/%2e%2e/secret.txt', '/plugin-ui/drawn/js/..%2F..%2Fsecret.txt', '/plugin-ui/drawn/out.txt', '/plugin-ui/drawn/js', '/plugin-ui/drawn/', '/plugin-ui/drawn/missing.html']) {
+      const r = await http(s2, path, { token: null })
+      expect(r.status, path).toBe(404)
+      expect(r.text, path).not.toContain('outside the ui directory')
+    }
+  })
+
+  it('serves the frame kit at a fixed address any frame can load', async () => {
+    const lib = await library()
+    const server = await serve(lib.root)
+    for (const [path, type] of [['/plugin-kit/frame.js', 'text/javascript'], ['/plugin-kit/frame.css', 'text/css']] as const) {
+      const r = await http(server, path, { token: null })
+      expect(r.status, path).toBe(200)
+      expect(r.type, path).toContain(type)
+      expect(r.headers['access-control-allow-origin'], path).toBe('*')
+    }
+    expect((await http(server, '/plugin-kit/frame.js', { token: null })).text).toContain('onData')
+  })
+
+  it('a malformed block in a plugin’s view becomes a block saying so, and a problem; the rest of the page stands', async () => {
+    const odd: Plugin = {
+      contract: 1,
+      name: name('odd'),
+      cognition: null,
+      storage: [],
+      statements: [],
+      ownerCommands: [],
+      views: [{ id: 'odd.page', title: '一页', icon: 'list', nav: true, filters: [] }],
+      onView: async () => ({ title: '一页', subtitle: null, blocks: [{ kind: 'table', columns: [], empty: '空' } as never, { kind: 'text', text: 'still here', tone: 'neutral' }] }),
+    }
+    const lib = await library([odd])
+    const server = await serve(lib.root, { table: new Map([['odd', odd]]) })
+    const r = (await http(server, '/api/view?view=odd.page')).json()
+    expect(r).toMatchObject({ outcome: 'shown', blocks: [{ kind: 'text', tone: 'bad', text: expect.stringContaining('插件 odd') }, { text: 'still here' }], problems: [{ plugin: 'odd', message: expect.stringContaining('rows') }] })
+  })
+})

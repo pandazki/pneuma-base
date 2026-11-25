@@ -1,7 +1,8 @@
 // Test-only plugins. Run by Node's type stripping, so only erasable TypeScript here.
-import { appendFile, writeFile } from 'node:fs/promises'
+import { appendFile, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { pluginName, type Action, type Block, type Event, type Instant, type LibraryPath, type OwnerCommand, type Plugin } from '@pneuma-base/kernel'
+import { fileURLToPath } from 'node:url'
+import { pluginName, type Action, type Block, type Event, type Instant, type LibraryPath, type OwnerCommand, type Plugin, type PluginContext } from '@pneuma-base/kernel'
 
 /** One line per event it observes, in `.pneuma-base/recorder/events.jsonl`. */
 export function describeEvent(event: Event): string {
@@ -58,43 +59,120 @@ export const thrower: Plugin = {
 }
 
 const ping = (label: string): Action => ({ label, tone: 'default', confirm: null, inputs: [], call: { face: 'owner', command: 'pager ping', args: { positional: [], flags: {} } } })
+const owner = (command: string, positional: string[] = [], flags: Record<string, string[]> = {}) => ({ face: 'owner' as const, command, args: { positional, flags } })
 
-/** Declares one view that uses every kind of block, and one kind no page knows. */
+/** How many times `pager bump` ran in this library, kept in pager's own directory. */
+const count = async (ctx: PluginContext) => Number(await readFile(join(ctx.dir, 'count'), 'utf8').catch(() => '0'))
+
+/** A long outside address, for a cell that has to be cut. */
+export const LONG_URL = 'http://127.0.0.1:18080/apps/a-rather-long-application-name-for-the-demo-site/index.html'
+
+const bump: Action = { label: '加一', tone: 'default', confirm: '把计数加一？', inputs: [], call: owner('pager bump') }
+const counter = (data: unknown, entry = 'counter.html'): Block => ({ kind: 'custom', entry, height: 140, data, actions: { bump } })
+
+/** The view with each thing the first tier added, and the second tier's own page. */
+async function newThings(ctx: PluginContext): Promise<Block[]> {
+  const toFile = { view: 'item', params: { path: 'pager.md' }, target: 'panel' as const }
+  const site = (key: string, url: string, link: typeof toFile | null = null) => ({ key, cells: { name: { text: key }, address: { text: url, mono: true, href: url, copy: true as const } }, link, actions: [] })
+  return [
+    {
+      kind: 'section',
+      title: '站点',
+      note: null,
+      count: 3,
+      actions: [],
+      blocks: [
+        { kind: 'table', columns: [{ key: 'name', label: '名字' }, { key: 'address', label: '地址' }], rows: [site('长地址', LONG_URL), site('短地址', 'https://example.com/', toFile), site('不是网址', 'javascript:alert(1)')], empty: '没有站点' },
+      ],
+    },
+    { kind: 'embed', url: process.env.PAGER_EMBED ?? 'http://127.0.0.1:9/', title: '站点预览', height: 220 },
+    {
+      kind: 'timeline',
+      entries: [
+        { at: '2026-11-25T02:00:00.000Z' as Instant, title: { text: '第 2 版' }, lines: ['bundle 48eb8ddd'], tag: { text: '线上', tone: 'good' } },
+        { at: '2026-11-25T01:00:00.000Z' as Instant, title: { text: '第 1 版' }, lines: ['bundle ec8fab9c'], tag: null, actions: [{ label: '放回这一版', tone: 'default', confirm: '把线上换回第 1 版？', inputs: [], call: owner('pager restore', [], { release: ['1'] }) }] },
+      ],
+    },
+    {
+      kind: 'actions',
+      actions: [
+        {
+          label: '设前缀',
+          tone: 'default',
+          confirm: null,
+          inputs: [{ name: 'prefix', label: '前缀', placeholder: '比如 shop', value: null, options: null, pattern: '[a-z][a-z0-9]{0,11}', hint: '小写字母开头，最多 12 个小写字母或数字' }],
+          call: owner('pager prefix', ['{prefix}']),
+        },
+      ],
+    },
+    counter({ count: await count(ctx), note: '插件自己画的一页' }),
+    counter({}, 'missing.html'),
+  ]
+}
+
+/** Declares one view that uses every kind of block, and one kind no page knows; one with each newer thing; and two for how often a view is asked. */
 export const pager: Plugin = {
   contract: 1,
   name: pluginName('pager'),
   cognition: null,
-  storage: [],
+  storage: [{ dir: '.', kind: 'body' }],
   statements: [],
-  ownerCommands: [{ name: 'pager ping', summary: 'Answer pong.', destructive: false, ownerOnly: false, run: async () => ({ outcome: 'done', text: 'pong' }) }],
-  views: [{ id: 'pager.blocks', title: '块的样例', icon: 'flask-conical', nav: true, filters: [] }],
-  onView: async () => ({
-    title: '块的样例',
-    subtitle: '测试插件 pager 的唯一一页',
-    blocks: [
-      { kind: 'text', text: '这是一段说明文字。', tone: 'info' },
-      {
-        kind: 'section',
-        title: '一节',
-        note: '节下的说明',
-        count: 2,
-        actions: [ping('打个招呼')],
-        blocks: [
-          {
-            kind: 'table',
-            columns: [{ key: 'name', label: '名字' }, { key: 'state', label: '状态' }, { key: 'when', label: '何时' }],
-            rows: [{ key: 'r1', cells: { name: { text: '表的第一行', mono: true }, state: { text: '', tag: { text: '好', tone: 'good' } }, when: { text: '', at: '2026-11-25T11:11:00.000Z' as Instant } }, link: { view: 'item', params: { path: 'pager.md' }, target: 'panel' }, actions: [] }],
-            empty: '空表',
-          },
-          { kind: 'fields', fields: [{ label: '字段', value: { text: '字段的值' } }] },
-        ],
+  ui: fileURLToPath(new URL('./pager-ui/', import.meta.url)),
+  ownerCommands: [
+    { name: 'pager ping', summary: 'Answer pong.', destructive: false, ownerOnly: false, run: async () => ({ outcome: 'done', text: 'pong' }) },
+    {
+      name: 'pager bump',
+      summary: 'Count one more.',
+      destructive: false,
+      ownerOnly: false,
+      run: async (_args, ctx) => {
+        const next = (await count(ctx)) + 1
+        await writeFile(join(ctx.dir, 'count'), String(next))
+        return { outcome: 'done', text: `计数是 ${next}` }
       },
-      { kind: 'list', items: [{ cell: { text: '列表的一项' }, note: '一项的说明', actions: [] }] },
-      { kind: 'timeline', entries: [{ at: '2026-11-25T01:00:00.000Z' as Instant, title: { text: '时间线的一条' }, lines: ['一条的说明'], tag: { text: '标签', tone: 'warn' } }] },
-      { kind: 'preview', path: 'pager.md' as LibraryPath },
-      { kind: 'actions', actions: [ping('再打个招呼')] },
-      { kind: 'empty', title: '空状态的标题', hint: '空状态的提示' },
-      { kind: 'sparkle' } as unknown as Block,
-    ],
-  }),
+    },
+    { name: 'pager restore', summary: 'Pretend to put a release back.', destructive: false, ownerOnly: false, run: async (args) => ({ outcome: 'done', text: `已放回第 ${String(args.flags.release)} 版` }) },
+    { name: 'pager prefix', summary: 'Pretend to set a prefix.', destructive: false, ownerOnly: false, run: async (args) => ({ outcome: 'done', text: `前缀是 ${args.positional[0] ?? ''}` }) },
+  ],
+  views: [
+    { id: 'pager.blocks', title: '块的样例', icon: 'flask-conical', nav: true, filters: [] },
+    { id: 'pager.new', title: '新的块', icon: 'layers', nav: true, filters: [] },
+    { id: 'pager.still', title: '不自己更新的页', icon: 'clock', nav: false, filters: [] },
+    { id: 'pager.ticking', title: '自己更新的页', icon: 'refresh-cw', nav: false, filters: [] },
+  ],
+  onItemView: async (path) => ({ title: '插件 pager 画的', blocks: [counter({ count: 0, note: `面板里的 ${path}` })] }),
+  onView: async (req, ctx) => {
+    if (req.view === 'pager.new') return { title: '新的块', subtitle: '链接、外部页面、带动作的时间线、带校验的输入、插件自己画的页', blocks: await newThings(ctx) }
+    if (req.view === 'pager.still') return { title: '不自己更新的页', subtitle: null, blocks: [{ kind: 'text', text: '只在库变了或做了操作之后才重取。', tone: 'neutral' }] }
+    if (req.view === 'pager.ticking') return { title: '自己更新的页', subtitle: null, blocks: [{ kind: 'text', text: '每 5 秒重取一次。', tone: 'neutral' }], refresh: 5 }
+    return {
+      title: '块的样例',
+      subtitle: '测试插件 pager 的一页',
+      blocks: [
+        { kind: 'text', text: '这是一段说明文字。', tone: 'info' },
+        {
+          kind: 'section',
+          title: '一节',
+          note: '节下的说明',
+          count: 2,
+          actions: [ping('打个招呼')],
+          blocks: [
+            {
+              kind: 'table',
+              columns: [{ key: 'name', label: '名字' }, { key: 'state', label: '状态' }, { key: 'when', label: '何时' }],
+              rows: [{ key: 'r1', cells: { name: { text: '表的第一行', mono: true }, state: { text: '', tag: { text: '好', tone: 'good' } }, when: { text: '', at: '2026-11-25T11:11:00.000Z' as Instant } }, link: { view: 'item', params: { path: 'pager.md' }, target: 'panel' }, actions: [] }],
+              empty: '空表',
+            },
+            { kind: 'fields', fields: [{ label: '字段', value: { text: '字段的值' } }] },
+          ],
+        },
+        { kind: 'list', items: [{ cell: { text: '列表的一项' }, note: '一项的说明', actions: [] }] },
+        { kind: 'timeline', entries: [{ at: '2026-11-25T01:00:00.000Z' as Instant, title: { text: '时间线的一条' }, lines: ['一条的说明'], tag: { text: '标签', tone: 'warn' } }] },
+        { kind: 'preview', path: 'pager.md' as LibraryPath },
+        { kind: 'actions', actions: [ping('再打个招呼')] },
+        { kind: 'empty', title: '空状态的标题', hint: '空状态的提示' },
+        { kind: 'sparkle' } as unknown as Block,
+      ],
+    }
+  },
 }

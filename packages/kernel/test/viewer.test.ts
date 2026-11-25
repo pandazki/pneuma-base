@@ -257,3 +257,90 @@ describe('the view slot', () => {
     expect(events).toEqual([])
   })
 })
+
+describe('what a plugin’s view answers is checked (D7)', () => {
+  const answering = (name: string, answer: unknown, extra: Partial<Parameters<typeof plugin>[1]> = {}) =>
+    plugin(name, {
+      views: [{ id: `${name}.page`, title: '一页', icon: 'x', nav: true, filters: [] }],
+      onView: async () => answer as never,
+      onItemView: async () => ({ title: '它知道的', blocks: (answer as { blocks: Block[] }).blocks }),
+      ...extra,
+    })
+  const text = (t: string): Block => ({ kind: 'text', text: t, tone: 'neutral' })
+
+  it('a block of a kind no one knows, or lacking a required field, is replaced by one saying whose and why; the rest stands', async () => {
+    const blocks = [
+      text('前面的'),
+      { kind: 'sparkle' },
+      { kind: 'table', columns: [{ key: 'a', label: 'A' }], empty: '空' },
+      { kind: 'section', title: '一节', note: null, count: null, actions: [], blocks: [text('节里的'), { kind: 'list', items: [{ cell: { text: 1 }, note: null, actions: [] }] }] },
+      text('后面的'),
+    ]
+    const f = await fixture([answering('odd', { title: '一页', subtitle: null, blocks })])
+    const r = shown(await show(f, 'odd.page'))
+    expect(r.blocks).toMatchObject([
+      { kind: 'text', text: '前面的' },
+      { kind: 'text', tone: 'bad', text: expect.stringMatching(/^插件 odd 的一块没法显示：.*sparkle/) },
+      { kind: 'text', tone: 'bad', text: expect.stringMatching(/^插件 odd 的一块没法显示：.*rows/) },
+      { kind: 'section', title: '一节', blocks: [{ kind: 'text', text: '节里的' }, { kind: 'text', tone: 'bad', text: expect.stringContaining('text') }] },
+      { kind: 'text', text: '后面的' },
+    ])
+    expect(r.problems).toHaveLength(3)
+    expect(r.problems.every((p) => p.plugin === 'odd')).toBe(true)
+  })
+
+  it('checks the blocks of a plugin’s section in the item panel the same way', async () => {
+    const f = await fixture([answering('odd', { title: '一页', subtitle: null, blocks: [{ kind: 'embed', url: 'file:///etc/passwd', title: '本机文件', height: 200 }] })])
+    f.write('a.md', 'a')
+    const r = shown(await show(f, 'item', { path: 'a.md' }))
+    expect(r.blocks[1]).toMatchObject({ kind: 'section', title: '它知道的', blocks: [{ kind: 'text', tone: 'bad', text: expect.stringContaining('http') }] })
+    expect(r.problems).toMatchObject([{ plugin: 'odd' }])
+  })
+
+  it('stamps a custom block with the plugin that gave it, and refuses one from a plugin without ui or with an entry that climbs out', async () => {
+    const custom = (entry: string): Block => ({ kind: 'custom', entry, height: 200, data: { n: 1 }, actions: {}, plugin: 'someone-else' as never })
+    const answer = { title: '一页', subtitle: null, blocks: [custom('page.html'), custom('../other/page.html')] }
+    const f = await fixture([answering('drawn', answer, { ui: '/somewhere/ui' }), answering('plain', answer)])
+    const drawn = shown(await show(f, 'drawn.page'))
+    expect(drawn.blocks[0]).toEqual({ kind: 'custom', entry: 'page.html', height: 200, data: { n: 1 }, actions: {}, plugin: 'drawn' })
+    expect(drawn.blocks[1]).toMatchObject({ kind: 'text', tone: 'bad', text: expect.stringContaining('entry') })
+    const plain = shown(await show(f, 'plain.page'))
+    expect(plain.blocks.map((b) => b.kind)).toEqual(['text', 'text'])
+    expect(plain.problems[0]?.message).toContain('ui')
+  })
+
+  it('keeps a refresh of at least five seconds, raises a shorter one to five, and drops one that is not a number as a problem', async () => {
+    const f = await fixture([
+      answering('slow', { title: '慢', subtitle: null, blocks: [], refresh: 30 }),
+      answering('eager', { title: '急', subtitle: null, blocks: [], refresh: 1 }),
+      answering('wrong', { title: '错', subtitle: null, blocks: [], refresh: 'often' }),
+      answering('quiet', { title: '静', subtitle: null, blocks: [] }),
+    ])
+    expect(shown(await show(f, 'slow.page')).refresh).toBe(30)
+    expect(shown(await show(f, 'eager.page')).refresh).toBe(5)
+    const wrong = shown(await show(f, 'wrong.page'))
+    expect(wrong.refresh).toBeUndefined()
+    expect(wrong.problems).toMatchObject([{ plugin: 'wrong', message: expect.stringContaining('refresh') }])
+    expect('refresh' in shown(await show(f, 'quiet.page'))).toBe(false)
+  })
+
+  it('lets the new fields through: link cells, embeds, timeline actions, patterned inputs', async () => {
+    const act = { label: '放回', tone: 'default', confirm: '放回这一版？', inputs: [{ name: 'p', label: '前缀', placeholder: null, value: null, options: null, pattern: '[a-z]+', hint: '小写字母' }], call: { face: 'owner', command: 'x', args: { positional: [], flags: {} } } }
+    const blocks = [
+      { kind: 'fields', fields: [{ label: '地址', value: { text: 'https://example.com/', href: 'https://example.com/', copy: true } }] },
+      { kind: 'embed', url: 'http://127.0.0.1:18080/apps/demo/', title: '预览', height: 320 },
+      { kind: 'timeline', entries: [{ at: '2026-11-25T01:00:00.000Z', title: { text: '第 1 版' }, lines: [], tag: null, actions: [act] }] },
+    ]
+    const f = await fixture([answering('fine', { title: '好', subtitle: null, blocks })])
+    const r = shown(await show(f, 'fine.page'))
+    expect(r.problems).toEqual([])
+    expect(r.blocks).toEqual(blocks)
+  })
+
+  it('refuses an input pattern that is not a regular expression', async () => {
+    const act = { label: '设', tone: 'default', confirm: null, inputs: [{ name: 'p', label: '前缀', placeholder: null, value: null, options: null, pattern: '[a-' }], call: { face: 'owner', command: 'x', args: { positional: [], flags: {} } } }
+    const f = await fixture([answering('regex', { title: '一页', subtitle: null, blocks: [{ kind: 'actions', actions: [act] }] })])
+    const r = shown(await show(f, 'regex.page'))
+    expect(r.blocks).toMatchObject([{ kind: 'text', tone: 'bad', text: expect.stringContaining('pattern') }])
+  })
+})

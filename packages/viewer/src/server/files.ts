@@ -51,6 +51,27 @@ export async function libraryFile(root: string, input: string): Promise<LibraryF
   return s.isFile() ? { path: real, type: await typeOf(real), size: s.size } : null
 }
 
+/**
+ * The regular file `rest` names inside a plugin's `ui` directory, links followed and still inside it.
+ * `rest` is the URL path after the plugin's name, still percent-encoded; a segment that is empty, a
+ * dot segment or holds a slash once decoded is refused. Null for anything else.
+ */
+export async function pluginUiFile(ui: string, rest: string): Promise<string | null> {
+  const segments = rest.split('/').map((s) => {
+    try {
+      return decodeURIComponent(s)
+    } catch {
+      return ''
+    }
+  })
+  if (segments.some((s) => s === '' || s === '.' || s === '..' || /[/\\\0]/.test(s))) return null
+  const base = await realpath(ui).catch(() => null)
+  if (base === null) return null
+  const real = await realpath(join(base, ...segments)).catch(() => null)
+  if (real === null || !real.startsWith(`${base}${sep}`)) return null
+  return (await stat(real)).isFile() ? real : null
+}
+
 /** A short stamp of every name, size and modification time under `dir`. It changes when anything there changes. */
 export async function revision(dir: string): Promise<string> {
   const hash = createHash('sha1')

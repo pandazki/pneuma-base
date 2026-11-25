@@ -51,4 +51,13 @@ export const api = {
   init: (plugins: string[]) => request<CallReply>('/api/init', { plugins }),
   rev: () => request<{ rev: string }>('/api/rev'),
   fileUrl: (path: string) => `/api/file?${new URLSearchParams({ path, token: TOKEN })}`,
+  /** A file of a plugin's ui directory. It carries no token: the frame that loads it must never hold one. */
+  pluginUiUrl: (plugin: string, entry: string) => `/plugin-ui/${encodeURIComponent(plugin)}/${entry.split('/').map(encodeURIComponent).join('/')}`,
+}
+
+/** The address when it is http or https, the only outside addresses the page opens; null for anything else. */
+export function outsideUrl(href: string | undefined): string | null {
+  if (href === undefined || !URL.canParse(href)) return null
+  const url = new URL(href)
+  return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null
 }

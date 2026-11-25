@@ -1,13 +1,17 @@
 // The shell: navigation on the left, the view in the middle, a detail panel on the right.
-// It keeps no state of its own beyond which views are open; every view comes from the server.
+// It keeps no state of its own beyond which views are open, which the address holds; every view
+// comes from the server, fetched again when the library changed, after an action, and every
+// `refresh` seconds when its answer asks for that.
 import type { Action, Link, PluginProblem, ViewDecl, ViewRequest, ViewResult } from '@pneuma-base/kernel'
 import { ArrowLeft, Database, LoaderCircle, Unplug, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, type State } from './api'
-import { BlockEnvContext, Blocks, sameLink, useWidth, type BlockEnv } from './blocks'
+import { Blocks, sameLink, useWidth } from './blocks'
+import { BlockEnvContext, type BlockEnv } from './env'
 import { ActionDialog, fill, Toasts, useToasts, ViewIcon } from './chrome'
 import { Choice } from './controls'
 import { FONT, fitStart } from './measure'
+import { useRoute } from './route'
 import { clockTime } from './time'
 
 /** How often the page asks whether the library changed. */
@@ -15,24 +19,38 @@ export const POLL_MS = 2000
 
 type Load<T> = { data: T | null; failed: boolean }
 
-/** Loads `load()` whenever `key` or `tick` changes, keeping the last answer on screen meanwhile. */
-function useLoad<T>(key: string | null, tick: number, load: () => Promise<T>): Load<T> {
+/**
+ * Loads `load()` whenever `key` or `tick` changes, and again `every(answer)` seconds after an answer
+ * that asks for it, keeping the last answer on screen meanwhile.
+ */
+function useLoad<T>(key: string | null, tick: number, load: () => Promise<T>, every: (answer: T) => number | undefined = () => undefined): Load<T> {
   const [state, setState] = useState<Load<T>>({ data: null, failed: false })
-  const loader = useRef(load)
-  loader.current = load
+  const [again, setAgain] = useState(0)
+  const loader = useRef({ load, every })
+  loader.current = { load, every }
   useEffect(() => {
     if (key === null) return
     let live = true
-    loader.current().then(
-      (data) => live && setState({ data, failed: false }),
+    let timer: number | undefined
+    loader.current.load().then(
+      (data) => {
+        if (!live) return
+        setState({ data, failed: false })
+        const seconds = loader.current.every(data)
+        if (seconds !== undefined) timer = window.setTimeout(() => setAgain((n) => n + 1), seconds * 1000)
+      },
       () => live && setState((s) => ({ ...s, failed: true })),
     )
     return () => {
       live = false
+      window.clearTimeout(timer)
     }
-  }, [key, tick])
+  }, [key, tick, again])
   return state
 }
+
+/** A view's own pace: the seconds its answer gave as `refresh`, for state from outside the library. */
+const refreshOf = (r: ViewResult) => (r.outcome === 'shown' ? r.refresh : undefined)
 
 /** The view's parameters with each filter's default filled in. */
 function withDefaults(req: ViewRequest, decl: ViewDecl | undefined): ViewRequest {
@@ -238,15 +256,14 @@ export function App() {
   const [tick, setTick] = useState(0)
   const [down, setDown] = useState(false)
   const [denied, setDenied] = useState(false)
-  const [main, setMain] = useState<ViewRequest | null>(null)
-  const [panel, setPanel] = useState<ViewRequest[]>([])
-  const [pending, setPending] = useState<Action | null>(null)
+  const [{ main, panel }, go] = useRoute()
+  const [pending, setPending] = useState<{ action: Action; values: Record<string, string> } | null>(null)
   const [changedAt, setChangedAt] = useState<Date | null>(null)
   const [toasts, toast, closeToast] = useToasts()
   const refresh = useCallback(() => setTick((t) => t + 1), [])
   const cancel = useCallback(() => setPending(null), [])
 
-  // Ask every two seconds whether anything changed; refetch when it did or when the server is back.
+  // Ask every two seconds whether the library changed; refetch when it did or when the server is back.
   useEffect(() => {
     let last: string | null = null
     let wasDown = false
@@ -275,16 +292,16 @@ export function App() {
   const current = main !== null && views.some((v) => v.id === main.view) ? main : firstNav === null ? null : { view: firstNav, params: {} }
   const decl = views.find((v) => v.id === current?.view)
   const request = current === null ? null : withDefaults(current, decl)
-  const shown = useLoad(keyOf(request), tick, () => api.view(request as ViewRequest))
+  const shown = useLoad(keyOf(request), tick, () => api.view(request as ViewRequest), refreshOf)
   const top = panel.at(-1) ?? null
-  const detail = useLoad(keyOf(top), tick, () => api.view(top as ViewRequest))
+  const detail = useLoad(keyOf(top), tick, () => api.view(top as ViewRequest), refreshOf)
 
   // Escape closes the panel; an open dialog takes Escape for itself first.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setPanel([])
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && go((r) => ({ ...r, panel: [] }))
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [go])
 
   const run = useCallback(
     async (action: Action, values: Record<string, string>, confirmed: boolean) => {
@@ -304,13 +321,14 @@ export function App() {
       tick,
       onLink: (link: Link) => {
         const req = { view: link.view, params: link.params }
-        if (link.target === 'main') setMain(req)
-        else setPanel((stack) => (sameLink(link, stack.at(-1) ?? null) ? stack : [...stack, req]))
+        if (link.target === 'main') go((r) => ({ ...r, main: req }))
+        else go((r) => (sameLink(link, r.panel.at(-1) ?? null) ? r : { ...r, panel: [...r.panel, req] }))
       },
-      onAction: (action: Action) => (action.inputs.length > 0 || action.confirm !== null ? setPending(action) : void run(action, {}, false)),
+      onAction: (action: Action, values: Record<string, string> = {}) =>
+        action.inputs.length > 0 || action.confirm !== null ? setPending({ action, values }) : void run(action, values, false),
       selected: (link: Link | null) => link !== null && link.target === 'panel' && sameLink(link, top),
     }),
-    [tick, run, top],
+    [tick, run, top, go],
   )
 
   if (denied) return <Denied />
@@ -351,9 +369,7 @@ export function App() {
             current={current?.view ?? null}
             down={down}
             changedAt={changedAt}
-            onSelect={(view) => {
-              setMain({ view, params: {} })
-            }}
+            onSelect={(view) => go((r) => ({ ...r, main: { view, params: {} } }))}
           />
           <main className="min-w-0 flex-1 overflow-auto bg-page">
             <header className="flex flex-col gap-3 px-6 pt-5 pb-4">
@@ -361,7 +377,7 @@ export function App() {
                 <h1 className="text-[19px] font-semibold tracking-[-0.015em]">{result?.title ?? decl?.title ?? ''}</h1>
                 {result?.subtitle ? <p className="truncate text-[12.5px] text-ink-2">{result.subtitle}</p> : null}
               </div>
-              <Filters decl={decl} params={request?.params ?? {}} onChange={(name, value) => current && setMain({ view: current.view, params: { ...current.params, [name]: value } })} />
+              <Filters decl={decl} params={request?.params ?? {}} onChange={(name, value) => current && go((r) => ({ ...r, main: { view: current.view, params: { ...current.params, [name]: value } } }))} />
             </header>
             <div className="flex flex-col gap-4 px-6 pb-12">
               <Problems problems={state.data.problems} />
@@ -369,16 +385,23 @@ export function App() {
             </div>
           </main>
           {top !== null ? (
-            <Panel result={detail.data} failed={detail.failed} canGoBack={panel.length > 1} onBack={() => setPanel((s) => s.slice(0, -1))} onClose={() => setPanel([])} />
+            <Panel
+              result={detail.data}
+              failed={detail.failed}
+              canGoBack={panel.length > 1}
+              onBack={() => go((r) => ({ ...r, panel: r.panel.slice(0, -1) }))}
+              onClose={() => go((r) => ({ ...r, panel: [] }))}
+            />
           ) : null}
         </div>
       </div>
       {pending ? (
         <ActionDialog
-          action={pending}
+          action={pending.action}
+          preset={pending.values}
           onCancel={cancel}
           onSubmit={(values) => {
-            const action = pending
+            const { action } = pending
             setPending(null)
             void run(action, values, action.confirm !== null)
           }}

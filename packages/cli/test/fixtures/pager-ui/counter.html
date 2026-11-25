@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="/plugin-kit/frame.css" />
+    <script src="/plugin-kit/frame.js"></script>
+    <style>
+      .panel {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 14px 16px;
+      }
+      .figure {
+        display: flex;
+        flex-direction: column;
+        min-width: 96px;
+      }
+      .count {
+        font-size: 26px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        font-variant-numeric: tabular-nums;
+      }
+      .side {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        gap: 8px;
+        min-width: 0;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card panel">
+      <div class="figure">
+        <span class="muted">计数</span>
+        <span class="count" id="count">…</span>
+      </div>
+      <div class="side">
+        <div class="row">
+          <span class="tag tone-info" id="scheme">…</span>
+          <span class="muted" id="note"></span>
+        </div>
+        <div class="row">
+          <button type="button" class="btn btn-primary" id="bump">加一</button>
+          <button type="button" class="btn" id="sneak">做没声明的事</button>
+          <button type="button" class="btn" id="files">打开文件页</button>
+        </div>
+      </div>
+    </div>
+    <script>
+      const $ = (id) => document.getElementById(id)
+      // What the page around sent last, for the test to read: it must never hold a call.
+      window.addEventListener('message', (event) => (window.lastMessage = event.data))
+      pneuma.onData((data, { scheme, actions }) => {
+        $('count').textContent = String(data.count ?? '—')
+        $('note').textContent = data.note ?? ''
+        $('scheme').textContent = scheme === 'dark' ? '深色' : '浅色'
+        $('bump').textContent = actions.bump ? actions.bump.label : '加一'
+      })
+      $('bump').onclick = () => pneuma.run('bump')
+      $('sneak').onclick = () => pneuma.run('wipe')
+      $('files').onclick = () => pneuma.open({ view: 'files', params: {}, target: 'main' })
+    </script>
+  </body>
+</html>

@@ -102,6 +102,11 @@ export default tseslint.config(
     },
   },
   {
+    // The frame kit runs as a plain script in a plugin's page, in the browser.
+    files: ['packages/viewer/web/kit/**/*.js'],
+    languageOptions: { globals: { window: 'readonly', document: 'readonly', ResizeObserver: 'readonly' } },
+  },
+  {
     // Tests read JSON printed by the command line; typing every shape there adds nothing.
     files: ['packages/*/test/**/*.ts'],
     rules: { '@typescript-eslint/no-explicit-any': 'off' },

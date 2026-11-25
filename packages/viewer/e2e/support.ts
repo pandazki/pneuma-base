@@ -12,6 +12,8 @@ const BIN_WITH_TEST_PLUGINS = fileURLToPath(new URL('../../cli/test/fixtures/bin
 export const SHOTS = fileURLToPath(new URL('../../../tmp/run-2/shots/', import.meta.url))
 /** Where the whole story's screenshots go. */
 export const STORY_SHOTS = fileURLToPath(new URL('../../../tmp/run-3/shots/', import.meta.url))
+/** Where the presentation layer's screenshots go: $PNEUMA_BASE_SHOTS, else tmp/run-4/shots/. */
+export const PRESENTATION_SHOTS = process.env.PNEUMA_BASE_SHOTS ?? fileURLToPath(new URL('../../../tmp/run-4/shots/', import.meta.url))
 
 export function tempDir(prefix = 'pb-e2e-'): string {
   return realpathSync(mkdtempSync(join(tmpdir(), prefix)))
