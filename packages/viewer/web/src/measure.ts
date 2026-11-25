@@ -35,9 +35,33 @@ const FIRST_PADDING = 20 // pl-3, pr-2
 const BUTTON_PADDING = 16 // a small button's px-2
 const SLACK = 4 // rounding and font fallback
 
-function cellWidth(cell: Cell): number {
+let probe: HTMLSpanElement | null = null
+/**
+ * A moment's width as the page draws it, with tabular figures. A canvas cannot be asked for those,
+ * and proportional figures are narrower: 11:11 would be cut short. Every figure is as wide as 0, so
+ * a text is measured by its shape.
+ */
+function momentWidth(text: string, font: string, seen: Map<string, number>): number {
+  const shape = text.replace(/\d/g, '0')
+  const known = seen.get(shape)
+  if (known !== undefined) return known
+  if (!probe) {
+    probe = document.createElement('span')
+    probe.setAttribute('aria-hidden', 'true')
+    Object.assign(probe.style, { position: 'absolute', visibility: 'hidden', whiteSpace: 'nowrap', top: '0', left: '0' })
+    document.body.append(probe)
+  }
+  probe.style.font = font
+  probe.style.fontVariantNumeric = 'tabular-nums'
+  probe.textContent = shape
+  const width = probe.getBoundingClientRect().width
+  seen.set(shape, width)
+  return width
+}
+
+function cellWidth(cell: Cell, moments: Map<string, number>): number {
   const text = cell.at ? shortTime(cell.at) : cell.text
-  let w = text === '' ? 0 : textWidth(text, cell.mono ? FONT.mono : FONT.cell)
+  let w = text === '' ? 0 : cell.at ? momentWidth(text, FONT.cell, moments) : textWidth(text, cell.mono ? FONT.mono : FONT.cell)
   if (cell.icon) w += ICON + (text === '' ? 0 : GAP)
   if (cell.tag) w += (w > 0 ? GAP : 0) + textWidth(cell.tag.text, FONT.small) + TAG_PADDING
   return w
@@ -52,9 +76,11 @@ const MIN: Record<Exclude<Give, 'fixed'>, number> = { text: 120, mono: 180 }
 
 /** Each column's natural width and how it may give, the actions column last when there is one. */
 export function naturalColumns(block: Table, withActions: boolean): Column[] {
+  // Measured anew each time: the fonts may have come in since.
+  const moments = new Map<string, number>()
   const columns = block.columns.map((c, i): Column => {
     const cells = block.rows.flatMap((r) => r.cells[c.key] ?? [])
-    const content = Math.max(textWidth(c.label, FONT.head), ...cells.map(cellWidth))
+    const content = Math.max(textWidth(c.label, FONT.head), ...cells.map((cell) => cellWidth(cell, moments)))
     const natural = Math.ceil(content) + SLACK + (i === 0 ? FIRST_PADDING : PADDING)
     const give: Give = cells.some((cell) => cell.mono && cell.text !== '') ? 'mono' : cells.some((cell) => cell.text !== '' && !cell.at) ? 'text' : 'fixed'
     return { natural, give, optional: c.optional === true }

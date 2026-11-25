@@ -2,13 +2,17 @@
 // render by kind, and the page goes when it is removed. A plugin that throws in its view does not
 // blank the UI: its page says it failed and every other page carries on.
 import { join } from 'node:path'
-import { expect, navTitles, shoot, tempDir, test, write } from './support.ts'
+import { cutTexts, expect, navTitles, shoot, tempDir, test, write } from './support.ts'
+
+// The sample table's moment reads 11:11 here: the digit whose proportional and tabular widths differ most.
+test.use({ timezoneId: 'UTC' })
 
 test('a plugin’s page appears when installed, renders each kind of block, and goes when removed', async ({ page, pb }) => {
   const lib = join(tempDir(), 'lib')
   pb.run(['init', lib, '--bare'], { testPlugins: true })
   write(lib, 'pager.md', 'pager 预览的内容')
   const { url } = await pb.view(lib, { testPlugins: true })
+  await page.clock.setFixedTime(new Date('2026-11-25T12:00:00.000Z'))
   await page.goto(url)
   await expect(page.getByRole('heading', { level: 1, name: '文件' })).toBeVisible()
   expect(await navTitles(page)).toEqual(['文件', '归档区', '配置'])
@@ -26,6 +30,8 @@ test('a plugin’s page appears when installed, renders each kind of block, and 
   const section = main.getByRole('region', { name: '一节' }) // section
   await expect(section).toContainText('节下的说明')
   await expect(section.getByRole('row', { name: /表的第一行/ })).toContainText('好') // table with a tag
+  await expect(section.getByRole('row', { name: /表的第一行/ })).toContainText('11:11') // a moment, never cut short
+  expect(await cutTexts(section.getByRole('table'))).toEqual([])
   await expect(section.getByText('字段的值')).toBeVisible() // fields
   await expect(main.getByText('列表的一项')).toBeVisible() // list
   await expect(main.getByText('一项的说明')).toBeVisible()

@@ -79,8 +79,8 @@ export const pager: Plugin = {
         blocks: [
           {
             kind: 'table',
-            columns: [{ key: 'name', label: '名字' }, { key: 'state', label: '状态' }],
-            rows: [{ key: 'r1', cells: { name: { text: '表的第一行', mono: true }, state: { text: '', tag: { text: '好', tone: 'good' } } }, link: { view: 'item', params: { path: 'pager.md' }, target: 'panel' }, actions: [] }],
+            columns: [{ key: 'name', label: '名字' }, { key: 'state', label: '状态' }, { key: 'when', label: '何时' }],
+            rows: [{ key: 'r1', cells: { name: { text: '表的第一行', mono: true }, state: { text: '', tag: { text: '好', tone: 'good' } }, when: { text: '', at: '2026-11-25T11:11:00.000Z' as Instant } }, link: { view: 'item', params: { path: 'pager.md' }, target: 'panel' }, actions: [] }],
             empty: '空表',
           },
           { kind: 'fields', fields: [{ label: '字段', value: { text: '字段的值' } }] },
