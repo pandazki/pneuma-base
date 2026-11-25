@@ -1,9 +1,10 @@
 // The block renderer: one component per kind of block. It knows the kernel's block types and no plugin.
 import type { Action, Block, Cell, Link, Tag, TableRow, Tone } from '@pneuma-base/kernel'
 import { ChevronRight, CircleAlert, CircleCheck, Info, TriangleAlert } from 'lucide-react'
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { api } from './api'
 import { ViewIcon } from './chrome'
+import { fitColumns, naturalColumns } from './measure'
 import { fullTime, shortTime } from './time'
 
 /** What a block can do besides showing itself: follow a link, start an action, and know what the panel shows. */
@@ -142,60 +143,100 @@ function SectionView({ block }: { block: Extract<Block, { kind: 'section' }> }) 
   )
 }
 
-/** How wide a text looks: a CJK character counts as two Latin ones. */
-const visualLength = (text: string) => [...text].reduce((n, ch) => n + ((ch.codePointAt(0) ?? 0) > 0x2e7f ? 2 : 1), 0)
+/** The element's inner width, kept up to date. */
+export function useWidth(): [(el: HTMLElement | null) => void, number] {
+  const [el, setEl] = useState<HTMLElement | null>(null)
+  const [width, setWidth] = useState(0)
+  useLayoutEffect(() => {
+    if (!el) return
+    setWidth(el.clientWidth)
+    const observer = new ResizeObserver(() => setWidth(el.clientWidth))
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [el])
+  return [setEl, width]
+}
 
-/** Columns whose texts run longer than this share the width the others leave, cut short; the others keep their own width. */
-const LONG_TEXT = 20
+/** Becomes true once the page's fonts have loaded, so measured widths are measured again with them. */
+function useFontsReady(): boolean {
+  const [ready, setReady] = useState(() => document.fonts.status === 'loaded')
+  useEffect(() => {
+    if (!ready) void document.fonts.ready.then(() => setReady(true))
+  }, [ready])
+  return ready
+}
 
+/**
+ * A table whose columns take their natural width when it fits, so nothing is cut while there is
+ * room; when the card is narrower, prose is cut before paths. A row with a link opens it on click,
+ * Enter or Space.
+ */
 function TableView({ block }: { block: Extract<Block, { kind: 'table' }> }) {
   const { onLink, selected } = useEnv()
+  const [measure, available] = useWidth()
+  const fonts = useFontsReady()
   const withActions = block.rows.some((r) => r.actions.length > 0)
-  const longest = block.columns.map((c) => Math.max(0, ...block.rows.map((r) => visualLength(r.cells[c.key]?.text ?? ''))))
-  const flexible = longest.map((n) => n > LONG_TEXT)
-  // Monospaced columns, paths mostly, get more of the shared width: their texts lose meaning faster when cut.
-  const weight = block.columns.map((c, i) => (longest[i] ?? 0) * (block.rows.some((r) => r.cells[c.key]?.mono) ? 2 : 1))
-  const shared = weight.reduce((sum, n, i) => (flexible[i] ? sum + n : sum), 0)
-  const rowClass = (row: TableRow) =>
-    `${row.link ? 'cursor-pointer hover:bg-hover' : ''} ${selected(row.link) ? '!bg-accent-tint' : ''}`
+  // `fonts` is a dependency so the columns are measured again once the fonts are in.
+  const columns = useMemo(() => naturalColumns(block, withActions), [block, withActions, fonts])
+  const fitted = available > 0 ? fitColumns(columns, available) : null
+  // The data columns shown, and every column's width in the same order, actions last.
+  const shownColumns = block.columns.filter((_, i) => fitted?.[i] !== null)
+  const widths = fitted?.filter((w) => w !== null) ?? null
+  const open = (row: TableRow) => row.link && onLink(row.link)
+  // An empty table is its message alone: headers over nothing say less than the message does.
+  if (block.rows.length === 0) return <p className="card px-3 py-6 text-center text-[13px] text-ink-2">{block.empty}</p>
   return (
-    <div className="card overflow-x-auto">
-      <table className="w-full border-collapse text-left text-[13px] font-medium">
+    <div ref={measure} className="card overflow-x-auto">
+      <table className="border-collapse text-left text-[13px] font-medium" style={widths ? { tableLayout: 'fixed', width: widths.reduce((a, b) => a + b, 0) } : { width: '100%' }}>
+        {widths ? (
+          <colgroup>
+            {widths.map((w, i) => (
+              <col key={i} style={{ width: w }} />
+            ))}
+          </colgroup>
+        ) : null}
         <thead>
           <tr className="bg-inset">
-            {block.columns.map((c, i) => (
-              <th
-                key={c.key}
-                scope="col"
-                className={`h-[35px] border-b border-line px-2 text-[12.5px] font-medium whitespace-nowrap text-ink-2 first:pl-3 ${flexible[i] ? '' : 'w-px'}`}
-                style={flexible[i] ? { width: `${Math.round(((weight[i] ?? 0) / shared) * 100)}%` } : undefined}
-              >
+            {shownColumns.map((c) => (
+              <th key={c.key} scope="col" className="h-[35px] border-b border-line px-2 text-[12.5px] font-medium whitespace-nowrap text-ink-2 first:pl-3">
                 {c.label}
               </th>
             ))}
-            {withActions ? <th scope="col" className="h-[35px] w-px border-b border-line px-2" aria-label="动作" /> : null}
+            {withActions ? <th scope="col" className="h-[35px] border-b border-line px-2" aria-label="动作" /> : null}
           </tr>
         </thead>
         <tbody>
           {block.rows.map((row) => (
             <tr
               key={row.key}
-              className={`transition-colors duration-[120ms] ease-out ${rowClass(row)}`}
+              className={`transition-colors duration-[120ms] ease-out ${row.link ? 'cursor-pointer hover:bg-hover' : ''} ${selected(row.link) ? '!bg-accent-tint' : ''}`}
               aria-selected={selected(row.link) || undefined}
-              onClick={row.link ? () => onLink(row.link as Link) : undefined}
+              tabIndex={row.link ? 0 : undefined}
+              onClick={row.link ? () => open(row) : undefined}
+              onKeyDown={
+                row.link
+                  ? (e) => {
+                      if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return
+                      e.preventDefault()
+                      open(row)
+                    }
+                  : undefined
+              }
             >
-              {block.columns.map((c, i) => {
+              {shownColumns.map((c) => {
                 const cell = row.cells[c.key]
                 return (
-                  <td key={c.key} className={`h-[35px] border-b border-line-soft px-2 align-middle whitespace-nowrap first:pl-3 ${flexible[i] ? 'max-w-0' : ''}`}>
+                  <td key={c.key} className="h-[35px] max-w-0 border-b border-line-soft px-2 align-middle whitespace-nowrap first:pl-3">
                     {cell ? <CellView cell={cell} line /> : null}
                   </td>
                 )
               })}
               {withActions ? (
                 <td className="h-[35px] border-b border-line-soft px-2 align-middle">
-                  <div className="flex justify-end">
-                    <ActionRow actions={row.actions} small />
+                  <div className="flex flex-nowrap justify-end gap-2">
+                    {row.actions.map((a, i) => (
+                      <ActionButton key={`${a.label}-${i}`} action={a} small />
+                    ))}
                   </div>
                 </td>
               ) : null}
@@ -203,7 +244,6 @@ function TableView({ block }: { block: Extract<Block, { kind: 'table' }> }) {
           ))}
         </tbody>
       </table>
-      {block.rows.length === 0 ? <p className="px-3 py-6 text-center text-[13px] text-ink-2">{block.empty}</p> : null}
     </div>
   )
 }
@@ -227,7 +267,7 @@ function ListView({ block }: { block: Extract<Block, { kind: 'list' }> }) {
   return (
     <ul className="card divide-y divide-line-soft">
       {block.items.map((item, i) => (
-        <li key={`${item.cell.text}-${i}`} className="flex items-start gap-3 px-3 py-2 text-[13px]">
+        <li key={`${item.cell.text}-${i}`} className="flex min-h-[35px] items-center gap-3 px-3 py-1.5 text-[13px]">
           <div className="min-w-0 flex-1">
             <CellView cell={item.cell} />
             {item.note ? <p className="mt-0.5 text-[12px] text-ink-2">{item.note}</p> : null}

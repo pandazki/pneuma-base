@@ -4,9 +4,11 @@ import type { Action, Link, PluginProblem, ViewDecl, ViewRequest, ViewResult } f
 import { ArrowLeft, Database, LoaderCircle, Unplug, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, type State } from './api'
-import { BlockEnvContext, Blocks, sameLink, type BlockEnv } from './blocks'
+import { BlockEnvContext, Blocks, sameLink, useWidth, type BlockEnv } from './blocks'
 import { ActionDialog, fill, Toasts, useToasts, ViewIcon } from './chrome'
 import { Choice } from './controls'
+import { FONT, fitStart } from './measure'
+import { clockTime } from './time'
 
 /** How often the page asks whether the library changed. */
 export const POLL_MS = 2000
@@ -53,19 +55,31 @@ function Problems({ problems }: { problems: PluginProblem[] }) {
   )
 }
 
-function Nav({ state, current, onSelect }: { state: State; current: string | null; onSelect(view: string): void }) {
+/** Whether the page keeps up with the library by itself, and when it last picked up a change. */
+function Freshness({ down, changedAt }: { down: boolean; changedAt: Date | null }) {
+  return (
+    <div className="mt-auto flex items-center gap-2 px-4 py-3 text-[11.5px] text-ink-3" title={`每 ${POLL_MS / 1000} 秒看一次库有没有变；变了，这一页自己会更新。`}>
+      <span key={changedAt?.getTime() ?? 0} className={`size-1.5 shrink-0 rounded-full ${down ? 'bg-red' : 'fresh-dot bg-green'}`} aria-hidden />
+      <span className="truncate">{down ? '连不上服务' : changedAt ? `自动更新 · ${clockTime(changedAt)} 有变化` : '自动更新'}</span>
+    </div>
+  )
+}
+
+function Nav({ state, current, down, changedAt, onSelect }: { state: State; current: string | null; down: boolean; changedAt: Date | null; onSelect(view: string): void }) {
   const root = state.library?.root ?? state.dir
   const name = root.split('/').filter(Boolean).at(-1) ?? root
+  const [measure, width] = useWidth()
+  const shown = state.library?.shown ?? root
   return (
     <nav aria-label="导航" className="flex w-[208px] shrink-0 flex-col border-r border-line bg-canvas">
       <div className="flex items-center gap-2 px-4 pt-4 pb-3">
         <span className="flex size-7 shrink-0 items-center justify-center rounded-control bg-surface shadow-(--shadow-btn)">
           <Database className="size-4 text-accent" strokeWidth={2} aria-hidden />
         </span>
-        <div className="min-w-0">
+        <div ref={measure} className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-semibold">{name}</div>
-          <div className="truncate font-mono text-[11px] text-ink-3" title={root}>
-            {root}
+          <div className="overflow-hidden font-mono text-[11px] whitespace-nowrap text-ink-3" title={root}>
+            {width > 0 ? fitStart(shown, FONT.monoSmall, width) : ''}
           </div>
         </div>
       </div>
@@ -86,6 +100,7 @@ function Nav({ state, current, onSelect }: { state: State; current: string | nul
             </li>
           ))}
       </ul>
+      <Freshness down={down} changedAt={changedAt} />
     </nav>
   )
 }
@@ -226,6 +241,7 @@ export function App() {
   const [main, setMain] = useState<ViewRequest | null>(null)
   const [panel, setPanel] = useState<ViewRequest[]>([])
   const [pending, setPending] = useState<Action | null>(null)
+  const [changedAt, setChangedAt] = useState<Date | null>(null)
   const [toasts, toast, closeToast] = useToasts()
   const refresh = useCallback(() => setTick((t) => t + 1), [])
   const cancel = useCallback(() => setPending(null), [])
@@ -237,6 +253,7 @@ export function App() {
     const poll = async () => {
       try {
         const { rev } = await api.rev()
+        if (last !== null && rev !== last) setChangedAt(new Date())
         if ((last !== null && rev !== last) || wasDown) refresh()
         last = rev
         wasDown = false
@@ -332,6 +349,8 @@ export function App() {
           <Nav
             state={state.data}
             current={current?.view ?? null}
+            down={down}
+            changedAt={changedAt}
             onSelect={(view) => {
               setMain({ view, params: {} })
             }}

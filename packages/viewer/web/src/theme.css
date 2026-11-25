@@ -34,6 +34,8 @@
   --red-tint: oklch(95.6% 0.017 17.462);
   --tooltip-bg: oklch(27.2% 0.008 264.435);
   --tooltip-fg: oklch(97.6% 0.002 247.839);
+  /* What dims the page behind a dialog. */
+  --scrim: oklch(20% 0.01 264 / 0.32);
   /* How much of a tag's colour goes into its background and its ring. */
   --tag-fill: 14%;
   --tag-ring: 32%;
@@ -74,6 +76,7 @@
     --red-tint: oklch(66.6% 0.18 21.433 / 0.14);
     --tooltip-bg: oklch(18.2% 0.004 264.459);
     --tooltip-fg: oklch(96.4% 0.002 247.839);
+    --scrim: oklch(0% 0 0 / 0.55);
     --tag-fill: 22%;
     --tag-ring: 34%;
 
@@ -150,6 +153,15 @@
   }
   .field:focus-visible {
     outline: none;
+  }
+}
+
+@keyframes fresh {
+  from {
+    box-shadow: 0 0 0 4px color-mix(in oklch, var(--green) 35%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 0 transparent;
   }
 }
 
@@ -234,6 +246,10 @@
   .dialog-in,
   .toast-in {
     animation: pop-in 0.15s cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  /* The dot glows once when the page picked up a change. */
+  .fresh-dot {
+    animation: fresh 1.2s ease-out;
   }
   .tag {
     --tone: var(--ink-3);

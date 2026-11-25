@@ -2,7 +2,7 @@
 // each thing's path, origin, who, what was being done and its state; a made thing's panel gives its
 // provenance, basis with states, dependents, decisions and versions; following the basis links leads
 // back to the brought-in sources.
-import { DECIDED, DOING, expect, relay, shoot, SOURCES, test } from './support.ts'
+import { cutTexts, DECIDED, DOING, expect, relay, shoot, SOURCES, test } from './support.ts'
 
 test('the items page and the provenance chain of a relayed library', async ({ page, pb }) => {
   const lib = relay(pb)
@@ -21,6 +21,9 @@ test('the items page and the provenance chain of a relayed library', async ({ pa
   await expect(row('payments/comparison.md')).toContainText(DOING)
   await expect(row('payments/comparison.md')).toContainText('一致')
   await expect(row('payments/sources/stripe-pricing.html')).toContainText('带进来的')
+  // With room, nothing in the table is cut short.
+  const items = main.getByRole('table')
+  expect(await cutTexts(items)).toEqual([])
 
   // The basis chain, one panel at a time.
   const panel = page.getByRole('complementary', { name: '详情' })
@@ -45,6 +48,8 @@ test('the items page and the provenance chain of a relayed library', async ({ pa
   for (const source of Object.keys(SOURCES)) await expect(basis.getByRole('listitem').filter({ hasText: source })).toContainText('一致')
   await expect(provenance.getByRole('region', { name: '版本' })).toContainText('当前')
   await expect(row('payments/comparison.md')).toHaveAttribute('aria-selected', 'true')
+  // With the panel open, the paths keep their width; other columns give way.
+  expect(await cutTexts(items, 'td:first-child')).toEqual([])
   await shoot(page, 'c3-items-with-detail')
 
   await basis.getByRole('button', { name: /payments\/sources\/stripe-pricing\.html/ }).click()
@@ -67,4 +72,12 @@ test('the items page and the provenance chain of a relayed library', async ({ pa
   await expect(page.getByRole('region', { name: '授权与技能' }).getByRole('row', { name: /codex/ })).toBeVisible()
   await panel.getByRole('button', { name: '关闭详情' }).click()
   await shoot(page, 'c3-config')
+
+  // By keyboard: a row opens its panel with Enter; Escape closes it.
+  await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '条目' }).click()
+  await row('payments/comparison.md').focus()
+  await page.keyboard.press('Enter')
+  await expect(title).toHaveText('comparison.md')
+  await page.keyboard.press('Escape')
+  await expect(panel).toHaveCount(0)
 })

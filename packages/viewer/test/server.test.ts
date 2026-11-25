@@ -183,10 +183,25 @@ describe('a library with no plugin over HTTP (C1)', () => {
     const server = await serve(lib.root)
     const state = (await http(server, '/api/state')).json()
     expect(state.library.root).toBe(lib.root)
+    expect(state.library.shown).toBe(lib.root) // not under the home directory: as it is
     expect(state.views.filter((v: any) => v.nav).map((v: any) => v.id)).toEqual(['files', 'archive', 'config'])
     for (const view of ['files', 'archive', 'config']) expect((await http(server, `/api/view?view=${view}`)).json()).toMatchObject({ outcome: 'shown' })
     expect((await http(server, '/api/view?view=item&path=a.md')).json()).toMatchObject({ outcome: 'shown', title: 'a.md' })
     expect((await http(server, '/api/view?view=nope')).json()).toMatchObject({ outcome: 'no-such-view' })
+  })
+
+  it('gives the root as people read it: the home directory as ~', async () => {
+    const home = tempDir('pb-v-user-')
+    const root = join(home, 'work', 'lib')
+    await initLibrary(root, { plugins: [], table: new Map(), actor: { kind: 'owner' }, session: { id: 's', source: 'flag', cwd: '/', machine: 'm', transcript: null }, home: tempDir('pb-v-home-') })
+    const server = await serve(root)
+    const before = process.env.HOME
+    process.env.HOME = home
+    try {
+      expect((await http(server, '/api/state')).json().library).toMatchObject({ root, shown: '~/work/lib' })
+    } finally {
+      process.env.HOME = before
+    }
   })
 
   it('archives and takes back through calls, leaving the files where expected', async () => {

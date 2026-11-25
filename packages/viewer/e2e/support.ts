@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { deflateSync, crc32 } from 'node:zlib'
-import { test as base, type Page } from '@playwright/test'
+import { test as base, type Locator, type Page } from '@playwright/test'
 
 const BIN = fileURLToPath(new URL('../../cli/dist/bin.js', import.meta.url))
 const BIN_WITH_TEST_PLUGINS = fileURLToPath(new URL('../../cli/test/fixtures/bin-with-test-plugins.ts', import.meta.url))
@@ -109,6 +109,14 @@ export async function navTitles(page: Page): Promise<string[]> {
 }
 
 /** Saves the page in the light and the dark scheme under tmp/run-2/shots/. */
+/** The texts inside `table` matching `cells` that are cut short on screen. */
+export function cutTexts(table: Locator, cells = 'td'): Promise<string[]> {
+  return table.evaluate(
+    (t, sel) => [...t.querySelectorAll(`${sel} .truncate`)].filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent ?? ''),
+    cells,
+  )
+}
+
 export async function shoot(page: Page, name: string): Promise<void> {
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme })

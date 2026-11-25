@@ -7,6 +7,7 @@ import {
   makeContext,
   openLibrary,
   ownerFace,
+  shortDir,
   viewerFace,
   type Actor,
   type Call,
@@ -40,7 +41,9 @@ export async function state(served: Served): Promise<Reply> {
   const library = await openLibrary(served.dir, served.table)
   if (!library) return reply({ dir: served.dir, library: null, views: [], problems: [], available: available(served.table) })
   const { views, problems } = viewerFace.views(library)
-  return reply({ dir: served.dir, library: { root: library.root, id: library.config.id }, views, problems, available: available(served.table) })
+  // `shown`: the root as people read it, the home directory as ~; the page cuts it to its room.
+  const shown = shortDir(library.root, Number.POSITIVE_INFINITY)
+  return reply({ dir: served.dir, library: { root: library.root, shown, id: library.config.id }, views, problems, available: available(served.table) })
 }
 
 /** `query` holds the view's id under `view`; every other entry is a parameter of the view. */

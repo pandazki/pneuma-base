@@ -143,6 +143,12 @@ const tableIn = (blocks: Block[]) => {
   return table
 }
 
+const listIn = (section: Block) => {
+  const list = flat([section]).find((b) => b.kind === 'list')
+  if (list?.kind !== 'list') throw new Error('no list')
+  return list.items
+}
+
 describe('the scenes view', () => {
   it('lists each session newest first: when, who, where, what was being done, how many things; a row opens its scene card', async () => {
     const { show, codex } = await relayed()
@@ -189,14 +195,15 @@ describe('the scene card', () => {
     expect(sectionNamed(r.blocks, '说过的话')).toMatchObject({ blocks: [{ kind: 'timeline', entries: [{ title: { text: '给小店选支付服务' }, tag: { text: '在做' } }, { title: { text: '用 Paddle' }, tag: { text: '决定' } }] }] })
     const things = sectionNamed(r.blocks, '条目')
     expect(things.count).toBe(4)
-    const rows = tableIn(things.blocks).rows
-    expect(rows.map((row) => line(row.cells))).toEqual([
-      { path: 'src/stripe.html', how: '放入 · 带进来的' },
-      { path: 'old.md 已归档', how: '放入 · 带进来的' },
-      { path: 'comparison.md', how: '放入 · 做出来的' },
-      { path: 'recommendation.md', how: '放入 · 做出来的' },
+    // A list, as the panel is narrow: each path whole, what happened to it in this scene below.
+    const items = listIn(things)
+    expect(items.map((i) => [i.cell.text, i.cell.tag?.text ?? null, i.note])).toEqual([
+      ['src/stripe.html', null, '放入 · 带进来的'],
+      ['old.md', '已归档', '放入 · 带进来的'],
+      ['comparison.md', null, '放入 · 做出来的'],
+      ['recommendation.md', null, '放入 · 做出来的'],
     ])
-    expect(rows[1]?.link).toEqual({ view: 'item', params: { path: '_archive/old.md' }, target: 'panel' })
+    expect(items[1]?.cell.link).toEqual({ view: 'item', params: { path: '_archive/old.md' }, target: 'panel' })
   })
 
   it('says so when there is no such scene', async () => {
@@ -220,16 +227,16 @@ describe('the standing view', () => {
     const r = shown(await show('ledger.standing'))
     const sections = r.blocks.filter((b) => b.kind === 'section')
     expect(sections.map((s) => s.kind === 'section' && `${s.title}:${s.count}`)).toEqual(['可能过期:1', '来源不在:1', '上游有标记:1', '没人登记过的:1', '被直接改过的:1', '不在了的:1', '挪过的:1'])
-    const rowsOf = (title: string) => tableIn([sectionNamed(r.blocks, title)]).rows
-    expect(rowsOf('可能过期').map((row) => line(row.cells))).toEqual([{ path: 'comparison.md', what: '依据 src/stripe.html 变了' }])
-    expect(rowsOf('可能过期')[0]?.link).toEqual({ view: 'item', params: { path: 'comparison.md' }, target: 'panel' })
-    expect(rowsOf('来源不在').map((row) => line(row.cells))).toEqual([{ path: 'uses-gone.md', what: '依据 gone-src.md 不在了' }])
-    expect(rowsOf('上游有标记').map((row) => line(row.cells))).toEqual([{ path: 'recommendation.md', what: '上游 comparison.md 有标记' }])
-    expect(rowsOf('没人登记过的').map((row) => line(row.cells))).toEqual([{ path: 'dropped.md', what: '没人登记过' }])
-    expect(rowsOf('被直接改过的').map((row) => line(row.cells))).toEqual([{ path: 'src/stripe.html', what: '内容和记录的不一样' }])
-    expect(rowsOf('不在了的').map((row) => line(row.cells))).toEqual([{ path: 'gone-src.md', what: '账上有，磁盘上找不到' }])
-    expect(rowsOf('挪过的').map((row) => line(row.cells))).toEqual([{ path: 'moving.md', what: '在 moved/here.md' }])
-    expect(rowsOf('挪过的')[0]?.link).toEqual({ view: 'item', params: { path: 'moved/here.md' }, target: 'panel' })
+    // Each a list of things: the path opening the item panel, a note only where it says more than the section.
+    const itemsOf = (title: string) => listIn(sectionNamed(r.blocks, title)).map((i) => ({ path: i.cell.text, note: i.note, open: i.cell.link?.params.path }))
+    expect(itemsOf('可能过期')).toEqual([{ path: 'comparison.md', note: '依据 src/stripe.html 变了', open: 'comparison.md' }])
+    expect(itemsOf('来源不在')).toEqual([{ path: 'uses-gone.md', note: '依据 gone-src.md 不在了', open: 'uses-gone.md' }])
+    expect(itemsOf('上游有标记')).toEqual([{ path: 'recommendation.md', note: '上游 comparison.md 有标记', open: 'recommendation.md' }])
+    expect(itemsOf('没人登记过的')).toEqual([{ path: 'dropped.md', note: null, open: 'dropped.md' }])
+    expect(itemsOf('被直接改过的')).toEqual([{ path: 'src/stripe.html', note: null, open: 'src/stripe.html' }])
+    expect(itemsOf('不在了的')).toEqual([{ path: 'gone-src.md', note: null, open: 'gone-src.md' }])
+    expect(itemsOf('挪过的')).toEqual([{ path: 'moving.md', note: '挪到了 moved/here.md', open: 'moved/here.md' }])
+    expect(listIn(sectionNamed(r.blocks, '可能过期'))[0]?.cell.link).toEqual({ view: 'item', params: { path: 'comparison.md' }, target: 'panel' })
 
     // The panel at the new path knows the thing that moved there.
     const panel = sectionNamed(shown(await show('item', { path: 'moved/here.md' })).blocks, '来历').blocks[0]
@@ -324,13 +331,13 @@ describe('the owner’s operations on the ledger’s blocks', () => {
     await agentFace.archive({ kind: 'archive', path: 'adopted.md' }, codex())
     await agentFace.archive({ kind: 'unarchive', path: '_archive/adopted.md' }, codex())
     const r = shown(await show('ledger.standing'))
-    const rows = (title: string) => tableIn([sectionNamed(r.blocks, title)]).rows
-    expect(rows('没人登记过的').map((row) => [row.cells.path?.text, row.actions.map((a) => a.label), row.actions.map((a) => a.call.face === 'agent' && a.call.verb === 'put' && a.call.request.kind === 'register' && a.call.request.path)])).toEqual([
-      ['dropped.md', ['记为带进来的', '记为做出来的'], ['dropped.md', 'dropped.md']],
-      ['adopted.md', ['记为带进来的', '记为做出来的'], ['adopted.md', 'adopted.md']],
+    const items = (title: string) => listIn(sectionNamed(r.blocks, title))
+    expect(items('没人登记过的').map((i) => [i.cell.text, i.note, i.actions.map((a) => a.label), i.actions.map((a) => a.call.face === 'agent' && a.call.verb === 'put' && a.call.request.kind === 'register' && a.call.request.path)])).toEqual([
+      ['dropped.md', null, ['记为带进来的', '记为做出来的'], ['dropped.md', 'dropped.md']],
+      ['adopted.md', '入了册，来历不明', ['记为带进来的', '记为做出来的'], ['adopted.md', 'adopted.md']],
     ])
-    expect(rows('被直接改过的')[0]?.actions).toMatchObject([{ label: '认下这次改动', call: { verb: 'say', request: { kind: 'revised', about: 'src/stripe.html' } } }])
-    expect(rows('可能过期')[0]?.actions).toEqual([])
+    expect(items('被直接改过的')[0]?.actions).toMatchObject([{ label: '认下这次改动', call: { verb: 'say', request: { kind: 'revised', about: 'src/stripe.html' } } }])
+    expect(items('可能过期')[0]?.actions).toEqual([])
   })
 })
 

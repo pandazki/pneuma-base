@@ -4,7 +4,7 @@
 // the command line then reports those that changed content or capabilities.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, tempDir, test, write } from './support.ts'
+import { expect, shoot, tempDir, test, write } from './support.ts'
 
 test('every owner operation from the page leaves a trace an agent sees in check', async ({ page, pb }) => {
   const lib = join(tempDir(), 'lib')
@@ -41,15 +41,16 @@ test('every owner operation from the page leaves a trace an agent sees in check'
   await nav.getByRole('button', { name: '状况' }).click()
   await panel.getByRole('button', { name: '关闭详情' }).click()
   const unowned = main.getByRole('region', { name: '没人登记过的' })
-  await unowned.getByRole('row', { name: /dropped\.md/ }).getByRole('button', { name: '记为带进来的' }).click()
+  await unowned.getByRole('listitem').filter({ hasText: 'dropped.md' }).getByRole('button', { name: '记为带进来的' }).click()
   await dialog.getByLabel('出处').fill('从邮件附件存下来的')
   await dialog.getByRole('button', { name: '记为带进来的' }).click()
   await expect(status).toContainText('已放好 dropped.md')
 
   // summary.md was made from two things of the library: one path per line.
-  await unowned.getByRole('row', { name: /summary\.md/ }).getByRole('button', { name: '记为做出来的' }).click()
+  await unowned.getByRole('listitem').filter({ hasText: 'summary.md' }).getByRole('button', { name: '记为做出来的' }).click()
   await dialog.getByLabel('依据库里的哪些').fill('doc.md\ndoc.first.md')
   await dialog.getByLabel('库外的依据').fill('主人在对话里口述的提纲')
+  await shoot(page, 'c5-provenance-dialog')
   await dialog.getByRole('button', { name: '记为做出来的' }).click()
   await expect(status).toContainText('已放好 summary.md')
   await expect(unowned).toHaveCount(0)

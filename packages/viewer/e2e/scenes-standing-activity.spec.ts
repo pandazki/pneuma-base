@@ -26,8 +26,8 @@ test('scenes, standing and activity: what happened and what needs attention', as
   await expect(title).toHaveText('场景 sess-a')
   await expect(panel.getByRole('region', { name: '说过的话' })).toContainText(DECIDED)
   const things = panel.getByRole('region', { name: '条目' })
-  await expect(things.getByRole('row')).toHaveCount(7) // the header and six things
-  await things.getByRole('row', { name: /payments\/comparison\.md/ }).click()
+  await expect(things.getByRole('listitem')).toHaveCount(6)
+  await things.getByRole('button', { name: 'payments/comparison.md' }).click()
   await expect(title).toHaveText('comparison.md')
   await panel.getByRole('button', { name: '返回' }).click()
   await expect(title).toHaveText('场景 sess-a')
@@ -39,7 +39,7 @@ test('scenes, standing and activity: what happened and what needs attention', as
   await expect(main.getByText('没有要处理的事')).toBeVisible()
   writeFileSync(join(lib, 'payments/sources/stripe-pricing.html'), '<html>Stripe pricing: 3.4% now</html>')
   const section = (name: string) => main.getByRole('region', { name, exact: true })
-  await expect(section('被直接改过的').getByRole('row', { name: /stripe-pricing\.html/ })).toBeVisible({ timeout: 5_000 })
+  await expect(section('被直接改过的').getByRole('listitem').filter({ hasText: 'payments/sources/stripe-pricing.html' })).toBeVisible({ timeout: 5_000 })
   await expect(section('可能过期')).toContainText('payments/comparison.md')
 
   // Every other kind: a file nobody registered, a source deleted, a source moved.
@@ -53,7 +53,7 @@ test('scenes, standing and activity: what happened and what needs attention', as
   await expect(section('来源不在')).toContainText('payments/comparison.md')
   await expect(section('上游有标记')).toContainText('payments/recommendation.md')
   await shoot(page, 'c4-standing')
-  await section('被直接改过的').getByRole('row', { name: /stripe-pricing\.html/ }).click()
+  await section('被直接改过的').getByRole('button', { name: 'payments/sources/stripe-pricing.html' }).click()
   await expect(title).toHaveText('stripe-pricing.html')
 
   // Activity: newest first, the owner's operations among them.

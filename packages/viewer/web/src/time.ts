@@ -26,3 +26,6 @@ export function fullTime(iso: string): string {
   const zone = `UTC${offset >= 0 ? '+' : '-'}${hours}${minutes ? `:${pad(minutes)}` : ''}`
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${zone}`
 }
+
+/** A clock time of today, to the second: 14:05:09. */
+export const clockTime = (d: Date) => [d.getHours(), d.getMinutes(), d.getSeconds()].map(pad).join(':')

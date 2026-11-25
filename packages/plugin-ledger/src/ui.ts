@@ -139,11 +139,12 @@ const pathCell = (item: ItemRecord): Cell => ({
 })
 const lastAt = (item: ItemRecord) => item.versions.at(-1)?.at ?? item.entered.at
 
+// What was being done is in the panel too: it steps aside first when the panel needs the room.
 const COLUMNS = [
   { key: 'path', label: '路径' },
   { key: 'origin', label: '来历' },
   { key: 'who', label: '谁' },
-  { key: 'doing', label: '当时在做什么' },
+  { key: 'doing', label: '当时在做什么', optional: true },
   { key: 'state', label: '现状' },
   { key: 'at', label: '时间' },
 ]
@@ -176,7 +177,7 @@ export function itemsAnswer(ledger: Ledger, standing: Standing, params: Record<s
     }
   })
   const filtered = origin !== '' || state !== ''
-  const table: Block = { kind: 'table', columns: COLUMNS, rows, empty: filtered ? '没有符合条件的条目。' : '库里还没有登记过的东西。agent 用 put 放进来的东西会出现在这里。' }
+  const table: Block = { kind: 'table', columns: COLUMNS, rows, empty: filtered ? '没有符合条件的条目。' : '库里还没有登记过的东西。让 agent 用 put 放东西进来；库里原有的文件在「状况」页，可以在那里给它们补上来历。' }
   return { title: '条目', subtitle: `${rows.length} 样东西`, blocks: [table] }
 }
 
@@ -299,8 +300,15 @@ export function scenesAnswer(ledger: Ledger): ViewAnswer {
     link: sceneLink(scene.id),
     actions: [],
   }))
-  const columns: [string, string][] = [['at', '时间'], ['who', '谁'], ['where', '在哪'], ['doing', '在做什么'], ['things', '几样东西']]
-  return { title: '场景', subtitle: `${scenes.length} 次会话`, blocks: [table(columns, rows, '')] }
+  // Where is in the scene's card too: it steps aside first when the panel needs the room.
+  const columns = [
+    { key: 'at', label: '时间' },
+    { key: 'who', label: '谁' },
+    { key: 'where', label: '在哪', optional: true },
+    { key: 'doing', label: '在做什么' },
+    { key: 'things', label: '几样东西' },
+  ]
+  return { title: '场景', subtitle: `${scenes.length} 次会话`, blocks: [{ kind: 'table', columns, rows, empty: '' }] }
 }
 
 /** One scene's card: who, when, where, what was said, the owner operations, and the things entered, changed or moved in it. */
@@ -340,13 +348,13 @@ export function sceneAnswer(ledger: Ledger, params: Record<string, string>): Vie
   }
   const items = scene.items.flatMap((id) => ledger.items.get(id) ?? [])
   if (items.length > 0) {
-    const rows: TableRow[] = items.map((item) => ({
-      key: item.id,
-      cells: { path: pathCell(item), how: { text: item.entered.scene === scene.id ? `放入 · ${originLabel(item.origin)}` : '改过或挪过', muted: true } },
-      link: itemLink(item.path),
+    // A list, as the panel is narrow: each path whole, what happened to it in this scene below.
+    const entries: Entry[] = items.map((item) => ({
+      cell: { ...pathCell(item), link: itemLink(item.path) },
+      note: item.entered.scene === scene.id ? `放入 · ${originLabel(item.origin)}` : '改过或挪过',
       actions: [],
     }))
-    blocks.push(counted('条目', items.length, [table([['path', '路径'], ['how', '在这里']], rows, '')]))
+    blocks.push(counted('条目', items.length, [{ kind: 'list', items: entries }]))
   }
   return { title: `场景 ${shortScene(scene.id)}`, subtitle: `${scene.actors.map(who).join('、')} · ${items.length} 样东西`, blocks }
 }
@@ -354,18 +362,21 @@ export function sceneAnswer(ledger: Ledger, params: Record<string, string>): Vie
 // ---- standing ----
 
 /** What needs looking at, one section for each kind, each row opening the thing's panel. */
+type Entry = Extract<Block, { kind: 'list' }>['items'][number]
+
 export function standingAnswer(ledger: Ledger, standing: Standing): ViewAnswer {
   const d = standingData(ledger, standing, false)
   const names = (refs: { path: string }[]) => refs.map((r) => r.path).join('、')
-  const row = (key: string, path: string, what: string, open: string, actions: Action[] = []): TableRow => ({ key, cells: { path: { text: path, mono: true }, what: { text: what, muted: true } }, link: itemLink(open), actions })
-  const sections: [title: string, note: string, rows: TableRow[]][] = [
-    ['可能过期', '它依据的东西变了，可能要重做。让 agent 看一下。', d.stale.map((r) => row(r.item, r.path, `依据 ${names(r.sources)} 变了`, r.path))],
-    ['来源不在', '它依据的东西不在了。', d.gone.map((r) => row(r.item, r.path, `依据 ${names(r.sources)} 不在了`, r.path))],
-    ['上游有标记', '它更上游的依据可能过期或不在了。', d.upstream.map((r) => row(r.item, r.path, `上游 ${names(r.via)} 有标记`, r.path))],
-    ['没人登记过的', '不知道从哪来的东西。知道来历，就给它补上。', d.unowned.map((r) => row(r.path, r.path, r.adopted ? '入了册，来历不明' : '没人登记过', r.path, provenanceActions(r.path)))],
-    ['被直接改过的', '有人绕过工具改了它。是你改的，就认下这次改动。', d.changed.map((r) => row(r.item, r.path, '内容和记录的不一样', r.path, [acceptAction(r.path)]))],
-    ['不在了的', '可能被删掉了，或挪到了认不出的地方。', d.missing.map((r) => row(r.item, r.path, '账上有，磁盘上找不到', r.path))],
-    ['挪过的', '东西挪到了新的位置。agent 下次 check 时，记账会把新位置接上。', d.moved.map((r) => row(r.item, r.from, `在 ${r.to}`, r.to))],
+  // The path opens the item panel; a note only where it says more than the section's title.
+  const entry = (path: string, note: string | null, open: string, actions: Action[] = []): Entry => ({ cell: { text: path, mono: true, link: itemLink(open) }, note, actions })
+  const sections: [title: string, note: string, entries: Entry[]][] = [
+    ['可能过期', '它依据的东西变了，可能要重做。让 agent 看一下。', d.stale.map((r) => entry(r.path, `依据 ${names(r.sources)} 变了`, r.path))],
+    ['来源不在', '它依据的东西不在了。', d.gone.map((r) => entry(r.path, `依据 ${names(r.sources)} 不在了`, r.path))],
+    ['上游有标记', '它更上游的依据可能过期或不在了。', d.upstream.map((r) => entry(r.path, `上游 ${names(r.via)} 有标记`, r.path))],
+    ['没人登记过的', '不知道从哪来的东西。知道来历，就给它补上。', d.unowned.map((r) => entry(r.path, r.adopted ? '入了册，来历不明' : null, r.path, provenanceActions(r.path)))],
+    ['被直接改过的', '有人绕过工具改了它，内容和记录的不一样。是你改的，就认下这次改动。', d.changed.map((r) => entry(r.path, null, r.path, [acceptAction(r.path)]))],
+    ['不在了的', '账上有，磁盘上找不到：可能被删掉了，或挪到了认不出的地方。', d.missing.map((r) => entry(r.path, null, r.path))],
+    ['挪过的', '东西挪到了新的位置。agent 下次 check 时，记账会把新位置接上。', d.moved.map((r) => entry(r.from, `挪到了 ${r.to}`, r.to))],
   ]
   const shown = sections.filter(([, , rows]) => rows.length > 0)
   const total = shown.reduce((n, [, , rows]) => n + rows.length, 0)
@@ -373,7 +384,7 @@ export function standingAnswer(ledger: Ledger, standing: Standing): ViewAnswer {
     const hint = '可能过期的、没人登记过的、被直接改过的东西会出现在这里，每样都带着对应的处理。'
     return { title: '状况', subtitle: '一切正常', blocks: [{ kind: 'empty', title: '没有要处理的事', hint }] }
   }
-  const blocks: Block[] = shown.map(([title, note, rows]) => ({ kind: 'section', title, note, count: rows.length, blocks: [table([['path', '路径'], ['what', '怎么了']], rows, '')], actions: [] }))
+  const blocks: Block[] = shown.map(([title, note, items]) => ({ kind: 'section', title, note, count: items.length, blocks: [{ kind: 'list', items }], actions: [] }))
   return { title: '状况', subtitle: `${total} 样要看`, blocks }
 }
 

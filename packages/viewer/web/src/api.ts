@@ -5,7 +5,8 @@ export const TOKEN = new URLSearchParams(window.location.search).get('token') ??
 
 export type State = {
   dir: string
-  library: { root: string; id: string } | null
+  /** `shown` is the root as people read it, the home directory as ~. */
+  library: { root: string; shown: string; id: string } | null
   views: ViewDecl[]
   problems: PluginProblem[]
   available: { name: string; title: string | null }[]

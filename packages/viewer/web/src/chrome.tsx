@@ -166,7 +166,7 @@ export function ActionDialog({ action, onCancel, onSubmit }: { action: Action; o
   }
   const set = (name: string, value: string) => setValues((all) => ({ ...all, [name]: value }))
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-[oklch(20%_0.01_264/0.32)] p-4 backdrop-blur-[1px]" onMouseDown={onCancel}>
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-(--scrim) p-4" onMouseDown={onCancel}>
       <form
         ref={form}
         role="dialog"

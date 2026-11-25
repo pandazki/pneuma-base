@@ -28,11 +28,11 @@ test('purging the archive asks first; cancelled, nothing changes; confirmed, it 
   await purge.click()
   await expect(dialog).toContainText('不能撤回')
   await expect(dialog.getByRole('button', { name: '取消' })).toBeFocused()
+  await shoot(page, 'c6-confirm-dialog')
   for (let i = 0; i < 5; i++) {
     await page.keyboard.press('Tab')
     expect(await dialog.evaluate((d) => d.contains(document.activeElement))).toBe(true)
   }
-  await shoot(page, 'c6-confirm-dialog')
 
   // Escape cancels; so does the button. Nothing changed, and focus is back on the button.
   await page.keyboard.press('Escape')

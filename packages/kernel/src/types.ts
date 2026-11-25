@@ -254,11 +254,13 @@ export type ActionInput = { name: string; label: string; placeholder: string | n
 export type Action = { label: string; tone: 'default' | 'danger'; confirm: string | null; inputs: ActionInput[]; call: Call }
 
 export type TableRow = { key: string; cells: Record<string, Cell>; link: Link | null; actions: Action[] }
+/** An `optional` column steps aside, the last one first, when the table has no room to show every column whole. */
+export type TableColumn = { key: string; label: string; optional?: boolean }
 
 /** A section with `collapse` can be folded by the viewer; the value is how it starts. */
 export type Block =
   | { kind: 'section'; title: string; note: string | null; count: number | null; blocks: Block[]; actions: Action[]; collapse?: 'open' | 'closed' }
-  | { kind: 'table'; columns: { key: string; label: string }[]; rows: TableRow[]; empty: string }
+  | { kind: 'table'; columns: TableColumn[]; rows: TableRow[]; empty: string }
   | { kind: 'fields'; fields: { label: string; value: Cell }[] }
   | { kind: 'list'; items: { cell: Cell; note: string | null; actions: Action[] }[] }
   | { kind: 'timeline'; entries: { at: Instant; title: Cell; lines: string[]; tag: Tag | null }[] }
