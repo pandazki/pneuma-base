@@ -1,4 +1,6 @@
+import { join } from 'node:path'
 import { pluginDir } from './paths.js'
+import { whyNotLoaded } from './plugin-table.js'
 import type {
   AgentFace,
   Context,
@@ -18,8 +20,8 @@ import type {
   Verb,
 } from './types.js'
 
-export function makeContext(library: Library, actor: Actor, session: Session, now: Instant = new Date().toISOString() as Instant): Context {
-  return { library, actor, session, now }
+export function makeContext(library: Library, actor: Actor, session: Session, home: string, now: Instant = new Date().toISOString() as Instant): Context {
+  return { library, actor, session, now, home }
 }
 
 export function messageOf(error: unknown): string {
@@ -49,7 +51,7 @@ export async function eachPlugin<T>(
 }
 
 export function pluginContext(ctx: Context, name: PluginName): PluginContext {
-  return { ...ctx, dir: pluginDir(ctx.library.root, name) }
+  return { ...ctx, dir: pluginDir(ctx.library.root, name), cacheDir: join(ctx.home, 'cache', ctx.library.config.id, name) }
 }
 
 type RequestOf<V extends Verb> = Parameters<AgentFace[V]>[0]
@@ -95,7 +97,10 @@ async function finish<R extends { problems: PluginProblem[] }>(
     throw error
   }
   const ctx = done.library ? { ...before, library: done.library } : before
-  const missing = ctx.library.unavailable.map((plugin) => ({ plugin, message: 'installed in this library but not known to this pneuma-base' }))
+  const missing: PluginProblem[] = []
+  for (const plugin of ctx.library.unavailable) {
+    missing.push({ plugin, message: (await whyNotLoaded(ctx.home, plugin)) ?? 'installed in this library but not known to this pneuma-base' })
+  }
   const answered = { ...done.result, problems: [...missing, ...done.result.problems] }
   const observed = await eachPlugin(ctx, (plugin, pctx) => plugin.observe?.(toEvent(answered), pctx))
   return { ...answered, problems: [...answered.problems, ...observed.problems] }

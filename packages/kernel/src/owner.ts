@@ -2,12 +2,14 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, realpath, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { skillText } from './cognition.js'
-import { exists, listFiles, writeAtomic } from './files.js'
+import { exists, writeAtomic } from './files.js'
 import { GRANT_NAME, readGrantFile, removeGrantFile, writeGrantFile } from './grants.js'
 import { CONFIG_FILE, newConfig, saveConfig } from './library.js'
 import { ARCHIVE_DIR, parseLibraryPath, regionOf } from './paths.js'
 import { makeContext, performOwner, pluginContext } from './pipeline.js'
+import { whyNotLoaded } from './plugin-table.js'
 import { looksLikeAgentSession, type Env } from './session.js'
+import { listThings } from './things.js'
 import type {
   Actor,
   Context,
@@ -62,7 +64,7 @@ const done = (text: string, data?: unknown, library?: Library) => ({ answer: { o
 /** Makes `dir` a library. Refused before anything is written, so a refused init has no library to send an event to. */
 export async function initLibrary(
   dir: string,
-  opts: { plugins: string[]; table: PluginTable; actor: Actor; session: Session },
+  opts: { plugins: string[]; table: PluginTable; actor: Actor; session: Session; home: string },
 ): Promise<OwnerResult> {
   if (await exists(join(dir, CONFIG_FILE))) {
     return { outcome: 'refused', reason: 'already-a-library', text: `${dir} 已经是一个库了`, problems: [] }
@@ -73,7 +75,7 @@ export async function initLibrary(
   }
   await mkdir(dir, { recursive: true })
   const library = await saveConfig(await realpath(dir), newConfig(opts.plugins as PluginName[]), opts.table)
-  const ctx = makeContext(library, opts.actor, opts.session)
+  const ctx = makeContext(library, opts.actor, opts.session, opts.home)
   const args: OwnerArgs = { positional: [library.root], flags: opts.plugins.length === 0 ? { bare: true } : {} }
   return performOwner(ctx, 'init', args, false, async () => done(`已把 ${library.root} 建成库。说明在 PNEUMA-BASE.md。`, { root: library.root }))
 }
@@ -123,7 +125,11 @@ export const ownerFace = {
     return gated(call, 'plugin add', false, { positional: [name], flags: {} }, async () => {
       const { library } = call.ctx
       if (library.config.plugins.includes(name as PluginName)) return done(`插件 ${name} 已经装了。`)
-      if (!call.table.has(name)) return refused('unknown-plugin', `没有这个插件：${name}。可用的：${[...call.table.keys()].join('、') || '无'}`)
+      if (!call.table.has(name)) {
+        const why = await whyNotLoaded(call.home, name)
+        if (why !== null) return refused('plugin-failed-to-load', `插件 ${name} 没能加载：${why}`)
+        return refused('unknown-plugin', `没有这个插件：${name}。可用的：${[...call.table.keys()].join('、') || '无'}`)
+      }
       const updated = await saveConfig(library.root, { ...library.config, plugins: [...library.config.plugins, name as PluginName] }, call.table)
       return done(`已装上插件 ${name}，说明已重新生成。`, undefined, updated)
     })
@@ -159,9 +165,9 @@ export const ownerFace = {
   purgeArchive(call: OwnerCall): Promise<OwnerResult> {
     return gated(call, 'archive purge', true, { positional: [], flags: {} }, async () => {
       const dir = join(call.ctx.library.root, ARCHIVE_DIR)
-      const paths = (await exists(dir)) ? (await listFiles(dir, new Set())).map((p) => `${ARCHIVE_DIR}/${p}` as LibraryPath) : []
+      const paths = (await exists(dir)) ? (await listThings(dir, new Set())).map((t) => `${ARCHIVE_DIR}/${t.path}` as LibraryPath) : []
       await rm(dir, { recursive: true, force: true })
-      return done(`已清空归档区，删掉了 ${paths.length} 个文件。`, { removed: paths.length, paths })
+      return done(`已清空归档区，删掉了 ${paths.length} 样东西。`, { removed: paths.length, paths })
     })
   },
 

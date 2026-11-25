@@ -61,6 +61,27 @@ describe('the state of each item', () => {
   })
 })
 
+describe('an item absorbed into a bundle', () => {
+  const ledger = fold([
+    f(1, sized('i_a', 'notes/a.md', 'a', 1)),
+    f(2, sized('i_d', 'd.md', 'd', 1, { kind: 'made', basis: basis([['i_a', 'a']]) })),
+    f(3, { ...sized('i_notes', 'notes', 'n', 1), bundle: true }),
+  ])
+  /** The snapshot lists the bundle, not the files in it; the fingerprint of a file inside is still taken on demand. */
+  const snapshot = (inner: string | null): Files => ({
+    sizes: new Map([[p('notes'), 1], [p('d.md'), 1]]),
+    fingerprint: async (path) => (path === 'notes' ? fp('n') : path === 'd.md' ? fp('d') : path === 'notes/a.md' && inner !== null ? fp(inner) : null),
+  })
+
+  it('is absorbed, not missing, and judged by the content at its path inside the bundle', async () => {
+    const same = await reconcile(ledger, snapshot('a'))
+    expect(same.states.get(id('i_a'))).toEqual({ kind: 'absorbed', into: 'i_notes', now: fp('a') })
+    expect(same.marks.size).toBe(0)
+    const edited = await reconcile(ledger, snapshot('a2'))
+    expect(edited.marks.get(id('i_d'))).toEqual([{ kind: 'stale', source: 'i_a', recorded: fp('a'), now: fp('a2') }])
+  })
+})
+
 describe('marks on the basis', () => {
   const made = (rows: [string, string][]) => ({ kind: 'made' as const, basis: basis(rows) })
   const ledger = fold([

@@ -25,7 +25,9 @@ export function f(second: number, body: FactBody, opts: { scene?: string; actor?
 
 export const basis = (rows: [string, string][], outside: string[] = []): Basis => ({ items: rows.map(([item, print]) => ({ item: id(item), fingerprint: fp(print) })), outside })
 
-export const enter = (item: string, path: string, print: string, origin: Extract<FactBody, { kind: 'item.enter' }>['origin'] = { kind: 'brought', source: null, by: null }): FactBody => ({
+type Enter = Extract<FactBody, { kind: 'item.enter' }>
+
+export const enter = (item: string, path: string, print: string, origin: Enter['origin'] = { kind: 'brought', source: null, by: null }): Enter => ({
   kind: 'item.enter',
   item: id(item),
   path: p(path),

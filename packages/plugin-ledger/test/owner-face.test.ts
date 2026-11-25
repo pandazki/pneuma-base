@@ -16,12 +16,14 @@ let second = 0
 const next = () => `2026-11-25T01:00:${String(second++).padStart(2, '0')}.000Z` as Instant
 
 async function library(): Promise<{ lib: Library; call: () => OwnerCall; as: (actor: Actor, id: string) => ReturnType<typeof makeContext> }> {
-  const root = join(realpathSync(mkdtempSync(join(process.env.PNEUMA_BASE_TEST_TMP ?? tmpdir(), 'pb-l-'))), 'lib')
-  await initLibrary(root, { plugins: ['ledger'], table, actor: owner, session: session('init') })
+  const dir = realpathSync(mkdtempSync(join(process.env.PNEUMA_BASE_TEST_TMP ?? tmpdir(), 'pb-l-')))
+  const root = join(dir, 'lib')
+  const home = join(dir, 'home')
+  await initLibrary(root, { plugins: ['ledger'], table, actor: owner, session: session('init'), home })
   const lib = await openLibrary(root, table)
   if (!lib) throw new Error('no library')
-  const as = (actor: Actor, id: string) => makeContext(lib, actor, session(id), next())
-  return { lib, as, call: () => ({ ctx: as(owner, 'owner'), table, home: root, env: {}, viaGrant: false, confirm: async () => true }) }
+  const as = (actor: Actor, id: string) => makeContext(lib, actor, session(id), home, next())
+  return { lib, as, call: () => ({ ctx: as(owner, 'owner'), table, home, env: {}, viaGrant: false, confirm: async () => true }) }
 }
 
 const text = (content: string) => ({ kind: 'stdin' as const, content: new TextEncoder().encode(content) })

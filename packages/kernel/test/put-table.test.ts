@@ -159,6 +159,54 @@ describe('place', () => {
   })
 })
 
+describe('revise asks every plugin that has the hook', () => {
+  type Answer = ReviseOutcome | 'throw'
+  /** Three plugins: two revisers answering as given, and one without the hook. Records who was asked. */
+  async function overwrite(first: Answer, second: Answer) {
+    const asked: string[] = []
+    const reviser = (name: string, answer: Answer) =>
+      plugin(name, {
+        revise: async () => {
+          asked.push(name)
+          if (answer === 'throw') throw new Error(`${name} broke`)
+          return answer
+        },
+      })
+    const f = await fixture([reviser('one', first), plugin('quiet'), reviser('two', second)])
+    f.write('a.md', 'old')
+    const r = await agentFace.put({ kind: 'place', from: { kind: 'file', path: outsideFile('new') }, to: 'a.md', origin: brought }, f.ctx)
+    return { r, asked, content: f.read('a.md') }
+  }
+  const held = (note: string | null): ReviseOutcome => ({ outcome: 'held', note })
+  const declined: ReviseOutcome = { outcome: 'declined', reason: 'not mine' }
+
+  it('accepts when one holds and another declines, and asks both', async () => {
+    const { r, asked, content } = await overwrite(declined, held('kept by two'))
+    expect(asked).toEqual(['one', 'two'])
+    expect(r).toMatchObject({ outcome: 'accepted', copied: true, notes: [{ plugin: 'two', text: 'kept by two' }], problems: [] })
+    expect(content).toBe('new')
+  })
+
+  it('keeps the note of each plugin that held, and still asks the second after the first held', async () => {
+    const { r, asked } = await overwrite(held('kept by one'), held('kept by two'))
+    expect(asked).toEqual(['one', 'two'])
+    expect(r).toMatchObject({ outcome: 'accepted', notes: [{ plugin: 'one', text: 'kept by one' }, { plugin: 'two', text: 'kept by two' }] })
+  })
+
+  it('counts a plugin that throws as not held and lists it; another holding is enough', async () => {
+    const { r, content } = await overwrite('throw', held(null))
+    expect(r).toMatchObject({ outcome: 'accepted', notes: [], problems: [{ plugin: 'one', message: 'one broke' }] })
+    expect(content).toBe('new')
+  })
+
+  it('refuses when none holds, the target unchanged, the thrower listed', async () => {
+    const { r, asked, content } = await overwrite('throw', declined)
+    expect(asked).toEqual(['one', 'two'])
+    expect(r).toMatchObject({ outcome: 'refused', reason: 'would-overwrite', problems: [{ plugin: 'one', message: 'one broke' }] })
+    expect(content).toBe('old')
+  })
+})
+
 describe('move', () => {
   it('outside the library or the grant: refused', async () => {
     const f = await fixture()

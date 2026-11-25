@@ -12,6 +12,12 @@ describe('searchTerms', () => {
     expect(searchTerms('对比 Stripe 和 Paddle', 'words')).toEqual(['对比', 'stripe', 'paddle'])
   })
 
+  it('joins adjacent single Chinese characters into two-character terms, since the segmenter cuts some words apart', () => {
+    expect(searchTerms('看看下单进展', 'words')).toEqual(['看看', '下单', '进展'])
+    expect(searchTerms('我们下单了吗', 'words')).toEqual(['我们', '下单', '单了', '了吗'])
+    expect(searchTerms('下 单', 'words')).toEqual([])
+  })
+
   it('keeps the text as written in terms mode', () => {
     expect(searchTerms('支付服务 Stripe', 'terms')).toEqual(['支付服务', 'stripe'])
   })
@@ -25,6 +31,12 @@ describe('find in words mode', () => {
     expect(paths(r)).toHaveLength(5)
     expect(paths(r)[0]).toBe('支付-小店.md')
     expect(paths(r)).not.toContain('其他.md')
+  })
+
+  it('finds an earlier 下单 from the sentence 看看下单进展', async () => {
+    const f = await fixture()
+    f.write('下单流程.md', 'x')
+    expect(paths(await agentFace.find(request('看看下单进展', 'words'), f.ctx))).toEqual(['下单流程.md'])
   })
 
   it('matches nothing when the sentence has no word to match', async () => {

@@ -10,27 +10,32 @@ export type ItemState =
   | { kind: 'moved'; to: LibraryPath }
   | { kind: 'missing' }
   | { kind: 'removed' }
+  | { kind: 'absorbed'; into: ItemId; now: Fingerprint | null } // its file is part of a bundle now; `now` is that file's content
 
 export type Mark = { kind: 'stale'; source: ItemId; recorded: Fingerprint; now: Fingerprint } | { kind: 'source-gone'; source: ItemId }
 
 /**
- * The one place an item's state is decided. `disk` is the fingerprint of the file at the item's
- * recorded path, null when no file is there; `movedTo` is the one unowned file that holds its content.
+ * The one place an item's state is decided. `disk` is the fingerprint of the thing at the item's
+ * recorded path, null when nothing is there; `movedTo` is the one unowned thing that holds its content.
  */
 export function classify(item: ItemRecord, disk: Fingerprint | null, movedTo: LibraryPath | null): ItemState {
   if (item.removed) return { kind: 'removed' }
+  if (item.absorbedInto !== null) return { kind: 'absorbed', into: item.absorbedInto, now: disk }
   if (disk !== null) return disk === item.fingerprint ? { kind: 'consistent' } : { kind: 'changed', now: disk }
   return movedTo !== null ? { kind: 'moved', to: movedTo } : { kind: 'missing' }
 }
 
 /** The content an item has on disk now; null when it has no file. */
 function contentNow(item: ItemRecord, state: ItemState): Fingerprint | null {
-  if (state.kind === 'changed') return state.now
+  if (state.kind === 'changed' || state.kind === 'absorbed') return state.now
   return state.kind === 'consistent' || state.kind === 'moved' ? item.fingerprint : null
 }
 
-/** A snapshot of the library's files outside the kernel's own: each one's size, and its fingerprint on demand. */
-export type Files = { sizes: ReadonlyMap<LibraryPath, number>; fingerprint(path: LibraryPath): Promise<Fingerprint> }
+/**
+ * A snapshot of the library's things outside the kernel's own (its files outside bundles, and its
+ * bundles): each one's size, and on demand the fingerprint of the thing at any path, null when none.
+ */
+export type Files = { sizes: ReadonlyMap<LibraryPath, number>; fingerprint(path: LibraryPath): Promise<Fingerprint | null> }
 
 export type Standing = {
   states: Map<ItemId, ItemState>
@@ -47,7 +52,8 @@ export async function reconcile(ledger: Ledger, files: Files): Promise<Standing>
   const states = new Map<ItemId, ItemState>()
   const missing: ItemRecord[] = []
   for (const item of ledger.items.values()) {
-    if (!item.removed && !files.sizes.has(item.path)) missing.push(item)
+    // An absorbed item's file lies inside a bundle, which the snapshot lists as one thing.
+    if (!item.removed && item.absorbedInto === null && !files.sizes.has(item.path)) missing.push(item)
     else states.set(item.id, classify(item, item.removed ? null : await files.fingerprint(item.path), null))
   }
   const unowned = [...files.sizes.keys()].filter((path) => !ledger.pathIndex.has(path))
@@ -58,7 +64,7 @@ export async function reconcile(ledger: Ledger, files: Files): Promise<Standing>
   for (const path of unowned) {
     if (!sizes.has(files.sizes.get(path) ?? -1)) continue
     const print = await files.fingerprint(path)
-    holders.set(print, [...(holders.get(print) ?? []), path])
+    if (print !== null) holders.set(print, [...(holders.get(print) ?? []), path])
   }
   const sharing = (print: Fingerprint) => missing.filter((item) => item.fingerprint === print).length
   const taken = new Set<LibraryPath>()
