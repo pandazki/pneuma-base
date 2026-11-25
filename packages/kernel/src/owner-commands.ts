@@ -35,7 +35,7 @@ const done = (text: string, data?: unknown, library?: Library, problems: PluginP
   problems,
 })
 
-type Read = { positional: string[]; value(flag: string): string | null }
+type Read = { positional: string[]; value(flag: string): string | null; on(flag: string): boolean }
 
 /**
  * A command's arguments, or the usage text that says what is wrong with them. A flag given with an
@@ -48,7 +48,12 @@ function read(command: string, args: OwnerArgs, arity: number, flags: readonly s
     const v = args.flags[flag]
     return Array.isArray(v) && v[0] !== undefined && v[0] !== '' ? v[0] : null
   }
-  return { positional: args.positional, value }
+  // A switch on the command line, such as `--read-only`; a form sends it with the value yes or no.
+  const on = (flag: string) => {
+    const v = args.flags[flag]
+    return v === true || (Array.isArray(v) && v[0] === 'yes')
+  }
+  return { positional: args.positional, value, on }
 }
 
 /** A refusal whose reason is `usage`: the call itself was malformed. The command line shows it as a usage error. */
@@ -67,9 +72,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       const name = a.positional[0] as string
       const agent = a.value('agent')
       if (agent === null) return usage('要写 --agent <给谁>，比如 --agent claude-code。')
-      // `--read-only` on the command line; a form sends it with the value yes or no.
-      const flag = args.flags['read-only']
-      const readOnly = flag === true || (Array.isArray(flag) && flag[0] === 'yes')
+      const readOnly = a.on('read-only')
       const { library } = call.ctx
       if (!GRANT_NAME.test(name)) return refused('bad-grant-name', `授权名只能用小写字母、数字和连字符，最长 41 个字符：${name}`)
       let area: Grant['area'] = null
@@ -124,12 +127,13 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       const name = a.positional[0] as string
       const { library } = call.ctx
       if (library.config.plugins.includes(name as PluginName)) return done(`插件 ${name} 已经装了。`)
-      if (!call.table.has(name)) {
+      const plugin = call.table.get(name)
+      if (!plugin) {
         const why = await whyNotLoaded(call.ctx.home, name)
         if (why !== null) return refused('plugin-failed-to-load', `插件 ${name} 没能加载：${why}`)
         return refused('unknown-plugin', `没有这个插件：${name}。可用的：${[...call.table.keys()].join('、') || '无'}`)
       }
-      const taken = takenBy(call.table.get(name) as Plugin, library.plugins)
+      const taken = takenBy(plugin, library.plugins)
       if (taken.length > 0) {
         const holders = [...new Set(taken.map((t) => t.holder))].join('、')
         const what = taken.map((t) => `${said(t.claim)}已归插件 ${t.holder}`).join('；')
@@ -158,8 +162,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       if (!library.config.plugins.includes(name as PluginName)) return refused('not-installed', `这个库没装插件 ${name}`)
       const heard = await hear(library.plugins.find((p) => p.name === name), (p, pctx) => p.onRemove?.(pctx), call.ctx)
       const warning = heard.answer ? heard.answer.refuse : null
-      const flag = args.flags.anyway
-      if (warning !== null && !(flag === true || (Array.isArray(flag) && flag[0] === 'yes'))) {
+      if (warning !== null && !a.on('anyway')) {
         return { ...refused('plugin-refused', `插件 ${name} 没有卸下，它说：${warning}\n照样要卸，用 plugin remove ${name} --anyway。`), problems: heard.problems }
       }
       const updated = await saveConfig(library.root, { ...library.config, plugins: library.config.plugins.filter((p) => p !== name) }, call.table)

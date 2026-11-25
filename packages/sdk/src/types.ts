@@ -1,4 +1,4 @@
-// The kernel's public shapes. ARCHITECTURE.md sections 4 and 5. Plugins see only these.
+// The plugin contract's shapes, which a plugin and the kernel exchange. ARCHITECTURE.md sections 4 and 5.
 
 // Semantic primitives. Parsed once at the kernel's boundary.
 export type LibraryPath = string & { readonly __brand: 'LibraryPath' } // library-relative, '/'-separated

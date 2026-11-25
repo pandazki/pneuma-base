@@ -80,9 +80,8 @@ const optional = (v: unknown, is: (v: unknown) => boolean) => v === undefined ||
  * `plugin add` refuses. Left to call time: what a hook or a command's `run` answers and whether it
  * throws (K8), and where the plugin writes.
  */
-function whatIsWrong(value: unknown, name: string): string[] {
-  if (!isObject(value)) return ['它不是一个对象']
-  const p = value
+function whatIsWrong(p: unknown, name: string): string[] {
+  if (!isObject(p)) return ['它不是一个对象']
   const wrong: string[] = []
   const check = (ok: boolean, what: string) => {
     if (!ok) wrong.push(what)
@@ -98,7 +97,6 @@ function whatIsWrong(value: unknown, name: string): string[] {
   /** Checks the list `key` entry by entry; `id` gives the name an entry claims, which may appear once. */
   const list = (key: string, entry: (v: unknown) => string | null, id: (v: unknown) => unknown = () => undefined): void => {
     const items = p[key]
-    if (key === 'views' && items === undefined) return
     if (!Array.isArray(items)) {
       wrong.push(`${key} 不是列表`)
       return
@@ -116,7 +114,7 @@ function whatIsWrong(value: unknown, name: string): string[] {
   list('storage', (d) => (isObject(d) && isText(d.dir) && (d.kind === 'body' || d.kind === 'cache') ? null : `storage 的每一项要是 { dir, kind: 'body' | 'cache' }`))
   list('statements', (k) => (isText(k) && k !== '' ? null : 'statements 的每一项要是不空的文字'), (k) => k)
   list('ownerCommands', (cmd) => commandWrong(cmd, name), (cmd) => (isObject(cmd) ? cmd.name : undefined))
-  list('views', (v) => viewWrong(v, name), (v) => (isObject(v) ? v.id : undefined))
+  if (p.views !== undefined) list('views', (v) => viewWrong(v, name), (v) => (isObject(v) ? v.id : undefined))
   for (const hook of Object.keys(HOOKS)) check(optional(p[hook], (v) => typeof v === 'function'), `${hook} 不是函数`)
   return wrong
 }
