@@ -417,7 +417,7 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable }): P
 - 具名动作走和按钮完全一样的路：同一个对话框问这个动作自己的 `confirm`，有输入的表单里先填好框架给的值（只取它声明了的输入），同样经两个面分派，同样的结果提示，同样的重取。框架拿不到 `Call`，也就跑不了块没声明的动作；视图照旧不发事件。不让框架直接调接口，是因为「破坏性的要当面确认」「每次操作留痕」只在两个面的入口守得住：框架只是另一种按钮。
 - 5 秒内没说准备好（文件不在、加载失败、没用开发包），那一块换成一段说明，写出插件名；页的其余部分照常（K8）。
 - 沙箱为的是隔离样式和崩溃，不是防插件：插件的 `index.js` 本来就在本机以主人的身份跑。
-- 开发包由界面的服务给出，地址固定：`/plugin-kit/frame.js` 做握手，给出 `pneuma.onData(callback)`、`pneuma.run(name, values)`、`pneuma.open(link)`，自己报告高度；`/plugin-kit/frame.css` 用和界面相同的变量名（`--surface`、`--ink`、`--accent`……）铺好底，带界面的组件（`card`、`btn`、`tag`、`field`、`link` 等，和界面共用一份 `components.css`）和字体。插件的页跟着浅色深色走，不用抄颜色。
+- 开发包由界面的服务给出，地址固定：`/plugin-kit/frame.js` 做握手，给出 `pneuma.onData(callback)`、`pneuma.run(name, values)`、`pneuma.open(link)`，自己报告高度；`/plugin-kit/frame.css` 用和界面相同的变量名（`--surface`、`--ink`、`--accent`……）铺好底，带界面的组件（`card`、`btn`、`tag`、`field`、`link` 等，和界面共用一份 `components.css`）和字体。插件的页跟着浅色深色走，不用抄颜色。`@pneuma-base/sdk/frame` 给插件作者 `window.pneuma` 的类型（`onData` 收到什么、`run`、`open`）和样式表给的类与变量的清单；界面发给框架的变量就取自这份清单，仓库的测试核对样式表里有清单上的每个类。
 
 网页渲染块时自己定的几条，插件写块时可以指望：
 

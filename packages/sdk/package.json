@@ -15,6 +15,10 @@
     "./testkit": {
       "types": "./dist/testkit/index.d.ts",
       "default": "./dist/testkit/index.js"
+    },
+    "./frame": {
+      "types": "./dist/frame.d.ts",
+      "default": "./dist/frame.js"
     }
   },
   "files": [

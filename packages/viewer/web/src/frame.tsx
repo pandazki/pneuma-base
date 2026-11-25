@@ -1,7 +1,9 @@
 // A `custom` block: a plugin's own page in a sandboxed frame. The frame gets the block's data, the
 // colour scheme, the design tokens and its actions' names; it may ask for three things only, and an
-// action it asks for runs exactly as a button's would. ARCHITECTURE section 6.
+// action it asks for runs exactly as a button's would. ARCHITECTURE section 6; the frame's side is
+// typed in @pneuma-base/sdk/frame.
 import type { Action, Block, Link } from '@pneuma-base/kernel'
+import { FRAME_TOKENS } from '@pneuma-base/sdk/frame'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { api, outsideUrl } from './api'
 import { useEnv } from './env'
@@ -19,19 +21,10 @@ type FrameMessage =
 const READY_MS = 5000
 const MAX_HEIGHT = 4000
 
-/** The UI's tokens, by the names the page and the frame kit's stylesheet both use. */
-const TOKENS = [
-  '--page', '--canvas', '--surface', '--inset', '--hover', '--hover-2', '--ink', '--ink-2', '--ink-3',
-  '--line', '--line-strong', '--line-soft', '--field', '--accent', '--accent-ink', '--accent-tint',
-  '--green', '--green-tint', '--orange', '--orange-tint', '--red', '--red-tint', '--tooltip-bg', '--tooltip-fg',
-  '--scrim', '--tag-fill', '--tag-ring', '--shadow-xs', '--shadow-sm', '--shadow-lg', '--shadow-hairline',
-  '--shadow-btn', '--shadow-card', '--shadow-overlay', '--shadow-inset-field',
-  '--radius-chip', '--radius-control', '--radius-card', '--radius-window', '--font-sans', '--font-mono',
-]
-
+/** The UI's tokens, by the names the page and the frame kit's stylesheet both use, as the sdk lists them for plugin authors. */
 const tokens = (): Record<string, string> => {
   const style = getComputedStyle(document.documentElement)
-  return Object.fromEntries(TOKENS.map((name) => [name, style.getPropertyValue(name).trim()]))
+  return Object.fromEntries(FRAME_TOKENS.map((name) => [name, style.getPropertyValue(name).trim()]))
 }
 
 const DARK = window.matchMedia('(prefers-color-scheme: dark)')

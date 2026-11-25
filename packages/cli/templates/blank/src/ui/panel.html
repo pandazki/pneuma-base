@@ -5,7 +5,9 @@
     <!--
       A page the plugin draws itself, shown in a custom block of its view. The viewer serves these two
       files: frame.css lays out the UI's colours, fonts and components (card, btn, tag, muted …) and
-      follows light and dark; frame.js hands over the block's data and runs its named actions.
+      follows light and dark; frame.js gives `pneuma`: onData hands over the block's data, run asks to
+      run one of the block's actions, open opens a view or an outside address. Both are typed and
+      listed, with every class and token, in @pneuma-base/sdk/frame.
     -->
     <link rel="stylesheet" href="/plugin-kit/frame.css" />
     <script src="/plugin-kit/frame.js"></script>
@@ -23,6 +25,7 @@
       }
       .latest {
         flex: 1;
+        text-align: left;
         min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -33,7 +36,7 @@
   <body>
     <div class="card panel">
       <span class="count" id="count">…</span>
-      <span class="muted latest" id="latest"></span>
+      <button type="button" class="link latest" id="latest"></button>
       <button type="button" class="btn" id="list">列出全部</button>
     </div>
     <script>
@@ -41,7 +44,9 @@
       // The block's data, now and each time the view is fetched again.
       pneuma.onData((data, { actions }) => {
         $('count').textContent = `${data.count} 条标记`
-        $('latest').textContent = data.latest === null ? '还没有' : `最近一条：${data.latest}`
+        $('latest').textContent = data.latest === null ? '还没有' : `最近一条：${data.latest.text}`
+        // The latest mark's thing opens in the item panel beside the page.
+        $('latest').onclick = data.latest === null ? null : () => pneuma.open({ view: 'item', params: { path: data.latest.path }, target: 'panel' })
         $('list').textContent = actions.list ? actions.list.label : '列出全部'
       })
       // A named action of the block: the UI confirms and runs it, as for any button.

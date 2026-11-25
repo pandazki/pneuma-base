@@ -7,6 +7,7 @@ import { connect } from 'node:net'
 import { networkInterfaces, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { initLibrary, type Plugin, type PluginTable } from '@pneuma-base/kernel'
+import { FRAME_CLASSES } from '@pneuma-base/sdk/frame'
 import { afterEach, describe, expect, it } from 'vitest'
 import { startServer, type RunningServer } from '../dist/server/index.js'
 
@@ -392,6 +393,15 @@ describe('a plugin’s own pages and the kit they load (custom blocks)', () => {
       expect(r.headers['access-control-allow-origin'], path).toBe('*')
     }
     expect((await http(server, '/plugin-kit/frame.js', { token: null })).text).toContain('onData')
+  })
+
+  it('gives a frame every call and class the sdk’s frame types promise', async () => {
+    const server = await serve((await library()).root)
+    const script = (await http(server, '/plugin-kit/frame.js', { token: null })).text
+    for (const call of ['onData', 'run', 'open']) expect(script, call).toMatch(new RegExp(`\\b${call}\\(`))
+    const sheet = (await http(server, '/plugin-kit/frame.css', { token: null })).text
+    const missing = FRAME_CLASSES.filter((c) => !new RegExp(`(^|[\\s,}>])\\.${c}\\s*[{,:.>[]`, 'm').test(sheet))
+    expect(missing).toEqual([])
   })
 
   it('a malformed block in a plugin’s view becomes a block saying so, and a problem; the rest of the page stands', async () => {

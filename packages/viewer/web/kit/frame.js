@@ -1,6 +1,7 @@
 // The frame kit: what a plugin's own page loads, by <script src="/plugin-kit/frame.js">, to live in a
 // `custom` block of the management UI. It takes the block's data and the UI's look from the page
-// around it, and sends back the only three things a frame may ask for. ARCHITECTURE section 6.
+// around it, and sends back the only three things a frame may ask for. Typed and documented for
+// plugin authors in @pneuma-base/sdk/frame.
 ;(() => {
   const listeners = []
   let last = null

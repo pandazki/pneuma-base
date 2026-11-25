@@ -5,28 +5,64 @@
     <!--
       A page the plugin draws itself, shown in a custom block on its page (target.ts, view.page). The
       viewer serves these two files: frame.css lays out the UI's colours, fonts and components and
-      follows light and dark; frame.js hands over the block's data.
+      follows light and dark; frame.js gives `pneuma`: onData hands over the block's data, run asks to
+      run one of the block's actions, open opens a view or an outside address. Both are typed and
+      listed, with every class and token, in @pneuma-base/sdk/frame.
     -->
     <link rel="stylesheet" href="/plugin-kit/frame.css" />
     <script src="/plugin-kit/frame.js"></script>
     <style>
       .panel {
+        padding: 12px 16px;
+      }
+      .row {
         display: flex;
         align-items: center;
-        gap: 12px;
-        padding: 14px 16px;
+        gap: 10px;
+        padding: 4px 0;
+      }
+      .row .link {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
     </style>
   </head>
   <body>
     <div class="card panel">
-      <span class="tag tone-good" id="online">…</span>
-      <span class="muted" id="where"></span>
+      <p class="muted" id="where">…</p>
+      <div id="things"></div>
     </div>
     <script>
-      pneuma.onData((data) => {
-        document.getElementById('online').textContent = `${data.online} / ${data.declared} 在线`
-        document.getElementById('where').textContent = `发布到 ${data.to}`
+      pneuma.onData((data, { actions }) => {
+        document.getElementById('where').textContent = `${data.online} / ${data.things.length} 在线，发布到 ${data.to}`
+        document.getElementById('things').replaceChildren(
+          ...data.things.map((thing) => {
+            const row = document.createElement('div')
+            row.className = 'row'
+            // The path opens the thing's item panel beside the page.
+            const path = document.createElement('button')
+            path.className = 'link mono'
+            path.textContent = thing.path
+            path.onclick = () => pneuma.open({ view: 'item', params: { path: thing.path }, target: 'panel' })
+            const state = document.createElement('span')
+            state.className = `tag tone-${thing.state.tone}`
+            state.textContent = thing.state.text
+            row.append(path, state)
+            // The kit's switch for it, run as the table's button runs.
+            const action = actions[thing.key]
+            if (action) {
+              const button = document.createElement('button')
+              button.className = 'btn'
+              button.textContent = action.label
+              button.onclick = () => pneuma.run(thing.key)
+              row.append(button)
+            }
+            return row
+          }),
+        )
       })
     </script>
   </body>

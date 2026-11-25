@@ -37,7 +37,7 @@ test('an agent declares a site; only the owner can switch it on, and then it is 
   assert.equal(existsSync(site), false)
 })
 
-test('its page has the kit’s sections and its own panel', async () => {
+test('its page has the kit’s sections and its own panel, whose switches are the table’s', async () => {
   const viewer = await sb.viewer()
   const page = await viewer.view(`${plugin.name}.sites`)
   assert.equal(page.outcome, 'shown')
@@ -46,4 +46,7 @@ test('its page has the kit’s sections and its own panel', async () => {
   const panel = page.blocks.find((b) => b.kind === 'custom')
   assert.ok(panel?.kind === 'custom')
   assert.equal((await viewer.get(`/plugin-ui/${plugin.name}/${panel.entry}`)).status, 200)
+  const table = page.blocks.flatMap((b) => (b.kind === 'section' ? b.blocks : [])).find((b) => b.kind === 'table')
+  assert.ok(table?.kind === 'table')
+  assert.deepEqual(Object.values(panel.actions), table.rows.map((row) => row.actions[0]))
 })

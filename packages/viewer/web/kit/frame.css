@@ -2,7 +2,8 @@
  * The frame kit's stylesheet: what a plugin's own page loads, by <link rel="stylesheet"
  * href="/plugin-kit/frame.css">, to look like the management UI around it. The UI sends its tokens
  * (--surface, --ink, --accent, ...) and frame.js sets them on the root, so the page follows light
- * and dark without a colour of its own. The UI's components follow this base.
+ * and dark without a colour of its own. The UI's components follow this base. The classes and tokens
+ * a plugin's page may use are listed in @pneuma-base/sdk/frame.
  */
 @font-face {
   font-family: 'Inter Variable';
