@@ -53,10 +53,12 @@ export function factActor(actor: Actor): FactActor {
 
 const safe = (text: string) => text.replace(/[^A-Za-z0-9_-]/g, '')
 
+export const ADHOC_SCENE = 'adhoc-'
+
 /** The session id made safe; for a session minted for this one call, the actor's ad hoc scene of the day. */
 export function sceneOf(ctx: Context): SceneId {
   if (ctx.session.source !== 'minted') return (safe(ctx.session.id) || 'session') as SceneId
-  return `adhoc-${safe(factActor(ctx.actor).name)}-${ctx.now.slice(0, 10)}` as SceneId
+  return `${ADHOC_SCENE}${safe(factActor(ctx.actor).name)}-${ctx.now.slice(0, 10)}` as SceneId
 }
 
 const compact = (at: Instant) => at.replace(/[^0-9]/g, '')

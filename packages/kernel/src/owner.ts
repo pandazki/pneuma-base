@@ -148,7 +148,10 @@ export const ownerFace = {
       const folder = join(req.dir, `pneuma-base-${grant.name}`)
       const file = join(folder, 'SKILL.md')
       await writeAtomic(file, skillText(grant.name, library.root), folder)
-      return done(`已为 ${req.agent} 写好技能：${file}`, { file })
+      const text = `已为 ${req.agent} 写好技能：${file}`
+      if (req.agent === 'claude') return done(text, { file })
+      const hint = `Codex 在沙箱里运行，这个库要是它能写的目录之一，比如：codex --add-dir ${library.root}`
+      return done(`${text}\n${hint}`, { file, hint })
     })
   },
 

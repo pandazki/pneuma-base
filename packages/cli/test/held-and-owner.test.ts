@@ -98,7 +98,7 @@ describe('a new version over an old one (C6)', () => {
 })
 
 describe('owner operations (C7)', () => {
-  it('appear in an agent’s check after its last visit', () => {
+  it('appear in an agent’s check after its last visit when they change the content or the capabilities', () => {
     ok(agent(['start', '整理资料']))
     const withTest = (args: string[]) => ok(sb.runWithTestPlugins([...args, '--library', lib], { cwd: outside }))
     withTest(['plugin', 'add', 'recorder'])
@@ -109,9 +109,12 @@ describe('owner operations (C7)', () => {
     const r = ok(agent(['check', '--json'], undefined, 's2'))
     const since = section(sections(r), '自上次以来')
     const ops = since.scenes.flatMap((s: any) => s.facts).filter((f: any) => f.kind === 'owner.op').map((f: any) => f.text)
-    expect(ops).toHaveLength(4)
-    for (const [i, command] of ['plugin add', 'grant issue', 'grant revoke', 'plugin remove'].entries()) expect(ops[i]).toContain(command)
-    expect(ok(agent(['check'], undefined, 's3')).stdout).toContain('主人面的操作 grant revoke')
+    expect(ops).toHaveLength(2)
+    for (const [i, command] of ['plugin add', 'plugin remove'].entries()) expect(ops[i]).toContain(command)
+    const text = ok(agent(['check'], undefined, 's3')).stdout
+    expect(text).toMatch(/^场景 adhoc-owner-\d{4}-\d\d-\d\d · 主人/m)
+    expect(text).toContain('主人面的操作 plugin remove')
+    expect(text).not.toContain('grant')
   })
 })
 

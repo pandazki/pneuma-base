@@ -78,7 +78,7 @@ async function nameHits(req: FindRequest, root: string): Promise<Hit[]> {
   const candidates = (await listFiles(root, skip)).map((file) => {
     const path = file as LibraryPath
     const archived = regionOf(path) === 'archive'
-    const hit: Hit = { path, title: posix.basename(path), by: 'kernel', detail: archived ? '已归档' : null }
+    const hit: Hit = { path, title: posix.basename(path), by: 'kernel', group: null, detail: archived ? '已归档' : null }
     return { hit, haystack: (archived ? originalPath(path) ?? path : path).toLowerCase() }
   })
   return rankHits(candidates, searchTerms(req.text, req.match), req.match)

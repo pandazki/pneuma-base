@@ -20,10 +20,23 @@ import {
 } from '@pneuma-base/kernel'
 import { itemNamed, load, onDisk, snapshot, statesOf, textOf, type Disk } from './disk.js'
 import { fact, factActor, LEDGER_ACTOR, newItemId, sceneOf, writeFacts, type Basis, type Fact, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
-import type { Ledger } from './fold.js'
+import type { Ledger, SceneRecord } from './fold.js'
 import { heldCommands, heldCopies, heldPath, keep } from './held.js'
 import { reconcile } from './reconcile.js'
-import { findableItems, findCandidates, itemText, itemView, originLabel, sceneText, sceneView, sinceText, sinceView, standingSections } from './views.js'
+import {
+  ambiguousText,
+  findableItems,
+  findCandidates,
+  itemText,
+  itemView,
+  originLabel,
+  scenesNamed,
+  sceneText,
+  sceneView,
+  sinceText,
+  sinceView,
+  standingSections,
+} from './views.js'
 
 /** One hook's writing: the ledger as read, and the facts it will write as one file. */
 type Writing = { ctx: PluginContext; ledger: Ledger; facts: Fact[]; adopted: Map<LibraryPath, ItemId> }
@@ -108,7 +121,7 @@ async function recordPut(w: Writing, req: AcceptedPut): Promise<PluginNote> {
   const claimed = req.kind === 'register'
   const basis = origin.kind === 'made' ? { basis: origin.basis } : {}
   w.facts.push(fact(ctx, claimed ? 'reported' : 'tool', { kind: 'item.revise', item: item.id, base: item.fingerprint, fingerprint: req.fingerprint, size, ...basis, held, claimed }))
-  const text = held ? `已记为新的一版，旧的一版留存在 ${held}` : claimed ? '已认下这次直接改动，记为新的一版' : '已记为新的一版'
+  const text = held ? '已记为新的一版，旧的一版已留存，主人可以取回' : claimed ? '已认下这次直接改动，记为新的一版' : '已记为新的一版'
   return { text: `${text} · 条目 ${item.id}`, data: { item: item.id } }
 }
 
@@ -200,30 +213,38 @@ export const ledger: Plugin = {
   async onFind(req, ctx) {
     const ledger = await load(ctx)
     const terms = searchTerms(req.text, req.match)
+    const scope = { ...req, skip: req.skipOwnSession ? sceneOf(ctx) : null }
     const content = new Map<ItemId, string>()
-    if (terms.length > 0) for (const item of findableItems(ledger, req)) content.set(item.id, await textOf(ctx.library.root, item.path))
-    return rankHits(findCandidates(ledger, { ...req, current: sceneOf(ctx), content }), terms, req.match)
+    if (terms.length > 0) for (const item of findableItems(ledger, scope)) content.set(item.id, await textOf(ctx.library.root, item.path))
+    return rankHits(findCandidates(ledger, { ...scope, content }), terms, req.match)
   },
 
+  /** The target is a scene id, an item id or path, a file nobody registered, else a scene id prefix: exact names first. */
   async onInspect(req, ctx) {
     const ledger = await load(ctx)
     const { root } = ctx.library
-    const scene = ledger.scenes.get(req.target as SceneId)
-    if (scene) {
+    const card = (scene: SceneRecord) => {
       const view = sceneView(ledger, scene)
       return [{ title: '场景', body: sceneText(view), data: view }]
     }
+    const scene = ledger.scenes.get(req.target as SceneId)
+    if (scene) return card(scene)
     const item = itemNamed(ledger, root, req.target)
-    if (!item) {
-      const path = parseLibraryPath(root, req.target)
-      if (path === null || regionOf(path) === 'kernel' || !(await onDisk(root, path) ?? (regionOf(path) === 'content' ? await onDisk(root, archivedPath(path)) : null))) return []
+    if (item) {
+      const states = await statesOf(root, ledger, [item.id, ...item.basis.items.map((row) => row.item)])
+      const held = (await heldCopies(ctx, item.id)).map((c) => c.path)
+      const view = itemView(ledger, item, states, held)
+      return [{ title: '来历', body: itemText(view), data: view }]
+    }
+    const path = parseLibraryPath(root, req.target)
+    if (path !== null && regionOf(path) !== 'kernel' && (await onDisk(root, path) ?? (regionOf(path) === 'content' ? await onDisk(root, archivedPath(path)) : null))) {
       const body = '没人登记过这个文件，来历不明。知道它从哪来，就用 put <库内路径> --brought 或 --made 补上。'
       return [{ title: '来历', body, data: { kind: 'unowned', path } }]
     }
-    const states = await statesOf(root, ledger, [item.id, ...item.basis.items.map((row) => row.item)])
-    const held = (await heldCopies(ctx, item.id)).map((c) => c.path)
-    const view = itemView(ledger, item, states, held)
-    return [{ title: '来历', body: itemText(view), data: view }]
+    const scenes = scenesNamed(ledger, req.target)
+    if (scenes.length === 1) return card(scenes[0] as SceneRecord)
+    if (scenes.length === 0) return []
+    return [{ title: '场景', body: ambiguousText(req.target, scenes), data: { kind: 'ambiguous', prefix: req.target, scenes: scenes.map((s) => s.id) } }]
   },
 
   async onCheck(req, ctx) {

@@ -23,27 +23,46 @@ export function putText(req: PutRequest, r: PutResult): string[] {
   return [head, ...tail(r.notes, r.problems)]
 }
 
-/** One entry per path (or title): the kernel's mark beside it, each plugin's detail on its own line. */
-export function findText(r: FindResult): string[] {
-  const entries = new Map<string, { marks: string[]; details: string[] }>()
+const minute = (at: string) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`
+
+type Entry = { key: string; path: string | null; marks: string[]; details: string[]; group: string | null }
+
+/**
+ * Hits in rank order. The hits on one path (or title) make one entry: the kernel's mark beside it,
+ * each plugin's detail after it. Entries that share a group print under it at the place of the
+ * first, one indented line each; an entry without a path describes the group, so it comes first.
+ */
+export function findText(r: FindResult, none = '没有找到。'): string[] {
+  const entries = new Map<string, Entry>()
   for (const h of r.hits) {
     const key = h.path ?? h.title
-    const entry = entries.get(key) ?? { marks: [], details: [] }
+    const entry = entries.get(key) ?? { key, path: h.path, marks: [], details: [], group: null }
     entries.set(key, entry)
+    entry.group ??= h.group
     if (h.detail === null) continue
     if (h.by === 'kernel') entry.marks.push(h.detail)
-    else entry.details.push(`  ${h.detail}`)
+    else entry.details.push(h.detail)
   }
-  const lines = [...entries].flatMap(([key, e]) => [`${key}${e.marks.map((m) => `（${m}）`).join('')}`, ...e.details])
-  return [...(lines.length === 0 ? ['没有找到。'] : lines), ...tail([], r.problems)]
+  const all = [...entries.values()]
+  const named = (e: Entry) => `${e.key}${e.marks.map((m) => `（${m}）`).join('')}`
+  const printed = new Set<string>()
+  const lines = all.flatMap((e) => {
+    if (e.group === null) return [named(e), ...e.details.map((d) => `  ${d}`)]
+    if (printed.has(e.group)) return []
+    printed.add(e.group)
+    const members = all.filter((m) => m.group === e.group)
+    const own = members.filter((m) => m.path === null && m.details.length > 0).map((m) => `  ${m.details.join(' · ')}`)
+    return [e.group, ...own, ...members.filter((m) => m.path !== null).map((m) => `  ${[named(m), ...m.details].join('  ')}`)]
+  })
+  return [...(lines.length === 0 ? [none] : lines), ...tail([], r.problems)]
 }
 
+/** What plugins know comes first, the file's own facts last. A target with no file may still be something a plugin knows, such as a scene. */
 export function inspectText(target: string, r: InspectResult): string[] {
-  // A target with no file may still be something a plugin knows, such as a scene.
   const file = r.file
-    ? [`${r.file.path}${r.file.archived ? '（已归档）' : ''}`, `  ${r.file.size} 字节，改于 ${r.file.modifiedAt}`, `  指纹 ${r.file.fingerprint}`]
+    ? [`${r.file.path}${r.file.archived ? '（已归档）' : ''} · ${r.file.size} 字节，改于 ${minute(r.file.modifiedAt)} · 指纹 ${r.file.fingerprint.slice(0, 12)}…`]
     : r.sections.length > 0 ? [] : [`库里没有这个文件：${target}`]
-  return [...file, ...sectionsText(r.sections), ...tail([], r.problems)]
+  return [...sectionsText(r.sections), ...file, ...tail([], r.problems)]
 }
 
 export function sayText(r: SayResult): string[] {
@@ -53,6 +72,16 @@ export function sayText(r: SayResult): string[] {
 
 export function checkText(r: CheckResult): string[] {
   return [...(r.sections.length === 0 ? ['没有可报告的。'] : sectionsText(r.sections)), ...tail([], r.problems)]
+}
+
+/** start's three parts under their headings. A part with nothing prints nothing; the related part says when nothing is related. */
+export function startText(say: SayResult, check: CheckResult, find: FindResult): string[] {
+  const part = (heading: string, lines: string[]) => (lines.length > 0 ? [heading, ...lines] : [])
+  return [
+    ...part('【记下】', sayText(say)),
+    ...part('【库的变化与状况】', [...sectionsText(check.sections), ...tail([], check.problems)]),
+    ...part('【库里可能相关的】', findText(find, '库里没有和这件事相关的东西。')),
+  ]
 }
 
 export function archiveText(kind: 'archive' | 'unarchive', r: ArchiveResult): string[] {

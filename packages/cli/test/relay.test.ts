@@ -15,6 +15,9 @@ let dirB: string
 const A = (args: string[], input?: string) => sb.run(['@claude', ...args, '--session', 'sess-a'], { cwd: dirA, ...(input === undefined ? {} : { input }) })
 const B = (args: string[], input?: string) => sb.run(['@codex', ...args], { cwd: dirB, env: { PNEUMA_BASE_SESSION: 'sess-b' }, ...(input === undefined ? {} : { input }) })
 
+// Text answers show a long working directory as its last 45 characters after an ellipsis.
+const shown = (dir: string) => (dir.length > 48 ? `…${dir.slice(-45)}` : dir)
+
 const ok = (r: { code: number; stdout: string; stderr: string }) => {
   expect(r.code, `${r.stdout}\n${r.stderr}`).toBe(0)
   return r
@@ -57,7 +60,7 @@ beforeAll(() => {
 describe('session B, told nothing', () => {
   it('start tells it what session A did, where, why, and what it decided, and finds the related things', () => {
     const text = ok(B(['start', '把支付服务接进电子书小店'])).stdout
-    for (const readable of ['sess-a', 'claude-code', dirA, DOING, DECIDED, 'payments/comparison.md', 'payments/sources/stripe-pricing.html']) expect(text).toContain(readable)
+    for (const readable of ['sess-a', 'claude-code', shown(dirA), DOING, DECIDED, 'payments/comparison.md', 'payments/sources/stripe-pricing.html']) expect(text).toContain(readable)
 
     const json = B(['start', '把支付服务接进电子书小店', '--json']).json()
     const since = json.check.sections.find((s: any) => s.title === '自上次以来')
@@ -74,16 +77,17 @@ describe('session B, told nothing', () => {
     const r = ok(B(['find', '支付']))
     expect(r.stdout).toContain('payments/comparison.md')
     expect(r.stdout).toContain('场景 sess-a')
-    const line = r.stdout.split('\n').findIndex((l) => l === 'payments/comparison.md')
-    const detail = r.stdout.split('\n')[line + 1] ?? ''
-    for (const readable of ['做出来的', 'claude-code', 'sess-a', DOING]) expect(detail).toContain(readable)
+    const lines = r.stdout.split('\n')
+    expect(lines).toContain('  payments/comparison.md  做出来的')
+    const heading = lines.find((l) => l.startsWith('场景 sess-a')) ?? ''
+    for (const readable of ['claude-code', DOING]) expect(heading).toContain(readable)
     const made = B(['find', '--origin', 'made', '--json']).json().hits.map((h: any) => h.path)
     expect(made.sort()).toEqual(['payments/comparison.md', 'payments/recommendation.md'])
   })
 
   it('inspect gives who, when, where, what for, the basis and its state, what built on it, and the decision', () => {
     const text = ok(B(['inspect', 'payments/comparison.md'])).stdout
-    for (const readable of ['做出来的', 'claude-code', dirA, '场景 sess-a', `当时在做：${DOING}`, `库外：${OUTSIDE}`, '被依据：payments/recommendation.md', `决定：${DECIDED}`]) {
+    for (const readable of ['做出来的', 'claude-code', shown(dirA), '场景 sess-a', `当时在做：${DOING}`, `库外：${OUTSIDE}`, '被依据：payments/recommendation.md', `决定：${DECIDED}`]) {
       expect(text).toContain(readable)
     }
     for (const source of Object.keys(SOURCES)) expect(text).toMatch(new RegExp(`${source}\\s+一致`))
@@ -103,7 +107,7 @@ describe('session B, told nothing', () => {
 
   it('inspect of a scene gives its card', () => {
     const text = ok(B(['inspect', 'sess-a'])).stdout
-    for (const readable of ['claude-code', dirA, DOING, DECIDED, 'payments/recommendation.md']) expect(text).toContain(readable)
+    for (const readable of ['claude-code', shown(dirA), DOING, DECIDED, 'payments/recommendation.md']) expect(text).toContain(readable)
   })
 
   it('puts back a file made from A’s output; inspect leads step by step back to A’s brought-in sources', () => {
@@ -111,7 +115,7 @@ describe('session B, told nothing', () => {
     ok(B(['put', 'integration.md', '--to', 'payments/integration-notes.md', '--made', '--from', 'payments/recommendation.md']))
 
     const text = ok(B(['inspect', 'payments/integration-notes.md'])).stdout
-    for (const readable of ['做出来的', 'codex', dirB, '场景 sess-b']) expect(text).toContain(readable)
+    for (const readable of ['做出来的', 'codex', shown(dirB), '场景 sess-b']) expect(text).toContain(readable)
     expect(text).toMatch(/payments\/recommendation\.md\s+一致/)
 
     const own = B(['inspect', 'payments/integration-notes.md', '--json']).json().sections[0].data
@@ -134,6 +138,6 @@ describe('session B, told nothing', () => {
 
   it('A, coming back later, sees in start what B did since', () => {
     const text = ok(sb.run(['@claude', 'start', '看看支付接入的进展', '--session', 'sess-a2'], { cwd: dirA })).stdout
-    for (const readable of ['sess-b', 'codex', dirB, 'payments/integration-notes.md']) expect(text).toContain(readable)
+    for (const readable of ['sess-b', 'codex', shown(dirB), 'payments/integration-notes.md']) expect(text).toContain(readable)
   })
 })

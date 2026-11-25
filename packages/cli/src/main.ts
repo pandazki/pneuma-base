@@ -26,7 +26,7 @@ import {
   type PutRequest,
 } from '@pneuma-base/kernel'
 import { GLOBAL_FLAGS, UsageError, flagList, flagValue, hasFlag, ownFlags, parseArgs, type Parsed } from './args.js'
-import { archiveText, checkText, findText, inspectText, ownerText, putText, sayText } from './format.js'
+import { archiveText, checkText, findText, inspectText, ownerText, putText, sayText, startText } from './format.js'
 
 export type Io = {
   env: Env
@@ -155,9 +155,8 @@ const SPECS: Spec[] = [
       const sentence = args.join(' ')
       const say = await agentFace.say({ kind: 'doing', about: null, text: sentence, args: {} }, ctx)
       const check = await agentFace.check({ since: 'last', includeArchived: false }, ctx)
-      const find = await agentFace.find({ text: sentence, match: 'words', filters: {}, includeArchived: false }, ctx)
-      const lines = ['【记下】', ...sayText(say), '【库的变化与状况】', ...checkText(check), '【库里可能相关的】', ...findText(find)]
-      return { json: { say, check, find }, lines, exit: exitOf(say, check, find) }
+      const find = await agentFace.find({ text: sentence, match: 'words', filters: {}, includeArchived: false, skipOwnSession: true }, ctx)
+      return { json: { say, check, find }, lines: startText(say, check, find), exit: exitOf(say, check, find) }
     },
   },
   {
@@ -168,7 +167,7 @@ const SPECS: Spec[] = [
     run: async ({ args, parsed }, { ctx }) => {
       const filters = Object.fromEntries((['scene', 'origin'] as const).flatMap((name) => (hasFlag(parsed, name) ? [[name, flagValue(parsed, name) as string]] : [])))
       const text = args.length === 0 ? null : args.join(' ')
-      const r = await agentFace.find({ text, match: 'terms', filters, includeArchived: hasFlag(parsed, 'include-archived') }, ctx)
+      const r = await agentFace.find({ text, match: 'terms', filters, includeArchived: hasFlag(parsed, 'include-archived'), skipOwnSession: false }, ctx)
       return { json: r, lines: findText(r), exit: exitOf(r) }
     },
   },

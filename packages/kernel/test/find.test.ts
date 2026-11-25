@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { agentFace, searchTerms, type FindRequest } from '../src/index.js'
 import { fixture } from './support.js'
 
-const request = (text: string, match: FindRequest['match'], filters: Record<string, string> = {}): FindRequest => ({ text, match, filters, includeArchived: false })
+const request = (text: string, match: FindRequest['match'], filters: Record<string, string> = {}): FindRequest => ({ text, match, filters, includeArchived: false, skipOwnSession: false })
 const paths = (r: { hits: { path: string | null }[] }) => r.hits.map((h) => h.path)
 
 describe('searchTerms', () => {

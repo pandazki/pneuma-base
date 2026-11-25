@@ -106,9 +106,15 @@ export type ReviseOutcome = { outcome: 'held'; note: string | null } | { outcome
  * `match`: `terms` matches any of the text's terms as written; `words` takes the words of a
  * sentence, ranks by how many distinct words matched, and each answerer gives its best few.
  * `filters` are words of a plugin's vocabulary; the kernel lists no file by name when any is given.
+ * `skipOwnSession` leaves out what the caller's own session did, for start, which looks for what
+ * the library already had; the kernel's listing by name cannot tell and ignores it.
  */
-export type FindRequest = { text: string | null; match: 'terms' | 'words'; filters: Record<string, string>; includeArchived: boolean }
-export type Hit = { path: LibraryPath | null; title: string; by: PluginName | 'kernel'; detail: string | null }
+export type FindRequest = { text: string | null; match: 'terms' | 'words'; filters: Record<string, string>; includeArchived: boolean; skipOwnSession: boolean }
+/**
+ * `group` is a heading the answerer puts the hit under: hits with the same group are shown together
+ * under it, at the place of the first. A grouped hit without a path describes the group itself.
+ */
+export type Hit = { path: LibraryPath | null; title: string; by: PluginName | 'kernel'; group: string | null; detail: string | null }
 export type FindResult = { hits: Hit[]; problems: PluginProblem[] }
 
 export type InspectRequest = { target: string }

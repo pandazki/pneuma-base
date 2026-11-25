@@ -47,7 +47,7 @@ describe('a library with no plugin', () => {
     agent(['put', '-', '--to', 'notes/other.md', '--made'], { input: 'b' })
     const r = agent(['find', 'comparison'])
     expect(r.code, r.stderr).toBe(0)
-    expect(r.json()).toEqual({ hits: [{ path: 'payments/comparison.md', title: 'comparison.md', by: 'kernel', detail: null }], problems: [] })
+    expect(r.json()).toEqual({ hits: [{ path: 'payments/comparison.md', title: 'comparison.md', by: 'kernel', group: null, detail: null }], problems: [] })
     const config = agent(['find', 'config'])
     expect(config.json().hits).toEqual([])
   })

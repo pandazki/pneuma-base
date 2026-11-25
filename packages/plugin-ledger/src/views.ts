@@ -1,13 +1,47 @@
-// What the ledger answers: data for --json and short Chinese text for agents. Pure.
-// ledger-design.md section 7.
+// What the ledger answers: data for --json and short Chinese text for agents. Pure, except that
+// text reads the home directory to show it as ~. ledger-design.md section 7.
+import { homedir } from 'node:os'
 import { posix } from 'node:path'
 import { originalPath, regionOf, type Instant, type LibraryPath, type PluginHit, type PluginSection } from '@pneuma-base/kernel'
-import type { Fact, FactActor, ItemId, LedgerOrigin, SceneId } from './facts.js'
+import { ADHOC_SCENE, type Fact, type FactActor, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
 import { actorKey, isArchived, type ItemRecord, type Ledger, type Said, type SceneRecord, type Version } from './fold.js'
 import { marksOf, type ItemState, type Mark, type Standing } from './reconcile.js'
 
 export const when = (at: Instant) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`
 const who = (a: FactActor) => (a.kind === 'owner' ? '主人' : a.name)
+
+/** A working directory as text shows it: the home directory as ~, and only the last 45 characters after … when longer than 48. */
+function shortDir(dir: string, home = homedir()): string {
+  const tilde = dir === home ? '~' : dir.startsWith(`${home}/`) ? `~${dir.slice(home.length)}` : dir
+  const chars = [...tilde]
+  return chars.length > 48 ? `…${chars.slice(-45).join('')}` : tilde
+}
+
+/** A scene id as text shows it: its first 8 characters; an ad hoc scene's id whole. */
+const shortScene = (id: SceneId) => (id.startsWith(ADHOC_SCENE) ? id : id.slice(0, 8))
+
+const SCENE_PREFIX_MIN = 6
+
+/** The scenes an input names: the one with that id, else those whose id starts with it when it has at least 6 characters. */
+export function scenesNamed(ledger: Ledger, input: string): SceneRecord[] {
+  const exact = ledger.scenes.get(input as SceneId)
+  if (exact) return [exact]
+  return input.length < SCENE_PREFIX_MIN ? [] : [...ledger.scenes.values()].filter((s) => s.id.startsWith(input))
+}
+
+/** Who was in a scene, when it began, what it was doing. */
+function sceneParts(scene: SceneRecord): string[] {
+  const doing = [...new Set(scene.said.filter((s) => s.flavor === 'doing').map((s) => s.text))]
+  return [scene.actors.map(who).join('、'), when(scene.first), ...(doing.length ? [`在做：${doing.join('；')}`] : [])]
+}
+
+/** The heading find puts a scene's hits under. */
+const sceneLine = (scene: SceneRecord) => [`场景 ${shortScene(scene.id)}`, ...sceneParts(scene)].join(' · ')
+
+/** The answer to a scene id prefix that several scenes share: each with its whole id. */
+export function ambiguousText(prefix: string, scenes: SceneRecord[]): string {
+  return [`有 ${scenes.length} 个场景的编号以 ${prefix} 开头，写长一点再看：`, ...scenes.map((s) => `  ${[s.id, ...sceneParts(s)].join(' · ')}`)].join('\n')
+}
 
 export function originLabel(origin: LedgerOrigin): string {
   if (origin.kind === 'made') return '做出来的'
@@ -91,8 +125,8 @@ export function itemView(ledger: Ledger, item: ItemRecord, states: ReadonlyMap<I
 const SAID_LABEL: Record<Said['flavor'], string> = { doing: '在做', decided: '决定', note: '备注' }
 
 export function itemText(v: ItemView): string {
-  const where = v.entered.where?.cwd ? ` · 在 ${v.entered.where.cwd}` : ''
-  const lines = [`${originLabel(v.origin)} · ${who(v.entered.actor)} · ${when(v.entered.at)}${where} · 场景 ${v.entered.scene}`]
+  const where = v.entered.where?.cwd ? ` · 在 ${shortDir(v.entered.where.cwd)}` : ''
+  const lines = [`${originLabel(v.origin)} · ${who(v.entered.actor)} · ${when(v.entered.at)}${where} · 场景 ${shortScene(v.entered.scene)}`]
   if (v.origin.kind === 'brought' && v.origin.source) lines.push(`出处：${v.origin.source}`)
   if (v.doing) lines.push(`当时在做：${v.doing}`)
   if (v.basis.length > 0 || v.outside.length > 0) {
@@ -143,7 +177,7 @@ export function sceneView(ledger: Ledger, scene: SceneRecord): SceneView {
 }
 
 export function sceneText(v: SceneView): string {
-  const lines = [`场景 ${v.id}`, `${v.actors.map(who).join('、')} · ${when(v.first)} 到 ${when(v.last)}${v.cwds.length ? ` · 在 ${v.cwds.join('、')}` : ''}`]
+  const lines = [`场景 ${shortScene(v.id)}`, `${v.actors.map(who).join('、')} · ${when(v.first)} 到 ${when(v.last)}${v.cwds.length ? ` · 在 ${v.cwds.map((d) => shortDir(d)).join('、')}` : ''}`]
   for (const s of v.said) lines.push(`${SAID_LABEL[s.flavor]}：${s.text}${s.about !== null ? `（关于 ${s.about}）` : ''}`)
   if (v.items.length > 0) lines.push('条目：', ...v.items.map((i) => `  ${i.path}  ${i.enteredHere ? `在这里放入，${originLabel(i.origin)}` : '在这里改过或挪过'}`))
   return lines.join('\n')
@@ -153,17 +187,22 @@ export function sceneText(v: SceneView): string {
 
 export const SINCE_LIMIT = 20
 
+/** Owner commands that change neither the content nor the capabilities: recorded as facts, but no news to an agent. */
+export const QUIET_OWNER_COMMANDS: ReadonlySet<string> = new Set(['init', 'grant issue', 'grant revoke', 'skill install'])
+
+const isNews = (f: Fact) => f.kind !== 'owner.op' || !QUIET_OWNER_COMMANDS.has(f.command)
+
 export type SinceFact = { kind: Fact['kind']; at: Instant; actor: string; text: string }
 export type SinceView = { since: Instant | null; scenes: { scene: SceneId; actors: string[]; cwds: string[]; facts: SinceFact[] }[] }
 
 /**
  * What others did since this actor was last here: from its latest fact in another scene, else
- * from the start, at most the latest `SINCE_LIMIT` facts, by scene.
+ * from the start, at most the latest `SINCE_LIMIT` facts that are news, by scene.
  */
 export function sinceView(ledger: Ledger, me: FactActor, current: SceneId, since: Instant | 'last' | null): SinceView {
   const mine = actorKey(me)
   const start = since === null || since === 'last' ? (ledger.facts.filter((f) => actorKey(f.actor) === mine && f.scene !== current).at(-1)?.at ?? null) : since
-  const recent = ledger.facts.filter((f) => actorKey(f.actor) !== mine && f.scene !== current && (start === null || f.at > start)).slice(-SINCE_LIMIT)
+  const recent = ledger.facts.filter((f) => actorKey(f.actor) !== mine && f.scene !== current && (start === null || f.at > start) && isNews(f)).slice(-SINCE_LIMIT)
   const scenes = new Map<SceneId, SinceView['scenes'][number]>()
   for (const f of recent) {
     const entry = scenes.get(f.scene) ?? { scene: f.scene, actors: [], cwds: [], facts: [] }
@@ -205,7 +244,7 @@ function factLine(ledger: Ledger, f: Fact): string {
 export function sinceText(v: SinceView): string {
   const head = v.since === null ? '你第一次来，下面是最近的记录：' : `${when(v.since)} 以来：`
   const scenes = v.scenes.flatMap((s) => [
-    `场景 ${s.scene} · ${s.actors.join('、')}${s.cwds.length ? ` · 在 ${s.cwds.join('、')}` : ''}`,
+    `场景 ${shortScene(s.scene)} · ${s.actors.join('、')}${s.cwds.length ? ` · 在 ${s.cwds.map((d) => shortDir(d)).join('、')}` : ''}`,
     ...s.facts.map((f) => `  ${f.text}`),
   ])
   return [head, ...scenes].join('\n')
@@ -261,49 +300,51 @@ export function standingSections(ledger: Ledger, standing: Standing, includeArch
 
 export type Candidate = { hit: PluginHit; haystack: string }
 
+/** An item, under the heading of the scene it was entered in. */
 export function itemHit(ledger: Ledger, item: ItemRecord): PluginHit {
-  const { entered } = item
-  const doing = doingAt(ledger.scenes.get(entered.scene), entered.at)
-  const parts = [originLabel(item.origin), who(entered.actor), when(entered.at), `场景 ${entered.scene}`, ...(doing ? [`在做：${doing}`] : []), ...(isArchived(item) ? ['已归档'] : [])]
-  return { path: item.path, title: posix.basename(item.path), detail: parts.join(' · ') }
+  const scene = ledger.scenes.get(item.entered.scene)
+  return { path: item.path, title: posix.basename(item.path), group: scene ? sceneLine(scene) : null, detail: originLabel(item.origin) }
 }
+
+/** The parts of a find request the ledger reads, and the scene to leave out: start's own, or null. */
+export type FindScope = { filters: Record<string, string>; includeArchived: boolean; skip: SceneId | null }
 
 /**
  * The items and scenes find looks at, with the text each is matched against. Items: the path, what
  * was said about it, where it was brought from, and its text `content` when given. Scenes: what was
- * said in them. The caller's own scene is left out.
+ * said in them. A scene's own hit is its group's detail: where it was and what it decided.
  */
-export function findCandidates(
-  ledger: Ledger,
-  opts: { filters: Record<string, string>; includeArchived: boolean; current: SceneId; content: ReadonlyMap<ItemId, string> },
-): Candidate[] {
+export function findCandidates(ledger: Ledger, opts: FindScope & { content: ReadonlyMap<ItemId, string> }): Candidate[] {
   const { scene: sceneFilter, origin: originFilter } = opts.filters
+  const named = sceneFilter === undefined ? null : scenesNamed(ledger, sceneFilter)
   const items = findableItems(ledger, opts).map((item): Candidate => {
     const shown = regionOf(item.path) === 'archive' ? (originalPath(item.path) ?? item.path) : item.path
     const source = item.origin.kind === 'brought' ? [item.origin.source ?? '', item.origin.by ?? ''] : []
     const haystack = [shown, ...item.said.map((s) => s.text), ...source, opts.content.get(item.id) ?? ''].join('\n').toLowerCase()
     return { hit: itemHit(ledger, item), haystack }
   })
-  const scenes = originFilter !== undefined ? [] : [...ledger.scenes.values()].filter((s) => s.id !== opts.current && (sceneFilter === undefined || s.id === sceneFilter) && s.said.length > 0)
+  const scenes = originFilter !== undefined ? [] : (named ?? [...ledger.scenes.values()]).filter((s) => s.id !== opts.skip && s.said.length > 0)
   return [
     ...items,
     ...scenes.map((s): Candidate => {
-      const doing = s.said.filter((x) => x.flavor === 'doing').map((x) => x.text)
       const decided = s.said.filter((x) => x.flavor === 'decided').map((x) => x.text)
-      const parts = [s.actors.map(who).join('、'), when(s.first), ...(s.cwds.length ? [`在 ${s.cwds.join('、')}`] : []), ...(doing.length ? [`在做：${doing.join('；')}`] : []), ...(decided.length ? [`决定：${decided.join('；')}`] : [])]
-      return { hit: { path: null, title: `场景 ${s.id}`, detail: parts.join(' · ') }, haystack: s.said.map((x) => x.text).join('\n').toLowerCase() }
+      const parts = [...(s.cwds.length ? [`在 ${s.cwds.map((d) => shortDir(d)).join('、')}`] : []), ...(decided.length ? [`决定：${decided.join('；')}`] : [])]
+      const hit: PluginHit = { path: null, title: `场景 ${s.id}`, group: sceneLine(s), detail: parts.length ? parts.join(' · ') : null }
+      return { hit, haystack: s.said.map((x) => x.text).join('\n').toLowerCase() }
     }),
   ]
 }
 
-/** The items a find with these filters may give. */
-export function findableItems(ledger: Ledger, opts: { filters: Record<string, string>; includeArchived: boolean }): ItemRecord[] {
+/** The items a find with these filters may give. A scene filter takes a scene id or a prefix of one, as inspect does. */
+export function findableItems(ledger: Ledger, opts: FindScope): ItemRecord[] {
   const { scene, origin } = opts.filters
+  const named = scene === undefined ? null : scenesNamed(ledger, scene)
   return [...ledger.items.values()].filter(
     (item) =>
       !item.removed &&
+      item.entered.scene !== opts.skip &&
       (opts.includeArchived || !isArchived(item)) &&
       (origin === undefined || item.origin.kind === origin) &&
-      (scene === undefined || ledger.scenes.get(scene as SceneId)?.items.includes(item.id) === true),
+      (named === null || named.some((s) => s.items.includes(item.id))),
   )
 }
