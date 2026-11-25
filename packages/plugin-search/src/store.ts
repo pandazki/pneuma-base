@@ -8,9 +8,27 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
+import type { DatabaseSync } from 'node:sqlite'
 import { regionOf, type Instant, type LibraryPath } from '@pneuma-base/kernel'
 import type { FileKey, Stamp } from './fresh.js'
+
+/**
+ * `node:sqlite`, loaded when an index is first opened. Node versions that still mark it experimental
+ * warn on stderr at load; an agent that sees stderr noise on every command starts discarding stderr,
+ * and with it the refusals it needs to read. Only that one warning is dropped.
+ */
+function sqlite(): typeof import('node:sqlite') {
+  const emit = process.emitWarning
+  process.emitWarning = ((warning: string | Error, ...rest: unknown[]) => {
+    const text = typeof warning === 'string' ? warning : warning.message
+    if (!text.includes('SQLite is an experimental feature')) (emit as (...a: unknown[]) => void).call(process, warning, ...rest)
+  }) as typeof process.emitWarning
+  try {
+    return process.getBuiltinModule('node:sqlite')
+  } finally {
+    process.emitWarning = emit
+  }
+}
 
 const SCHEMA = '1'
 const FILE = 'index.sqlite'
@@ -84,7 +102,7 @@ export class SearchIndex {
     const file = join(cacheDir, FILE)
     if (!existsSync(file)) return null
     try {
-      const index = new SearchIndex(new DatabaseSync(file))
+      const index = new SearchIndex(new (sqlite().DatabaseSync)(file))
       if (index.schema() === SCHEMA) return index
       index.close()
     } catch {
@@ -95,7 +113,7 @@ export class SearchIndex {
 
   /** The index in `file` with this schema, its tables made when the file is empty. Throws for anything else. */
   private static ready(file: string, now: Instant): SearchIndex {
-    const index = new SearchIndex(new DatabaseSync(file))
+    const index = new SearchIndex(new (sqlite().DatabaseSync)(file))
     try {
       if (index.schema() !== SCHEMA) {
         index.transaction(() => {

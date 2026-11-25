@@ -1,5 +1,13 @@
 #!/usr/bin/env node
-import { main, processIo } from './main.js'
-import { builtinPlugins } from './plugins.js'
+import { meetsNodeFloor, NODE_FLOOR } from './node-floor.js'
+
+if (!meetsNodeFloor(process.versions.node)) {
+  process.stderr.write(`pneuma-base 要 Node ${NODE_FLOOR} 以上，现在是 ${process.versions.node}。\n`)
+  process.exit(1)
+}
+
+// Loaded after the check, so an older Node gets the sentence above and not an error from deep in a module.
+const { main, processIo } = await import('./main.js')
+const { builtinPlugins } = await import('./plugins.js')
 
 process.exitCode = await main(process.argv.slice(2), builtinPlugins, processIo())

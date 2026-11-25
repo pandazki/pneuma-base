@@ -4,7 +4,7 @@
 
 ## 主人怎么开始
 
-要 Node 26 以上和 pnpm。还没发布到 npm，先在这个仓库里构建，再让 `pneuma-base` 指向构建出的命令：
+要 Node 22.18 以上和 pnpm。还没发布到 npm，先在这个仓库里构建，再让 `pneuma-base` 指向构建出的命令：
 
 ```sh
 pnpm install
@@ -38,12 +38,14 @@ alias pneuma-base="node $PWD/packages/cli/dist/bin.js"
 
    ```sh
    pneuma-base grant issue claude --agent claude-code --library ~/base
-   pneuma-base skill install claude --agent claude --dir ~/.claude/skills
+   pneuma-base skill install claude --dir ~/.claude/skills
    pneuma-base grant issue codex --agent codex --library ~/base
-   pneuma-base skill install codex --agent codex --dir ~/.agents/skills
+   pneuma-base skill install codex --dir ~/.agents/skills
    ```
 
    Codex 在沙箱里运行，启动时要把库加进可写目录：`codex --add-dir ~/base`。
+
+   别的 agent 产品一样：发一份授权，再把技能写进那个产品读技能的目录。几个产品共用一个技能目录时只装一份，agent 拿哪份授权，账上记的就是哪个名字。
 
 4. **看和管。** 在浏览器里打开管理界面：
 

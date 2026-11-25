@@ -147,7 +147,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
   {
     name: 'skill install',
     summary: '为一个 agent 产品写一份指向说明的技能',
-    usage: '<授权名> --agent claude|codex --dir <目录>',
+    usage: '<授权名> [--agent <给谁>] --dir <目录>',
     destructive: false,
     ownerOnly: false,
     /** Writes `<dir>/pneuma-base-<grant>/SKILL.md`. A relative `--dir` is taken from the caller's working directory; `~` is the home directory. */
@@ -155,19 +155,19 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       const a = read('skill install', args, 1, ['agent', 'dir'])
       if (typeof a === 'string') return usage(a)
       const grantName = a.positional[0] as string
-      const agent = a.value('agent')
       const dir = a.value('dir')
-      if (agent !== 'claude' && agent !== 'codex') return usage('要写 --agent claude 或 --agent codex。')
       if (dir === null) return usage('要写 --dir <放技能的目录>。')
       const { library } = call.ctx
       const grant = library.config.grants.find((g) => g.name === grantName)
       if (!grant) return refused('no-such-grant', `这个库没有叫 ${grantName} 的授权`)
+      const agent = (a.value('agent') ?? grant.agent).trim()
+      if (agent === '') return usage('要写 --agent <给谁>。')
       const typed = dir === '~' || dir.startsWith('~/') ? join(homedir(), dir.slice(1)) : dir
       const folder = join(resolve(call.ctx.session.cwd, typed), `pneuma-base-${grant.name}`)
       const file = join(folder, 'SKILL.md')
       await writeAtomic(file, skillText(grant.name, library.root), folder)
       const text = `已为 ${agent} 写好技能：${file}`
-      if (agent === 'claude') return done(text, { file })
+      if (agent !== 'codex' && !agent.startsWith('codex-')) return done(text, { file })
       const hint = codexHint(library.root)
       return done(`${text}\n${hint}`, { file, hint })
     },
