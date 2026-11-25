@@ -69,8 +69,10 @@ describe('dependency direction', () => {
     expect(Object.keys(pkg.devDependencies ?? {}).filter((d) => d.startsWith('@pneuma-base/'))).toEqual([])
   })
 
-  it('the kernel package declares no dependency at all', () => {
+  it('the kernel package depends on the sdk and nothing else; the sdk on nothing', () => {
     const pkg = JSON.parse(readFileSync(join(root, 'packages/kernel/package.json'), 'utf8'))
-    expect(pkg.dependencies ?? {}).toEqual({})
+    expect(Object.keys(pkg.dependencies ?? {})).toEqual(['@pneuma-base/sdk'])
+    const sdk = JSON.parse(readFileSync(join(root, 'packages/sdk/package.json'), 'utf8'))
+    expect(sdk.dependencies ?? {}).toEqual({})
   })
 })

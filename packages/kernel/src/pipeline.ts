@@ -18,7 +18,7 @@ import type {
   PluginProblem,
   Session,
   Verb,
-} from './types.js'
+} from '@pneuma-base/sdk'
 
 export function makeContext(library: Library, actor: Actor, session: Session, home: string, now: Instant = new Date().toISOString() as Instant): Context {
   return { library, actor, session, now, home }

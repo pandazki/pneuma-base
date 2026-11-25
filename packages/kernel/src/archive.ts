@@ -3,7 +3,7 @@ import { moveInto, replaceWith } from './files.js'
 import { abs, archivedPath, originalPath, parseLibraryPath, regionOf, scratchDir, withSuffix } from './paths.js'
 import { eachPlugin } from './pipeline.js'
 import { enclosingBundle, fingerprintOf, kindAt } from './things.js'
-import type { ArchiveRefusal, ArchiveRequest, ArchiveResult, Context, LibraryPath } from './types.js'
+import type { ArchiveRefusal, ArchiveRequest, ArchiveResult, Context, LibraryPath } from '@pneuma-base/sdk'
 
 /** Where a path's thing is: in neither area, only the main area, only `_archive/`, or both. */
 type ArchiveState = 'missing' | 'main' | 'archived' | 'both'

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { assembleDescription } from './cognition.js'
 import { writeAtomic } from './files.js'
 import { DESCRIPTION_FILE, KERNEL_DIR, pluginDir, scratchDir } from './paths.js'
-import type { Grant, GrantId, LibraryConfig, Library, LibraryPath, Plugin, PluginName, PluginTable } from './types.js'
+import type { Grant, GrantId, LibraryConfig, Library, LibraryPath, Plugin, PluginName, PluginTable } from '@pneuma-base/sdk'
 
 export const CONFIG_FILE = join(KERNEL_DIR, 'config.json')
 

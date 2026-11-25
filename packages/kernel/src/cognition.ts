@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import type { Library } from './types.js'
+import type { Library } from '@pneuma-base/sdk'
 
 // The texts live in packages/kernel/cognition/, next to src/ and dist/.
 const COGNITION = new URL('../cognition/', import.meta.url)

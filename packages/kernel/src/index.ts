@@ -1,4 +1,4 @@
-export * from './types.js'
+export * from '@pneuma-base/sdk'
 export { agentFace, libraryFiles, rankHits, searchTerms, SENTENCE_HITS } from './agent.js'
 export { ownerFace, initLibrary, type OwnerCall, type OwnerCommandInfo } from './owner.js'
 export { viewerFace, type ViewerCall } from './viewer.js'

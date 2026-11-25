@@ -17,7 +17,7 @@ import type {
   PutRequest,
   PutResult,
   ThingKind,
-} from './types.js'
+} from '@pneuma-base/sdk'
 
 /**
  * What the target path holds, against the incoming thing: nothing; a thing of the same kind with

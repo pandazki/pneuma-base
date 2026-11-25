@@ -11,7 +11,7 @@ import { GRANT_NAME, readGrantFile, removeGrantFile, writeGrantFile } from './gr
 import { saveConfig } from './library.js'
 import type { OwnerCall } from './owner.js'
 import { ARCHIVE_DIR, parseLibraryPath, regionOf } from './paths.js'
-import type { Grant, GrantId, Library, LibraryPath, OwnerAnswer, OwnerArgs, PluginName } from './types.js'
+import type { Grant, GrantId, Library, LibraryPath, OwnerAnswer, OwnerArgs, PluginName } from '@pneuma-base/sdk'
 
 export type Outcome = { answer: OwnerAnswer; library?: Library }
 

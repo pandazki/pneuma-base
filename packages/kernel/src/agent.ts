@@ -22,7 +22,7 @@ import type {
   SayRequest,
   SayResult,
   Section,
-} from './types.js'
+} from '@pneuma-base/sdk'
 
 export const NO_HEARER = '这个库没配能记下这句话的插件'
 

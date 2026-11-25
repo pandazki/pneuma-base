@@ -27,7 +27,7 @@ import type {
   ViewList,
   ViewRequest,
   ViewResult,
-} from './types.js'
+} from '@pneuma-base/sdk'
 
 /** What showing a view needs besides the request: the operation's context and the plugins this pneuma-base knows. */
 export type ViewerCall = { ctx: Context; table: PluginTable }

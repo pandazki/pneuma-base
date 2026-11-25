@@ -5,7 +5,7 @@ import { copyFile, mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fingerprintOfFile } from './files.js'
 import { abs } from './paths.js'
-import type { Fingerprint, Instant, LibraryPath, ThingKind } from './types.js'
+import type { Fingerprint, Instant, LibraryPath, ThingKind } from '@pneuma-base/sdk'
 
 /** The file that makes a directory one thing. */
 export const BUNDLE_MARKER = '.pneuma-item'

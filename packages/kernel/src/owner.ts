@@ -5,7 +5,7 @@ import { CONFIG_FILE, newConfig, saveConfig } from './library.js'
 import { KERNEL_COMMANDS, type KernelCommand, type Outcome } from './owner-commands.js'
 import { makeContext, performOwner, pluginContext } from './pipeline.js'
 import { agentSessionSign, type Env } from './session.js'
-import type { Actor, Context, OwnerArgs, OwnerCommand, OwnerResult, Plugin, PluginName, PluginTable, Session } from './types.js'
+import type { Actor, Context, OwnerArgs, OwnerCommand, OwnerResult, Plugin, PluginName, PluginTable, Session } from '@pneuma-base/sdk'
 
 /** What every owner command needs besides its own arguments. This machine's home is `ctx.home`. */
 export type OwnerCall = {

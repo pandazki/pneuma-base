@@ -1,7 +1,7 @@
 import { realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, posix, relative, sep } from 'node:path'
-import type { LibraryPath, PluginName } from './types.js'
+import type { LibraryPath, PluginName } from '@pneuma-base/sdk'
 
 export const KERNEL_DIR = '.pneuma-base'
 export const ARCHIVE_DIR = '_archive'
