@@ -1,4 +1,5 @@
 // The plugin contract's shapes, which a plugin and the kernel exchange. ARCHITECTURE.md sections 4 and 5.
+import type { IconName } from './icons.js'
 
 // Semantic primitives. Parsed once at the kernel's boundary.
 export type LibraryPath = string & { readonly __brand: 'LibraryPath' } // library-relative, '/'-separated
@@ -64,8 +65,12 @@ export interface PluginSecrets {
   get(name: string): Promise<string | null>
 }
 
-/** A credential a plugin reads, so the configuration page can show whether it is set and offer to set it. */
-export type SecretDecl = { name: string; description: string }
+/**
+ * A credential a plugin reads, so the configuration page can show whether it is set and offer to set
+ * it. `optional`: the plugin works without it, such as a token only some servers ask for; the page,
+ * `secret list` and a deploy target's `target set` then do not ask for it as missing.
+ */
+export type SecretDecl = { name: string; description: string; optional?: boolean }
 
 /** Where a library path lies: the content anyone may arrange, the archive, or the kernel's own files. */
 export type Region = 'content' | 'archive' | 'kernel'
@@ -408,11 +413,11 @@ export type Tag = { text: string; tone: Tone }
 export type Link = { view: string; params: Record<string, string>; target: 'main' | 'panel' }
 /**
  * `at`: the cell is a moment. The page shows it in the viewer's local time, short, with the whole
- * time on hover; `text` is what a reader without a clock shows. `icon`: a lucide icon name shown
+ * time on hover; `text` is what a reader without a clock shows. `icon`: one of `ICON_NAMES`, shown
  * before the text, such as `folder`, `file` or `package` for a bundle. `href`: an outside address the
  * cell opens in a new tab; only http and https are links. `copy`: a button that copies `href`, else `text`.
  */
-export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; link?: Link; at?: Instant; icon?: string; href?: string; copy?: true }
+export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; link?: Link; at?: Instant; icon?: IconName; href?: string; copy?: true }
 
 /**
  * What a button does: one verb of the agent face, or one owner command. Strings may hold `{input}`,
@@ -447,13 +452,14 @@ export type TableRow = { key: string; cells: Record<string, Cell>; link: Link | 
 export type TableColumn = { key: string; label: string; optional?: boolean }
 
 /**
- * A section with `collapse` can be folded by the viewer; the value is how it starts. `embed`: an
+ * A section with `collapse` can be folded by the viewer; the value is how it starts. A section of the
+ * item panel carries `plugin`, the plugin whose part it is, stamped by the kernel. `embed`: an
  * outside http or https page in a sandboxed frame. `custom`: a page of the plugin's own, `entry`
  * relative to its `ui` directory, sent `data` and the names of `actions`, which it may ask to run;
  * `plugin` is stamped by the kernel.
  */
 export type Block =
-  | { kind: 'section'; title: string; note: string | null; count: number | null; blocks: Block[]; actions: Action[]; collapse?: 'open' | 'closed' }
+  | { kind: 'section'; title: string; note: string | null; count: number | null; blocks: Block[]; actions: Action[]; collapse?: 'open' | 'closed'; plugin?: PluginName }
   | { kind: 'table'; columns: TableColumn[]; rows: TableRow[]; empty: string }
   | { kind: 'fields'; fields: { label: string; value: Cell }[] }
   | { kind: 'list'; items: { cell: Cell; note: string | null; actions: Action[] }[] }
@@ -466,8 +472,8 @@ export type Block =
   | { kind: 'custom'; entry: string; height: number; data: unknown; actions: Record<string, Action>; plugin?: PluginName }
 
 export type ViewFilter = { name: string; label: string; options: { value: string; label: string }[]; default: string }
-/** `icon` is a lucide icon name. A view with `nav` false is reached only through links, as a detail. */
-export type ViewDecl = { id: string; title: string; icon: string; nav: boolean; filters: ViewFilter[] }
+/** `icon` is one of `ICON_NAMES`. A view with `nav` false is reached only through links, as a detail. */
+export type ViewDecl = { id: string; title: string; icon: IconName; nav: boolean; filters: ViewFilter[] }
 export type ViewRequest = { view: string; params: Record<string, string> }
 /** `refresh`: seconds after which the page asks again, for a view showing state from outside the library; at least 5. */
 export type ViewAnswer = { title: string; subtitle: string | null; blocks: Block[]; refresh?: number }

@@ -2,6 +2,8 @@
 // real viewer's server.
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdir, rm } from 'node:fs/promises'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { join, resolve } from 'node:path'
 import type { Action, ActionInput, Call, ViewResult } from '../types.js'
 import { DEFAULT_TIMEOUT, cleanEnv, findCli, runCli, tempDir, type CallOptions, type Result } from './run.js'
@@ -11,7 +13,11 @@ export type SandboxOptions = {
   plugins?: readonly string[]
   /** Built-in plugins to add to the library besides those `init` adds. */
   builtins?: readonly string[]
-  /** Start from `init --bare`: no plugin but those given here. */
+  /**
+   * Start from `init --bare`: no plugin but those given here. With no plugin that has `revise`, a put
+   * onto a path that holds different content is refused (`would-overwrite`); with no plugin for a
+   * kind, `say` is not heard; find lists by name only, and inspect and check give no sections.
+   */
   bare?: boolean
   /** Added to the environment of every call, such as the address of a test server. */
   env?: Record<string, string>
@@ -29,8 +35,11 @@ export interface Viewer {
   state(): Promise<{ views: { id: string; title: string }[]; problems: { plugin: string; message: string }[]; library: { root: string; id: string } | null }>
   /** `GET /api/view`: one view with its parameters. */
   view(id: string, params?: Record<string, string>): Promise<ViewResult>
-  /** The item panel of one library path. */
-  item(path: string): Promise<ViewResult>
+  /**
+   * The item panel of one library path. With `plugin`, only that plugin's section of it: the
+   * section's title and blocks, and that plugin's problems; no blocks when it gave no section.
+   */
+  item(path: string, options?: { plugin?: string }): Promise<ViewResult>
   /**
    * Runs an action of a block as a person who fills its inputs with `values` and confirms: its call,
    * with every `{input}` replaced as the page replaces it, sent to `POST /api/call`.
@@ -61,9 +70,18 @@ export interface Sandbox {
   agent(name: string, session: string, args: readonly string[], opts?: CallOptions): Promise<Result>
   /** Starts `pneuma-base view <library> --no-open`; `cleanup` stops it if the test did not. */
   viewer(): Promise<Viewer>
-  /** Stops every viewer it started and removes its temporary directories. */
+  /**
+   * Starts a stand-in for an outside HTTP service, such as the one a deploy target publishes to, and
+   * answers its address, `http://127.0.0.1:<port>`. Each request reaches `handler` whole (method, URL,
+   * headers, body), and what it answers goes back; a handler that throws answers 500. `cleanup` stops it.
+   */
+  serve(handler: Handler): Promise<string>
+  /** Stops every viewer and stand-in it started and removes its temporary directories. */
   cleanup(): Promise<void>
 }
+
+/** What a stand-in answers to one request, as a `fetch` handler does. */
+export type Handler = (request: Request) => Response | Promise<Response>
 
 const failed = (what: string, r: Result) => new Error(`${what}没有做成（退出码 ${r.code}）：\n${r.stdout}${r.stderr}`)
 
@@ -77,6 +95,7 @@ export async function sandbox(options: SandboxOptions = {}): Promise<Sandbox> {
   await Promise.all([mkdir(home), mkdir(work)])
   const env = cleanEnv(home, options.env)
   const viewers: Viewer[] = []
+  const standIns: (() => Promise<void>)[] = []
 
   const run = (args: readonly string[], opts: CallOptions = {}) =>
     runCli(cli, args, { cwd: opts.cwd ?? work, env: { ...env, ...opts.env }, timeout, ...(opts.input === undefined ? {} : { input: opts.input }) })
@@ -101,8 +120,13 @@ export async function sandbox(options: SandboxOptions = {}): Promise<Sandbox> {
       viewers.push(v)
       return v
     },
+    async serve(handler) {
+      const { url, stop } = await standIn(handler)
+      standIns.push(stop)
+      return url
+    },
     async cleanup() {
-      await Promise.all(viewers.map((v) => v.stop()))
+      await Promise.all([...viewers.map((v) => v.stop()), ...standIns.map((stop) => stop())])
       await rm(root, { recursive: true, force: true })
     },
   }
@@ -120,6 +144,35 @@ export async function sandbox(options: SandboxOptions = {}): Promise<Sandbox> {
     throw error
   }
   return sb
+}
+
+// ---- a stand-in for an outside service ----
+
+async function standIn(handler: Handler): Promise<{ url: string; stop: () => Promise<void> }> {
+  let origin = ''
+  const server = createServer(async (req, res) => {
+    try {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(chunk as Buffer)
+      const headers = new Headers()
+      for (const [name, value] of Object.entries(req.headers)) for (const one of [value ?? []].flat()) headers.append(name, one)
+      const body = chunks.length === 0 ? null : new Uint8Array(Buffer.concat(chunks))
+      const answer = await handler(new Request(new URL(req.url ?? '/', origin), { method: req.method ?? 'GET', headers, body }))
+      res.writeHead(answer.status, Object.fromEntries(answer.headers))
+      res.end(Buffer.from(await answer.arrayBuffer()))
+    } catch (error) {
+      res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })
+      res.end(`替身出错了：${error instanceof Error ? error.message : String(error)}`)
+    }
+  })
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done))
+  origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const stop = () =>
+    new Promise<void>((done) => {
+      server.close(() => done())
+      server.closeAllConnections()
+    })
+  return { url: origin, stop }
 }
 
 // ---- the viewer ----
@@ -160,7 +213,14 @@ async function startViewer(cli: string, library: string, opts: { cwd: string; en
     url: url.href,
     state: () => json('/api/state', {}),
     view: (id, params = {}) => json('/api/view', { ...params, view: id }),
-    item: (path) => json('/api/view', { view: 'item', path }),
+    async item(path, options = {}) {
+      const whole = await json<ViewResult>('/api/view', { view: 'item', path })
+      const { plugin } = options
+      if (plugin === undefined || whole.outcome !== 'shown') return whole
+      const section = whole.blocks.find((b) => b.kind === 'section' && b.plugin === plugin)
+      const problems = whole.problems.filter((p) => p.plugin === plugin)
+      return section?.kind === 'section' ? { ...whole, title: section.title, blocks: section.blocks, problems } : { ...whole, blocks: [], problems }
+    },
     async act(action, values = {}) {
       const call = fill(action.call, { ...initial(action.inputs), ...values }, action.inputs)
       const reply = await fetch(new URL('/api/call', url.origin), {

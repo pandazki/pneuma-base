@@ -24,6 +24,7 @@ import {
   type LibraryPath,
   type Link,
   type Plugin,
+  type PluginName,
   type PluginProblem,
   type PluginTable,
   type TableRow,
@@ -196,7 +197,7 @@ async function secretsSection(ctx: Context): Promise<Block | null> {
           plugin: { text: plugin.name, mono: true },
           name: { text: secret.name, mono: true },
           description: { text: secret.description },
-          state: { text: '', tag: has ? { text: '已设', tone: 'good' } : { text: '没设', tone: 'warn' } },
+          state: { text: '', tag: has ? { text: '已设', tone: 'good' } : secret.optional === true ? { text: '没设（可选）', tone: 'neutral' } : { text: '没设', tone: 'warn' } },
         },
         link: null,
         actions: [
@@ -320,7 +321,8 @@ async function takenBack(root: string, target: string) {
 const answered = (a: unknown): a is { title: string; blocks: Block[] } =>
   typeof a === 'object' && a !== null && typeof (a as { title?: unknown }).title === 'string' && Array.isArray((a as { blocks?: unknown }).blocks)
 
-const section = (title: string, blocks: Block[]): Block => ({ kind: 'section', title, note: null, count: null, blocks, actions: [] })
+/** A section of the item panel; a plugin's part is stamped with the plugin's name. */
+const section = (title: string, blocks: Block[], plugin?: PluginName): Block => ({ kind: 'section', title, note: null, count: null, blocks, actions: [], ...(plugin === undefined ? {} : { plugin }) })
 
 /** Each installed plugin's section about `path`, in configuration order. A plugin that fails gets a section that says so (K8). */
 async function pluginSections(ctx: Context, path: LibraryPath): Promise<{ blocks: Block[]; problems: PluginProblem[] }> {
@@ -333,12 +335,12 @@ async function pluginSections(ctx: Context, path: LibraryPath): Promise<{ blocks
       if (answer === null) continue
       if (!answered(answer)) throw new Error('onItemView answered something that is not a section')
       const checked = checkBlocks(answer.blocks, plugin)
-      blocks.push(section(answer.title, checked.blocks))
+      blocks.push(section(answer.title, checked.blocks, plugin.name))
       problems.push(...checked.problems)
     } catch (error) {
       const message = messageOf(error)
       problems.push({ plugin: plugin.name, message })
-      blocks.push(section(`插件 ${plugin.name}`, [{ kind: 'empty', title: `插件 ${plugin.name} 出错了，没能给出它知道的`, hint: message }]))
+      blocks.push(section(`插件 ${plugin.name}`, [{ kind: 'empty', title: `插件 ${plugin.name} 出错了，没能给出它知道的`, hint: message }], plugin.name))
     }
   }
   return { blocks, problems }
@@ -374,7 +376,7 @@ async function thingSections(root: string, facts: FileFacts, bundle: LibraryPath
     kind: 'fields',
     fields: [
       { label: '路径', value: { text: facts.path, mono: true, ...(facts.archived ? { tag: { text: '已归档', tone: 'neutral' as const } } : {}) } },
-      ...(bundle !== null ? [{ label: '在', value: { text: bundle, mono: true, icon: 'package', link: itemLink(bundle) } }] : []),
+      ...(bundle !== null ? [{ label: '在', value: { text: bundle, mono: true, icon: 'package' as const, link: itemLink(bundle) } }] : []),
       { label: '种类', value: { text: facts.kind === 'bundle' ? '一样东西（带标记的目录）' : '文件' } },
       ...(facts.kind === 'bundle' ? [{ label: '文件数', value: { text: String(facts.files) } }] : []),
       { label: '大小', value: { text: sizeText(facts.size) } },

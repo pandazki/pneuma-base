@@ -4,7 +4,7 @@
 import { cp, mkdir, rename, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { defineTarget, type Target } from '@pneuma-base/sdk/kit'
+import { defineTarget, STATUS, switchAction, type Target } from '@pneuma-base/sdk/kit'
 
 export const localTarget = defineTarget({
   kind: 'local',
@@ -19,7 +19,7 @@ export const localTarget = defineTarget({
   },
 
   /** A stored configuration, parsed at the boundary, opened for one hook or command. */
-  open(config): Target {
+  open(config, env): Target {
     if (typeof config.to !== 'string') throw new Error('本地目录的配置要写 to')
     const to = config.to
     return {
@@ -38,14 +38,22 @@ export const localTarget = defineTarget({
         await rm(join(to, site), { recursive: true, force: true })
       },
       view: {
-        /** A panel of the plugin's own after the kit's sections on its page. */
+        /**
+         * A panel of the plugin's own after the kit's sections on its page: each declared thing with the
+         * kit's state tag and switch, so the panel says and does what the table does.
+         */
         page: (all) => [
           {
             kind: 'custom',
             entry: 'panel.html',
             height: 72,
-            data: { online: all.filter((l) => l.status === 'online').length, declared: all.length, to },
-            actions: {},
+            data: { to, online: all.filter((l) => l.status === 'online').length, things: all.map((l) => ({ key: l.thing.id, path: l.thing.path, state: STATUS[l.status] })) },
+            actions: Object.fromEntries(
+              all.flatMap((l) => {
+                const action = switchAction(env.plugin, l)
+                return action === null ? [] : [[l.thing.id, action]]
+              }),
+            ),
           },
         ],
       },

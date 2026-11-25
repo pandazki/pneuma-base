@@ -2,13 +2,14 @@
 // owner's switch decides whether it is online, and what is switched on follows the library's
 // current content. README.md in this folder.
 import { CONTRACT, pluginName } from '../../index.js'
+import type { IconName } from '../../icons.js'
 import type { Plugin, SayAnswer, SecretDecl } from '../../types.js'
 import { commands } from './commands.js'
 import { newThingId } from './facts.js'
 import { declaredAt, look, looks, record, settle, thingPath, withRun, type Kit } from './reconcile.js'
 import type { TargetAdapter } from './target.js'
 import { cognitionText, followed, lookText, skippedText, staysOnline, unsettledText } from './words.js'
-import { itemSection, sitesPage, sitesView, viewDecls } from './views.js'
+import { itemSection, sitesPage, sitesView, targetPage, targetPages, viewDecls } from './views.js'
 
 export type DeployOptions = {
   /** The plugin's title for people: in the description, on its page and its item section. Defaults to 部署. */
@@ -17,8 +18,8 @@ export type DeployOptions = {
   readonly heading?: string
   /** A paragraph added to the cognition section, for what agents should know about this target. */
   readonly cognition?: string
-  /** The page's lucide icon. Defaults to globe. */
-  readonly icon?: string
+  /** The page's icon. Defaults to globe. */
+  readonly icon?: IconName
   readonly version?: string
   readonly summary?: string
   /** The directory of the plugin's own pages, for `custom` blocks a target adds. */
@@ -38,6 +39,11 @@ const refused = (note: string): SayAnswer => ({ outcome: 'not-heard', reason: 'r
 export function deployPlugin(name: string, targets: TargetAdapter | readonly TargetAdapter[], options: DeployOptions = {}): Plugin {
   const kit: Kit = { name: pluginName(name), title: options.title ?? '部署', targets: 'kind' in targets ? [targets] : targets }
   if (kit.targets.length === 0) throw new Error('a deploy plugin needs at least one kind of target')
+  const pages = targetPages(kit)
+  for (const [i, p] of pages.entries()) {
+    if (!/^[a-z][a-z0-9-]*$/.test(p.name) || p.name === 'sites') throw new Error(`a target's page is named in lower-case letters, digits and dashes, and not sites: ${p.name}`)
+    if (pages.findIndex((q) => q.name === p.name) !== i) throw new Error(`two kinds of target name a page ${p.name}`)
+  }
   return {
     contract: CONTRACT,
     name: kit.name,
@@ -133,12 +139,14 @@ export function deployPlugin(name: string, targets: TargetAdapter | readonly Tar
     },
 
     async onView(req, ctx) {
-      if (req.view !== sitesView(kit)) return { title: kit.title, subtitle: null, blocks: [{ kind: 'empty', title: '没有这一页', hint: req.view }] }
-      return withRun(kit, ctx, sitesPage)
+      if (req.view === sitesView(kit)) return withRun(kit, ctx, sitesPage, true)
+      const page = pages.find((p) => p.id === req.view)
+      if (page === undefined) return { title: kit.title, subtitle: null, blocks: [{ kind: 'empty', title: '没有这一页', hint: req.view }] }
+      return withRun(kit, ctx, (run) => targetPage(run, page), true)
     },
 
     async onItemView(path, ctx) {
-      return withRun(kit, ctx, (run) => itemSection(run, path))
+      return withRun(kit, ctx, (run) => itemSection(run, path), true)
     },
   }
 }

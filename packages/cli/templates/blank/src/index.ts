@@ -49,7 +49,7 @@ const LIST: Action = { label: '列出全部', tone: 'default', confirm: null, in
 function page(all: readonly (Envelope & Mark)[]): Block[] {
   const latest = all.at(-1)
   return [
-    { kind: 'custom', entry: 'panel.html', height: 72, data: { count: all.length, latest: latest?.text ?? null }, actions: { list: LIST } },
+    { kind: 'custom', entry: 'panel.html', height: 72, data: { count: all.length, latest: latest === undefined ? null : { text: latest.text, path: latest.path } }, actions: { list: LIST } },
     {
       kind: 'table',
       columns: [

@@ -45,8 +45,8 @@ function templateFiles(kind: Kind): Map<string, string> {
 
 /**
  * Writes the project `kind` for the plugin `name` (the directory's name when null) into `dir`, which
- * must be missing or empty. It depends on the two package files in `packages`; when that is null, on
- * those `pnpm pack:dist` built beside this command line, else on the packages by name.
+ * must be missing or empty. It depends on the two package files in `packages` by absolute path; when
+ * that is null, on those `pnpm pack:dist` built beside this command line, else on the packages by name.
  */
 export function scaffold(opts: { dir: string; kind: Kind; name: string | null; packages: string | null }): Scaffolded {
   const name = opts.name ?? basename(opts.dir)
@@ -57,8 +57,8 @@ export function scaffold(opts: { dir: string; kind: Kind; name: string | null; p
     return { ok: false, reason: 'no-package-files', text: `${opts.packages} 里没有 ${Object.values(PACKAGE_FILES).join(' 和 ')}。在 Pneuma Base 仓库里 pnpm pack:dist 打出它们。` }
   }
   const packages = opts.packages ?? (hasPackageFiles(OWN_PACKAGES) ? OWN_PACKAGES : null)
-  const dependency = (pkg: keyof typeof PACKAGE_FILES) =>
-    packages === null ? `^${PNEUMA_BASE_VERSION}` : `file:${relative(opts.dir, join(packages, PACKAGE_FILES[pkg])).split(sep).join('/')}`
+  // By absolute path, so the project can move; the package files stay where they are.
+  const dependency = (pkg: keyof typeof PACKAGE_FILES) => (packages === null ? `^${PNEUMA_BASE_VERSION}` : `file:${join(packages, PACKAGE_FILES[pkg]).split(sep).join('/')}`)
   const manifest = {
     name: `pneuma-base-plugin-${name}`,
     version: '0.1.0',

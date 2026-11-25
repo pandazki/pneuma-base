@@ -6,4 +6,21 @@ export { configFile, type ConfigFile } from './config-file.js'
 export { deployPlugin, type DeployOptions } from './deploy/plugin.js'
 export { siteName, plan, statusOf, want, type ContentId, type Held, type SiteName, type Standing, type State, type Step } from './deploy/model.js'
 export type { Declared, ThingId } from './deploy/facts.js'
-export { defineTarget, type Configured, type Look, type PublishMeta, type Served, type SiteFile, type Status, type Target, type TargetAdapter, type TargetConfig, type TargetEnv, type TargetView } from './deploy/target.js'
+export {
+  defineTarget,
+  type Configured,
+  type Look,
+  type PublishMeta,
+  type Served,
+  type ServingAsk,
+  type SiteFile,
+  type Status,
+  type Target,
+  type TargetAdapter,
+  type TargetConfig,
+  type TargetEnv,
+  type TargetPage,
+  type TargetView,
+} from './deploy/target.js'
+export { STATUS } from './deploy/words.js'
+export { switchAction } from './deploy/views.js'

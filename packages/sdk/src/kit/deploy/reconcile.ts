@@ -9,7 +9,7 @@ import { configFile } from '../config-file.js'
 import { recordStore, type RecordStore, type Skipped } from '../records.js'
 import { apply, fold, parseFact, type Declared, type Deployments, type Fact, type FactBody, type OnTarget, type TargetKey, type ThingId } from './facts.js'
 import { plan, siteName, statusOf, want, type ContentId, type SiteName } from './model.js'
-import type { Look, Served, SiteFile, Target, TargetAdapter, TargetConfig } from './target.js'
+import type { Look, Served, SiteFile, Target, TargetAdapter, TargetConfig, TargetEnv } from './target.js'
 
 /** What the kit was made with: the plugin's name, its title for people, and the kinds of target it can publish to. */
 export type Kit = { readonly name: PluginName; readonly title: string; readonly targets: readonly TargetAdapter[] }
@@ -17,8 +17,11 @@ export type Kit = { readonly name: PluginName; readonly title: string; readonly 
 /** The kit's one kind of target, when it has only one: then `--kind` may be left out. */
 export const onlyTarget = (kit: Kit): TargetAdapter | null => (kit.targets.length === 1 ? (kit.targets[0] ?? null) : null)
 
-/** One hook's or command's work: the records as read, the target, and the facts it adds, written as one file at the end. */
-export type Run = { kit: Kit; ctx: PluginContext; store: RecordStore<FactBody>; d: Deployments; skipped: Skipped[]; target: Target | null; facts: Fact[] }
+/**
+ * One hook's, command's or view's work: the records as read, the target, and the facts it adds, written
+ * as one file at the end. `view`: it draws a page or the item panel, so looks carry the target's details.
+ */
+export type Run = { kit: Kit; ctx: PluginContext; store: RecordStore<FactBody>; d: Deployments; skipped: Skipped[]; target: Target | null; facts: Fact[]; view: boolean }
 
 /** The configuration file as stored: the target's own configuration, with the kind of target it is. */
 type StoredTarget = { format: 1; target: TargetConfig & { kind: string } }
@@ -37,17 +40,20 @@ const stageRoot = (ctx: PluginContext) => join(ctx.cacheDir, 'stage')
 export function openTarget(kit: Kit, stored: StoredTarget['target'], ctx: PluginContext): Target {
   const adapter = kit.targets.find((t) => t.kind === stored.kind)
   if (!adapter) throw new Error(`unknown kind of target: ${stored.kind}`)
-  return adapter.open(stored, { ctx, scratch: stageRoot(ctx), secret: (name) => secretOf(kit, adapter, ctx, name) })
+  // `secretOf` gives null only for an optional secret, as `TargetEnv['secret']` types it per name.
+  const secret = ((name: string) => secretOf(kit, adapter, ctx, name)) as TargetEnv['secret']
+  return adapter.open(stored, { ctx, scratch: stageRoot(ctx), plugin: kit.name, secret })
 }
 
 /** The command that sets a secret of the plugin, for the owner to type. */
 export const setSecret = (kit: Kit, name: string) => `pneuma-base secret set ${kit.name} ${name}`
 
-/** A secret the adapter declares, as the owner set it on this machine; a target cannot go on without one that is not set. */
-async function secretOf(kit: Kit, adapter: TargetAdapter, ctx: PluginContext, name: string): Promise<string> {
-  if (!adapter.secrets?.some((s) => s.name === name)) throw new Error(`the ${adapter.kind} target reads a secret it does not declare: ${name}`)
+/** A secret the adapter declares, as the owner set it on this machine; a target cannot go on without a required one that is not set. */
+async function secretOf(kit: Kit, adapter: TargetAdapter, ctx: PluginContext, name: string): Promise<string | null> {
+  const declared = adapter.secrets?.find((s) => s.name === name)
+  if (declared === undefined) throw new Error(`the ${adapter.kind} target reads a secret it does not declare: ${name}`)
   const value = await ctx.secrets.get(name)
-  if (value === null) throw new Error(`还没设密钥 ${name}：用 ${setSecret(kit, name)} 设，值从标准输入读`)
+  if (value === null && declared.optional !== true) throw new Error(`还没设密钥 ${name}：用 ${setSecret(kit, name)} 设，值从标准输入读`)
   return value
 }
 
@@ -60,12 +66,12 @@ async function configured(kit: Kit, ctx: PluginContext): Promise<Target | null> 
   }
 }
 
-/** Loads the records and the target, runs `body`, and writes the facts it added, also when it throws. */
-export async function withRun<T>(kit: Kit, ctx: PluginContext, body: (run: Run) => Promise<T>): Promise<T> {
+/** Loads the records and the target, runs `body`, and writes the facts it added, also when it throws. `view`: it draws a page or the item panel. */
+export async function withRun<T>(kit: Kit, ctx: PluginContext, body: (run: Run) => Promise<T>, view = false): Promise<T> {
   const target = await configured(kit, ctx)
   const store = recordStore(join(ctx.dir, 'facts'), parseFact)
   const { records, skipped } = await store.read()
-  const run: Run = { kit, ctx, store, d: fold(records), skipped, target, facts: [] }
+  const run: Run = { kit, ctx, store, d: fold(records), skipped, target, facts: [], view }
   try {
     return await body(run)
   } finally {
@@ -106,58 +112,73 @@ function recorded(run: Run, id: ThingId): Map<SiteName, OnTarget> {
   return new Map([...(sites ?? [])].filter(([, s]) => s.thing === id))
 }
 
-/**
- * What a target that reports serves for a thing: of the name its path has and the names the records
- * give it, those the target serves, leaving out a name the records give another declared thing.
- */
-async function served(run: Run, serving: NonNullable<Target['serving']>, id: ThingId, path: LibraryPath, mine: Map<SiteName, OnTarget>): Promise<Map<SiteName, Served>> {
-  const { tools } = run.ctx
-  const original = tools.regionOf(path) === 'archive' ? tools.originalPath(path) : path
-  const names = [...new Set([...(original === null ? [] : [nameOf(run, original)]), ...mine.keys()])]
-  const answer = await serving(names)
-  const holders = run.target ? run.d.sites.get(run.target.key as TargetKey) : undefined
-  const out = new Map<SiteName, Served>()
-  for (const name of names) {
-    const s = answer.get(name)
-    const holder = holders?.get(name)?.thing
-    if (s !== undefined && (holder === undefined || holder === id || !run.d.things.has(holder))) out.set(name, s)
-  }
-  return out
-}
-
+/** A site a thing holds on the target: the content served there and where. */
+type OnSite = { readonly content: ContentId; readonly url: string | null }
 /** A look and the address of each site it holds, which a target that reports may tell apart from the records. */
-type Seen = Look & { sites: ReadonlyMap<SiteName, Served> }
+type Seen = Look & { sites: ReadonlyMap<SiteName, OnSite> }
 
-/** Reads without changing anything. The content is identified only when it can matter: switched on and not archived. */
+/** Reads without changing anything. */
 export async function look(run: Run, id: ThingId): Promise<Seen> {
-  const thing = run.d.things.get(id) as Declared
-  const archived = run.ctx.tools.regionOf(thing.path) === 'archive'
-  const standing = { on: thing.on, archived, content: thing.on && !archived ? await contentAt(run, thing.path) : null }
-  const mine = recorded(run, id)
-  let sites: ReadonlyMap<SiteName, Served> = new Map([...mine].map(([site, s]) => [site, { content: s.content, url: s.url }]))
-  let unreachable: string | null = null
-  const { target } = run
-  const serving = target?.serving
-  if (target && serving) {
-    try {
-      sites = await served(run, (names) => serving.call(target, names), id, thing.path, mine)
-    } catch (error) {
-      unreachable = messageOf(error)
-    }
-  }
-  const held = new Map([...sites].map(([site, s]) => [site, s.content]))
-  const site = archived ? null : nameOf(run, thing.path)
-  const shown = (site === null ? undefined : sites.get(site)) ?? [...sites.values()][0]
-  const status = unreachable === null ? statusOf(site, standing, held) : 'unknown'
-  return { thing, standing, held, status, site, url: shown?.url ?? null, unreachable, sites }
+  return (await lookAll(run, [id]))[0] as Seen
 }
 
 /** Every declared thing as it stands, by path, the archived ones last. */
 export async function looks(run: Run): Promise<Seen[]> {
   const key = (path: LibraryPath) => `${run.ctx.tools.regionOf(path) === 'archive' ? 1 : 0}${path}`
-  const out: Seen[] = []
-  for (const thing of [...run.d.things.values()].sort((a, b) => (key(a.path) < key(b.path) ? -1 : 1))) out.push(await look(run, thing.id))
-  return out
+  return lookAll(run, [...run.d.things.values()].sort((a, b) => (key(a.path) < key(b.path) ? -1 : 1)).map((t) => t.id))
+}
+
+/**
+ * The things as they stand. The content is identified only when it can matter: switched on and not
+ * archived. A target that reports is asked once, about the name each thing's path has (for an
+ * archived thing, the path it had) and the names the records give it; of those, a thing holds the
+ * ones the target serves, leaving out a name the records give another declared thing.
+ */
+async function lookAll(run: Run, ids: readonly ThingId[]): Promise<Seen[]> {
+  const { tools } = run.ctx
+  const { target } = run
+  const holders = target ? run.d.sites.get(target.key as TargetKey) : undefined
+  const parts = []
+  for (const id of ids) {
+    const thing = run.d.things.get(id) as Declared
+    const archived = tools.regionOf(thing.path) === 'archive'
+    const standing = { on: thing.on, archived, content: thing.on && !archived ? await contentAt(run, thing.path) : null }
+    const original = archived ? tools.originalPath(thing.path) : thing.path
+    const named = original === null ? null : nameOf(run, original)
+    const mine = recorded(run, id)
+    const ours = (name: SiteName) => {
+      const holder = holders?.get(name)?.thing
+      return holder === undefined || holder === id || !run.d.things.has(holder)
+    }
+    const names = [...new Set([...(named === null ? [] : [named]), ...mine.keys()])].filter(ours)
+    parts.push({ thing, standing, archived, named, mine, names })
+  }
+  let answer: ReadonlyMap<SiteName, Served> | null = null
+  let unreachable: string | null = null
+  if (target?.serving) {
+    try {
+      answer = await target.serving([...new Set(parts.flatMap((p) => p.names))], { detail: run.view })
+    } catch (error) {
+      unreachable = messageOf(error)
+    }
+  }
+  return parts.map(({ thing, standing, archived, named, mine, names }) => {
+    const told = (name: SiteName | null | undefined) => (name != null && names.includes(name) ? answer?.get(name) : undefined)
+    const sites = new Map<SiteName, OnSite>(
+      answer === null
+        ? [...mine].map(([site, s]) => [site, { content: s.content, url: s.url }])
+        : names.flatMap((name) => {
+            const s = told(name)
+            return s?.content == null ? [] : [[name, { content: s.content, url: s.url }]]
+          }),
+    )
+    const held = new Map([...sites].map(([site, s]) => [site, s.content]))
+    const site = archived ? null : named
+    const shown = site !== null && sites.has(site) ? site : [...sites.keys()][0]
+    const status = unreachable === null ? statusOf(site, standing, held) : 'unknown'
+    const detail = run.view ? (told(shown)?.detail ?? told(named)?.detail ?? null) : null
+    return { thing, standing, held, status, site, url: (shown === undefined ? undefined : sites.get(shown))?.url ?? null, unreachable, detail, sites }
+  })
 }
 
 /** The library path an input names: the thing itself, or the bundle it lies in. Null outside the content and the archive. */
@@ -240,13 +261,13 @@ export async function sweep(run: Run): Promise<{ done: Done[]; failed: { site: S
   if (orphans.length === 0) return out
   let serving: ReadonlyMap<SiteName, Served> | null
   try {
-    serving = target.serving ? await target.serving(orphans.map(([site]) => site)) : null
+    serving = target.serving ? await target.serving(orphans.map(([site]) => site), { detail: false }) : null
   } catch (error) {
     return { done: [], failed: orphans.map(([site]) => ({ site, message: messageOf(error) })) }
   }
   for (const [site, s] of orphans) {
     try {
-      if (serving === null || serving.has(site)) {
+      if (serving === null || serving.get(site)?.content != null) {
         await target.remove(site)
         out.done.push({ kind: 'unpublish', site })
       }

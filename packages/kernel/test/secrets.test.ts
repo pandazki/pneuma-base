@@ -4,7 +4,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ownerFace, type Event, type MachineContext, type OwnerCall, type OwnerResult } from '../src/index.js'
+import { ownerFace, viewerFace, type Event, type MachineContext, type OwnerCall, type OwnerResult } from '../src/index.js'
 import { fixture, owner, plugin, session, tempDir } from './support.js'
 
 const TOKEN = 'tok-5c1e7-only-here'
@@ -92,5 +92,20 @@ describe('secret list and secret remove', () => {
     expect(await ownerFace.dispatch(machine(home), 'secret remove', { positional: ['vault', 'token'], flags: {} })).toMatchObject({ outcome: 'done', data: { removed: true } })
     expect(await ownerFace.dispatch(machine(home), 'secret remove', { positional: ['vault', 'token'], flags: {} })).toMatchObject({ outcome: 'done', data: { removed: false } })
     expect(contents(home)).toEqual([])
+  })
+})
+
+describe('an optional secret', () => {
+  const meter = plugin('meter', { secrets: [{ name: 'token', description: '服务要求登录时的令牌', optional: true }] })
+
+  it('is listed, and shown on the configuration page, as optional while it is not set', async () => {
+    const f = await fixture([meter])
+    const call = { ...machine(f.home), table: new Map([['meter', meter]]) }
+    const listed = await ownerFace.dispatch(call, 'secret list', { positional: ['meter'], flags: {} })
+    expect(listed).toMatchObject({ outcome: 'done', text: '插件 meter 在这台机器上没设密钥。\n可以不设、还没设的：token' })
+    const config = await viewerFace.show({ view: 'config', params: {} }, { ctx: f.ctx, table: call.table })
+    const secrets = config.outcome === 'shown' ? config.blocks.find((b) => b.kind === 'section' && b.title === '密钥') : undefined
+    const rows = secrets?.kind === 'section' && secrets.blocks[0]?.kind === 'table' ? secrets.blocks[0].rows : []
+    expect(rows.map((r) => r.cells.state?.tag)).toEqual([{ text: '没设（可选）', tone: 'neutral' }])
   })
 })

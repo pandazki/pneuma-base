@@ -1,5 +1,6 @@
 // The parts around the blocks: icons, the action dialog, toasts.
 import type { Action, ActionInput, Call } from '@pneuma-base/kernel'
+import type { IconName } from '@pneuma-base/sdk'
 import {
   Activity,
   Archive,
@@ -50,8 +51,8 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 're
 import type { Tone } from './api'
 import { Choice } from './controls'
 
-/** The lucide icons a view or a cell may name. Plugins added later pick from these; another name gets the default. */
-const ICONS: Record<string, LucideIcon> = {
+/** The icon of each name in the sdk's `ICON_NAMES`, every one and no other. */
+const ICONS: Record<IconName, LucideIcon> = {
   activity: Activity,
   archive: Archive,
   bookmark: Bookmark,
@@ -93,9 +94,9 @@ const ICONS: Record<string, LucideIcon> = {
   users: Users,
 }
 
-/** A lucide icon by name; a name this page does not know gets the default icon. */
+/** An icon by name; a name outside `ICON_NAMES`, from a plugin written without the sdk's types, gets the puzzle piece. */
 export function ViewIcon({ name, className }: { name: string; className?: string }) {
-  const Icon = ICONS[name] ?? Puzzle
+  const Icon = (ICONS as Partial<Record<string, LucideIcon>>)[name] ?? Puzzle
   return <Icon className={className} strokeWidth={2} aria-hidden />
 }
 

@@ -54,7 +54,7 @@ export const thrower: Plugin = {
   onCheck: boom('onCheck'),
   onArchive: boom('onArchive'),
   observe: boom('observe'),
-  views: [{ id: 'thrower.page', title: '总出错的页', icon: 'bomb', nav: true, filters: [] }],
+  views: [{ id: 'thrower.page', title: '总出错的页', icon: 'triangle-alert', nav: true, filters: [] }],
   onView: boom('onView'),
   onItemView: boom('onItemView'),
 }

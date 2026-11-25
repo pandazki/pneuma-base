@@ -300,18 +300,18 @@ type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems: string
 - 插件表 = 命令行自带的插件 + 本机的 `$PNEUMA_BASE_HOME/plugins/<名字>/`。加载在内核导出的 `loadPlugins(home, 自带的表)` 里，命令行每次调用用它建表，界面的服务每次请求用它建表。自带插件的名字不会被本机的插件占用。
 - 装载器不替插件设 `ui`：插件自己写，比如 `new URL('./ui/', import.meta.url)`。没有 `package.json` 的目录，`plugin install` 写一个 `{ "type": "module" }`，让 `.js` 怎么载不取决于 `$PNEUMA_BASE_HOME` 上面有什么。
 - 改了就重新载入：装载器按目录里每个文件的名字、大小、修改时间算一个戳，`index.js` 带着戳导入，一个模块钩子（`registerHooks`）让它从目录里导入的每个模块带上同一个戳。目录里任何文件一变，下一次 `loadPlugins` 就载入整套新的；没变就用进程里已有的。所以一直开着的界面服务在插件的文件变了之后的下一次请求就用新代码，不用重启。同一个目录的两份副本、装之前核对的那份，各是各的模块，互不影响。
-- 装载时核对不必调钩子就能核对的一切（`whatIsWrong`，清单在 `PLUGINS.md` 第 2 节）；留到调用时的是钩子和命令的 `run` 答什么、抛不抛错（K8），插件往哪里写。自带插件过同一道检查，没有例外：过不了是这个 pneuma-base 自己的错，`loadPlugins` 抛错。内核自己不听任何「说」的种类，所以种类只会和别的插件撞，那由 `plugin add` 管。
+- 装载时核对不必调钩子就能核对的一切（`whatIsWrong`，清单在 `PLUGINS.md` 第 8 节）；留到调用时的是钩子和命令的 `run` 答什么、抛不抛错（K8），插件往哪里写。自带插件过同一道检查，没有例外：过不了是这个 pneuma-base 自己的错，`loadPlugins` 抛错。内核自己不听任何「说」的种类，所以种类只会和别的插件撞，那由 `plugin add` 管。
 - `plugin add` 和 `plugin remove` 是一个库里的启用和停用，`plugin install` 和 `plugin uninstall` 是这台机器上有没有；装、卸都先写临时名再改名，没有装了一半的插件被载入。库的配置里只写名字。
 - 本机的插件加载失败，它不进插件表；装了它的库照「装了但这台机器不认识」处理（K8）：每个答复的 `problems` 里有它，消息是加载失败的原因（`whyNotLoaded`，中文）。
 - 缓存目录 `PluginContext.cacheDir` 是 `$PNEUMA_BASE_HOME/cache/<库的 id>/<插件名>/`。放在库外，因为库会被同步工具整个同步，而索引这类文件经不起同步。内核不建它。库的 id 因此只能是字母、数字、连字符和下划线。`Context` 带 `home`，即本机的 `$PNEUMA_BASE_HOME`，由建上下文的地方传进来；`cacheDir` 由它算出。
-- 密钥放在 `$PNEUMA_BASE_HOME/secrets/<插件名>/<密钥名>`，一个密钥一个文件，内容就是值；目录是 `0700`，文件是 `0600`，先写临时名再改名。放在库外，所以任何同步都带不走；值不出现在任何答复、事件、视图里。主人用 `secret set` 设，值从标准输入读，从不取命令行的参数：参数会留在 shell 的历史和进程列表里。界面的配置页设密钥时，值作为命令的标准输入送去（`Call` 的 `stdin`），不进事件；界面的服务读写同一处。
+- 密钥放在 `$PNEUMA_BASE_HOME/secrets/<插件名>/<密钥名>`，一个密钥一个文件，内容就是值；目录是 `0700`，文件是 `0600`，先写临时名再改名。放在库外，所以任何同步都带不走；值不出现在任何答复、事件、视图里。插件声明的密钥可以标 `optional: true`：配置页写「没设（可选）」，`secret list` 另列一行。主人用 `secret set` 设，值从标准输入读，从不取命令行的参数：参数会留在 shell 的历史和进程列表里。界面的配置页设密钥时，值作为命令的标准输入送去（`Call` 的 `stdin`），不进事件；界面的服务读写同一处。
 
 ### 写一个库外的插件
 
 - 两个包文件，`pnpm pack:dist` 打进 `dist-packages/`（不进 git，不发布）：`pneuma-base-<版本>.tgz` 是命令行，内核、五个自带插件、界面的服务和网页都作为捆绑的依赖在里面，另带插件规范 `PLUGINS.md`，`npm install` 它不用别的包，也不用联网；`pneuma-base-sdk-<版本>.tgz` 是 `@pneuma-base/sdk`，不依赖这个仓库的别的包，声明文件自成一体。两个的版本都是 sdk 的 `PNEUMA_BASE_VERSION`，自带的五个插件的 `version` 也是它，每个工作区包的 `package.json` 和它不一样时打包拒绝。实现在 `scripts/pack-dist.mjs`。
-- 测试工具 `@pneuma-base/sdk/testkit` 跑真的命令行，不另造一个假的内核：插件在测试里和在主人的机器上走同一条路。调用的环境从空的建起，所以没有任何 agent 产品的会话变量。
+- 测试工具 `@pneuma-base/sdk/testkit` 跑真的命令行，不另造一个假的内核：插件在测试里和在主人的机器上走同一条路。调用的环境从空的建起，所以没有任何 agent 产品的会话变量。`serve(handler)` 起一个库外 HTTP 服务的替身、交回地址，沙箱收尾时一起停，所以目标是网络服务的插件不连真的服务也能跑符合性检查和自己的测试；`viewer().item(路径, { plugin })` 只要一个插件的那一节。
 - `conformance` 把规范里行为上的规矩跑成检查（九项，见 `PLUGINS.md` 第 7 节），每项的规则文字在 `RULES` 里，报告原样引用，规范也原样引用（`plugins-doc.test.ts` 核对）。仓库自己的测试拿它查自带的五个插件，也拿故意违规的插件看每条检查都会变红（`packages/cli/test/conformance.test.ts`）。
-- 脚手架 `pneuma-base plugin new` 是命令行的命令，不是内核的：它只从命令行包里的 `templates/` 写一个项目目录，不碰库，不碰 `$PNEUMA_BASE_HOME`，不发事件。生成的项目按路径依赖两个包文件（`--packages` 给的目录；没给时用构建这个命令行的仓库里 `dist-packages/` 的，都没有就按包名，发布之后能装）；esbuild 打成一个 `dist/index.js`，旁边是 `cognition.md` 和 `ui/`；测试用 Node 自己的测试运行器，直接导入 `src/` 的源码。它的答复和生成的 `README.md` 指向插件规范。两种项目都不改一行就通过自己的测试，`packages/cli/test/scaffold.slow.test.ts` 和 `plugins-doc.slow.test.ts`（`pnpm test:slow`，要联网）从生成一直走到装进库、调命令、开视图。
+- 脚手架 `pneuma-base plugin new` 是命令行的命令，不是内核的：它只从命令行包里的 `templates/` 写一个项目目录，不碰库，不碰 `$PNEUMA_BASE_HOME`，不发事件。生成的项目按绝对路径依赖两个包文件（`--packages` 给的目录；没给时用构建这个命令行的仓库里 `dist-packages/` 的，都没有就按包名，发布之后能装），所以项目挪到哪里都装得上；`plugin new --help` 说它自己的用法；esbuild 打成一个 `dist/index.js`，旁边是 `cognition.md` 和 `ui/`；测试用 Node 自己的测试运行器，直接导入 `src/` 的源码。它的答复和生成的 `README.md` 指向插件规范。两种项目都不改一行就通过自己的测试：`packages/cli/test/scaffold.slow.test.ts`（`pnpm test:slow`，要联网）把生成的项目先挪到别处，再从安装一直走到装进库、调命令、开视图；`plugins-doc.slow.test.ts` 照原样跑规范里从安装开始的例子。
 
 插件的规矩写在 `PLUGINS.md` 第 3.7 和第 6 节：只往自己名下写，不改别的插件的东西，不认识的内容原样留着，agent 面上做的事主人撤得回。插件可以做要模型、要联网、带判断的事；内核不做。
 
@@ -359,7 +359,7 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable }): P
 | `config` | 是 | 库的位置；这个 pneuma-base 认识的每个插件和库里装了的每个插件，各带版本和一句说明（没有 `summary` 用认知段的标题，同 `plugin list`），装了的带「卸下」，没装的带「装上」，插件不肯卸时提示里带「仍然卸下」；授权，各带为 Claude 或 Codex 生成技能（目录可以写 `~/…`）、撤回；发授权；Codex 要把库加进可写目录的提示；已装插件声明的密钥，各带设没设、「设」和「删掉」。这些按钮的表单都由内核命令的参数表生成 |
 | `item` | 否 | 一样东西，参数 `path`，开在右侧面板：归档或取回；每个插件的 `onItemView` 给的一节；「文件」一节是它自己的事实（路径、种类、文件数、大小、改于、指纹）；带标记的目录接着列出里面的文件，各链到自己的 `item`，文件接着是可以折起来的预览。带标记的目录里面的文件说明它是谁的一部分，不给归档。路径上没有东西时说明不在，插件的节照常给。`_archive/…` 的东西被取回后，面板跟到它原来的路径 |
 
-一样东西的详情是内核的视图，不是某个插件的：内核按配置次序把各插件用 `onItemView` 给的节拼在归档的按钮之后、文件的事实与预览之前，节名由插件给，插件之间互不认识。记账插件的来历、版本插件的版本时间线、部署插件的开关都落在同一个面板里。
+一样东西的详情是内核的视图，不是某个插件的：内核按配置次序把各插件用 `onItemView` 给的节拼在归档的按钮之后、文件的事实与预览之前，节名由插件给，节上盖着插件名（`plugin`），插件之间互不认识。记账插件的来历、版本插件的版本时间线、部署插件的开关都落在同一个面板里。
 
 `viewerFace.views` 先列插件的视图，按配置次序，后列内核的。
 
@@ -368,7 +368,7 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable }): P
 块的字段只加不改，新加的都是可选的，所以已经写好的插件不用跟着改：
 
 - 单元格的 `at`：这一格是一个时刻。界面按看的人的本地时间给短的写法，悬停给完整的时间；`text` 是不认识时刻的读者看到的。
-- 单元格的 `icon`：文字前面的一个 lucide 图标名，比如文件夹 `folder`、文件 `file`、带标记的目录 `package`。
+- 单元格的 `icon`：文字前面的一个 lucide 图标名，比如文件夹 `folder`、文件 `file`、带标记的目录 `package`。视图的 `icon` 也是。能用的名字是 sdk 的 `ICON_NAMES`，类型 `IconName`；网页的图标表按这个类型写，所以清单和网页画得出的一样。别的名字（不经 sdk 的类型写的插件才给得出）画成拼图。
 - 动作输入的 `multiple`：可以填几个值，一行一个。`call` 的列表里正好是 `{输入名}` 的那一项，换成每行一项。
 - 分节的 `collapse`：这一节可以折起来，值是开始时开着还是折着。
 - 表格列的 `optional`：放不下每一列的全部时，这一列先让开，后面的先让；别的列只在可让的都让开了之后才截短。
@@ -398,7 +398,7 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable }): P
 - 具名动作走和按钮完全一样的路：同一个对话框问这个动作自己的 `confirm`，有输入的表单里先填好框架给的值（只取它声明了的输入），同样经两个面分派，同样的结果提示，同样的重取。框架拿不到 `Call`，也就跑不了块没声明的动作；视图照旧不发事件。不让框架直接调接口，是因为「破坏性的要当面确认」「每次操作留痕」只在两个面的入口守得住：框架只是另一种按钮。
 - 5 秒内没说准备好（文件不在、加载失败、没用开发包），那一块换成一段说明，写出插件名；页的其余部分照常（K8）。
 - 沙箱为的是隔离样式和崩溃，不是防插件：插件的 `index.js` 本来就在本机以主人的身份跑。
-- 开发包由界面的服务给出，地址固定：`/plugin-kit/frame.js` 做握手，给出 `pneuma.onData(callback)`、`pneuma.run(name, values)`、`pneuma.open(link)`，自己报告高度；`/plugin-kit/frame.css` 用和界面相同的变量名（`--surface`、`--ink`、`--accent`……）铺好底，带界面的组件（`card`、`btn`、`tag`、`field`、`link` 等，和界面共用一份 `components.css`）和字体。插件的页跟着浅色深色走，不用抄颜色。
+- 开发包由界面的服务给出，地址固定：`/plugin-kit/frame.js` 做握手，给出 `pneuma.onData(callback)`、`pneuma.run(name, values)`、`pneuma.open(link)`，自己报告高度；`/plugin-kit/frame.css` 用和界面相同的变量名（`--surface`、`--ink`、`--accent`……）铺好底，带界面的组件（`card`、`btn`、`tag`、`field`、`link` 等，和界面共用一份 `components.css`）和字体。插件的页跟着浅色深色走，不用抄颜色。`@pneuma-base/sdk/frame` 给插件作者 `window.pneuma` 的类型（`onData` 收到什么、`run`、`open`）和样式表给的类与变量的清单；界面发给框架的变量就取自这份清单，仓库的测试核对样式表里有清单上的每个类。
 
 网页渲染块时自己定的几条，插件写块时可以指望：
 
@@ -606,7 +606,7 @@ $PNEUMA_BASE_HOME/
 
 包 `packages/plugin-deploy`，名字 `deploy`。agent 用 `say deployable <库内路径> [一句话]` 声明一样东西（文件或带标记的目录）可以部署，声明不让它上线；主人用开关决定它在不在线；开着的东西，目标上跟着库里当前的内容。
 
-它是 sdk 的**部署库**加两种目标：`deployPlugin('deploy', [dirTarget, commandTarget])`。部署库（`@pneuma-base/sdk/kit`，代码在 `packages/sdk/src/kit/deploy/`）拿一个插件名和一种或几种目标，交回一个完整的插件；和目标无关的都在它里面，第三方的部署插件只写自己的目标。库不是插件，插件导入库不算插件导入插件；库不导入内核，对库的读写都经 `tools`。状态表、决定表、站点名的规则和目标的接口在 `packages/sdk/src/kit/deploy/README.md`。
+它是 sdk 的**部署库**加两种目标：`deployPlugin('deploy', [dirTarget, commandTarget])`。部署库（`@pneuma-base/sdk/kit`，代码在 `packages/sdk/src/kit/deploy/`）拿一个插件名和一种或几种目标，交回一个完整的插件；和目标无关的都在它里面，第三方的部署插件只写自己的目标。库不是插件，插件导入库不算插件导入插件；库不导入内核，对库的读写都经 `tools`。状态表、决定表、站点名的规则和目标的接口在 `packages/sdk/src/kit/deploy/README.md`。一个库只装一个部署插件，这是设计：几个部署插件都认领 `deployable`，第二个在 `plugin add` 时以 `name-taken` 拒绝；要发到几种地方，是一个部署插件带几种目标。
 
 它接上的槽（别的部署插件一样，命令和页面以它自己的名字开头）：
 
@@ -625,7 +625,7 @@ $PNEUMA_BASE_HOME/
 
 主人面命令，都不是破坏性的：`deploy on <路径>`、`deploy off <路径>`、`deploy target set --kind dir --to <目录>` 或 `--kind command --publish <发布命令>… --unpublish <下线命令>… [--url <地址模板>] [--timeout <超时秒数>]`、`deploy sync`、`deploy list`（只读）。对外发布是对外的动作，所以前三条是 `ownerOnly`，由内核的门在 agent 的会话里拒绝（第 6 节），插件自己不再看上下文。`deploy sync` 和 `deploy list` agent 也能用，它们只照主人的开关办。开关在目标失败时照样记下，答复以 `publish-failed` / `unpublish-failed` 或 `no-target` 拒绝并说明现在的状态。每条命令都有参数表；`target set` 的由各种目标的开关拼成：`--kind` 选目标（只有一种时可不写），其余是每种目标的开关，几种目标都有的开关意思要一样，否则 `deployPlugin` 抛错；有几种目标时，选定的那种必填的开关、不收别的种类的开关，由部署库在 `configure` 之前核对。页面上每种目标一个按钮，表单用 `formOf` 从那种目标的开关生成。
 
-目标是一个接口（`TargetAdapter`，sdk 的 `defineTarget` 让 `configure` 收到按开关定好类型的值）：怎么配（`params`，`target set` 在 `--kind` 之后的开关，一份 `FlagParam[]`，用法、核对和表单都从它来；`configure` 把核过的值变成要存的配置；给人看的说明；`secrets`，它读的密钥），怎么在边界上解析存下的配置并打开它。部署库把各种目标的 `secrets` 声明成插件的 `secrets`，所以 `secret set <插件名> <名字>` 和配置页都认得；打开目标时给它 `secret(名字)`，读主人在这台机器上设的值，没设就以说明用哪条命令设的错误拒绝，开关的答复里是 `publish-failed` 带这句话；`target set` 的答复也提醒还没设的。要密钥的目标从不在开关里要它。打开的 `Target` 有标识 `key` 和给人看的 `label`，`publish(站点名, 内容目录, meta) → { url }`、`remove(站点名)`；可选的 `siteName` 换掉缺省的站点名规则，`identify` 换掉内核的指纹作内容的编号，`serving` 报告它真在服务什么，`view` 往页面和面板里加东西。会报告的目标按它报告的对账，对账前先把记录对齐它，所以 `deploy sync` 修得好断在一半的发布和在目标那边被删掉的站点；它读不到时状态是「不知道」，什么都不做。不会报告的按插件自己的记录对账。自带的两种都不报告。发布前用 `tools.copyOut` 把算进内容的文件复制到缓存目录下的临时目录（不带标记），核对编号，再交给目标。`dir` 目标写 `<目录>/<站点名>/…` 和 `index.json`，先写 `.tmp-` 开头的名字再换上，目录不能在库里或包含库；`command` 目标把主人的命令按 shell 的引号规则切成参数、不经 shell 运行，工作目录是库根，超时缺省 120 秒。
+目标是一个接口（`TargetAdapter`，sdk 的 `defineTarget` 让 `configure` 收到按开关定好类型的值）：怎么配（`params`，`target set` 在 `--kind` 之后的开关，一份 `FlagParam[]`，用法、核对和表单都从它来；`configure` 把核过的值变成要存的配置；给人看的说明；`secrets`，它读的密钥），怎么在边界上解析存下的配置并打开它。部署库把各种目标的 `secrets` 声明成插件的 `secrets`，所以 `secret set <插件名> <名字>` 和配置页都认得；打开目标时给它 `secret(名字)`，读主人在这台机器上设的值，必需的没设就以说明用哪条命令设的错误拒绝，开关的答复里是 `publish-failed` 带这句话，可选的（`optional: true`）没设读出 null；`target set` 的答复提醒还没设的必需密钥，可选的只说要用时怎么设。要密钥的目标从不在开关里要它。打开的 `Target` 有标识 `key` 和给人看的 `label`，`publish(站点名, 内容目录, meta) → { url }`、`remove(站点名)`；可选的 `siteName` 换掉缺省的站点名规则，`identify` 换掉内核的指纹作内容的编号，`serving` 报告它真在服务什么，每个站点可以另带一份它自己类型的 `detail`，`view` 往页面和面板里加东西：列、字段、部署库的节前后的块、面板里的块，和目标在 `views` 里声明的自己的页（导航里各一项）。视图的函数拿到的每个 look 带着 `serving` 对它的站点说的 `detail`，归档了的、待下线的也一样；`defineTarget` 按 `open` 的返回类型 `Target<细节>` 给这些函数定类型。一页先为全部东西问一次 `serving`（问时说明这次要画，`{ detail: true }`），再调视图的函数；钩子和命令问时 `detail` 为假，目标据此只在要画时取贵的数据。目标有 `serving` 时页面带 `refresh`，缺省 30 秒，目标的 `view.refresh` 可以改。部署库导出 `STATUS` 和 `switchAction`，目标自己画的块用它们说和表格一样的状态、给一样的开关。会报告的目标按它报告的对账，对账前先把记录对齐它，所以 `deploy sync` 修得好断在一半的发布和在目标那边被删掉的站点；它读不到时状态是「不知道」，什么都不做。不会报告的按插件自己的记录对账。自带的两种都不报告。发布前用 `tools.copyOut` 把算进内容的文件复制到缓存目录下的临时目录（不带标记），核对编号，再交给目标。`dir` 目标写 `<目录>/<站点名>/…` 和 `index.json`，先写 `.tmp-` 开头的名字再换上，目录不能在库里或包含库；`command` 目标把主人的命令按 shell 的引号规则切成参数、不经 shell 运行，工作目录是库根，超时缺省 120 秒。
 
 存放，都在 `.pneuma-base/deploy/` 下，本体：`config.json` 是目标，带它的 `kind`，经 sdk 的配置文件助手先写临时名再改名；`facts/` 经 sdk 的记录库，每次写入一个名字唯一、写完不动的 jsonl 文件：声明、开关、挪、去掉、发布、下线。「目标上有什么」（目标不会报告时）来自对当前目标（按目标的标识区分）的发布与下线记录；换了目标，开着的东西都成待发布，旧目标上的不撤。缓存目录里只有发布时的临时目录。改用部署库之前写下的记录和配置，格式没变，照样读。
 

@@ -3,7 +3,7 @@
 // refuses them in an agent session. Every command declares its arguments; `target set` takes them
 // from the kinds of target.
 import { defineCommand } from '../../params.js'
-import type { FlagParam, OwnerAnswer, OwnerCommand, OwnerValues } from '../../types.js'
+import type { FlagParam, OwnerAnswer, OwnerCommand, OwnerValues, SecretDecl } from '../../types.js'
 import { declaredAt, looks, onlyTarget, openTarget, record, setSecret, settle, sweep, targetFile, withRun, type Done, type Kit, type Settled } from './reconcile.js'
 import type { TargetKey } from './facts.js'
 import type { TargetAdapter } from './target.js'
@@ -16,13 +16,13 @@ function doneText(path: string, d: Done): string {
   return d.kind === 'publish' ? `已发布 ${path}${d.url ? ` → ${d.url}` : ''}` : `已下线 ${path} 的站点 ${d.site}`
 }
 
-export const switchName = (kit: Kit, on: boolean) => `${kit.name} ${on ? 'on' : 'off'}`
+export const switchName = (plugin: string, on: boolean) => `${plugin} ${on ? 'on' : 'off'}`
 export const SWITCH_PARAMS = { positional: [{ name: 'path', hint: '库内路径', required: true }] } as const
 
 function switchCommand(kit: Kit, on: boolean): OwnerCommand {
   const [verb, effect] = on ? ['打开', '发布'] : ['关上', '下线']
   return defineCommand({
-    name: switchName(kit, on),
+    name: switchName(kit.name, on),
     summary: on ? '打开开关：发布一样可部署的东西，之后线上跟着它的内容' : '关上开关：把一样东西从目标上撤下',
     params: SWITCH_PARAMS,
     destructive: false,
@@ -141,6 +141,16 @@ function kindWrong(kit: Kit, t: TargetAdapter, values: OwnerValues): string | nu
   return missing === undefined ? null : `--kind ${t.kind} 要写 --${missing.name}。${how}`
 }
 
+/** What `target set` says of the target's secrets the owner has not set: a required one as missing, an optional one as there to set when needed. */
+function secretNotes(kit: Kit, unset: readonly SecretDecl[]): string[] {
+  const required = unset.filter((s) => s.optional !== true).map((s) => s.name)
+  const optional = unset.filter((s) => s.optional === true)
+  return [
+    ...(required.length === 0 ? [] : [`这个目标要用密钥 ${required.join('、')}，还没设：${required.map((name) => setSecret(kit, name)).join('；')}。`]),
+    ...optional.map((s) => `可选的密钥 ${s.name} 没设（${s.description}）；要用时：${setSecret(kit, s.name)}。`),
+  ]
+}
+
 function targetSetCommand(kit: Kit): OwnerCommand {
   return {
     name: targetSetName(kit),
@@ -158,12 +168,12 @@ function targetSetCommand(kit: Kit): OwnerCommand {
       const configured = await adapter.configure(values, ctx)
       if (!configured.ok) return refused(configured.reason, configured.text)
       const stored = { kind: adapter.kind, ...configured.config }
-      const unset: string[] = []
-      for (const s of adapter.secrets ?? []) if ((await ctx.secrets.get(s.name)) === null) unset.push(s.name)
+      const unset: SecretDecl[] = []
+      for (const s of adapter.secrets ?? []) if ((await ctx.secrets.get(s.name)) === null) unset.push(s)
       return withRun(kit, ctx, async (run) => {
         await targetFile(ctx).write({ format: 1, target: stored })
         const next = openTarget(kit, stored, ctx)
-        const secrets = unset.length === 0 ? [] : [`这个目标要用密钥 ${unset.join('、')}，还没设：${unset.map((name) => setSecret(kit, name)).join('；')}。`]
+        const secrets = secretNotes(kit, unset)
         const head = `部署目标已设为 ${next.label}。`
         if (run.target?.key === next.key) return done([head, ...secrets].join(''), { target: stored })
         const on = [...run.d.things.values()].filter((t) => t.on && ctx.tools.regionOf(t.path) === 'content').length
