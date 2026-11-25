@@ -124,15 +124,16 @@ async function recordPut(w: Writing, req: AcceptedPut): Promise<PluginNote> {
     w.facts.push(fact(ctx, 'tool', { kind: 'item.move', item: id, from: req.from, to: req.path, archive: null }))
     return { text: `已记下挪动 · 条目 ${id}`, data: { item: id } }
   }
+  const item = ledger.items.get(ledger.pathIndex.get(req.path) ?? ('' as ItemId))
   let origin: LedgerOrigin
   if (req.origin.kind === 'made') {
     const basis = await basisOf(w, req.origin.from, req.origin.outside)
     // The kernel accepted the put only when every --from file was there; one gone since is a failure to record.
     if ('missing' in basis) throw new Error(`依据的文件不在了，没能记下来历：${basis.missing}`)
-    origin = { kind: 'made', basis }
+    // New content made from the thing's own old content: that it changed is the revise; it is no basis of itself.
+    origin = { kind: 'made', basis: { ...basis, items: basis.items.filter((row) => row.item !== item?.id) } }
   } else origin = req.origin
   const made = origin.kind === 'made' ? basisNote(origin.basis) : ''
-  const item = ledger.items.get(ledger.pathIndex.get(req.path) ?? ('' as ItemId))
   if (!item) {
     const id = newItemId()
     w.facts.push(fact(ctx, 'tool', { kind: 'item.enter', item: id, path: req.path, fingerprint: req.fingerprint, size, origin, ...bundleFlag(disk) }))
@@ -203,11 +204,17 @@ function purged(event: Extract<Event, { face: 'owner' }>): LibraryPath[] {
 }
 
 /**
- * An owner command's answer as one line of the record: each absolute path shortened to its last
- * name, since the answer is read in check, on the scene card and in the activity list, where a
- * name will do and the whole path only crowds the line.
+ * An owner command's answer as one line of the record, its lines joined, each absolute path or
+ * file URL shortened to its last name: it is read in check, on the scene card and in the activity
+ * list, where a name will do and the whole path only crowds the line.
  */
-export const ownerSummary = (text: string) => text.replace(/(^|[\s：:（(「，,])\/(?:[^\s/：:，,。；、）)」]+\/)*([^\s/：:，,。；、）)」]+)/gu, '$1$2')
+export const ownerSummary = (text: string) =>
+  text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+    .join('；')
+    .replace(/(^|[\s：:（(「，,]|file:\/\/)\/(?:[^\s/：:，,。；、）)」]+\/)*([^\s/：:，,。；、）)」]+\/?)/gu, (_, before: string, name: string) => `${before === 'file://' ? '' : before}${name}`)
 
 /** An item as inspect and the item panel show it: its state and its direct sources' states from their own files, and its held copies. */
 async function viewOfItem(ctx: PluginContext, ledger: Ledger, item: ItemRecord): Promise<ItemView> {
@@ -382,7 +389,7 @@ export const ledger: Plugin = {
   async observe(event, ctx) {
     if (event.face !== 'owner' || event.result.outcome !== 'done') return
     const w = await writing(ctx)
-    w.facts.push(fact(ctx, 'tool', { kind: 'owner.op', command: event.command, summary: ownerSummary(event.result.text), destructive: event.destructive }))
+    w.facts.push(fact(ctx, 'tool', { kind: 'owner.op', command: event.command, summary: ownerSummary(event.result.text), destructive: event.destructive, ...(event.readOnly ? { readOnly: true as const } : {}) }))
     for (const path of purged(event)) {
       const id = w.ledger.pathIndex.get(path)
       if (id !== undefined) w.facts.push(fact(ctx, 'tool', { kind: 'item.remove', item: id }))

@@ -12,10 +12,11 @@ const refused = (reason: string, text: string): OwnerAnswer => ({ outcome: 'refu
 /** A malformed call; the command line shows it as a usage error. */
 const usage = (text: string) => refused('usage', text)
 
-type Who = 'owner' | 'anyone'
+/** Who may run a command: the owner alone, anyone, or anyone, as it only reads. */
+type Who = 'owner' | 'anyone' | 'reader'
 
 function command(name: string, summary: string, who: Who, run: OwnerCommand['run'], args?: string): OwnerCommand {
-  return { name, summary, ...(args === undefined ? {} : { usage: args }), destructive: false, ownerOnly: who === 'owner', run }
+  return { name, summary, ...(args === undefined ? {} : { usage: args }), destructive: false, ownerOnly: who === 'owner', readOnly: who === 'reader', run }
 }
 
 type Read = { positional: string[]; value(flag: string): string | null; values(flag: string): string[] }
@@ -88,7 +89,7 @@ const sync = command('deploy sync', '把全部可部署的东西对一遍：该�
   })
 })
 
-const list = command('deploy list', '列出可部署的东西、状态和地址', 'anyone', async (args, ctx) => {
+const list = command('deploy list', '列出可部署的东西、状态和地址', 'reader', async (args, ctx) => {
   const a = read('deploy list', args, 0, [])
   if (typeof a === 'string') return usage(a)
   return withRun(ctx, async (run) => {

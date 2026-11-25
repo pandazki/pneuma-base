@@ -38,6 +38,31 @@ describe('an owner operation in the record', () => {
     expect(ownerSummary('已发授权 c 给 claude-code。本机副本：/Users/me/.pneuma-base/grants/c.json')).toBe('已发授权 c 给 claude-code。本机副本：c.json')
     expect(ownerSummary('部署目标已设为目录 /tmp/a/www。开着的 2 样还没发到新目标：运行 deploy sync。')).toBe('部署目标已设为目录 www。开着的 2 样还没发到新目标：运行 deploy sync。')
     expect(ownerSummary('已打开 sites/a：在线 · 开关开')).toBe('已打开 sites/a：在线 · 开关开')
+    expect(ownerSummary('已打开 sites/a：在线 · file:///tmp/x/www/sites-a/ · 开关开')).toBe('已打开 sites/a：在线 · sites-a/ · 开关开')
+    expect(ownerSummary('已同步：本地 ⇄ 目录 /tmp/s\n推上去 3 · 拉下来 0\n')).toBe('已同步：本地 ⇄ 目录 s；推上去 3 · 拉下来 0')
+  })
+})
+
+describe('a read-only owner command', () => {
+  it('is recorded, but is no news in check', async () => {
+    const { as, call } = await library()
+    await agentFace.put({ kind: 'place', from: text('old'), to: 'a.md', origin: { kind: 'made', from: [], outside: [] } }, as(claude, 's1'))
+    await agentFace.put({ kind: 'place', from: text('new'), to: 'a.md', origin: { kind: 'made', from: [], outside: [] } }, as(claude, 's1'))
+    expect(await ownerFace.dispatch(call(), 'held list', { positional: [], flags: {} })).toMatchObject({ outcome: 'done' })
+    const { lines } = await sinceLines(as(claude, 's2'))
+    expect(lines.some((l) => l.includes('held list'))).toBe(false)
+  })
+})
+
+describe('new content made from the old', () => {
+  it('records no basis on itself', async () => {
+    const { as } = await library()
+    await agentFace.put({ kind: 'place', from: text('v1'), to: 'site.md', origin: { kind: 'made', from: [], outside: [] } }, as(claude, 's1'))
+    const r = await agentFace.put({ kind: 'place', from: text('v2'), to: 'site.md', origin: { kind: 'made', from: ['site.md'], outside: [] } }, as(claude, 's2'))
+    expect(r).toMatchObject({ outcome: 'accepted' })
+    const body = (await agentFace.inspect({ target: 'site.md' }, as(claude, 's3'))).sections[0]?.body ?? ''
+    expect(body).not.toContain('依据：')
+    expect(body).not.toContain('被依据')
   })
 })
 

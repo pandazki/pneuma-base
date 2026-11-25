@@ -93,6 +93,7 @@ export const heldCommands: OwnerCommand[] = [
     summary: '列出留存：被新内容换下来的旧内容',
     destructive: false,
     ownerOnly: false,
+    readOnly: true,
     async run(_args, ctx) {
       const ledger = await load(ctx)
       const copies = (await heldCopies(ctx)).map((c) => ({ ...c, current: ledger.items.get(c.item)?.path ?? null }))

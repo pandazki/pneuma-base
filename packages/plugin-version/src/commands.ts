@@ -69,6 +69,7 @@ export const versionCommands: OwnerCommand[] = [
     usage: LIST.slice('version list '.length),
     destructive: false,
     ownerOnly: false,
+    readOnly: true,
     async run(args, ctx) {
       const input = args.positional[0]
       if (input === undefined) return usage(LIST)

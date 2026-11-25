@@ -196,7 +196,8 @@ export const SINCE_LIMIT = 20
 /** Owner commands that change neither the content nor the capabilities: recorded as facts, but no news to an agent. */
 export const QUIET_OWNER_COMMANDS: ReadonlySet<string> = new Set(['init', 'grant issue', 'grant revoke', 'skill install'])
 
-const isNews = (f: Fact) => f.kind !== 'owner.op' || !QUIET_OWNER_COMMANDS.has(f.command)
+/** A read-only owner command, such as a listing, is no news either; its fact says so. */
+const isNews = (f: Fact) => f.kind !== 'owner.op' || !(QUIET_OWNER_COMMANDS.has(f.command) || f.readOnly)
 
 export type SinceFact = { kind: Fact['kind']; at: Instant; actor: string; text: string }
 export type SinceView = { since: Instant | null; scenes: { scene: SceneId; actors: string[]; cwds: string[]; facts: SinceFact[] }[] }

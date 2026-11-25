@@ -105,6 +105,7 @@ export const searchCommands: OwnerCommand[] = [
     summary: '删掉查找的索引，从库里的文件重建',
     destructive: false,
     ownerOnly: false,
+    readOnly: true,
     async run(args, ctx) {
       const flag = flagsOf('search rebuild', args, [])
       return typeof flag === 'string' ? usage(flag) : rebuild(ctx)
@@ -115,6 +116,7 @@ export const searchCommands: OwnerCommand[] = [
     summary: '查找的索引有多少、待更新多少、配了什么嵌入器',
     destructive: false,
     ownerOnly: false,
+    readOnly: true,
     async run(args, ctx) {
       const flag = flagsOf('search status', args, [])
       if (typeof flag === 'string') return usage(flag)

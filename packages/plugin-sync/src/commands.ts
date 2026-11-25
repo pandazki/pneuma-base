@@ -86,6 +86,7 @@ const statusCommand: OwnerCommand = {
   summary: '看同步目标、上次同步、待同步的数目和还在的冲突副本',
   destructive: false,
   ownerOnly: false,
+  readOnly: true,
   async run(args, ctx) {
     const f = flags('sync status', args, [])
     if (isAnswer(f)) return f

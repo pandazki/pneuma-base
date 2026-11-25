@@ -195,6 +195,8 @@ export interface OwnerCommand {
   readonly usage?: string
   readonly destructive: boolean
   readonly ownerOnly: boolean
+  /** It changes nothing, in the library or outside it, such as a listing; its event is no news to agents. */
+  readonly readOnly?: boolean
   run(args: OwnerArgs, ctx: PluginContext): Promise<OwnerAnswer>
 }
 
@@ -205,7 +207,7 @@ export type Failure = { outcome: 'failed'; message: string }
 /** One per operation of either face, sent to every plugin's `observe` after the operation. */
 export type Event =
   | { [V in Verb]: { face: 'agent'; verb: V; request: Parameters<AgentFace[V]>[0]; result: Awaited<ReturnType<AgentFace[V]>> | Failure } }[Verb]
-  | { face: 'owner'; command: string; args: OwnerArgs; destructive: boolean; result: OwnerResult | Failure }
+  | { face: 'owner'; command: string; args: OwnerArgs; destructive: boolean; readOnly: boolean; result: OwnerResult | Failure }
 
 // ---- the extension point ----
 
