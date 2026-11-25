@@ -62,6 +62,11 @@ export type PluginSection = Omit<Section, 'plugin'>
 export type PluginHit = Omit<Hit, 'by'>
 /** What `onFind` answers: its hits, or its hits and what it could not do, such as an embedder that did not answer (K8). */
 export type PluginFindAnswer = PluginHit[] | { hits: PluginHit[]; problems: string[] }
+/**
+ * What `onPut` and `onArchive` answer: a note, or a note and what it could not do, such as an outside
+ * step that failed after the verb itself succeeded. The kernel lists each problem as this plugin's (K8).
+ */
+export type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems: string[] }
 
 // ---- put ----
 
@@ -146,9 +151,9 @@ export type SayResult =
   | { outcome: 'heard'; by: PluginName; note: string; problems: PluginProblem[] }
   | { outcome: 'not-heard'; reason: 'no-plugin-for-kind' | 'refused' | 'plugin-failed'; note: string; problems: PluginProblem[] }
 
-/** What a plugin's `onSay` answers. The kernel adds `problems`. */
+/** What a plugin's `onSay` answers. A heard answer may carry what it could not do; the kernel lists those as problems. */
 export type SayAnswer =
-  | { outcome: 'heard'; note: string }
+  | { outcome: 'heard'; note: string; problems?: string[] }
   | { outcome: 'not-heard'; reason: 'refused'; note: string }
 
 export type CheckRequest = { since: Instant | 'last' | null; includeArchived: boolean }
@@ -240,7 +245,7 @@ export interface Plugin {
   readonly ownerCommands: readonly OwnerCommand[]
 
   // Hooks are function-typed properties, not methods, so a hook is checked strictly against what the kernel gives it.
-  readonly onPut?: (req: AcceptedPut, ctx: PluginContext) => Promise<PluginNote | null>
+  readonly onPut?: (req: AcceptedPut, ctx: PluginContext) => Promise<PluginNoteAnswer | null>
   readonly revise?: (req: PlaceOverExisting, ctx: PluginContext) => Promise<ReviseOutcome>
   readonly onFind?: (req: FindRequest, ctx: PluginContext) => Promise<PluginFindAnswer>
   /** What it knows about paths that others found and it did not: each hit is about one of `paths`. */
@@ -248,7 +253,7 @@ export interface Plugin {
   readonly onInspect?: (req: InspectRequest, ctx: PluginContext) => Promise<PluginSection[]>
   readonly onSay?: (req: SayRequest, ctx: PluginContext) => Promise<SayAnswer>
   readonly onCheck?: (req: CheckRequest, ctx: PluginContext) => Promise<PluginSection[]>
-  readonly onArchive?: (req: AcceptedArchive, ctx: PluginContext) => Promise<PluginNote | null>
+  readonly onArchive?: (req: AcceptedArchive, ctx: PluginContext) => Promise<PluginNoteAnswer | null>
   readonly observe?: (event: Event, ctx: PluginContext) => Promise<void>
 
   /** The views it adds to the management UI. Each id starts with `<name>.`. */

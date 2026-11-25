@@ -110,3 +110,22 @@ describe('a plugin’s own directory', () => {
     expect(r).toMatchObject({ outcome: 'accepted', notes: [{ plugin: 'keeper', text: 'there' }] })
   })
 })
+
+describe('a hook that did its part but not an outside step', () => {
+  it('answers problems beside its note from onPut, onArchive and onSay; the verb’s result stands', async () => {
+    const p = plugin('outward', {
+      statements: ['ship'],
+      onPut: async () => ({ note: { text: '记下了' }, problems: ['没能发布，主人运行 outward sync'] }),
+      onArchive: async () => ({ note: null, problems: ['没能下线'] }),
+      onSay: async () => ({ outcome: 'heard', note: '记下了', problems: ['目标没有答复'] }),
+    })
+    const f = await fixture([p])
+    const put = await kernel.agentFace.put({ kind: 'place', from: { kind: 'file', path: outsideFile('a') }, to: 'a.md', origin: brought }, f.ctx)
+    expect(put).toMatchObject({ outcome: 'accepted', notes: [{ plugin: 'outward', text: '记下了' }], problems: [{ plugin: 'outward', message: '没能发布，主人运行 outward sync' }] })
+    const archived = await kernel.agentFace.archive({ kind: 'archive', path: 'a.md' }, f.ctx)
+    expect(archived).toMatchObject({ outcome: 'accepted', notes: [], problems: [{ plugin: 'outward', message: '没能下线' }] })
+    expect(f.read('_archive/a.md')).toBe('a')
+    const said = await kernel.agentFace.say({ kind: 'ship', about: null, text: null, args: {} }, f.ctx)
+    expect(said).toEqual({ outcome: 'heard', by: 'outward', note: '记下了', problems: [{ plugin: 'outward', message: '目标没有答复' }] })
+  })
+})

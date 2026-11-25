@@ -3,7 +3,7 @@ import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { writableContent } from './access.js'
 import { discard, moveInto, regularFile, replaceWith, scratchName } from './files.js'
 import { abs, archivedPath, canonical, originalPath, parseLibraryPath, regionOf, scratchDir } from './paths.js'
-import { eachPlugin } from './pipeline.js'
+import { eachPlugin, notesOf } from './pipeline.js'
 import { copyBundle, enclosingBundle, fingerprintOf, kindAt, markBundle } from './things.js'
 import type {
   AcceptedPut,
@@ -50,13 +50,13 @@ type Refused = { refused: PutRefusal; subject: string; notes: Note[]; problems: 
 export async function put(req: PutRequest, ctx: Context): Promise<PutResult> {
   const step = req.kind === 'register' ? await register(req, ctx) : req.kind === 'place' ? await place(req, ctx) : await move(req, ctx)
   if ('refused' in step) return { outcome: 'refused', reason: step.refused, subject: step.subject, notes: step.notes, problems: step.problems }
-  const heard = await eachPlugin(ctx, (plugin, pctx) => plugin.onPut?.(step.put, pctx))
+  const heard = notesOf(await eachPlugin(ctx, (plugin, pctx) => plugin.onPut?.(step.put, pctx)))
   return {
     outcome: 'accepted',
     path: step.put.path,
     fingerprint: step.put.fingerprint,
     copied: step.copied,
-    notes: [...step.notes, ...heard.values.map(({ plugin, value }) => ({ ...value, plugin }))],
+    notes: [...step.notes, ...heard.notes],
     problems: [...step.problems, ...heard.problems],
   }
 }

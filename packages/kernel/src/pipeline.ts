@@ -9,12 +9,14 @@ import type {
   Instant,
   Actor,
   Library,
+  Note,
   OwnerAnswer,
   OwnerArgs,
   OwnerResult,
   Plugin,
   PluginContext,
   PluginName,
+  PluginNoteAnswer,
   PluginProblem,
   Session,
   Verb,
@@ -48,6 +50,18 @@ export async function eachPlugin<T>(
     }
   }
   return out
+}
+
+/** The notes of hooks that answer `PluginNoteAnswer`, and the problems they answered beside them, stamped with each plugin's name. */
+export function notesOf(heard: Collected<PluginNoteAnswer>): { notes: Note[]; problems: PluginProblem[] } {
+  const notes: Note[] = []
+  const problems: PluginProblem[] = [...heard.problems]
+  for (const { plugin, value } of heard.values) {
+    const answer = 'problems' in value ? value : { note: value, problems: [] }
+    if (answer.note !== null) notes.push({ ...answer.note, plugin })
+    problems.push(...answer.problems.map((message) => ({ plugin, message })))
+  }
+  return { notes, problems }
 }
 
 export function pluginContext(ctx: Context, name: PluginName): PluginContext {

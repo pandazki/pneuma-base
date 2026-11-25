@@ -184,7 +184,7 @@ async function say(req: SayRequest, ctx: Context): Promise<SayResult> {
   if (!hearer?.onSay) return { outcome: 'not-heard', reason: 'no-plugin-for-kind', note: NO_HEARER, problems: [] }
   try {
     const answer = await hearer.onSay(req, pluginContext(ctx, hearer.name))
-    if (answer.outcome === 'heard') return { outcome: 'heard', by: hearer.name, note: answer.note, problems: [] }
+    if (answer.outcome === 'heard') return { outcome: 'heard', by: hearer.name, note: answer.note, problems: (answer.problems ?? []).map((message) => ({ plugin: hearer.name, message })) }
     return { ...answer, problems: [] }
   } catch (error) {
     return {

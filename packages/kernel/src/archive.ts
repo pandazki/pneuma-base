@@ -1,7 +1,7 @@
 import { mayWrite } from './access.js'
 import { moveInto, replaceWith } from './files.js'
 import { abs, archivedPath, originalPath, parseLibraryPath, regionOf, scratchDir, withSuffix } from './paths.js'
-import { eachPlugin } from './pipeline.js'
+import { eachPlugin, notesOf } from './pipeline.js'
 import { enclosingBundle, fingerprintOf, kindAt } from './things.js'
 import type { ArchiveRefusal, ArchiveRequest, ArchiveResult, Context, LibraryPath } from '@pneuma-base/sdk'
 
@@ -54,15 +54,8 @@ export async function archive(req: ArchiveRequest, ctx: Context): Promise<Archiv
     to = req.kind === 'archive' ? inArchive : original
   }
   const moved = action !== 'stay'
-  const heard = await eachPlugin(ctx, (plugin, pctx) => plugin.onArchive?.({ kind: req.kind, from, to, moved }, pctx))
-  return {
-    outcome: 'accepted',
-    from,
-    to,
-    moved,
-    notes: heard.values.map(({ plugin, value }) => ({ ...value, plugin })),
-    problems: heard.problems,
-  }
+  const heard = notesOf(await eachPlugin(ctx, (plugin, pctx) => plugin.onArchive?.({ kind: req.kind, from, to, moved }, pctx)))
+  return { outcome: 'accepted', from, to, moved, notes: heard.notes, problems: heard.problems }
 }
 
 /** The original path a caller means, whether written as `a.md` or `_archive/a.md`; null when it is no content path. */
