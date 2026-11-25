@@ -193,7 +193,7 @@ export function itemSection(v: ItemView): ItemSection {
       { label: '场景', value: { text: shortScene(entered.scene), mono: true } },
       ...(v.doing ? [{ label: '当时在做', value: { text: v.doing } }] : []),
       { label: '现状', value: { text: v.archived ? '已归档' : '', muted: true, tag: stateTag(v.state) } },
-      ...(v.absorbedInto !== null ? [{ label: '并入', value: { text: v.absorbedInto, mono: true, icon: 'package', link: itemLink(v.absorbedInto) } }] : []),
+      ...(v.absorbedInto !== null ? [{ label: '并入', value: { text: v.absorbedInto, mono: true, icon: 'package' as const, link: itemLink(v.absorbedInto) } }] : []),
       { label: '条目号', value: { text: v.item, mono: true, muted: true } },
     ],
   }
@@ -261,7 +261,7 @@ export function partOfSection(bundle: LibraryPath): ItemSection {
   return {
     title: '来历',
     blocks: [
-      { kind: 'fields', fields: [{ label: '是谁的一部分', value: { text: bundle, mono: true, icon: 'package', link: itemLink(bundle) } }] },
+      { kind: 'fields', fields: [{ label: '是谁的一部分', value: { text: bundle, mono: true, icon: 'package' as const, link: itemLink(bundle) } }] },
       { kind: 'text', tone: 'neutral', text: `它的来历记在 ${bundle} 上：${bundle} 是一样东西，整个一起记账。` },
     ],
   }
