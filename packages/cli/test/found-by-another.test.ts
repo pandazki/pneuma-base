@@ -28,3 +28,21 @@ it('a sentence only search matches gives the item under its scene with its origi
   expect(exact[1]).toBe('  notes/coffee.md  做出来的  正文：手冲咖啡要注意水温和研磨度，闷蒸三十秒。')
   expect(as('codex', 's2', ['find', '怎么冲出好喝的咖啡'])).toEqual(exact)
 })
+
+it('start does not put the caller’s own things under its own scene: the ledger adds only what it would give itself', () => {
+  const sb = sandbox()
+  const lib = join(tempDir(), 'lib')
+  const outside = tempDir('pb-outside-')
+  const ok = (args: string[]) => {
+    const r = sb.run(args, { cwd: outside })
+    expect(r.code, `${r.stdout}\n${r.stderr}`).toBe(0)
+    return r.stdout
+  }
+  ok(['init', lib])
+  writeFileSync(join(outside, 'coffee.md'), 'notes\n')
+  const mine = (args: string[]) => ok(['--library', lib, '--as', 'claude-code', '--session', 's1', ...args])
+  mine(['put', join(outside, 'coffee.md'), '--to', 'notes/coffee.md', '--made'])
+  const started = mine(['start', '接着写 coffee 笔记'])
+  expect(started).toContain('notes/coffee.md')
+  expect(started).not.toContain('场景 s1')
+})

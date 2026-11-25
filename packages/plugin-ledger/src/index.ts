@@ -306,13 +306,15 @@ export const ledger: Plugin = {
     return rankHits(findCandidates(ledger, { ...scope, content }), terms, req.match)
   },
 
-  /** The scene and origin of each found path that is an item; a file nobody registered gets nothing. */
-  async onFound(paths, _req, ctx) {
+  /**
+   * The scene and origin of each found path that is an item this find would give: start's own
+   * session stays left out, as in `onFind`. A file nobody registered gets nothing.
+   */
+  async onFound(paths, req, ctx) {
     const ledger = await load(ctx)
-    return paths.flatMap((path) => {
-      const item = ledger.items.get(ledger.pathIndex.get(path) ?? ('' as ItemId))
-      return item ? [itemHit(ledger, item)] : []
-    })
+    const asked = new Set(paths)
+    const scope = { ...req, skip: req.skipOwnSession ? sceneOf(ctx) : null }
+    return findableItems(ledger, scope).flatMap((item) => (asked.has(item.path) ? [itemHit(ledger, item)] : []))
   },
 
   /** The target is a scene id, an item id or path, a file nobody registered, else a scene id prefix: exact names first. */
