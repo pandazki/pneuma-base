@@ -105,6 +105,28 @@ describe('a bundle with the ledger', () => {
     ok(agent(['put', '-', '--to', 'review.md', '--made', '--from', 'sites/a/index.html'], 's1', 'review'))
     expect(ledgerData(ok(agent(['inspect', 'review.md', '--json']))).basis).toMatchObject([{ path: 'sites/a' }])
   })
+
+  it('find matches text inside a bundle, and with the search plugin keeps the bundle under its scene with its origin', () => {
+    ok(agent(['start', '做早鸟预订页'], 's1'))
+    write(outside, { 'landing/index.html': '<h1>桌上只留一块铝</h1>', 'landing/style.css': 'body { color: #222; }' })
+    ok(agent(['put', 'landing', '--to', 'sites/landing', '--made']))
+    const ledgerOnly = ok(agent(['find', '一块铝'], 's2')).stdout
+    expect(ledgerOnly).toContain('在做：做早鸟预订页')
+    expect(ledgerOnly).toMatch(/sites\/landing\s+做出来的/)
+
+    ok(owner(['plugin', 'add', 'search']))
+    const withSearch = ok(agent(['find', '一块铝'], 's2')).stdout
+    expect(withSearch).toContain('在做：做早鸟预订页')
+    expect(withSearch).toMatch(/sites\/landing\s+做出来的\s+index\.html：.*一块铝/)
+  })
+
+  it('find reaches a bundle’s text past images that sort before it and outweigh the reading limit', () => {
+    const image = Buffer.alloc(400 * 1024, 0xff)
+    write(outside, { 'shop/assets/a.png': image, 'shop/assets/b.png': image, 'shop/assets/c.png': image, 'shop/index.html': '<h1>黄铜镇纸</h1>' })
+    ok(agent(['put', 'shop', '--to', 'sites/shop', '--made']))
+    expect(ok(agent(['find', '黄铜镇纸'], 's2')).stdout).toMatch(/sites\/shop\s+做出来的/)
+    expect(ok(agent(['find', 'b.png'], 's2')).stdout).toMatch(/sites\/shop\s+做出来的/)
+  })
 })
 
 describe('registering a folder whose files are on record', () => {

@@ -40,6 +40,13 @@ describe('put --note', () => {
     expect(ok(codex(['inspect', 'brief.md'])).stdout).toMatch(/^ {2}[0-9a-f]{8} {2}\S+ \S+ {2}claude-code {2}「主人给的需求」$/m)
   })
 
+  it('is matched by find, both from the initial enter and from a later revise', () => {
+    ok(claude(['put', '-', '--to', 'quote.md', '--made', '--note', '拉丝铝初稿'], 'early bird 99'))
+    ok(claude(['put', '-', '--to', 'quote.md', '--made', '--note', '芯片涨价后重算'], 'early bird 129'))
+    expect(ok(codex(['find', '拉丝铝'])).stdout).toContain('quote.md  做出来的')
+    expect(ok(codex(['find', '芯片涨价'])).stdout).toContain('quote.md  做出来的')
+  })
+
   it('is refused on a move within the library, which changes no content', () => {
     ok(claude(['put', '-', '--to', 'a.md', '--made'], 'a'))
     const r = claude(['put', 'a.md', '--to', 'moved/a.md', '--note', '挪个地方'])
