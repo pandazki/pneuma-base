@@ -170,6 +170,22 @@ describe('versions of a declared thing (C4)', () => {
     expect(owner(['version', 'export', 'report.bin', '--version', '9', '--to', join(outside, 'x'), '--json']).json()).toMatchObject({ reason: 'no-such-version' })
   })
 
+  it('an export by one agent is no news in another agent’s check; a restore is', () => {
+    ok(owner(['plugin', 'add', 'ledger']))
+    ok(put('v1'))
+    declare('report.md')
+    ok(put('v2'))
+    ok(agent(['version', 'export', 'report.md', '--version', '1', '--to', join(outside, 'v1.md')]))
+    const since = () => {
+      const r = ok(sb.run(['--library', lib, '--as', 'codex', '--session', 's2', 'check', '--json'], { cwd: outside })).json()
+      return r.sections.find((s: any) => s.title === '自上次以来')?.body as string
+    }
+    expect(since()).toContain('report.md 换了新内容')
+    expect(since()).not.toContain('version export')
+    ok(agent(['version', 'restore', 'report.md', '--version', '1']))
+    expect(since()).toContain('执行 version restore')
+  })
+
   it('a bundle version is exported as the tree it had', () => {
     const site = join(outside, 'site')
     writeTree(site, { 'index.html': '<h1>1</h1>', 'css/a.css': 'a{}' })

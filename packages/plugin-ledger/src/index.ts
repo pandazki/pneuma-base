@@ -190,14 +190,18 @@ async function recordSay(w: Writing, req: SayRequest): Promise<SayAnswer> {
   }
   if (req.kind === 'revised') {
     const input = req.about ?? req.text
+    const by = req.args.by?.[0]?.trim() || null
+    if (by !== null && by !== 'owner') return refused('say revised 的 --by 只能写 owner：say revised <库内路径> [--by owner]')
     const path = input === null ? null : await thingPath(ctx.library.root, input)
     const item = w.ledger.items.get((path !== null && w.ledger.pathIndex.get(path)) || ('' as ItemId))
     if (!item || path === null) return refused(`没人登记过这个文件：${input ?? '（没写）'}。要补来历，用 put <库内路径> --brought 或 --made。`)
     const disk = await onDisk(ctx.library.root, path)
     if (!disk) return refused(`文件不在：${input}`)
     if (disk.fingerprint === item.fingerprint) return heard(`${input} 的内容和记录一致，没有要认的改动`)
-    w.facts.push(fact(ctx, 'reported', { kind: 'item.revise', item: item.id, base: item.fingerprint, fingerprint: disk.fingerprint, size: disk.size, held: null, claimed: true }))
-    return heard(`已认下 ${input} 的直接改动`)
+    // The envelope's actor is who the library recognised; what the caller says goes in the body.
+    const forOwner = by === 'owner' && ctx.actor.kind !== 'owner'
+    w.facts.push(fact(ctx, 'reported', { kind: 'item.revise', item: item.id, base: item.fingerprint, fingerprint: disk.fingerprint, size: disk.size, held: null, claimed: true, ...(forOwner ? { by: 'owner' as const } : {}) }))
+    return heard(forOwner ? `已记下 ${input} 的这次直接改动是主人做的` : `已认下 ${input} 的直接改动`)
   }
   return refused(`记账插件不认识这个种类：${req.kind}`)
 }
