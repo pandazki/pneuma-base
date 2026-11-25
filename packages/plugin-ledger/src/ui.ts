@@ -244,7 +244,10 @@ export function itemSection(v: ItemView): ItemSection {
     // A held copy lies at held/<item>/<fingerprint>/<name>.
     const items = v.held.map((path) => {
       const fingerprint = path.split('/').at(-2) ?? ''
-      return { cell: { text: `留存 ${fingerprint.slice(0, 8)}`, mono: true }, note: path, actions: [restoreAction(v, path, fingerprint)] }
+      // Whose content it was, as the changes above show it; where it lies is the plugin's business.
+      const ver = v.versions.find((x) => x.fingerprint === fingerprint)
+      const note = ver ? `${who(ver.actor)} 放进来的那份内容` : null
+      return { cell: { text: `留存 ${fingerprint.slice(0, 8)}`, mono: true }, note, actions: [restoreAction(v, path, fingerprint)] }
     })
     blocks.push(counted('留存', items.length, [{ kind: 'text', text: '被新内容换下来的旧内容，给主人的保险。取回时复制到一个新路径，现在的内容不动。', tone: 'neutral' }, { kind: 'list', items }]))
   }

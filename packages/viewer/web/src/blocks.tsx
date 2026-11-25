@@ -63,10 +63,10 @@ export function CellView({ cell, line = false }: { cell: Cell; line?: boolean })
         </span>
       </span>
     ) : (
-      <span className={`${style} ${line ? 'min-w-0 truncate' : 'break-words'}`}>{cell.text}</span>
+      <span className={`${style} min-w-0 ${line ? 'truncate' : '[overflow-wrap:anywhere]'}`}>{cell.text}</span>
     )
   const content = (
-    <span className={`items-center gap-x-2 align-middle ${line ? 'flex max-w-full min-w-0' : 'inline-flex flex-wrap gap-y-1'}`} title={line && cell.text !== '' && !cell.at ? cell.text : undefined}>
+    <span className={`items-center gap-x-2 align-middle ${line ? 'flex max-w-full min-w-0' : 'inline-flex max-w-full flex-wrap gap-y-1'}`} title={line && cell.text !== '' && !cell.at ? cell.text : undefined}>
       {cell.icon ? <ViewIcon name={cell.icon} className="size-4 shrink-0 text-ink-3" /> : null}
       {text}
       {cell.tag ? <TagView tag={cell.tag} /> : null}
@@ -270,7 +270,7 @@ function ListView({ block }: { block: Extract<Block, { kind: 'list' }> }) {
         <li key={`${item.cell.text}-${i}`} className="flex min-h-[35px] items-center gap-3 px-3 py-1.5 text-[13px]">
           <div className="min-w-0 flex-1">
             <CellView cell={item.cell} />
-            {item.note ? <p className="mt-0.5 text-[12px] text-ink-2">{item.note}</p> : null}
+            {item.note ? <p className="mt-0.5 text-[12px] [overflow-wrap:anywhere] text-ink-2">{item.note}</p> : null}
           </div>
           <ActionRow actions={item.actions} small />
         </li>

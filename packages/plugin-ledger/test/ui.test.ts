@@ -284,6 +284,8 @@ describe('the owner’s operations on the ledger’s blocks', () => {
     expect(held.blocks.find((b) => b.kind === 'list')).toMatchObject({
       items: [
         {
+          // Whose content it was, not where the plugin keeps it.
+          note: 'claude-code 放进来的那份内容',
           actions: [
             {
               label: '取回到新路径',

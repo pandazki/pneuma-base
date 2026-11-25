@@ -10,6 +10,8 @@ import { test as base, type Locator, type Page } from '@playwright/test'
 const BIN = fileURLToPath(new URL('../../cli/dist/bin.js', import.meta.url))
 const BIN_WITH_TEST_PLUGINS = fileURLToPath(new URL('../../cli/test/fixtures/bin-with-test-plugins.ts', import.meta.url))
 export const SHOTS = fileURLToPath(new URL('../../../tmp/run-2/shots/', import.meta.url))
+/** Where the whole story's screenshots go. */
+export const STORY_SHOTS = fileURLToPath(new URL('../../../tmp/run-3/shots/', import.meta.url))
 
 export function tempDir(prefix = 'pb-e2e-'): string {
   return realpathSync(mkdtempSync(join(tmpdir(), prefix)))
@@ -108,7 +110,6 @@ export async function navTitles(page: Page): Promise<string[]> {
   return page.getByRole('navigation', { name: '导航' }).getByRole('button').allInnerTexts()
 }
 
-/** Saves the page in the light and the dark scheme under tmp/run-2/shots/. */
 /** The texts inside `table` matching `cells` that are cut short on screen. */
 export function cutTexts(table: Locator, cells = 'td'): Promise<string[]> {
   return table.evaluate(
@@ -117,11 +118,12 @@ export function cutTexts(table: Locator, cells = 'td'): Promise<string[]> {
   )
 }
 
-export async function shoot(page: Page, name: string): Promise<void> {
+/** Saves the page in the light and the dark scheme under `dir`, tmp/run-2/shots/ unless given. */
+export async function shoot(page: Page, name: string, dir = SHOTS): Promise<void> {
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme })
     await page.waitForTimeout(150)
-    await page.screenshot({ path: join(SHOTS, `${name}-${scheme}.png`) })
+    await page.screenshot({ path: join(dir, `${name}-${scheme}.png`) })
   }
   await page.emulateMedia({ colorScheme: 'light' })
 }

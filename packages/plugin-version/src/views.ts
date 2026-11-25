@@ -8,7 +8,7 @@ import type { DiskState } from './versions.js'
 export const THINGS_VIEW: ViewDecl = {
   id: 'version.things',
   title: '有版本的东西',
-  icon: 'history',
+  icon: 'git-branch',
   nav: true,
   filters: [{ name: 'archived', label: '归档的', options: [{ value: 'hide', label: '不显示' }, { value: 'show', label: '也显示' }], default: 'hide' }],
 }
