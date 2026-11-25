@@ -73,10 +73,13 @@ export type Origin<P = LibraryPath> =
 /** `directory`: a directory outside the library, placed as one thing (a bundle). */
 export type PlaceSource = { kind: 'file'; path: string } | { kind: 'directory'; path: string } | { kind: 'stdin'; content: Uint8Array }
 
-/** Paths are as the caller wrote them: library-relative or absolute. The kernel parses them. */
+/**
+ * Paths are as the caller wrote them: library-relative or absolute. The kernel parses them.
+ * `note`: one sentence on what this put changed.
+ */
 export type PutRequest =
-  | { kind: 'register'; path: string; origin: Origin<string> }
-  | { kind: 'place'; from: PlaceSource; to: string; origin: Origin<string> }
+  | { kind: 'register'; path: string; origin: Origin<string>; note?: string | null }
+  | { kind: 'place'; from: PlaceSource; to: string; origin: Origin<string>; note?: string | null }
   | { kind: 'move'; from: string; to: string }
 
 /**
@@ -90,14 +93,15 @@ export type PutResult =
   | { outcome: 'accepted'; path: LibraryPath; fingerprint: Fingerprint; copied: boolean; notes: Note[]; problems: PluginProblem[] }
   | { outcome: 'refused'; reason: PutRefusal; subject: string; notes: Note[]; problems: PluginProblem[] }
 
-/** What `onPut` receives after the kernel accepted a put. */
+/** What `onPut` receives after the kernel accepted a put. `note` is trimmed; blank or absent is null. */
 export type AcceptedPut =
-  | { kind: 'register'; path: LibraryPath; fingerprint: Fingerprint; origin: Origin }
+  | { kind: 'register'; path: LibraryPath; fingerprint: Fingerprint; origin: Origin; note: string | null }
   | {
       kind: 'place'
       path: LibraryPath
       fingerprint: Fingerprint
       origin: Origin
+      note: string | null
       source: { kind: 'file'; path: string } | { kind: 'directory'; path: string } | { kind: 'stdin' }
       copied: boolean
       previous: Fingerprint | null // the content it replaced through `revise`, if any

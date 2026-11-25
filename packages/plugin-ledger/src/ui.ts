@@ -236,7 +236,7 @@ export function itemSection(v: ItemView): ItemSection {
   const versions = [...v.versions].reverse().map((ver, i) => ({
     at: ver.at,
     title: { text: ver.fingerprint.slice(0, 12), mono: true },
-    lines: [`${ver.by === 'owner' ? `主人，${who(ver.actor)} 代记` : who(ver.actor)} · 场景 ${shortScene(ver.scene)}`],
+    lines: [`${ver.by === 'owner' ? `主人，${who(ver.actor)} 代记` : who(ver.actor)} · 场景 ${shortScene(ver.scene)}`, ...(ver.note === null ? [] : [ver.note])],
     tag: i === 0 ? { text: '当前', tone: 'good' as const } : ver.claimed ? { text: ver.by === 'owner' ? '主人直接改的' : '认了直接改动', tone: 'warn' as const } : ver.held ? { text: '换下的进了留存', tone: 'neutral' as const } : null,
   }))
   blocks.push(counted('内容的变化', versions.length, [{ kind: 'timeline', entries: versions }]))

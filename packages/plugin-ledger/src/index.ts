@@ -133,22 +133,28 @@ async function recordPut(w: Writing, req: AcceptedPut): Promise<PluginNote> {
     // New content made from the thing's own old content: that it changed is the revise; it is no basis of itself.
     origin = { kind: 'made', basis: { ...basis, items: basis.items.filter((row) => row.item !== item?.id) } }
   } else origin = req.origin
+  const noted = req.note === null ? {} : { note: req.note }
   const made = origin.kind === 'made' ? basisNote(origin.basis) : ''
   if (!item) {
     const id = newItemId()
-    w.facts.push(fact(ctx, 'tool', { kind: 'item.enter', item: id, path: req.path, fingerprint: req.fingerprint, size, origin, ...bundleFlag(disk) }))
+    w.facts.push(fact(ctx, 'tool', { kind: 'item.enter', item: id, path: req.path, fingerprint: req.fingerprint, size, origin, ...bundleFlag(disk), ...noted }))
     return { text: `已记下：${originLabel(origin)}${made} · 条目 ${id}`, data: { item: id } }
   }
   if (item.fingerprint === req.fingerprint) {
-    if (!item.unknownOrigin) return { text: `已在册：条目 ${item.id}，内容和记录一致，没有新记`, data: { item: item.id } }
+    if (!item.unknownOrigin) {
+      if (req.note === null) return { text: `已在册：条目 ${item.id}，内容和记录一致，没有新记`, data: { item: item.id } }
+      // No fact is written for this put, so its sentence is a note about the thing.
+      w.facts.push(fact(ctx, 'reported', { kind: 'said', flavor: 'note', text: req.note, about: item.id }))
+      return { text: `已在册：条目 ${item.id}，内容和记录一致，已记下备注：${req.note}`, data: { item: item.id } }
+    }
     // An enter at a path an item holds is an alias of it; it gives the adopted item its origin.
-    w.facts.push(fact(ctx, 'tool', { kind: 'item.enter', item: newItemId(), path: req.path, fingerprint: req.fingerprint, size, origin, ...bundleFlag(disk) }))
+    w.facts.push(fact(ctx, 'tool', { kind: 'item.enter', item: newItemId(), path: req.path, fingerprint: req.fingerprint, size, origin, ...bundleFlag(disk), ...noted }))
     return { text: `已补上来历：${originLabel(origin)}${made} · 条目 ${item.id}`, data: { item: item.id } }
   }
   const held = req.kind === 'place' && req.previous !== null ? heldPath(ctx, item.id, req.previous, req.path) : null
   const claimed = req.kind === 'register'
   const basis = origin.kind === 'made' ? { basis: origin.basis } : {}
-  w.facts.push(fact(ctx, claimed ? 'reported' : 'tool', { kind: 'item.revise', item: item.id, base: item.fingerprint, fingerprint: req.fingerprint, size, ...basis, held, claimed }))
+  w.facts.push(fact(ctx, claimed ? 'reported' : 'tool', { kind: 'item.revise', item: item.id, base: item.fingerprint, fingerprint: req.fingerprint, size, ...basis, held, claimed, ...noted }))
   const text = held ? '已记下换了新内容，旧内容进了留存，主人取得回' : claimed ? '已认下这次直接改动' : '已记下换了新内容'
   return { text: `${text} · 条目 ${item.id}`, data: { item: item.id } }
 }

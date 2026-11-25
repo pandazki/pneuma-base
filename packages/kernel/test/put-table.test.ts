@@ -39,6 +39,20 @@ describe('an origin from a form', () => {
   })
 })
 
+describe('a note on a put', () => {
+  it('reaches onPut trimmed; a blank or absent note arrives as null', async () => {
+    const seen: AcceptedPut[] = []
+    const f = await fixture([plugin('watcher', { onPut: async (req) => (seen.push(req), null) })])
+    f.write('a.md', 'a')
+    const stdin = (content: string) => ({ kind: 'stdin' as const, content: new TextEncoder().encode(content) })
+    await agentFace.put({ kind: 'register', path: 'a.md', origin: brought, note: ' 第一稿 ' }, f.ctx)
+    await agentFace.put({ kind: 'place', from: stdin('b'), to: 'b.md', origin: brought, note: '按新成本重算' }, f.ctx)
+    await agentFace.put({ kind: 'register', path: 'a.md', origin: brought, note: '  ' }, f.ctx)
+    await agentFace.put({ kind: 'place', from: stdin('b'), to: 'b.md', origin: brought }, f.ctx)
+    expect(seen.map((r) => r.kind !== 'move' && r.note)).toEqual(['第一稿', '按新成本重算', null, null])
+  })
+})
+
 describe('register', () => {
   it('outside the library: refused', async () => {
     const f = await fixture()

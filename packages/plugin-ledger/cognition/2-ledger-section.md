@@ -32,6 +32,8 @@ pneuma-base @{{授权的名字}} put ./comparison.md --to payments/comparison.md
   --from-outside "主人在对话里说：客户主要在欧洲"
 ```
 
+放的时候可以加 `--note "<一句话>"`，写这次放入改了什么。
+
 主人给你的文件，用 `--brought --by owner`。主人拍板了，记一句：
 
 ```sh

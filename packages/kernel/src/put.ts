@@ -82,7 +82,7 @@ async function register(req: Extract<PutRequest, { kind: 'register' }>, ctx: Con
   const action = PUT_TABLE.register[state]
   if (typeof action === 'object') return refuse(action.refuse, req.path)
   if (action === 'mark') await markBundle(file)
-  return { put: { kind: 'register', path: target.path, fingerprint: await fingerprintOf(file), origin }, copied: false, notes: [], problems: [] }
+  return { put: { kind: 'register', path: target.path, fingerprint: await fingerprintOf(file), origin, note: given(req.note ?? null) }, copied: false, notes: [], problems: [] }
 }
 
 async function place(req: Extract<PutRequest, { kind: 'place' }>, ctx: Context): Promise<Accepted | Refused> {
@@ -111,8 +111,9 @@ async function place(req: Extract<PutRequest, { kind: 'place' }>, ctx: Context):
     const file = abs(root, target.path)
     const there = await stateAt(file, kind, fingerprint)
     const source = from.kind === 'stdin' ? { kind: 'stdin' as const } : { kind: from.kind, path: from.path }
+    const note = given(req.note ?? null)
     const accepted = (copied: boolean, previous: Fingerprint | null, notes: Note[] = [], problems: PluginProblem[] = []): Accepted => ({
-      put: { kind: 'place', path: target.path, fingerprint, origin, source, copied, previous },
+      put: { kind: 'place', path: target.path, fingerprint, origin, note, source, copied, previous },
       copied,
       notes,
       problems,

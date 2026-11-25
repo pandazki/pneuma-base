@@ -78,7 +78,7 @@ const USAGE = `用法：
   pneuma-base @<授权名> <动词> …
   pneuma-base --library <库的目录> [--as <agent 名>] <动词> …
 动词：start "<一句话>" | find <文字> [--include-archived] [--scene <场景号>] [--origin brought|made] | inspect <库内路径|条目号|场景号>
-      put <文件|目录|-|库内路径> [--to <库内路径>] (--brought [--source <出处>] [--by owner] | --made [--from <库内路径…>] [--from-outside <一句话…>])
+      put <文件|目录|-|库内路径> [--to <库内路径>] (--brought [--source <出处>] [--by owner] | --made [--from <库内路径…>] [--from-outside <一句话…>]) [--note "<一句话>"]
       say <种类> [<关于>] [<内容>] | check [--since <时间>|last] [--include-archived]
       archive <库内路径> | unarchive <库内路径>
 主人：view [<目录>] [--port <端口>] [--no-open]（在浏览器里打开管理界面；pneuma-base <目录> 也一样）
@@ -157,20 +157,21 @@ async function putRequest(inv: Invocation, library: Library): Promise<PutRequest
   const first = inv.args[0] as string
   const to = flagValue(inv.parsed, 'to')
   const origin = originOf(inv.parsed)
+  const note = flagValue(inv.parsed, 'note')
   if (first === '-') {
     if (to === null) throw new UsageError('从标准输入放进来要写 --to <库内路径>。')
-    return { kind: 'place', from: { kind: 'stdin', content: await inv.io.readStdin() }, to, origin: requireOrigin(origin) }
+    return { kind: 'place', from: { kind: 'stdin', content: await inv.io.readStdin() }, to, origin: requireOrigin(origin), note }
   }
   const local = resolve(inv.io.cwd, first)
   const onDisk = isAbsolute(first) || existsSync(local)
   if (onDisk && parseLibraryPath(library.root, local) === null) {
     if (to === null) throw new UsageError('从库外放进来要写 --to <库内路径>。')
     const kind = statSync(local, { throwIfNoEntry: false })?.isDirectory() ? 'directory' : 'file'
-    return { kind: 'place', from: { kind, path: local }, to, origin: requireOrigin(origin) }
+    return { kind: 'place', from: { kind, path: local }, to, origin: requireOrigin(origin), note }
   }
   const path = onDisk ? local : first
-  if (to === null) return { kind: 'register', path, origin: requireOrigin(origin) }
-  if (origin) throw new UsageError('在库里挪位置不需要 --brought 或 --made。')
+  if (to === null) return { kind: 'register', path, origin: requireOrigin(origin), note }
+  if (origin || note !== null) throw new UsageError('在库里挪位置不需要 --brought、--made 或 --note。')
   return { kind: 'move', from: path, to }
 }
 
@@ -224,7 +225,7 @@ const SPECS: Spec[] = [
   },
   {
     words: ['put'],
-    flags: ['to', 'brought', 'made', 'source', 'by', 'from', 'from-outside'],
+    flags: ['to', 'brought', 'made', 'source', 'by', 'from', 'from-outside', 'note'],
     arity: [1, 1],
     library: true,
     run: async (inv, { library, ctx }) => {

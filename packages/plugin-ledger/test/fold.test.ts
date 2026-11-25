@@ -51,6 +51,17 @@ describe('fold', () => {
     expect(based.items.get(id('i_a'))).toMatchObject({ unknownOrigin: false, basis: basis([['i_s', 's']]) })
   })
 
+  it('puts a put’s note on the content that put recorded; an alias giving an adopted item its origin notes the content it registered', () => {
+    const ledger = fold([
+      f(1, { ...enter('i_a', 'a.md', 'a'), note: '初稿' }),
+      f(2, { kind: 'item.revise', item: id('i_a'), base: fp('a'), fingerprint: fp('b'), size: 1, held: null, claimed: false, note: '重算' }),
+      f(3, enter('i_d', 'd.md', 'd', { kind: 'adopted' })),
+      f(4, { ...enter('i_x', 'd.md', 'd'), note: '主人给的' }),
+    ])
+    expect(ledger.items.get(id('i_a'))?.versions.map((v) => v.note)).toEqual(['初稿', '重算'])
+    expect(ledger.items.get(id('i_d'))?.versions.map((v) => v.note)).toEqual(['主人给的'])
+  })
+
   it('does not alias onto an item that moved away or was removed', () => {
     const ledger = fold([
       f(1, enter('i_a', 'a.md', 'a')),

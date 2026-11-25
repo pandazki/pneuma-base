@@ -5,7 +5,7 @@ import type { Basis, Fact, FactActor, How, ItemId, LedgerOrigin, SceneId } from 
 export type Said = Extract<Fact, { kind: 'said' }>
 export type OwnerOp = Extract<Fact, { kind: 'owner.op' }>
 
-export type Version = { fingerprint: Fingerprint; at: Instant; scene: SceneId; actor: FactActor; how: How; held: string | null; claimed: boolean; by: 'owner' | null }
+export type Version = { fingerprint: Fingerprint; at: Instant; scene: SceneId; actor: FactActor; how: How; held: string | null; claimed: boolean; by: 'owner' | null; note: string | null }
 
 export type ItemRecord = {
   id: ItemId
@@ -94,6 +94,9 @@ function apply(ledger: Ledger, f: Fact): void {
       if (item) {
         // An alias that knows where the thing came from fills in an adopted item's origin.
         if (item.unknownOrigin && f.origin.kind !== 'adopted') Object.assign(item, { origin: f.origin, basis: basisOf(f.origin), unknownOrigin: false })
+        // Its note is about the content it registered, which an earlier fact recorded.
+        const registered = item.versions.findLast((v) => v.fingerprint === f.fingerprint)
+        if (f.note && registered && registered.note === null) registered.note = f.note
         return
       }
       ledger.items.set(f.item, {
@@ -178,7 +181,7 @@ function touchScene(ledger: Ledger, f: Fact): void {
 
 function version(f: Extract<Fact, { kind: 'item.enter' | 'item.revise' }>): Version {
   const revise = f.kind === 'item.revise' ? f : null
-  return { fingerprint: f.fingerprint, at: f.at, scene: f.scene, actor: f.actor, how: f.how, held: revise?.held ?? null, claimed: revise?.claimed ?? false, by: revise?.by ?? null }
+  return { fingerprint: f.fingerprint, at: f.at, scene: f.scene, actor: f.actor, how: f.how, held: revise?.held ?? null, claimed: revise?.claimed ?? false, by: revise?.by ?? null, note: f.note ?? null }
 }
 
 const basisOf = (origin: LedgerOrigin): Basis => (origin.kind === 'made' ? origin.basis : NO_BASIS)

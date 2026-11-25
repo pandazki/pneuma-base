@@ -104,6 +104,23 @@ describe('versions of a declared thing (C4)', () => {
     ])
   })
 
+  it('put --note records the version description in the same step, and the ledger keeps it on that content, not as a separate note', () => {
+    ok(owner(['plugin', 'add', 'ledger']))
+    ok(put('v1'))
+    declare('report.md', '初稿')
+    const second = ok(agent(['put', '-', '--to', 'report.md', '--made', '--note', '按新成本重算早鸟价', '--json'], 'v2')).json()
+    expect(second).toMatchObject({ outcome: 'accepted', copied: true })
+    expect(second.notes.map((n: any) => n.text).join('\n')).toContain('记为 report.md 的第 2 版：「按新成本重算早鸟价」')
+    expect(versions('report.md').map((v) => [v.n, v.note])).toEqual([
+      [1, '初稿'],
+      [2, '按新成本重算早鸟价'],
+    ])
+    const inspected = ok(agent(['inspect', 'report.md', '--json'])).json()
+    const ledgerData = inspected.sections.find((s: any) => s.plugin === 'ledger').data
+    expect(ledgerData.versions.map((v: any) => v.note)).toEqual([null, '按新成本重算早鸟价'])
+    expect(ledgerData.said).toEqual([])
+  })
+
   it('say version names the current version', () => {
     ok(put('v1'))
     declare('report.md')
