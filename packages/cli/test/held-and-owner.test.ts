@@ -2,8 +2,10 @@
 // same bytes; the agent face has no delete. C7: owner operations show up in an agent's check;
 // destructive owner commands are refused in an agent session and without in-person confirmation.
 // C15 with the ledger: an archived item stays out of the stale lists, its origin still readable.
+import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { sandbox, tempDir, type Sandbox } from './helpers.js'
 
@@ -95,7 +97,35 @@ describe('a new version over an old one (C6)', () => {
     expect(unconfirmed.stdout).toContain('not-confirmed')
     expect(readdirSync(heldDir)).toHaveLength(1)
   })
+
+  it.skipIf(!HAS_PTY)('in a terminal, input that ends (Ctrl+D) is no confirmation: refused in Chinese, exit 2; typing yes confirms', () => {
+    ok(agent(['put', 'report.bin', '--to', 'report.bin', '--made']))
+    const heldDir = join(lib, '.pneuma-base/ledger/held')
+    const ended = inTerminal('EOF', ['ledger', 'held', 'drop', '--library', lib])
+    expect(ended.stdout).not.toMatch(/Aborted|Ctrl\+D/)
+    expect(ended.stdout).toContain('拒绝（not-confirmed）：没有得到当面确认，什么都没做。')
+    expect(ended.code).toBe(2)
+    expect(readdirSync(heldDir)).toHaveLength(1)
+    const confirmed = inTerminal('yes', ['ledger', 'held', 'drop', '--library', lib])
+    expect(confirmed.code, confirmed.stdout).toBe(0)
+    expect(existsSync(heldDir) ? readdirSync(heldDir) : []).toEqual([])
+  })
 })
+
+const TERMINAL = fileURLToPath(new URL('./fixtures/terminal.py', import.meta.url))
+const BIN = fileURLToPath(new URL('../dist/bin.js', import.meta.url))
+const HAS_PTY = process.platform !== 'win32' && spawnSync('python3', ['--version']).status === 0
+
+/** `pneuma-base ...args` as the owner at a terminal, who answers the confirmation with `answer`, or ends the input. */
+function inTerminal(answer: 'EOF' | 'yes', args: string[]): { code: number; stdout: string } {
+  const r = spawnSync('python3', [TERMINAL, answer, process.execPath, BIN, ...args], {
+    cwd: outside,
+    env: { PATH: process.env.PATH ?? '', HOME: sb.home, PNEUMA_BASE_HOME: join(sb.home, '.pneuma-base') },
+    encoding: 'utf8',
+    timeout: 90_000,
+  })
+  return { code: r.status ?? -1, stdout: r.stdout }
+}
 
 describe('owner operations (C7)', () => {
   it('appear in an agent’s check after its last visit when they change the content or the capabilities', () => {

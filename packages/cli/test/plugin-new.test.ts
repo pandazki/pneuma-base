@@ -58,6 +58,20 @@ describe('plugin new', () => {
     expect(readdirSync(where)).toEqual([])
   })
 
+  it('never sends a reader who has only the two package files to the source repository', () => {
+    const toRepository = /仓库|pack:dist|dist-packages/
+    expect(sb.run(['plugin', 'new', '--help']).stdout).not.toMatch(toRepository)
+    const missing = sb.run(['plugin', 'new', join(tempDir('pb-new-'), 'x'), '--packages', tempDir('pb-none-')])
+    expect(missing.stdout).toContain('拒绝（no-package-files）')
+    expect(missing.stdout).not.toMatch(toRepository)
+    const project = join(tempDir('pb-new-'), 'unpacked')
+    const r = sb.run(['plugin', 'new', project])
+    expect(r.code, r.stderr).toBe(0)
+    expect(r.stdout).toContain('--packages <两个包文件所在的目录>')
+    expect(r.stdout).not.toMatch(toRepository)
+    expect(JSON.parse(readFileSync(join(project, 'package.json'), 'utf8')).devDependencies['pneuma-base']).toBe(`^${PNEUMA_BASE_VERSION}`)
+  })
+
   it('refuses before writing anything: a directory that is not empty, package files that are not there, a name or kind that cannot be', () => {
     const full = tempDir('pb-new-')
     mkdirSync(join(full, 'x'))
