@@ -74,7 +74,7 @@ async function fixture() {
   const ctx = makeContext(library, { kind: 'owner' }, session, home)
   const pctx: PluginContext = { ...ctx, dir: join(root, '.pneuma-base', 'sync'), cacheDir: join(home, 'cache', library.config.id, 'sync') }
   const owner = async (name: string, flags: Record<string, string[]> = {}) => {
-    const r = await ownerFace.dispatch({ ctx, table, home, env: {}, viaGrant: false, confirm: async () => false }, name, { positional: [], flags })
+    const r = await ownerFace.dispatch({ ctx, table, env: {}, viaGrant: false, confirm: async () => false }, name, { positional: [], flags })
     if (r.outcome !== 'done') throw new Error(r.text)
     return r
   }

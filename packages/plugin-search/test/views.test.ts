@@ -30,7 +30,7 @@ async function library() {
     find: async (text: string) => agentFace.find({ text, match: 'terms', filters: {}, includeArchived: false, skipOwnSession: false }, (await open()).ctx),
     owner: async (name: string, flags: Record<string, string[]> = {}) => {
       const { ctx } = await open()
-      return ownerFace.dispatch({ ctx, table, home, env: {}, viaGrant: false, confirm: async () => false }, name, { positional: [], flags })
+      return ownerFace.dispatch({ ctx, table, env: {}, viaGrant: false, confirm: async () => false }, name, { positional: [], flags })
     },
     status: async () => (await search.onView?.({ view: 'search.status', params: {} }, (await open()).pctx)) ?? null,
     item: async (path: string) => (await search.onItemView?.(path as LibraryPath, (await open()).pctx)) ?? null,

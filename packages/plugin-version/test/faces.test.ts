@@ -37,7 +37,7 @@ async function library() {
   if (!lib) throw new Error('no library')
   const as = (actor: Actor = claude): Context => makeContext(lib, actor, session('s1'), home, next())
   const plugin = (): PluginContext => ({ ...as(owner), dir: join(root, '.pneuma-base', 'version'), cacheDir: join(home, 'cache', lib.config.id, 'version') })
-  const call = (): OwnerCall => ({ ctx: as(owner), table, home, env: {}, viaGrant: false, confirm: async () => true })
+  const call = (): OwnerCall => ({ ctx: as(owner), table, env: {}, viaGrant: false, confirm: async () => true })
   const owned = (name: string, positional: string[], flags: Record<string, string[]> = {}) => ownerFace.dispatch(call(), name, { positional, flags })
   const put = (content: string, to: string) =>
     agentFace.put({ kind: 'place', from: { kind: 'stdin', content: new TextEncoder().encode(content) }, to, origin: { kind: 'made', from: [], outside: [] } }, as())
