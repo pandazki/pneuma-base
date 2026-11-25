@@ -8,6 +8,7 @@ import {
   identifyActor,
   identifySession,
   initLibrary,
+  loadPlugins,
   makeContext,
   openLibrary,
   ownerFace,
@@ -77,7 +78,7 @@ const USAGE = `用法：
   pneuma-base @<授权名> <动词> …
   pneuma-base --library <库的目录> [--as <agent 名>] <动词> …
 动词：start "<一句话>" | find <文字> [--include-archived] [--scene <场景号>] [--origin brought|made] | inspect <库内路径|条目号|场景号>
-      put <文件|-|库内路径> [--to <库内路径>] (--brought [--source <出处>] [--by owner] | --made [--from <库内路径…>] [--from-outside <一句话…>])
+      put <文件|目录|-|库内路径> [--to <库内路径>] (--brought [--source <出处>] [--by owner] | --made [--from <库内路径…>] [--from-outside <一句话…>])
       say <种类> [<关于>] [<内容>] | check [--since <时间>|last] [--include-archived]
       archive <库内路径> | unarchive <库内路径>
 主人：view [<目录>] [--port <端口>] [--no-open]（在浏览器里打开管理界面；pneuma-base <目录> 也一样）
@@ -126,9 +127,9 @@ function requireOrigin(origin: Origin<string> | null): Origin<string> {
 }
 
 /**
- * The four forms of put. A relative first argument names a file next to the caller when one is
- * there, otherwise a path in the library. A file outside the library is placed; a path inside is
- * registered, or moved when `--to` is given.
+ * The four forms of put. A relative first argument names a file or directory next to the caller
+ * when one is there, otherwise a path in the library. A file or directory outside the library is
+ * placed; a path inside is registered, or moved when `--to` is given.
  */
 async function putRequest(inv: Invocation, library: Library): Promise<PutRequest> {
   const first = inv.args[0] as string
@@ -142,7 +143,8 @@ async function putRequest(inv: Invocation, library: Library): Promise<PutRequest
   const onDisk = isAbsolute(first) || existsSync(local)
   if (onDisk && parseLibraryPath(library.root, local) === null) {
     if (to === null) throw new UsageError('从库外放进来要写 --to <库内路径>。')
-    return { kind: 'place', from: { kind: 'file', path: local }, to, origin: requireOrigin(origin) }
+    const kind = statSync(local, { throwIfNoEntry: false })?.isDirectory() ? 'directory' : 'file'
+    return { kind: 'place', from: { kind, path: local }, to, origin: requireOrigin(origin) }
   }
   const path = onDisk ? local : first
   if (to === null) return { kind: 'register', path, origin: requireOrigin(origin) }
@@ -249,11 +251,11 @@ const SPECS: Spec[] = [
     flags: ['bare'],
     arity: [1, 1],
     library: false,
-    run: async ({ args, parsed, io, table }) => {
+    run: async ({ args, parsed, io, table, home }) => {
       const actor = identifyActor({ grant: null, as: flagValue(parsed, 'as'), env: io.env })
       const session = identifySession({ flag: flagValue(parsed, 'session'), env: io.env, cwd: io.cwd, machine: hostname() })
       const plugins = hasFlag(parsed, 'bare') ? [] : ['ledger']
-      return owner(await initLibrary(resolve(io.cwd, args[0] as string), { plugins, table, actor, session }))
+      return owner(await initLibrary(resolve(io.cwd, args[0] as string), { plugins, table, actor, session, home }))
     },
   },
   {
@@ -297,10 +299,10 @@ async function bind(inv: Invocation): Promise<Bound | Answer> {
   return library ? contextFor(inv, library, null) : refusal('not-a-library', `${dir} 不是一个库。先用 pneuma-base init <目录> 建库。`)
 }
 
-function contextFor({ parsed, io }: Invocation, library: Library, grant: Grant | null): Bound {
+function contextFor({ parsed, io, home }: Invocation, library: Library, grant: Grant | null): Bound {
   const actor = identifyActor({ grant, as: flagValue(parsed, 'as'), env: io.env })
   const session = identifySession({ flag: flagValue(parsed, 'session'), env: io.env, cwd: io.cwd, machine: hostname() })
-  return { library, ctx: makeContext(library, actor, session), viaGrant: grant !== null }
+  return { library, ctx: makeContext(library, actor, session, home), viaGrant: grant !== null }
 }
 
 /** Owner commands whose library comes from the local grant their first argument names, not from --library. */
@@ -366,7 +368,8 @@ function impliedView(parsed: Parsed, cwd: string): Parsed {
   return statSync(resolve(cwd, first), { throwIfNoEntry: false })?.isDirectory() ? { ...parsed, positional: ['view', first] } : parsed
 }
 
-export async function main(argv: readonly string[], table: PluginTable, io: Io): Promise<number> {
+/** `builtins` is the command line's own plugin table; the owner's plugins in `$PNEUMA_BASE_HOME/plugins/` join it. */
+export async function main(argv: readonly string[], builtins: PluginTable, io: Io): Promise<number> {
   try {
     if (argv.length === 0 || argv[0] === '--help' || argv[0] === 'help') {
       io.out(USAGE)
@@ -374,6 +377,7 @@ export async function main(argv: readonly string[], table: PluginTable, io: Io):
     }
     const parsed = impliedView(parseArgs(argv), io.cwd)
     const home = io.env.PNEUMA_BASE_HOME ?? join(homedir(), '.pneuma-base')
+    const table = await loadPlugins(home, builtins)
     const spec = verbSpec(parsed.positional)
     const inv: Invocation = { parsed, args: parsed.positional.slice(spec?.words.length ?? 0), io, table, home }
     const result = spec ? await runSpec(spec, inv) : await ownerCommand(inv)

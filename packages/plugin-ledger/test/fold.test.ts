@@ -75,6 +75,30 @@ describe('fold', () => {
     expect(replaced.items.get(id('i_a'))?.basis).toEqual(basis([['i_v', 'v']]))
   })
 
+  it('derives the items under a bundle entered later as absorbed into it; they follow its moves and its removal', () => {
+    const bundle = (item: string, path: string) => ({ ...enter(item, path, path), bundle: true as const })
+    const facts = [
+      f(1, enter('i_a', 'notes/a.md', 'a')),
+      f(2, enter('i_deep', 'notes/x/b.md', 'b')),
+      f(3, enter('i_beside', 'notes-old.md', 'c')),
+      f(4, bundle('i_notes', 'notes')),
+      f(5, enter('i_later', 'other/c.md', 'c')),
+    ]
+    const ledger = fold(facts)
+    const absorbed = (l: typeof ledger) => Object.fromEntries([...l.items.values()].map((item) => [item.id, item.absorbedInto]))
+    expect(absorbed(ledger)).toEqual({ i_a: 'i_notes', i_deep: 'i_notes', i_beside: null, i_notes: null, i_later: null })
+    expect(ledger.items.get(id('i_notes'))?.bundle).toBe(true)
+    expect(ledger.pathIndex.get(p('notes/a.md'))).toBe('i_a')
+
+    const archived = fold([...facts, f(6, { kind: 'item.move', item: id('i_notes'), from: p('notes'), to: p('_archive/notes'), archive: 'in' })])
+    expect(archived.items.get(id('i_deep'))?.path).toBe('_archive/notes/x/b.md')
+    expect(archived.pathIndex.get(p('_archive/notes/x/b.md'))).toBe('i_deep')
+    expect(archived.pathIndex.has(p('notes/x/b.md'))).toBe(false)
+
+    const purged = fold([...facts, f(6, { kind: 'item.remove', item: id('i_notes') })])
+    expect([...purged.items.values()].filter((item) => item.removed).map((item) => item.id).sort()).toEqual(['i_a', 'i_deep', 'i_notes'])
+  })
+
   it('gathers each scene: actors, directories, what was said, the items it touched', () => {
     const ledger = fold([
       f(1, { kind: 'said', flavor: 'doing', text: '选支付服务', about: null }),

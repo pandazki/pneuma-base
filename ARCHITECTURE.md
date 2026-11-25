@@ -78,7 +78,7 @@ type Session = {
   transcript: string | null
 }
 
-type Context = { library: Library; actor: Actor; session: Session; now: Instant }
+type Context = { library: Library; actor: Actor; session: Session; now: Instant; home: string }   // home：本机的 $PNEUMA_BASE_HOME
 
 interface AgentFace {
   put(req: PutRequest, ctx: Context): Promise<PutResult>
@@ -98,34 +98,46 @@ type Origin =
   | { kind: 'made'; from: string[]; outside: string[] }             // 做出来的：依据库里的哪些，库外的各写一句
 
 type PutRequest =
-  | { kind: 'register'; path: LibraryPath; origin: Origin }                 // 文件已经在库里
-  | { kind: 'place'; from: string | 'stdin'; to: LibraryPath; origin: Origin }   // 从库外的文件或标准输入放进来
+  | { kind: 'register'; path: LibraryPath; origin: Origin }                 // 文件或目录已经在库里
+  | { kind: 'place'; from: string | 'stdin'; to: LibraryPath; origin: Origin }   // 从库外的文件、目录或标准输入放进来
   | { kind: 'move'; from: LibraryPath; to: LibraryPath }                         // 在库里挪位置
 
 type PutResult =
   | { outcome: 'accepted'; path: LibraryPath; fingerprint: Fingerprint; copied: boolean
       notes: Note[]; problems: PluginProblem[] }
-  | { outcome: 'refused'; reason: 'outside-library' | 'outside-grant' | 'no-such-file' | 'would-overwrite' }
+  | { outcome: 'refused'; reason: 'outside-library' | 'outside-grant' | 'no-such-file' | 'would-overwrite' | 'inside-bundle' }
 ```
 
-内核自己能看到的只有文件。全化表：
+内核自己能看到的是「东西」：一个普通文件，或一个带标记的目录（见下一小节「一个目录算一样东西」）。全化表里「同类」指和放进来的东西同一类：文件对文件，带标记的目录对带标记的目录；「另一类」是另一类的东西，或既不是文件也不是目录的东西。
 
-| 请求 ＼ 目标 | 在库外或授权区域外 | 不存在 | 存在，内容相同 | 存在，内容不同 |
-| --- | --- | --- | --- | --- |
-| 登记 | 拒绝 | 拒绝：没有这个文件 | 接受 | 接受（登记的是当前内容） |
-| 放入 | 拒绝 | 复制，接受 | 不复制，接受 | 有插件提供可撤回的改：交给它。没有：拒绝，目标不动 |
-| 挪 | 拒绝 | 挪过去，接受 | 拒绝 | 拒绝 |
+| 请求 ＼ 目标 | 在库外或授权区域外 | 在带标记的目录里面 | 不存在 | 同类，内容相同 | 同类，内容不同 | 没标记的目录 | 另一类 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 登记 | 拒绝 | 拒绝 | 拒绝：没有这个文件 | 接受（登记的是目标本身的当前内容） | 不适用 | 写标记，它从此是一样东西，接受 | 拒绝：没有这个文件 |
+| 放入文件或标准输入 | 拒绝 | 拒绝 | 复制，接受 | 不复制，接受 | 有插件留住旧内容：换上新的。没有：拒绝，目标不动 | 拒绝：那是个文件夹，里面可能有别的东西 | 拒绝 |
+| 放入库外的目录 | 拒绝 | 拒绝 | 复制整棵树，写标记，接受 | 不复制，接受 | 有插件留住旧内容：整棵换掉。没有：拒绝，目标不动 | 拒绝：那是个文件夹，里面可能有别的东西 | 拒绝 |
+| 挪 | 拒绝 | 拒绝 | 挪过去，整个目录一起，接受 | 拒绝 | 拒绝 | 拒绝 | 拒绝 |
 
 接受之后，内核把请求交给每个插件的 `onPut`，把它们的答复收进 `notes`。
 
-「交给它」的分工：内核只问配置里排在最前、提供了 `revise` 的那个插件。插件把当前内容留到自己名下（`held`）或拒绝（`declined`）；答复 `held` 之后，由内核把新内容先写临时名再改名放到目标上。插件拒绝或出错，内核拒绝这次放入，目标不动，出错的插件列进 `problems`。这样不管插件写得对不对，目标上都不会出现半截内容。
+「有插件留住旧内容」的分工：内核问配置里每一个提供了 `revise` 的插件，按配置的次序，一个答了之后照样问下一个。插件把当前内容留到自己名下（`held`）或拒绝（`declined`）。至少一个答 `held`，内核就把新内容先写临时名再改名放到目标上，每个答 `held` 的插件附的那句话都收进 `notes`。一个都没答 `held`，内核拒绝这次放入，目标不动。出错的插件列进 `problems`，算没留住。这样不管插件写得对不对，目标上都不会出现半截内容。
 
 实现里的细化（形状在 `packages/kernel/src/types.ts`）：
 
 - 请求里的路径是调用方写的原样（相对库根，或库内的绝对路径），由内核在入口解析一次。「在库外」那一列就是解析不出库内路径的情形。`.pneuma-base/`、`PNEUMA-BASE.md` 和 `_archive/` 不算内容，放和挪到那里都按「在库外」拒绝；`_archive/` 只经归档和取回进出。
-- 放入的来源是 `{ kind: 'file'; path } | { kind: 'stdin'; content }`。
-- 每个结果都带 `problems`，拒绝的结果也带，并带 `subject`：拒绝针对的那个输入。
-- 做出来的来历里，`from` 的每个路径都要是库里在的文件（主区，或它在归档区的那份）。有一个不在，就以「没有这个文件」拒绝，`subject` 是那个路径，目标不动。
+- 放入的来源是 `{ kind: 'file'; path } | { kind: 'directory'; path } | { kind: 'stdin'; content }`。来源是目录时，它要在库外，也不能包含这个库，否则以 `outside-library` 拒绝：复制它会把库复制进库里。
+- 每个结果都带 `problems`，拒绝的结果也带，并带 `subject`：拒绝针对的那个输入。`inside-bundle` 的 `subject` 是那个带标记的目录。
+- 做出来的来历里，`from` 的每个路径都要是库里在的东西（主区，或它在归档区的那份）。有一个不在，就以「没有这个文件」拒绝，`subject` 是那个路径，目标不动。写的是带标记的目录里面的文件，依据记为那个目录。
+
+### 一个目录算一样东西
+
+- 标记：目录里有一个 `.pneuma-item` 文件（JSON，`{"format":1}`）的，是一样东西，代码里叫 bundle。没有标记的目录只是文件夹。
+- 内核列库里的东西时，遇到带标记的目录不往里走，把它当一项。库内路径是目录的路径，不带斜杠。
+- 指纹：目录里每个算进来的文件写成 `<相对路径>\0<内容的 sha256>\n`，按相对路径的 UTF-8 字节排好，连起来取 sha256。不算标记文件，不算任何一层的 `.git`、`node_modules`、`.DS_Store`，放进来时也不复制这三样。只认普通文件和目录，不跟符号链接，空目录不算。看到的 `size` 和 `files` 也只算这些文件。
+- 算法归内核。内核导出 `fingerprintOf(路径)`（文件和带标记的目录都给指纹）、`bundleManifest(目录)`（每个文件的相对路径和 sha256）、`fingerprintOfManifest(清单)`（不读文件，只从清单算指纹）、`bundleFiles`、`thingAt(路径)`（`kind` 是 `'file'` 或 `'bundle'`）、`enclosingBundle(库根, 库内路径)`（这个路径在哪个带标记的目录里面）、`copyBundle` 和 `BUNDLE_MARKER`。插件认目录条目靠 `thingAt` 的 `kind`，指纹一律用 `fingerprintOf`。
+- 放进来时先把整棵树复制到 `.pneuma-base/tmp/` 下的临时名，再改名到目标，中途出错或被杀，目标上不留半棵树，留下的临时名不算库的内容，重放一次得到同样的结果。换掉一个目录条目时，先把旧的改名到临时名，再把新的改名过去，最后删掉旧的；旧的内容这时已经由插件留住。
+- 一个带标记的目录只能整体地变：它里面的路径不是 agent 面写的目标，放、挪、登记、归档到它里面都以 `inside-bundle` 拒绝。要改它，把整个目录重新放进来。
+- 找：一个带标记的目录是一个命中，`detail` 是「目录」。看：`FileFacts` 多 `kind: 'file' | 'bundle'` 和 `files`（文件数）。
+- 挪、归档、取回：整个目录一起动。取回时原路径上有任何东西，包括没标记的目录，都算原路径被占。
 
 ### 找、看、说、查、归档
 
@@ -155,7 +167,7 @@ type Section = { plugin: PluginName; title: string; body: string; data?: unknown
 type PluginProblem = { plugin: PluginName; message: string }
 ```
 
-找的两种匹配：`terms` 把文字按空白和常见标点切开，名字里含任一段就算；`words` 用 `Intl.Segmenter` 取一句话里两个字以上的词和拉丁词，按命中的不同词数排，至少命中一个，每个答复者最多给 5 条。`start` 用 `words`，`find` 用 `terms`。切词和排序是内核导出的 `searchTerms` 与 `rankHits`，插件用同一套。`filters` 是插件的用语，内核不懂，所以带了过滤时内核不按名字列文件。
+找的两种匹配：`terms` 把文字按空白和常见标点切开，名字里含任一段就算；`words` 用 `Intl.Segmenter` 取一句话里两个字以上的词和拉丁词（它会把「下单」这类两个字的词切成单字，所以相邻的两个单个汉字也连成一个词），按命中的不同词数排，至少命中一个，每个答复者最多给 5 条。`start` 用 `words`，`find` 用 `terms`。切词和排序是内核导出的 `searchTerms` 与 `rankHits`，插件用同一套。`filters` 是插件的用语，内核不懂，所以带了过滤时内核不按名字列文件。
 
 `skipOwnSession` 让答复者不带调用者自己这次会话做的东西。`start` 打开它，因为它找的是库里本来就有的；`find` 不打开，什么都给。内核按名字列文件时分不出是哪次会话放的，不管这个开关。
 
@@ -167,10 +179,10 @@ type PluginProblem = { plugin: PluginName; message: string }
 
 | 请求 ＼ 目标 | 不存在 | 在主区 | 已在归档区 |
 | --- | --- | --- | --- |
-| 归档 | 拒绝：没有这个文件 | 挪进归档区，接受。归档区里同一路径已有内容不同的文件时，新来的文件名后加指纹的前八位 | 接受，什么都不动 |
+| 归档 | 拒绝：没有这个文件 | 挪进归档区，接受。归档区里同一路径已有别的东西时，新来的名字后加指纹的前八位 | 接受，什么都不动 |
 | 取回 | 拒绝 | 接受，什么都不动 | 原路径空着：挪回去，接受。原路径被占：拒绝 |
 
-实现按四种状态判：两处都没有；只在主区；只在归档区（原路径空着）；两处都有（原路径被占）。两处都有时，归档按「在主区」办，取回按「原路径被占」拒绝。路径写成 `a.md` 或 `_archive/a.md` 都指同一样东西。接受的结果带 `moved`，什么都没动时为 `false`。
+这里的「东西」是文件或带标记的目录，目录整个一起动。实现按四种状态判：两处都没有；只在主区；只在归档区（原路径空着）；两处都有（原路径被占）。两处都有时，归档按「在主区」办，取回按「原路径被占」拒绝。取回时原路径上的任何东西都算占着。路径在一个带标记的目录里面时，归档和取回都以 `inside-bundle` 拒绝。路径写成 `a.md` 或 `_archive/a.md` 都指同一样东西。接受的结果带 `moved`，什么都没动时为 `false`。
 
 找和查默认跳过归档区，`includeArchived` 打开才带上。看一样已归档的东西照常给出，并标明它已归档。命令行里除了 `find` 和 `check`，库的目录树本身也把归档的东西隔开了，agent 用自己的工具翻目录时同样看不到它们混在里面。
 
@@ -181,8 +193,8 @@ type PluginProblem = { plugin: PluginName; message: string }
 | 动词 | 答复 |
 | --- | --- |
 | 放 | 按上面的全化表。接受时 `notes` 为空。放入遇到内容不同的同名文件：拒绝 |
-| 找 | 按名字列出库里的文件 |
-| 看 | 文件本身的情况，`sections` 为空 |
+| 找 | 按名字列出库里的文件和带标记的目录 |
+| 看 | 这样东西本身的情况（文件或带标记的目录），`sections` 为空 |
 | 说 | `not-heard`，`no-plugin-for-kind`，附一句「这个库没配能记下这句话的插件」 |
 | 查 | `sections` 为空 |
 | 归档 | 按上面的全化表 |
@@ -217,7 +229,15 @@ interface Plugin {
 
 视图槽（第 6 节「只读的一面」）：插件声明它的视图，每个视图返回带类型的块，界面只渲染块，不知道块来自哪个插件。编号不以插件名加点开头的视图不列出，记成问题。`onView` 或 `onItemView` 抛错、或答复的不是一个视图或一节，内核在那一页或那一节里给出说明出错的块，并把问题列进结果（K8）。视图不是操作：插件在这两个钩子里不写东西，内核也不为它们发事件。
 
-实现里的细化：钩子收到的上下文另带 `dir`，即这个插件名下的目录；钩子的答复不写插件名，由内核盖上（`PluginNote`、`PluginSection`、`PluginHit`）；`onSay` 答复 `SayAnswer`，处理它的插件出错时结果是 `not-heard`、`plugin-failed`。主人面命令 `OwnerCommand` 带 `destructive` 标志，由内核在同一处拦。插件名同时是目录名，用 `pluginName()` 解析。主人面的事件带 `destructive`，插件不用自己认哪些命令会丢数据；`archive purge` 的答复在 `data.paths` 里列出被删的库内路径，记账插件据此记「已除」。
+实现里的细化：钩子收到的上下文另带 `dir`，即这个插件名下的目录，和 `cacheDir`，即这个插件在库外的缓存目录（见下面「库外的插件与缓存」）；钩子的答复不写插件名，由内核盖上（`PluginNote`、`PluginSection`、`PluginHit`）；`onSay` 答复 `SayAnswer`，处理它的插件出错时结果是 `not-heard`、`plugin-failed`。主人面命令 `OwnerCommand` 带 `destructive` 标志，由内核在同一处拦。插件名同时是目录名，用 `pluginName()` 解析。主人面的事件带 `destructive`，插件不用自己认哪些命令会丢数据；`archive purge` 的答复在 `data.paths` 里列出被删的库内路径，记账插件据此记「已除」。
+
+### 库外的插件与缓存
+
+- 插件表 = 命令行自带的插件 + 本机的 `$PNEUMA_BASE_HOME/plugins/<名字>/index.js`。`index.js` 是 ESM，缺省导出一个 `Plugin`，名字和目录名相同；它是普通的 JS 文件，运行时不必导入内核。自带插件的名字不会被本机的插件占用。加载在内核导出的 `loadPlugins(home, 自带的表)` 里，命令行每次调用用它建表，别的入口用同一个函数。
+- 库的配置里只写名字。`plugin add <名字>` 从自带的和本机的里找。
+- 本机的插件加载失败（导入时抛错、缺 `index.js`、缺省导出不是插件），它不进插件表。装了它的库照「装了但这台机器不认识」处理（K8）：每个答复的 `problems` 里有它，消息是加载失败的原因（`whyNotLoaded`）。`plugin add` 一个加载失败的插件以 `plugin-failed-to-load` 拒绝，并说明原因。
+- 缓存目录：`PluginContext.cacheDir` 是 `$PNEUMA_BASE_HOME/cache/<库的 id>/<插件名>/`。放在库外，因为库会被同步工具整个同步，而索引这类文件经不起同步。插件第一次用时自己建，内核不建。删掉它什么都不丢。库的 id 因此只能是字母、数字、连字符和下划线。
+- `Context` 带 `home`，即本机的 `$PNEUMA_BASE_HOME`，由建上下文的地方传进来；`cacheDir` 由它算出。
 
 规矩：
 
@@ -304,9 +324,20 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable }): P
   PNEUMA-BASE.md              说明（认知的载体，由内核拼）
   .pneuma-base/
     config.json               库标识、格式版本、插件表、授权
+    tmp/                      内核写到一半的临时名
     <插件名>/                  每个插件名下的目录
   _archive/                   归档区，里面保持原来的相对路径
+  <某个目录>/.pneuma-item      带这个标记的目录是一样东西
   ……                          其余都是内容，随便怎么放
+```
+
+本机还有一个目录，不是库的一部分，缺省是 `~/.pneuma-base`，可以用 `PNEUMA_BASE_HOME` 换：
+
+```
+$PNEUMA_BASE_HOME/
+  grants/<名字>.json          发给 agent 的授权副本
+  plugins/<名字>/index.js     主人自己的插件
+  cache/<库的 id>/<插件名>/    插件的缓存，删了能重建
 ```
 
 ## 9. 内核的不变式
@@ -329,8 +360,8 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable }): P
 
 | 槽 | 它做什么 |
 | --- | --- |
-| `onPut` | 记入册；内容变了的记改 |
-| `revise` | 把旧内容挪进留存；新的由内核放上去，`onPut` 收到的 `previous` 是被换下的指纹，记改 |
+| `onPut` | 记入册；内容变了的记改。带标记的目录入册时，事实带 `bundle: true` |
+| `revise` | 把旧内容复制进留存，目录条目整棵复制；新的由内核放上去，`onPut` 收到的 `previous` 是被换下的指纹，记改 |
 | `onFind` | 按场景、来历、记录里的文字找 |
 | `onInspect` | 一样东西的来历、现状、它来自什么、什么来自它；一个场景的卡 |
 | `onSay` | 听得懂：在做什么、决定、备注、来自、改了 |
@@ -340,11 +371,14 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable }): P
 | `views`、`onView` | 视图 `ledger.items`（条目）：每个没除掉的条目的路径、来历、谁、当时在做什么、现状（对账后的状态，依据上有标记时显示标记）、时间；过滤来历、现状、是否带归档的，默认不带；行链到内核的 `item` 面板 |
 | `onItemView` | 条目详情里「来历」一节：怎么来的与出处、谁、何时、在哪、场景、当时在做、现状；依据（每个依据的现状，链到上游的 `item`）；被什么依据；决定与备注；版本；留存的旧版。数据就是 `inspect` 用的 `itemView`，没人登记过的文件说明来历不明 |
 
-它给主人面加三条命令：`held list` 列出留存；`held restore <库内路径或条目号> [--fingerprint <指纹>] --to <库内路径>` 把一份留存复制到一个空着的新路径，并把那个文件以「主人带进来的」入册；`held drop` 清掉全部留存，是破坏性的，由内核的门拦。
+它给主人面加三条命令：`held list` 列出留存；`held restore <库内路径或条目号> [--fingerprint <指纹>] --to <库内路径>` 把一份留存复制到一个空着的新路径，目录条目整棵复制回去，并把它以「主人带进来的」入册；`held drop` 清掉全部留存，是破坏性的，由内核的门拦。
 
 事实的种类、归并函数 `fold`、对账函数 `reconcile` 和输出的形状在 `packages/plugin-ledger/src/` 里，`fold` 和 `reconcile` 是纯函数。实现里和本程细化设计不同的几处：
 
-- `item.enter` 和 `item.revise` 另带 `size`。对账找已搬的候选时先按大小筛，再取指纹；没有这个字段就没法筛。
+- `item.enter` 和 `item.revise` 另带 `size`。对账找已搬的候选时先按大小筛，再取指纹；没有这个字段就没法筛。目录条目的 `size` 是它算进指纹的文件的字节数之和。
+- 目录条目：`item.enter` 带 `bundle: true`。已经在册、路径在一个后来入册的目录条目下面的条目算「并入」了它，这是 `fold` 推出来的，没有新的事实种类。并入的条目跟着那个目录挪、归档、被清掉；它不报「不在」，不出现在 `find` 和 `check` 的清单里；看它时说明它并入了哪里。依据它的东西照样按它那个文件现在的内容判可能过期。目录里面从没入册的文件，看它时说明它是哪个目录条目的一部分。`say` 写的路径在一个带标记的目录里面时，说的是那个目录。
+- 对账用内核的 `fingerprintOf`，文件和目录条目一样；快照列的是东西，目录条目不往里走。
+- `inspect` 的版本列表里，「被换下，留存着」标在被留存的那一版上，按留存目录里的指纹认。
 - 「一次命令行调用写一个文件」落成「每个钩子写一个文件」：`start` 里「说」和「查」各写一个，`put` 盖掉无主文件时 `revise` 写入册、`onPut` 写改。每个文件照样是新文件、写完不动。
 - 发布事实文件用硬链接到最终名再删临时名，最终名已存在时失败重试，而不是覆盖。
 - `check` 比设计多一节「不在了的」，验收 C4 要求报告不在；「上游有标记」也单列一节，直接带标记的条目不重复列在里面。

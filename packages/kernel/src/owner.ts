@@ -42,7 +42,7 @@ async function gated(call: OwnerCall, name: string, destructive: boolean, args: 
 /** Makes `dir` a library. Refused before anything is written, so a refused init has no library to send an event to. */
 export async function initLibrary(
   dir: string,
-  opts: { plugins: string[]; table: PluginTable; actor: Actor; session: Session },
+  opts: { plugins: string[]; table: PluginTable; actor: Actor; session: Session; home: string },
 ): Promise<OwnerResult> {
   if (await exists(join(dir, CONFIG_FILE))) {
     return { outcome: 'refused', reason: 'already-a-library', text: `${dir} 已经是一个库了`, problems: [] }
@@ -53,7 +53,7 @@ export async function initLibrary(
   }
   await mkdir(dir, { recursive: true })
   const library = await saveConfig(await realpath(dir), newConfig(opts.plugins as PluginName[]), opts.table)
-  const ctx = makeContext(library, opts.actor, opts.session)
+  const ctx = makeContext(library, opts.actor, opts.session, opts.home)
   const args: OwnerArgs = { positional: [library.root], flags: opts.plugins.length === 0 ? { bare: true } : {} }
   return performOwner(ctx, 'init', args, false, async () => ({
     answer: { outcome: 'done', text: `已把 ${library.root} 建成库。说明在 PNEUMA-BASE.md。`, data: { root: library.root } },

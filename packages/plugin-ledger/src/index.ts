@@ -1,13 +1,14 @@
 import { readFileSync } from 'node:fs'
-import { stat } from 'node:fs/promises'
 import {
   abs,
   archivedPath,
+  enclosingBundle,
   parseLibraryPath,
   pluginName,
   rankHits,
   regionOf,
   searchTerms,
+  thingAt,
   type AcceptedPut,
   type Event,
   type Fingerprint,
@@ -47,10 +48,12 @@ async function writing(ctx: PluginContext): Promise<Writing> {
   return { ctx, ledger: await load(ctx), facts: [], adopted: new Map() }
 }
 
-/** Enters a file nobody registered, origin unknown. */
+const bundleFlag = (disk: Disk | null) => (disk?.bundle ? { bundle: true as const } : {})
+
+/** Enters a thing nobody registered, origin unknown. */
 function adopt(w: Writing, path: LibraryPath, disk: Disk): ItemId {
   const item = newItemId()
-  w.facts.push(fact(w.ctx, 'tool', { kind: 'item.enter', item, path, fingerprint: disk.fingerprint, size: disk.size, origin: { kind: 'adopted' } }))
+  w.facts.push(fact(w.ctx, 'tool', { kind: 'item.enter', item, path, fingerprint: disk.fingerprint, size: disk.size, origin: { kind: 'adopted' }, ...bundleFlag(disk) }))
   w.adopted.set(path, item)
   return item
 }
@@ -68,12 +71,19 @@ async function itemAt(w: Writing, path: LibraryPath): Promise<{ id: ItemId; fing
   return known ? { id: known.id, fingerprint: known.fingerprint } : null
 }
 
-/** What a caller wrote: an item id, or a path in the library. */
+/** What a caller wrote: an item id, or a path in the library. A path inside a bundle names the bundle. */
 async function target(w: Writing, input: string): Promise<{ id: ItemId; fingerprint: Fingerprint } | null> {
   const known = w.ledger.items.get(input as ItemId)
   if (known) return { id: known.id, fingerprint: known.fingerprint }
-  const path = parseLibraryPath(w.ctx.library.root, input)
-  return path === null || regionOf(path) === 'kernel' ? null : itemAt(w, path)
+  const path = await thingPath(w.ctx.library.root, input)
+  return path === null ? null : itemAt(w, path)
+}
+
+/** The library path of the thing an input names: itself, or the bundle it lies in. Null outside the content and the archive. */
+async function thingPath(root: string, input: string): Promise<LibraryPath | null> {
+  const path = parseLibraryPath(root, input)
+  if (path === null || regionOf(path) === 'kernel') return null
+  return (await enclosingBundle(root, path)) ?? path
 }
 
 /** Basis rows with each source's content as it is now. */
@@ -95,7 +105,7 @@ async function recordPut(w: Writing, req: AcceptedPut): Promise<PluginNote> {
   const size = disk?.size ?? 0
   if (req.kind === 'move') {
     const id = ledger.pathIndex.get(req.from)
-    if (id === undefined) return { text: `挪过来的文件没人登记过，已以来历不明入册 · 条目 ${adopt(w, req.path, { fingerprint: req.fingerprint, size })}` }
+    if (id === undefined) return { text: `挪过来的东西没人登记过，已以来历不明入册 · 条目 ${adopt(w, req.path, { fingerprint: req.fingerprint, size, bundle: disk?.bundle ?? false })}` }
     w.facts.push(fact(ctx, 'tool', { kind: 'item.move', item: id, from: req.from, to: req.path, archive: null }))
     return { text: `已记下挪动 · 条目 ${id}`, data: { item: id } }
   }
@@ -110,13 +120,13 @@ async function recordPut(w: Writing, req: AcceptedPut): Promise<PluginNote> {
   const item = ledger.items.get(ledger.pathIndex.get(req.path) ?? ('' as ItemId))
   if (!item) {
     const id = newItemId()
-    w.facts.push(fact(ctx, 'tool', { kind: 'item.enter', item: id, path: req.path, fingerprint: req.fingerprint, size, origin }))
+    w.facts.push(fact(ctx, 'tool', { kind: 'item.enter', item: id, path: req.path, fingerprint: req.fingerprint, size, origin, ...bundleFlag(disk) }))
     return { text: `已记下：${originLabel(origin)}${made} · 条目 ${id}`, data: { item: id } }
   }
   if (item.fingerprint === req.fingerprint) {
     if (!item.unknownOrigin) return { text: `已在册：条目 ${item.id}，内容和记录一致，没有新记`, data: { item: item.id } }
     // An enter at a path an item holds is an alias of it; it gives the adopted item its origin.
-    w.facts.push(fact(ctx, 'tool', { kind: 'item.enter', item: newItemId(), path: req.path, fingerprint: req.fingerprint, size, origin }))
+    w.facts.push(fact(ctx, 'tool', { kind: 'item.enter', item: newItemId(), path: req.path, fingerprint: req.fingerprint, size, origin, ...bundleFlag(disk) }))
     return { text: `已补上来历：${originLabel(origin)}${made} · 条目 ${item.id}`, data: { item: item.id } }
   }
   const held = req.kind === 'place' && req.previous !== null ? heldPath(ctx, item.id, req.previous, req.path) : null
@@ -153,7 +163,7 @@ async function recordSay(w: Writing, req: SayRequest): Promise<SayAnswer> {
   }
   if (req.kind === 'revised') {
     const input = req.about ?? req.text
-    const path = input === null ? null : parseLibraryPath(ctx.library.root, input)
+    const path = input === null ? null : await thingPath(ctx.library.root, input)
     const item = w.ledger.items.get((path !== null && w.ledger.pathIndex.get(path)) || ('' as ItemId))
     if (!item || path === null) return refused(`没人登记过这个文件：${input ?? '（没写）'}。要补来历，用 put <库内路径> --brought 或 --made。`)
     const disk = await onDisk(ctx.library.root, path)
@@ -209,11 +219,11 @@ export const ledger: Plugin = {
     return note
   },
 
-  /** Keeps the bytes on disk in held/ before the kernel writes the new version; a file nobody registered is adopted first. */
+  /** Keeps the thing on disk in held/ before the kernel writes the new version; a thing nobody registered is adopted first. */
   async revise(req, ctx) {
     const w = await writing(ctx)
-    const size = (await stat(abs(ctx.library.root, req.path))).size
-    const id = w.ledger.pathIndex.get(req.path) ?? adopt(w, req.path, { fingerprint: req.current, size })
+    const thing = await thingAt(abs(ctx.library.root, req.path))
+    const id = w.ledger.pathIndex.get(req.path) ?? adopt(w, req.path, { fingerprint: req.current, size: thing?.size ?? 0, bundle: thing?.kind === 'bundle' })
     if ((await keep(ctx, id, req.path, req.current)) === null) return { outcome: 'declined', reason: `${req.path} 正在被改动，没能留存旧的一版` }
     await writeFacts(ctx.dir, w.facts)
     return { outcome: 'held', note: null }
@@ -251,7 +261,13 @@ export const ledger: Plugin = {
       return [{ title: '来历', body: itemText(view), data: view }]
     }
     const path = parseLibraryPath(root, req.target)
-    if (path !== null && (await fileAt(root, path))) {
+    const region = path === null ? 'kernel' : regionOf(path)
+    const bundle = path === null || region === 'kernel' ? null : ((await enclosingBundle(root, path)) ?? (region === 'content' ? await enclosingBundle(root, archivedPath(path)) : null))
+    if (path !== null && bundle !== null) {
+      const body = `它是 ${bundle} 的一部分：${bundle} 是一样东西（带标记的目录），来历见 inspect ${bundle}。`
+      return [{ title: '来历', body, data: { kind: 'part-of', path, bundle } }]
+    }
+    if (path !== null && regionOf(path) !== 'kernel' && (await onDisk(root, path) ?? (regionOf(path) === 'content' ? await onDisk(root, archivedPath(path)) : null))) {
       const body = '没人登记过这个文件，来历不明。知道它从哪来，就用 put <库内路径> --brought 或 --made 补上。'
       return [{ title: '来历', body, data: { kind: 'unowned', path } }]
     }

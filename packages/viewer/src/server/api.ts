@@ -31,7 +31,7 @@ const NOT_A_LIBRARY = failure(409, 'not-a-library')
 
 /** Everything in the UI is done by the owner, in the session the server's environment shows, else one minted per request. */
 function ownerContext(library: Library, served: Served): Context {
-  return makeContext(library, OWNER, identifySession({ flag: null, env: served.env, cwd: process.cwd(), machine: hostname() }))
+  return makeContext(library, OWNER, identifySession({ flag: null, env: served.env, cwd: process.cwd(), machine: hostname() }), served.home)
 }
 
 const available = (table: PluginTable) => [...table.values()].map((p) => ({ name: p.name, title: p.cognition?.title ?? null }))
@@ -104,6 +104,6 @@ export async function init(served: Served, body: unknown): Promise<Reply> {
   const plugins = typeof body === 'object' && body !== null ? (body as Record<string, unknown>).plugins : undefined
   if (!Array.isArray(plugins) || !plugins.every((p) => typeof p === 'string')) return failure(400, 'plugins is not a list of names')
   const session = identifySession({ flag: null, env: served.env, cwd: process.cwd(), machine: hostname() })
-  const r = await initLibrary(served.dir, { plugins, table: served.table, actor: OWNER, session })
+  const r = await initLibrary(served.dir, { plugins, table: served.table, actor: OWNER, session, home: served.home })
   return reply({ ...ownerSummary(r), result: r })
 }

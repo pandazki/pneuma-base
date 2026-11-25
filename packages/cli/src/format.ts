@@ -6,6 +6,7 @@ const REFUSAL: Record<string, (subject: string) => string> = {
   'no-such-file': (s) => `没有这个文件：${s}`,
   'would-overwrite': (s) => `${s} 已有内容不同的文件，没有动它。换一个名字。`,
   'original-path-taken': (s) => `原路径 ${s} 已有文件，什么都没动。`,
+  'inside-bundle': (s) => `${s} 是一样东西（带 .pneuma-item 标记的目录），它里面的文件不单独放、挪或归档。要改它，把整个目录重新放进来。`,
 }
 
 function tail(notes: { plugin: string; text: string }[], problems: PluginProblem[]): string[] {
@@ -59,8 +60,9 @@ export function findText(r: FindResult, none = '没有找到。'): string[] {
 
 /** What plugins know comes first, the file's own facts last. A target with no file may still be something a plugin knows, such as a scene. */
 export function inspectText(target: string, r: InspectResult): string[] {
+  const kind = r.file?.kind === 'bundle' ? `目录，${r.file.files} 个文件，` : ''
   const file = r.file
-    ? [`${r.file.path}${r.file.archived ? '（已归档）' : ''} · ${r.file.size} 字节，改于 ${minute(r.file.modifiedAt)} · 指纹 ${r.file.fingerprint.slice(0, 12)}…`]
+    ? [`${r.file.path}${r.file.archived ? '（已归档）' : ''} · ${kind}${r.file.size} 字节，改于 ${minute(r.file.modifiedAt)} · 指纹 ${r.file.fingerprint.slice(0, 12)}…`]
     : r.sections.length > 0 ? [] : [`库里没有这个文件：${target}`]
   return [...sectionsText(r.sections), ...file, ...tail([], r.problems)]
 }

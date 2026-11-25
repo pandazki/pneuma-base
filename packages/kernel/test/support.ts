@@ -45,7 +45,7 @@ export async function fixture(plugins: Plugin[] = []): Promise<Fixture> {
   const root = join(tempDir(), 'lib')
   const home = tempDir('pb-k-home-')
   const table = new Map(plugins.map((p) => [p.name as string, p]))
-  const init = await initLibrary(root, { plugins: plugins.map((p) => p.name), table, actor: owner, session })
+  const init = await initLibrary(root, { plugins: plugins.map((p) => p.name), table, actor: owner, session, home })
   if (init.outcome !== 'done') throw new Error(`init refused: ${init.reason}`)
   const f: Fixture = {
     root,
@@ -60,10 +60,10 @@ export async function fixture(plugins: Plugin[] = []): Promise<Fixture> {
     read: (path) => readFileSync(join(root, path), 'utf8'),
     async reopen(actor = owner) {
       f.library = await mustOpen(root, table)
-      f.ctx = makeContext(f.library, actor, session)
+      f.ctx = makeContext(f.library, actor, session, home)
     },
   }
-  f.ctx = makeContext(f.library, owner, session)
+  f.ctx = makeContext(f.library, owner, session, home)
   return f
 }
 

@@ -41,7 +41,7 @@ export const LEDGER_VIEWS: readonly ViewDecl[] = [
 const itemLink = (path: string): Link => ({ view: 'item', params: { path }, target: 'panel' })
 
 const ORIGIN_TONE: Record<LedgerOrigin['kind'], Tag['tone']> = { made: 'info', brought: 'neutral', adopted: 'warn' }
-const STATE_TONE: Record<ItemState['kind'], Tag['tone']> = { consistent: 'good', changed: 'warn', moved: 'info', missing: 'bad', removed: 'neutral' }
+const STATE_TONE: Record<ItemState['kind'], Tag['tone']> = { consistent: 'good', changed: 'warn', moved: 'info', missing: 'bad', removed: 'neutral', absorbed: 'neutral' }
 const MARK_TONE: Record<Mark['kind'], Tag['tone']> = { stale: 'warn', 'source-gone': 'bad' }
 
 const originTag = (origin: LedgerOrigin): Tag => ({ text: originLabel(origin), tone: ORIGIN_TONE[origin.kind] })

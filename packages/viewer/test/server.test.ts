@@ -22,10 +22,11 @@ type Lib = { root: string; home: string; write(path: string, content: string): v
 async function library(plugins: Plugin[] = []): Promise<Lib> {
   const root = join(tempDir('pb-v-'), 'lib')
   const table = new Map(plugins.map((p) => [p.name as string, p]))
-  await initLibrary(root, { plugins: plugins.map((p) => p.name), table, actor: { kind: 'owner' }, session: { id: 's', source: 'flag', cwd: '/', machine: 'm', transcript: null } })
+  const home = tempDir('pb-v-home-')
+  await initLibrary(root, { plugins: plugins.map((p) => p.name), table, actor: { kind: 'owner' }, session: { id: 's', source: 'flag', cwd: '/', machine: 'm', transcript: null }, home })
   return {
     root,
-    home: tempDir('pb-v-home-'),
+    home,
     write(path, content) {
       mkdirSync(dirname(join(root, path)), { recursive: true })
       writeFileSync(join(root, path), content)

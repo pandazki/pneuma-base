@@ -15,11 +15,13 @@ const next = () => `2026-11-25T02:00:${String(second++).padStart(2, '0')}.000Z` 
 const text = (content: string) => ({ kind: 'stdin' as const, content: new TextEncoder().encode(content) })
 
 async function relayed() {
-  const root = join(realpathSync(mkdtempSync(join(process.env.PNEUMA_BASE_TEST_TMP ?? tmpdir(), 'pb-ui-'))), 'lib')
-  await initLibrary(root, { plugins: ['ledger'], table, actor: { kind: 'owner' }, session: session('init') })
+  const base = realpathSync(mkdtempSync(join(process.env.PNEUMA_BASE_TEST_TMP ?? tmpdir(), 'pb-ui-')))
+  const root = join(base, 'lib')
+  const home = join(base, 'home')
+  await initLibrary(root, { plugins: ['ledger'], table, actor: { kind: 'owner' }, session: session('init'), home })
   const lib = await openLibrary(root, table)
   if (!lib) throw new Error('no library')
-  const ctx = () => makeContext(lib, claude, session('sess-a'), next())
+  const ctx = () => makeContext(lib, claude, session('sess-a'), home, next())
   await agentFace.say({ kind: 'doing', about: null, text: '给小店选支付服务', args: {} }, ctx())
   await agentFace.put({ kind: 'place', from: text('stripe'), to: 'src/stripe.html', origin: { kind: 'brought', source: 'https://stripe.com/pricing', by: null } }, ctx())
   await agentFace.put({ kind: 'place', from: text('old'), to: 'old.md', origin: { kind: 'brought', source: null, by: null } }, ctx())
@@ -27,7 +29,7 @@ async function relayed() {
   await agentFace.put({ kind: 'place', from: text('rec'), to: 'recommendation.md', origin: { kind: 'made', from: ['comparison.md'], outside: [] } }, ctx())
   await agentFace.say({ kind: 'decided', about: 'comparison.md', text: '用 Paddle', args: {} }, ctx())
   await agentFace.archive({ kind: 'archive', path: 'old.md' }, ctx())
-  const show = (view: string, params: Record<string, string> = {}) => viewerFace.show({ view, params }, { ctx: makeContext(lib, { kind: 'owner' }, session('ui'), next()), table })
+  const show = (view: string, params: Record<string, string> = {}) => viewerFace.show({ view, params }, { ctx: makeContext(lib, { kind: 'owner' }, session('ui'), home, next()), table })
   return { root, show }
 }
 

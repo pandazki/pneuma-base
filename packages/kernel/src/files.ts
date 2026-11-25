@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { mkdir, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { Fingerprint, Instant } from './types.js'
 
@@ -49,22 +49,24 @@ export async function moveInto(from: string, to: string): Promise<void> {
   await rename(from, to)
 }
 
+/** Removes a scratch file or directory, if it is there. */
 export async function discard(path: string): Promise<void> {
-  await unlink(path).catch(() => undefined)
+  await rm(path, { recursive: true, force: true })
 }
 
-/** Library-relative paths of every regular file under `root`, skipping the top-level names in `skip`. */
-export async function listFiles(root: string, skip: ReadonlySet<string>): Promise<string[]> {
-  const out: string[] = []
-  const walk = async (rel: string): Promise<void> => {
-    const entries = await readdir(rel === '' ? root : join(root, rel), { withFileTypes: true })
-    for (const entry of entries) {
-      const path = rel === '' ? entry.name : `${rel}/${entry.name}`
-      if (rel === '' && skip.has(entry.name)) continue
-      if (entry.isDirectory()) await walk(path)
-      else if (entry.isFile()) out.push(path)
-    }
+/**
+ * Renames `from` onto `to`, replacing what is there. A rename cannot replace a directory that holds
+ * files, so a directory at `to` is renamed aside into `scratch` first and removed after.
+ */
+export async function replaceWith(from: string, to: string, scratch: string): Promise<void> {
+  if (!(await stat(to).catch(() => null))?.isDirectory()) return moveInto(from, to)
+  const aside = await scratchName(scratch)
+  await rename(to, aside)
+  try {
+    await rename(from, to)
+  } catch (error) {
+    await rename(aside, to)
+    throw error
   }
-  await walk('')
-  return out.sort()
+  await discard(aside)
 }
