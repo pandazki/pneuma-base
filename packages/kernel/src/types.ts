@@ -75,8 +75,8 @@ export type PlaceSource = { kind: 'file'; path: string } | { kind: 'directory'; 
 
 /** Paths are as the caller wrote them: library-relative or absolute. The kernel parses them. */
 export type PutRequest =
-  | { kind: 'register'; path: string; origin: Origin<string> }
-  | { kind: 'place'; from: PlaceSource; to: string; origin: Origin<string> }
+  | { kind: 'register'; path: string; origin: Origin<string>; note?: string | null }
+  | { kind: 'place'; from: PlaceSource; to: string; origin: Origin<string>; note?: string | null }
   | { kind: 'move'; from: string; to: string }
 
 /**
@@ -92,12 +92,13 @@ export type PutResult =
 
 /** What `onPut` receives after the kernel accepted a put. */
 export type AcceptedPut =
-  | { kind: 'register'; path: LibraryPath; fingerprint: Fingerprint; origin: Origin }
+  | { kind: 'register'; path: LibraryPath; fingerprint: Fingerprint; origin: Origin; note?: string | null }
   | {
       kind: 'place'
       path: LibraryPath
       fingerprint: Fingerprint
       origin: Origin
+      note?: string | null
       source: { kind: 'file'; path: string } | { kind: 'directory'; path: string } | { kind: 'stdin' }
       copied: boolean
       previous: Fingerprint | null // the content it replaced through `revise`, if any

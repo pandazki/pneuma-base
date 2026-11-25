@@ -4,8 +4,8 @@
 
 ```sh
 pneuma-base @{{授权的名字}} say versioned sites/shop "第一版"
-pneuma-base @{{授权的名字}} put ./shop --to sites/shop --made   # 第 2 版
-pneuma-base @{{授权的名字}} say version sites/shop "换了配色"   # 给当前这一版写说明
+pneuma-base @{{授权的名字}} put ./shop --to sites/shop --made --note "换了配色"   # 第 2 版，直接写说明
+pneuma-base @{{授权的名字}} say version sites/shop "换了配色"   # 也可以事后给当前这一版写说明
 pneuma-base @{{授权的名字}} version list sites/shop
 pneuma-base @{{授权的名字}} version export sites/shop --version 1 --to ./shop-v1
 pneuma-base @{{授权的名字}} version restore sites/shop --version 1   # 放回来算新的一版，现在的内容不会丢
