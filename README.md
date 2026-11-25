@@ -41,11 +41,11 @@ alias pneuma-base="node $PWD/packages/cli/dist/bin.js"
    pneuma-base skill install claude --dir ~/.claude/skills
    pneuma-base grant issue codex --agent codex --library ~/base
    pneuma-base skill install codex --dir ~/.agents/skills
-   pneuma-base grant issue agy --agent antigravity --library ~/base
-   pneuma-base skill install agy --dir ~/.agents/skills
    ```
 
    Codex 在沙箱里运行，启动时要把库加进可写目录：`codex --add-dir ~/base`。
+
+   别的 agent 产品一样：发一份授权，再把技能写进那个产品读技能的目录。几个产品共用一个技能目录时只装一份，agent 拿哪份授权，账上记的就是哪个名字。
 
 4. **看和管。** 在浏览器里打开管理界面：
 
