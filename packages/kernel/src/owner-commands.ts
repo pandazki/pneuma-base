@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { said, takenBy, type KernelCommandName } from './claims.js'
 import { skillText } from './cognition.js'
 import { exists, writeAtomic } from './files.js'
 import { whyNotLoaded } from './plugin-table.js'
@@ -11,13 +12,14 @@ import { GRANT_NAME, readGrantFile, removeGrantFile, writeGrantFile } from './gr
 import { saveConfig } from './library.js'
 import type { OwnerCall } from './owner.js'
 import { ARCHIVE_DIR, parseLibraryPath, regionOf } from './paths.js'
-import type { Grant, GrantId, Library, LibraryPath, OwnerAnswer, OwnerArgs, PluginName } from './types.js'
+import { eachPlugin, messageOf, pluginContext } from './pipeline.js'
+import type { Context, Grant, GrantId, Library, LibraryPath, OwnerAnswer, OwnerArgs, Plugin, PluginContext, PluginName, PluginProblem } from '@pneuma-base/sdk'
 
-export type Outcome = { answer: OwnerAnswer; library?: Library }
+export type Outcome = { answer: OwnerAnswer; library?: Library; problems?: PluginProblem[] }
 
 /** Like a plugin's OwnerCommand, but it runs with the whole owner call and may hand back the reopened library. */
 export type KernelCommand = {
-  readonly name: string
+  readonly name: KernelCommandName
   readonly summary: string
   readonly usage?: string
   readonly destructive: boolean
@@ -27,12 +29,13 @@ export type KernelCommand = {
 }
 
 const refused = (reason: string, text: string): Outcome => ({ answer: { outcome: 'refused', reason, text } })
-const done = (text: string, data?: unknown, library?: Library): Outcome => ({
+const done = (text: string, data?: unknown, library?: Library, problems: PluginProblem[] = []): Outcome => ({
   answer: { outcome: 'done', text, ...(data === undefined ? {} : { data }) },
   ...(library ? { library } : {}),
+  problems,
 })
 
-type Read = { positional: string[]; value(flag: string): string | null }
+type Read = { positional: string[]; value(flag: string): string | null; on(flag: string): boolean }
 
 /**
  * A command's arguments, or the usage text that says what is wrong with them. A flag given with an
@@ -45,7 +48,12 @@ function read(command: string, args: OwnerArgs, arity: number, flags: readonly s
     const v = args.flags[flag]
     return Array.isArray(v) && v[0] !== undefined && v[0] !== '' ? v[0] : null
   }
-  return { positional: args.positional, value }
+  // A switch on the command line, such as `--read-only`; a form sends it with the value yes or no.
+  const on = (flag: string) => {
+    const v = args.flags[flag]
+    return v === true || (Array.isArray(v) && v[0] === 'yes')
+  }
+  return { positional: args.positional, value, on }
 }
 
 /** A refusal whose reason is `usage`: the call itself was malformed. The command line shows it as a usage error. */
@@ -64,9 +72,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       const name = a.positional[0] as string
       const agent = a.value('agent')
       if (agent === null) return usage('要写 --agent <给谁>，比如 --agent claude-code。')
-      // `--read-only` on the command line; a form sends it with the value yes or no.
-      const flag = args.flags['read-only']
-      const readOnly = flag === true || (Array.isArray(flag) && flag[0] === 'yes')
+      const readOnly = a.on('read-only')
       const { library } = call.ctx
       if (!GRANT_NAME.test(name)) return refused('bad-grant-name', `授权名只能用小写字母、数字和连字符，最长 41 个字符：${name}`)
       let area: Grant['area'] = null
@@ -121,30 +127,47 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       const name = a.positional[0] as string
       const { library } = call.ctx
       if (library.config.plugins.includes(name as PluginName)) return done(`插件 ${name} 已经装了。`)
-      if (!call.table.has(name)) {
+      const plugin = call.table.get(name)
+      if (!plugin) {
         const why = await whyNotLoaded(call.ctx.home, name)
         if (why !== null) return refused('plugin-failed-to-load', `插件 ${name} 没能加载：${why}`)
         return refused('unknown-plugin', `没有这个插件：${name}。可用的：${[...call.table.keys()].join('、') || '无'}`)
       }
+      const taken = takenBy(plugin, library.plugins)
+      if (taken.length > 0) {
+        const holders = [...new Set(taken.map((t) => t.holder))].join('、')
+        const what = taken.map((t) => `${said(t.claim)}已归插件 ${t.holder}`).join('；')
+        return refused('name-taken', `没有装上插件 ${name}：${what}。一个名字只归一个插件；要换用 ${name}，先卸下 ${holders}。`)
+      }
       const updated = await saveConfig(library.root, { ...library.config, plugins: [...library.config.plugins, name as PluginName] }, call.table)
-      return done(`已装上插件 ${name}，说明已重新生成。`, undefined, updated)
+      const added = updated.plugins.find((p) => p.name === name)
+      const heard = await hear(added, (p, pctx) => p.onAdd?.(pctx), { ...call.ctx, library: updated })
+      const problems = [...heard.problems, ...(heard.answer ? heard.answer.problems.map((message) => ({ plugin: name as PluginName, message })) : [])]
+      return done(`已装上插件 ${name}，说明已重新生成。`, undefined, updated, problems)
     },
   },
   {
     name: 'plugin remove',
     summary: '卸下一个插件；它名下的目录原样留着',
-    usage: '<插件名>',
+    usage: '<插件名> [--anyway]',
     destructive: false,
     ownerOnly: true,
     setup: true,
+    /** Asks the plugin first; it may refuse, saying why. `--anyway` removes it all the same: the owner may always drop a plugin. */
     async run(args, call) {
-      const a = read('plugin remove', args, 1, [])
+      const a = read('plugin remove', args, 1, ['anyway'])
       if (typeof a === 'string') return usage(a)
       const name = a.positional[0] as string
       const { library } = call.ctx
       if (!library.config.plugins.includes(name as PluginName)) return refused('not-installed', `这个库没装插件 ${name}`)
+      const heard = await hear(library.plugins.find((p) => p.name === name), (p, pctx) => p.onRemove?.(pctx), call.ctx)
+      const warning = heard.answer ? heard.answer.refuse : null
+      if (warning !== null && !a.on('anyway')) {
+        return { ...refused('plugin-refused', `插件 ${name} 没有卸下，它说：${warning}\n照样要卸，用 plugin remove ${name} --anyway。`), problems: heard.problems }
+      }
       const updated = await saveConfig(library.root, { ...library.config, plugins: library.config.plugins.filter((p) => p !== name) }, call.table)
-      return done(`已卸下插件 ${name}，说明已重新生成。它名下的目录 .pneuma-base/${name}/ 原样留着。`, undefined, updated)
+      const text = `已卸下插件 ${name}，说明已重新生成。它名下的目录 .pneuma-base/${name}/ 原样留着。${warning === null ? '' : `\n它卸下前提醒过：${warning}`}`
+      return done(text, undefined, updated, heard.problems)
     },
   },
   {
@@ -180,17 +203,28 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
     summary: '清空归档区',
     destructive: true,
     ownerOnly: true,
-    /** Deletes everything in `_archive/`. The answer's data names the library paths it deleted. */
+    /** Deletes everything in `_archive/`, then tells each plugin's onPurged. The answer's data names the library paths it deleted. */
     async run(args, call) {
       const a = read('archive purge', args, 0, [])
       if (typeof a === 'string') return usage(a)
       const dir = join(call.ctx.library.root, ARCHIVE_DIR)
       const paths = (await exists(dir)) ? (await listThings(dir, new Set())).map((t) => `${ARCHIVE_DIR}/${t.path}` as LibraryPath) : []
       await rm(dir, { recursive: true, force: true })
-      return done(`已清空归档区，删掉了 ${paths.length} 样东西。`, { removed: paths.length, paths })
+      const heard = paths.length === 0 ? { problems: [] } : await eachPlugin(call.ctx, (plugin, pctx) => plugin.onPurged?.(paths, pctx))
+      return done(`已清空归档区，删掉了 ${paths.length} 样东西。`, { removed: paths.length, paths }, undefined, heard.problems)
     },
   },
 ]
+
+/** One plugin's lifecycle hook, if it is installed here and has it: what it answered, or the problem it threw (K8). */
+async function hear<T>(plugin: Plugin | undefined, call: (p: Plugin, pctx: PluginContext) => Promise<T> | undefined, ctx: Context): Promise<{ answer: T | undefined; problems: PluginProblem[] }> {
+  if (!plugin) return { answer: undefined, problems: [] }
+  try {
+    return { answer: await call(plugin, pluginContext(ctx, plugin.name)), problems: [] }
+  } catch (error) {
+    return { answer: undefined, problems: [{ plugin: plugin.name, message: messageOf(error) }] }
+  }
+}
 
 /** What Codex needs before it can write the library from its sandbox. */
 export function codexHint(root: string): string {

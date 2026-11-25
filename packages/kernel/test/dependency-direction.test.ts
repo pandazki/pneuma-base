@@ -59,6 +59,20 @@ describe('dependency direction', () => {
     expect(await restrictedImports(`import type { Block } from '@pneuma-base/kernel'\nexport type B = Block\n`, 'packages/viewer/web/src/ok.tsx')).toEqual([])
   })
 
+  it('flags the sdk importing the kernel, the command line, the viewer or a plugin, by package or by path', async () => {
+    for (const code of [
+      `export * from '@pneuma-base/kernel'\n`,
+      `export * from '../../kernel/src/paths.js'\n`,
+      `export * from '@pneuma-base/cli'\n`,
+      `export * from '@pneuma-base/viewer'\n`,
+      `export * from '@pneuma-base/plugin-ledger'\n`,
+      `export * from '../../plugin-ledger/src/index.js'\n`,
+    ]) {
+      expect(await restrictedImports(code, 'packages/sdk/src/violation.ts'), code).toHaveLength(1)
+    }
+    expect(await restrictedImports(`export * from './types.js'\n`, 'packages/sdk/src/ok.ts')).toEqual([])
+  })
+
   it('flags a plugin importing the viewer', async () => {
     expect(await restrictedImports(`export { startServer } from '@pneuma-base/viewer'\n`, 'packages/plugin-ledger/src/violation.ts')).toHaveLength(1)
   })
@@ -69,8 +83,10 @@ describe('dependency direction', () => {
     expect(Object.keys(pkg.devDependencies ?? {}).filter((d) => d.startsWith('@pneuma-base/'))).toEqual([])
   })
 
-  it('the kernel package declares no dependency at all', () => {
+  it('the kernel package depends on the sdk and nothing else; the sdk on nothing', () => {
     const pkg = JSON.parse(readFileSync(join(root, 'packages/kernel/package.json'), 'utf8'))
-    expect(pkg.dependencies ?? {}).toEqual({})
+    expect(Object.keys(pkg.dependencies ?? {})).toEqual(['@pneuma-base/sdk'])
+    const sdk = JSON.parse(readFileSync(join(root, 'packages/sdk/package.json'), 'utf8'))
+    expect(sdk.dependencies ?? {}).toEqual({})
   })
 })

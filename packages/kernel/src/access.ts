@@ -1,5 +1,5 @@
 import { isWithin, parseLibraryPath, regionOf } from './paths.js'
-import type { Context, LibraryPath } from './types.js'
+import type { Context, LibraryPath } from '@pneuma-base/sdk'
 
 export type Writable = { ok: true; path: LibraryPath } | { ok: false; reason: 'outside-library' | 'outside-grant' }
 

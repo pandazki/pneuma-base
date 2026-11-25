@@ -1,4 +1,4 @@
-// The kernel's public shapes. ARCHITECTURE.md sections 4 and 5. Plugins see only these.
+// The plugin contract's shapes, which a plugin and the kernel exchange. ARCHITECTURE.md sections 4 and 5.
 
 // Semantic primitives. Parsed once at the kernel's boundary.
 export type LibraryPath = string & { readonly __brand: 'LibraryPath' } // library-relative, '/'-separated
@@ -40,6 +40,8 @@ export type Library = {
   readonly config: LibraryConfig
   readonly plugins: readonly Plugin[] // installed and present in the plugin table, in config order
   readonly unavailable: readonly PluginName[] // installed but absent from the plugin table
+  /** Names a later plugin claims that an earlier one holds, left out of the later one: a problem in every answer (K8). */
+  readonly clashes: readonly PluginProblem[]
 }
 
 /** `home` is this machine's `$PNEUMA_BASE_HOME`: local grant files, external plugins, plugin caches. */
@@ -47,10 +49,67 @@ export type Context = { library: Library; actor: Actor; session: Session; now: I
 
 /**
  * The context a plugin's hook receives: the operation's context, the plugin's own directory in the
- * library, and its cache directory outside the library (`<home>/cache/<library id>/<plugin>/`).
- * The kernel does not create the cache directory; deleting it must lose nothing.
+ * library, its cache directory outside the library (`<home>/cache/<library id>/<plugin>/`), and the
+ * kernel's helpers bound to the library. The own directory exists whenever a hook runs. The kernel
+ * does not create the cache directory; deleting it must lose nothing.
  */
-export type PluginContext = Context & { dir: string; cacheDir: string }
+export type PluginContext = Context & { dir: string; cacheDir: string; tools: PluginTools }
+
+/** Where a library path lies: the content anyone may arrange, the archive, or the kernel's own files. */
+export type Region = 'content' | 'archive' | 'kernel'
+/** What an input names in the library: the path, where it lies, and the bundle it lies strictly inside, if any. */
+export type Resolved = { path: LibraryPath; region: Region; bundle: LibraryPath | null }
+/** A thing's facts that need no hashing. A file counts as one file; a bundle, as the files its fingerprint counts. */
+export type Thing = { kind: ThingKind; size: number; files: number; modifiedAt: Instant }
+/** A file a bundle counts: its path relative to the bundle, '/'-separated. */
+export type BundleFile = { path: string; size: number; modifiedAt: Instant }
+/** A file a bundle counts, with the sha256 of its content. */
+export type ManifestEntry = { path: string; fingerprint: Fingerprint; size: number }
+
+/**
+ * The kernel's helpers a plugin needs, bound to the operation's library so no call takes the root.
+ * They are the running kernel's own code: what a bundle counts, how a fingerprint is taken, how find
+ * splits and ranks never drift from a plugin's copy. Paths are library paths unless named absolute.
+ */
+export interface PluginTools {
+  /** What an agent wrote, relative to the library or absolute inside it; null when it names nothing in the library. */
+  resolve(input: string): Promise<Resolved | null>
+  regionOf(path: LibraryPath): Region
+  /** Where a content path lies in the archive. */
+  archivedPath(path: LibraryPath): LibraryPath
+  /** The content path of an archived one; null for the archive itself. */
+  originalPath(path: LibraryPath): LibraryPath | null
+  abs(path: LibraryPath): string
+  /** The file or bundle at a path; null when neither is there. */
+  thing(path: LibraryPath): Promise<Thing | null>
+  /** Every thing in the content and the archive: each file outside bundles, and each bundle. */
+  things(): Promise<LibraryPath[]>
+  /** The files the bundle at a path counts, in fingerprint order; null when no bundle is there. */
+  files(path: LibraryPath): Promise<BundleFile[] | null>
+  /**
+   * Copies the thing at a path into the absolute directory `to`, which must not exist: a bundle's
+   * counted files without its marker, a file under its own name. Answers the fingerprint of the copy,
+   * to compare with the content decided on; null when nothing is there. Throws when `to` lies in the
+   * library outside the plugin's own directory.
+   */
+  copyOut(path: LibraryPath, to: string): Promise<Fingerprint | null>
+  /** The fingerprint of the file or bundle at a path; null when neither is there. */
+  fingerprint(path: LibraryPath): Promise<Fingerprint | null>
+  /** Each file the bundle at a path counts, with its sha256; null when no bundle is there. */
+  manifest(path: LibraryPath): Promise<ManifestEntry[] | null>
+  /** A bundle's fingerprint from its manifest, reading no file. */
+  fingerprintOfManifest(entries: readonly Pick<ManifestEntry, 'path' | 'fingerprint'>[]): Fingerprint
+  /** The fingerprint of a regular file anywhere on this machine, such as a copy the plugin keeps. */
+  fingerprintOfFile(absolute: string): Promise<Fingerprint>
+  /** The terms of a find's text, as the kernel splits them. */
+  searchTerms(text: string | null, match: FindRequest['match']): string[]
+  /** The hits to give from candidates, ranked as the kernel ranks its own. */
+  rankHits<T>(candidates: readonly { hit: T; haystack: string }[], terms: readonly string[], match: FindRequest['match']): T[]
+  /** How many hits each answerer gives at most when a find matches the words of a sentence. */
+  readonly sentenceHits: number
+  /** A put through the agent face, as the operation's actor and session, so every plugin hears it and it sends its event. */
+  put(req: PutRequest): Promise<PutResult>
+}
 
 export type Note = { plugin: PluginName; text: string; data?: unknown }
 export type Section = { plugin: PluginName; title: string; body: string; data?: unknown }
@@ -62,6 +121,11 @@ export type PluginSection = Omit<Section, 'plugin'>
 export type PluginHit = Omit<Hit, 'by'>
 /** What `onFind` answers: its hits, or its hits and what it could not do, such as an embedder that did not answer (K8). */
 export type PluginFindAnswer = PluginHit[] | { hits: PluginHit[]; problems: string[] }
+/**
+ * What `onPut` and `onArchive` answer: a note, or a note and what it could not do, such as an outside
+ * step that failed after the verb itself succeeded. The kernel lists each problem as this plugin's (K8).
+ */
+export type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems: string[] }
 
 // ---- put ----
 
@@ -146,9 +210,9 @@ export type SayResult =
   | { outcome: 'heard'; by: PluginName; note: string; problems: PluginProblem[] }
   | { outcome: 'not-heard'; reason: 'no-plugin-for-kind' | 'refused' | 'plugin-failed'; note: string; problems: PluginProblem[] }
 
-/** What a plugin's `onSay` answers. The kernel adds `problems`. */
+/** What a plugin's `onSay` answers. A heard answer may carry what it could not do; the kernel lists those as problems. */
 export type SayAnswer =
-  | { outcome: 'heard'; note: string }
+  | { outcome: 'heard'; note: string; problems?: string[] }
   | { outcome: 'not-heard'; reason: 'refused'; note: string }
 
 export type CheckRequest = { since: Instant | 'last' | null; includeArchived: boolean }
@@ -203,7 +267,7 @@ export interface OwnerCommand {
   readonly readOnly?: boolean
   /** It configures plugins, targets or embedders without changing items; its event is news only after an agent's first visit. */
   readonly setup?: boolean
-  run(args: OwnerArgs, ctx: PluginContext): Promise<OwnerAnswer>
+  readonly run: (args: OwnerArgs, ctx: PluginContext) => Promise<OwnerAnswer>
 }
 
 // ---- events ----
@@ -220,9 +284,15 @@ export type Event =
 export type CognitionSection = { title: string; text: string }
 export type StorageDecl = { dir: string; kind: 'body' | 'cache' } // relative to the plugin's own directory
 
-/** An object with only a name and empty lists is a valid plugin. */
+/** An object with only a contract, a name and empty lists is a valid plugin. */
 export interface Plugin {
+  /** The plugin contract it is written against: the sdk's `CONTRACT`. The kernel refuses a version it does not run. */
+  readonly contract: number
   readonly name: PluginName
+  /** Its own version, for people. */
+  readonly version?: string
+  /** What it brings, in one Chinese sentence for people. */
+  readonly summary?: string
   readonly cognition: CognitionSection | null
   /**
    * With `revise`: whether it holds every replaced content (`every`) or only some (`some`, the
@@ -233,22 +303,32 @@ export interface Plugin {
   readonly statements: readonly string[]
   readonly ownerCommands: readonly OwnerCommand[]
 
-  onPut?(req: AcceptedPut, ctx: PluginContext): Promise<PluginNote | null>
-  revise?(req: PlaceOverExisting, ctx: PluginContext): Promise<ReviseOutcome>
-  onFind?(req: FindRequest, ctx: PluginContext): Promise<PluginFindAnswer>
+  // Hooks are function-typed properties, not methods, so a hook is checked strictly against what the kernel gives it.
+  readonly onPut?: (req: AcceptedPut, ctx: PluginContext) => Promise<PluginNoteAnswer | null>
+  readonly revise?: (req: PlaceOverExisting, ctx: PluginContext) => Promise<ReviseOutcome>
+  readonly onFind?: (req: FindRequest, ctx: PluginContext) => Promise<PluginFindAnswer>
   /** What it knows about paths that others found and it did not: each hit is about one of `paths`. */
-  onFound?(paths: readonly LibraryPath[], req: FindRequest, ctx: PluginContext): Promise<PluginHit[]>
-  onInspect?(req: InspectRequest, ctx: PluginContext): Promise<PluginSection[]>
-  onSay?(req: SayRequest, ctx: PluginContext): Promise<SayAnswer>
-  onCheck?(req: CheckRequest, ctx: PluginContext): Promise<PluginSection[]>
-  onArchive?(req: AcceptedArchive, ctx: PluginContext): Promise<PluginNote | null>
-  observe?(event: Event, ctx: PluginContext): Promise<void>
+  readonly onFound?: (paths: readonly LibraryPath[], req: FindRequest, ctx: PluginContext) => Promise<PluginHit[]>
+  readonly onInspect?: (req: InspectRequest, ctx: PluginContext) => Promise<PluginSection[]>
+  readonly onSay?: (req: SayRequest, ctx: PluginContext) => Promise<SayAnswer>
+  readonly onCheck?: (req: CheckRequest, ctx: PluginContext) => Promise<PluginSection[]>
+  readonly onArchive?: (req: AcceptedArchive, ctx: PluginContext) => Promise<PluginNoteAnswer | null>
+  readonly observe?: (event: Event, ctx: PluginContext) => Promise<void>
+  /** After `archive purge` deleted things, with their library paths as they were in the archive. */
+  readonly onPurged?: (paths: readonly LibraryPath[], ctx: PluginContext) => Promise<void>
+  /** Once, after `plugin add` installed it. A problem it answers, or a throw, is shown in the answer of `plugin add`, which still succeeds. */
+  readonly onAdd?: (ctx: PluginContext) => Promise<void | { problems: string[] }>
+  /**
+   * Before `plugin remove` takes it out. It may refuse with a Chinese sentence saying why and what to
+   * do first. `plugin remove <name> --anyway` removes it all the same, and the answer repeats the sentence.
+   */
+  readonly onRemove?: (ctx: PluginContext) => Promise<void | { refuse: string }>
 
   /** The views it adds to the management UI. Each id starts with `<name>.`. */
   readonly views?: readonly ViewDecl[]
-  onView?(req: ViewRequest, ctx: PluginContext): Promise<ViewAnswer>
+  readonly onView?: (req: ViewRequest, ctx: PluginContext) => Promise<ViewAnswer>
   /** What it knows about one library path, as one section of the kernel's item panel: onInspect's counterpart in the UI. */
-  onItemView?(path: LibraryPath, ctx: PluginContext): Promise<ItemSection | null>
+  readonly onItemView?: (path: LibraryPath, ctx: PluginContext) => Promise<ItemSection | null>
 }
 
 export type PluginTable = ReadonlyMap<string, Plugin>

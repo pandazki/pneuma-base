@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import type { Fingerprint, Instant } from './types.js'
+import type { Fingerprint, Instant } from '@pneuma-base/sdk'
 
 export async function fingerprintOfFile(path: string): Promise<Fingerprint> {
   const hash = createHash('sha256')

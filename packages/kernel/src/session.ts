@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { Actor, Grant, Session } from './types.js'
+import type { Actor, Grant, Session } from '@pneuma-base/sdk'
 
 export type Env = Readonly<Record<string, string | undefined>>
 

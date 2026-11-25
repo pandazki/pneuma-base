@@ -21,6 +21,7 @@ const clear: OwnerCommand = {
 }
 
 export const recorder: Plugin = {
+  contract: 1,
   name: pluginName('recorder'),
   cognition: null,
   storage: [{ dir: '.', kind: 'body' }],
@@ -37,6 +38,7 @@ const boom = (hook: string) => async (): Promise<never> => {
 
 /** Throws in every hook. */
 export const thrower: Plugin = {
+  contract: 1,
   name: pluginName('thrower'),
   cognition: { title: '总是出错的测试插件', text: '## 测试插件\n\n它在每个钩子里都抛错。' },
   storage: [],
@@ -59,6 +61,7 @@ const ping = (label: string): Action => ({ label, tone: 'default', confirm: null
 
 /** Declares one view that uses every kind of block, and one kind no page knows. */
 export const pager: Plugin = {
+  contract: 1,
   name: pluginName('pager'),
   cognition: null,
   storage: [],

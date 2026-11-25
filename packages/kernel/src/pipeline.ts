@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { pluginDir } from './paths.js'
 import { whyNotLoaded } from './plugin-table.js'
+import { pluginTools } from './tools.js'
 import type {
   AgentFace,
   Context,
@@ -9,16 +10,18 @@ import type {
   Instant,
   Actor,
   Library,
+  Note,
   OwnerAnswer,
   OwnerArgs,
   OwnerResult,
   Plugin,
   PluginContext,
   PluginName,
+  PluginNoteAnswer,
   PluginProblem,
   Session,
   Verb,
-} from './types.js'
+} from '@pneuma-base/sdk'
 
 export function makeContext(library: Library, actor: Actor, session: Session, home: string, now: Instant = new Date().toISOString() as Instant): Context {
   return { library, actor, session, now, home }
@@ -50,8 +53,21 @@ export async function eachPlugin<T>(
   return out
 }
 
+/** The notes of hooks that answer `PluginNoteAnswer`, and the problems they answered beside them, stamped with each plugin's name. */
+export function notesOf(heard: Collected<PluginNoteAnswer>): { notes: Note[]; problems: PluginProblem[] } {
+  const notes: Note[] = []
+  const problems: PluginProblem[] = [...heard.problems]
+  for (const { plugin, value } of heard.values) {
+    const answer = 'problems' in value ? value : { note: value, problems: [] }
+    if (answer.note !== null) notes.push({ ...answer.note, plugin })
+    problems.push(...answer.problems.map((message) => ({ plugin, message })))
+  }
+  return { notes, problems }
+}
+
 export function pluginContext(ctx: Context, name: PluginName): PluginContext {
-  return { ...ctx, dir: pluginDir(ctx.library.root, name), cacheDir: join(ctx.home, 'cache', ctx.library.config.id, name) }
+  const dir = pluginDir(ctx.library.root, name)
+  return { ...ctx, dir, cacheDir: join(ctx.home, 'cache', ctx.library.config.id, name), tools: pluginTools(ctx, dir) }
 }
 
 type RequestOf<V extends Verb> = Parameters<AgentFace[V]>[0]
@@ -64,25 +80,27 @@ export async function performVerb<V extends Verb>(verb: V, request: RequestOf<V>
 
 /**
  * Runs one owner-face operation and ends it at the single exit. A command that changes the
- * configuration hands back the reopened library, so the event reaches the plugins installed after it.
+ * configuration hands back the reopened library, so the event reaches the plugins installed after it;
+ * a kernel command that called plugins' hooks hands back their problems.
  */
 export async function performOwner(
   ctx: Context,
   command: string,
   args: OwnerArgs,
   how: { destructive: boolean; readOnly: boolean; setup?: boolean },
-  body: () => Promise<{ answer: OwnerAnswer; library?: Library }>,
+  body: () => Promise<{ answer: OwnerAnswer; library?: Library; problems?: PluginProblem[] }>,
 ): Promise<OwnerResult> {
   return finish(ctx, (result) => ({ face: 'owner', command, args, destructive: how.destructive, readOnly: how.readOnly, setup: how.setup ?? false, result }), async () => {
-    const { answer, library } = await body()
-    return { result: { ...answer, problems: [] }, ...(library ? { library } : {}) }
+    const { answer, library, problems } = await body()
+    return { result: { ...answer, problems: problems ?? [] }, ...(library ? { library } : {}) }
   })
 }
 
 /**
  * The single exit of both faces (K5). Every operation, accepted, refused or failed, ends here by
  * sending exactly one event to every installed plugin's `observe`. Problems from installed plugins
- * that are missing from the plugin table and from `observe` itself join the result (K8).
+ * that are missing from the plugin table, from names a later plugin could not claim, and from
+ * `observe` itself join the result (K8).
  */
 async function finish<R extends { problems: PluginProblem[] }>(
   before: Context,
@@ -101,7 +119,7 @@ async function finish<R extends { problems: PluginProblem[] }>(
   for (const plugin of ctx.library.unavailable) {
     missing.push({ plugin, message: (await whyNotLoaded(ctx.home, plugin)) ?? 'installed in this library but not known to this pneuma-base' })
   }
-  const answered = { ...done.result, problems: [...missing, ...done.result.problems] }
+  const answered = { ...done.result, problems: [...missing, ...ctx.library.clashes, ...done.result.problems] }
   const observed = await eachPlugin(ctx, (plugin, pctx) => plugin.observe?.(toEvent(answered), pctx))
   return { ...answered, problems: [...answered.problems, ...observed.problems] }
 }

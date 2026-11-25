@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { agentFace, BUNDLE_MARKER, initLibrary, makeContext, openLibrary, ownerFace, type Action, type Block, type LibraryPath, type PluginContext, type Session } from '@pneuma-base/kernel'
+import { agentFace, BUNDLE_MARKER, initLibrary, makeContext, openLibrary, pluginContext, ownerFace, type Action, type Block, type LibraryPath, type PluginContext, type Session } from '@pneuma-base/kernel'
 import { search } from '../src/index.js'
 
 const tempDir = (prefix: string) => realpathSync(mkdtempSync(join(process.env.PNEUMA_BASE_TEST_TMP ?? tmpdir(), prefix)))
@@ -19,7 +19,7 @@ async function library() {
     const lib = await openLibrary(root, table)
     if (!lib) throw new Error('no library')
     const ctx = makeContext(lib, { kind: 'owner' }, session, home)
-    const pctx: PluginContext = { ...ctx, dir: join(root, '.pneuma-base', 'search'), cacheDir: join(home, 'cache', lib.config.id, 'search') }
+    const pctx: PluginContext = pluginContext(ctx, search.name)
     return { ctx, pctx, table }
   }
   return {

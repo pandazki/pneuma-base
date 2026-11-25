@@ -54,7 +54,11 @@ importers:
         specifier: workspace:*
         version: link:../viewer
 
-  packages/kernel: {}
+  packages/kernel:
+    dependencies:
+      '@pneuma-base/sdk':
+        specifier: workspace:*
+        version: link:../sdk
 
   packages/plugin-deploy:
     dependencies:
@@ -85,6 +89,8 @@ importers:
       '@pneuma-base/kernel':
         specifier: workspace:*
         version: link:../kernel
+
+  packages/sdk: {}
 
   packages/viewer:
     dependencies:
