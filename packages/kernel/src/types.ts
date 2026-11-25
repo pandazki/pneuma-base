@@ -60,6 +60,8 @@ export type PluginProblem = { plugin: PluginName; message: string }
 export type PluginNote = Omit<Note, 'plugin'>
 export type PluginSection = Omit<Section, 'plugin'>
 export type PluginHit = Omit<Hit, 'by'>
+/** What `onFind` answers: its hits, or its hits and what it could not do, such as an embedder that did not answer (K8). */
+export type PluginFindAnswer = PluginHit[] | { hits: PluginHit[]; problems: string[] }
 
 // ---- put ----
 
@@ -209,7 +211,7 @@ export interface Plugin {
 
   onPut?(req: AcceptedPut, ctx: PluginContext): Promise<PluginNote | null>
   revise?(req: PlaceOverExisting, ctx: PluginContext): Promise<ReviseOutcome>
-  onFind?(req: FindRequest, ctx: PluginContext): Promise<PluginHit[]>
+  onFind?(req: FindRequest, ctx: PluginContext): Promise<PluginFindAnswer>
   onInspect?(req: InspectRequest, ctx: PluginContext): Promise<PluginSection[]>
   onSay?(req: SayRequest, ctx: PluginContext): Promise<SayAnswer>
   onCheck?(req: CheckRequest, ctx: PluginContext): Promise<PluginSection[]>

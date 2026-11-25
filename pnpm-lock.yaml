@@ -35,16 +35,52 @@ importers:
       '@pneuma-base/kernel':
         specifier: workspace:*
         version: link:../kernel
+      '@pneuma-base/plugin-deploy':
+        specifier: workspace:*
+        version: link:../plugin-deploy
       '@pneuma-base/plugin-ledger':
         specifier: workspace:*
         version: link:../plugin-ledger
+      '@pneuma-base/plugin-search':
+        specifier: workspace:*
+        version: link:../plugin-search
+      '@pneuma-base/plugin-sync':
+        specifier: workspace:*
+        version: link:../plugin-sync
+      '@pneuma-base/plugin-version':
+        specifier: workspace:*
+        version: link:../plugin-version
       '@pneuma-base/viewer':
         specifier: workspace:*
         version: link:../viewer
 
   packages/kernel: {}
 
+  packages/plugin-deploy:
+    dependencies:
+      '@pneuma-base/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+
   packages/plugin-ledger:
+    dependencies:
+      '@pneuma-base/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+
+  packages/plugin-search:
+    dependencies:
+      '@pneuma-base/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+
+  packages/plugin-sync:
+    dependencies:
+      '@pneuma-base/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+
+  packages/plugin-version:
     dependencies:
       '@pneuma-base/kernel':
         specifier: workspace:*

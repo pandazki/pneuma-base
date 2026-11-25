@@ -1,7 +1,7 @@
 // The kernel's find: matching the words of a sentence for `start`, and plugin filters.
 import { describe, expect, it } from 'vitest'
-import { agentFace, searchTerms, type FindRequest } from '../src/index.js'
-import { fixture } from './support.js'
+import { agentFace, BUNDLE_MARKER, searchTerms, type FindRequest, type LibraryPath, type PluginHit } from '../src/index.js'
+import { fixture, plugin } from './support.js'
 
 const request = (text: string, match: FindRequest['match'], filters: Record<string, string> = {}): FindRequest => ({ text, match, filters, includeArchived: false, skipOwnSession: false })
 const paths = (r: { hits: { path: string | null }[] }) => r.hits.map((h) => h.path)
@@ -43,6 +43,41 @@ describe('find in words mode', () => {
     const f = await fixture()
     f.write('a.md', 'a')
     expect(paths(await agentFace.find(request('做', 'words'), f.ctx))).toEqual([])
+  })
+})
+
+describe('find with plugins that read content', () => {
+  const contentHit = (path: string, detail: string | null): PluginHit => ({ path: path as LibraryPath, title: path.split('/').at(-1) as string, group: null, detail })
+
+  it('gives a path both the kernel and a plugin found once, from the plugin, at the plugin’s place', async () => {
+    const reader = plugin('reader', { onFind: async () => [contentHit('notes/zebra.md', '正文：…zebra…')] })
+    const f = await fixture([reader])
+    f.write('notes/zebra.md', 'zebra')
+    f.write('notes/zebra-2.md', 'other')
+    const r = await agentFace.find(request('zebra', 'terms'), f.ctx)
+    expect(r.hits).toEqual([
+      { path: 'notes/zebra-2.md', title: 'zebra-2.md', by: 'kernel', group: null, detail: null },
+      { path: 'notes/zebra.md', title: 'zebra.md', by: 'reader', group: null, detail: '正文：…zebra…' },
+    ])
+  })
+
+  it('keeps the kernel’s mark of a bundle in front of the plugin’s detail', async () => {
+    const reader = plugin('reader', { onFind: async () => [contentHit('sites/zebra', 'index.html：…zebra…')] })
+    const f = await fixture([reader])
+    f.write('sites/zebra/index.html', 'zebra')
+    f.write(`sites/zebra/${BUNDLE_MARKER}`, '{"format":1}\n')
+    expect((await agentFace.find(request('zebra', 'terms'), f.ctx)).hits).toEqual([
+      { path: 'sites/zebra', title: 'zebra', by: 'reader', group: null, detail: '目录，index.html：…zebra…' },
+    ])
+  })
+
+  it('lists what a plugin could not do next to the hits it still gave', async () => {
+    const partial = plugin('partial', { onFind: async () => ({ hits: [contentHit('a.md', '正文：…a…')], problems: ['嵌入服务连不上'] }) })
+    const f = await fixture([partial])
+    f.write('a.md', 'a')
+    const r = await agentFace.find(request('nothing-by-name', 'terms'), f.ctx)
+    expect(r.hits.map((h) => [h.path, h.by])).toEqual([['a.md', 'partial']])
+    expect(r.problems).toEqual([{ plugin: 'partial', message: '嵌入服务连不上' }])
   })
 })
 
