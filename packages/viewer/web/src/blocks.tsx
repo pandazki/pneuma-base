@@ -1,28 +1,13 @@
 // The block renderer: one component per kind of block. It knows the kernel's block types and no plugin.
 import type { Action, Block, Cell, Link, Tag, TableRow, Tone } from '@pneuma-base/kernel'
-import { ChevronRight, CircleAlert, CircleCheck, Info, TriangleAlert } from 'lucide-react'
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
-import { api } from './api'
+import { Check, ChevronRight, CircleAlert, CircleCheck, Copy, ExternalLink, Info, TriangleAlert } from 'lucide-react'
+import { useEffect, useLayoutEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
+import { api, outsideUrl } from './api'
 import { ViewIcon } from './chrome'
-import { fitColumns, naturalColumns } from './measure'
+import { useEnv } from './env'
+import { CustomView } from './frame'
+import { FONT, fitColumns, fitMiddle, naturalColumns, textRoom } from './measure'
 import { fullTime, shortTime } from './time'
-
-/** What a block can do besides showing itself: follow a link, start an action, and know what the panel shows. */
-export type BlockEnv = {
-  onLink(link: Link): void
-  onAction(action: Action): void
-  selected(link: Link | null): boolean
-  /** Changes whenever the library changed, so blocks that load on their own load again. */
-  tick: number
-}
-
-export const BlockEnvContext = createContext<BlockEnv | null>(null)
-
-function useEnv(): BlockEnv {
-  const env = useContext(BlockEnvContext)
-  if (!env) throw new Error('blocks rendered outside BlockEnvContext')
-  return env
-}
 
 export const sameLink = (a: Link | null, b: { view: string; params: Record<string, string> } | null) =>
   a !== null && b !== null && a.view === b.view && JSON.stringify(Object.entries(a.params).sort()) === JSON.stringify(Object.entries(b.params).sort())
@@ -42,17 +27,61 @@ export function TagView({ tag }: { tag: Tag }) {
   return <span className={`tag ${TONE_CLASS[tag.tone]}`}>{tag.text}</span>
 }
 
-/** One cell. In a table it stays on one line, its text cut short with the whole of it on hover; elsewhere it wraps. */
-export function CellView({ cell, line = false }: { cell: Cell; line?: boolean }) {
+const stop = (e: MouseEvent) => e.stopPropagation()
+
+/** Copies `value`, and says so for a moment. */
+function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const timer = window.setTimeout(() => setCopied(false), 1500)
+    return () => window.clearTimeout(timer)
+  }, [copied])
+  const Icon = copied ? Check : Copy
+  return (
+    <button
+      type="button"
+      className="flex size-5 shrink-0 items-center justify-center rounded-chip text-ink-3 transition-colors hover:bg-hover hover:text-ink"
+      aria-label={copied ? '已复制' : '复制'}
+      title={copied ? '已复制' : '复制'}
+      onClick={(e) => {
+        e.stopPropagation()
+        navigator.clipboard.writeText(value).then(() => setCopied(true), () => undefined)
+      }}
+    >
+      <Icon className={`size-3.5 ${copied ? 'text-green' : ''}`} strokeWidth={2} aria-hidden />
+    </button>
+  )
+}
+
+/**
+ * One cell. In a table it stays on one line, its text cut short with the whole of it on hover; elsewhere
+ * it wraps. An outside address is a link to a new tab; given `room`, it is cut in the middle to fit.
+ */
+export function CellView({ cell, line = false, room }: { cell: Cell; line?: boolean; room?: number }) {
   const { onLink } = useEnv()
   const style = `${cell.mono ? 'font-mono text-[12.5px]' : ''} ${cell.muted ? 'text-ink-2' : ''}`
+  const href = outsideUrl(cell.href)
+  const fitted = href && line && room !== undefined ? fitMiddle(cell.text, cell.mono ? FONT.mono : FONT.cell, room) : cell.text
   // On one line, a path-like text is cut in its folders, so its last part stays readable.
   const cut = line && cell.mono ? cell.text.lastIndexOf('/') : -1
   const text = cell.at ? (
     <span className={`${style} ${line ? 'min-w-0 truncate' : ''}`}>
       <Moment at={cell.at} />
     </span>
-  ) : cell.text === '' ? null : cut > 0 && cut < cell.text.length - 1 ? (
+  ) : cell.text === '' ? null : href ? (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`link ${style} min-w-0 ${line ? 'overflow-hidden whitespace-nowrap' : '[overflow-wrap:anywhere]'}`}
+      title={cell.text}
+      aria-label={fitted !== cell.text ? cell.text : undefined}
+      onClick={stop}
+    >
+      {fitted}
+    </a>
+  ) : cut > 0 && cut < cell.text.length - 1 ? (
       <span className={`flex min-w-0 ${style}`}>
         <span className="sr-only">{cell.text}</span>
         <span className="min-w-0 truncate" aria-hidden>
@@ -69,10 +98,11 @@ export function CellView({ cell, line = false }: { cell: Cell; line?: boolean })
     <span className={`items-center gap-x-2 align-middle ${line ? 'flex max-w-full min-w-0' : 'inline-flex max-w-full flex-wrap gap-y-1'}`} title={line && cell.text !== '' && !cell.at ? cell.text : undefined}>
       {cell.icon ? <ViewIcon name={cell.icon} className="size-4 shrink-0 text-ink-3" /> : null}
       {text}
+      {cell.copy ? <CopyButton value={href ?? cell.text} /> : null}
       {cell.tag ? <TagView tag={cell.tag} /> : null}
     </span>
   )
-  if (!cell.link) return content
+  if (!cell.link || href) return content
   const link = cell.link
   return (
     <button
@@ -223,11 +253,12 @@ function TableView({ block }: { block: Extract<Block, { kind: 'table' }> }) {
                   : undefined
               }
             >
-              {shownColumns.map((c) => {
+              {shownColumns.map((c, i) => {
                 const cell = row.cells[c.key]
+                const width = widths?.[i]
                 return (
                   <td key={c.key} className="h-[35px] max-w-0 border-b border-line-soft px-2 align-middle whitespace-nowrap first:pl-3">
-                    {cell ? <CellView cell={cell} line /> : null}
+                    {cell ? <CellView cell={cell} line room={cell.href && width !== undefined ? textRoom(cell, width, i === 0) : undefined} /> : null}
                   </td>
                 )
               })}
@@ -297,6 +328,11 @@ function TimelineView({ block }: { block: Extract<Block, { kind: 'timeline' }> }
               {line}
             </p>
           ))}
+          {e.actions && e.actions.length > 0 ? (
+            <div className="mt-1.5">
+              <ActionRow actions={e.actions} small />
+            </div>
+          ) : null}
         </li>
       ))}
     </ol>
@@ -376,6 +412,32 @@ function PreviewView({ block }: { block: Extract<Block, { kind: 'preview' }> }) 
   return <p className="text-[12.5px] text-ink-2">没能读到这个文件。</p>
 }
 
+/**
+ * An outside page in a frame that runs its scripts but never shares the viewer's origin, with a way
+ * to open it in a new tab. A page of another origin keeps its own, so its storage works.
+ */
+function EmbedView({ block }: { block: Extract<Block, { kind: 'embed' }> }) {
+  const href = outsideUrl(block.url)
+  if (href === null) return <p className="text-[12.5px] text-ink-2">这一块要显示的不是 http 或 https 的地址：{block.url}</p>
+  const sandbox = new URL(href).origin === window.location.origin ? 'allow-scripts' : 'allow-scripts allow-same-origin'
+  return (
+    <figure className="card overflow-hidden" aria-label={block.title}>
+      <figcaption className="flex h-9 items-center gap-2 border-b border-line px-3 text-[12.5px]">
+        <ViewIcon name="globe" className="size-3.5 shrink-0 text-ink-3" />
+        <span className="min-w-0 truncate font-medium">{block.title}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-ink-3" title={href}>
+          {href}
+        </span>
+        <a href={href} target="_blank" rel="noopener noreferrer" className="link flex shrink-0 items-center gap-1">
+          在新标签页打开
+          <ExternalLink className="size-3.5" strokeWidth={2} aria-hidden />
+        </a>
+      </figcaption>
+      <iframe src={href} title={block.title} sandbox={sandbox} referrerPolicy="no-referrer" className="block w-full border-0 bg-white" style={{ height: block.height }} />
+    </figure>
+  )
+}
+
 function EmptyView({ block }: { block: Extract<Block, { kind: 'empty' }> }) {
   return (
     <div className="card flex flex-col items-center justify-center px-6 py-10 text-center">
@@ -406,6 +468,10 @@ export function BlockView({ block }: { block: Block }) {
       return <ActionRow actions={block.actions} />
     case 'empty':
       return <EmptyView block={block} />
+    case 'embed':
+      return <EmbedView block={block} />
+    case 'custom':
+      return <CustomView block={block} />
     default:
       return <p className="text-[12.5px] text-ink-3">这一块界面还不认识：{String((block as { kind?: unknown }).kind)}</p>
   }

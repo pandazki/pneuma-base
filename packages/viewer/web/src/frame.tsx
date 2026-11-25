@@ -1,0 +1,151 @@
+// A `custom` block: a plugin's own page in a sandboxed frame. The frame gets the block's data, the
+// colour scheme, the design tokens and its actions' names; it may ask for three things only, and an
+// action it asks for runs exactly as a button's would. ARCHITECTURE section 6.
+import type { Action, Block, Link } from '@pneuma-base/kernel'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { api, outsideUrl } from './api'
+import { useEnv } from './env'
+
+type Custom = Extract<Block, { kind: 'custom' }>
+
+/** What a frame may send. Anything else, or from anywhere else, is ignored. */
+type FrameMessage =
+  | { type: 'run'; name: string; values: Record<string, unknown> }
+  | { type: 'open'; link: Link }
+  | { type: 'open'; href: string }
+  | { type: 'height'; height: number }
+
+/** How long a frame has to say it is ready, by its first message, before its place says it failed. */
+const READY_MS = 5000
+const MAX_HEIGHT = 4000
+
+/** The UI's tokens, by the names the page and the frame kit's stylesheet both use. */
+const TOKENS = [
+  '--page', '--canvas', '--surface', '--inset', '--hover', '--hover-2', '--ink', '--ink-2', '--ink-3',
+  '--line', '--line-strong', '--line-soft', '--field', '--accent', '--accent-ink', '--accent-tint',
+  '--green', '--green-tint', '--orange', '--orange-tint', '--red', '--red-tint', '--tooltip-bg', '--tooltip-fg',
+  '--scrim', '--tag-fill', '--tag-ring', '--shadow-xs', '--shadow-sm', '--shadow-lg', '--shadow-hairline',
+  '--shadow-btn', '--shadow-card', '--shadow-overlay', '--shadow-inset-field',
+  '--radius-chip', '--radius-control', '--radius-card', '--radius-window', '--font-sans', '--font-mono',
+]
+
+const tokens = (): Record<string, string> => {
+  const style = getComputedStyle(document.documentElement)
+  return Object.fromEntries(TOKENS.map((name) => [name, style.getPropertyValue(name).trim()]))
+}
+
+const DARK = window.matchMedia('(prefers-color-scheme: dark)')
+const subscribe = (change: () => void) => {
+  DARK.addEventListener('change', change)
+  return () => DARK.removeEventListener('change', change)
+}
+function useScheme(): 'light' | 'dark' {
+  return useSyncExternalStore(subscribe, () => (DARK.matches ? 'dark' : 'light'))
+}
+
+type Raw = Record<string, unknown>
+const isObject = (v: unknown): v is Raw => typeof v === 'object' && v !== null && !Array.isArray(v)
+
+function parseLink(v: unknown): Link | null {
+  if (!isObject(v) || typeof v.view !== 'string' || !isObject(v.params) || !Object.values(v.params).every((p) => typeof p === 'string')) return null
+  return { view: v.view, params: v.params as Record<string, string>, target: v.target === 'panel' ? 'panel' : 'main' }
+}
+
+/** The frame's message as one of the three it may send, or null. */
+function parseMessage(data: unknown): FrameMessage | null {
+  if (!isObject(data) || data.pneuma !== 1) return null
+  if (data.type === 'height' && typeof data.height === 'number' && Number.isFinite(data.height)) return { type: 'height', height: data.height }
+  if (data.type === 'run' && typeof data.name === 'string') return { type: 'run', name: data.name, values: isObject(data.values) ? data.values : {} }
+  if (data.type === 'open') {
+    const link = parseLink(data.link)
+    if (link) return { type: 'open', link }
+    const href = typeof data.href === 'string' ? outsideUrl(data.href) : null
+    if (href) return { type: 'open', href }
+  }
+  return null
+}
+
+/** The frame's values for the action's own inputs, and nothing else. */
+const declared = (action: Action, values: Record<string, unknown>): Record<string, string> =>
+  Object.fromEntries(action.inputs.flatMap((i) => (typeof values[i.name] === 'string' ? [[i.name, values[i.name] as string]] : [])))
+
+/** Each action as the frame may know it: its label, tone and inputs, never its call. */
+const described = (actions: Custom['actions']) => Object.fromEntries(Object.entries(actions).map(([name, a]) => [name, { label: a.label, tone: a.tone, inputs: a.inputs }]))
+
+export function CustomView({ block }: { block: Custom }) {
+  const plugin = block.plugin ?? ''
+  const src = api.pluginUiUrl(plugin, block.entry)
+  return <Frame key={src} block={block} plugin={plugin} src={src} />
+}
+
+function Frame({ block, plugin, src }: { block: Custom; plugin: string; src: string }) {
+  const env = useEnv()
+  const scheme = useScheme()
+  const frame = useRef<HTMLIFrameElement | null>(null)
+  const [phase, setPhase] = useState<'loading' | 'ready' | 'failed'>('loading')
+  const [height, setHeight] = useState(block.height)
+  const latest = useRef({ block, env })
+  latest.current = { block, env }
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.source === null || event.source !== frame.current?.contentWindow) return
+      const message = parseMessage(event.data)
+      if (message === null) return
+      setPhase('ready')
+      const { block, env } = latest.current
+      switch (message.type) {
+        case 'height':
+          setHeight(Math.min(MAX_HEIGHT, Math.max(0, Math.ceil(message.height))))
+          break
+        case 'open':
+          if ('link' in message) env.onLink(message.link)
+          else window.open(message.href, '_blank', 'noopener,noreferrer')
+          break
+        case 'run': {
+          const action = Object.hasOwn(block.actions, message.name) ? block.actions[message.name] : undefined
+          if (action) env.onAction(action, declared(action, message.values))
+          else console.warn(`插件 ${plugin} 的页要做一件这一块没有声明的事：${message.name}`)
+        }
+      }
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [plugin])
+
+  useEffect(() => {
+    if (phase !== 'loading') return
+    const timer = window.setTimeout(() => setPhase('failed'), READY_MS)
+    return () => window.clearTimeout(timer)
+  }, [phase])
+
+  // Once it is ready, and again whenever the view was fetched again or the scheme changed.
+  useEffect(() => {
+    if (phase !== 'ready') return
+    frame.current?.contentWindow?.postMessage({ pneuma: 1, type: 'data', data: block.data ?? null, scheme, tokens: tokens(), actions: described(block.actions) }, '*')
+  }, [phase, block, scheme])
+
+  if (phase === 'failed') {
+    return (
+      <div className="card flex flex-col items-center justify-center px-6 py-8 text-center" role="alert">
+        <p className="text-[14px] font-medium text-ink">插件 {plugin} 的页没能打开</p>
+        <p className="mt-1 max-w-[36rem] text-[12.5px] break-words text-ink-2">
+          <span className="font-mono">{block.entry}</span> 没有加载，或者 {READY_MS / 1000} 秒内没有说它准备好了。页面的其余部分不受影响。
+        </p>
+      </div>
+    )
+  }
+  return (
+    <div className={phase === 'loading' ? 'animate-pulse rounded-card bg-inset' : ''}>
+      <iframe
+        ref={frame}
+        src={src}
+        title={`插件 ${plugin} 的页`}
+        sandbox="allow-scripts"
+        referrerPolicy="no-referrer"
+        className={`-mx-px block w-[calc(100%+2px)] max-w-none border-0 ${phase === 'ready' ? '' : 'opacity-0'}`}
+        style={{ height }}
+      />
+    </div>
+  )
+}

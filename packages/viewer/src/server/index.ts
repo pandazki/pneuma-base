@@ -4,11 +4,11 @@ import { createReadStream } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { extname, join, normalize, sep } from 'node:path'
+import { extname, isAbsolute, join, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openLibrary, type Env, type PluginTable } from '@pneuma-base/kernel'
 import { call, init, state, view, type Reply, type Served } from './api.js'
-import { libraryFile, revision } from './files.js'
+import { libraryFile, pluginUiFile, revision } from './files.js'
 
 export type ServerOptions = {
   dir: string
@@ -31,13 +31,31 @@ const BODY_LIMIT = 1024 * 1024
 const STATIC_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
   '.json': 'application/json',
+  '.txt': 'text/plain; charset=utf-8',
 }
+
+/** Where a plugin's own pages are served from: `/plugin-ui/<plugin>/<path in its ui directory>`. */
+const PLUGIN_UI = '/plugin-ui/'
+/** The kit a plugin's page loads by a fixed address: `/plugin-kit/frame.js` and `/plugin-kit/frame.css`. */
+const PLUGIN_KIT = '/plugin-kit/'
+/**
+ * A frame's files are loaded from an opaque origin, so they are readable by any origin (module
+ * scripts and fonts are fetched with CORS). A plugin's page is under the sandbox CSP: even opened
+ * on its own it never shares the viewer's origin, and it is sent no referrer, which would carry the token.
+ */
+const FRAME_HEADERS = { 'access-control-allow-origin': '*', 'referrer-policy': 'no-referrer', 'x-content-type-options': 'nosniff' }
+const FRAME_CSP = "sandbox allow-scripts; frame-ancestors 'self'"
 
 /** The request itself is malformed: answered with 400. */
 class BadRequest extends Error {}
@@ -115,8 +133,30 @@ async function staticFile(res: ServerResponse, webRoot: string, pathname: string
     }
     return sendJson(res, { status: 404, json: { error: 'not found' } })
   }
-  res.writeHead(200, { 'content-type': STATIC_TYPES[extname(file)] ?? 'application/octet-stream', 'cache-control': file.endsWith('index.html') ? 'no-store' : 'max-age=3600' })
+  res.writeHead(200, {
+    'content-type': STATIC_TYPES[extname(file)] ?? 'application/octet-stream',
+    'cache-control': file.endsWith('index.html') ? 'no-store' : 'max-age=3600',
+    ...(pathname.startsWith(PLUGIN_KIT) ? FRAME_HEADERS : {}),
+  })
   res.end(await readFile(file))
+}
+
+/** A file of an installed plugin's `ui` directory, for its `custom` blocks' frames. No token: a frame never holds it. */
+async function pluginUi(res: ServerResponse, served: Served, pathname: string): Promise<void> {
+  const [name = '', ...rest] = pathname.slice(PLUGIN_UI.length).split('/')
+  const library = await openLibrary(served.dir, served.table)
+  const ui = library?.plugins.find((p) => p.name === name)?.ui
+  const file = typeof ui === 'string' && isAbsolute(ui) ? await pluginUiFile(ui, rest.join('/')) : null
+  if (file === null) return sendJson(res, { status: 404, json: { error: 'not found' } })
+  const s = await stat(file)
+  res.writeHead(200, {
+    'content-type': STATIC_TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream',
+    'content-length': s.size,
+    'cache-control': 'no-store',
+    'content-security-policy': FRAME_CSP,
+    ...FRAME_HEADERS,
+  })
+  createReadStream(file).pipe(res)
 }
 
 /**
@@ -131,8 +171,10 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1')
-    if (!url.pathname.startsWith('/api/')) return staticFile(res, webRoot, url.pathname)
+    const plugin = url.pathname.startsWith(PLUGIN_UI)
+    if (!url.pathname.startsWith('/api/') && !plugin) return staticFile(res, webRoot, url.pathname)
     if (!hosts.has(req.headers.host ?? '')) return sendJson(res, { status: 403, json: { error: 'wrong host' } })
+    if (plugin) return pluginUi(res, served, url.pathname)
     const given = (req.headers['x-pneuma-token'] as string | undefined) ?? url.searchParams.get('token')
     if (!sameToken(given, token)) return sendJson(res, { status: 401, json: { error: 'missing or wrong token' } })
     return api(req, res, url, served)

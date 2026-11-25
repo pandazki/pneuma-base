@@ -125,6 +125,18 @@ export function fill(call: Call, values: Record<string, string>, inputs: ActionI
 
 const initial = (inputs: ActionInput[]) => Object.fromEntries(inputs.map((i) => [i.name, i.value ?? i.options?.[0]?.value ?? '']))
 
+/** Whether a filled value fails the input's pattern, matched whole; each line of a `multiple` input. An empty one never does. */
+function mismatched(input: ActionInput, value: string): boolean {
+  if (input.pattern === undefined || value.trim() === '') return false
+  let re: RegExp
+  try {
+    re = new RegExp(`^(?:${input.pattern})$`, 'u')
+  } catch {
+    return false
+  }
+  return (input.multiple ? lines(value) : [value]).some((v) => !re.test(v))
+}
+
 const FOCUSABLE = 'button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])'
 
 /**
@@ -132,10 +144,11 @@ const FOCUSABLE = 'button:not([disabled]), input, select, textarea, [tabindex]:n
  * in-person confirmation. While it is open, Tab stays inside it and Escape cancels; closing gives
  * focus back to what had it.
  */
-export function ActionDialog({ action, onCancel, onSubmit }: { action: Action; onCancel(): void; onSubmit(values: Record<string, string>): void }) {
-  const [values, setValues] = useState(() => initial(action.inputs))
+export function ActionDialog({ action, preset = {}, onCancel, onSubmit }: { action: Action; preset?: Record<string, string>; onCancel(): void; onSubmit(values: Record<string, string>): void }) {
+  const [values, setValues] = useState(() => ({ ...initial(action.inputs), ...preset }))
   const form = useRef<HTMLFormElement | null>(null)
   const danger = action.tone === 'danger'
+  const wrong = new Set(action.inputs.filter((i) => mismatched(i, values[i.name] ?? '')).map((i) => i.name))
   useEffect(() => {
     const before = document.activeElement instanceof HTMLElement ? document.activeElement : null
     // A question with nothing to fill in starts on 取消, the choice that changes nothing.
@@ -177,7 +190,7 @@ export function ActionDialog({ action, onCancel, onSubmit }: { action: Action; o
         onKeyDown={trap}
         onSubmit={(e) => {
           e.preventDefault()
-          onSubmit(values)
+          if (wrong.size === 0) onSubmit(values)
         }}
       >
         <h2 className="flex items-center gap-2 text-[15px] font-semibold">
@@ -194,21 +207,40 @@ export function ActionDialog({ action, onCancel, onSubmit }: { action: Action; o
                   <Choice label={input.label} options={input.options} value={values[input.name] ?? ''} onChange={(v) => set(input.name, v)} />
                 </div>
               ) : (
-                <label key={input.name} className="flex flex-col gap-1.5 text-[12.5px] font-medium text-ink-2">
-                  {input.label}
-                  {input.multiple ? (
-                    <textarea
-                      className="field field-area font-normal"
-                      name={input.name}
-                      rows={3}
-                      value={values[input.name] ?? ''}
-                      placeholder={input.placeholder ?? undefined}
-                      onChange={(e) => set(input.name, e.target.value)}
-                    />
-                  ) : (
-                    <input className="field font-normal" name={input.name} value={values[input.name] ?? ''} placeholder={input.placeholder ?? undefined} onChange={(e) => set(input.name, e.target.value)} />
-                  )}
-                </label>
+                <div key={input.name} className="flex flex-col gap-1.5">
+                  <label className="flex flex-col gap-1.5 text-[12.5px] font-medium text-ink-2">
+                    {input.label}
+                    {input.multiple ? (
+                      <textarea
+                        className="field field-area font-normal"
+                        name={input.name}
+                        rows={3}
+                        value={values[input.name] ?? ''}
+                        placeholder={input.placeholder ?? undefined}
+                        aria-invalid={wrong.has(input.name) || undefined}
+                        aria-describedby={input.hint ? `hint-${input.name}` : undefined}
+                        onChange={(e) => set(input.name, e.target.value)}
+                      />
+                    ) : (
+                      <input
+                        className="field font-normal"
+                        name={input.name}
+                        value={values[input.name] ?? ''}
+                        placeholder={input.placeholder ?? undefined}
+                        aria-invalid={wrong.has(input.name) || undefined}
+                        aria-describedby={input.hint ? `hint-${input.name}` : undefined}
+                        onChange={(e) => set(input.name, e.target.value)}
+                      />
+                    )}
+                  </label>
+                  {input.hint ? (
+                    <span id={`hint-${input.name}`} className={`text-[12px] ${wrong.has(input.name) ? 'text-red' : 'text-ink-3'}`}>
+                      {input.hint}
+                    </span>
+                  ) : wrong.has(input.name) ? (
+                    <span className="text-[12px] text-red">格式不对。</span>
+                  ) : null}
+                </div>
               ),
             )}
           </div>
@@ -217,7 +249,7 @@ export function ActionDialog({ action, onCancel, onSubmit }: { action: Action; o
           <button type="button" className="btn" data-cancel onClick={onCancel}>
             取消
           </button>
-          <button type="submit" className={`btn btn-primary ${danger ? 'btn-danger' : ''}`}>
+          <button type="submit" className={`btn btn-primary ${danger ? 'btn-danger' : ''}`} disabled={wrong.size > 0}>
             {action.label}
           </button>
         </div>

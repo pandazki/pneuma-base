@@ -27,13 +27,41 @@ export function fitStart(text: string, font: string, width: number): string {
   return `…${chars.slice(from).join('')}`
 }
 
+/** The text with its middle cut away, at a …, until it fits `width`: both ends of an address stay readable. */
+export function fitMiddle(text: string, font: string, width: number): string {
+  if (textWidth(text, font) <= width) return text
+  const chars = [...text]
+  const cut = (keep: number) => `${chars.slice(0, Math.ceil(keep / 2)).join('')}…${chars.slice(chars.length - Math.floor(keep / 2)).join('')}`
+  let [low, high] = [0, chars.length - 1]
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2)
+    if (textWidth(cut(mid), font) <= width) low = mid
+    else high = mid - 1
+  }
+  return cut(low)
+}
+
 const ICON = 16
 const GAP = 8
 const TAG_PADDING = 14
+const COPY = 20 // the copy button, size-5
 const PADDING = 16 // px-2 on each side
 const FIRST_PADDING = 20 // pl-3, pr-2
 const BUTTON_PADDING = 16 // a small button's px-2
 const SLACK = 4 // rounding and font fallback
+
+/** What a cell draws besides its text: its icon, its tag and its copy button, with their gaps. */
+function extras(cell: Cell, text: boolean): number {
+  let w = cell.icon ? ICON + (text ? GAP : 0) : 0
+  if (cell.copy) w += (text || w > 0 ? GAP : 0) + COPY
+  if (cell.tag) w += (text || w > 0 ? GAP : 0) + textWidth(cell.tag.text, FONT.small) + TAG_PADDING
+  return w
+}
+
+/** How wide the text of a cell may be in a column `width` wide, the first column with its wider padding. */
+export function textRoom(cell: Cell, width: number, first: boolean): number {
+  return width - (first ? FIRST_PADDING : PADDING) - extras(cell, true)
+}
 
 let probe: HTMLSpanElement | null = null
 /**
@@ -61,10 +89,8 @@ function momentWidth(text: string, font: string, seen: Map<string, number>): num
 
 function cellWidth(cell: Cell, moments: Map<string, number>): number {
   const text = cell.at ? shortTime(cell.at) : cell.text
-  let w = text === '' ? 0 : cell.at ? momentWidth(text, FONT.cell, moments) : textWidth(text, cell.mono ? FONT.mono : FONT.cell)
-  if (cell.icon) w += ICON + (text === '' ? 0 : GAP)
-  if (cell.tag) w += (w > 0 ? GAP : 0) + textWidth(cell.tag.text, FONT.small) + TAG_PADDING
-  return w
+  const w = text === '' ? 0 : cell.at ? momentWidth(text, FONT.cell, moments) : textWidth(text, cell.mono ? FONT.mono : FONT.cell)
+  return w + extras(cell, text !== '')
 }
 
 /** How a column may give: prose and paths down to a minimum, prose first; anything else not at all. */
