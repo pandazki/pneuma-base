@@ -29,9 +29,11 @@ export function machineDirOf(plugin: Plugin): string | null {
  * The built-in plugins, then each plugin in `<home>/plugins/` whose `index.js` loads and default-exports
  * a plugin of the directory's name. A built-in name is never taken by one of these. One that fails to
  * load is left out, so a library that installed it reports it as unavailable, with `whyNotLoaded`.
- * A plugin whose files changed since this process last loaded it is loaded afresh.
+ * A plugin whose files changed since this process last loaded it is loaded afresh. A built-in plugin
+ * passes the same check; one that does not is a fault of this pneuma-base, so it throws.
  */
 export async function loadPlugins(home: string, builtins: PluginTable): Promise<PluginTable> {
+  for (const [name, plugin] of builtins) checkBuiltin(name, plugin)
   const table = new Map(builtins)
   for (const name of await machinePlugins(home)) {
     if (table.has(name)) continue
@@ -50,6 +52,16 @@ export async function machinePlugins(home: string): Promise<string[]> {
 export async function whyNotLoaded(home: string, name: string): Promise<string | null> {
   const loaded = await loadExternal(home, name)
   return loaded !== null && 'failed' in loaded ? loaded.failed : null
+}
+
+/** Built-in plugins this process already checked: they do not change while it runs. */
+const checkedBuiltins = new WeakSet<Plugin>()
+
+function checkBuiltin(name: string, plugin: Plugin): void {
+  if (checkedBuiltins.has(plugin)) return
+  const wrong = whatIsWrong(plugin, name)
+  if (wrong.length > 0) throw new Error(`自带插件 ${name} 过不了插件的核对：${wrong.join('；')}`)
+  checkedBuiltins.add(plugin)
 }
 
 async function loadExternal(home: string, name: string): Promise<Plugin | { failed: string } | null> {
@@ -209,12 +221,12 @@ function eachOf(items: unknown, what: string, wrong: string[], entry: (v: unknow
 }
 
 /**
- * What the loader finds wrong with a default export, in Chinese; empty when it is a plugin it runs.
- * Checked here, at load, is everything that needs no hook called: the contract version, the name,
- * the optional fields' types, the cognition section, the lists and each entry's shape, each `say`
- * kind, command name, view id and secret name given once, command names starting with `<name> ` and
- * none of them the kernel's own, each command's `params`, view ids starting with `<name>.`, and every
- * hook given being a function. The kernel hears no `say` kind itself, so a kind can clash only with
+ * What the loader finds wrong with a plugin, built-in or default-exported, in Chinese; empty when it is
+ * a plugin it runs. Checked here, at load, is everything that needs no hook called: the contract
+ * version, the name, the optional fields' types, the cognition section, the lists and each entry's
+ * shape, each `say` kind, command name, view id and secret name given once, command names starting
+ * with `<name> ` and none of them the kernel's own, each command's `params`, view ids starting with
+ * `<name>.`, and every hook given being a function. The kernel hears no `say` kind itself, so a kind can clash only with
  * another plugin's, which `plugin add` refuses. Left to call time: what a hook or a command's `run`
  * answers and whether it throws (K8), and where the plugin writes.
  */
@@ -252,10 +264,9 @@ function commandWrong(cmd: unknown, plugin: string): string | null {
   if (!name.startsWith(`${plugin} `)) return `主人命令「${name}」不以「${plugin} 」开头`
   if ((KERNEL_COMMAND_NAMES as readonly string[]).includes(name)) return `主人命令「${name}」是内核自己的`
   const typed = isText(cmd.summary) && isBoolean(cmd.destructive) && isBoolean(cmd.ownerOnly) && typeof cmd.run === 'function'
-  const flags = optional(cmd.usage, isText) && optional(cmd.readOnly, isBoolean) && optional(cmd.setup, isBoolean)
-  if (!typed || !flags) return `主人命令「${name}」要有文字的 summary、真假的 destructive 和 ownerOnly、函数 run，usage 是文字，readOnly 和 setup 是真假`
-  if (cmd.params === undefined) return null
-  if (cmd.usage !== undefined) return `主人命令「${name}」有 params 就不写 usage：用法由 params 生成`
+  const flags = optional(cmd.readOnly, isBoolean) && optional(cmd.setup, isBoolean)
+  if (!typed || !flags) return `主人命令「${name}」要有文字的 summary、真假的 destructive 和 ownerOnly、函数 run，readOnly 和 setup 是真假`
+  if (cmd.params === undefined) return `主人命令「${name}」没有 params：每条命令都声明它的参数，什么都不带的写 params: {}`
   const wrong = paramsWrong(cmd.params)
   return wrong === null ? null : `主人命令「${name}」的 params：${wrong}`
 }

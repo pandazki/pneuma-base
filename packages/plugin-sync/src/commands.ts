@@ -3,39 +3,28 @@
 // command, already confirmed in person. So none is destructive and an agent may run them.
 import { mkdir, realpath } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import type { OwnerAnswer, OwnerArgs, OwnerCommand } from '@pneuma-base/kernel'
+import { defineCommand, type OwnerAnswer, type OwnerCommand } from '@pneuma-base/kernel'
 import { currentTarget, envelope, readFacts, writeFact, type RunFact, type TargetFact } from './facts.js'
 import { countsText, notReadyText, overlaps, pendingOf, prepare, run, status, when } from './sync.js'
 
 const done = (text: string, data?: unknown): OwnerAnswer => ({ outcome: 'done', text, ...(data === undefined ? {} : { data }) })
 const refused = (reason: string, text: string, data?: unknown): OwnerAnswer => ({ outcome: 'refused', reason, text, ...(data === undefined ? {} : { data }) })
 
-/** The value of each allowed flag, or a usage refusal. A flag given with an empty value counts as not given. */
-function flags(command: string, args: OwnerArgs, allowed: readonly string[]): Record<string, string | null> | OwnerAnswer {
-  if (args.positional.length > 0) return refused('usage', `${command} 不带参数${allowed.length > 0 ? `，只带 --${allowed.join('、--')}` : ''}`)
-  for (const flag of Object.keys(args.flags)) if (!allowed.includes(flag)) return refused('usage', `${command} 不认识 --${flag}`)
-  return Object.fromEntries(allowed.map((name) => {
-    const v = args.flags[name]
-    return [name, Array.isArray(v) && v[0] !== undefined && v[0] !== '' ? v[0] : null]
-  }))
-}
-
-const isAnswer = (x: object): x is OwnerAnswer => 'outcome' in x
-
-const targetSet: OwnerCommand = {
+export const TARGET_SET = defineCommand({
   name: 'sync target set',
   summary: '设同步目标：本机上的一个目录',
-  usage: '--kind dir --to <目录>',
+  params: {
+    flags: [
+      { name: 'kind', hint: '种类', kind: 'value', required: true, options: [{ value: 'dir', label: 'dir：本机上的一个目录' }] },
+      { name: 'to', hint: '目录', kind: 'value', required: true },
+    ],
+  },
   destructive: false,
   ownerOnly: true,
   setup: true,
-  async run(args, ctx) {
-    const f = flags('sync target set', args, ['kind', 'to'])
-    if (isAnswer(f)) return f
-    if (f.kind !== 'dir') return refused('usage', '要写 --kind dir --to <目录>。这一版只有本地目录一种目标。')
-    if (!f.to) return refused('usage', '要写 --to <目录>。')
+  async run({ to }, ctx) {
     const root = ctx.library.root
-    const wanted = resolve(ctx.session.cwd, f.to)
+    const wanted = resolve(ctx.session.cwd, to)
     if (overlaps(root, wanted)) return refused('target-overlaps', `${wanted} 和库的目录互相包含，不能当同步目标。换一个库外的目录。`)
     // A disk that is not mounted, or a folder this user cannot write, is the owner's to fix, not a crash.
     const made = await mkdir(wanted, { recursive: true }).then(() => null, (error: unknown) => (error instanceof Error ? error.message : String(error)))
@@ -49,7 +38,7 @@ const targetSet: OwnerCommand = {
     await writeFact(ctx, fact)
     return done(`已把这台机器（${machine}）的同步目标设为目录 ${path}。用 sync now 同步。`, { target: fact.target })
   },
-}
+})
 
 function runText(fact: RunFact): string[] {
   const { counts, conflicts, kept } = fact
@@ -68,31 +57,29 @@ function runText(fact: RunFact): string[] {
   ]
 }
 
-const now: OwnerCommand = {
+const now = defineCommand({
   name: 'sync now',
   summary: '现在同步：不合并内容，不让任何内容找不回',
+  params: {},
   destructive: false,
   ownerOnly: false,
-  async run(args, ctx) {
-    const f = flags('sync now', args, [])
-    if (isAnswer(f)) return f
+  async run(_values, ctx) {
     const prepared = await prepare(ctx, currentTarget(await readFacts(ctx), ctx.session.machine))
     if (prepared.kind !== 'ready') return refused(prepared.kind, `${notReadyText(prepared, ctx.session.machine)}什么都没动。`)
     const fact = await run(ctx, prepared)
     const text = runText(fact).join('\n')
     return fact.outcome === 'done' ? done(text, fact) : refused('target-failed', text, fact)
   },
-}
+})
 
-const statusCommand: OwnerCommand = {
+const statusCommand = defineCommand({
   name: 'sync status',
   summary: '看同步目标、上次同步、待同步的数目和还在的冲突副本',
+  params: {},
   destructive: false,
   ownerOnly: false,
   readOnly: true,
-  async run(args, ctx) {
-    const f = flags('sync status', args, [])
-    if (isAnswer(f)) return f
+  async run(_values, ctx) {
     const { prepared, record, last, copies } = await status(ctx)
     const pending = prepared.kind === 'ready' ? pendingOf(prepared.plan) : null
     const lines = [
@@ -103,6 +90,6 @@ const statusCommand: OwnerCommand = {
     ]
     return done(lines.join('\n'), { target: record?.target ?? null, ready: prepared.kind, last, pending, conflicts: copies })
   },
-}
+})
 
-export const syncCommands: readonly OwnerCommand[] = [targetSet, now, statusCommand]
+export const syncCommands: readonly OwnerCommand[] = [TARGET_SET, now, statusCommand]

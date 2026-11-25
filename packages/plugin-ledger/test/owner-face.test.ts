@@ -48,9 +48,9 @@ describe('a read-only owner command', () => {
     const { as, call } = await library()
     await agentFace.put({ kind: 'place', from: text('old'), to: 'a.md', origin: { kind: 'made', from: [], outside: [] } }, as(claude, 's1'))
     await agentFace.put({ kind: 'place', from: text('new'), to: 'a.md', origin: { kind: 'made', from: [], outside: [] } }, as(claude, 's1'))
-    expect(await ownerFace.dispatch(call(), 'held list', { positional: [], flags: {} })).toMatchObject({ outcome: 'done' })
+    expect(await ownerFace.dispatch(call(), 'ledger held list', { positional: [], flags: {} })).toMatchObject({ outcome: 'done' })
     const { lines } = await sinceLines(as(claude, 's2'))
-    expect(lines.some((l) => l.includes('held list'))).toBe(false)
+    expect(lines.some((l) => l.includes('ledger held list'))).toBe(false)
   })
 })
 
@@ -61,7 +61,7 @@ describe('a plugin command run by an agent', () => {
       cognition: null,
       storage: [],
       statements: [],
-      ownerCommands: [{ name: 'syncer run', summary: '', destructive: false, ownerOnly: false, run: async () => ({ outcome: 'done' as const, text: '已对一遍' }) }],
+      ownerCommands: [{ name: 'syncer run', summary: '', params: {}, destructive: false, ownerOnly: false, run: async () => ({ outcome: 'done' as const, text: '已对一遍' }) }],
     }
     const dir = realpathSync(mkdtempSync(join(process.env.PNEUMA_BASE_TEST_TMP ?? tmpdir(), 'pb-l-agent-op-')))
     const root = join(dir, 'lib')
@@ -90,18 +90,18 @@ describe('new content made from the old', () => {
 })
 
 describe('confirmed destructive owner commands', () => {
-  it('held drop deletes the held copies, and an agent sees it in check', async () => {
+  it('ledger held drop deletes the held copies, and an agent sees it in check', async () => {
     const { lib, as, call } = await library()
     await agentFace.put({ kind: 'place', from: text('old'), to: 'a.md', origin: { kind: 'made', from: [], outside: [] } }, as(claude, 's1'))
     const replaced = await agentFace.put({ kind: 'place', from: text('new'), to: 'a.md', origin: { kind: 'made', from: [], outside: [] } }, as(claude, 's1'))
     expect(replaced).toMatchObject({ outcome: 'accepted', copied: true })
     expect(existsSync(join(lib.root, '.pneuma-base/ledger/held'))).toBe(true)
 
-    expect(await ownerFace.dispatch(call(), 'held drop', { positional: [], flags: {} })).toMatchObject({ outcome: 'done', text: '已清掉 1 份留存。' })
+    expect(await ownerFace.dispatch(call(), 'ledger held drop', { positional: [], flags: {} })).toMatchObject({ outcome: 'done', text: '已清掉 1 份留存。' })
     expect(existsSync(join(lib.root, '.pneuma-base/ledger/held'))).toBe(false)
 
     const { lines } = await sinceLines(as(claude, 's2'))
-    expect(lines).toContain('  主人面的操作 held drop：已清掉 1 份留存。')
+    expect(lines).toContain('  主人面的操作 ledger held drop：已清掉 1 份留存。')
   })
 
   it('archive purge removes the purged items; what was made from them shows its source gone', async () => {

@@ -1,29 +1,37 @@
 // What a deploy plugin shows: its sites page and its part of the item panel, as the kernel's blocks,
 // with the places a target adds columns, fields and blocks of its own.
+import { formOf } from '../../params.js'
 import type { Action, Block, Call, Cell, ItemSection, LibraryPath, TableRow, ViewAnswer, ViewDecl } from '../../types.js'
-import { look, looks, type Kit, type Run } from './reconcile.js'
+import { kindFlag, SWITCH_PARAMS, switchName, targetSetName } from './commands.js'
+import { look, looks, onlyTarget, type Kit, type Run } from './reconcile.js'
 import type { Look } from './target.js'
 import { MEANING, STATUS } from './words.js'
 
 export const sitesView = (kit: Kit) => `${kit.name}.sites`
 export const viewDecls = (kit: Kit, icon: string): ViewDecl[] => [{ id: sitesView(kit), title: kit.title, icon, nav: true, filters: [] }]
 
-const owner = (command: string, positional: string[], flags: Record<string, string[]> = {}): Call => ({ face: 'owner', command, args: { positional, flags } })
 const action = (label: string, call: Call, inputs: Action['inputs'] = []): Action => ({ label, tone: 'default', confirm: null, inputs, call })
+const switchAction = (kit: Kit, on: boolean, path: string): Action => {
+  const { inputs, call } = formOf({ name: switchName(kit, on), params: SWITCH_PARAMS }, { fixed: { path } })
+  return action(on ? '打开' : '关上', call, inputs)
+}
 
 /** An archived thing is offline whatever its switch says, so it offers no "turn on"; a switch left on can still be turned off. */
 function switchActions(kit: Kit, l: Look): Action[] {
-  if (l.thing.on) return [action('关上', owner(`${kit.name} off`, [l.thing.path]))]
-  return l.status === 'archived' ? [] : [action('打开', owner(`${kit.name} on`, [l.thing.path]))]
+  if (l.thing.on) return [switchAction(kit, false, l.thing.path)]
+  return l.status === 'archived' ? [] : [switchAction(kit, true, l.thing.path)]
 }
 
 const stateCell = (l: Look): Cell => ({ text: '', tag: STATUS[l.status] })
 /** The address opens in a new tab when it is a web address, and can always be copied. */
 const addressCell = (l: Look): Cell => (l.url ? { text: l.url, mono: true, ...(/^https?:\/\//.test(l.url) ? { href: l.url } : {}), copy: true } : { text: '—', muted: true })
 
-/** One button per kind of target, filling `<name> target set` from its form. */
+/** One button per kind of target, asking for that kind's flags of `<name> target set`. */
 function setTargetActions(kit: Kit): Action[] {
-  return kit.targets.map((t) => action(t.form.label, owner(`${kit.name} target set`, [], { kind: [t.kind], ...Object.fromEntries(t.form.inputs.map((i) => [i.name, [`{${i.name}}`]])) }), [...t.form.inputs]))
+  return kit.targets.map((t) => {
+    const { inputs, call } = formOf({ name: targetSetName(kit), params: { flags: [kindFlag(kit), ...t.params] } }, { fixed: { kind: t.kind } })
+    return action(onlyTarget(kit) ? '设部署目标' : `设为${t.label}`, call, inputs)
+  })
 }
 
 export async function sitesPage(run: Run): Promise<ViewAnswer> {
@@ -54,7 +62,7 @@ export async function sitesPage(run: Run): Promise<ViewAnswer> {
     note: 'agent 用 say deployable 声明；在不在线由开关决定，开着的东西跟着库里当前的内容。',
     count: all.length,
     blocks: [{ kind: 'table', columns: [{ key: 'path', label: '路径' }, { key: 'state', label: '状态' }, { key: 'address', label: '地址' }, ...(view?.columns ?? [])], rows, empty: '还没有声明过可以部署的东西' }],
-    actions: [action('对一遍', owner(`${kit.name} sync`, []))],
+    actions: [action('对一遍', { face: 'owner', command: `${kit.name} sync`, args: { positional: [], flags: {} } })],
   }
   const online = all.filter((l) => l.status === 'online').length
   return { title: kit.title, subtitle: `${online} 样在线，共 ${all.length} 样`, blocks: [target, things, ...(view?.page?.(all) ?? [])] }

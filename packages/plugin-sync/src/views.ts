@@ -1,11 +1,12 @@
 // What the sync shows: the sync.status page, its part of the item panel, and its section of check.
 // Each is a function of the files, the records and the baseline; showing changes nothing.
-import type { Action, Block, ItemSection, LibraryPath, PluginContext, PluginSection, ViewAnswer, ViewDecl } from '@pneuma-base/kernel'
+import { formOf, type Action, type Block, type ItemSection, type LibraryPath, type PluginContext, type PluginSection, type ViewAnswer, type ViewDecl } from '@pneuma-base/kernel'
+import { TARGET_SET } from './commands.js'
 import { conflictCopies, countsText, notReadyText, pendingOf, status, when, type Prepared } from './sync.js'
 
 export const STATUS_VIEW: ViewDecl = { id: 'sync.status', title: '同步', icon: 'refresh-cw', nav: true, filters: [] }
 
-const owner = (command: string, flags: Record<string, string[]> = {}) => ({ face: 'owner' as const, command, args: { positional: [], flags } })
+const owner = (command: string) => ({ face: 'owner' as const, command, args: { positional: [], flags: {} } })
 
 const archiveAction = (path: LibraryPath): Action => ({
   label: '归档',
@@ -21,8 +22,7 @@ const setTarget = (current: string | null): Action => ({
   label: current === null ? '设同步目标' : '换同步目标',
   tone: 'default',
   confirm: null,
-  inputs: [{ name: 'to', label: '目标目录', placeholder: '本机上一个库外的目录', value: current, options: null }],
-  call: owner('sync target set', { kind: ['dir'], to: ['{to}'] }),
+  ...formOf(TARGET_SET, { fixed: { kind: 'dir' }, values: current === null ? {} : { to: current } }),
 })
 
 const RESOLVE = '看过两份，把要的内容放回原文件，再把冲突副本归档。'

@@ -277,7 +277,7 @@ describe('the activity view', () => {
 describe('the owner’s operations on the ledger’s blocks', () => {
   const actionsIn = (blocks: Block[]) => flat(blocks).flatMap((b) => (b.kind === 'actions' ? b.actions : []))
 
-  it('a held copy can be taken back to a new path, as the owner command held restore', async () => {
+  it('a held copy can be taken back to a new path, as the owner command ledger held restore', async () => {
     const { show, codex } = await relayed()
     await agentFace.put({ kind: 'place', from: text('cmp v2'), to: 'comparison.md', origin: { kind: 'made', from: ['src/stripe.html'], outside: [] } }, codex())
     const held = sectionNamed(sectionNamed(shown(await show('item', { path: 'comparison.md' })).blocks, '来历').blocks, '留存')
@@ -290,7 +290,7 @@ describe('the owner’s operations on the ledger’s blocks', () => {
             {
               label: '取回到新路径',
               inputs: [{ name: 'to', value: expect.stringMatching(/^comparison\.[0-9a-f]{8}\.md$/) }],
-              call: { face: 'owner', command: 'held restore', args: { positional: [expect.stringMatching(/^i_/)], flags: { fingerprint: [expect.stringMatching(/^[0-9a-f]{64}$/)], to: ['{to}'] } } },
+              call: { face: 'owner', command: 'ledger held restore', args: { positional: [expect.stringMatching(/^i_/)], flags: { fingerprint: [expect.stringMatching(/^[0-9a-f]{64}$/)], to: ['{to}'] } } },
             },
           ],
         },

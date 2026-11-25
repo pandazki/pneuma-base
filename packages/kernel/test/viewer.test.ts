@@ -63,14 +63,25 @@ describe('the views of a library with no plugin', () => {
 
   it('config shows the library, every plugin it knows with 装上 or 卸下, and the grants with skill generation', async () => {
     const f = await fixture()
-    const table = new Map([['ledger', plugin('ledger', { cognition: { title: '记账与对账', text: '' } })], ['pager', plugin('pager')]])
+    const table = new Map([
+      ['ledger', plugin('ledger', { cognition: { title: '记账与对账', text: '' } })],
+      ['pager', plugin('pager', { version: '0.2.0', summary: '一页字' })],
+      ['bare', plugin('bare')],
+    ])
     const r = shown(await viewerFace.show({ view: 'config', params: {} }, { ctx: f.ctx, table }))
     const sections = r.blocks.filter((b) => b.kind === 'section')
     expect(sections.map((s) => s.kind === 'section' && s.title)).toEqual(['插件', '授权与技能'])
     const plugins = tableOf({ outcome: 'shown', title: '', subtitle: null, blocks: [sections[0] as Block], problems: [] })
+    // Its version and what it brings, as plugin list shows them: the summary, else the cognition's title.
+    expect(plugins.columns.map((c) => c.label)).toEqual(['名字', '版本', '做什么', '状态'])
     expect(plugins.rows).toMatchObject([
-      { key: 'ledger', cells: { name: { text: 'ledger' }, title: { text: '记账与对账' }, state: { tag: { text: '没装' } } }, actions: [{ label: '装上', call: { face: 'owner', command: 'plugin add', args: { positional: ['ledger'] } } }] },
-      { key: 'pager', actions: [{ label: '装上', call: { command: 'plugin add', args: { positional: ['pager'] } } }] },
+      {
+        key: 'ledger',
+        cells: { name: { text: 'ledger' }, version: { text: '—', muted: true }, title: { text: '记账与对账' }, state: { tag: { text: '没装' } } },
+        actions: [{ label: '装上', call: { face: 'owner', command: 'plugin add', args: { positional: ['ledger'] } } }],
+      },
+      { key: 'pager', cells: { version: { text: '0.2.0' }, title: { text: '一页字' } }, actions: [{ label: '装上', call: { command: 'plugin add', args: { positional: ['pager'] } } }] },
+      { key: 'bare', cells: { version: { text: '—', muted: true }, title: { text: '—', muted: true } } },
     ])
     expect(sections[1]).toMatchObject({ actions: [{ label: '发授权', call: { command: 'grant issue' } }] })
     expect(JSON.stringify(sections[1])).toContain('codex --add-dir')

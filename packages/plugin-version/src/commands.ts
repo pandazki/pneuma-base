@@ -7,12 +7,12 @@ import {
   abs,
   agentFace,
   archivedPath,
+  defineCommand,
   fingerprintOf,
   originalPath,
   parseLibraryPath,
   thingAt,
   type OwnerAnswer,
-  type OwnerArgs,
   type OwnerCommand,
   type PluginContext,
   type PluginProblem,
@@ -24,13 +24,7 @@ import { apply, commit, diskState, load, thingPath, writing } from './versions.j
 
 const done = (text: string, data?: unknown): OwnerAnswer => ({ outcome: 'done', text, ...(data === undefined ? {} : { data }) })
 const refused = (reason: string, text: string): OwnerAnswer => ({ outcome: 'refused', reason, text })
-const usage = (text: string) => refused('usage', `用法：${text}`)
 
-const flag = (args: OwnerArgs, name: string) => {
-  const value = args.flags[name]
-  return Array.isArray(value) ? (value[0] ?? null) : null
-}
-const count = (text: string | null) => (text !== null && /^[1-9]\d*$/.test(text) ? Number(text) : null)
 const numbers = (versions: Version[]) => versions.map((v) => v.n).join('、')
 const problemLines = (problems: PluginProblem[]) => problems.map((p) => `\n插件 ${p.plugin} 出错：${p.message}`).join('')
 
@@ -65,99 +59,98 @@ async function chosen(ctx: PluginContext, input: string, n: number): Promise<{ t
   return 'outcome' in v ? v : { thing, v }
 }
 
-const LIST = 'version list <库内路径>'
-const EXPORT = 'version export <库内路径> --version <n> --to <库外的目录或文件>'
-const RESTORE = 'version restore <库内路径> --version <n>'
-const PRUNE = 'version prune <库内路径> --keep <n>'
+const PATH = { name: 'path', hint: '库内路径', required: true } as const
+const NUMBER = '[1-9][0-9]*'
+
+export const VERSION_EXPORT = defineCommand({
+  name: 'version export',
+  summary: '把某一版写到库外的一个新路径',
+  params: {
+    positional: [PATH],
+    flags: [
+      { name: 'version', hint: '第几版', kind: 'value', required: true, pattern: NUMBER },
+      { name: 'to', hint: '库外的目录或文件', kind: 'value', required: true },
+    ],
+  },
+  destructive: false,
+  ownerOnly: false,
+  readOnly: true,
+  async run({ path: input, version, to }, ctx) {
+    const n = Number(version)
+    const found = await chosen(ctx, input, n)
+    if ('outcome' in found) return found
+    const { thing, v } = found
+    // An existing directory receives the export under the thing's name, as cp does.
+    let target = resolve(ctx.session.cwd, to)
+    if ((await stat(target).catch(() => null))?.isDirectory()) target = join(target, posix.basename(thing.path))
+    if (parseLibraryPath(ctx.library.root, target) !== null) return refused('inside-library', `导出要写到库外，${to} 在库里。要在库里用旧版，用 version restore。`)
+    if (await stat(target).catch(() => null)) return refused('would-overwrite', `${target} 已有东西，没有动它。换一个路径。`)
+    try {
+      await mkdir(dirname(target), { recursive: true })
+      await writeOut(ctx.dir, v.manifest, target)
+    } catch (error) {
+      return refused('export-failed', `没能导出到 ${target}：${error instanceof Error ? error.message : String(error)}`)
+    }
+    return done(`已把 ${thing.path} 的第 ${n} 版导出到 ${target}。`, { path: thing.path, version: n, to: target })
+  },
+})
+
+export const VERSION_RESTORE = defineCommand({
+  name: 'version restore',
+  summary: '把某一版放回来，作为新的一版',
+  params: { positional: [PATH], flags: [{ name: 'version', hint: '第几版', kind: 'value', required: true, pattern: NUMBER }] },
+  destructive: false,
+  ownerOnly: false,
+  async run({ path: input, version }, ctx) {
+    const n = Number(version)
+    const found = await chosen(ctx, input, n)
+    if ('outcome' in found) return found
+    const { thing, v } = found
+    if (archived(thing)) return refused('archived', `${thing.path} 已归档。先 unarchive ${originalPath(thing.path) ?? thing.path}，再放回旧版。`)
+    const file = abs(ctx.library.root, thing.path)
+    if ((await thingAt(file)) && (await fingerprintOf(file)) === v.fingerprint) return done(`${thing.path} 现在就是第 ${n} 版的内容，没有动。`)
+    // Through the kernel's put, so every plugin sees it and it sends its event; the export is its source outside the library.
+    const scratch = await mkdtemp(join(tmpdir(), 'pneuma-base-version-'))
+    try {
+      const from = join(scratch, posix.basename(thing.path))
+      await writeOut(ctx.dir, v.manifest, from)
+      const source = { kind: v.manifest.kind === 'bundle' ? ('directory' as const) : ('file' as const), path: from }
+      const r = await agentFace.put({ kind: 'place', from: source, to: thing.path, origin: { kind: 'brought', source: `${thing.path} 的第 ${n} 版`, by: null } }, ctx)
+      if (r.outcome === 'refused') return refused(r.reason, `没能放回 ${thing.path}：放入被拒绝（${r.reason}，${r.subject}）。${problemLines(r.problems)}`)
+      const now = declaredAt(await load(ctx), thing.path)
+      const m = now ? latest(now)?.n : undefined
+      return done(`已把 ${thing.path} 的第 ${n} 版放回来${m === undefined ? '' : `，记为第 ${m} 版`}。${problemLines(r.problems)}`, { path: thing.path, version: n, recorded: m ?? null })
+    } finally {
+      await rm(scratch, { recursive: true, force: true })
+    }
+  },
+})
 
 export const versionCommands: OwnerCommand[] = [
-  {
+  defineCommand({
     name: 'version list',
     summary: '列出一样有版本的东西的每一版',
-    usage: LIST.slice('version list '.length),
+    params: { positional: [PATH] },
     destructive: false,
     ownerOnly: false,
     readOnly: true,
-    async run(args, ctx) {
-      const input = args.positional[0]
-      if (input === undefined) return usage(LIST)
+    async run({ path: input }, ctx) {
       const thing = await named(ctx, await load(ctx), input)
       if ('outcome' in thing) return thing
       const state = await diskState(ctx.library.root, thing)
       return done(timelineText(thing, state), timelineData(thing, state))
     },
-  },
-  {
-    name: 'version export',
-    summary: '把某一版写到库外的一个新路径',
-    usage: EXPORT.slice('version export '.length),
-    destructive: false,
-    ownerOnly: false,
-    readOnly: true,
-    async run(args, ctx) {
-      const input = args.positional[0]
-      const n = count(flag(args, 'version'))
-      const to = flag(args, 'to')
-      if (input === undefined || n === null || to === null) return usage(EXPORT)
-      const found = await chosen(ctx, input, n)
-      if ('outcome' in found) return found
-      const { thing, v } = found
-      // An existing directory receives the export under the thing's name, as cp does.
-      let target = resolve(ctx.session.cwd, to)
-      if ((await stat(target).catch(() => null))?.isDirectory()) target = join(target, posix.basename(thing.path))
-      if (parseLibraryPath(ctx.library.root, target) !== null) return refused('inside-library', `导出要写到库外，${to} 在库里。要在库里用旧版，用 version restore。`)
-      if (await stat(target).catch(() => null)) return refused('would-overwrite', `${target} 已有东西，没有动它。换一个路径。`)
-      try {
-        await mkdir(dirname(target), { recursive: true })
-        await writeOut(ctx.dir, v.manifest, target)
-      } catch (error) {
-        return refused('export-failed', `没能导出到 ${target}：${error instanceof Error ? error.message : String(error)}`)
-      }
-      return done(`已把 ${thing.path} 的第 ${n} 版导出到 ${target}。`, { path: thing.path, version: n, to: target })
-    },
-  },
-  {
-    name: 'version restore',
-    summary: '把某一版放回来，作为新的一版',
-    usage: RESTORE.slice('version restore '.length),
-    destructive: false,
-    ownerOnly: false,
-    async run(args, ctx) {
-      const input = args.positional[0]
-      const n = count(flag(args, 'version'))
-      if (input === undefined || n === null) return usage(RESTORE)
-      const found = await chosen(ctx, input, n)
-      if ('outcome' in found) return found
-      const { thing, v } = found
-      if (archived(thing)) return refused('archived', `${thing.path} 已归档。先 unarchive ${originalPath(thing.path) ?? thing.path}，再放回旧版。`)
-      const file = abs(ctx.library.root, thing.path)
-      if ((await thingAt(file)) && (await fingerprintOf(file)) === v.fingerprint) return done(`${thing.path} 现在就是第 ${n} 版的内容，没有动。`)
-      // Through the kernel's put, so every plugin sees it and it sends its event; the export is its source outside the library.
-      const scratch = await mkdtemp(join(tmpdir(), 'pneuma-base-version-'))
-      try {
-        const from = join(scratch, posix.basename(thing.path))
-        await writeOut(ctx.dir, v.manifest, from)
-        const source = { kind: v.manifest.kind === 'bundle' ? ('directory' as const) : ('file' as const), path: from }
-        const r = await agentFace.put({ kind: 'place', from: source, to: thing.path, origin: { kind: 'brought', source: `${thing.path} 的第 ${n} 版`, by: null } }, ctx)
-        if (r.outcome === 'refused') return refused(r.reason, `没能放回 ${thing.path}：放入被拒绝（${r.reason}，${r.subject}）。${problemLines(r.problems)}`)
-        const now = declaredAt(await load(ctx), thing.path)
-        const m = now ? latest(now)?.n : undefined
-        return done(`已把 ${thing.path} 的第 ${n} 版放回来${m === undefined ? '' : `，记为第 ${m} 版`}。${problemLines(r.problems)}`, { path: thing.path, version: n, recorded: m ?? null })
-      } finally {
-        await rm(scratch, { recursive: true, force: true })
-      }
-    },
-  },
-  {
+  }),
+  VERSION_EXPORT,
+  VERSION_RESTORE,
+  defineCommand({
     name: 'version prune',
     summary: '只留最近的几版，清掉更早的',
-    usage: PRUNE.slice('version prune '.length),
+    params: { positional: [PATH], flags: [{ name: 'keep', hint: '留几版', kind: 'value', required: true, pattern: NUMBER }] },
     destructive: true,
     ownerOnly: true,
-    async run(args, ctx) {
-      const input = args.positional[0]
-      const keep = count(flag(args, 'keep'))
-      if (input === undefined || keep === null) return usage(PRUNE)
+    async run({ path: input, keep: kept }, ctx) {
+      const keep = Number(kept)
       const w = await writing(ctx)
       const thing = await named(ctx, w.model, input)
       if ('outcome' in thing) return thing
@@ -178,5 +171,5 @@ export const versionCommands: OwnerCommand[] = [
         deleted,
       })
     },
-  },
+  }),
 ]

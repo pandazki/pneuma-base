@@ -1,6 +1,7 @@
 // What the management UI shows, in the kernel's block types only: a thing's section of the item
 // panel, and the page of every versioned thing. Pure.
-import type { Action, ActionInput, Block, ItemSection, LibraryPath, Link, Tag, TableRow, ViewAnswer, ViewDecl } from '@pneuma-base/kernel'
+import { formOf, type Action, type Block, type ItemSection, type LibraryPath, type Link, type Tag, type TableRow, type ViewAnswer, type ViewDecl } from '@pneuma-base/kernel'
+import { VERSION_EXPORT, VERSION_RESTORE } from './commands.js'
 import { latest, type Thing, type Version } from './model.js'
 import { aboutVersion, archived, minute, whoText } from './text.js'
 import type { DiskState } from './versions.js'
@@ -22,33 +23,23 @@ function versionTag(thing: Thing, v: Version, state: DiskState): Tag | null {
   return null
 }
 
-/** A choice of the versions whose content is kept, newest first; the one before the latest is chosen. */
-function versionInput(thing: Thing): ActionInput {
+/** The versions whose content is kept, newest first, as a choice; the one before the latest is chosen. */
+function versionChoice(thing: Thing) {
   const kept = thing.versions.filter((v) => !v.pruned).toReversed()
   return {
-    name: 'version',
-    label: '哪一版',
-    placeholder: null,
-    value: String((kept[1] ?? kept[0])?.n ?? ''),
-    options: kept.map((v) => ({ value: String(v.n), label: `第 ${v.n} 版 · ${minute(v.at)}${v.note ? ` · ${v.note}` : ''}` })),
+    values: { version: String((kept[1] ?? kept[0])?.n ?? '') },
+    choices: { version: kept.map((v) => ({ value: String(v.n), label: `第 ${v.n} 版 · ${minute(v.at)}${v.note ? ` · ${v.note}` : ''}` })) },
   }
 }
 
 function actions(thing: Thing): Action[] {
-  const exportTo: ActionInput = { name: 'to', label: '导出到（库外的路径）', placeholder: '比如 /Users/me/Desktop/旧版', value: null, options: null }
-  const exported: Action = {
-    label: '导出到库外',
-    tone: 'default',
-    confirm: null,
-    inputs: [versionInput(thing), exportTo],
-    call: { face: 'owner', command: 'version export', args: { positional: [thing.path], flags: { version: ['{version}'], to: ['{to}'] } } },
-  }
+  const fixed = { path: thing.path }
+  const exported: Action = { label: '导出到库外', tone: 'default', confirm: null, ...formOf(VERSION_EXPORT, { fixed, ...versionChoice(thing) }) }
   const restored: Action = {
     label: '放回这一版',
     tone: 'default',
     confirm: `把选中的那一版放回 ${thing.path}，作为新的一版？现在的内容已经是一版，不会丢。`,
-    inputs: [versionInput(thing)],
-    call: { face: 'owner', command: 'version restore', args: { positional: [thing.path], flags: { version: ['{version}'] } } },
+    ...formOf(VERSION_RESTORE, { fixed, ...versionChoice(thing) }),
   }
   return archived(thing) ? [exported] : [exported, restored]
 }

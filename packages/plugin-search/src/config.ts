@@ -18,7 +18,8 @@ function parseRecord(text: string): EmbedderRecord | null {
     const e = raw.embedder as Record<string, unknown> | null | undefined
     if (raw.format !== 1 || e === undefined) return null
     if (e === null || e.kind === 'hash') return raw as EmbedderRecord
-    const valid = e.kind === 'http' && typeof e.url === 'string' && typeof e.model === 'string' && (e.keyEnv === null || typeof e.keyEnv === 'string')
+    // keyEnv: a record written before the key moved to a secret; still valid, read only to say so.
+    const valid = e.kind === 'http' && typeof e.url === 'string' && typeof e.model === 'string' && (e.keyEnv === undefined || e.keyEnv === null || typeof e.keyEnv === 'string')
     return valid ? (raw as EmbedderRecord) : null
   } catch {
     return null

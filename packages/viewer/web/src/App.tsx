@@ -252,6 +252,12 @@ function InitScreen({ state, onInit }: { state: State; onInit(plugins: string[])
   )
 }
 
+/** The action an owner command's refusal offers instead, such as removing a plugin that refused anyway. */
+function offerOf(result: unknown): Action | null {
+  const offer = (result as { offer?: unknown } | null)?.offer
+  return typeof offer === 'object' && offer !== null && 'call' in offer ? (offer as Action) : null
+}
+
 export function App() {
   const [tick, setTick] = useState(0)
   const [down, setDown] = useState(false)
@@ -307,7 +313,7 @@ export function App() {
     async (action: Action, values: Record<string, string>, confirmed: boolean) => {
       try {
         const reply = await api.call(fill(action.call, values, action.inputs), confirmed)
-        toast(reply.tone, reply.text)
+        toast(reply.tone, reply.text, offerOf(reply.result))
       } catch (error) {
         toast('bad', error instanceof Error ? error.message : String(error))
       }
@@ -407,7 +413,7 @@ export function App() {
           }}
         />
       ) : null}
-      <Toasts toasts={toasts} onClose={closeToast} />
+      <Toasts toasts={toasts} onClose={closeToast} onAction={env.onAction} />
     </BlockEnvContext.Provider>
   )
 }

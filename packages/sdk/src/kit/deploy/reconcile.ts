@@ -37,7 +37,18 @@ const stageRoot = (ctx: PluginContext) => join(ctx.cacheDir, 'stage')
 export function openTarget(kit: Kit, stored: StoredTarget['target'], ctx: PluginContext): Target {
   const adapter = kit.targets.find((t) => t.kind === stored.kind)
   if (!adapter) throw new Error(`unknown kind of target: ${stored.kind}`)
-  return adapter.open(stored, { ctx, scratch: stageRoot(ctx) })
+  return adapter.open(stored, { ctx, scratch: stageRoot(ctx), secret: (name) => secretOf(kit, adapter, ctx, name) })
+}
+
+/** The command that sets a secret of the plugin, for the owner to type. */
+export const setSecret = (kit: Kit, name: string) => `pneuma-base secret set ${kit.name} ${name}`
+
+/** A secret the adapter declares, as the owner set it on this machine; a target cannot go on without one that is not set. */
+async function secretOf(kit: Kit, adapter: TargetAdapter, ctx: PluginContext, name: string): Promise<string> {
+  if (!adapter.secrets?.some((s) => s.name === name)) throw new Error(`the ${adapter.kind} target reads a secret it does not declare: ${name}`)
+  const value = await ctx.secrets.get(name)
+  if (value === null) throw new Error(`还没设密钥 ${name}：用 ${setSecret(kit, name)} 设，值从标准输入读`)
+  return value
 }
 
 async function configured(kit: Kit, ctx: PluginContext): Promise<Target | null> {

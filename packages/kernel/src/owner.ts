@@ -1,5 +1,6 @@
 import { mkdir, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
+import { said, takenBy } from './claims.js'
 import { exists } from './files.js'
 import { CONFIG_FILE, newConfig, saveConfig } from './library.js'
 import { KERNEL_COMMANDS, type Outcome } from './owner-commands.js'
@@ -28,15 +29,12 @@ export type OwnerCall = {
 /** An owner call with a library. */
 export type LibraryCall = OwnerCall & { ctx: Context }
 
-/**
- * An owner command as the owner face lists it, and who provides it. `params` is null for a command
- * that checks its own arguments; `machine`: it needs no library.
- */
+/** An owner command as the owner face lists it, and who provides it. `machine`: it needs no library. */
 export type OwnerCommandInfo = {
   name: string
   summary: string
   usage: string | null
-  params: OwnerParams | null
+  params: OwnerParams
   destructive: boolean
   ownerOnly: boolean
   machine: boolean
@@ -63,7 +61,7 @@ function agentSign(call: OwnerCall): string | null {
  * person (K7). With a library, refused or not, it ends at the pipeline's single exit; with none,
  * there is no plugin to tell.
  */
-async function gated(call: OwnerCall, name: string, gate: Gate, args: OwnerArgs, params: OwnerParams | null, body: (values: OwnerValues) => Promise<Outcome>): Promise<OwnerResult> {
+async function gated(call: OwnerCall, name: string, gate: Gate, args: OwnerArgs, params: OwnerParams, body: (values: OwnerValues) => Promise<Outcome>): Promise<OwnerResult> {
   const decide = async (): Promise<Outcome> => {
     const sign = gate.destructive || gate.ownerOnly ? agentSign(call) : null
     if (sign !== null) {
@@ -71,7 +69,7 @@ async function gated(call: OwnerCall, name: string, gate: Gate, args: OwnerArgs,
       const text = `「${name}」${why}，只有主人能做，不能在 agent 的会话里做（${sign}）。需要的话告诉主人；主人在自己的终端里做，或在自己的终端里运行 pneuma-base view 用界面做。`
       return { answer: { outcome: 'refused', reason: 'agent-session', text } }
     }
-    const checked = params === null ? { values: {} } : checkArgs(name, params, args)
+    const checked = checkArgs(name, params, args)
     if ('usage' in checked) return { answer: { outcome: 'refused', reason: 'usage', text: checked.usage } }
     if (gate.destructive && !(await call.confirm(`「${name}」会丢数据，不能撤回。确认要做吗？`))) {
       return { answer: { outcome: 'refused', reason: 'not-confirmed', text: '没有得到当面确认，什么都没做。' } }
@@ -97,6 +95,14 @@ export async function initLibrary(
   const unknown = opts.plugins.filter((name) => !opts.table.has(name))
   if (unknown.length > 0) {
     return { outcome: 'refused', reason: 'unknown-plugin', text: `没有这个插件：${unknown.join('、')}`, problems: [] }
+  }
+  // As `plugin add` would refuse each plugin after the first that claims a name an earlier one holds.
+  const chosen = [...new Set(opts.plugins)].map((name) => opts.table.get(name) as Plugin)
+  const clashes = chosen.flatMap((p, i) => takenBy(p, chosen.slice(0, i)).map((t) => ({ plugin: p.name, ...t })))
+  if (clashes.length > 0) {
+    const what = clashes.map((c) => `插件 ${c.plugin} 的${said(c.claim)}已归插件 ${c.holder}`).join('；')
+    const pairs = [...new Set(clashes.map((c) => `${c.holder} 和 ${c.plugin}`))].join('、')
+    return { outcome: 'refused', reason: 'name-taken', text: `没有建库：${what}。一个名字只归一个插件，${pairs} 只能选一个。`, problems: [] }
   }
   await mkdir(dir, { recursive: true })
   const library = await saveConfig(await realpath(dir), newConfig(opts.plugins as PluginName[]), opts.table)
@@ -126,8 +132,8 @@ export const ownerFace = {
       p.ownerCommands.map((c): OwnerCommandInfo => ({
         name: c.name,
         summary: c.summary,
-        usage: c.params === undefined ? (c.usage ?? null) : usageOf(c.params) || null,
-        params: c.params ?? null,
+        usage: usageOf(c.params) || null,
+        params: c.params,
         destructive: c.destructive,
         ownerOnly: c.ownerOnly,
         machine: false,
@@ -154,7 +160,7 @@ export const ownerFace = {
     for (const plugin of ctx.library.plugins) {
       const command = plugin.ownerCommands.find((c) => c.name === name)
       if (!command) continue
-      return gated(bound, name, command, args, command.params ?? null, async (values) => ({ answer: await command.run({ ...args, values }, pluginContext(ctx, plugin.name)) }))
+      return gated(bound, name, command, args, command.params, async (values) => ({ answer: await command.run({ ...args, values }, pluginContext(ctx, plugin.name)) }))
     }
     return refuse('unknown-command', `没有这条主人命令：${name}`)
   },

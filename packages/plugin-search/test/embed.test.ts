@@ -1,6 +1,6 @@
 // The two embedders. hash: deterministic feature hashing, 256 dimensions, unit length. http: an
-// OpenAI-compatible /v1/embeddings at the owner's address, with the key read from the variable the
-// owner named, vectors in input order, and every failure a rejection that names what went wrong.
+// OpenAI-compatible /v1/embeddings at the owner's address, with the key it is given as the bearer
+// token, vectors in input order, and every failure a rejection that names what went wrong.
 import { createServer, type Server } from 'node:http'
 import { afterEach, describe, expect, it } from 'vitest'
 import { embedderFor, HASH_DIMENSIONS, httpEmbedder } from '../src/embed.js'
@@ -8,7 +8,7 @@ import { embedderFor, HASH_DIMENSIONS, httpEmbedder } from '../src/embed.js'
 const dot = (a: Float32Array, b: Float32Array) => a.reduce((sum, x, i) => sum + x * (b[i] as number), 0)
 
 describe('the hash embedder', () => {
-  const hash = embedderFor({ kind: 'hash' }, {})
+  const hash = embedderFor({ kind: 'hash' }, null)
 
   it('gives the same unit vector of 256 dimensions for the same text', async () => {
     const [a, b] = await hash.embed(['手冲咖啡豆和拿铁', '手冲咖啡豆和拿铁'])
@@ -42,13 +42,13 @@ describe('the http embedder', () => {
     return typeof address === 'object' && address ? `http://127.0.0.1:${address.port}` : ''
   }
 
-  it('posts the model and the texts with the key from the named variable, and gives the vectors in input order', async () => {
+  it('posts the model and the texts with the key it is given, and gives the vectors in input order', async () => {
     const seen: any[] = []
     const url = await serve((body, headers) => {
       seen.push({ url: body.url, model: body.model, input: body.input, authorization: headers.authorization })
       return { status: 200, body: { data: [{ index: 1, embedding: [0, 2] }, { index: 0, embedding: [3, 4] }] } }
     })
-    const embedder = embedderFor({ kind: 'http', url: `${url}/v1/`, model: 'm-1', keyEnv: 'MY_KEY' }, { MY_KEY: 'k-9' })
+    const embedder = embedderFor({ kind: 'http', url: `${url}/v1/`, model: 'm-1' }, 'k-9')
     const [first, second] = await embedder.embed(['one', 'two'])
     expect(seen).toEqual([{ url: '/v1/embeddings', model: 'm-1', input: ['one', 'two'], authorization: 'Bearer k-9' }])
     const rounded = (v: Float32Array | undefined) => [...(v ?? [])].map((x) => Number(x.toFixed(6)))
@@ -56,26 +56,31 @@ describe('the http embedder', () => {
     expect(rounded(second)).toEqual([0, 1])
   })
 
-  it('sends no request when the named key variable is not set', async () => {
-    let asked = false
-    const url = await serve(() => ((asked = true), { status: 200, body: { data: [] } }))
-    await expect(embedderFor({ kind: 'http', url, model: 'm', keyEnv: 'MISSING_KEY' }, {}).embed(['x'])).rejects.toThrow('MISSING_KEY')
-    expect(asked).toBe(false)
+  it('sends no key without one, and never reads the variable an older record named', async () => {
+    const seen: unknown[] = []
+    const url = await serve((_body, headers) => (seen.push(headers.authorization), { status: 200, body: { data: [{ index: 0, embedding: [1, 0] }] } }))
+    process.env.PB_TEST_OLD_KEY = 'from-the-environment'
+    try {
+      await embedderFor({ kind: 'http', url, model: 'm', keyEnv: 'PB_TEST_OLD_KEY' }, null).embed(['x'])
+    } finally {
+      delete process.env.PB_TEST_OLD_KEY
+    }
+    expect(seen).toEqual([undefined])
   })
 
   it('rejects an error status, an answer of the wrong shape, a server that is down, and one that does not answer in time', async () => {
     const url = await serve((body) => (body.input[0] === 'slow' ? null : body.input[0] === 'bad' ? { status: 200, body: { data: [{ index: 0 }] } } : { status: 401, body: { error: 'no' } }))
-    const config = { kind: 'http' as const, url, model: 'm', keyEnv: null }
-    await expect(embedderFor(config, {}).embed(['x'])).rejects.toThrow('401')
-    await expect(embedderFor(config, {}).embed(['bad'])).rejects.toThrow('嵌入')
-    await expect(httpEmbedder(config, {}, 200).embed(['slow'])).rejects.toThrow('没有答复')
-    await expect(embedderFor({ ...config, url: 'http://127.0.0.1:9' }, {}).embed(['x'])).rejects.toThrow('连不上')
+    const config = { kind: 'http' as const, url, model: 'm' }
+    await expect(embedderFor(config, null).embed(['x'])).rejects.toThrow('401')
+    await expect(embedderFor(config, null).embed(['bad'])).rejects.toThrow('嵌入')
+    await expect(httpEmbedder(config, null, 200).embed(['slow'])).rejects.toThrow('没有答复')
+    await expect(embedderFor({ ...config, url: 'http://127.0.0.1:9' }, null).embed(['x'])).rejects.toThrow('连不上')
   })
 
   it('names its vectors by address and model, so changing either changes the embedder', () => {
-    const a = embedderFor({ kind: 'http', url: 'http://127.0.0.1:1/v1', model: 'm', keyEnv: 'A' }, {})
-    expect(embedderFor({ kind: 'http', url: 'http://127.0.0.1:1', model: 'm', keyEnv: 'B' }, {}).id).toBe(a.id)
-    expect(embedderFor({ kind: 'http', url: 'http://127.0.0.1:1', model: 'n', keyEnv: 'A' }, {}).id).not.toBe(a.id)
-    expect(embedderFor({ kind: 'hash' }, {}).id).not.toBe(a.id)
+    const a = embedderFor({ kind: 'http', url: 'http://127.0.0.1:1/v1', model: 'm' }, 'k-1')
+    expect(embedderFor({ kind: 'http', url: 'http://127.0.0.1:1', model: 'm' }, 'k-2').id).toBe(a.id)
+    expect(embedderFor({ kind: 'http', url: 'http://127.0.0.1:1', model: 'n' }, 'k-1').id).not.toBe(a.id)
+    expect(embedderFor({ kind: 'hash' }, null).id).not.toBe(a.id)
   })
 })

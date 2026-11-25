@@ -3,7 +3,7 @@
 import { rm } from 'node:fs/promises'
 import { defineCommand, type OwnerAnswer, type OwnerCommand, type PluginContext } from '@pneuma-base/kernel'
 import { currentEmbedder, recordEmbedder } from './config.js'
-import { embedderFor, embedderLabel, type EmbedderConfig } from './embed.js'
+import { embedderFor, embedderLabel, KEY_SECRET, SET_KEY, type EmbedderConfig } from './embed.js'
 import { embedMissing, messageOf, refresh } from './search.js'
 import { SearchIndex } from './store.js'
 import { statusOf, statusText } from './views.js'
@@ -13,16 +13,17 @@ const refused = (reason: string, text: string): OwnerAnswer => ({ outcome: 'refu
 const usage = (text: string) => refused('usage', text)
 
 /** The embedder an owner command chose: `--kind` is one of the options; what http needs besides is checked here. */
-function embedderOf(kind: string, url: string | null, model: string | null, keyEnv: string | null): EmbedderConfig | string {
+function embedderOf(kind: string, url: string | null, model: string | null): EmbedderConfig | string {
   // A form sends every field; for hash the http ones mean nothing.
   if (kind === 'hash') return { kind }
   if (url === null) return `--kind http 要写 --url <地址>，比如 http://127.0.0.1:11434。`
   if (model === null) return '--kind http 要写 --model <模型名>。'
-  return { kind: 'http', url, model, keyEnv }
+  return { kind: 'http', url, model }
 }
 
 async function rebuild(ctx: PluginContext): Promise<OwnerAnswer> {
   const config = await currentEmbedder(ctx)
+  const key = await ctx.secrets.get(KEY_SECRET)
   await rm(ctx.cacheDir, { recursive: true, force: true })
   const index = SearchIndex.open(ctx.cacheDir, ctx.now)
   let failure: string | null = null
@@ -30,7 +31,7 @@ async function rebuild(ctx: PluginContext): Promise<OwnerAnswer> {
     await refresh(index, ctx.library.root)
     if (config !== null) {
       try {
-        await embedMissing(index, embedderFor(config, process.env))
+        await embedMissing(index, embedderFor(config, key))
       } catch (error) {
         failure = messageOf(error)
       }
@@ -61,23 +62,24 @@ export const SET_EMBEDDER = defineCommand({
       },
       { name: 'url', hint: '地址（http）', kind: 'value', pattern: 'https?://[^\\s/]+\\S*' },
       { name: 'model', hint: '模型（http）', kind: 'value' },
-      // The key itself never goes into the library: only the name of the variable that holds it.
-      { name: 'key-env', hint: '存密钥的环境变量名（http）', kind: 'value', pattern: '[A-Za-z_][A-Za-z0-9_]*' },
     ],
   },
   destructive: false,
   ownerOnly: true,
   setup: true,
-  async run({ kind, url, model, 'key-env': keyEnv }, ctx) {
-    const config = embedderOf(kind, url, model, keyEnv)
+  async run({ kind, url, model }, ctx) {
+    const config = embedderOf(kind, url, model)
     if (typeof config === 'string') return usage(config)
     await recordEmbedder(ctx, config)
-    const probe = await embedderFor(config, process.env)
+    // The key never goes into the library: it is this machine's secret, read when set.
+    const key = await ctx.secrets.get(KEY_SECRET)
+    const probe = await embedderFor(config, key)
       .embed(['试一下能不能用'])
       .then(() => null)
       .catch((error: unknown) => messageOf(error))
     const tried = probe === null ? '试了一次，能用。下次 find 时给库里的文本补上向量。' : `不过试了一次没成：${probe}。find 照常按文字找，并报这个问题。`
-    return done(`已设好嵌入器：${embedderLabel(config)}。${tried}`, { embedder: config, probe: probe ?? 'ok' })
+    const secret = config.kind === 'http' && key === null ? `服务要密钥时，用 ${SET_KEY} 设，值从标准输入读；它只存在这台机器上，不进库。` : ''
+    return done(`已设好嵌入器：${embedderLabel(config, key !== null)}。${tried}${secret}`, { embedder: config, probe: probe ?? 'ok', key: key !== null })
   },
 })
 

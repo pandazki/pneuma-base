@@ -376,12 +376,11 @@ function matchCommand(commands: OwnerCommandInfo[], typed: readonly string[]): O
 
 /**
  * The arguments after the command's name, read by its `params`: a flag it does not declare is a
- * switch, which the owner face then refuses with the usage line. A command without `params` reads
- * flags as the command line always has.
+ * switch, which the owner face then refuses with the usage line.
  */
 function argsOf(command: OwnerCommandInfo, line: Line): OwnerArgs {
-  const kinds = Object.fromEntries((command.params?.flags ?? []).map((f) => [f.name, f.kind]))
-  const parsed = parseCommand(line, words(command.name).length, kinds, command.params ? 'switch' : 'table', command.name)
+  const kinds = Object.fromEntries((command.params.flags ?? []).map((f) => [f.name, f.kind]))
+  const parsed = parseCommand(line, words(command.name).length, kinds, 'switch', command.name)
   return { positional: parsed.positional, flags: Object.fromEntries(ownFlags(parsed)) }
 }
 

@@ -260,19 +260,20 @@ export function ActionDialog({ action, preset = {}, onCancel, onSubmit }: { acti
   )
 }
 
-export type Toast = { id: number; tone: Tone; text: string }
+/** `offer`: what a refusal offers the person to do instead, shown as a button in the toast. */
+export type Toast = { id: number; tone: Tone; text: string; offer: Action | null }
 
 const TOAST_MS = 4500
 
 /** Toasts that go by themselves, except a refusal or an error, which stays until the person closes it. */
-export function useToasts(): [Toast[], (tone: Tone, text: string) => void, (id: number) => void] {
+export function useToasts(): [Toast[], (tone: Tone, text: string, offer?: Action | null) => void, (id: number) => void] {
   const [toasts, setToasts] = useState<Toast[]>([])
   const next = useRef(0)
   const close = useCallback((id: number) => setToasts((all) => all.filter((t) => t.id !== id)), [])
   const push = useCallback(
-    (tone: Tone, text: string) => {
+    (tone: Tone, text: string, offer: Action | null = null) => {
       const id = next.current++
-      setToasts((all) => [...all.slice(-3), { id, tone, text }])
+      setToasts((all) => [...all.slice(-3), { id, tone, text, offer }])
       if (tone !== 'bad') window.setTimeout(() => close(id), TOAST_MS)
     },
     [close],
@@ -283,15 +284,31 @@ export function useToasts(): [Toast[], (tone: Tone, text: string) => void, (id: 
 const TOAST_ICON: Record<Tone, LucideIcon> = { good: CircleCheck, warn: TriangleAlert, bad: CircleAlert }
 const TOAST_COLOR: Record<Tone, string> = { good: 'text-green', warn: 'text-orange', bad: 'text-red' }
 
-export function Toasts({ toasts, onClose }: { toasts: Toast[]; onClose(id: number): void }) {
+/** `onAction` runs a toast's offer, as a button would; the toast closes when it is taken. */
+export function Toasts({ toasts, onClose, onAction }: { toasts: Toast[]; onClose(id: number): void; onAction?(action: Action): void }) {
   return (
     <div className="pointer-events-none fixed right-4 bottom-4 z-50 flex w-[380px] max-w-[calc(100vw-2rem)] flex-col gap-2" role="status" aria-live="polite">
       {toasts.map((t) => {
         const Icon = TOAST_ICON[t.tone]
+        const { offer } = t
         return (
           <div key={t.id} className="toast-in pointer-events-auto flex items-start gap-2 rounded-card bg-surface py-2.5 pr-2 pl-3 text-[13px] shadow-(--shadow-overlay)" data-tone={t.tone}>
             <Icon className={`mt-0.5 size-4 shrink-0 ${TOAST_COLOR[t.tone]}`} strokeWidth={2} aria-hidden />
-            <span className="min-w-0 flex-1 break-words whitespace-pre-line">{t.text}</span>
+            <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
+              <span className="break-words whitespace-pre-line">{t.text}</span>
+              {offer && onAction ? (
+                <button
+                  type="button"
+                  className={`btn !h-6 !px-2 !text-[12px] ${offer.tone === 'danger' ? 'btn-danger' : ''}`}
+                  onClick={() => {
+                    onClose(t.id)
+                    onAction(offer)
+                  }}
+                >
+                  {offer.label}
+                </button>
+              ) : null}
+            </div>
             <button type="button" className="-my-0.5 flex size-6 shrink-0 items-center justify-center rounded-chip text-ink-3 hover:bg-hover hover:text-ink" aria-label="关闭" onClick={() => onClose(t.id)}>
               <X className="size-3.5" strokeWidth={2} aria-hidden />
             </button>

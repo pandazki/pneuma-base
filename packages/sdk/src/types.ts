@@ -258,10 +258,14 @@ export type OwnerArgs = { positional: string[]; flags: Record<string, string[] |
 
 export type OwnerResult =
   | { outcome: 'done'; text: string; data?: unknown; problems: PluginProblem[] }
-  | { outcome: 'refused'; reason: string; text: string; problems: PluginProblem[] }
+  | { outcome: 'refused'; reason: string; text: string; offer?: Action; problems: PluginProblem[] }
 
-/** What an owner command's `run` answers. The kernel adds `problems`. */
-export type OwnerAnswer = { outcome: 'done'; text: string; data?: unknown } | { outcome: 'refused'; reason: string; text: string }
+/**
+ * What an owner command's `run` answers. The kernel adds `problems`. A refusal may `offer` one
+ * action the person can take instead, such as removing a plugin that refused anyway: the page shows
+ * it beside the refusal, and it runs as any button does, asking its `confirm` first.
+ */
+export type OwnerAnswer = { outcome: 'done'; text: string; data?: unknown } | { outcome: 'refused'; reason: string; text: string; offer?: Action }
 
 /** A value a `value` flag takes, and what it means, for people. */
 export type ParamOption = { value: string; label: string }
@@ -289,7 +293,7 @@ export type FlagParam = {
 /** How a command's arguments are written. The command line parses by it, the kernel checks by it, and help and forms are made from it. */
 export type OwnerParams = { readonly positional?: readonly PositionalParam[]; readonly flags?: readonly FlagParam[] }
 
-/** The checked values of a call, by argument name: what `run` gets when its command has `params`. */
+/** The checked values of a call, by argument name. */
 export type OwnerValues = { readonly [name: string]: string | readonly string[] | boolean | null }
 
 type Each<L> = L extends readonly (infer E)[] ? E : never
@@ -301,7 +305,7 @@ export type ParamValues<P extends OwnerParams> = { readonly [A in Each<P['positi
   readonly [F in Each<P['flags']> as NameOf<F>]: FlagValue<F>
 }
 
-/** What an owner command's `run` gets: the arguments as written, and their values by name as checked against `params`; empty without `params`. */
+/** What an owner command's `run` gets: the arguments as written, and their values by name as checked against `params`. */
 export type CommandArgs = OwnerArgs & { readonly values: OwnerValues }
 
 /**
@@ -309,16 +313,15 @@ export type CommandArgs = OwnerArgs & { readonly values: OwnerValues }
  * or without confirmation, and an `ownerOnly` one in an agent session, without asking: it changes no
  * data but decides for the owner, such as what goes online or where the library syncs.
  *
- * With `params`, the kernel refuses a call that does not fit them before `run`, and help shows the
- * usage made from them; write the command with `defineCommand` to get the values typed. Without
- * `params`, `run` checks the arguments itself and `usage` says how they are written after the name,
- * for help, e.g. '<库内路径> --to <库内路径>'.
+ * `params` declares its arguments; a command that takes none declares `{}`. The command line reads a
+ * call by them, the kernel refuses one that does not fit them before `run`, help shows the usage made
+ * from them, and a page's form is made from them with `formOf`. Write the command with
+ * `defineCommand` to get the values typed.
  */
 export interface OwnerCommand {
-  readonly name: string // one or more words, e.g. 'held restore'
+  readonly name: string // `<plugin> ` and one or more words, e.g. 'ledger held restore'
   readonly summary: string
-  readonly params?: OwnerParams
-  readonly usage?: string
+  readonly params: OwnerParams
   readonly destructive: boolean
   readonly ownerOnly: boolean
   /** It changes nothing, in the library or outside it, such as a listing; its event is no news to agents. */

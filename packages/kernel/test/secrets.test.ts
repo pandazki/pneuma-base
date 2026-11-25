@@ -12,7 +12,7 @@ const TOKEN = 'tok-5c1e7-only-here'
 const events: Event[] = []
 const vault = plugin('vault', {
   secrets: [{ name: 'token', description: '外面服务的令牌' }],
-  ownerCommands: [{ name: 'vault show', summary: '', destructive: false, ownerOnly: false, run: async (_args, ctx) => ({ outcome: 'done', text: 'shown', data: { token: await ctx.secrets.get('token') } }) }],
+  ownerCommands: [{ name: 'vault show', summary: '', params: {}, destructive: false, ownerOnly: false, run: async (_args, ctx) => ({ outcome: 'done', text: 'shown', data: { token: await ctx.secrets.get('token') } }) }],
   observe: async (e) => void events.push(e),
 })
 

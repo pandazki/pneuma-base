@@ -78,7 +78,7 @@ describe('the owner’s operations from the page (C5)', () => {
     const server = await serve()
     const fingerprint = (agent(['inspect', 'doc.md', '--json']).json().sections[0].data.versions[0].fingerprint as string)
     const done = [
-      await post(server, owner('held restore', ['doc.md'], { fingerprint: [fingerprint], to: ['doc.first.md'] })),
+      await post(server, owner('ledger held restore', ['doc.md'], { fingerprint: [fingerprint], to: ['doc.first.md'] })),
       await post(server, { face: 'agent', verb: 'put', request: { kind: 'register', path: 'dropped.md', origin: { kind: 'brought', source: '', by: 'owner' } } }),
       await post(server, { face: 'agent', verb: 'say', request: { kind: 'revised', about: 'notes.md', text: null, args: {} } }),
       await post(server, owner('plugin add', ['pager'])),
@@ -96,11 +96,11 @@ describe('the owner’s operations from the page (C5)', () => {
     expect(existsSync(join(lib, '_archive'))).toBe(false)
 
     // In the ledger: a fact for every owner command, the quiet ones included.
-    expect(ownerFacts()).toEqual(expect.arrayContaining(['held restore', 'plugin add', 'plugin remove', 'grant issue', 'grant revoke', 'skill install', 'archive purge']))
+    expect(ownerFacts()).toEqual(expect.arrayContaining(['ledger held restore', 'plugin add', 'plugin remove', 'grant issue', 'grant revoke', 'skill install', 'archive purge']))
 
     // An agent's check: what changed content or capabilities, not the grants or the skill.
     const news = agent(['check']).stdout
-    for (const line of ['主人面的操作 held restore', '放入 doc.first.md', '放入 dropped.md（带进来的，主人给的）', '认了 notes.md 的直接改动', '主人面的操作 plugin add', '主人面的操作 plugin remove', '主人面的操作 archive purge', 'old.md 随归档区一起清掉了']) {
+    for (const line of ['主人面的操作 ledger held restore', '放入 doc.first.md', '放入 dropped.md（带进来的，主人给的）', '认了 notes.md 的直接改动', '主人面的操作 plugin add', '主人面的操作 plugin remove', '主人面的操作 archive purge', 'old.md 随归档区一起清掉了']) {
       expect(news).toContain(line)
     }
     for (const quiet of ['grant issue', 'grant revoke', 'skill install']) expect(news).not.toContain(quiet)
@@ -108,9 +108,9 @@ describe('the owner’s operations from the page (C5)', () => {
 
   it('a refused operation says why and leaves no fact', async () => {
     const server = await serve()
-    const r = await post(server, owner('held restore', ['nothing.md'], { to: ['x.md'] }))
+    const r = await post(server, owner('ledger held restore', ['nothing.md'], { to: ['x.md'] }))
     expect(r).toMatchObject({ tone: 'bad', result: { outcome: 'refused', reason: 'no-such-item' } })
-    expect(ownerFacts()).not.toContain('held restore')
+    expect(ownerFacts()).not.toContain('ledger held restore')
   })
 })
 

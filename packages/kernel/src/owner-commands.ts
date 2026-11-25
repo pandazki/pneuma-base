@@ -15,7 +15,9 @@ import { ARCHIVE_DIR, parseLibraryPath, regionOf } from './paths.js'
 import { eachPlugin, messageOf, pluginContext } from './pipeline.js'
 import { readSecret, removeSecret, SECRET_LIMIT, secretNames, secretsDir, writeSecret } from './secrets.js'
 import {
+  formOf,
   SECRET_NAME,
+  type Action,
   type Context,
   type Grant,
   type GrantId,
@@ -73,6 +75,7 @@ const done = (text: string, data?: unknown, library?: Library, problems: PluginP
 const typedDir = (dir: string, cwd: string) => resolve(cwd, dir === '~' || dir.startsWith('~/') ? join(homedir(), dir.slice(1)) : dir)
 
 const PLUGIN = { name: 'plugin', hint: '插件名', required: true } as const
+const REMOVE = { positional: [PLUGIN], flags: [{ name: 'anyway', hint: '插件不肯也卸', kind: 'boolean' }] } as const
 
 export const KERNEL_COMMANDS: readonly KernelCommand[] = [
   command({
@@ -160,7 +163,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
   command({
     name: 'plugin remove',
     summary: '在这个库里卸下一个插件；它名下的目录原样留着',
-    params: { positional: [PLUGIN], flags: [{ name: 'anyway', hint: '插件不肯也卸', kind: 'boolean' }] },
+    params: REMOVE,
     destructive: false,
     ownerOnly: true,
     setup: true,
@@ -172,7 +175,10 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       const heard = await hear(library.plugins.find((p) => p.name === name), (p, pctx) => p.onRemove?.(pctx), call.ctx)
       const warning = heard.answer ? heard.answer.refuse : null
       if (warning !== null && !anyway) {
-        return { ...refused('plugin-refused', `插件 ${name} 没有卸下，它说：${warning}\n照样要卸，用 plugin remove ${name} --anyway。`), problems: heard.problems }
+        const text = `插件 ${name} 没有卸下，它说：${warning}\n照样要卸，用 plugin remove ${name} --anyway。`
+        const { call: removeAnyway } = formOf({ name: 'plugin remove', params: REMOVE }, { fixed: { plugin: name, anyway: true } })
+        const offer: Action = { label: '仍然卸下', tone: 'danger', confirm: `插件 ${name} 说：${warning}\n仍然卸下吗？`, inputs: [], call: removeAnyway }
+        return { answer: { outcome: 'refused', reason: 'plugin-refused', text, offer }, problems: heard.problems }
       }
       const updated = await saveConfig(library.root, { ...library.config, plugins: library.config.plugins.filter((p) => p !== name) }, call.table)
       const text = `已卸下插件 ${name}，说明已重新生成。它名下的目录 .pneuma-base/${name}/ 原样留着。${warning === null ? '' : `\n它卸下前提醒过：${warning}`}`

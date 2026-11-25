@@ -1,9 +1,10 @@
 // The words agents and owners read: states, what each means, the one-line look, check's section,
 // what a put or archive is told, and the cognition section. The plugin's name goes into every command.
+import { usageOf } from '../../params.js'
 import type { PluginContext, PluginNoteAnswer, Tag } from '../../types.js'
 import type { Skipped } from '../records.js'
 import { onlyTarget, type Kit, type Settled } from './reconcile.js'
-import type { Look, Status } from './target.js'
+import type { Look, Status, TargetAdapter } from './target.js'
 
 export const STATUS: Record<Status, Tag> = {
   online: { text: '在线', tone: 'good' },
@@ -51,12 +52,15 @@ export function skippedText(kit: Kit, skipped: readonly Skipped[]): { body: stri
   return { body: [...lines, '这些行原样留着，没有算进去。'].join('\n'), data: skipped }
 }
 
+/** How the flags of one kind are written after `<name> target set`, with `--kind` when the kit has several; `required`: those alone. */
+export function kindUsage(kit: Kit, t: TargetAdapter, required = false): string {
+  const flags = required ? t.params.filter((f) => f.required) : t.params
+  return [...(onlyTarget(kit) ? [] : [`--kind ${t.kind}`]), usageOf({ flags })].filter((s) => s !== '').join(' ')
+}
+
 /** The alternatives of `<name> target set`, required flags only: what the owner types to set a target. */
 function targetSetHint(kit: Kit): string {
-  const required = (usage: string) => usage.replace(/\s*\[[^\]]*\]/g, '')
-  const only = onlyTarget(kit)
-  if (only) return `${kit.name} target set ${required(only.usage)}`
-  return `${kit.name} target set ${kit.targets.map((t) => `--kind ${t.kind} ${required(t.usage)}`).join('，或 ')}`
+  return `${kit.name} target set ${kit.targets.map((t) => kindUsage(kit, t, true)).join('，或 ')}`.trimEnd()
 }
 
 export const noTarget = (kit: Kit) => `还没配部署目标：${targetSetHint(kit)}`

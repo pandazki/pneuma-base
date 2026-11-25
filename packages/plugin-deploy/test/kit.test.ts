@@ -21,7 +21,7 @@ import {
   type Plugin,
   type Session,
 } from '@pneuma-base/kernel'
-import { deployPlugin, siteName, type ContentId, type SiteName, type Target, type TargetAdapter } from '@pneuma-base/sdk/kit'
+import { defineTarget, deployPlugin, siteName, type ContentId, type SiteName, type Target, type TargetAdapter } from '@pneuma-base/sdk/kit'
 import { describe, expect, it } from 'vitest'
 
 const owner: Actor = { kind: 'owner' }
@@ -75,22 +75,18 @@ function fakeTarget(opts: Options = {}) {
         }
       : {}),
   })
-  const adapter: TargetAdapter = {
+  const adapter: TargetAdapter = defineTarget({
     kind: 'fake',
     label: '一个假的目标',
-    usage: '--where <名字>',
-    flags: ['where'],
-    form: { label: '设假的目标', inputs: [{ name: 'where', label: '名字', placeholder: null, value: null, options: null }] },
-    secrets: [{ name: 'fake-token', label: '假的令牌' }],
-    async configure(flags) {
-      const where = flags.value('where')
-      return where === null ? { ok: false, reason: 'usage', text: '要写 --where <名字>。' } : { ok: true, config: { where } }
+    params: [{ name: 'where', hint: '名字', kind: 'value', required: true }],
+    async configure({ where }) {
+      return { ok: true, config: { where } }
     },
     open(config) {
       if (typeof config.where !== 'string') throw new Error('no where')
       return open(config.where)
     },
-  }
+  })
   return { fake, adapter }
 }
 
@@ -126,10 +122,14 @@ async function library(plugin: Plugin, noTarget = false) {
     }
     return agentFace.put({ kind: 'place', from: { kind: 'directory', path: src }, to: path, origin: { kind: 'made', from: [], outside: [] } }, as(claude))
   }
+  /** The owner sets a secret of the plugin on this machine, through the kernel's command. */
+  const secret = (name: string, value: string) =>
+    ownerFace.dispatch({ ctx: as(owner), table, env: {}, viaGrant: false, confirm: async () => true, readSecret: async () => value }, 'secret set', { positional: [plugin.name, name], flags: {} })
   const lib0 = {
     root,
     as,
     cmd,
+    secret,
     put,
     site,
     write,
@@ -340,7 +340,12 @@ describe('the plugin the kit makes', () => {
     const { adapter } = fakeTarget()
     const plugin = deployPlugin('fake', adapter, { title: '假部署', heading: '上线到假的地方：主人开关', cognition: '网站里的链接要写相对路径。' })
     expect(plugin.ownerCommands.map((c) => c.name)).toEqual(['fake on', 'fake off', 'fake sync', 'fake list', 'fake target set'])
-    expect(plugin.ownerCommands.find((c) => c.name === 'fake target set')).toMatchObject({ usage: '--where <名字>', summary: '配部署目标：一个假的目标', ownerOnly: true, setup: true })
+    expect(plugin.ownerCommands.find((c) => c.name === 'fake target set')).toMatchObject({
+      params: { flags: [{ name: 'kind', kind: 'value', options: [{ value: 'fake', label: '一个假的目标' }] }, { name: 'where', hint: '名字', kind: 'value', required: true }] },
+      summary: '配部署目标：一个假的目标',
+      ownerOnly: true,
+      setup: true,
+    })
     expect(plugin.views).toEqual([expect.objectContaining({ id: 'fake.sites', title: '假部署' })])
     expect(plugin.statements).toEqual(['deployable'])
     expect(plugin.cognition?.text).toMatch(/^## 上线到假的地方：主人开关\n\n这个库装了\*\*假部署\*\*插件。/)
@@ -350,7 +355,7 @@ describe('the plugin the kit makes', () => {
     const l = await library(plugin, true)
     expect(await l.cmd('fake list')).toMatchObject({ text: expect.stringContaining('还没配部署目标：fake target set --where <名字>') })
     expect(await l.cmd('fake target set', [], { where: ['x'] })).toMatchObject({ outcome: 'done', text: '部署目标已设为 假的 x。' })
-    expect(await l.cmd('fake target set', [], {})).toMatchObject({ outcome: 'refused', reason: 'usage', text: '要写 --where <名字>。' })
+    expect(await l.cmd('fake target set', [], {})).toMatchObject({ outcome: 'refused', reason: 'usage', text: '要写 --where <名字>。\n用法：fake target set [--kind fake] --where <名字>' })
   })
 
   it('tells an agent whose put the target refused that the put is in and going online waits for the owner, as a problem beside the answer', async () => {
@@ -434,10 +439,46 @@ describe('the plugin the kit makes', () => {
     expect(table?.rows[0]?.cells).toMatchObject({ files: { text: '2' }, address: { text: address, href: address, copy: true } })
     expect(blocks.at(-1)).toMatchObject({ kind: 'custom', entry: 'chart.html', data: { sites: 1 } })
     const setTarget = blocks.find((b): b is Extract<Block, { kind: 'section' }> => b.kind === 'section' && b.title === '目标')?.actions[0]
-    expect(setTarget).toMatchObject({ label: '设假的目标', call: { face: 'owner', command: 'fake target set', args: { flags: { kind: ['fake'], where: ['{where}'] } } } })
+    expect(setTarget).toMatchObject({ label: '设部署目标', inputs: [{ name: 'where', label: '名字' }], call: { face: 'owner', command: 'fake target set', args: { flags: { kind: ['fake'], where: ['{where}'] } } } })
 
     const section = await plugin.onItemView?.('sites/shop' as LibraryPath, l.pctx())
     expect(section?.blocks.find((b): b is Extract<Block, { kind: 'fields' }> => b.kind === 'fields')?.fields.at(-1)).toEqual({ label: '文件数', value: { text: '2' } })
     expect(section?.blocks.at(-1)).toEqual({ kind: 'text', tone: 'info', text: '假的目标的说明' })
+  })
+
+  it('declares the secrets its target reads; one not set refuses, naming the command that sets it, and one set reaches the target', async () => {
+    const tokens: string[] = []
+    const adapter = defineTarget({
+      kind: 'vault',
+      label: '一个要令牌的目标',
+      params: [],
+      secrets: [{ name: 'token', description: '目标的令牌' }],
+      configure: async () => ({ ok: true, config: {} }),
+      open: (_config, env) => ({
+        key: 'vault',
+        label: '要令牌的目标',
+        async publish(site) {
+          tokens.push(await env.secret('token'))
+          return { url: url(site) }
+        },
+        async remove() {
+          await env.secret('token')
+        },
+      }),
+    })
+    const plugin = deployPlugin('vault', adapter)
+    expect(plugin.secrets).toEqual([{ name: 'token', description: '目标的令牌' }])
+    expect(plugin.ownerCommands.find((c) => c.name === 'vault target set')?.params.flags?.map((f) => f.name)).toEqual(['kind'])
+    const l = await library(plugin, true)
+    expect(await l.cmd('vault target set')).toMatchObject({ outcome: 'done', text: expect.stringContaining('还没设：pneuma-base secret set vault token') })
+    await l.put(P, 'v1')
+    await l.say(P)
+    const on = await l.cmd('vault on', [P])
+    expect(on).toMatchObject({ outcome: 'refused', reason: 'publish-failed', text: expect.stringContaining('还没设密钥 token：用 pneuma-base secret set vault token 设') })
+    expect(tokens).toEqual([])
+    expect(await l.secret('token', 'tok-1')).toMatchObject({ outcome: 'done' })
+    expect(await l.cmd('vault sync')).toMatchObject({ outcome: 'done' })
+    expect(tokens).toEqual(['tok-1'])
+    expect(await l.list()).toMatchObject([{ path: P, status: 'online' }])
   })
 })

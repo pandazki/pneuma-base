@@ -15,7 +15,7 @@ import {
   type PluginHit,
 } from '@pneuma-base/kernel'
 import { currentEmbedder } from './config.js'
-import { embedderFor, type Embedder } from './embed.js'
+import { embedderFor, KEY_SECRET, movedKey, type Embedder } from './embed.js'
 import { freshness, type Stamp } from './fresh.js'
 import { SearchIndex, type ChunkRow, type Doc, type Ranked } from './store.js'
 import { chunksOf, decodeHead, firstLine, indexTerms, snippet, TEXT_LIMIT, visibleText } from './text.js'
@@ -145,12 +145,14 @@ export async function findHits(req: FindRequest, ctx: PluginContext): Promise<Pl
     let query: { embedder: string; vector: Float32Array } | null = null
     if (config === null) index.keepVectorsOf(null)
     else {
-      const embedder = embedderFor(config, process.env)
+      const key = await ctx.secrets.get(KEY_SECRET)
+      const embedder = embedderFor(config, key)
       try {
         const vector = await queryVector(index, embedder, text)
         if (vector) query = { embedder: embedder.id, vector }
       } catch (error) {
-        problems.push(`按意思找没做成，只按文字找了：${messageOf(error)}`)
+        const moved = movedKey(config, key !== null)
+        problems.push(`按意思找没做成，只按文字找了：${messageOf(error)}${moved ? `。${moved}` : ''}`)
       }
     }
     const terms = searchTerms(text, 'words')

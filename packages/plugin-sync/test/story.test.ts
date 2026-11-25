@@ -137,13 +137,13 @@ describe('what the owner deletes with a destructive command stays deleted (CONTE
     }
   })
 
-  it('held drop on A: the held copies leave the target and B, and stay gone', () => {
+  it('ledger held drop on A: the held copies leave the target and B, and stay gone', () => {
     const { a, b } = synced((a) => {
       ok(a.agent(['put', '-', '--to', 'doc.md', '--made'], 'first version'))
       ok(a.agent(['put', '-', '--to', 'doc.md', '--made'], 'second version'))
     })
     expect(texts(b.dir)).toContain('first version')
-    ok(a.confirmed(['held', 'drop']))
+    ok(a.confirmed(['ledger', 'held', 'drop']))
 
     for (let round = 0; round < 2; round++) {
       both(a, b)
