@@ -203,7 +203,7 @@ export interface OwnerCommand {
   readonly readOnly?: boolean
   /** It configures plugins, targets or embedders without changing items; its event is news only after an agent's first visit. */
   readonly setup?: boolean
-  run(args: OwnerArgs, ctx: PluginContext): Promise<OwnerAnswer>
+  readonly run: (args: OwnerArgs, ctx: PluginContext) => Promise<OwnerAnswer>
 }
 
 // ---- events ----
@@ -233,22 +233,23 @@ export interface Plugin {
   readonly statements: readonly string[]
   readonly ownerCommands: readonly OwnerCommand[]
 
-  onPut?(req: AcceptedPut, ctx: PluginContext): Promise<PluginNote | null>
-  revise?(req: PlaceOverExisting, ctx: PluginContext): Promise<ReviseOutcome>
-  onFind?(req: FindRequest, ctx: PluginContext): Promise<PluginFindAnswer>
+  // Hooks are function-typed properties, not methods, so a hook is checked strictly against what the kernel gives it.
+  readonly onPut?: (req: AcceptedPut, ctx: PluginContext) => Promise<PluginNote | null>
+  readonly revise?: (req: PlaceOverExisting, ctx: PluginContext) => Promise<ReviseOutcome>
+  readonly onFind?: (req: FindRequest, ctx: PluginContext) => Promise<PluginFindAnswer>
   /** What it knows about paths that others found and it did not: each hit is about one of `paths`. */
-  onFound?(paths: readonly LibraryPath[], req: FindRequest, ctx: PluginContext): Promise<PluginHit[]>
-  onInspect?(req: InspectRequest, ctx: PluginContext): Promise<PluginSection[]>
-  onSay?(req: SayRequest, ctx: PluginContext): Promise<SayAnswer>
-  onCheck?(req: CheckRequest, ctx: PluginContext): Promise<PluginSection[]>
-  onArchive?(req: AcceptedArchive, ctx: PluginContext): Promise<PluginNote | null>
-  observe?(event: Event, ctx: PluginContext): Promise<void>
+  readonly onFound?: (paths: readonly LibraryPath[], req: FindRequest, ctx: PluginContext) => Promise<PluginHit[]>
+  readonly onInspect?: (req: InspectRequest, ctx: PluginContext) => Promise<PluginSection[]>
+  readonly onSay?: (req: SayRequest, ctx: PluginContext) => Promise<SayAnswer>
+  readonly onCheck?: (req: CheckRequest, ctx: PluginContext) => Promise<PluginSection[]>
+  readonly onArchive?: (req: AcceptedArchive, ctx: PluginContext) => Promise<PluginNote | null>
+  readonly observe?: (event: Event, ctx: PluginContext) => Promise<void>
 
   /** The views it adds to the management UI. Each id starts with `<name>.`. */
   readonly views?: readonly ViewDecl[]
-  onView?(req: ViewRequest, ctx: PluginContext): Promise<ViewAnswer>
+  readonly onView?: (req: ViewRequest, ctx: PluginContext) => Promise<ViewAnswer>
   /** What it knows about one library path, as one section of the kernel's item panel: onInspect's counterpart in the UI. */
-  onItemView?(path: LibraryPath, ctx: PluginContext): Promise<ItemSection | null>
+  readonly onItemView?: (path: LibraryPath, ctx: PluginContext) => Promise<ItemSection | null>
 }
 
 export type PluginTable = ReadonlyMap<string, Plugin>
