@@ -356,7 +356,8 @@ export function findCandidates(ledger: Ledger, opts: FindScope & { content: Read
   const items = findableItems(ledger, opts).map((item): Candidate => {
     const shown = regionOf(item.path) === 'archive' ? (originalPath(item.path) ?? item.path) : item.path
     const source = item.origin.kind === 'brought' ? [item.origin.source ?? '', item.origin.by ?? ''] : []
-    const haystack = [shown, ...item.said.map((s) => s.text), ...source, opts.content.get(item.id) ?? ''].join('\n').toLowerCase()
+    const notes = item.versions.flatMap((v) => (v.note === null ? [] : [v.note]))
+    const haystack = [shown, ...item.said.map((s) => s.text), ...notes, ...source, opts.content.get(item.id) ?? ''].join('\n').toLowerCase()
     return { hit: itemHit(ledger, item), haystack }
   })
   const scenes = originFilter !== undefined ? [] : (named ?? [...ledger.scenes.values()]).filter((s) => s.id !== opts.skip && s.said.length > 0)
