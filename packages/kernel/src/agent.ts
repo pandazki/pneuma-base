@@ -75,9 +75,31 @@ export function rankHits<T>(candidates: { hit: T; haystack: string }[], terms: s
 }
 
 async function find(req: FindRequest, ctx: Context): Promise<FindResult> {
-  const hits = Object.keys(req.filters).length === 0 ? await nameHits(req, ctx.library.root) : []
+  const named = Object.keys(req.filters).length === 0 ? await nameHits(req, ctx.library.root) : []
   const heard = await eachPlugin(ctx, (plugin, pctx) => plugin.onFind?.(req, pctx))
-  return { hits: [...hits, ...heard.values.flatMap(({ plugin, value }) => value.map((h) => ({ ...h, by: plugin })))], problems: heard.problems }
+  const answers = heard.values.map(({ plugin, value }) => ({ plugin, ...(Array.isArray(value) ? { hits: value, problems: [] } : value) }))
+  return {
+    hits: mergeHits(named, answers.flatMap(({ plugin, hits }) => hits.map((h) => ({ ...h, by: plugin })))),
+    problems: [...heard.problems, ...answers.flatMap(({ plugin, problems }) => problems.map((message) => ({ plugin, message })))],
+  }
+}
+
+/**
+ * The kernel's hits by name and the plugins' hits as one list, one hit per path between the kernel
+ * and the plugins: a path a plugin found is given by the first plugin that found it, at its place,
+ * with the kernel's mark (目录, 已归档) in front of its detail. Two plugins' hits on one path stay
+ * apart, since each says what its plugin knows.
+ */
+function mergeHits(named: Hit[], heard: Hit[]): Hit[] {
+  const byName = new Map(named.map((h) => [h.path, h]))
+  const taken = new Set<LibraryPath>()
+  const merged = heard.map((h) => {
+    if (h.path === null || taken.has(h.path)) return h
+    taken.add(h.path)
+    const mark = byName.get(h.path)?.detail ?? null
+    return mark === null ? h : { ...h, detail: h.detail === null ? mark : `${mark}，${h.detail}` }
+  })
+  return [...named.filter((h) => h.path === null || !taken.has(h.path)), ...merged]
 }
 
 /** A bundle is one hit, marked 目录; the files inside it are none. */

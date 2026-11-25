@@ -6,5 +6,5 @@
     "outDir": "dist"
   },
   "include": ["src"],
-  "references": [{ "path": "../kernel" }, { "path": "../plugin-ledger" }, { "path": "../viewer" }]
+  "references": [{ "path": "../kernel" }, { "path": "../plugin-ledger" }, { "path": "../plugin-search" }, { "path": "../viewer" }]
 }
