@@ -4,7 +4,7 @@ import { readdir } from 'node:fs/promises'
 import { join, posix } from 'node:path'
 import { fileFacts } from './agent.js'
 import { exists } from './files.js'
-import { bundleFiles, enclosingBundle, kindAt, listThings, thingAt, type Thing } from './things.js'
+import { bundleFiles, enclosingBundle, kindAt, listThings, thingAt } from './things.js'
 import { codexHint } from './owner-commands.js'
 import { ARCHIVE_DIR, DESCRIPTION_FILE, KERNEL_DIR, abs, archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
 import { messageOf, pluginContext } from './pipeline.js'
@@ -22,6 +22,7 @@ import type {
   PluginTable,
   TableRow,
   Tag,
+  Thing,
   ViewAnswer,
   ViewDecl,
   ViewList,

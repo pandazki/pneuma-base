@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { pluginDir } from './paths.js'
 import { whyNotLoaded } from './plugin-table.js'
+import { pluginTools } from './tools.js'
 import type {
   AgentFace,
   Context,
@@ -65,7 +66,8 @@ export function notesOf(heard: Collected<PluginNoteAnswer>): { notes: Note[]; pr
 }
 
 export function pluginContext(ctx: Context, name: PluginName): PluginContext {
-  return { ...ctx, dir: pluginDir(ctx.library.root, name), cacheDir: join(ctx.home, 'cache', ctx.library.config.id, name) }
+  const dir = pluginDir(ctx.library.root, name)
+  return { ...ctx, dir, cacheDir: join(ctx.home, 'cache', ctx.library.config.id, name), tools: pluginTools(ctx, dir) }
 }
 
 type RequestOf<V extends Verb> = Parameters<AgentFace[V]>[0]

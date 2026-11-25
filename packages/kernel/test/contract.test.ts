@@ -1,5 +1,6 @@
 // The plugin contract as a third party builds against it: the sdk's root export, re-exported by the kernel.
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as sdk from '@pneuma-base/sdk'
 import { describe, expect, it } from 'vitest'
@@ -127,5 +128,89 @@ describe('a hook that did its part but not an outside step', () => {
     expect(f.read('_archive/a.md')).toBe('a')
     const said = await kernel.agentFace.say({ kind: 'ship', about: null, text: null, args: {} }, f.ctx)
     expect(said).toEqual({ outcome: 'heard', by: 'outward', note: '记下了', problems: [{ plugin: 'outward', message: '目标没有答复' }] })
+  })
+})
+
+describe('the tools on a plugin’s context', () => {
+  const sha = (text: string) => createHash('sha256').update(text).digest('hex')
+
+  async function probe() {
+    const heard: string[] = []
+    let grabbed: sdk.PluginContext | undefined
+    const p = plugin('probe', {
+      onCheck: async (_req, ctx) => ((grabbed = ctx), []),
+      onPut: async (req) => (heard.push(req.path), null),
+    })
+    const f = await fixture([p])
+    f.write('notes/a.md', 'a')
+    f.write('site/.pneuma-item', '{"format":1}\n')
+    f.write('site/index.html', '<h1>')
+    for (const left of ['site/.git/HEAD', 'site/node_modules/x.js', 'site/.DS_Store']) f.write(left, 'left out')
+    f.write('_archive/old.md', 'old')
+    await kernel.agentFace.check({ since: null, includeArchived: false }, f.ctx)
+    if (!grabbed) throw new Error('onCheck was not called')
+    return { f, ctx: grabbed, heard }
+  }
+
+  it('turn an agent’s input into a library path with its region and the bundle it lies in', async () => {
+    const { f, ctx } = await probe()
+    const t = ctx.tools
+    expect(await t.resolve('site/index.html')).toEqual({ path: 'site/index.html', region: 'content', bundle: 'site' })
+    expect(await t.resolve(join(f.root, 'notes', 'a.md'))).toEqual({ path: 'notes/a.md', region: 'content', bundle: null })
+    expect(await t.resolve('.pneuma-base/probe/x')).toMatchObject({ region: 'kernel' })
+    expect(await t.resolve('../elsewhere.md')).toBeNull()
+    expect(t.regionOf('_archive/old.md' as sdk.LibraryPath)).toBe('archive')
+    expect(t.archivedPath('a.md' as sdk.LibraryPath)).toBe('_archive/a.md')
+    expect(t.originalPath('_archive/a.md' as sdk.LibraryPath)).toBe('a.md')
+    expect(t.abs('notes/a.md' as sdk.LibraryPath)).toBe(join(f.root, 'notes', 'a.md'))
+  })
+
+  it('say what is at a path, list the things, and the files a bundle counts, leaving out the kernel’s names', async () => {
+    const { ctx } = await probe()
+    const t = ctx.tools
+    expect(await t.thing('site' as sdk.LibraryPath)).toMatchObject({ kind: 'bundle', files: 1, size: 4 })
+    expect(await t.thing('notes/a.md' as sdk.LibraryPath)).toMatchObject({ kind: 'file', files: 1, size: 1 })
+    expect(await t.thing('notes' as sdk.LibraryPath)).toBeNull()
+    expect(await t.things()).toEqual(['_archive/old.md', 'notes/a.md', 'site'])
+    expect((await t.files('site' as sdk.LibraryPath))?.map((file) => file.path)).toEqual(['index.html'])
+    expect(await t.files('notes/a.md' as sdk.LibraryPath)).toBeNull()
+  })
+
+  it('give fingerprints of things, manifests and files', async () => {
+    const { f, ctx } = await probe()
+    const t = ctx.tools
+    expect(await t.fingerprint('notes/a.md' as sdk.LibraryPath)).toBe(sha('a'))
+    expect(await t.fingerprintOfFile(join(f.root, 'notes', 'a.md'))).toBe(sha('a'))
+    const manifest = await t.manifest('site' as sdk.LibraryPath)
+    expect(manifest).toEqual([{ path: 'index.html', fingerprint: sha('<h1>'), size: 4 }])
+    expect(await t.fingerprint('site' as sdk.LibraryPath)).toBe(sha(`index.html\0${sha('<h1>')}\n`))
+    expect(t.fingerprintOfManifest(manifest ?? [])).toBe(await t.fingerprint('site' as sdk.LibraryPath))
+    expect(await t.fingerprint('gone.md' as sdk.LibraryPath)).toBeNull()
+    expect(await t.manifest('notes/a.md' as sdk.LibraryPath)).toBeNull()
+  })
+
+  it('copy a thing out, answering the fingerprint of the copy, and never into the library outside the plugin’s own directory', async () => {
+    const { f, ctx } = await probe()
+    const t = ctx.tools
+    const stage = join(tempDir('pb-k-stage-'), 'site')
+    expect(await t.copyOut('site' as sdk.LibraryPath, stage)).toBe(await t.fingerprint('site' as sdk.LibraryPath))
+    expect(readdirSync(stage)).toEqual(['index.html'])
+    const own = join(ctx.dir, 'stage')
+    expect(await t.copyOut('notes/a.md' as sdk.LibraryPath, own)).toBe(sha('a'))
+    expect(readFileSync(join(own, 'a.md'), 'utf8')).toBe('a')
+    await expect(t.copyOut('notes/a.md' as sdk.LibraryPath, join(f.root, 'copied'))).rejects.toThrow()
+    expect(existsSync(join(f.root, 'copied'))).toBe(false)
+    expect(await t.copyOut('gone.md' as sdk.LibraryPath, join(tempDir('pb-k-stage-'), 'x'))).toBeNull()
+  })
+
+  it('split and rank find terms as the kernel does, and put through the agent face so every plugin hears it', async () => {
+    const { ctx, heard } = await probe()
+    const t = ctx.tools
+    expect(t.searchTerms('部署 网站', 'terms')).toEqual(kernel.searchTerms('部署 网站', 'terms'))
+    expect(t.rankHits([{ hit: 'a', haystack: 'x 部署' }, { hit: 'b', haystack: 'y' }], ['部署'], 'terms')).toEqual(['a'])
+    expect(t.sentenceHits).toBe(kernel.SENTENCE_HITS)
+    const r = await t.put({ kind: 'place', from: { kind: 'file', path: outsideFile('b') }, to: 'b.md', origin: brought })
+    expect(r).toMatchObject({ outcome: 'accepted', path: 'b.md' })
+    expect(heard).toEqual(['b.md'])
   })
 })

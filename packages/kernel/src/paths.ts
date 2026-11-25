@@ -1,14 +1,11 @@
 import { realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, posix, relative, sep } from 'node:path'
-import type { LibraryPath, PluginName } from '@pneuma-base/sdk'
+import type { LibraryPath, PluginName, Region } from '@pneuma-base/sdk'
 
 export const KERNEL_DIR = '.pneuma-base'
 export const ARCHIVE_DIR = '_archive'
 export const DESCRIPTION_FILE = 'PNEUMA-BASE.md'
-
-/** Where a library path lies: the content anyone may arrange, the archive, or the kernel's own files. */
-export type Region = 'content' | 'archive' | 'kernel'
 
 /**
  * Parses what a caller wrote into a library path: relative to the library root, or absolute and
