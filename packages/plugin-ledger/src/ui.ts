@@ -232,11 +232,12 @@ export function itemSection(v: ItemView): ItemSection {
     blocks.push(counted('决定与备注', entries.length, [{ kind: 'timeline', entries }]))
   }
 
+  // An edit the owner made and an agent recorded names both, also on the current version, whose tag says only 当前.
   const versions = [...v.versions].reverse().map((ver, i) => ({
     at: ver.at,
     title: { text: ver.fingerprint.slice(0, 12), mono: true },
-    lines: [`${who(ver.actor)} · 场景 ${shortScene(ver.scene)}`],
-    tag: i === 0 ? { text: '当前', tone: 'good' as const } : ver.claimed ? { text: '认了直接改动', tone: 'warn' as const } : ver.held ? { text: '换下的进了留存', tone: 'neutral' as const } : null,
+    lines: [`${ver.by === 'owner' ? `主人，${who(ver.actor)} 代记` : who(ver.actor)} · 场景 ${shortScene(ver.scene)}`],
+    tag: i === 0 ? { text: '当前', tone: 'good' as const } : ver.claimed ? { text: ver.by === 'owner' ? '主人直接改的' : '认了直接改动', tone: 'warn' as const } : ver.held ? { text: '换下的进了留存', tone: 'neutral' as const } : null,
   }))
   blocks.push(counted('内容的变化', versions.length, [{ kind: 'timeline', entries: versions }]))
 
@@ -246,7 +247,7 @@ export function itemSection(v: ItemView): ItemSection {
       const fingerprint = path.split('/').at(-2) ?? ''
       // Whose content it was, as the changes above show it; where it lies is the plugin's business.
       const ver = v.versions.find((x) => x.fingerprint === fingerprint)
-      const note = ver ? `${who(ver.actor)} 放进来的那份内容` : null
+      const note = !ver ? null : ver.by === 'owner' ? `主人直接改的那份内容，${who(ver.actor)} 代记` : `${who(ver.actor)} 放进来的那份内容`
       return { cell: { text: `留存 ${fingerprint.slice(0, 8)}`, mono: true }, note, actions: [restoreAction(v, path, fingerprint)] }
     })
     blocks.push(counted('留存', items.length, [{ kind: 'text', text: '被新内容换下来的旧内容，给主人的保险。取回时复制到一个新路径，现在的内容不动。', tone: 'neutral' }, { kind: 'list', items }]))
@@ -278,8 +279,10 @@ const table = (columns: [key: string, label: string][], rows: TableRow[], empty:
 function sceneDoing(ledger: Ledger, scene: SceneRecord): Cell {
   const doing = [...new Set(scene.said.filter((s) => s.flavor === 'doing').map((s) => s.text))]
   if (doing.length > 0) return { text: doing.join('；') }
-  const commands = [...new Set(ledger.ownerOps.filter((op) => op.scene === scene.id).map((op) => op.command))]
-  return commands.length > 0 ? { text: `主人面的操作：${commands.join('、')}`, muted: true } : none
+  const ops = ledger.ownerOps.filter((op) => op.scene === scene.id)
+  const commands = [...new Set(ops.map((op) => op.command))]
+  const prefix = ops.every((op) => op.actor.kind === 'owner') ? '主人面的操作' : '执行命令'
+  return commands.length > 0 ? { text: `${prefix}：${commands.join('、')}`, muted: true } : none
 }
 
 const newestFirst = (a: SceneRecord, b: SceneRecord) => (a.first === b.first ? (a.id < b.id ? -1 : 1) : a.first > b.first ? -1 : 1)
@@ -347,7 +350,8 @@ export function sceneAnswer(ledger: Ledger, params: Record<string, string>): Vie
   const ops = ledger.ownerOps.filter((op) => op.scene === scene.id)
   if (ops.length > 0) {
     const entries = ops.map((op) => ({ at: op.at, title: { text: op.command, mono: true }, lines: [op.summary], tag: op.destructive ? { text: '丢了数据', tone: 'bad' as const } : null }))
-    blocks.push(counted('主人面的操作', entries.length, [{ kind: 'timeline', entries }]))
+    const title = ops.every((op) => op.actor.kind === 'owner') ? '主人面的操作' : '执行的命令'
+    blocks.push(counted(title, entries.length, [{ kind: 'timeline', entries }]))
   }
   const items = scene.items.flatMap((id) => ledger.items.get(id) ?? [])
   if (items.length > 0) {
@@ -402,7 +406,8 @@ function kindTag(f: Fact): Tag {
     case 'item.enter':
       return { text: '放入', tone: 'neutral' }
     case 'item.revise':
-      return f.claimed ? { text: '认改动', tone: 'warn' } : { text: '换内容', tone: 'neutral' }
+      if (!f.claimed) return { text: '换内容', tone: 'neutral' }
+      return { text: f.by === 'owner' ? '主人直接改的' : '认改动', tone: 'warn' }
     case 'item.move':
       return { text: f.archive === 'in' ? '归档' : f.archive === 'out' ? '取回' : '挪动', tone: 'neutral' }
     case 'item.basis':
@@ -410,7 +415,7 @@ function kindTag(f: Fact): Tag {
     case 'item.remove':
       return { text: '除掉', tone: 'bad' }
     case 'owner.op':
-      return { text: '主人面', tone: 'info' }
+      return f.actor.kind === 'owner' ? { text: '主人面', tone: 'info' } : { text: '命令', tone: 'neutral' }
   }
 }
 

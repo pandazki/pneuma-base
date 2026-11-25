@@ -93,6 +93,7 @@ export const versionCommands: OwnerCommand[] = [
     usage: EXPORT.slice('version export '.length),
     destructive: false,
     ownerOnly: false,
+    readOnly: true,
     async run(args, ctx) {
       const input = args.positional[0]
       const n = count(flag(args, 'version'))

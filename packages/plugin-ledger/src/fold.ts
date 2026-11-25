@@ -5,7 +5,7 @@ import type { Basis, Fact, FactActor, How, ItemId, LedgerOrigin, SceneId } from 
 export type Said = Extract<Fact, { kind: 'said' }>
 export type OwnerOp = Extract<Fact, { kind: 'owner.op' }>
 
-export type Version = { fingerprint: Fingerprint; at: Instant; scene: SceneId; actor: FactActor; how: How; held: string | null; claimed: boolean }
+export type Version = { fingerprint: Fingerprint; at: Instant; scene: SceneId; actor: FactActor; how: How; held: string | null; claimed: boolean; by: 'owner' | null }
 
 export type ItemRecord = {
   id: ItemId
@@ -105,7 +105,7 @@ function apply(ledger: Ledger, f: Fact): void {
         entered: f,
         basis: basisOf(f.origin),
         unknownOrigin: f.origin.kind === 'adopted',
-        versions: [version(f, null, false)],
+        versions: [version(f)],
         removed: false,
         said: [],
         bundle: f.bundle === true,
@@ -117,7 +117,7 @@ function apply(ledger: Ledger, f: Fact): void {
     case 'item.revise':
       if (!item) return
       Object.assign(item, { fingerprint: f.fingerprint, size: f.size, basis: f.basis ? mergeBasis(item.basis, f.basis) : item.basis })
-      item.versions.push(version(f, f.held, f.claimed))
+      item.versions.push(version(f))
       return
     case 'item.move':
       if (item) relocate(ledger, item, f.to)
@@ -176,8 +176,9 @@ function touchScene(ledger: Ledger, f: Fact): void {
   if ('item' in f && f.kind !== 'item.remove' && !scene.items.includes(f.item)) scene.items.push(f.item)
 }
 
-function version(f: Fact & { fingerprint: Fingerprint }, held: string | null, claimed: boolean): Version {
-  return { fingerprint: f.fingerprint, at: f.at, scene: f.scene, actor: f.actor, how: f.how, held, claimed }
+function version(f: Extract<Fact, { kind: 'item.enter' | 'item.revise' }>): Version {
+  const revise = f.kind === 'item.revise' ? f : null
+  return { fingerprint: f.fingerprint, at: f.at, scene: f.scene, actor: f.actor, how: f.how, held: revise?.held ?? null, claimed: revise?.claimed ?? false, by: revise?.by ?? null }
 }
 
 const basisOf = (origin: LedgerOrigin): Basis => (origin.kind === 'made' ? origin.basis : NO_BASIS)

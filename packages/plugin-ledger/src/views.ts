@@ -146,7 +146,8 @@ export function itemText(v: ItemView): string {
     // A held copy lies at held/<item>/<fingerprint>/<name>, so the version it keeps is the one with that fingerprint.
     const kept = new Set(v.held.flatMap((path) => path.split('/').slice(-2, -1)))
     for (const ver of v.versions) {
-      const how = [...(ver.claimed ? ['认了直接改动'] : []), ...(kept.has(ver.fingerprint) ? ['被换下，在留存里'] : [])].join('，')
+      const claimed = ver.by === 'owner' ? `主人直接改的，${who(ver.actor)} 代记` : '认了直接改动'
+      const how = [...(ver.claimed ? [claimed] : []), ...(kept.has(ver.fingerprint) ? ['被换下，在留存里'] : [])].join('，')
       lines.push(`  ${ver.fingerprint.slice(0, 8)}  ${when(ver.at)}  ${who(ver.actor)}${how ? `  ${how}` : ''}`)
     }
   }
@@ -233,7 +234,8 @@ export function factLine(ledger: Ledger, f: Fact): string {
     case 'item.enter':
       return `放入 ${now(f.item, f.path)}（${originLabel(f.origin)}）`
     case 'item.revise':
-      return f.claimed ? `认了 ${pathOf(ledger, f.item)} 的直接改动` : `${pathOf(ledger, f.item)} 换了新内容`
+      if (!f.claimed) return `${pathOf(ledger, f.item)} 换了新内容`
+      return f.by === 'owner' ? `记下 ${pathOf(ledger, f.item)} 是主人直接改的` : `认了 ${pathOf(ledger, f.item)} 的直接改动`
     case 'item.move': {
       const seen = f.how === 'observed' ? '（看到的）' : ''
       if (f.archive === 'in') return `归档 ${f.from}${seen}`
@@ -245,7 +247,7 @@ export function factLine(ledger: Ledger, f: Fact): string {
     case 'item.remove':
       return `${pathOf(ledger, f.item)} 随归档区一起清掉了`
     case 'owner.op':
-      return `主人面的操作 ${f.command}：${f.summary}`
+      return f.actor.kind === 'owner' ? `主人面的操作 ${f.command}：${f.summary}` : `执行 ${f.command}：${f.summary}`
   }
 }
 
@@ -315,7 +317,7 @@ export function standingSections(ledger: Ledger, standing: Standing, includeArch
     ['来源不在', gone, gone.map((r) => `  ${r.path} ← 依据 ${names(r.sources)} 不在了`)],
     ['上游有标记', upstream, upstream.map((r) => `  ${r.path} ← 上游 ${names(r.via)} 有标记`)],
     ['没人登记过的', unowned, [...unowned.map((r) => `  ${r.path}${r.adopted ? '（入了册，来历不明）' : ''}`), '它们不是经 put 放进来的。要留着用的，知道来历就用 put <库内路径> --brought 或 --made 补上；不要的归档。']],
-    ['被直接改过的', changed, [...changed.map((r) => `  ${r.path}`), '是你改的，就用 say revised <库内路径> 认下。']],
+    ['被直接改过的', changed, [...changed.map((r) => `  ${r.path}`), '是你改的，就用 say revised <库内路径> 认下；主人说是自己改的，加 --by owner。']],
     ['不在了的', missing, missing.map((r) => `  ${r.path}`)],
     ['挪过的', moved, moved.map((r) => `  ${r.from} → ${r.to}，已接回`)],
   ]

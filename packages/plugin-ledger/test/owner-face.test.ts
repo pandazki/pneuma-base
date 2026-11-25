@@ -54,6 +54,29 @@ describe('a read-only owner command', () => {
   })
 })
 
+describe('a plugin command run by an agent', () => {
+  it('is attributed as a command run by that agent, not as 主人面的操作', async () => {
+    const syncer = {
+      name: 'syncer' as never,
+      cognition: null,
+      storage: [],
+      statements: [],
+      ownerCommands: [{ name: 'syncer run', summary: '', destructive: false, ownerOnly: false, run: async () => ({ outcome: 'done' as const, text: '已对一遍' }) }],
+    }
+    const dir = realpathSync(mkdtempSync(join(process.env.PNEUMA_BASE_TEST_TMP ?? tmpdir(), 'pb-l-agent-op-')))
+    const root = join(dir, 'lib')
+    const home = join(dir, 'home')
+    const both = new Map<string, any>([[ledger.name as string, ledger], ['syncer', syncer]])
+    await initLibrary(root, { plugins: ['ledger', 'syncer'], table: both, actor: owner, session: session('init'), home })
+    const lib = (await openLibrary(root, both))!
+    const codex: Actor = { kind: 'agent', name: 'codex', grant: null }
+    await ownerFace.dispatch({ ctx: makeContext(lib, codex, session('s-codex'), home, next()), table: both, env: {}, viaGrant: true, confirm: async () => false }, 'syncer run', { positional: [], flags: {} })
+    const { lines } = await sinceLines(makeContext(lib, claude, session('s-claude'), home, next()))
+    expect(lines).toContain('  执行 syncer run：已对一遍')
+    expect(lines.some((l) => l.includes('主人面的操作 syncer run'))).toBe(false)
+  })
+})
+
 describe('new content made from the old', () => {
   it('records no basis on itself', async () => {
     const { as } = await library()
