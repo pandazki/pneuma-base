@@ -4,7 +4,7 @@
 
 ## 主人怎么开始
 
-要 Node 26 以上和 pnpm。还没发布到 npm，先在这个仓库里构建，再让 `pneuma-base` 指向构建出的命令：
+要 Node 22.18 以上和 pnpm。还没发布到 npm，先在这个仓库里构建，再让 `pneuma-base` 指向构建出的命令：
 
 ```sh
 pnpm install
