@@ -1,6 +1,7 @@
 // The ledger's reads of the disk: the facts, the files of the library, what an input names.
-import { readFile, stat } from 'node:fs/promises'
-import { abs, archivedPath, fingerprintOf, libraryFiles, parseLibraryPath, regionOf, thingAt, type Fingerprint, type LibraryPath, type PluginContext } from '@pneuma-base/kernel'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { abs, archivedPath, bundleFiles, fingerprintOf, libraryFiles, parseLibraryPath, regionOf, thingAt, type Fingerprint, type LibraryPath, type PluginContext } from '@pneuma-base/kernel'
 import { readFacts, type ItemId } from './facts.js'
 import { fold, type ItemRecord, type Ledger } from './fold.js'
 import { classify, type Files, type ItemState } from './reconcile.js'
@@ -20,17 +21,36 @@ export async function onDisk(root: string, path: LibraryPath): Promise<Disk | nu
   return thing ? { fingerprint: await fingerprintOf(file), size: thing.size, bundle: thing.kind === 'bundle' } : null
 }
 
-/** The file's text when it is UTF-8 and at most 1 MB; otherwise empty. */
-export async function textOf(root: string, path: LibraryPath): Promise<string> {
-  const file = abs(root, path)
-  const s = await stat(file).catch(() => null)
-  if (!s?.isFile() || s.size > TEXT_LIMIT) return ''
+async function decodeUtf8(file: string): Promise<string> {
   try {
     const text = new TextDecoder('utf-8', { fatal: true }).decode(await readFile(file))
     return text.includes('\u0000') ? '' : text
   } catch {
     return ''
   }
+}
+
+/**
+ * The thing's UTF-8 text, up to 1 MB: a single file's content, or for a bundle each inner relative
+ * path and the UTF-8 text of the inner files that fit within the remaining budget.
+ */
+export async function textOf(root: string, path: LibraryPath): Promise<string> {
+  const file = abs(root, path)
+  const thing = await thingAt(file)
+  if (!thing) return ''
+  if (thing.kind === 'file') return thing.size > TEXT_LIMIT ? '' : decodeUtf8(file)
+  let budget = TEXT_LIMIT
+  const parts: string[] = []
+  for (const inner of await bundleFiles(file)) {
+    parts.push(inner.path)
+    if (inner.size > budget) continue
+    const text = await decodeUtf8(join(file, inner.path))
+    if (text !== '') {
+      parts.push(text)
+      budget -= inner.size
+    }
+  }
+  return parts.join('\n')
 }
 
 /** The library's things outside the kernel's own, with sizes; fingerprints taken once each, on demand. */
