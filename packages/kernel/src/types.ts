@@ -236,6 +236,8 @@ export interface Plugin {
   onPut?(req: AcceptedPut, ctx: PluginContext): Promise<PluginNote | null>
   revise?(req: PlaceOverExisting, ctx: PluginContext): Promise<ReviseOutcome>
   onFind?(req: FindRequest, ctx: PluginContext): Promise<PluginFindAnswer>
+  /** What it knows about paths that others found and it did not: each hit is about one of `paths`. */
+  onFound?(paths: readonly LibraryPath[], req: FindRequest, ctx: PluginContext): Promise<PluginHit[]>
   onInspect?(req: InspectRequest, ctx: PluginContext): Promise<PluginSection[]>
   onSay?(req: SayRequest, ctx: PluginContext): Promise<SayAnswer>
   onCheck?(req: CheckRequest, ctx: PluginContext): Promise<PluginSection[]>

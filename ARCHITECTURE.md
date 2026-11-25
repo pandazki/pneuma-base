@@ -182,6 +182,8 @@ type PluginProblem = { plugin: PluginName; message: string }
 
 几个答复者的结果合成一张表：同一个路径的结果排在一起，位置是任何一个答复者给它的最好名次（在自己那张表里的序号）；名次相同时内核在先，插件按配置次序。路径相同的，内核的那条不单列，它的标记（目录、已归档）放在第一个插件那条的细节前面；几个插件命中同一路径各给一条，因为各说各插件知道的。所以记账插件排在查找插件前面时，查找插件按相关度排在前面的文件也排得靠前，不被压在记账插件的位置上。
 
+内核和各插件的 `onFind` 都答完后，内核按配置次序问每个有 `onFound` 的插件：找到的路径里它自己没给命中的那些，它知道什么。没有路径的命中不算；一个路径都不剩就不问。它答的每条命中并进那个路径的那一项，不改名次。一项里的命中按内核在先、插件按配置次序排，不论插件是找到了这个路径还是补了一条，所以只被查找插件找到的条目也带着记账插件给的场景和来历，和两个插件都匹配时一个样子。补的一条就是一条 `Hit`，没有标记说它是补的（K3）。`onFound` 抛错的插件列进 `problems`，命中照给；答了没问它的路径的那条（含没有路径的）不要，也列进 `problems`（K8）。
+
 `group` 是答复者给一条结果定的标题：`group` 相同的结果在文字答复里合在这个标题下，出现在其中排得最前的那条的位置，每条一行；没有路径的那条说的是这个标题本身，排在标题下第一行。内核按名字列出的结果 `group` 为 `null`。
 
 `problems` 是失败语义的落点：某个插件出错时，动词照样给出答复，同时如实说明哪个插件没做成。「已放入，但没有记下」是和「已放入并记下」不同的结果，命令行以非零退出码区分。
@@ -223,6 +225,7 @@ interface Plugin {
   onPut?(req: AcceptedPut, ctx: Context): Promise<Note | null>
   revise?(req: PlaceOverExisting, ctx: Context): Promise<ReviseOutcome>   // 可撤回的改
   onFind?(req: FindRequest, ctx: Context): Promise<Hit[]>
+  onFound?(paths: LibraryPath[], req: FindRequest, ctx: Context): Promise<Hit[]>   // 别人找到、它没给命中的路径，它知道什么
   onInspect?(req: InspectRequest, ctx: Context): Promise<Section[]>
   onSay?(req: SayRequest, ctx: Context): Promise<SayResult>
   onCheck?(req: CheckRequest, ctx: Context): Promise<Section[]>
@@ -395,6 +398,7 @@ $PNEUMA_BASE_HOME/
 | `onPut` | 记入册；内容变了的记改。带标记的目录入册时，事实带 `bundle: true`。放入带的 `note` 记在这次写的 `item.enter` 或 `item.revise` 上，所以 `check` 里一次放入是一行，`inspect` 把它写在那份内容的那一行后面；内容和记录一致、这次不写事实时，记成关于这样东西的一条备注 |
 | `revise` | 把旧内容复制进留存，目录条目整棵复制；新的由内核放上去，`onPut` 收到的 `previous` 是被换下的指纹，记改 |
 | `onFind` | 按场景、来历、记录里的文字（含放入带的说明）和文本内容找。目录条目算它里面每个文件的相对文件名，和它的文本文件：从小的读起，读过的不论是不是文本都算数，读满 1 MB 为止，所以图片多的网站不会让一次查找读个没完 |
+| `onFound` | 别的插件找到的路径是没除掉的条目时，给它所在场景的那一行和来历，和 `onFind` 给条目的那条一样；没人登记过的文件不给。不读正文 |
 | `onInspect` | 一样东西的来历、现状、它来自什么、什么来自它；一个场景的卡 |
 | `onSay` | 听得懂：在做什么、决定、备注、来自、改了 |
 | `onArchive` | 记下归档和取回；已归档的条目不出现在可能过期等清单里 |

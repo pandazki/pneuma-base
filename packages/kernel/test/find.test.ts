@@ -96,6 +96,78 @@ describe('find with plugins that read content', () => {
   })
 })
 
+describe('find with plugins that know about paths others found', () => {
+  const hit = (path: string | null, detail: string): PluginHit => ({ path: path as LibraryPath | null, title: path ?? '场景', group: null, detail })
+  const finder = (found: () => string[]) => plugin('finder', { onFind: async () => found().map((p) => hit(p, `正文：${p}`)) })
+
+  it('joins what a plugin knows to the entry of its path, in configuration order, at the rank the finders gave', async () => {
+    const annotator = plugin('annotator', { onFound: async (paths) => [...paths].reverse().map((p) => hit(p, `来历：${p}`)) })
+    const f = await fixture([annotator, finder(() => ['b.md', 'a.md'])])
+    const r = await agentFace.find(request('q', 'terms'), f.ctx)
+    expect(r.hits.map((h) => [h.path, h.by, h.detail])).toEqual([
+      ['b.md', 'annotator', '来历：b.md'],
+      ['b.md', 'finder', '正文：b.md'],
+      ['a.md', 'annotator', '来历：a.md'],
+      ['a.md', 'finder', '正文：a.md'],
+    ])
+    expect(r.problems).toEqual([])
+  })
+
+  it('keeps the kernel’s mark in front of the first plugin hit when that hit is what a plugin knows', async () => {
+    const annotator = plugin('annotator', { onFound: async (paths) => paths.map((p) => hit(p, '做出来的')) })
+    const f = await fixture([annotator, finder(() => ['sites/zebra'])])
+    f.write('sites/zebra/index.html', 'zebra')
+    f.write(`sites/zebra/${BUNDLE_MARKER}`, '{"format":1}\n')
+    expect((await agentFace.find(request('zebra', 'terms'), f.ctx)).hits.map((h) => [h.path, h.by, h.detail])).toEqual([
+      ['sites/zebra', 'annotator', '目录，做出来的'],
+      ['sites/zebra', 'finder', '正文：sites/zebra'],
+    ])
+  })
+
+  it('asks a plugin only about the found paths it gave no hit for, and not at all when none is left', async () => {
+    const asked: string[][] = []
+    const both = plugin('both', {
+      onFind: async () => [hit('a.md', '正文：a.md'), hit(null, '一个场景')],
+      onFound: async (paths) => {
+        asked.push([...paths].sort())
+        return []
+      },
+    })
+    let found = ['a.md', 'b.md']
+    const f = await fixture([both, finder(() => found)])
+    f.write('q-by-name.md', 'x')
+    await agentFace.find(request('q', 'terms'), f.ctx)
+    expect(asked).toEqual([['b.md', 'q-by-name.md']])
+
+    found = ['a.md']
+    await agentFace.find(request('nothing-by-name', 'terms'), f.ctx)
+    expect(asked).toHaveLength(1)
+  })
+
+  it('lists a plugin whose onFound throws as a problem, and the hits stand', async () => {
+    const thrower = plugin('thrower', {
+      onFound: async () => {
+        throw new Error('记录读不了')
+      },
+    })
+    const f = await fixture([thrower, finder(() => ['a.md'])])
+    const r = await agentFace.find(request('q', 'terms'), f.ctx)
+    expect(r.hits.map((h) => [h.path, h.by])).toEqual([['a.md', 'finder']])
+    expect(r.problems).toEqual([{ plugin: 'thrower', message: '记录读不了' }])
+  })
+
+  it('leaves out a hit on a path the plugin was not asked about, a hit without a path too, and lists each as its problem', async () => {
+    const stray = plugin('stray', { onFound: async () => [hit('a.md', '来历：a.md'), hit('elsewhere.md', '来历'), hit(null, '场景')] })
+    const f = await fixture([stray, finder(() => ['a.md'])])
+    const r = await agentFace.find(request('q', 'terms'), f.ctx)
+    expect(r.hits.map((h) => [h.path, h.by])).toEqual([
+      ['a.md', 'stray'],
+      ['a.md', 'finder'],
+    ])
+    expect(r.problems.map((p) => p.plugin)).toEqual(['stray', 'stray'])
+  })
+})
+
 describe('find with filters', () => {
   it('lists no file by name, since the kernel cannot apply a plugin filter', async () => {
     const f = await fixture()
