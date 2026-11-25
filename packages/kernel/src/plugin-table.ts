@@ -4,8 +4,7 @@ import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { exists, regularFile } from './files.js'
-import { PLUGIN_NAME } from './library.js'
-import type { Plugin, PluginTable } from '@pneuma-base/sdk'
+import { PLUGIN_NAME, type Plugin, type PluginTable } from '@pneuma-base/sdk'
 
 /**
  * The built-in plugins, then each plugin in `<home>/plugins/` whose `index.js` loads and default-exports

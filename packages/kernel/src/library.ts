@@ -4,20 +4,12 @@ import { join } from 'node:path'
 import { assembleDescription } from './cognition.js'
 import { writeAtomic } from './files.js'
 import { DESCRIPTION_FILE, KERNEL_DIR, pluginDir, scratchDir } from './paths.js'
-import type { Grant, GrantId, LibraryConfig, Library, LibraryPath, Plugin, PluginName, PluginTable } from '@pneuma-base/sdk'
+import { PLUGIN_NAME, type Grant, type GrantId, type LibraryConfig, type Library, type LibraryPath, type Plugin, type PluginName, type PluginTable } from '@pneuma-base/sdk'
 
 export const CONFIG_FILE = join(KERNEL_DIR, 'config.json')
 
-/** A plugin's name is also the name of its directory under `.pneuma-base/`. */
-export const PLUGIN_NAME = /^[a-z][a-z0-9-]{0,40}$/
-
 /** A library id is one segment of a path under the cache directory, so it stays plain. */
 const LIBRARY_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
-
-export function pluginName(name: string): PluginName {
-  if (!PLUGIN_NAME.test(name)) throw new Error(`not a plugin name (lowercase letters, digits, hyphens): ${name}`)
-  return name as PluginName
-}
 
 export function newConfig(plugins: PluginName[]): LibraryConfig {
   return { format: 1, id: randomUUID(), plugins, grants: [] }

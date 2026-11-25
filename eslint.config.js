@@ -1,6 +1,26 @@
 import js from '@eslint/js'
 import tseslint from 'typescript-eslint'
 
+// The sdk is the plugin contract alone: a plugin outside the repository depends on it, so it imports
+// nothing of the kernel, the command line, the viewer or any plugin.
+const sdkBoundary = {
+  files: ['packages/sdk/**/*.ts'],
+  rules: {
+    'no-restricted-imports': ['error', {
+      patterns: [
+        {
+          regex: '^@pneuma-base/(kernel|cli|viewer|plugin-[^/]+)(/.*)?$',
+          message: 'The sdk is the plugin contract alone: it imports nothing of the kernel, the command line, the viewer or a plugin. The kernel gives plugins its helpers through PluginContext.tools.',
+        },
+        {
+          regex: '^(\\.\\./)+(kernel|cli|viewer|plugin-[^/]+)(/|$)',
+          message: 'The sdk is the plugin contract alone: it imports nothing of the kernel, the command line, the viewer or a plugin. The kernel gives plugins its helpers through PluginContext.tools.',
+        },
+      ],
+    }],
+  },
+}
+
 // K4: the kernel depends on no plugin, not on the command line and not on the viewer; a plugin
 // reaches the kernel only through `@pneuma-base/kernel` and never another plugin, the command line
 // or the viewer. The viewer is a client of the kernel that knows no plugin: it gets the plugin
@@ -86,6 +106,7 @@ export default tseslint.config(
     files: ['packages/*/test/**/*.ts'],
     rules: { '@typescript-eslint/no-explicit-any': 'off' },
   },
+  sdkBoundary,
   kernelBoundary,
   pluginBoundary,
   viewerBoundary,
