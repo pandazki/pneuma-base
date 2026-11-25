@@ -31,6 +31,13 @@ describe('the package files', () => {
     expect(manifest.engines).toEqual(JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8')).engines)
   })
 
+  it('carry the plugin standard in the command line’s package, and plugin new names it', () => {
+    const standard = join(project, 'node_modules/pneuma-base/PLUGINS.md')
+    expect(readFileSync(standard, 'utf8')).toBe(readFileSync(join(REPO, 'PLUGINS.md'), 'utf8'))
+    const made = JSON.parse(run('npx', ['--no', '--', 'pneuma-base', 'plugin', 'new', 'demo', '--packages', out, '--json']))
+    expect(made.standard).toBe(standard)
+  })
+
   it('give npx pneuma-base, which makes a library, puts into it and serves its UI', async () => {
     expect(run('npx', ['--no', '--', 'pneuma-base', 'init', 'lib'])).toContain('建成库')
     expect(run('npx', ['--no', '--', 'pneuma-base', '--library', 'lib', 'put', '-', '--to', 'notes/a.md', '--made'], '# 一页\n')).toContain('已放入 notes/a.md')
