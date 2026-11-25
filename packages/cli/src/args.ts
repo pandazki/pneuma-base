@@ -19,6 +19,7 @@ const FLAGS: Record<string, 'boolean' | 'value' | 'list'> = {
   agent: 'value',
   area: 'value',
   'read-only': 'boolean',
+  anyway: 'boolean',
   dir: 'value',
   port: 'value',
   'no-open': 'boolean',

@@ -5,7 +5,7 @@ import { join, posix } from 'node:path'
 import { fileFacts } from './agent.js'
 import { checkBlocks, checkRefresh } from './blocks.js'
 import { exists } from './files.js'
-import { bundleFiles, enclosingBundle, kindAt, listThings, thingAt, type Thing } from './things.js'
+import { bundleFiles, enclosingBundle, kindAt, listThings, thingAt } from './things.js'
 import { codexHint } from './owner-commands.js'
 import { ARCHIVE_DIR, DESCRIPTION_FILE, KERNEL_DIR, abs, archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
 import { messageOf, pluginContext } from './pipeline.js'
@@ -23,12 +23,13 @@ import type {
   PluginTable,
   TableRow,
   Tag,
+  Thing,
   ViewAnswer,
   ViewDecl,
   ViewList,
   ViewRequest,
   ViewResult,
-} from './types.js'
+} from '@pneuma-base/sdk'
 
 /** What showing a view needs besides the request: the operation's context and the plugins this pneuma-base knows. */
 export type ViewerCall = { ctx: Context; table: PluginTable }
@@ -421,7 +422,7 @@ export const viewerFace = {
   views(library: Library): ViewList {
     const missing: PluginProblem[] = library.unavailable.map((plugin) => ({ plugin, message: 'installed in this library but not known to this pneuma-base' }))
     const own = pluginViews(library)
-    return { views: [...own.views.map((v) => v.decl), ...KERNEL_VIEWS], problems: [...missing, ...own.problems] }
+    return { views: [...own.views.map((v) => v.decl), ...KERNEL_VIEWS], problems: [...missing, ...library.clashes, ...own.problems] }
   },
 
   /** One view. Showing changes nothing and sends no event. */

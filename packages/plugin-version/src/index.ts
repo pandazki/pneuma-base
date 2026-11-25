@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import {
   abs,
   archivedPath,
+  CONTRACT,
   pluginName,
   regionOf,
   thingAt,
@@ -91,6 +92,7 @@ function purged(event: Event): LibraryPath[] {
 
 /** 版本：things declared versioned keep every version's content. */
 export const version: Plugin = {
+  contract: CONTRACT,
   name: pluginName('version'),
   cognition: { title: '版本', text: readFileSync(new URL('../cognition/version-section.md', import.meta.url), 'utf8') },
   keeps: 'some',

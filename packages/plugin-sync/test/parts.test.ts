@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import {
   initLibrary,
   makeContext,
+  pluginContext,
   openLibrary,
   ownerFace,
   pluginName,
@@ -22,7 +23,7 @@ import { scopeOf } from '../src/scope.js'
 import { tempDir } from './support.js'
 
 describe('scope', () => {
-  const withCache: Plugin = { name: pluginName('search'), cognition: null, storage: [{ dir: 'index', kind: 'cache' }, { dir: 'facts', kind: 'body' }], statements: [], ownerCommands: [] }
+  const withCache: Plugin = { contract: 1, name: pluginName('search'), cognition: null, storage: [{ dir: 'index', kind: 'cache' }, { dir: 'facts', kind: 'body' }], statements: [], ownerCommands: [] }
   const inScope = scopeOf([sync, withCache])
 
   it('takes content, the archive, records and bundle markers', () => {
@@ -72,7 +73,7 @@ async function fixture() {
   const library = await openLibrary(root, table)
   if (!library) throw new Error('no library')
   const ctx = makeContext(library, { kind: 'owner' }, session, home)
-  const pctx: PluginContext = { ...ctx, dir: join(root, '.pneuma-base', 'sync'), cacheDir: join(home, 'cache', library.config.id, 'sync') }
+  const pctx: PluginContext = pluginContext(ctx, sync.name)
   const owner = async (name: string, flags: Record<string, string[]> = {}) => {
     const r = await ownerFace.dispatch({ ctx, table, env: {}, viaGrant: false, confirm: async () => false }, name, { positional: [], flags })
     if (r.outcome !== 'done') throw new Error(r.text)

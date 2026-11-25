@@ -4,8 +4,8 @@ import { createHash } from 'node:crypto'
 import { copyFile, mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fingerprintOfFile } from './files.js'
-import { abs } from './paths.js'
-import type { Fingerprint, Instant, LibraryPath, ThingKind } from './types.js'
+import { abs, DESCRIPTION_FILE, KERNEL_DIR } from './paths.js'
+import type { BundleFile, Fingerprint, Instant, LibraryPath, ManifestEntry, Thing, ThingKind } from '@pneuma-base/sdk'
 
 /** The file that makes a directory one thing. */
 export const BUNDLE_MARKER = '.pneuma-item'
@@ -22,9 +22,6 @@ export async function kindAt(path: string): Promise<ThingKind | 'folder' | 'othe
   if (!s.isDirectory()) return 'other'
   return (await stat(join(path, BUNDLE_MARKER)).catch(() => null))?.isFile() ? 'bundle' : 'folder'
 }
-
-/** A thing's facts that need no hashing. A file counts as one file. */
-export type Thing = { kind: ThingKind; size: number; files: number; modifiedAt: Instant }
 
 /** The thing at `path`; null when there is no regular file and no bundle there. */
 export async function thingAt(path: string): Promise<Thing | null> {
@@ -43,9 +40,6 @@ export async function thingAt(path: string): Promise<Thing | null> {
     modifiedAt: (latest || (await stat(path)).mtime.toISOString()) as Instant,
   }
 }
-
-/** A file a bundle counts: its path relative to the bundle, '/'-separated. */
-export type BundleFile = { path: string; size: number; modifiedAt: Instant }
 
 const byBytes = (a: { path: string }, b: { path: string }) => Buffer.compare(Buffer.from(a.path), Buffer.from(b.path))
 
@@ -66,8 +60,6 @@ export async function bundleFiles(dir: string): Promise<BundleFile[]> {
   await walk('')
   return out.sort(byBytes)
 }
-
-export type ManifestEntry = { path: string; fingerprint: Fingerprint; size: number }
 
 /** Each counted file of a bundle with the sha256 of its content, in fingerprint order. */
 export async function bundleManifest(dir: string): Promise<ManifestEntry[]> {
@@ -96,16 +88,21 @@ export async function markBundle(dir: string): Promise<void> {
   await writeFile(join(dir, BUNDLE_MARKER), MARKER_TEXT)
 }
 
-/**
- * Copies the counted files of the directory `from` into `to`, which must not exist, and writes the
- * marker there. Callers copy to a temporary name and rename it into place.
- */
-export async function copyBundle(from: string, to: string): Promise<void> {
+/** Copies the counted files of the directory `from` into `to`, which must not exist, without the marker. */
+export async function copyCounted(from: string, to: string): Promise<void> {
   await mkdir(to, { recursive: false })
   for (const f of await bundleFiles(from)) {
     await mkdir(dirname(join(to, f.path)), { recursive: true })
     await copyFile(join(from, f.path), join(to, f.path))
   }
+}
+
+/**
+ * Copies the counted files of the directory `from` into `to`, which must not exist, and writes the
+ * marker there. Callers copy to a temporary name and rename it into place.
+ */
+export async function copyBundle(from: string, to: string): Promise<void> {
+  await copyCounted(from, to)
   await markBundle(to)
 }
 
@@ -127,6 +124,11 @@ export async function listThings(root: string, skip: ReadonlySet<string>): Promi
   }
   await walk('')
   return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+}
+
+/** Every thing of the library outside the kernel's own, in the content and the archive: its files outside bundles, and its bundles. */
+export async function libraryFiles(root: string): Promise<LibraryPath[]> {
+  return (await listThings(root, new Set([KERNEL_DIR, DESCRIPTION_FILE]))).map((thing) => thing.path as LibraryPath)
 }
 
 /** The bundle a library path lies strictly inside, or null. */

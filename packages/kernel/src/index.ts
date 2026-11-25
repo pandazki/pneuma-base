@@ -1,12 +1,13 @@
-export * from './types.js'
-export { agentFace, libraryFiles, rankHits, searchTerms, SENTENCE_HITS } from './agent.js'
+export * from '@pneuma-base/sdk'
+export { agentFace } from './agent.js'
+export { rankHits, searchTerms, SENTENCE_HITS } from './terms.js'
 export { ownerFace, initLibrary, type OwnerCall, type OwnerCommandInfo } from './owner.js'
 export { viewerFace, type ViewerCall } from './viewer.js'
-export { openLibrary, pluginName } from './library.js'
-export { makeContext } from './pipeline.js'
+export { openLibrary } from './library.js'
+export { makeContext, pluginContext } from './pipeline.js'
 export { identifySession, identifyActor, looksLikeAgentSession, type Env } from './session.js'
 export { resolveGrant, GRANT_NAME, type ResolvedGrant } from './grants.js'
-export { abs, archivedPath, originalPath, parseLibraryPath, regionOf, shortDir, withSuffix, type Region } from './paths.js'
+export { abs, archivedPath, originalPath, parseLibraryPath, regionOf, shortDir, withSuffix } from './paths.js'
 export { fingerprintOfFile } from './files.js'
 export {
   BUNDLE_MARKER,
@@ -16,10 +17,8 @@ export {
   enclosingBundle,
   fingerprintOf,
   fingerprintOfManifest,
+  libraryFiles,
   listThings,
   thingAt,
-  type BundleFile,
-  type ManifestEntry,
-  type Thing,
 } from './things.js'
 export { loadPlugins, whyNotLoaded } from './plugin-table.js'

@@ -1,6 +1,7 @@
 {
   "files": [],
   "references": [
+    { "path": "packages/sdk" },
     { "path": "packages/kernel" },
     { "path": "packages/kernel/test" },
     { "path": "packages/plugin-ledger" },

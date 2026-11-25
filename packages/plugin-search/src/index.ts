@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { pluginName, type Plugin } from '@pneuma-base/kernel'
+import { CONTRACT, pluginName, type Plugin } from '@pneuma-base/kernel'
 import { searchCommands } from './commands.js'
 import { findHits } from './search.js'
 import { itemSection, STATUS_VIEW, statusView } from './views.js'
@@ -10,6 +10,7 @@ import { itemSection, STATUS_VIEW, statusView } from './views.js'
  * record in the library is the owner's choice of embedder.
  */
 export const search: Plugin = {
+  contract: CONTRACT,
   name: pluginName('search'),
   cognition: { title: '查找', text: readFileSync(new URL('../cognition/search-section.md', import.meta.url), 'utf8') },
   storage: [{ dir: 'embedder', kind: 'body' }],

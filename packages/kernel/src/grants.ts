@@ -2,7 +2,7 @@ import { readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { writeAtomic } from './files.js'
 import { openLibrary } from './library.js'
-import type { Grant, GrantId, Library, PluginTable } from './types.js'
+import type { Grant, GrantId, Library, PluginTable } from '@pneuma-base/sdk'
 
 /** A grant's name is also a file name and part of a skill name, so it stays short and plain. */
 export const GRANT_NAME = /^[a-z0-9][a-z0-9-]{0,40}$/

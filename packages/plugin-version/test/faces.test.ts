@@ -6,6 +6,7 @@ import {
   agentFace,
   initLibrary,
   makeContext,
+  pluginContext,
   openLibrary,
   ownerFace,
   type Actor,
@@ -36,7 +37,7 @@ async function library() {
   const lib = await openLibrary(root, table)
   if (!lib) throw new Error('no library')
   const as = (actor: Actor = claude): Context => makeContext(lib, actor, session('s1'), home, next())
-  const plugin = (): PluginContext => ({ ...as(owner), dir: join(root, '.pneuma-base', 'version'), cacheDir: join(home, 'cache', lib.config.id, 'version') })
+  const plugin = (): PluginContext => pluginContext(as(owner), version.name)
   const call = (): OwnerCall => ({ ctx: as(owner), table, env: {}, viaGrant: false, confirm: async () => true })
   const owned = (name: string, positional: string[], flags: Record<string, string[]> = {}) => ownerFace.dispatch(call(), name, { positional, flags })
   const put = (content: string, to: string) =>

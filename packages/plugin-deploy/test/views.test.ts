@@ -7,6 +7,7 @@ import {
   agentFace,
   initLibrary,
   makeContext,
+  pluginContext,
   openLibrary,
   ownerFace,
   type Action,
@@ -49,7 +50,7 @@ beforeAll(async () => {
   expect(await ownerFace.dispatch(call, 'deploy target set', { positional: [], flags: { kind: ['dir'], to: [join(dir, 'www')] } })).toMatchObject({ outcome: 'done' })
   expect(await ownerFace.dispatch(call, 'deploy on', { positional: ['sites/s1'], flags: {} })).toMatchObject({ outcome: 'done' })
   await agentFace.archive({ kind: 'archive', path: 'sites/s2' }, as(claude))
-  pctx = { ...as(owner), dir: join(root, '.pneuma-base', 'deploy'), cacheDir: join(home, 'cache', lib.config.id, 'deploy') }
+  pctx = pluginContext(as(owner), deploy.name)
 })
 
 const sections = (blocks: Block[]) => blocks.filter((b): b is Extract<Block, { kind: 'section' }> => b.kind === 'section')

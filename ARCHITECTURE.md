@@ -42,16 +42,19 @@
 
 ```
 packages/cli ──▶ packages/viewer ──▶ packages/kernel ◀── packages/plugin-ledger
-      │                                   ▲          ◀── packages/plugin-version
-      ├───────────────────────────────────┘          ◀── packages/plugin-sync
-      │                                              ◀── packages/plugin-deploy
-      │                                              ◀── packages/plugin-search
+      │                                   ▲  │       ◀── packages/plugin-version
+      ├───────────────────────────────────┘  │       ◀── packages/plugin-sync
+      │                                      ▼       ◀── packages/plugin-deploy
+      │                               packages/sdk   ◀── packages/plugin-search
+      │                                      ▲
+      │                                      └────── 库外的插件（只依赖 sdk）
       └──────── 内置插件表：五个插件包 ────────────────────────────┘
 ```
 
 | 包 | 职责 | 不许 |
 | --- | --- | --- |
-| `packages/kernel` | 打开库、解析配置、识别行动者和会话、六个动词的管线、授权的门、事件、认知的拼装、技能的生成 | 依赖任何插件；认识任何插件的事实或目录 |
+| `packages/sdk` | 插件契约（`@pneuma-base/sdk`）：全部类型、契约版本 `CONTRACT`、`definePlugin`，和插件自己造带品牌的值用的 `pluginName`、`instant`、`PLUGIN_NAME`。库外的插件只依赖它 | 导入内核、命令行、界面或任何插件；含内核的逻辑（内核的工具经上下文的 `tools` 给） |
+| `packages/kernel` | 打开库、解析配置、识别行动者和会话、六个动词的管线、授权的门、事件、认知的拼装、技能的生成、装载库外的插件。依赖 sdk，并把它原样再导出 | 依赖 sdk 以外的任何包；认识任何插件的事实或目录 |
 | `packages/plugin-ledger` | 记账与对账：事实、场景、条目、对账、来历、过期、变化，留存（第 10 节） | 读写别的插件的目录；绕过内核的公开接口；导入别的插件 |
 | `packages/plugin-version` | 版本：声明了有版本的东西，每一版都留着（第 11 节） | 同上 |
 | `packages/plugin-sync` | 同步：库和一个目标双向同步，不合并、不丢内容（第 12 节） | 同上 |
@@ -60,7 +63,7 @@ packages/cli ──▶ packages/viewer ──▶ packages/kernel ◀── packa
 | `packages/viewer` | 管理界面。`src/server/` 是只听本机的 HTTP 服务，用内核的三个面；`web/` 是网页，只渲染块。插件表由调用方传进 `startServer` | 导入任何插件包或命令行；网页导入内核的代码（只取类型） |
 | `packages/cli` | 命令 `pneuma-base`：把命令行翻译成对内核的调用，把结果打印出来；内置插件表（记账、版本、同步、部署、查找，`init` 缺省只装记账）；`view` 把内置插件表交给界面的服务 | 含领域逻辑 |
 
-插件只经 `packages/kernel` 导出的类型和上下文对象接触内核。插件之间不直接调用，也不互相导入。内核不导入界面，界面不导入任何插件；lint 的导入规则守这几条，`packages/kernel/test/dependency-direction.test.ts` 在故意违反的例子上看它们变红。
+插件只经契约的类型和上下文对象接触内核：自带的插件从 `packages/kernel` 导入（它再导出 sdk），库外的插件只依赖 `packages/sdk`，运行时不导入内核，要用内核的工具就用上下文的 `tools`。插件之间不直接调用，也不互相导入。内核不导入界面，界面不导入任何插件，sdk 不导入内核、命令行、界面和任何插件；lint 的导入规则守这几条，`packages/kernel/test/dependency-direction.test.ts` 在故意违反的例子上看它们变红。
 
 运行时是 Node，语言是 TypeScript，包管理用 pnpm 的工作区，测试用 vitest。
 
@@ -216,42 +219,76 @@ type PluginProblem = { plugin: PluginName; message: string }
 
 ```ts
 interface Plugin {
+  readonly contract: number                     // 按哪一版插件契约写的：sdk 的 CONTRACT（现在是 1）
   readonly name: PluginName
+  readonly version?: string                     // 它自己的版本，给人看
+  readonly summary?: string                     // 一句中文，说它带来什么，给人看
   readonly cognition: CognitionSection | null   // 拼进说明和技能的那一段
   readonly keeps?: 'every' | 'some'             // 有 revise 时：换下的内容都留住，还是只留一部分（缺省）
   readonly storage: StorageDecl[]               // 它名下的目录，各是本体还是缓存
   readonly statements: string[]                 // 「说」里它听得懂的种类
 
-  onPut?(req: AcceptedPut, ctx: Context): Promise<Note | null>
-  revise?(req: PlaceOverExisting, ctx: Context): Promise<ReviseOutcome>   // 可撤回的改
-  onFind?(req: FindRequest, ctx: Context): Promise<Hit[]>
-  onFound?(paths: LibraryPath[], req: FindRequest, ctx: Context): Promise<Hit[]>   // 别人找到、它没给命中的路径，它知道什么
-  onInspect?(req: InspectRequest, ctx: Context): Promise<Section[]>
-  onSay?(req: SayRequest, ctx: Context): Promise<SayResult>
-  onCheck?(req: CheckRequest, ctx: Context): Promise<Section[]>
-  onArchive?(req: AcceptedArchive, ctx: Context): Promise<Note | null>
+  // 钩子都是函数类型的属性，不是方法，所以参数按契约严格检查
+  readonly onPut?: (req: AcceptedPut, ctx: PluginContext) => Promise<PluginNoteAnswer | null>
+  readonly revise?: (req: PlaceOverExisting, ctx: PluginContext) => Promise<ReviseOutcome>   // 可撤回的改
+  readonly onFind?: (req: FindRequest, ctx: PluginContext) => Promise<PluginFindAnswer>
+  readonly onFound?: (paths: LibraryPath[], req: FindRequest, ctx: PluginContext) => Promise<PluginHit[]>   // 别人找到、它没给命中的路径，它知道什么
+  readonly onInspect?: (req: InspectRequest, ctx: PluginContext) => Promise<PluginSection[]>
+  readonly onSay?: (req: SayRequest, ctx: PluginContext) => Promise<SayAnswer>
+  readonly onCheck?: (req: CheckRequest, ctx: PluginContext) => Promise<PluginSection[]>
+  readonly onArchive?: (req: AcceptedArchive, ctx: PluginContext) => Promise<PluginNoteAnswer | null>
 
-  observe?(event: Event, ctx: Context): Promise<void>   // 两个面的每次操作之后
-  readonly ownerCommands: OwnerCommand[]                // 它给主人面加的命令
+  readonly observe?: (event: Event, ctx: PluginContext) => Promise<void>   // 两个面的每次操作之后
+  readonly onPurged?: (paths: LibraryPath[], ctx: PluginContext) => Promise<void>   // archive purge 删了东西之后，路径是它们在归档区时的
+  readonly onAdd?: (ctx: PluginContext) => Promise<void | { problems: string[] }>   // plugin add 装上它之后，一次
+  readonly onRemove?: (ctx: PluginContext) => Promise<void | { refuse: string }>    // plugin remove 卸下它之前
+  readonly ownerCommands: OwnerCommand[]                // 它给主人面加的命令，名字以 `<插件名> ` 开头
 
   readonly views?: ViewDecl[]                           // 它给管理界面加的视图，编号以 `<插件名>.` 开头
-  onView?(req: ViewRequest, ctx: Context): Promise<ViewAnswer>
-  onItemView?(path: LibraryPath, ctx: Context): Promise<ItemSection | null>   // 「看」在界面上的对应物
+  readonly onView?: (req: ViewRequest, ctx: PluginContext) => Promise<ViewAnswer>
+  readonly onItemView?: (path: LibraryPath, ctx: PluginContext) => Promise<ItemSection | null>   // 「看」在界面上的对应物
   readonly ui?: string                                  // 它自己画的页所在的目录，绝对路径（第 6 节）
 }
+
+type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems: string[] }   // onFind 的 { hits, problems } 同理
 ```
 
-一个只有名字、其余全空的对象是合法的插件。
+一个只有契约版本、名字、其余全空的对象是合法的插件。sdk 的 `definePlugin(plugin)` 原样交回它，只为让钩子在写的地方就按契约检查。
 
 视图槽（第 6 节「只读的一面」）：插件声明它的视图，每个视图返回带类型的块，界面只渲染块，不知道块来自哪个插件。编号不以插件名加点开头的视图不列出，记成问题。`onView` 或 `onItemView` 抛错、或答复的不是一个视图或一节，内核在那一页或那一节里给出说明出错的块，并把问题列进结果（K8）；答复里的每一块也由内核核对（第 6 节）。视图不是操作：插件在这两个钩子里不写东西，内核也不为它们发事件。
 
-实现里的细化：钩子收到的上下文另带 `dir`，即这个插件名下的目录，和 `cacheDir`，即这个插件在库外的缓存目录（见下面「库外的插件与缓存」）；钩子的答复不写插件名，由内核盖上（`PluginNote`、`PluginSection`、`PluginHit`）；`onSay` 答复 `SayAnswer`，处理它的插件出错时结果是 `not-heard`、`plugin-failed`。主人面命令 `OwnerCommand` 带 `destructive` 和 `ownerOnly` 两个标志，由内核在同一处拦（第 6 节）；可选的 `usage` 是它的参数怎么写，给帮助看；可选的 `readOnly` 说它什么都不改（列清单、看状态），它的事件带着这个标志，记账插件不把它当成给 agent 的消息；可选的 `setup` 说它只改插件、目标或嵌入器这类配置而不动条目，agent 第一次来时说明里已经是最新配置，只在它来过之后再改才算消息。`keeps` 定说明里同名时的那句话（第 7 节）：记账插件是 `every`，版本插件是 `some`。插件名同时是目录名，用 `pluginName()` 解析。主人面的事件带 `destructive`、`readOnly` 和 `setup`，插件不用自己认哪些命令会丢数据、哪些什么都不改、哪些只是前期配置；`archive purge` 的答复在 `data.paths` 里列出被删的库内路径，记账插件据此记「已除」。
+实现里的细化：钩子收到的上下文另带 `dir`，即这个插件名下的目录，钩子运行时它一定在（打开库时内核把每个能运行的已装插件的目录建好，同步过来、这台机器后来才有这个插件的库也一样）；`cacheDir`，即这个插件在库外的缓存目录（见下面「库外的插件与缓存」）；`tools`，内核的工具（见下面「上下文里的工具」）。钩子的答复不写插件名，由内核盖上（`PluginNote`、`PluginSection`、`PluginHit`）；`onPut`、`onArchive` 的答复和 `onSay` 听到时的答复可以在说明旁边带 `problems`，即它自己那份做成了、库外的一步没做成：内核把它们列成这个插件的问题，动词的结果照旧，抛错也照旧是问题。`onSay` 答复 `SayAnswer`，处理它的插件出错时结果是 `not-heard`、`plugin-failed`。主人面命令 `OwnerCommand` 带 `destructive` 和 `ownerOnly` 两个标志，由内核在同一处拦（第 6 节）；可选的 `usage` 是它的参数怎么写，给帮助看；可选的 `readOnly` 说它什么都不改（列清单、看状态），它的事件带着这个标志，记账插件不把它当成给 agent 的消息；可选的 `setup` 说它只改插件、目标或嵌入器这类配置而不动条目，agent 第一次来时说明里已经是最新配置，只在它来过之后再改才算消息。`keeps` 定说明里同名时的那句话（第 7 节）：记账插件是 `every`，版本插件是 `some`。插件名同时是目录名，用 `pluginName()` 解析。主人面的事件带 `destructive`、`readOnly` 和 `setup`，插件不用自己认哪些命令会丢数据、哪些什么都不改、哪些只是前期配置；`archive purge` 的答复在 `data.paths` 里列出被删的库内路径，记账插件据此记「已除」。
+
+生命周期钩子：
+
+- `onPurged`：`archive purge` 删了东西之后，内核按配置次序问每个已装插件，给出被删的库内路径（`_archive/…`）。什么都没删就不问。插件不用再认命令名；它抛错列进清空的答复的 `problems`。
+- `onAdd`：`plugin add` 装上它、说明重拼之后调一次，这时 `ctx.library` 里已经有它。它答的问题或抛的错列进 `plugin add` 的答复，装照样装上。已经装了的再 add 不调。
+- `onRemove`：`plugin remove` 卸下它之前调。它可以答 `{ refuse: 一句中文 }`，说为什么、先要做什么，`plugin remove` 就以 `plugin-refused` 拒绝，库不变。主人总能卸下一个插件：`plugin remove <名字> --anyway` 跳过这次拒绝，答复里复述它提醒过的那句话。它抛错不拦，列进答复的 `problems`。
+
+### 名字只归一个插件
+
+插件认领的名字是三样：「说」的种类、主人命令名、视图编号。`plugin add` 遇到一个名字已被已装的插件认领，就以 `name-taken` 拒绝，说出每个名字归谁、要换用它先卸下哪个。配置被手改或同步过来、已经有这样的撞名时，库照样打开：按配置次序，后面那个插件撞上的名字不接上，每个记成它的问题，在每个答复里列出，和坏掉的插件一样（K8）。实现在 `claims.ts`。
+
+### 上下文里的工具
+
+`PluginContext.tools` 是插件正当需要的内核工具，绑在这次操作的库上，没有一个要传库根。类型在 sdk，代码是正在跑的内核的，所以目录条目算哪些文件、指纹怎么算、找怎么切词排序，插件和内核永远一致，库外的插件不再抄一份。这套是从五个自带插件运行时从内核导入的东西归出来的最小一组：
+
+| 组 | 工具 | 覆盖原来的导入 |
+| --- | --- | --- |
+| 路径 | `resolve(输入)` → `{ path, region, bundle } \| null`；`regionOf`、`archivedPath`、`originalPath`、`abs` | `parseLibraryPath`、`regionOf`、`enclosingBundle`、`archivedPath`、`originalPath`、`abs` |
+| 东西 | `thing(路径)`（文件或目录条目，带大小和文件数）、`things()`、`files(目录条目)`、`copyOut(路径, 库外或自己名下的目录)` → 复制件的指纹 | `thingAt`、`libraryFiles`、`bundleFiles`、`copyBundle` |
+| 指纹 | `fingerprint(路径)`、`manifest(目录条目)`、`fingerprintOfManifest`、`fingerprintOfFile(绝对路径)` | `fingerprintOf`、`bundleManifest`、`fingerprintOfManifest`、`fingerprintOfFile` |
+| 找 | `searchTerms`、`rankHits`、`sentenceHits` | 同名的三样 |
+| 放 | `put(请求)`：经 agent 面放入，行动者和会话是这次操作的，所以每个插件都听到、它发自己的事件 | `agentFace.put` |
+
+`shortDir` 和 `withSuffix` 只是把字写给人看，不涉库的事实，不进 `tools`；`pluginName` 是 sdk 的构造。自带插件这一程照旧直接导入内核。
 
 ### 库外的插件与缓存
 
 - 插件表 = 命令行自带的插件 + 本机的 `$PNEUMA_BASE_HOME/plugins/<名字>/index.js`。`index.js` 是 ESM，缺省导出一个 `Plugin`，名字和目录名相同；它是普通的 JS 文件，运行时不必导入内核。自带插件的名字不会被本机的插件占用。加载在内核导出的 `loadPlugins(home, 自带的表)` 里，命令行每次调用用它建表，别的入口用同一个函数。
+- 装载时核对不必调钩子就能核对的一切：`contract` 写了、是这个内核跑的版本（现在只有 1）；名字是目录名；`version`、`summary` 是文字，`keeps` 是 `every` 或 `some`；`cognition` 是 `null` 或 `{ title, text }`；`storage`、`statements`、`ownerCommands` 是列表，`views` 没有或是列表，每一项的形状对；同一个种类、命令名、视图编号不写两次；命令名以 `<名字> ` 开头且不是内核自己的命令；视图编号以 `<名字>.` 开头；给出的每个钩子是函数。内核自己不听任何「说」的种类，所以种类只会和别的插件撞，那由 `plugin add` 管。留到调用时的：钩子和命令的 `run` 答什么、抛不抛错（K8），插件往哪里写。自带插件不过这道检查。
 - 库的配置里只写名字。`plugin add <名字>` 从自带的和本机的里找。
-- 本机的插件加载失败（导入时抛错、缺 `index.js`、缺省导出不是插件），它不进插件表。装了它的库照「装了但这台机器不认识」处理（K8）：每个答复的 `problems` 里有它，消息是加载失败的原因（`whyNotLoaded`）。`plugin add` 一个加载失败的插件以 `plugin-failed-to-load` 拒绝，并说明原因。
+- 本机的插件加载失败（导入时抛错、缺 `index.js`、缺省导出过不了上面的核对），它不进插件表。装了它的库照「装了但这台机器不认识」处理（K8）：每个答复的 `problems` 里有它，消息是加载失败的原因（`whyNotLoaded`，中文）。`plugin add` 一个加载失败的插件以 `plugin-failed-to-load` 拒绝，并说明原因。
 - 缓存目录：`PluginContext.cacheDir` 是 `$PNEUMA_BASE_HOME/cache/<库的 id>/<插件名>/`。放在库外，因为库会被同步工具整个同步，而索引这类文件经不起同步。插件第一次用时自己建，内核不建。删掉它什么都不丢。库的 id 因此只能是字母、数字、连字符和下划线。
 - `Context` 带 `home`，即本机的 `$PNEUMA_BASE_HOME`，由建上下文的地方传进来；`cacheDir` 由它算出。
 
