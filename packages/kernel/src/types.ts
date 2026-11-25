@@ -205,6 +205,12 @@ export interface Plugin {
   onCheck?(req: CheckRequest, ctx: PluginContext): Promise<PluginSection[]>
   onArchive?(req: AcceptedArchive, ctx: PluginContext): Promise<PluginNote | null>
   observe?(event: Event, ctx: PluginContext): Promise<void>
+
+  /** The views it adds to the management UI. Each id starts with `<name>.`. */
+  readonly views?: readonly ViewDecl[]
+  onView?(req: ViewRequest, ctx: PluginContext): Promise<ViewAnswer>
+  /** What it knows about one library path, as one section of the kernel's item panel: onInspect's counterpart in the UI. */
+  onItemView?(path: LibraryPath, ctx: PluginContext): Promise<ItemSection | null>
 }
 
 export type PluginTable = ReadonlyMap<string, Plugin>
@@ -250,3 +256,5 @@ export type ViewResult =
   | { outcome: 'no-such-view'; problems: PluginProblem[] }
 /** Every view of a library: the plugins' first, in configuration order, then the kernel's. */
 export type ViewList = { views: ViewDecl[]; problems: PluginProblem[] }
+/** A plugin's part of the item panel: its own section title and blocks. */
+export type ItemSection = { title: string; blocks: Block[] }

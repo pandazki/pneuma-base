@@ -33,13 +33,28 @@ export function TagView({ tag }: { tag: Tag }) {
   return <span className={`tag ${TONE_CLASS[tag.tone]}`}>{tag.text}</span>
 }
 
-export function CellView({ cell }: { cell: Cell }) {
+/** One cell. In a table it stays on one line, its text cut short with the whole of it on hover; elsewhere it wraps. */
+export function CellView({ cell, line = false }: { cell: Cell; line?: boolean }) {
   const { onLink } = useEnv()
-  const text = cell.text === '' ? null : (
-    <span className={`${cell.mono ? 'font-mono text-[12.5px]' : ''} ${cell.muted ? 'text-ink-2' : ''} break-words`}>{cell.text}</span>
-  )
+  const style = `${cell.mono ? 'font-mono text-[12.5px]' : ''} ${cell.muted ? 'text-ink-2' : ''}`
+  // On one line, a path-like text is cut in its folders, so its last part stays readable.
+  const cut = line && cell.mono ? cell.text.lastIndexOf('/') : -1
+  const text =
+    cell.text === '' ? null : cut > 0 && cut < cell.text.length - 1 ? (
+      <span className={`flex min-w-0 ${style}`}>
+        <span className="sr-only">{cell.text}</span>
+        <span className="min-w-0 truncate" aria-hidden>
+          {cell.text.slice(0, cut + 1)}
+        </span>
+        <span className="max-w-full shrink-0 truncate" aria-hidden>
+          {cell.text.slice(cut + 1)}
+        </span>
+      </span>
+    ) : (
+      <span className={`${style} ${line ? 'min-w-0 truncate' : 'break-words'}`}>{cell.text}</span>
+    )
   const content = (
-    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 align-middle">
+    <span className={`items-center gap-x-2 align-middle ${line ? 'flex max-w-full min-w-0' : 'inline-flex flex-wrap gap-y-1'}`} title={line && cell.text !== '' ? cell.text : undefined}>
       {text}
       {cell.tag ? <TagView tag={cell.tag} /> : null}
     </span>
@@ -49,7 +64,7 @@ export function CellView({ cell }: { cell: Cell }) {
   return (
     <button
       type="button"
-      className="link"
+      className={`link ${line ? 'block max-w-full' : ''}`}
       onClick={(e) => {
         e.stopPropagation()
         onLink(link)
@@ -103,22 +118,38 @@ function SectionView({ block }: { block: Extract<Block, { kind: 'section' }> }) 
   )
 }
 
+/** How wide a text looks: a CJK character counts as two Latin ones. */
+const visualLength = (text: string) => [...text].reduce((n, ch) => n + ((ch.codePointAt(0) ?? 0) > 0x2e7f ? 2 : 1), 0)
+
+/** Columns whose texts run longer than this share the width the others leave, cut short; the others keep their own width. */
+const LONG_TEXT = 20
+
 function TableView({ block }: { block: Extract<Block, { kind: 'table' }> }) {
   const { onLink, selected } = useEnv()
   const withActions = block.rows.some((r) => r.actions.length > 0)
+  const longest = block.columns.map((c) => Math.max(0, ...block.rows.map((r) => visualLength(r.cells[c.key]?.text ?? ''))))
+  const flexible = longest.map((n) => n > LONG_TEXT)
+  // Monospaced columns, paths mostly, get more of the shared width: their texts lose meaning faster when cut.
+  const weight = block.columns.map((c, i) => (longest[i] ?? 0) * (block.rows.some((r) => r.cells[c.key]?.mono) ? 2 : 1))
+  const shared = weight.reduce((sum, n, i) => (flexible[i] ? sum + n : sum), 0)
   const rowClass = (row: TableRow) =>
-    `${row.link ? 'cursor-pointer hover:bg-hover' : ''} ${selected(row.link) ? 'bg-[color-mix(in_srgb,var(--accent)_7%,var(--surface))] hover:bg-[color-mix(in_srgb,var(--accent)_10%,var(--surface))]' : ''}`
+    `${row.link ? 'cursor-pointer hover:bg-hover' : ''} ${selected(row.link) ? '!bg-accent-tint' : ''}`
   return (
     <div className="card overflow-x-auto">
       <table className="w-full border-collapse text-left text-[13px] font-medium">
         <thead>
           <tr className="bg-inset">
-            {block.columns.map((c) => (
-              <th key={c.key} scope="col" className="h-[35px] whitespace-nowrap border-b border-line px-2 text-[12.5px] font-medium text-ink-2 first:pl-3">
+            {block.columns.map((c, i) => (
+              <th
+                key={c.key}
+                scope="col"
+                className={`h-[35px] border-b border-line px-2 text-[12.5px] font-medium whitespace-nowrap text-ink-2 first:pl-3 ${flexible[i] ? '' : 'w-px'}`}
+                style={flexible[i] ? { width: `${Math.round(((weight[i] ?? 0) / shared) * 100)}%` } : undefined}
+              >
                 {c.label}
               </th>
             ))}
-            {withActions ? <th scope="col" className="h-[35px] border-b border-line px-2" aria-label="动作" /> : null}
+            {withActions ? <th scope="col" className="h-[35px] w-px border-b border-line px-2" aria-label="动作" /> : null}
           </tr>
         </thead>
         <tbody>
@@ -129,11 +160,11 @@ function TableView({ block }: { block: Extract<Block, { kind: 'table' }> }) {
               aria-selected={selected(row.link) || undefined}
               onClick={row.link ? () => onLink(row.link as Link) : undefined}
             >
-              {block.columns.map((c) => {
+              {block.columns.map((c, i) => {
                 const cell = row.cells[c.key]
                 return (
-                  <td key={c.key} className="h-[35px] border-b border-line-soft px-2 align-middle first:pl-3">
-                    {cell ? <CellView cell={cell} /> : null}
+                  <td key={c.key} className={`h-[35px] border-b border-line-soft px-2 align-middle whitespace-nowrap first:pl-3 ${flexible[i] ? 'max-w-0' : ''}`}>
+                    {cell ? <CellView cell={cell} line /> : null}
                   </td>
                 )
               })}
@@ -271,7 +302,7 @@ function PreviewView({ block }: { block: Extract<Block, { kind: 'preview' }> }) 
   if (loaded.kind === 'text')
     return (
       <figure aria-label="预览">
-        <pre className="max-h-[520px] overflow-auto rounded-card bg-inset p-3 font-mono text-[12px] leading-[1.6] break-words whitespace-pre-wrap text-ink shadow-(--shadow-hairline)">
+        <pre className="max-h-[320px] overflow-auto rounded-card bg-inset p-3 font-mono text-[12px] leading-[1.6] break-words whitespace-pre-wrap text-ink shadow-(--shadow-hairline)">
           {loaded.text}
         </pre>
         {loaded.cut ? <figcaption className="mt-1 text-[12px] text-ink-3">只显示了前 {TEXT_LIMIT.toLocaleString()} 个字符。</figcaption> : null}

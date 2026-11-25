@@ -8,17 +8,17 @@ import { actorKey, isArchived, type ItemRecord, type Ledger, type Said, type Sce
 import { marksOf, type ItemState, type Mark, type Standing } from './reconcile.js'
 
 export const when = (at: Instant) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`
-const who = (a: FactActor) => (a.kind === 'owner' ? '主人' : a.name)
+export const who = (a: FactActor) => (a.kind === 'owner' ? '主人' : a.name)
 
 /** A working directory as text shows it: the home directory as ~, and only the last 45 characters after … when longer than 48. */
-function shortDir(dir: string, home = homedir()): string {
+export function shortDir(dir: string, home = homedir()): string {
   const tilde = dir === home ? '~' : dir.startsWith(`${home}/`) ? `~${dir.slice(home.length)}` : dir
   const chars = [...tilde]
   return chars.length > 48 ? `…${chars.slice(-45).join('')}` : tilde
 }
 
 /** A scene id as text shows it: its first 8 characters; an ad hoc scene's id whole. */
-const shortScene = (id: SceneId) => (id.startsWith(ADHOC_SCENE) ? id : id.slice(0, 8))
+export const shortScene = (id: SceneId) => (id.startsWith(ADHOC_SCENE) ? id : id.slice(0, 8))
 
 const SCENE_PREFIX_MIN = 6
 
@@ -50,7 +50,7 @@ export function originLabel(origin: LedgerOrigin): string {
 }
 
 export const STATE_LABEL: Record<ItemState['kind'], string> = { consistent: '一致', changed: '已变', moved: '已搬', missing: '不在', removed: '已除' }
-const MARK_LABEL: Record<Mark['kind'], string> = { stale: '可能过期', 'source-gone': '来源不在' }
+export const MARK_LABEL: Record<Mark['kind'], string> = { stale: '可能过期', 'source-gone': '来源不在' }
 
 const pathOf = (ledger: Ledger, id: ItemId) => ledger.items.get(id)?.path ?? id
 
@@ -122,7 +122,7 @@ export function itemView(ledger: Ledger, item: ItemRecord, states: ReadonlyMap<I
   }
 }
 
-const SAID_LABEL: Record<Said['flavor'], string> = { doing: '在做', decided: '决定', note: '备注' }
+export const SAID_LABEL: Record<Said['flavor'], string> = { doing: '在做', decided: '决定', note: '备注' }
 
 export function itemText(v: ItemView): string {
   const where = v.entered.where?.cwd ? ` · 在 ${shortDir(v.entered.where.cwd)}` : ''

@@ -248,3 +248,49 @@ describe('a directory that is not a library (C7)', () => {
     expect((await http(server, '/api/init', { body: { plugins: [] } })).json()).toMatchObject({ result: { reason: 'already-a-library' } })
   })
 })
+
+describe('the view slot over HTTP (C2)', () => {
+  const name = (n: string) => n as Plugin['name']
+  const page: Plugin = {
+    name: name('page'),
+    cognition: null,
+    storage: [],
+    statements: [],
+    ownerCommands: [],
+    views: [{ id: 'page.one', title: '一页', icon: 'list', nav: true, filters: [] }],
+    onView: async () => ({ title: '一页', subtitle: null, blocks: [{ kind: 'text', text: 'hello from page', tone: 'neutral' }] }),
+  }
+  const thrower: Plugin = {
+    name: name('thrower'),
+    cognition: null,
+    storage: [],
+    statements: [],
+    ownerCommands: [],
+    views: [{ id: 'thrower.page', title: '出错的页', icon: 'x', nav: true, filters: [] }],
+    onView: async () => {
+      throw new Error('boom in onView')
+    },
+  }
+
+  it('a plugin’s view joins the navigation before the kernel’s and is shown; uninstalled, it is gone', async () => {
+    const lib = await library([page])
+    const table = new Map([['page', page]])
+    const server = await serve(lib.root, { table, home: lib.home })
+    const navOf = async () => (await http(server, '/api/state')).json().views.filter((v: any) => v.nav).map((v: any) => v.id)
+    expect(await navOf()).toEqual(['page.one', 'files', 'archive', 'config'])
+    expect((await http(server, '/api/view?view=page.one')).json()).toMatchObject({ outcome: 'shown', blocks: [{ text: 'hello from page' }], problems: [] })
+    const removed = await http(server, '/api/call', { body: { call: { face: 'owner', command: 'plugin remove', args: { positional: ['page'], flags: {} } }, confirmed: false } })
+    expect(removed.json()).toMatchObject({ tone: 'good' })
+    expect(await navOf()).toEqual(['files', 'archive', 'config'])
+    expect((await http(server, '/api/view?view=page.one')).json()).toMatchObject({ outcome: 'no-such-view' })
+  })
+
+  it('a plugin that throws in its view gives a page that says so; the server and the other views carry on', async () => {
+    const lib = await library([thrower])
+    const server = await serve(lib.root, { table: new Map([['thrower', thrower]]) })
+    const r = await http(server, '/api/view?view=thrower.page')
+    expect(r.status).toBe(200)
+    expect(r.json()).toMatchObject({ outcome: 'shown', blocks: [{ kind: 'empty', hint: 'boom in onView' }], problems: [{ plugin: 'thrower', message: 'boom in onView' }] })
+    expect((await http(server, '/api/view?view=files')).json()).toMatchObject({ outcome: 'shown', problems: [] })
+  })
+})

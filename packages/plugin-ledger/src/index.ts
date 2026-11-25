@@ -20,9 +20,10 @@ import {
 } from '@pneuma-base/kernel'
 import { itemNamed, load, onDisk, snapshot, statesOf, textOf, type Disk } from './disk.js'
 import { fact, factActor, LEDGER_ACTOR, newItemId, sceneOf, writeFacts, type Basis, type Fact, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
-import type { Ledger, SceneRecord } from './fold.js'
+import type { ItemRecord, Ledger, SceneRecord } from './fold.js'
 import { heldCommands, heldCopies, heldPath, keep } from './held.js'
 import { reconcile } from './reconcile.js'
+import { itemSection, itemsAnswer, ITEMS_VIEW, LEDGER_VIEWS, UNOWNED_SECTION } from './ui.js'
 import {
   ambiguousText,
   findableItems,
@@ -36,6 +37,7 @@ import {
   sinceText,
   sinceView,
   standingSections,
+  type ItemView,
 } from './views.js'
 
 /** One hook's writing: the ledger as read, and the facts it will write as one file. */
@@ -175,6 +177,19 @@ function purged(event: Extract<Event, { face: 'owner' }>): LibraryPath[] {
   return Array.isArray(paths) ? paths.filter((p): p is LibraryPath => typeof p === 'string') : []
 }
 
+/** An item as inspect and the item panel show it: its state and its direct sources' states from their own files, and its held copies. */
+async function viewOfItem(ctx: PluginContext, ledger: Ledger, item: ItemRecord): Promise<ItemView> {
+  const states = await statesOf(ctx.library.root, ledger, [item.id, ...item.basis.items.map((row) => row.item)])
+  const held = (await heldCopies(ctx, item.id)).map((c) => c.path)
+  return itemView(ledger, item, states, held)
+}
+
+/** Whether a file is at a content or archive path, or at its archived copy. */
+async function fileAt(root: string, path: LibraryPath): Promise<boolean> {
+  if (regionOf(path) === 'kernel') return false
+  return (await onDisk(root, path)) !== null || (regionOf(path) === 'content' && (await onDisk(root, archivedPath(path))) !== null)
+}
+
 /** 记账与对账. ledger-design.md. */
 export const ledger: Plugin = {
   name: pluginName('ledger'),
@@ -185,6 +200,7 @@ export const ledger: Plugin = {
   ],
   statements: ['doing', 'decided', 'note', 'from', 'revised'],
   ownerCommands: heldCommands,
+  views: LEDGER_VIEWS,
 
   async onPut(req, ctx) {
     const w = await writing(ctx)
@@ -231,13 +247,11 @@ export const ledger: Plugin = {
     if (scene) return card(scene)
     const item = itemNamed(ledger, root, req.target)
     if (item) {
-      const states = await statesOf(root, ledger, [item.id, ...item.basis.items.map((row) => row.item)])
-      const held = (await heldCopies(ctx, item.id)).map((c) => c.path)
-      const view = itemView(ledger, item, states, held)
+      const view = await viewOfItem(ctx, ledger, item)
       return [{ title: '来历', body: itemText(view), data: view }]
     }
     const path = parseLibraryPath(root, req.target)
-    if (path !== null && regionOf(path) !== 'kernel' && (await onDisk(root, path) ?? (regionOf(path) === 'content' ? await onDisk(root, archivedPath(path)) : null))) {
+    if (path !== null && (await fileAt(root, path))) {
       const body = '没人登记过这个文件，来历不明。知道它从哪来，就用 put <库内路径> --brought 或 --made 补上。'
       return [{ title: '来历', body, data: { kind: 'unowned', path } }]
     }
@@ -271,6 +285,21 @@ export const ledger: Plugin = {
     await writeFacts(ctx.dir, w.facts)
     const what = req.kind === 'archive' ? '已记下归档' : '已记下取回'
     return { text: `${what}${known ? '' : '；这个文件以前没人登记过，已以来历不明入册'} · 条目 ${id}`, data: { item: id } }
+  },
+
+  /** The items view: every item with its provenance and how it stands after full reconciliation. Writes nothing. */
+  async onView(req, ctx) {
+    if (req.view !== ITEMS_VIEW) throw new Error(`the ledger has no view ${req.view}`)
+    const ledger = await load(ctx)
+    return itemsAnswer(ledger, await reconcile(ledger, await snapshot(ctx.library.root)), req.params)
+  },
+
+  /** The item panel's provenance section, from the same view inspect gives; a file nobody registered says so. */
+  async onItemView(path, ctx) {
+    const ledger = await load(ctx)
+    const item = itemNamed(ledger, ctx.library.root, path)
+    if (item) return itemSection(await viewOfItem(ctx, ledger, item))
+    return (await fileAt(ctx.library.root, path)) ? UNOWNED_SECTION : null
   },
 
   /** Records each owner operation that was done, so agents see it in check; an archive purge removes the items it deleted. */

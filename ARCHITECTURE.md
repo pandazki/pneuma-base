@@ -206,10 +206,16 @@ interface Plugin {
 
   observe?(event: Event, ctx: Context): Promise<void>   // 两个面的每次操作之后
   readonly ownerCommands: OwnerCommand[]                // 它给主人面加的命令
+
+  readonly views?: ViewDecl[]                           // 它给管理界面加的视图，编号以 `<插件名>.` 开头
+  onView?(req: ViewRequest, ctx: Context): Promise<ViewAnswer>
+  onItemView?(path: LibraryPath, ctx: Context): Promise<ItemSection | null>   // 「看」在界面上的对应物
 }
 ```
 
 一个只有名字、其余全空的对象是合法的插件。
+
+视图槽（第 6 节「只读的一面」）：插件声明它的视图，每个视图返回带类型的块，界面只渲染块，不知道块来自哪个插件。编号不以插件名加点开头的视图不列出，记成问题。`onView` 或 `onItemView` 抛错、或答复的不是一个视图或一节，内核在那一页或那一节里给出说明出错的块，并把问题列进结果（K8）。视图不是操作：插件在这两个钩子里不写东西，内核也不为它们发事件。
 
 实现里的细化：钩子收到的上下文另带 `dir`，即这个插件名下的目录；钩子的答复不写插件名，由内核盖上（`PluginNote`、`PluginSection`、`PluginHit`）；`onSay` 答复 `SayAnswer`，处理它的插件出错时结果是 `not-heard`、`plugin-failed`。主人面命令 `OwnerCommand` 带 `destructive` 标志，由内核在同一处拦。插件名同时是目录名，用 `pluginName()` 解析。主人面的事件带 `destructive`，插件不用自己认哪些命令会丢数据；`archive purge` 的答复在 `data.paths` 里列出被删的库内路径，记账插件据此记「已除」。
 
@@ -259,7 +265,11 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable }): P
 | `files` | 是 | 库的一个文件夹，参数 `dir`。先文件夹后文件；内核的文件和归档区不列。文件夹链到下一层，文件链到 `item` 面板 |
 | `archive` | 是 | 归档区里的每个文件和它原来的路径，各带「取回」；整区一个「清空归档区」，先问 |
 | `config` | 是 | 库的位置；装了的插件和可装的插件；授权，各带为 Claude 或 Codex 生成技能、撤回；发授权；Codex 要把库加进可写目录的提示 |
-| `item` | 否 | 一样东西，参数 `path`，开在右侧面板：文件的事实、归档或取回、预览。路径上没有文件时说明文件不在。`_archive/…` 的东西被取回后，面板跟到它原来的路径 |
+| `item` | 否 | 一样东西，参数 `path`，开在右侧面板：文件的事实、归档或取回、预览，再接每个插件的 `onItemView` 给的一节。路径上没有文件时说明文件不在，插件的节照常给。`_archive/…` 的东西被取回后，面板跟到它原来的路径 |
+
+一样东西的详情是内核的视图，不是某个插件的：内核按配置次序把各插件用 `onItemView` 给的节拼在文件的事实和预览之后，节名由插件给，插件之间互不认识。记账插件的来历、以后版本插件的版本时间线、部署插件的开关都落在同一个面板里。
+
+`viewerFace.views` 先列插件的视图，按配置次序，后列内核的。
 
 动作的 `call` 里的字符串可以含 `{输入名}`，界面用输入的值替换。动作的 `confirm` 是一句问话，界面弹框问；人点了确认，就是内核要的当面确认。
 
@@ -327,6 +337,8 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable }): P
 | `onArchive` | 记下归档和取回；已归档的条目不出现在可能过期等清单里 |
 | `onCheck` | 自某时以来的变化；来历不明的；可能过期的；来源不在的；挪过的（已接回，记一条看到的挪动）；不在了的 |
 | `observe` | 把做成了的主人面操作记成事实；清归档时，被删的路径上的条目记为已除 |
+| `views`、`onView` | 视图 `ledger.items`（条目）：每个没除掉的条目的路径、来历、谁、当时在做什么、现状（对账后的状态，依据上有标记时显示标记）、时间；过滤来历、现状、是否带归档的，默认不带；行链到内核的 `item` 面板 |
+| `onItemView` | 条目详情里「来历」一节：怎么来的与出处、谁、何时、在哪、场景、当时在做、现状；依据（每个依据的现状，链到上游的 `item`）；被什么依据；决定与备注；版本；留存的旧版。数据就是 `inspect` 用的 `itemView`，没人登记过的文件说明来历不明 |
 
 它给主人面加三条命令：`held list` 列出留存；`held restore <库内路径或条目号> [--fingerprint <指纹>] --to <库内路径>` 把一份留存复制到一个空着的新路径，并把那个文件以「主人带进来的」入册；`held drop` 清掉全部留存，是破坏性的，由内核的门拦。
 
@@ -337,6 +349,7 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable }): P
 - 发布事实文件用硬链接到最终名再删临时名，最终名已存在时失败重试，而不是覆盖。
 - `check` 比设计多一节「不在了的」，验收 C4 要求报告不在；「上游有标记」也单列一节，直接带标记的条目不重复列在里面。
 - `find` 什么都给，包括调用者自己这次会话的场景和条目；`start` 的找（`skipOwnSession`）不带调用者自己的场景和在其中放入的条目。找的结果按场景分组，`group` 是场景那一行。`inspect` 一个条目时只看它自己和它直接依据的文件，不找已搬；已搬只在 `check` 和 `start` 里认。
+- 界面的两个视图在 `ui.ts`，是纯函数：条目表取自 `fold` 与 `reconcile`，详情取自 `itemView`，不另算一套来历；两者都不写事实，也不收养没人登记过的文件。
 - 「自上次以来」只列改了内容或能力的事。不改两者的主人面操作（`init`、`grant issue`、`grant revoke`、`skill install`）照样记成事实，但不列出；名单是 `views.ts` 里的一个集合。
 - 场景号在文字答复里只显示前 8 位（临时场景 `adhoc-…` 显示全），工作目录把家目录写成 `~`、过长时只留最后 45 个字符；`--json` 给全的。`inspect` 和 `find --scene` 接受场景号的前缀，至少 6 个字符；`inspect` 遇到几个场景共用的前缀，列出它们的全号。
 

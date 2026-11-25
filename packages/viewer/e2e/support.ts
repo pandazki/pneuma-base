@@ -42,7 +42,7 @@ export function png(width: number, height: number, [r, g, b]: [number, number, n
 export type Cli = {
   home: string
   /** Runs the built `pneuma-base`, or with `testPlugins` the same command line with the test-only plugins added. */
-  run(args: string[], opts?: { cwd?: string; env?: Record<string, string>; input?: string; testPlugins?: boolean }): { code: number; stdout: string; stderr: string }
+  run(args: string[], opts?: { cwd?: string; env?: Record<string, string>; input?: string; testPlugins?: boolean; codes?: number[] }): { code: number; stdout: string; stderr: string }
   /** Starts `pneuma-base view <dir> --no-open` and resolves with its address once it printed it. */
   view(dir: string, opts?: { testPlugins?: boolean }): Promise<{ url: string; stop(): Promise<void> }>
 }
@@ -56,7 +56,7 @@ export function cli(): Cli {
     run(args, opts = {}) {
       const r = spawnSync(process.execPath, [opts.testPlugins ? BIN_WITH_TEST_PLUGINS : BIN, ...args], { cwd: opts.cwd ?? home, env: env(opts.env), input: opts.input ?? '', encoding: 'utf8' })
       if (r.error) throw r.error
-      if (r.status !== 0) throw new Error(`pneuma-base ${args.join(' ')} exited ${r.status}\n${r.stdout}\n${r.stderr}`)
+      if (!(opts.codes ?? [0]).includes(r.status ?? -1)) throw new Error(`pneuma-base ${args.join(' ')} exited ${r.status}\n${r.stdout}\n${r.stderr}`)
       return { code: r.status ?? -1, stdout: r.stdout, stderr: r.stderr }
     },
     view(dir, opts = {}) {

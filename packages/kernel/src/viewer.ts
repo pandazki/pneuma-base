@@ -7,7 +7,25 @@ import { fileFacts } from './agent.js'
 import { exists, listFiles, regularFile } from './files.js'
 import { codexHint } from './owner-commands.js'
 import { ARCHIVE_DIR, DESCRIPTION_FILE, KERNEL_DIR, abs, archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
-import type { Action, Block, Context, LibraryPath, Link, PluginProblem, PluginTable, TableRow, ViewAnswer, ViewDecl, ViewList, ViewRequest, ViewResult } from './types.js'
+import { messageOf, pluginContext } from './pipeline.js'
+import type {
+  Action,
+  Block,
+  Context,
+  FileFacts,
+  Library,
+  LibraryPath,
+  Link,
+  Plugin,
+  PluginProblem,
+  PluginTable,
+  TableRow,
+  ViewAnswer,
+  ViewDecl,
+  ViewList,
+  ViewRequest,
+  ViewResult,
+} from './types.js'
 
 /** What showing a view needs besides the request: the operation's context and the plugins this pneuma-base knows. */
 export type ViewerCall = { ctx: Context; table: PluginTable }
@@ -245,12 +263,49 @@ async function takenBack(root: string, target: string) {
   return original === null ? null : fileFacts(root, original)
 }
 
-/** One thing of the library: the file's facts, archive or take back, a preview. */
+/** A plugin's answer has at least a title and a list of blocks; anything else is the plugin failing. */
+const answered = (a: unknown): a is { title: string; blocks: Block[] } =>
+  typeof a === 'object' && a !== null && typeof (a as { title?: unknown }).title === 'string' && Array.isArray((a as { blocks?: unknown }).blocks)
+
+const section = (title: string, blocks: Block[]): Block => ({ kind: 'section', title, note: null, count: null, blocks, actions: [] })
+
+/** Each installed plugin's section about `path`, in configuration order. A plugin that fails gets a section that says so (K8). */
+async function pluginSections(ctx: Context, path: LibraryPath): Promise<{ blocks: Block[]; problems: PluginProblem[] }> {
+  const blocks: Block[] = []
+  const problems: PluginProblem[] = []
+  for (const plugin of ctx.library.plugins) {
+    if (!plugin.onItemView) continue
+    try {
+      const answer = await plugin.onItemView(path, pluginContext(ctx, plugin.name))
+      if (answer === null) continue
+      if (!answered(answer)) throw new Error('onItemView answered something that is not a section')
+      blocks.push(section(answer.title, answer.blocks))
+    } catch (error) {
+      const message = messageOf(error)
+      problems.push({ plugin: plugin.name, message })
+      blocks.push(section(`插件 ${plugin.name}`, [{ kind: 'empty', title: `插件 ${plugin.name} 出错了，没能给出它知道的`, hint: message }]))
+    }
+  }
+  return { blocks, problems }
+}
+
+/** One thing of the library: the file's facts, archive or take back, a preview; then what each plugin knows about it. */
 async function itemPage(params: Record<string, string>, { ctx }: ViewerCall): Promise<Shown> {
   const { root } = ctx.library
   const target = params.path ?? ''
   const facts = target === '' ? null : ((await fileFacts(root, target)) ?? (await takenBack(root, target)))
-  if (!facts) return shown(posix.basename(target) || '一样东西', target || null, [{ kind: 'text', tone: 'warn', text: `${target || '这个路径'} 上没有文件：不在，或已经除掉了。` }])
+  const path = facts?.path ?? parseLibraryPath(root, target)
+  const known = path === null || regionOf(path) === 'kernel' ? { blocks: [], problems: [] } : await pluginSections(ctx, path)
+  if (!facts) {
+    const missing: Block = { kind: 'text', tone: 'warn', text: `${target || '这个路径'} 上没有文件：不在，或已经除掉了。` }
+    return shown(posix.basename(target) || '一样东西', target || null, [missing, ...known.blocks], known.problems)
+  }
+  const original = facts.archived ? (originalPath(facts.path) ?? facts.path) : facts.path
+  return shown(posix.basename(original), facts.path, [...fileBlocks(facts, original), ...known.blocks], known.problems)
+}
+
+/** The file's own facts, the archive or take-back button, and its preview. */
+function fileBlocks(facts: FileFacts, original: LibraryPath): Block[] {
   const fields: Block = {
     kind: 'fields',
     fields: [
@@ -260,9 +315,8 @@ async function itemPage(params: Record<string, string>, { ctx }: ViewerCall): Pr
       { label: '指纹', value: { text: facts.fingerprint.slice(0, 16), mono: true, muted: true } },
     ],
   }
-  const original = facts.archived ? (originalPath(facts.path) ?? facts.path) : facts.path
   const actions: Block = { kind: 'actions', actions: [facts.archived ? archiveAction('unarchive', facts.path) : archiveAction('archive', original)] }
-  return shown(posix.basename(original), facts.path, [fields, actions, { kind: 'preview', path: facts.path }])
+  return [fields, actions, { kind: 'preview', path: facts.path }]
 }
 
 // ---- the face ----
@@ -281,17 +335,46 @@ const KERNEL_PAGES: ReadonlyMap<string, KernelPage> = new Map([
   ['item', itemPage],
 ])
 
+/** Each installed plugin's views, in configuration order. A view whose id does not start with `<plugin name>.` is left out as a problem. */
+function pluginViews(library: Library): { views: { plugin: Plugin; decl: ViewDecl }[]; problems: PluginProblem[] } {
+  const views: { plugin: Plugin; decl: ViewDecl }[] = []
+  const problems: PluginProblem[] = []
+  for (const plugin of library.plugins) {
+    for (const decl of plugin.views ?? []) {
+      if (decl.id.startsWith(`${plugin.name}.`)) views.push({ plugin, decl })
+      else problems.push({ plugin: plugin.name, message: `view ${decl.id} does not start with ${plugin.name}.` })
+    }
+  }
+  return { views, problems }
+}
+
+/** A plugin's view. A plugin that throws or answers no view gets a page that says it failed, and the problem (K8). */
+async function pluginPage(plugin: Plugin, decl: ViewDecl, req: ViewRequest, ctx: Context): Promise<Shown> {
+  try {
+    if (!plugin.onView) throw new Error(`declares the view ${decl.id} but has no onView`)
+    const answer = await plugin.onView(req, pluginContext(ctx, plugin.name))
+    if (!answered(answer)) throw new Error(`onView answered something that is not a view for ${decl.id}`)
+    return shown(answer.title, answer.subtitle ?? null, answer.blocks)
+  } catch (error) {
+    const message = messageOf(error)
+    return shown(decl.title, null, [{ kind: 'empty', title: `插件 ${plugin.name} 出错了，没能给出这一页`, hint: message }], [{ plugin: plugin.name, message }])
+  }
+}
+
 export const viewerFace = {
   /** Every view of the library: the plugins' first, in configuration order, then the kernel's. */
-  views(library: Context['library']): ViewList {
-    const problems: PluginProblem[] = library.unavailable.map((plugin) => ({ plugin, message: 'installed in this library but not known to this pneuma-base' }))
-    return { views: [...KERNEL_VIEWS], problems }
+  views(library: Library): ViewList {
+    const missing: PluginProblem[] = library.unavailable.map((plugin) => ({ plugin, message: 'installed in this library but not known to this pneuma-base' }))
+    const own = pluginViews(library)
+    return { views: [...own.views.map((v) => v.decl), ...KERNEL_VIEWS], problems: [...missing, ...own.problems] }
   },
 
   /** One view. Showing changes nothing and sends no event. */
   async show(req: ViewRequest, call: ViewerCall): Promise<ViewResult> {
     const page = KERNEL_PAGES.get(req.view)
     if (page) return { outcome: 'shown', ...(await page(req.params, call)) }
-    return { outcome: 'no-such-view', problems: [] }
+    const found = pluginViews(call.ctx.library).views.find((v) => v.decl.id === req.view)
+    if (!found) return { outcome: 'no-such-view', problems: [] }
+    return { outcome: 'shown', ...(await pluginPage(found.plugin, found.decl, req, call.ctx)) }
   },
 }

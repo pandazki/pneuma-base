@@ -114,3 +114,73 @@ describe('showing a view', () => {
     expect(events).toEqual([])
   })
 })
+
+describe('the view slot', () => {
+  const pager = plugin('pager', {
+    views: [{ id: 'pager.page', title: '测试页', icon: 'flask', nav: true, filters: [] }],
+    onView: async (req) => ({ title: '测试页', subtitle: req.params.q ?? null, blocks: [{ kind: 'text', text: 'from pager', tone: 'info' }] }),
+    onItemView: async (path) => ({ title: '测试插件知道的', blocks: [{ kind: 'text', text: `pager knows ${path}`, tone: 'neutral' }] }),
+  })
+  const thrower = plugin('thrower', {
+    views: [{ id: 'thrower.page', title: '出错的页', icon: 'x', nav: true, filters: [] }],
+    onView: async () => {
+      throw new Error('thrower failed in onView')
+    },
+    onItemView: async () => {
+      throw new Error('thrower failed in onItemView')
+    },
+  })
+
+  it('lists plugin views first, in configuration order, then the kernel’s; a view outside the plugin’s name is a problem', async () => {
+    const stray = plugin('stray', { views: [{ id: 'files', title: '冒名的页', icon: 'x', nav: true, filters: [] }] })
+    const f = await fixture([pager, thrower, stray])
+    const { views, problems } = viewerFace.views(f.library)
+    expect(views.map((v) => v.id)).toEqual(['pager.page', 'thrower.page', 'files', 'archive', 'config', 'item'])
+    expect(problems).toEqual([{ plugin: 'stray', message: 'view files does not start with stray.' }])
+  })
+
+  it('shows a plugin’s view with its parameters', async () => {
+    const f = await fixture([pager])
+    expect(await show(f, 'pager.page', { q: 'x' })).toEqual({ outcome: 'shown', title: '测试页', subtitle: 'x', blocks: [{ kind: 'text', text: 'from pager', tone: 'info' }], problems: [] })
+  })
+
+  it('a plugin that throws in onView gets a page that says so and a problem; the other views still work (K8)', async () => {
+    const f = await fixture([thrower, pager])
+    const r = shown(await show(f, 'thrower.page'))
+    expect(r).toMatchObject({ title: '出错的页', blocks: [{ kind: 'empty', title: expect.stringContaining('thrower'), hint: 'thrower failed in onView' }] })
+    expect(r.problems).toEqual([{ plugin: 'thrower', message: 'thrower failed in onView' }])
+    expect(shown(await show(f, 'pager.page')).problems).toEqual([])
+    expect(shown(await show(f, 'files')).problems).toEqual([])
+  })
+
+  it('a plugin that answers no view at all is failing too', async () => {
+    const broken = plugin('broken', { views: [{ id: 'broken.page', title: '坏页', icon: 'x', nav: true, filters: [] }], onView: async () => ({ title: 'x' }) as never })
+    const f = await fixture([broken])
+    expect(shown(await show(f, 'broken.page')).problems).toMatchObject([{ plugin: 'broken' }])
+  })
+
+  it('the item panel adds one section per plugin, in configuration order, a failing one saying it failed', async () => {
+    const f = await fixture([thrower, pager])
+    f.write('a.md', 'a')
+    const r = shown(await show(f, 'item', { path: 'a.md' }))
+    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['fields', 'actions', 'preview', 'section:插件 thrower', 'section:测试插件知道的'])
+    expect(r.blocks[4]).toMatchObject({ blocks: [{ text: 'pager knows a.md' }] })
+    expect(r.problems).toEqual([{ plugin: 'thrower', message: 'thrower failed in onItemView' }])
+  })
+
+  it('with no file at the path the panel says so, and the plugins still give their sections', async () => {
+    const f = await fixture([pager])
+    const r = shown(await show(f, 'item', { path: 'gone.md' }))
+    expect(r.blocks).toMatchObject([{ kind: 'text', tone: 'warn' }, { kind: 'section', title: '测试插件知道的', blocks: [{ text: 'pager knows gone.md' }] }])
+  })
+
+  it('a plugin view sends no event either', async () => {
+    const events: Event[] = []
+    const f = await fixture([pager, plugin('recorder', { observe: async (e) => void events.push(e) })])
+    events.length = 0
+    f.write('a.md', 'a')
+    await show(f, 'pager.page')
+    await show(f, 'item', { path: 'a.md' })
+    expect(events).toEqual([])
+  })
+})

@@ -124,7 +124,7 @@ function Panel({ result, failed, canGoBack, onBack, onClose }: { result: ViewRes
   const title = result?.outcome === 'shown' ? result.title : ''
   const subtitle = result?.outcome === 'shown' ? result.subtitle : null
   return (
-    <aside aria-label="详情" className="flex w-[460px] shrink-0 flex-col border-l border-line bg-surface">
+    <aside aria-label="详情" className="flex w-[420px] shrink-0 flex-col border-l border-line bg-surface">
       <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line px-2">
         {canGoBack ? (
           <button type="button" className="flex size-8 items-center justify-center rounded-control text-ink-2 hover:bg-hover" aria-label="返回" onClick={onBack}>
@@ -177,7 +177,7 @@ function InitScreen({ state, onInit }: { state: State; onInit(plugins: string[])
   const [busy, setBusy] = useState(false)
   return (
     <div className="flex h-full items-center justify-center p-6">
-      <div className="card w-full max-w-[460px] p-6">
+      <div className="card w-full max-w-[420px] p-6">
         <h1 className="text-[17px] font-semibold">这个目录还不是库</h1>
         <p className="mt-1 font-mono text-[12px] break-all text-ink-2">{state.dir}</p>
         <p className="mt-3 text-[13px] text-ink-2">建成库之后，根目录多一份说明 PNEUMA-BASE.md 和一个 .pneuma-base/ 目录，里面的东西原样留着。</p>
