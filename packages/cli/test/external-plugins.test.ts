@@ -9,6 +9,7 @@ import { sandbox, tempDir, type Sandbox } from './helpers.js'
 const ECHO = `import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 export default {
+  contract: 1,
   name: 'echo',
   cognition: { title: '回声', text: '## 回声\\n\\n用 say echo "<一句话>" 它就回一句。' },
   storage: [],
@@ -22,6 +23,7 @@ export default {
 }
 `
 const BROKEN = `throw new Error('broken on purpose')\n`
+const NO_CONTRACT = ECHO.replace('  contract: 1,\n', '')
 
 let sb: Sandbox
 let lib: string
@@ -93,6 +95,15 @@ describe('a plugin that fails to load', () => {
     expect(r.code).toBe(2)
     expect(r.json()).toMatchObject({ outcome: 'refused', reason: 'plugin-failed-to-load' })
     expect(r.json().text).toContain('broken on purpose')
+    expect(JSON.parse(readFileSync(join(lib, '.pneuma-base/config.json'), 'utf8')).plugins).toEqual([])
+  })
+
+  it('is refused by plugin add when it declares no contract, saying so in Chinese', () => {
+    plugin('echo', NO_CONTRACT)
+    const r = run(['plugin', 'add', 'echo'])
+    expect(r.code).toBe(2)
+    expect(r.json()).toMatchObject({ outcome: 'refused', reason: 'plugin-failed-to-load' })
+    expect(r.json().text).toContain('没有写 contract')
     expect(JSON.parse(readFileSync(join(lib, '.pneuma-base/config.json'), 'utf8')).plugins).toEqual([])
   })
 

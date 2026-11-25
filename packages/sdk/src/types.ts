@@ -220,9 +220,15 @@ export type Event =
 export type CognitionSection = { title: string; text: string }
 export type StorageDecl = { dir: string; kind: 'body' | 'cache' } // relative to the plugin's own directory
 
-/** An object with only a name and empty lists is a valid plugin. */
+/** An object with only a contract, a name and empty lists is a valid plugin. */
 export interface Plugin {
+  /** The plugin contract it is written against: the sdk's `CONTRACT`. The kernel refuses a version it does not run. */
+  readonly contract: number
   readonly name: PluginName
+  /** Its own version, for people. */
+  readonly version?: string
+  /** What it brings, in one Chinese sentence for people. */
+  readonly summary?: string
   readonly cognition: CognitionSection | null
   /**
    * With `revise`: whether it holds every replaced content (`every`) or only some (`some`, the

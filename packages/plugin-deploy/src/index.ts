@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { abs, archivedPath, pluginName, regionOf, thingAt, type Event, type LibraryPath, type Plugin, type PluginContext, type PluginNote, type SayAnswer } from '@pneuma-base/kernel'
+import { abs, archivedPath, CONTRACT, pluginName, regionOf, thingAt, type Event, type LibraryPath, type Plugin, type PluginContext, type PluginNote, type SayAnswer } from '@pneuma-base/kernel'
 import { COMMANDS } from './commands.js'
 import { newThingId } from './facts.js'
 import { declaredAt, look, looks, record, settle, thingPath, withRun, type Settled } from './reconcile.js'
@@ -37,6 +37,7 @@ function purged(event: Event): LibraryPath[] {
 
 /** 部署. README.md. */
 export const deploy: Plugin = {
+  contract: CONTRACT,
   name: pluginName('deploy'),
   cognition: { title: '部署', text: readFileSync(new URL('../cognition/deploy-section.md', import.meta.url), 'utf8') },
   storage: [{ dir: '.', kind: 'body' }],

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import {
   abs,
   archivedPath,
+  CONTRACT,
   enclosingBundle,
   parseLibraryPath,
   pluginName,
@@ -262,6 +263,7 @@ async function panelView(ctx: PluginContext, ledger: Ledger, path: LibraryPath):
 
 /** 记账与对账. ledger-design.md. */
 export const ledger: Plugin = {
+  contract: CONTRACT,
   name: pluginName('ledger'),
   cognition: { title: '记账与对账', text: readFileSync(new URL('../cognition/2-ledger-section.md', import.meta.url), 'utf8') },
   keeps: 'every',

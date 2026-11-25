@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import type { KernelCommandName } from './claims.js'
 import { skillText } from './cognition.js'
 import { exists, writeAtomic } from './files.js'
 import { whyNotLoaded } from './plugin-table.js'
@@ -17,7 +18,7 @@ export type Outcome = { answer: OwnerAnswer; library?: Library }
 
 /** Like a plugin's OwnerCommand, but it runs with the whole owner call and may hand back the reopened library. */
 export type KernelCommand = {
-  readonly name: string
+  readonly name: KernelCommandName
   readonly summary: string
   readonly usage?: string
   readonly destructive: boolean

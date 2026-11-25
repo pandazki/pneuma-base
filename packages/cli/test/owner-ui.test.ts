@@ -11,7 +11,7 @@ import { builtinPlugins } from '../dist/plugins.js'
 import { sandbox, tempDir, type Sandbox } from './helpers.js'
 
 /** A plugin the library can install and remove from the page. */
-const pager: Plugin = { name: 'pager' as Plugin['name'], cognition: { title: '测试插件', text: '## 测试' }, storage: [], statements: [], ownerCommands: [] }
+const pager: Plugin = { contract: 1, name: 'pager' as Plugin['name'], cognition: { title: '测试插件', text: '## 测试' }, storage: [], statements: [], ownerCommands: [] }
 const table = new Map([...builtinPlugins, [pager.name as string, pager]])
 
 let sb: Sandbox

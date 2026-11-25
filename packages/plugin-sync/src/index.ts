@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { pluginName, type Plugin } from '@pneuma-base/kernel'
+import { CONTRACT, pluginName, type Plugin } from '@pneuma-base/kernel'
 import { syncCommands } from './commands.js'
 import { SCRATCH } from './facts.js'
 import { recordDeletions } from './sync.js'
@@ -7,6 +7,7 @@ import { checkSections, itemSection, STATUS_VIEW, statusView } from './views.js'
 
 /** 同步: a library and a target in two-way sync, without merging contents and without losing any. design.md 五. */
 export const sync: Plugin = {
+  contract: CONTRACT,
   name: pluginName('sync'),
   cognition: { title: '同步', text: readFileSync(new URL('../cognition/2-sync-section.md', import.meta.url), 'utf8') },
   storage: [

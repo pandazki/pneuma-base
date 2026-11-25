@@ -22,7 +22,7 @@ import { scopeOf } from '../src/scope.js'
 import { tempDir } from './support.js'
 
 describe('scope', () => {
-  const withCache: Plugin = { name: pluginName('search'), cognition: null, storage: [{ dir: 'index', kind: 'cache' }, { dir: 'facts', kind: 'body' }], statements: [], ownerCommands: [] }
+  const withCache: Plugin = { contract: 1, name: pluginName('search'), cognition: null, storage: [{ dir: 'index', kind: 'cache' }, { dir: 'facts', kind: 'body' }], statements: [], ownerCommands: [] }
   const inScope = scopeOf([sync, withCache])
 
   it('takes content, the archive, records and bundle markers', () => {
