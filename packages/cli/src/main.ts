@@ -158,20 +158,19 @@ async function putRequest(inv: Invocation, library: Library): Promise<PutRequest
   const to = flagValue(inv.parsed, 'to')
   const origin = originOf(inv.parsed)
   const note = flagValue(inv.parsed, 'note')
-  const withNote = note === null ? {} : { note }
   if (first === '-') {
     if (to === null) throw new UsageError('从标准输入放进来要写 --to <库内路径>。')
-    return { kind: 'place', from: { kind: 'stdin', content: await inv.io.readStdin() }, to, origin: requireOrigin(origin), ...withNote }
+    return { kind: 'place', from: { kind: 'stdin', content: await inv.io.readStdin() }, to, origin: requireOrigin(origin), note }
   }
   const local = resolve(inv.io.cwd, first)
   const onDisk = isAbsolute(first) || existsSync(local)
   if (onDisk && parseLibraryPath(library.root, local) === null) {
     if (to === null) throw new UsageError('从库外放进来要写 --to <库内路径>。')
     const kind = statSync(local, { throwIfNoEntry: false })?.isDirectory() ? 'directory' : 'file'
-    return { kind: 'place', from: { kind, path: local }, to, origin: requireOrigin(origin), ...withNote }
+    return { kind: 'place', from: { kind, path: local }, to, origin: requireOrigin(origin), note }
   }
   const path = onDisk ? local : first
-  if (to === null) return { kind: 'register', path, origin: requireOrigin(origin), ...withNote }
+  if (to === null) return { kind: 'register', path, origin: requireOrigin(origin), note }
   if (origin || note !== null) throw new UsageError('在库里挪位置不需要 --brought、--made 或 --note。')
   return { kind: 'move', from: path, to }
 }

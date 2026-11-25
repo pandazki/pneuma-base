@@ -336,6 +336,15 @@ describe('the owner’s operations on the ledger’s blocks', () => {
     expect(sectionNamed(provenance.blocks, '留存').blocks.find((b) => b.kind === 'list')).toMatchObject({ items: [{ note: '主人直接改的那份内容，codex 代记' }] })
   })
 
+  it('a put’s note is a line of that content’s entry in the panel, and ends its row in the activity', async () => {
+    const { show, codex } = await relayed()
+    await agentFace.put({ kind: 'place', from: text('cmp v2'), to: 'comparison.md', origin: { kind: 'made', from: [], outside: [] }, note: '换了结论' }, codex())
+    const provenance = sectionNamed(shown(await show('item', { path: 'comparison.md' })).blocks, '来历')
+    expect(sectionNamed(provenance.blocks, '内容的变化').blocks[0]).toMatchObject({ entries: [{ lines: ['codex · 场景 sess-b', '换了结论'] }, { lines: ['claude-code · 场景 sess-a'] }] })
+    const activity = tableIn(shown(await show('ledger.activity')).blocks).rows.map((row) => line(row.cells))
+    expect(activity.filter((row) => row.who === 'codex').map((row) => row.what)).toEqual(['comparison.md 换了新内容：换了结论'])
+  })
+
   it('the standing page offers the same on its rows: provenance for things nobody registered, accepting a direct change', async () => {
     const { root, show, codex } = await relayed()
     writeFileSync(join(root, 'dropped.md'), 'by hand')

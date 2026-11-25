@@ -104,7 +104,7 @@ describe('versions of a declared thing (C4)', () => {
     ])
   })
 
-  it('put --note records the version description in the same step, and attaches an item note in the ledger', () => {
+  it('put --note records the version description in the same step, and the ledger keeps it on that content, not as a separate note', () => {
     ok(owner(['plugin', 'add', 'ledger']))
     ok(put('v1'))
     declare('report.md', '初稿')
@@ -117,7 +117,8 @@ describe('versions of a declared thing (C4)', () => {
     ])
     const inspected = ok(agent(['inspect', 'report.md', '--json'])).json()
     const ledgerData = inspected.sections.find((s: any) => s.plugin === 'ledger').data
-    expect(ledgerData.said.map((s: any) => s.text)).toContain('按新成本重算早鸟价')
+    expect(ledgerData.versions.map((v: any) => v.note)).toEqual([null, '按新成本重算早鸟价'])
+    expect(ledgerData.said).toEqual([])
   })
 
   it('say version names the current version', () => {

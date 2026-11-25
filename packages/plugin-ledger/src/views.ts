@@ -142,13 +142,13 @@ export function itemText(v: ItemView): string {
   const state = v.state.kind === 'moved' ? `已搬到 ${v.state.to}` : v.absorbedInto !== null ? `并入了 ${v.absorbedInto}，是它的一部分` : STATE_LABEL[v.state.kind]
   const changed = v.versions.length > 1 ? `内容换过 ${v.versions.length - 1} 次，` : ''
   lines.push(`现状：${state}${v.archived ? ' · 已归档' : ''} · ${changed}${v.held.length} 份留存 · 条目 ${v.item}`)
-  if (v.versions.length > 1) {
+  if (v.versions.length > 1 || v.versions.some((ver) => ver.note !== null)) {
     // A held copy lies at held/<item>/<fingerprint>/<name>, so the version it keeps is the one with that fingerprint.
     const kept = new Set(v.held.flatMap((path) => path.split('/').slice(-2, -1)))
     for (const ver of v.versions) {
       const claimed = ver.by === 'owner' ? `主人直接改的，${who(ver.actor)} 代记` : '认了直接改动'
       const how = [...(ver.claimed ? [claimed] : []), ...(kept.has(ver.fingerprint) ? ['被换下，在留存里'] : [])].join('，')
-      lines.push(`  ${ver.fingerprint.slice(0, 8)}  ${when(ver.at)}  ${who(ver.actor)}${how ? `  ${how}` : ''}`)
+      lines.push([`  ${ver.fingerprint.slice(0, 8)}`, when(ver.at), who(ver.actor), ...(how ? [how] : []), ...(ver.note === null ? [] : [`「${ver.note}」`])].join('  '))
     }
   }
   return lines.join('\n')
@@ -222,6 +222,8 @@ export function sinceView(ledger: Ledger, me: FactActor, current: SceneId, since
   return { since: start, scenes: [...scenes.values()] }
 }
 
+const noteTail = (note: string | undefined) => (note ? `：${note}` : '')
+
 /** One fact as one line of text, paths as they are now where they moved since. */
 export function factLine(ledger: Ledger, f: Fact): string {
   const now = (id: ItemId, then: LibraryPath) => {
@@ -232,10 +234,12 @@ export function factLine(ledger: Ledger, f: Fact): string {
     case 'said':
       return `${SAID_LABEL[f.flavor]}：${f.text}${f.about !== null ? `（关于 ${pathOf(ledger, f.about)}）` : ''}`
     case 'item.enter':
-      return `放入 ${now(f.item, f.path)}（${originLabel(f.origin)}）`
-    case 'item.revise':
-      if (!f.claimed) return `${pathOf(ledger, f.item)} 换了新内容`
-      return f.by === 'owner' ? `记下 ${pathOf(ledger, f.item)} 是主人直接改的` : `认了 ${pathOf(ledger, f.item)} 的直接改动`
+      return `放入 ${now(f.item, f.path)}（${originLabel(f.origin)}）${noteTail(f.note)}`
+    case 'item.revise': {
+      const path = pathOf(ledger, f.item)
+      const what = !f.claimed ? `${path} 换了新内容` : f.by === 'owner' ? `记下 ${path} 是主人直接改的` : `认了 ${path} 的直接改动`
+      return `${what}${noteTail(f.note)}`
+    }
     case 'item.move': {
       const seen = f.how === 'observed' ? '（看到的）' : ''
       if (f.archive === 'in') return `归档 ${f.from}${seen}`

@@ -114,12 +114,11 @@ export const version: Plugin = {
     if (!thing) return null
     const r = await record(w, thing, 'put')
     if (!r) return null
-    const note = req.note?.trim() || null
-    if (!r.added && note === null) return null
-    if (note !== null) apply(w, { kind: 'note', thing: thing.id, version: r.version.id, text: note })
+    if (!r.added && req.note === null) return null
+    if (req.note !== null) apply(w, { kind: 'note', thing: thing.id, version: r.version.id, text: req.note })
     await commit(w)
-    if (!r.added) return { text: `已给 ${thing.path} 的第 ${r.version.n} 版写上说明：${note}`, data: { thing: thing.id, version: r.version.n } }
-    return { text: `记为 ${thing.path} 的第 ${r.version.n} 版${note ? `：「${note}」` : ''}`, data: { thing: thing.id, version: r.version.n } }
+    if (!r.added) return { text: `已给 ${thing.path} 的第 ${r.version.n} 版写上说明：${req.note}`, data: { thing: thing.id, version: r.version.n } }
+    return { text: `记为 ${thing.path} 的第 ${r.version.n} 版${req.note ? `：「${req.note}」` : ''}`, data: { thing: thing.id, version: r.version.n } }
   },
 
   /** Holds only a declared thing, and only once its current content is a recorded version. */
