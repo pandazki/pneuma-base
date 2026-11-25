@@ -20,7 +20,7 @@ type SaidFlavor = 'doing' | 'decided' | 'note'
 export type FactBody =
   | { kind: 'said'; flavor: SaidFlavor; text: string; about: ItemId | null }
   | { kind: 'item.enter'; item: ItemId; path: LibraryPath; fingerprint: Fingerprint; size: number; origin: LedgerOrigin; bundle?: true } // bundle: a marked directory
-  | { kind: 'item.revise'; item: ItemId; base: Fingerprint | null; fingerprint: Fingerprint; size: number; basis?: Basis; held: string | null; claimed: boolean }
+  | { kind: 'item.revise'; item: ItemId; base: Fingerprint | null; fingerprint: Fingerprint; size: number; basis?: Basis; held: string | null; claimed: boolean; by?: 'owner' } // by: the owner made the edit the actor recorded
   | { kind: 'item.move'; item: ItemId; from: LibraryPath; to: LibraryPath; archive: 'in' | 'out' | null }
   | { kind: 'item.basis'; item: ItemId; fingerprint: Fingerprint; basis: Basis }
   | { kind: 'item.remove'; item: ItemId }

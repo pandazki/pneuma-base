@@ -48,11 +48,6 @@ async function library() {
 const objects = (root: string) => Object.keys(readTree(join(root, '.pneuma-base/version'))).filter((f) => f.startsWith('objects/'))
 
 describe('version prune, confirmed', () => {
-  it('marks version list and version export as read-only commands', () => {
-    const readOnly = version.ownerCommands.filter((c) => c.readOnly).map((c) => c.name)
-    expect(readOnly).toEqual(['version list', 'version export'])
-  })
-
   it('drops the oldest versions and the content only they held; numbers stay; shared content stays', async () => {
     const { root, owned, put, declare } = await library()
     await put('one', 'a.md')

@@ -2,7 +2,7 @@
 // by check as unowned, changed, moved and taken back, and missing; the library does not fail.
 // C5: a thing made from S is marked stale when S changes, source-gone when S is deleted, and the
 // mark goes when S holds its old content again.
-import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { sandbox, tempDir, type Sandbox } from './helpers.js'
@@ -23,6 +23,15 @@ const agent = (args: string[], input?: string) =>
 const ok = <R extends { code: number; stdout: string; stderr: string }>(r: R): R => {
   expect(r.code, `${r.stdout}\n${r.stderr}`).toBe(0)
   return r
+}
+const other = (args: string[]) => sb.run(['--library', lib, '--as', 'codex', '--session', 's2', ...args], { cwd: outside })
+/** The item.revise facts on disk, as written. */
+const reviseFacts = () => {
+  const facts = join(lib, '.pneuma-base/ledger/facts')
+  return readdirSync(facts)
+    .flatMap((scene) => readdirSync(join(facts, scene)).map((name) => readFileSync(join(facts, scene, name), 'utf8')))
+    .flatMap((text) => text.trim().split('\n').map((line) => JSON.parse(line)))
+    .filter((f) => f.kind === 'item.revise')
 }
 const check = () => {
   const r = ok(agent(['check', '--json']))
@@ -82,14 +91,23 @@ describe('changes made outside the tool (C4)', () => {
     expect(edited.versions.map((v: any) => v.claimed)).toEqual([false, true])
   })
 
-  it('say revised --by owner records an owner edit told to the agent, and refuses unknown --by values', () => {
+  it('say revised --by owner: the agent stays the one who recorded it, the owner is named as who edited, and unknown --by values are refused', () => {
     expect(agent(['say', 'revised', 'edited.md', '--by', 'someone', '--json']).json()).toMatchObject({ outcome: 'not-heard', reason: 'refused' })
     const said = ok(agent(['say', 'revised', 'edited.md', '--by', 'owner', '--json'])).json()
-    expect(said).toMatchObject({ outcome: 'heard', by: 'ledger', note: expect.stringContaining('主人') })
+    expect(said).toMatchObject({ outcome: 'heard', by: 'ledger', note: '已记下 edited.md 的这次直接改动是主人做的' })
+    expect(reviseFacts()).toMatchObject([{ actor: { kind: 'agent', name: 'claude-code' }, claimed: true, by: 'owner' }])
     expect(section(check(), '被直接改过的')).toBeUndefined()
-    const edited = ok(agent(['inspect', 'edited.md', '--json'])).json().sections[0].data
-    expect(edited.versions.at(-1)).toMatchObject({ claimed: true, actor: { kind: 'owner', name: 'owner' } })
-    expect(ok(agent(['inspect', 'edited.md'])).stdout).toMatch(/主人\s+认了直接改动/)
+    expect(ok(agent(['inspect', 'edited.md'])).stdout).toMatch(/claude-code\s+主人直接改的，claude-code 代记/)
+    const since = ok(other(['check', '--json'])).json().sections.find((s: any) => s.title === '自上次以来').data
+    const told = since.scenes.flatMap((s: any) => s.facts).filter((f: any) => f.kind === 'item.revise')
+    expect(told).toEqual([expect.objectContaining({ actor: 'claude-code', text: '记下 edited.md 是主人直接改的' })])
+  })
+
+  it('say revised --by owner said by the owner records the owner, with no by', () => {
+    ok(sb.run(['--library', lib, 'say', 'revised', 'edited.md', '--by', 'owner'], { cwd: outside }))
+    const [revise] = reviseFacts()
+    expect(revise).toMatchObject({ actor: { kind: 'owner' }, claimed: true })
+    expect(revise).not.toHaveProperty('by')
   })
 
   it('say revised on a file nobody registered or one that did not change is answered plainly', () => {

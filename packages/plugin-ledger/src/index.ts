@@ -187,9 +187,10 @@ async function recordSay(w: Writing, req: SayRequest): Promise<SayAnswer> {
     const disk = await onDisk(ctx.library.root, path)
     if (!disk) return refused(`文件不在：${input}`)
     if (disk.fingerprint === item.fingerprint) return heard(`${input} 的内容和记录一致，没有要认的改动`)
-    const actor = by === 'owner' ? ({ kind: 'owner', name: 'owner', grant: null } as const) : factActor(ctx.actor)
-    w.facts.push(fact(ctx, 'reported', { kind: 'item.revise', item: item.id, base: item.fingerprint, fingerprint: disk.fingerprint, size: disk.size, held: null, claimed: true }, actor))
-    return heard(by === 'owner' ? `已把 ${input} 的直接改动记在主人名下` : `已认下 ${input} 的直接改动`)
+    // The envelope's actor is who the library recognised; what the caller says goes in the body.
+    const forOwner = by === 'owner' && ctx.actor.kind !== 'owner'
+    w.facts.push(fact(ctx, 'reported', { kind: 'item.revise', item: item.id, base: item.fingerprint, fingerprint: disk.fingerprint, size: disk.size, held: null, claimed: true, ...(forOwner ? { by: 'owner' as const } : {}) }))
+    return heard(forOwner ? `已记下 ${input} 的这次直接改动是主人做的` : `已认下 ${input} 的直接改动`)
   }
   return refused(`记账插件不认识这个种类：${req.kind}`)
 }

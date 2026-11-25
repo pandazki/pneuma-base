@@ -324,6 +324,18 @@ describe('the owner’s operations on the ledger’s blocks', () => {
     expect(actionsIn(sectionNamed(shown(await show('item', { path: 'comparison.md' })).blocks, '来历').blocks)).toEqual([])
   })
 
+  it('an edit the owner made and an agent recorded names both, in the panel and in the activity', async () => {
+    const { root, show, codex } = await relayed()
+    writeFileSync(join(root, 'src/stripe.html'), 'stripe, new prices')
+    await agentFace.say({ kind: 'revised', about: 'src/stripe.html', text: null, args: { by: ['owner'] } }, codex())
+    const activity = tableIn(shown(await show('ledger.activity')).blocks).rows.map((row) => line(row.cells))
+    expect(activity.find((row) => row.kind === '主人直接改的')).toMatchObject({ who: 'codex', what: '记下 src/stripe.html 是主人直接改的' })
+    await agentFace.put({ kind: 'place', from: text('stripe v3'), to: 'src/stripe.html', origin: { kind: 'brought', source: null, by: null } }, codex())
+    const provenance = sectionNamed(shown(await show('item', { path: 'src/stripe.html' })).blocks, '来历')
+    expect(sectionNamed(provenance.blocks, '内容的变化').blocks[0]).toMatchObject({ entries: [{ tag: { text: '当前' } }, { lines: ['主人，codex 代记 · 场景 sess-b'], tag: { text: '主人直接改的' } }, {}] })
+    expect(sectionNamed(provenance.blocks, '留存').blocks.find((b) => b.kind === 'list')).toMatchObject({ items: [{ note: '主人直接改的那份内容，codex 代记' }] })
+  })
+
   it('the standing page offers the same on its rows: provenance for things nobody registered, accepting a direct change', async () => {
     const { root, show, codex } = await relayed()
     writeFileSync(join(root, 'dropped.md'), 'by hand')
