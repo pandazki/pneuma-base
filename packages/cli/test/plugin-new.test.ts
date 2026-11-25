@@ -11,13 +11,14 @@ describe('plugin new', () => {
   const packages = tempDir('pb-packages-')
   for (const file of [`pneuma-base-${PNEUMA_BASE_VERSION}.tgz`, `pneuma-base-sdk-${PNEUMA_BASE_VERSION}.tgz`]) writeFileSync(join(packages, file), '')
 
-  it('writes a project named after its directory, depending on the two package files by path', () => {
+  it('writes a project named after its directory, depending on the two package files by a path that holds wherever the project moves', () => {
     const project = join(tempDir('pb-new-'), 'marks')
     const r = sb.run(['plugin', 'new', project, '--packages', packages, '--json'])
     expect(r.code, r.stderr).toBe(0)
     expect(r.json()).toMatchObject({ outcome: 'done', name: 'marks', kind: 'blank' })
     const manifest = JSON.parse(readFileSync(join(project, 'package.json'), 'utf8'))
-    expect(manifest.devDependencies['pneuma-base']).toBe(`file:../../${packages.split('/').at(-1)}/pneuma-base-${PNEUMA_BASE_VERSION}.tgz`)
+    expect(manifest.devDependencies['pneuma-base']).toBe(`file:${packages}/pneuma-base-${PNEUMA_BASE_VERSION}.tgz`)
+    expect(manifest.devDependencies['@pneuma-base/sdk']).toBe(`file:${packages}/pneuma-base-sdk-${PNEUMA_BASE_VERSION}.tgz`)
     expect(Object.keys(manifest.scripts)).toEqual(['build', 'test', 'install-local'])
     const index = readFileSync(join(project, 'src/index.ts'), 'utf8')
     expect(index).toContain("pluginName('marks')")
@@ -32,6 +33,17 @@ describe('plugin new', () => {
     expect(r.code, r.stderr).toBe(0)
     expect(r.json().files).toContain('src/target.ts')
     expect(readFileSync(join(project, 'src/index.ts'), 'utf8')).toContain("deployPlugin('my-site', localTarget")
+  })
+
+  it('with --help prints its own usage, and writes nothing', () => {
+    const where = tempDir('pb-new-')
+    const r = sb.run(['plugin', 'new', join(where, 'x'), '--help'])
+    expect(r.code).toBe(0)
+    expect(r.stdout).toMatch(/^用法：pneuma-base plugin new <目录> \[--kind blank\|deploy\] \[--name <插件名>\] \[--packages <两个包文件所在的目录>\]\n/)
+    for (const flag of ['--kind', '--name', '--packages']) expect(r.stdout).toContain(`\n  ${flag}`)
+    expect(r.stdout).not.toContain('动词：')
+    expect(sb.run(['plugin', 'new', '--help']).stdout).toBe(r.stdout)
+    expect(readdirSync(where)).toEqual([])
   })
 
   it('refuses before writing anything: a directory that is not empty, package files that are not there, a name or kind that cannot be', () => {

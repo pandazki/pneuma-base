@@ -28,6 +28,17 @@ npx -- pneuma-base plugin add {{name}} --library <库的目录>              # 5
 - 插件装在 `$PNEUMA_BASE_HOME/plugins/{{name}}/`（缺省 `~/.pneuma-base`）。改了代码再 `npm run install-local`，开着的管理界面下一次请求就用新的。
 - `npx` 后面的 `--` 让 `--library` 这样的开关交给 `pneuma-base`，不被 npm 自己读走。
 
+## 测试里替掉库外的服务
+
+插件连一个网络服务（比如部署目标）时，测试不连真的：`sandbox.serve(handler)` 在本机起一个替身，交回它的地址；每个请求作为 `Request` 交给 `handler`，它答的 `Response` 发回去；沙箱收尾时替身也停。符合性检查的 `setup` 拿到的 `sandbox` 一样能用：
+
+```ts
+async setup({ sandbox }) {
+  const url = await sandbox.serve(async (request) => Response.json({ ok: true }))
+  await sandbox.owner(['{{name}}', 'target', 'set', '--url', url])
+}
+```
+
 ## 标准在哪
 
-插件要守的规矩写在 Pneuma Base 的插件规范里（Pneuma Base 仓库的 `ARCHITECTURE.md` 第 5 节「扩展点」）。能跑的规矩在 `test/conformance.test.ts` 里跑成检查，每条的规矩写在它不通过时的报告里；查不了的列在报告最后，要自己看。
+插件要守的规矩写在 `PLUGINS.md` 里，它随命令行的包装在这个项目的 `node_modules/pneuma-base/PLUGINS.md`。能跑的规矩在 `test/conformance.test.ts` 里跑成检查，每条的规矩写在它不通过时的报告里；查不了的列在报告最后，要自己看。

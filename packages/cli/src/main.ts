@@ -120,6 +120,14 @@ const USAGE = `用法：
 插件作者：plugin new <目录> [--kind blank|deploy] [--name <插件名>] [--packages <两个包文件所在的目录>]（生成一个插件项目）
 加 --json 输出结果对象。`
 
+/** `plugin new --help`: the scaffold's own usage. */
+const PLUGIN_NEW_USAGE = `用法：pneuma-base plugin new <目录> [--kind blank|deploy] [--name <插件名>] [--packages <两个包文件所在的目录>]
+在一个空的或还不存在的目录里生成一个插件项目，不改一行就能构建、通过自己的测试、装进这台机器。不碰任何库。
+  --kind      blank（缺省）：一种「说」的种类、一条带参数表的主人命令、一个视图和一个自己画的块；deploy：开发包里的部署库加一个发布到本地目录的目标
+  --name      插件名：小写字母开头，只用小写字母、数字和连字符；不写就用目录名
+  --packages  pneuma-base 和 @pneuma-base/sdk 两个包文件所在的目录。项目按绝对路径依赖它们，挪到哪里都装得上；包文件要留在原处。不写就用构建这个命令行的仓库里 pnpm pack:dist 打出的，都没有就按包名依赖
+生成之后：cd <目录>，npm install，npm test，npm run install-local；README.md 说每个文件是什么。`
+
 /**
  * The owner commands of the library at hand, from the owner face, or the kernel's when there is
  * none: each with its arguments, what it does, and how it is gated.
@@ -138,6 +146,7 @@ function ownerHelp(commands: OwnerCommandInfo[], library: Library | null): strin
 /** Help, with the owner commands of the library `--library` or `@<grant>` names, if any. */
 async function help(argv: readonly string[], io: Io, table: PluginTable, home: string): Promise<string> {
   const line = splitLine(argv.filter((a) => a !== '--help' && a !== 'help'))
+  if (line.rest[0] === 'plugin' && line.rest[1] === 'new') return PLUGIN_NEW_USAGE
   const dir = flagValue({ flags: line.global }, 'library')
   const library =
     line.grant !== null

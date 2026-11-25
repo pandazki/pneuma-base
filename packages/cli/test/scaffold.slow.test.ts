@@ -1,11 +1,12 @@
 // B1, B5, B6: a third party's whole loop, from nothing to a plugin in a library. The command line
 // comes from its package file, installed with no registry, so nothing reaches into this repository.
-// For each kind, its `plugin new` writes a project; it installs its dependencies (the two package files, and the
-// bundler, the type checker and Node's types from the registry), builds, passes its own tests, and
-// installs into a temporary home, where a library adds it, calls its command and opens its view.
+// For each kind, its `plugin new` writes a project, which is moved elsewhere before anything else; it
+// installs its dependencies (the two package files, and the bundler, the type checker and Node's types
+// from the registry), builds, passes its own tests, and installs into a temporary home, where a library
+// adds it, calls its command and opens its view.
 // Slow and needs the registry, so it runs with `pnpm test:slow`, not `pnpm test`.
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -43,11 +44,13 @@ describe('a plugin project from plugin new', () => {
   })
 
   for (const kind of ['blank', 'deploy'] as const) {
-    it(`${kind}: builds, passes its own tests untouched, installs, and works in a library`, async () => {
+    it(`${kind}: moved before it is installed, builds, passes its own tests untouched, installs, and works in a library`, async () => {
       const name = `demo-${kind}`
-      const project = join(tempDir('pb-scaffold-'), name)
-      const made = JSON.parse(run(home, process.execPath, [cli, 'plugin', 'new', project, '--kind', kind, '--packages', packages, '--json']))
+      const made = JSON.parse(run(home, process.execPath, [cli, 'plugin', 'new', join(tempDir('pb-scaffold-'), name), '--kind', kind, '--packages', packages, '--json']))
       expect(made).toMatchObject({ outcome: 'done', name, kind, files: FILES[kind] })
+      const project = join(tempDir('pb-moved-'), 'deeper', name)
+      mkdirSync(join(project, '..'))
+      renameSync(made.dir, project)
 
       run(project, 'npm', ['install', '--prefer-offline', '--no-audit', '--no-fund'])
       run(project, 'npm', ['run', 'build'])
