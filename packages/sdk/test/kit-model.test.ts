@@ -1,11 +1,11 @@
-// The deploy plugin's decision, cell by cell of README "状态 × 操作": each state is a world of
-// switch, archive flag, content and what the target holds; each operation changes the world; then
-// the plan runs against a target that answers every step, or one that fails every step.
-import type { Fingerprint, LibraryPath } from '@pneuma-base/kernel'
+// The deploy kit's decision, cell by cell of src/kit/deploy/README.md "状态 × 操作": each state is a
+// world of switch, archive flag, content and what the target holds; each operation changes the world;
+// then the plan runs against a target that answers every step, or one that fails every step.
 import { describe, expect, it } from 'vitest'
-import { plan, siteName, statusOf, want, type SiteName, type Status } from '../src/model.js'
+import { plan, siteName, statusOf, want, type ContentId, type SiteName, type State as Status } from '../src/kit/index.js'
+import type { LibraryPath } from '../src/index.js'
 
-const fp = (s: string) => s.padEnd(64, '0') as Fingerprint
+const fp = (s: string) => s.padEnd(64, '0') as ContentId
 const p = (s: string) => s as LibraryPath
 const [OLD, F1, F2] = [fp('0'), fp('1'), fp('2')]
 const P = p('sites/a')
@@ -13,7 +13,7 @@ const Q = p('sites/b')
 const S = siteName(P)
 const S2 = siteName(Q)
 
-type World = { path: LibraryPath; on: boolean; archived: boolean; content: Fingerprint | null; target: Map<SiteName, Fingerprint> }
+type World = { path: LibraryPath; on: boolean; archived: boolean; content: ContentId | null; target: Map<SiteName, ContentId> }
 
 const world = (w: Partial<World>): World => ({ path: P, on: false, archived: false, content: F1, target: new Map(), ...w })
 const archivedAt = (path: LibraryPath) => p(`_archive/${path}`)
@@ -42,18 +42,18 @@ const OPS = {
 /** Runs the plan for the world against a target that does every step, or fails at the first. */
 function reconcile(w: World, targetFails: boolean): World {
   const target = new Map(w.target)
-  for (const step of plan(want(w.path, w), target)) {
+  for (const step of plan(want(siteName(w.path), w), target)) {
     if (targetFails) break
-    if (step.kind === 'publish') target.set(step.site, step.fingerprint)
+    if (step.kind === 'publish') target.set(step.site, step.content)
     else target.delete(step.site)
   }
   return { ...w, target }
 }
 
-const status = (w: World): Status => statusOf(w.path, w, w.target)
+const status = (w: World): Status => statusOf(siteName(w.path), w, w.target)
 
 /** The target holds the current content under the current path's name, and nothing else. */
-const servesCurrent = (w: World) => new Map([[siteName(w.path), w.content as Fingerprint]])
+const servesCurrent = (w: World) => new Map([[siteName(w.path), w.content as ContentId]])
 
 type Cell = [state: keyof typeof STATES, op: keyof typeof OPS, ok: Status, failed: Status]
 
@@ -123,12 +123,12 @@ describe('the plan', () => {
   it('is empty once the target holds what is wanted, so a second run changes nothing', () => {
     const w = world({ on: true, target: new Map([[S, OLD], [S2, F1]]) })
     const once = reconcile(w, false)
-    expect(plan(want(once.path, once), once.target)).toEqual([])
+    expect(plan(want(siteName(once.path), once), once.target)).toEqual([])
   })
 
   it('on a move, publishes under the new name before taking the old one down', () => {
-    expect(plan(want(Q, { on: true, archived: false, content: F1 }), new Map([[S, F1]]))).toEqual([
-      { kind: 'publish', site: S2, fingerprint: F1 },
+    expect(plan(want(S2, { on: true, archived: false, content: F1 }), new Map([[S, F1]]))).toEqual([
+      { kind: 'publish', site: S2, content: F1 },
       { kind: 'unpublish', site: S },
     ])
   })

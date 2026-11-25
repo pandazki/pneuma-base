@@ -62,6 +62,10 @@ importers:
 
   packages/plugin-deploy:
     dependencies:
+      '@pneuma-base/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+    devDependencies:
       '@pneuma-base/kernel':
         specifier: workspace:*
         version: link:../kernel

@@ -81,7 +81,7 @@ const pluginBoundary = {
       patterns: [
         {
           regex: '^@pneuma-base/(cli|viewer|plugin-[^/]+)(/.*)?$',
-          message: 'A plugin imports only @pneuma-base/kernel. Plugins do not call each other, the command line or the viewer.',
+          message: 'A plugin imports only @pneuma-base/kernel and @pneuma-base/sdk, with its kit. Plugins do not call each other, the command line or the viewer.',
         },
         {
           regex: '^(\\.\\./)+(kernel|cli|plugin-[^/]+)(/|$)',

@@ -44,8 +44,8 @@
 packages/cli ──▶ packages/viewer ──▶ packages/kernel ◀── packages/plugin-ledger
       │                                   ▲  │       ◀── packages/plugin-version
       ├───────────────────────────────────┘  │       ◀── packages/plugin-sync
-      │                                      ▼       ◀── packages/plugin-deploy
-      │                               packages/sdk   ◀── packages/plugin-search
+      │                                      ▼       ◀── packages/plugin-search
+      │                               packages/sdk（含 kit）◀── packages/plugin-deploy
       │                                      ▲
       │                                      └────── 库外的插件（只依赖 sdk）
       └──────── 内置插件表：五个插件包 ────────────────────────────┘
@@ -53,17 +53,17 @@ packages/cli ──▶ packages/viewer ──▶ packages/kernel ◀── packa
 
 | 包 | 职责 | 不许 |
 | --- | --- | --- |
-| `packages/sdk` | 插件契约（`@pneuma-base/sdk`）：全部类型、契约版本 `CONTRACT`、`definePlugin`，和插件自己造带品牌的值用的 `pluginName`、`instant`、`PLUGIN_NAME`。库外的插件只依赖它 | 导入内核、命令行、界面或任何插件；含内核的逻辑（内核的工具经上下文的 `tools` 给） |
+| `packages/sdk` | 插件契约（`@pneuma-base/sdk`）：全部类型、契约版本 `CONTRACT`、`definePlugin`，和插件自己造带品牌的值用的 `pluginName`、`instant`、`PLUGIN_NAME`。另一个入口 `@pneuma-base/sdk/kit` 是插件打进自己包里的库：只新增文件的记录库 `recordStore`、配置文件助手 `configFile`、部署库 `deployPlugin`（第 13 节）。库外的插件只依赖它 | 导入内核、命令行、界面或任何插件；含内核的逻辑（内核的工具经上下文的 `tools` 给，库也只用 `tools`） |
 | `packages/kernel` | 打开库、解析配置、识别行动者和会话、六个动词的管线、授权的门、事件、认知的拼装、技能的生成、装载库外的插件。依赖 sdk，并把它原样再导出 | 依赖 sdk 以外的任何包；认识任何插件的事实或目录 |
 | `packages/plugin-ledger` | 记账与对账：事实、场景、条目、对账、来历、过期、变化，留存（第 10 节） | 读写别的插件的目录；绕过内核的公开接口；导入别的插件 |
 | `packages/plugin-version` | 版本：声明了有版本的东西，每一版都留着（第 11 节） | 同上 |
 | `packages/plugin-sync` | 同步：库和一个目标双向同步，不合并、不丢内容（第 12 节） | 同上 |
-| `packages/plugin-deploy` | 部署：主人的开关决定什么在线（第 13 节） | 同上 |
+| `packages/plugin-deploy` | 部署：sdk 的部署库加「本地目录」「命令」两种目标（第 13 节）。只依赖 sdk | 同上 |
 | `packages/plugin-search` | 查找：正文和按意思，索引是缓存（第 14 节） | 同上 |
 | `packages/viewer` | 管理界面。`src/server/` 是只听本机的 HTTP 服务，用内核的三个面；`web/` 是网页，只渲染块。插件表由调用方传进 `startServer` | 导入任何插件包或命令行；网页导入内核的代码（只取类型） |
 | `packages/cli` | 命令 `pneuma-base`：把命令行翻译成对内核的调用，把结果打印出来；内置插件表（记账、版本、同步、部署、查找，`init` 缺省只装记账）；`view` 把内置插件表交给界面的服务 | 含领域逻辑 |
 
-插件只经契约的类型和上下文对象接触内核：自带的插件从 `packages/kernel` 导入（它再导出 sdk），库外的插件只依赖 `packages/sdk`，运行时不导入内核，要用内核的工具就用上下文的 `tools`。插件之间不直接调用，也不互相导入。内核不导入界面，界面不导入任何插件，sdk 不导入内核、命令行、界面和任何插件；lint 的导入规则守这几条，`packages/kernel/test/dependency-direction.test.ts` 在故意违反的例子上看它们变红。
+插件只经契约的类型和上下文对象接触内核：自带的插件从 `packages/kernel` 导入（它再导出 sdk），部署插件和库外的插件只依赖 `packages/sdk`，运行时不导入内核，要用内核的工具就用上下文的 `tools`。插件之间不直接调用，也不互相导入。内核不导入界面，界面不导入任何插件，sdk 不导入内核、命令行、界面和任何插件；lint 的导入规则守这几条，`packages/kernel/test/dependency-direction.test.ts` 在故意违反的例子上看它们变红。
 
 运行时是 Node，语言是 TypeScript，包管理用 pnpm 的工作区，测试用 vitest。
 
@@ -587,32 +587,35 @@ $PNEUMA_BASE_HOME/
 
 ## 13. 部署插件
 
-包 `packages/plugin-deploy`，名字 `deploy`。agent 用 `say deployable <库内路径> [一句话]` 声明一样东西（文件或带标记的目录）可以部署，声明不让它上线；主人用开关决定它在不在线；开着的东西，目标上跟着库里当前的内容。状态表、决定表和站点名的规则在包里的 `README.md`。
+包 `packages/plugin-deploy`，名字 `deploy`。agent 用 `say deployable <库内路径> [一句话]` 声明一样东西（文件或带标记的目录）可以部署，声明不让它上线；主人用开关决定它在不在线；开着的东西，目标上跟着库里当前的内容。
 
-它接上的槽：
+它是 sdk 的**部署库**加两种目标：`deployPlugin('deploy', [dirTarget, commandTarget])`。部署库（`@pneuma-base/sdk/kit`，代码在 `packages/sdk/src/kit/deploy/`）拿一个插件名和一种或几种目标，交回一个完整的插件；和目标无关的都在它里面，第三方的部署插件只写自己的目标。库不是插件，插件导入库不算插件导入插件；库不导入内核，对库的读写都经 `tools`。状态表、决定表、站点名的规则和目标的接口在 `packages/sdk/src/kit/deploy/README.md`。
+
+它接上的槽（别的部署插件一样，命令和页面以它自己的名字开头）：
 
 | 槽 | 它做什么 |
 | --- | --- |
 | `onSay` | 听得懂 `deployable`：路径要是库里在主区的东西，带标记的目录里面的路径算那个目录 |
-| `onPut` | 放入了新内容、登记了在工具外改过的内容、挪了位置：对那样东西对一遍，答复里说重新发布了什么；目标失败时抛错，内核把它列进 `problems`，放照样成功（K8），退出码 3。这句话先说放入本身已经成功、只是没跟着上线；调用者是 agent 时（比如沙箱里写不到目标）再说这不是它的放入出了问题、不用重做，上线等主人在自己的终端里跑 `deploy sync` |
-| `onArchive` | 归档的东西下线；取回的按开关重新上线 |
+| `onPut` | 放入了新内容、登记了在工具外改过的内容、挪了位置：对那样东西对一遍，答复里说重新发布了什么；目标失败时答复带 `problems`，放照样成功（K8），退出码 3。这句话先说放入本身已经成功、只是没跟着上线；调用者是 agent 时（比如沙箱里写不到目标）再说这不是它的放入出了问题、不用重做，上线等主人在自己的终端里跑 `deploy sync` |
+| `onArchive` | 归档的东西下线；取回的按开关重新上线；目标失败同样经 `problems` |
 | `onInspect` | 状态、地址、开关、站点名 |
-| `onCheck` | 「线上和库里不一致」：待发布、待下线、开着但路径上没有东西的。已归档但目标上还有的也列，因为它还对外可见 |
-| `observe` | `archive purge` 清掉的声明：先把目标上剩下的撤下，再去掉声明 |
-| `views` / `onView` / `onItemView` | 页 `deploy.sites`：目标和配目标的动作；可部署的东西一张表，路径、状态、地址、每行一个开关，「对一遍」。条目面板里的「部署」节：状态、开关、地址、站点名、开关按钮 |
+| `onCheck` | 「线上和库里不一致」：待发布、待下线、开着但路径上没有东西的、读不到目标的。已归档但目标上还有的也列，因为它还对外可见。记录里读不懂的行另列一节 |
+| `onPurged` | `archive purge` 清掉的声明：先把目标上剩下的撤下，再去掉声明 |
+| `onRemove` | 目标上还有它的站点时拒绝卸下，说有几样在线、先用 `deploy off` 关上；主人 `--anyway` 卸下时，答复复述这句话，列出留在线上的 |
+| `views` / `onView` / `onItemView` | 页 `deploy.sites`：目标和配每种目标的按钮；可部署的东西一张表，路径、状态、地址（可复制，网址可点开）、每行一个开关，「对一遍」。条目面板里的「部署」节：状态、开关、地址、站点名、开关按钮。目标可以在两处加列、字段和块，含 `custom` 块 |
 
-一个决定：目标上该有什么，只看开关、是否在归档区、路径上有没有东西（`model.ts` 的 `want`）。对账（`plan`）拿它和记录里这个目标上有的比，先发布再撤下旧名，两边一样就什么都不做。开关、放、挪、归档、取回、`deploy sync` 都跑同一个对账，所以 `deploy sync` 跑几遍结果一样。
+一个决定：目标上该有什么，只看开关、是否在归档区、路径上有没有东西（`model.ts` 的 `want`）。对账（`plan`）拿它和目标上有的比，先发布再撤下旧名，两边一样就什么都不做。开关、放、挪、归档、取回、`deploy sync` 都跑同一个对账，所以 `deploy sync` 跑几遍结果一样。
 
-主人面命令，都不是破坏性的：`deploy on <路径>`、`deploy off <路径>`、`deploy target set --kind dir --to <目录>` 或 `--kind command --publish "<命令>" --unpublish "<命令>" [--url <模板>] [--timeout <秒>]`、`deploy sync`、`deploy list`（只读）。对外发布是对外的动作，所以前三条是 `ownerOnly`，由内核的门在 agent 的会话里拒绝（第 6 节），插件自己不再看上下文。`deploy sync` 和 `deploy list` agent 也能用，它们只照主人的开关办。开关在目标失败时照样记下，答复以 `publish-failed` / `unpublish-failed` 或 `no-target` 拒绝并说明现在的状态。
+主人面命令，都不是破坏性的：`deploy on <路径>`、`deploy off <路径>`、`deploy target set --kind dir --to <目录>` 或 `--kind command --publish "<命令>" --unpublish "<命令>" [--url <模板>] [--timeout <秒>]`、`deploy sync`、`deploy list`（只读）。对外发布是对外的动作，所以前三条是 `ownerOnly`，由内核的门在 agent 的会话里拒绝（第 6 节），插件自己不再看上下文。`deploy sync` 和 `deploy list` agent 也能用，它们只照主人的开关办。开关在目标失败时照样记下，答复以 `publish-failed` / `unpublish-failed` 或 `no-target` 拒绝并说明现在的状态。每条命令读参数的地方各是一个小函数，换成命令的参数表时只动那里。
 
-目标是一个接口：`publish(站点名, 内容目录) → { url }`、`unpublish(站点名)`。发布前把算进指纹的文件复制到缓存目录下的临时目录（不带标记），核对指纹，再交给目标。`dir` 目标写 `<目录>/<站点名>/…` 和 `index.json`，先写 `.tmp-` 开头的名字再换上，目录不能在库里或包含库；`command` 目标把主人的命令按 shell 的引号规则切成参数、不经 shell 运行，工作目录是库根，超时缺省 120 秒。
+目标是一个接口（`TargetAdapter`）：怎么配（`target set` 在 `--kind` 之后的参数和用法、把参数变成要存的配置、给人看的说明、页面上的表单、要用的密钥的名字），怎么在边界上解析存下的配置并打开它。打开的 `Target` 有标识 `key` 和给人看的 `label`，`publish(站点名, 内容目录, meta) → { url }`、`remove(站点名)`；可选的 `siteName` 换掉缺省的站点名规则，`identify` 换掉内核的指纹作内容的编号，`serving` 报告它真在服务什么，`view` 往页面和面板里加东西。会报告的目标按它报告的对账，对账前先把记录对齐它，所以 `deploy sync` 修得好断在一半的发布和在目标那边被删掉的站点；它读不到时状态是「不知道」，什么都不做。不会报告的按插件自己的记录对账。自带的两种都不报告。发布前用 `tools.copyOut` 把算进内容的文件复制到缓存目录下的临时目录（不带标记），核对编号，再交给目标。`dir` 目标写 `<目录>/<站点名>/…` 和 `index.json`，先写 `.tmp-` 开头的名字再换上，目录不能在库里或包含库；`command` 目标把主人的命令按 shell 的引号规则切成参数、不经 shell 运行，工作目录是库根，超时缺省 120 秒。
 
-存放，都在 `.pneuma-base/deploy/` 下，本体：`config.json` 是目标，先写临时名再改名；`facts/` 每次写入一个名字唯一、写完不动的 jsonl 文件：声明、开关、挪、去掉、发布、下线。「目标上有什么」来自对当前目标（按目标的标识区分）的发布与下线记录；换了目标，开着的东西都成待发布，旧目标上的不撤。缓存目录里只有发布时的临时目录。
+存放，都在 `.pneuma-base/deploy/` 下，本体：`config.json` 是目标，带它的 `kind`，经 sdk 的配置文件助手先写临时名再改名；`facts/` 经 sdk 的记录库，每次写入一个名字唯一、写完不动的 jsonl 文件：声明、开关、挪、去掉、发布、下线。「目标上有什么」（目标不会报告时）来自对当前目标（按目标的标识区分）的发布与下线记录；换了目标，开着的东西都成待发布，旧目标上的不撤。缓存目录里只有发布时的临时目录。改用部署库之前写下的记录和配置，格式没变，照样读。
 
 实现里和本程细化设计不同的几处：
 
-- 跟着挪和归档用的是 `onPut`、`onArchive`，不是 `observe`：这两个槽收到的是内核解析过的路径（`observe` 里挪的来源只有调用方写的原样），答复能告诉 agent 重新发布了什么。`observe` 只用来接 `archive purge`。
-- 状态比设计多两种：待下线（不该在线、目标上还有，上次下线失败）和不在（开着、路径上没有东西）。
+- 跟着挪和归档用的是 `onPut`、`onArchive`，不是 `observe`：这两个槽收到的是内核解析过的路径（`observe` 里挪的来源只有调用方写的原样），答复能告诉 agent 重新发布了什么。清归档区用 `onPurged`，不看 `observe`。
+- 状态比设计多两种：待下线（不该在线、目标上还有，上次下线失败）和不在（开着、路径上没有东西）。会报告的目标读不到时还有「不知道」。
 - 目标的配置是 `config.json`，会被 `deploy target set` 换掉；它是配置，不是记录。
 
 ## 14. 查找插件
