@@ -35,7 +35,7 @@ async function library(plugins: Plugin[] = []): Promise<Lib> {
 }
 
 async function serve(dir: string, opts: { table?: PluginTable; env?: Record<string, string>; home?: string } = {}): Promise<RunningServer> {
-  const server = await startServer({ dir, table: opts.table ?? new Map(), home: opts.home ?? tempDir('pb-v-home-'), env: opts.env ?? {} })
+  const server = await startServer({ dir, builtins: opts.table ?? new Map(), home: opts.home ?? tempDir('pb-v-home-'), env: opts.env ?? {} })
   running.push(server)
   return server
 }

@@ -49,11 +49,23 @@ export type Context = { library: Library; actor: Actor; session: Session; now: I
 
 /**
  * The context a plugin's hook receives: the operation's context, the plugin's own directory in the
- * library, its cache directory outside the library (`<home>/cache/<library id>/<plugin>/`), and the
- * kernel's helpers bound to the library. The own directory exists whenever a hook runs. The kernel
- * does not create the cache directory; deleting it must lose nothing.
+ * library, its cache directory outside the library (`<home>/cache/<library id>/<plugin>/`), the
+ * kernel's helpers bound to the library, and its credentials on this machine. The own directory
+ * exists whenever a hook runs. The kernel does not create the cache directory; deleting it must lose nothing.
  */
-export type PluginContext = Context & { dir: string; cacheDir: string; tools: PluginTools }
+export type PluginContext = Context & { dir: string; cacheDir: string; tools: PluginTools; secrets: PluginSecrets }
+
+/**
+ * The credentials the owner set for this plugin on this machine with `secret set`: kept under
+ * `$PNEUMA_BASE_HOME`, outside every library, so never synced. A plugin reads only its own.
+ */
+export interface PluginSecrets {
+  /** The value of the secret `name`, one the plugin declares; null when the owner has not set it here. */
+  get(name: string): Promise<string | null>
+}
+
+/** A credential a plugin reads, so the configuration page can show whether it is set and offer to set it. */
+export type SecretDecl = { name: string; description: string }
 
 /** Where a library path lies: the content anyone may arrange, the archive, or the kernel's own files. */
 export type Region = 'content' | 'archive' | 'kernel'
@@ -251,15 +263,61 @@ export type OwnerResult =
 /** What an owner command's `run` answers. The kernel adds `problems`. */
 export type OwnerAnswer = { outcome: 'done'; text: string; data?: unknown } | { outcome: 'refused'; reason: string; text: string }
 
+/** A value a `value` flag takes, and what it means, for people. */
+export type ParamOption = { value: string; label: string }
+
+/**
+ * One argument by position. `hint`: a few Chinese words for what to write, shown as `<hint>` in the
+ * usage line and as the form's label. `many`: it takes the rest, one or more when `required`, else
+ * none or more; only the last may. `pattern`: a regular expression each value matches whole (`u` flag).
+ */
+export type PositionalParam = { readonly name: string; readonly hint: string; readonly required?: boolean; readonly many?: boolean; readonly pattern?: string }
+
+/**
+ * One flag, `--<name>`. `value` takes exactly one value, `list` one or more up to the next flag,
+ * `boolean` none, and is never required. A `value` flag with `options` takes only those values.
+ */
+export type FlagParam = {
+  readonly name: string
+  readonly hint: string
+  readonly kind: 'value' | 'list' | 'boolean'
+  readonly required?: boolean
+  readonly pattern?: string
+  readonly options?: readonly ParamOption[]
+}
+
+/** How a command's arguments are written. The command line parses by it, the kernel checks by it, and help and forms are made from it. */
+export type OwnerParams = { readonly positional?: readonly PositionalParam[]; readonly flags?: readonly FlagParam[] }
+
+/** The checked values of a call, by argument name: what `run` gets when its command has `params`. */
+export type OwnerValues = { readonly [name: string]: string | readonly string[] | boolean | null }
+
+type Each<L> = L extends readonly (infer E)[] ? E : never
+type NameOf<T> = T extends { name: infer N extends string } ? N : never
+type PositionalValue<A> = A extends { many: true } ? readonly string[] : A extends { required: true } ? string : string | null
+type FlagValue<F> = F extends { kind: 'boolean' } ? boolean : F extends { kind: 'list' } ? readonly string[] : F extends { required: true } ? string : string | null
+/** The values of `P` by name: a required value is a string, an optional one may be null, a list or `many` is a list, a boolean is true or false. */
+export type ParamValues<P extends OwnerParams> = { readonly [A in Each<P['positional']> as NameOf<A>]: PositionalValue<A> } & {
+  readonly [F in Each<P['flags']> as NameOf<F>]: FlagValue<F>
+}
+
+/** What an owner command's `run` gets: the arguments as written, and their values by name as checked against `params`; empty without `params`. */
+export type CommandArgs = OwnerArgs & { readonly values: OwnerValues }
+
 /**
  * A command a plugin adds to the owner face. The kernel refuses a destructive one in an agent session
  * or without confirmation, and an `ownerOnly` one in an agent session, without asking: it changes no
  * data but decides for the owner, such as what goes online or where the library syncs.
+ *
+ * With `params`, the kernel refuses a call that does not fit them before `run`, and help shows the
+ * usage made from them; write the command with `defineCommand` to get the values typed. Without
+ * `params`, `run` checks the arguments itself and `usage` says how they are written after the name,
+ * for help, e.g. '<库内路径> --to <库内路径>'.
  */
 export interface OwnerCommand {
   readonly name: string // one or more words, e.g. 'held restore'
   readonly summary: string
-  /** How its arguments are written after the name, for help, e.g. '<库内路径> --to <库内路径>'. */
+  readonly params?: OwnerParams
   readonly usage?: string
   readonly destructive: boolean
   readonly ownerOnly: boolean
@@ -267,7 +325,7 @@ export interface OwnerCommand {
   readonly readOnly?: boolean
   /** It configures plugins, targets or embedders without changing items; its event is news only after an agent's first visit. */
   readonly setup?: boolean
-  readonly run: (args: OwnerArgs, ctx: PluginContext) => Promise<OwnerAnswer>
+  readonly run: (args: CommandArgs, ctx: PluginContext) => Promise<OwnerAnswer>
 }
 
 // ---- events ----
@@ -302,6 +360,8 @@ export interface Plugin {
   readonly storage: readonly StorageDecl[]
   readonly statements: readonly string[]
   readonly ownerCommands: readonly OwnerCommand[]
+  /** The credentials it reads with `ctx.secrets.get`, each with one Chinese line on what it is for. */
+  readonly secrets?: readonly SecretDecl[]
 
   // Hooks are function-typed properties, not methods, so a hook is checked strictly against what the kernel gives it.
   readonly onPut?: (req: AcceptedPut, ctx: PluginContext) => Promise<PluginNoteAnswer | null>
@@ -355,13 +415,27 @@ export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; l
  * What a button does: one verb of the agent face, or one owner command. Strings may hold `{input}`,
  * replaced by that input's value. A `multiple` input's values, one per line, replace a list element
  * that is exactly `{input}`, one element each. An input left empty gives an empty string, which the
- * faces take as not given.
+ * faces take as not given. An owner call's `stdin` is what the command reads as its standard input,
+ * such as the value `secret set` keeps; it is never part of the event.
  */
 export type Call =
   | { [V in Verb]: { face: 'agent'; verb: V; request: Parameters<AgentFace[V]>[0] } }[Verb]
-  | { face: 'owner'; command: string; args: OwnerArgs }
-/** `pattern`: a regular expression a filled value must match whole, each line of a `multiple` one; `hint` says what fits. */
-export type ActionInput = { name: string; label: string; placeholder: string | null; value: string | null; options: { value: string; label: string }[] | null; multiple?: boolean; pattern?: string; hint?: string }
+  | { face: 'owner'; command: string; args: OwnerArgs; stdin?: string }
+/**
+ * `pattern`: a regular expression a filled value must match whole, each line of a `multiple` one;
+ * `hint` says what fits. `secret`: the value is typed hidden, as a password is.
+ */
+export type ActionInput = {
+  name: string
+  label: string
+  placeholder: string | null
+  value: string | null
+  options: { value: string; label: string }[] | null
+  multiple?: boolean
+  pattern?: string
+  hint?: string
+  secret?: true
+}
 /** `confirm`: a question the person answers before the call; the answer is the in-person confirmation a destructive command needs. */
 export type Action = { label: string; tone: 'default' | 'danger'; confirm: string | null; inputs: ActionInput[]; call: Call }
 

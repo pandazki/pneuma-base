@@ -53,14 +53,14 @@ packages/cli ──▶ packages/viewer ──▶ packages/kernel ◀── packa
 
 | 包 | 职责 | 不许 |
 | --- | --- | --- |
-| `packages/sdk` | 插件契约（`@pneuma-base/sdk`）：全部类型、契约版本 `CONTRACT`、`definePlugin`，和插件自己造带品牌的值用的 `pluginName`、`instant`、`PLUGIN_NAME`。另一个入口 `@pneuma-base/sdk/kit` 是插件打进自己包里的库：只新增文件的记录库 `recordStore`、配置文件助手 `configFile`、部署库 `deployPlugin`（第 13 节）。库外的插件只依赖它 | 导入内核、命令行、界面或任何插件；含内核的逻辑（内核的工具经上下文的 `tools` 给，库也只用 `tools`） |
-| `packages/kernel` | 打开库、解析配置、识别行动者和会话、六个动词的管线、授权的门、事件、认知的拼装、技能的生成、装载库外的插件。依赖 sdk，并把它原样再导出 | 依赖 sdk 以外的任何包；认识任何插件的事实或目录 |
+| `packages/sdk` | 插件契约（`@pneuma-base/sdk`）：全部类型、契约版本 `CONTRACT`、`definePlugin`、`defineCommand`，从命令的参数表生成用法和表单的 `usageOf`、`formOf`，和插件自己造带品牌的值用的 `pluginName`、`instant`、`PLUGIN_NAME`、`SECRET_NAME`。另一个入口 `@pneuma-base/sdk/kit` 是插件打进自己包里的库：只新增文件的记录库 `recordStore`、配置文件助手 `configFile`、部署库 `deployPlugin`（第 13 节）。库外的插件只依赖它 | 导入内核、命令行、界面或任何插件；含内核的逻辑（内核的工具经上下文的 `tools` 给，库也只用 `tools`） |
+| `packages/kernel` | 打开库、解析配置、识别行动者和会话、六个动词的管线、授权的门、事件、认知的拼装、技能的生成、装载和安装库外的插件、本机的密钥。依赖 sdk，并把它原样再导出 | 依赖 sdk 以外的任何包；认识任何插件的事实或目录 |
 | `packages/plugin-ledger` | 记账与对账：事实、场景、条目、对账、来历、过期、变化，留存（第 10 节） | 读写别的插件的目录；绕过内核的公开接口；导入别的插件 |
 | `packages/plugin-version` | 版本：声明了有版本的东西，每一版都留着（第 11 节） | 同上 |
 | `packages/plugin-sync` | 同步：库和一个目标双向同步，不合并、不丢内容（第 12 节） | 同上 |
 | `packages/plugin-deploy` | 部署：sdk 的部署库加「本地目录」「命令」两种目标（第 13 节）。只依赖 sdk | 同上 |
 | `packages/plugin-search` | 查找：正文和按意思，索引是缓存（第 14 节） | 同上 |
-| `packages/viewer` | 管理界面。`src/server/` 是只听本机的 HTTP 服务，用内核的三个面；`web/` 是网页，只渲染块。插件表由调用方传进 `startServer` | 导入任何插件包或命令行；网页导入内核的代码（只取类型） |
+| `packages/viewer` | 管理界面。`src/server/` 是只听本机的 HTTP 服务，用内核的三个面；`web/` 是网页，只渲染块。自带的插件表由调用方传进 `startServer`，服务每次请求再并上本机的插件 | 导入任何插件包或命令行；网页导入内核的代码（只取类型） |
 | `packages/cli` | 命令 `pneuma-base`：把命令行翻译成对内核的调用，把结果打印出来；内置插件表（记账、版本、同步、部署、查找，`init` 缺省只装记账）；`view` 把内置插件表交给界面的服务 | 含领域逻辑 |
 
 插件只经契约的类型和上下文对象接触内核：自带的插件从 `packages/kernel` 导入（它再导出 sdk），部署插件和库外的插件只依赖 `packages/sdk`，运行时不导入内核，要用内核的工具就用上下文的 `tools`。插件之间不直接调用，也不互相导入。内核不导入界面，界面不导入任何插件，sdk 不导入内核、命令行、界面和任何插件；lint 的导入规则守这几条，`packages/kernel/test/dependency-direction.test.ts` 在故意违反的例子上看它们变红。
@@ -227,6 +227,7 @@ interface Plugin {
   readonly keeps?: 'every' | 'some'             // 有 revise 时：换下的内容都留住，还是只留一部分（缺省）
   readonly storage: StorageDecl[]               // 它名下的目录，各是本体还是缓存
   readonly statements: string[]                 // 「说」里它听得懂的种类
+  readonly secrets?: SecretDecl[]               // 它用 ctx.secrets.get 读的凭证，各带一句中文说明做什么用
 
   // 钩子都是函数类型的属性，不是方法，所以参数按契约严格检查
   readonly onPut?: (req: AcceptedPut, ctx: PluginContext) => Promise<PluginNoteAnswer | null>
@@ -242,7 +243,7 @@ interface Plugin {
   readonly onPurged?: (paths: LibraryPath[], ctx: PluginContext) => Promise<void>   // archive purge 删了东西之后，路径是它们在归档区时的
   readonly onAdd?: (ctx: PluginContext) => Promise<void | { problems: string[] }>   // plugin add 装上它之后，一次
   readonly onRemove?: (ctx: PluginContext) => Promise<void | { refuse: string }>    // plugin remove 卸下它之前
-  readonly ownerCommands: OwnerCommand[]                // 它给主人面加的命令，名字以 `<插件名> ` 开头
+  readonly ownerCommands: OwnerCommand[]                // 它给主人面加的命令，名字以 `<插件名> ` 开头；可带参数表 params
 
   readonly views?: ViewDecl[]                           // 它给管理界面加的视图，编号以 `<插件名>.` 开头
   readonly onView?: (req: ViewRequest, ctx: PluginContext) => Promise<ViewAnswer>
@@ -257,13 +258,30 @@ type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems: string
 
 视图槽（第 6 节「只读的一面」）：插件声明它的视图，每个视图返回带类型的块，界面只渲染块，不知道块来自哪个插件。编号不以插件名加点开头的视图不列出，记成问题。`onView` 或 `onItemView` 抛错、或答复的不是一个视图或一节，内核在那一页或那一节里给出说明出错的块，并把问题列进结果（K8）；答复里的每一块也由内核核对（第 6 节）。视图不是操作：插件在这两个钩子里不写东西，内核也不为它们发事件。
 
-实现里的细化：钩子收到的上下文另带 `dir`，即这个插件名下的目录，钩子运行时它一定在（打开库时内核把每个能运行的已装插件的目录建好，同步过来、这台机器后来才有这个插件的库也一样）；`cacheDir`，即这个插件在库外的缓存目录（见下面「库外的插件与缓存」）；`tools`，内核的工具（见下面「上下文里的工具」）。钩子的答复不写插件名，由内核盖上（`PluginNote`、`PluginSection`、`PluginHit`）；`onPut`、`onArchive` 的答复和 `onSay` 听到时的答复可以在说明旁边带 `problems`，即它自己那份做成了、库外的一步没做成：内核把它们列成这个插件的问题，动词的结果照旧，抛错也照旧是问题。`onSay` 答复 `SayAnswer`，处理它的插件出错时结果是 `not-heard`、`plugin-failed`。主人面命令 `OwnerCommand` 带 `destructive` 和 `ownerOnly` 两个标志，由内核在同一处拦（第 6 节）；可选的 `usage` 是它的参数怎么写，给帮助看；可选的 `readOnly` 说它什么都不改（列清单、看状态），它的事件带着这个标志，记账插件不把它当成给 agent 的消息；可选的 `setup` 说它只改插件、目标或嵌入器这类配置而不动条目，agent 第一次来时说明里已经是最新配置，只在它来过之后再改才算消息。`keeps` 定说明里同名时的那句话（第 7 节）：记账插件是 `every`，版本插件是 `some`。插件名同时是目录名，用 `pluginName()` 解析。主人面的事件带 `destructive`、`readOnly` 和 `setup`，插件不用自己认哪些命令会丢数据、哪些什么都不改、哪些只是前期配置；`archive purge` 的答复在 `data.paths` 里列出被删的库内路径，记账插件据此记「已除」。
+实现里的细化：钩子收到的上下文另带 `dir`，即这个插件名下的目录，钩子运行时它一定在（打开库时内核把每个能运行的已装插件的目录建好，同步过来、这台机器后来才有这个插件的库也一样）；`cacheDir`，即这个插件在库外的缓存目录（见下面「库外的插件与缓存」）；`tools`，内核的工具（见下面「上下文里的工具」）；`secrets`，主人在这台机器上给它设的凭证，`get(名字)` 读出，没设是 null（见下面「库外的插件与缓存」）。钩子的答复不写插件名，由内核盖上（`PluginNote`、`PluginSection`、`PluginHit`）；`onPut`、`onArchive` 的答复和 `onSay` 听到时的答复可以在说明旁边带 `problems`，即它自己那份做成了、库外的一步没做成：内核把它们列成这个插件的问题，动词的结果照旧，抛错也照旧是问题。`onSay` 答复 `SayAnswer`，处理它的插件出错时结果是 `not-heard`、`plugin-failed`。主人面命令 `OwnerCommand` 带 `destructive` 和 `ownerOnly` 两个标志，由内核在同一处拦（第 6 节）；可选的 `params` 是它的参数表（下面「命令的参数表」），没有参数表的命令自己核参数，可选的 `usage` 写它的参数怎么写，给帮助看；可选的 `readOnly` 说它什么都不改（列清单、看状态），它的事件带着这个标志，记账插件不把它当成给 agent 的消息；可选的 `setup` 说它只改插件、目标或嵌入器这类配置而不动条目，agent 第一次来时说明里已经是最新配置，只在它来过之后再改才算消息。`keeps` 定说明里同名时的那句话（第 7 节）：记账插件是 `every`，版本插件是 `some`。插件名同时是目录名，用 `pluginName()` 解析。主人面的事件带 `destructive`、`readOnly` 和 `setup`，插件不用自己认哪些命令会丢数据、哪些什么都不改、哪些只是前期配置；`archive purge` 的答复在 `data.paths` 里列出被删的库内路径，记账插件据此记「已除」。
 
 生命周期钩子：
 
 - `onPurged`：`archive purge` 删了东西之后，内核按配置次序问每个已装插件，给出被删的库内路径（`_archive/…`）。什么都没删就不问。插件不用再认命令名；它抛错列进清空的答复的 `problems`。
 - `onAdd`：`plugin add` 装上它、说明重拼之后调一次，这时 `ctx.library` 里已经有它。它答的问题或抛的错列进 `plugin add` 的答复，装照样装上。已经装了的再 add 不调。
 - `onRemove`：`plugin remove` 卸下它之前调。它可以答 `{ refuse: 一句中文 }`，说为什么、先要做什么，`plugin remove` 就以 `plugin-refused` 拒绝，库不变。主人总能卸下一个插件：`plugin remove <名字> --anyway` 跳过这次拒绝，答复里复述它提醒过的那句话。它抛错不拦，列进答复的 `problems`。
+
+### 命令的参数表
+
+主人命令可以声明参数表 `params`，命令行、核对、帮助和界面的表单都从这一份来，不会说两样：
+
+```ts
+type OwnerParams = { positional?: PositionalParam[]; flags?: FlagParam[] }
+type PositionalParam = { name: string; hint: string; required?: boolean; many?: boolean; pattern?: string }
+type FlagParam = { name: string; hint: string; kind: 'value' | 'list' | 'boolean'; required?: boolean; pattern?: string; options?: { value: string; label: string }[] }
+```
+
+- `hint` 是几个中文字，说要写什么：用法里写成 `<hint>`，表单里是这一项的名字。`pattern` 是每个值都要整个匹配的正则（`u` 标志）。位置参数按次序；`many` 收下其余的，只有最后一个能是；必填的不在可省的后面。`value` 只收一个值，`list` 收到下一个开关为止的一个或几个，`boolean` 不收值、不能必填。`value` 带 `options` 时只收这几个值，用法写成 `a|b`，表单是选择。
+- 命令行先取出每条命令都有的 `--library`、`--as`、`--session`、`--json`，认出命令名，再按这条命令的参数表读其余的：开关不吞后面的参数，列表正好收它的值。参数表没声明的开关读成开关，再由内核以「不认识」拒绝。没有参数表的命令照旧：命令行认识的几个开关照它的表，不认识的收到下一个开关为止。
+- 内核在门里、`run` 之前核对：少了、多了、不认识、格式不对、不在可选的值里，都以 `usage` 拒绝，说出哪一样，后面跟着从参数表生成的用法；`run` 不被调。值去掉两头空白，空的算没给，所以表单留空的一项等于没写；开关在表单里写成 `yes` 或 `no`。
+- `run` 收到 `CommandArgs`：写下的参数原样，加上按名字核过的 `values`。sdk 的 `defineCommand` 让 `run` 直接收按参数表定好类型的值：必填的是文字，可省的可能是 null，列表和 `many` 是列表，开关是真假。
+- `--help` 的用法由 `usageOf(params)` 生成；sdk 的 `formOf(命令, { fixed, values })` 给出表单的输入和 `Call`：每个参数一个输入，名字取 `hint`，带上 `pattern` 和可选的值，列表和 `many` 一行一个，开关是「否、是」；`fixed` 里的参数不问，直接写进 `Call`。
+- 装载库外的插件时核对参数表的形状（第 5 节「库外的插件与缓存」），开关名不能是每条命令都有的那几个，有参数表就不写 `usage`。
 
 ### 名字只归一个插件
 
@@ -285,12 +303,20 @@ type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems: string
 
 ### 库外的插件与缓存
 
-- 插件表 = 命令行自带的插件 + 本机的 `$PNEUMA_BASE_HOME/plugins/<名字>/index.js`。`index.js` 是 ESM，缺省导出一个 `Plugin`，名字和目录名相同；它是普通的 JS 文件，运行时不必导入内核。自带插件的名字不会被本机的插件占用。加载在内核导出的 `loadPlugins(home, 自带的表)` 里，命令行每次调用用它建表，别的入口用同一个函数。
-- 装载时核对不必调钩子就能核对的一切：`contract` 写了、是这个内核跑的版本（现在只有 1）；名字是目录名；`version`、`summary` 是文字，`keeps` 是 `every` 或 `some`；`cognition` 是 `null` 或 `{ title, text }`；`storage`、`statements`、`ownerCommands` 是列表，`views` 没有或是列表，每一项的形状对；同一个种类、命令名、视图编号不写两次；命令名以 `<名字> ` 开头且不是内核自己的命令；视图编号以 `<名字>.` 开头；给出的每个钩子是函数。内核自己不听任何「说」的种类，所以种类只会和别的插件撞，那由 `plugin add` 管。留到调用时的：钩子和命令的 `run` 答什么、抛不抛错（K8），插件往哪里写。自带插件不过这道检查。
+- 插件表 = 命令行自带的插件 + 本机的 `$PNEUMA_BASE_HOME/plugins/<名字>/`。加载在内核导出的 `loadPlugins(home, 自带的表)` 里，命令行每次调用用它建表，界面的服务每次请求用它建表。自带插件的名字不会被本机的插件占用。
+- 一个插件目录：`index.js` 是 ESM，缺省导出一个 `Plugin`，名字和目录名相同；它导入的别的文件放在它旁边，依赖打包进来或放在目录里的 `node_modules/`；可选的 `ui/` 放它自己画的页。它是普通的 JS，运行时不必导入内核。装载器不替插件设 `ui`：插件自己写，比如 `new URL('./ui/', import.meta.url)`。可选的 `package.json`，没有时 `plugin install` 写一个 `{ "type": "module" }`，让 `.js` 怎么载不取决于 `$PNEUMA_BASE_HOME` 上面有什么。
+- 改了就重新载入：装载器按目录里每个文件的名字、大小、修改时间算一个戳，`index.js` 带着戳导入，一个模块钩子让它从目录里导入的每个模块带上同一个戳。目录里任何文件一变，下一次 `loadPlugins` 就载入整套新的；没变就用进程里已有的。所以一直开着的界面服务在插件的文件变了之后的下一次请求就用新代码，不用重启。同一个目录的两份副本、装之前核对的那份，各是各的模块，互不影响。
+- 装载时核对不必调钩子就能核对的一切：`contract` 写了、是这个内核跑的版本（现在只有 1）；名字是目录名；`version`、`summary` 是文字，`keeps` 是 `every` 或 `some`；`cognition` 是 `null` 或 `{ title, text }`；`storage`、`statements`、`ownerCommands` 是列表，`views`、`secrets` 没有或是列表，每一项的形状对；同一个种类、命令名、视图编号、密钥名不写两次；命令名以 `<名字> ` 开头且不是内核自己的命令；命令的参数表形状对（上面「命令的参数表」）；视图编号以 `<名字>.` 开头；给出的每个钩子是函数。内核自己不听任何「说」的种类，所以种类只会和别的插件撞，那由 `plugin add` 管。留到调用时的：钩子和命令的 `run` 答什么、抛不抛错（K8），插件往哪里写。自带插件不过这道检查。
+- 装、列、卸本机的插件，都只给主人（`plugin list` 谁都能跑），都不用指明库：
+  - `plugin install <目录>` 按装载器的办法载入那个目录、过同样的核对，名字取插件自己写的；再把目录复制到 `plugins/` 里的一个临时名，换到 `plugins/<名字>/`。自带插件的名字以 `built-in-name` 拒绝；过不了核对以 `plugin-failed-to-load` 拒绝，已装的那份不动。装在已有的上面就换掉它，答复说哪一版换了哪一版。
+  - `plugin uninstall <名字>` 把目录挪出 `plugins/` 再删。自带的以 `built-in` 拒绝；带 `--library` 而那个库还装着它，以 `still-installed` 拒绝；答复提醒这台机器上装着它的库会报它不可用。它在库里名下的目录和它的密钥都不动。
+  - `plugin list` 列出自带的和装上来的，各带版本、契约、一句说明（没有 `summary` 用认知段的标题），加载失败的带原因；带 `--library` 时标出那个库装了哪些。
+- 库的配置里只写名字。`plugin add <名字>` 从自带的和本机的里找；`plugin add` 和 `plugin remove` 是一个库里的启用和停用，`plugin install` 和 `plugin uninstall` 是这台机器上有没有。
 - 库的配置里只写名字。`plugin add <名字>` 从自带的和本机的里找。
 - 本机的插件加载失败（导入时抛错、缺 `index.js`、缺省导出过不了上面的核对），它不进插件表。装了它的库照「装了但这台机器不认识」处理（K8）：每个答复的 `problems` 里有它，消息是加载失败的原因（`whyNotLoaded`，中文）。`plugin add` 一个加载失败的插件以 `plugin-failed-to-load` 拒绝，并说明原因。
 - 缓存目录：`PluginContext.cacheDir` 是 `$PNEUMA_BASE_HOME/cache/<库的 id>/<插件名>/`。放在库外，因为库会被同步工具整个同步，而索引这类文件经不起同步。插件第一次用时自己建，内核不建。删掉它什么都不丢。库的 id 因此只能是字母、数字、连字符和下划线。
 - `Context` 带 `home`，即本机的 `$PNEUMA_BASE_HOME`，由建上下文的地方传进来；`cacheDir` 由它算出。
+- 密钥：插件读的凭证，比如部署目标的令牌。放在 `$PNEUMA_BASE_HOME/secrets/<插件名>/<密钥名>`，一个密钥一个文件，内容就是值；目录是 `0700`，文件是 `0600`，先写临时名再改名。放在库外，所以任何同步都带不走；值不出现在任何答复、事件、视图里。插件在 `secrets` 里声明它用的名字（`SECRET_NAME`：小写字母开头，小写字母、数字、连字符），各带一句说明，用 `ctx.secrets.get(名字)` 读自己的。主人用 `secret set <插件名> <密钥名>` 设：值从标准输入读（去掉最后一个换行），在终端里就不回显地问，从不取命令行的参数；只收插件声明了的名字。`secret list <插件名>` 只列名字，`secret remove` 删掉一个，没有也算做完。三条都只给主人、不用指明库。界面的配置页列出已装插件声明的每个密钥设没设，带一个设它的表单，值作为命令的标准输入送去（`Call` 的 `stdin`）；界面的服务读写同一处，所以在哪边设，两边都能用。插件从这台机器卸掉，密钥留着。
 
 规矩：
 
@@ -305,24 +331,25 @@ type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems: string
 
 | | agent 面 | 主人面 |
 | --- | --- | --- |
-| 能做什么 | 六个动词 | 建库、改配置、装卸插件、发和撤授权、生成技能、清留存、清归档、丢数据 |
+| 能做什么 | 六个动词 | 建库、改配置、装卸插件、发和撤授权、生成技能、清留存、清归档、丢数据；在这台机器上装卸插件、设密钥 |
 | 破坏性 | 没有 | 有。要人在终端当面确认；在 agent 的会话里被拒绝 |
-| 只给主人 | 不适用 | 不丢数据、但替主人做决定的命令（对外发布、设部署和同步的目标、设嵌入器、发撤授权、装卸插件、取回留存）：在 agent 的会话里被拒绝，不用确认 |
+| 只给主人 | 不适用 | 不丢数据、但替主人做决定的命令（对外发布、设部署和同步的目标、设嵌入器、发撤授权、装卸插件、取回留存、设密钥）：在 agent 的会话里被拒绝，不用确认 |
 | 留痕 | 每次调用之后发一个事件 | 同样。主人可以关 |
 
 「在 agent 的会话里」的判断：环境里有 agent 产品的会话变量，或调用带着授权，或行动者被 `--as` 写成了一个 agent。拒绝的话说出是哪一样让它这样判的。这是第二级的拦法，和认知里的「不该做」一起构成默认强度。让 agent 对库的目录没有直接写权限是第三级，靠 agent 产品自己的沙箱，是装的时候可选的。
 
 ### 主人面的一个入口
 
-主人面的命令都是数据：名字、一句说明、参数怎么写（可选）、是否破坏性、是否只给主人、是否只读（可选）、是否配置（可选）、`run`。内核自己的六条（`grant issue`、`grant revoke`、`plugin add`、`plugin remove`、`skill install`、`archive purge`）在 `owner-commands.ts`，和插件的 `OwnerCommand` 同形，只是 `run` 收到整个主人调用（上下文、插件表、环境、是否带授权、怎么问当面确认；本机的家目录就是上下文的 `home`），并可交回重开的库。
+主人面的命令都是数据：名字、一句说明、参数表或参数怎么写（可选）、是否破坏性、是否只给主人、是否只读（可选）、是否配置（可选）、`run`。内核自己的十二条在 `owner-commands.ts`，都带参数表，和插件的 `OwnerCommand` 同形，只是 `run` 收到整个主人调用（上下文、插件表、环境、是否带授权、怎么问当面确认、怎么读主人另给的值；本机的家目录就是上下文的 `home`），并可交回重开的库。其中六条要一个库（`grant issue`、`grant revoke`、`plugin add`、`plugin remove`、`skill install`、`archive purge`）；六条只动这台机器的 `$PNEUMA_BASE_HOME`，有没有库都能跑（`plugin install`、`plugin uninstall`、`plugin list`、`secret set`、`secret list`、`secret remove`）：没有库时上下文的 `library` 是 null，没有插件可告诉，不发事件；带着库（比如从界面）时照常在单一出口发事件。
 
 - `ownerFace.commands(插件表)` 列出可用的命令：先内核的，后各插件的，按配置次序；名字已被占的不再列，插件盖不住内核的命令。命令行的 `--help` 用它列出主人命令：带 `--library` 或 `@<授权名>` 时是那个库的，否则是内核的。
-- 门：破坏性的和只给主人的，在 agent 的会话里都以 `agent-session` 拒绝；破坏性的另要当面确认。内核自己的命令里，`grant issue`、`grant revoke`、`plugin add`、`plugin remove` 只给主人，`archive purge` 是破坏性的，`skill install` 谁都能跑。
+- 门：破坏性的和只给主人的，在 agent 的会话里都以 `agent-session` 拒绝；然后按参数表核对；破坏性的再要当面确认。内核自己的命令里，`archive purge` 是破坏性的，`skill install` 和 `plugin list` 谁都能跑，其余只给主人。
 - `ownerFace.dispatch(主人调用, 命令名, 参数)` 是唯一的入口，命令行和界面的服务都走它。命令经同一道门（K7），在单一出口发事件（K5）。
-- 没有这条命令：在任何操作开始前拒绝（`unknown-command`），不发事件。
-- 参数不对：以 `usage` 拒绝，命令行把它当用法错误，退出码 1。表单里留空的可选值等于没给；`--read-only` 在表单里写成值 `yes` 或 `no`。
+- 没有这条命令：在任何操作开始前拒绝（`unknown-command`），不发事件。要库的命令没给库，同样在开始前拒绝（`no-library`）。
+- 参数不对：以 `usage` 拒绝，说出哪一样不对，带参数表生成的用法；命令行把它当用法错误，退出码 1。表单里留空的可选值等于没给；开关在表单里写成值 `yes` 或 `no`。
+- 主人另给的值，比如密钥：命令行从标准输入读，在终端里不回显地问；界面的服务取 `Call` 的 `stdin`。它不在参数里，所以不进事件。
 
-命令行只做两件事：认出命令名（字数最多的那条，内核命令的字数多过同名的动词时取内核命令，所以 `archive purge` 不是归档一个叫 purge 的文件），以及定库。`skill install` 的库由它的授权名经本机的授权副本定出，其余用 `@<授权名>` 或 `--library`。
+命令行只做三件事：认出命令名（第一个开关之前的那几个词，取字数最多的那条，内核命令的字数多过同名的动词时取内核命令，所以 `archive purge` 不是归档一个叫 purge 的文件），按那条命令的参数表读其余的（第 5 节「命令的参数表」），以及定库。`skill install` 的库由它的授权名经本机的授权副本定出；不用指明库的六条没给库就不带库跑；其余用 `@<授权名>` 或 `--library`。
 
 ### 只读的一面：视图
 
@@ -341,7 +368,7 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable }): P
 | --- | --- | --- |
 | `files` | 是 | 库的一个文件夹，参数 `dir`。先文件夹，后东西；内核的文件和归档区不列。文件夹链到下一层；文件和带标记的目录各是一行，链到 `item` 面板，带标记的目录有自己的图标和文件数，不往里走 |
 | `archive` | 是 | 归档区里的每样东西和它原来的路径，带标记的目录是一行，各带「取回」；整区一个「清空归档区」，先问 |
-| `config` | 是 | 库的位置；这个 pneuma-base 认识的每个插件和库里装了的每个插件，装了的带「卸下」，没装的带「装上」；授权，各带为 Claude 或 Codex 生成技能（目录可以写 `~/…`）、撤回；发授权；Codex 要把库加进可写目录的提示 |
+| `config` | 是 | 库的位置；这个 pneuma-base 认识的每个插件和库里装了的每个插件，装了的带「卸下」，没装的带「装上」；授权，各带为 Claude 或 Codex 生成技能（目录可以写 `~/…`）、撤回；发授权；Codex 要把库加进可写目录的提示；已装插件声明的密钥，各带设没设、「设」和「删掉」。这些按钮的表单都由内核命令的参数表生成 |
 | `item` | 否 | 一样东西，参数 `path`，开在右侧面板：归档或取回；每个插件的 `onItemView` 给的一节；「文件」一节是它自己的事实（路径、种类、文件数、大小、改于、指纹）；带标记的目录接着列出里面的文件，各链到自己的 `item`，文件接着是可以折起来的预览。带标记的目录里面的文件说明它是谁的一部分，不给归档。路径上没有东西时说明不在，插件的节照常给。`_archive/…` 的东西被取回后，面板跟到它原来的路径 |
 
 一样东西的详情是内核的视图，不是某个插件的：内核按配置次序把各插件用 `onItemView` 给的节拼在归档的按钮之后、文件的事实与预览之前，节名由插件给，插件之间互不认识。记账插件的来历、版本插件的版本时间线、部署插件的开关都落在同一个面板里。
@@ -360,6 +387,7 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable }): P
 - 单元格的 `href`：库外的地址，在新标签页打开（`rel="noopener noreferrer"`）；只有 http 和 https 算链接，别的照文字显示。表格里放不下时从中间截短，两头都看得见，悬停给全文。`copy`：旁边一个复制按钮，复制 `href`，没有 `href` 就复制 `text`。
 - 时间线条目的 `actions`：这一条上的小按钮，比如「放回这一版」。
 - 动作输入的 `pattern` 和 `hint`：填了的值要整个匹配 `pattern`（`u` 标志，`multiple` 的每一行都要），不匹配时表单不提交，`hint` 变红；`hint` 平时就写在输入下面。留空不算不匹配。
+- 动作输入的 `secret`：输入时不显示，像密码。主人面 `Call` 的 `stdin`：命令当作标准输入读的值，可以含 `{输入名}`；它不进事件。配置页设密钥的表单就是这两样。
 - 块 `embed`：`{ url, title, height }`，库外的一个 http 或 https 页面，放在沙箱框架里：能跑脚本，拿不到界面的源，和界面不同源时保留它自己的源，它自己的存储照常能用。带「在新标签页打开」。给发布出去的网站做实时预览。
 - 块 `custom`：插件自己画的页，见下面。
 - 视图答复的 `refresh`：见上面。
@@ -395,10 +423,10 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable }): P
 ### 界面的服务
 
 - 只听 127.0.0.1。启动时造一个随机令牌，打印的地址带着它。`/api/*` 每次请求核令牌（查询参数 `token` 或头 `x-pneuma-token`）和 Host（`127.0.0.1:<端口>` 或 `localhost:<端口>`）；`/plugin-ui/*` 只核 Host；网页本身和开发包不核。
-- `GET /api/state`：是不是库、库的位置（另有一份把家目录写成 `~` 的，给人看）、视图清单和问题、可用的插件。`GET /api/view?view=&<参数>`。`POST /api/call`：一个 `Call` 加 `confirmed`，答复是结果和一行给人看的话。`GET /api/file?path=`：内容区和归档区的文件原样给出；路径经内核解析，链接跟到底后还要在库里、不在内核的地方，否则 404；HTML 一律当文字给，带 `sandbox` 的 CSP，浏览器不会运行库里的文件。`GET /api/rev`：库里每个名字、大小、修改时间的摘要。`POST /api/init`：把目录建成库。
+- `GET /api/state`：是不是库、库的位置（另有一份把家目录写成 `~` 的，给人看）、视图清单和问题、可用的插件。`GET /api/view?view=&<参数>`。`POST /api/call`：一个 `Call` 加 `confirmed`，答复是结果和一行给人看的话；主人面 `Call` 的 `stdin` 是命令向主人要的值，比如密钥。`GET /api/file?path=`：内容区和归档区的文件原样给出；路径经内核解析，链接跟到底后还要在库里、不在内核的地方，否则 404；HTML 一律当文字给，带 `sandbox` 的 CSP，浏览器不会运行库里的文件。`GET /api/rev`：库里每个名字、大小、修改时间的摘要。`POST /api/init`：把目录建成库。
 - `GET /plugin-ui/<插件名>/<路径>`：这个库装了的插件的 `ui` 目录里的文件，只读。路径的段解码后是空、`.`、`..` 或含斜杠的，链接跟到底不在 `ui` 里面的，没装的插件、没有 `ui` 的插件，都是 404。不要令牌：框架拿着令牌就能绕过对话框直接调 `/api/call`，所以它的地址不带令牌，载入它时也不发 Referer（界面的地址里有令牌）。答复带 `Content-Security-Policy: sandbox allow-scripts; frame-ancestors 'self'`，单独打开也拿不到界面的源；带 `Referrer-Policy: no-referrer`；带 `Access-Control-Allow-Origin: *`，因为沙箱里的框架是不透明的源，模块脚本和字体要 CORS 才载得进来。
 - `GET /plugin-kit/frame.js`、`/plugin-kit/frame.css`：开发包，同样带 CORS。
-- 服务不持有状态，每次请求重新打开库。行动者是主人；会话按环境识别，同命令行。服务若跑在 agent 的会话里，破坏性命令照常被拒（K7），拒绝的话说出是哪个环境变量或授权让它这样判的。
+- 服务不持有状态，每次请求重新建插件表（自带的加本机的，本机的插件文件变了就载入新的）、重新打开库。行动者是主人；会话按环境识别，同命令行。服务若跑在 agent 的会话里，破坏性命令照常被拒（K7），拒绝的话说出是哪个环境变量或授权让它这样判的。
 
 **授权**在内核里，只有最小的形状：编号、名字、给谁、哪个区域、读还是读写。没配任何授权时，谁都能用整个库。区域是库里的一个子文件夹。
 
@@ -440,7 +468,8 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable }): P
 ```
 $PNEUMA_BASE_HOME/
   grants/<名字>.json          发给 agent 的授权副本
-  plugins/<名字>/index.js     主人自己的插件
+  plugins/<名字>/              装到这台机器上的插件：index.js、它导入的文件、可选的 ui/
+  secrets/<插件名>/<密钥名>     插件的凭证，只有用户能读，不进任何库
   cache/<库的 id>/<插件名>/    插件的缓存，删了能重建
 ```
 

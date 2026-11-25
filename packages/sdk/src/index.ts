@@ -4,6 +4,7 @@
 import type { Instant, Plugin, PluginName } from './types.js'
 
 export * from './types.js'
+export { defineCommand, formOf, usageOf, type FixedValue } from './params.js'
 
 /** The version of the plugin contract this package describes. A plugin declares it as `contract`. */
 export const CONTRACT = 1
@@ -15,6 +16,9 @@ export function definePlugin(plugin: Plugin): Plugin {
 
 /** A plugin's name is also the name of its directory under `.pneuma-base/` and under `$PNEUMA_BASE_HOME/plugins/`. */
 export const PLUGIN_NAME = /^[a-z][a-z0-9-]{0,40}$/
+
+/** The name of a secret a plugin declares; it is also a file name under `$PNEUMA_BASE_HOME/secrets/<plugin>/`. */
+export const SECRET_NAME = /^[a-z][a-z0-9-]{0,40}$/
 
 export function pluginName(name: string): PluginName {
   if (!PLUGIN_NAME.test(name)) throw new Error(`not a plugin name (lowercase letters, digits, hyphens): ${name}`)

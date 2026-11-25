@@ -83,7 +83,8 @@ export function parseCall(raw: unknown): Call | string {
     const c = raw as Raw
     if (c.face === 'owner') {
       need(isString(c.command), 'owner call needs a command')
-      return { face: 'owner', command: c.command as string, args: ownerArgs(c.args) }
+      need(c.stdin === undefined || isString(c.stdin), 'owner call stdin is not a string')
+      return { face: 'owner', command: c.command as string, args: ownerArgs(c.args), ...(c.stdin === undefined ? {} : { stdin: c.stdin as string }) }
     }
     need(c.face === 'agent' && isObject(c.request), 'call is neither an agent nor an owner call')
     return agentCall(c.verb, c.request as Raw)

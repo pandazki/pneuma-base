@@ -94,7 +94,7 @@ const cell = shape({ text: string, 'mono?': boolean, 'muted?': boolean, 'tag?': 
 
 const call: Check = (v, at) => {
   if (!isObject(v)) return `${at} 应是对象`
-  if (v.face === 'owner') return shape({ command: string, args: shape({ positional: listOf(string), flags: recordOf((f, a) => (f === true ? null : listOf(string)(f, a))) }) })(v, at)
+  if (v.face === 'owner') return shape({ command: string, args: shape({ positional: listOf(string), flags: recordOf((f, a) => (f === true ? null : listOf(string)(f, a))) }), 'stdin?': string })(v, at)
   if (v.face === 'agent') return shape({ verb: string, request: shape({}) })(v, at)
   return `${at}.face 应是 agent 或 owner`
 }
@@ -107,6 +107,7 @@ const input = shape({
   'multiple?': boolean,
   'pattern?': pattern,
   'hint?': string,
+  'secret?': (v, at) => (v === true ? null : `${at} 只能是 true`),
 })
 const action = shape({ label: string, tone: oneOf('default', 'danger'), confirm: nullable(string), inputs: listOf(input), call })
 const actions = listOf(action)

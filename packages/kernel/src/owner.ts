@@ -2,22 +2,46 @@ import { mkdir, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { exists } from './files.js'
 import { CONFIG_FILE, newConfig, saveConfig } from './library.js'
-import { KERNEL_COMMANDS, type KernelCommand, type Outcome } from './owner-commands.js'
+import { KERNEL_COMMANDS, type Outcome } from './owner-commands.js'
+import { checkArgs } from './params.js'
 import { makeContext, performOwner, pluginContext } from './pipeline.js'
 import { agentSessionSign, type Env } from './session.js'
-import type { Actor, Context, OwnerArgs, OwnerCommand, OwnerResult, Plugin, PluginName, PluginTable, Session } from '@pneuma-base/sdk'
+import { usageOf, type Actor, type Context, type OwnerArgs, type OwnerParams, type OwnerResult, type OwnerValues, type Plugin, type PluginName, type PluginTable, type Session } from '@pneuma-base/sdk'
+
+/** Who acts, in which session, on this machine, with no library at hand: the context of a command that needs none. */
+export type MachineContext = Omit<Context, 'library'> & { library: null }
 
 /** What every owner command needs besides its own arguments. This machine's home is `ctx.home`. */
 export type OwnerCall = {
-  ctx: Context
+  ctx: Context | MachineContext
   table: PluginTable
   env: Env
   viaGrant: boolean
   confirm: (question: string) => Promise<boolean>
+  /**
+   * A value the person gives besides the arguments, such as a credential: typed without echo, or
+   * standard input; from the page, the call's `stdin`. Absent or null: none was given.
+   */
+  readSecret?: (question: string) => Promise<string | null>
 }
 
-/** An owner command as the owner face lists it, and who provides it. */
-export type OwnerCommandInfo = { name: string; summary: string; usage: string | null; destructive: boolean; ownerOnly: boolean; by: PluginName | 'kernel' }
+/** An owner call with a library. */
+export type LibraryCall = OwnerCall & { ctx: Context }
+
+/**
+ * An owner command as the owner face lists it, and who provides it. `params` is null for a command
+ * that checks its own arguments; `machine`: it needs no library.
+ */
+export type OwnerCommandInfo = {
+  name: string
+  summary: string
+  usage: string | null
+  params: OwnerParams | null
+  destructive: boolean
+  ownerOnly: boolean
+  machine: boolean
+  by: PluginName | 'kernel'
+}
 
 /** How a command is gated: destructive ones lose data; owner-only ones decide for the owner. Read-only ones change nothing; setup ones configure plugins or targets. */
 type Gate = { destructive: boolean; ownerOnly: boolean; readOnly?: boolean; setup?: boolean }
@@ -34,22 +58,32 @@ function agentSign(call: OwnerCall): string | null {
 
 /**
  * The one place owner commands pass through. In an agent session a destructive or owner-only
- * command is refused, naming what showed the session; a destructive one also needs a confirmation
- * the person gives in person (K7). Refused or not, it ends at the pipeline's single exit.
+ * command is refused, naming what showed the session; a call that does not fit the command's
+ * `params` is refused as `usage`; a destructive one then needs a confirmation the person gives in
+ * person (K7). With a library, refused or not, it ends at the pipeline's single exit; with none,
+ * there is no plugin to tell.
  */
-async function gated(call: OwnerCall, name: string, gate: Gate, args: OwnerArgs, body: () => Promise<Outcome>): Promise<OwnerResult> {
-  return performOwner(call.ctx, name, args, { destructive: gate.destructive, readOnly: gate.readOnly ?? false, setup: gate.setup ?? false }, async () => {
+async function gated(call: OwnerCall, name: string, gate: Gate, args: OwnerArgs, params: OwnerParams | null, body: (values: OwnerValues) => Promise<Outcome>): Promise<OwnerResult> {
+  const decide = async (): Promise<Outcome> => {
     const sign = gate.destructive || gate.ownerOnly ? agentSign(call) : null
     if (sign !== null) {
       const why = gate.destructive ? '会丢数据' : '是替主人做的决定'
       const text = `「${name}」${why}，只有主人能做，不能在 agent 的会话里做（${sign}）。需要的话告诉主人；主人在自己的终端里做，或在自己的终端里运行 pneuma-base view 用界面做。`
       return { answer: { outcome: 'refused', reason: 'agent-session', text } }
     }
+    const checked = params === null ? { values: {} } : checkArgs(name, params, args)
+    if ('usage' in checked) return { answer: { outcome: 'refused', reason: 'usage', text: checked.usage } }
     if (gate.destructive && !(await call.confirm(`「${name}」会丢数据，不能撤回。确认要做吗？`))) {
       return { answer: { outcome: 'refused', reason: 'not-confirmed', text: '没有得到当面确认，什么都没做。' } }
     }
-    return body()
-  })
+    return body(checked.values)
+  }
+  const ctx = call.ctx
+  if (ctx.library === null) {
+    const { answer, problems } = await decide()
+    return { ...answer, problems: problems ?? [] }
+  }
+  return performOwner(ctx, name, args, { destructive: gate.destructive, readOnly: gate.readOnly ?? false, setup: gate.setup ?? false }, decide)
 }
 
 /** Makes `dir` a library. Refused before anything is written, so a refused init has no library to send an event to. */
@@ -73,32 +107,55 @@ export async function initLibrary(
   }))
 }
 
+const NEEDS_LIBRARY = '要用 @<授权名> 或 --library <库的目录> 指明是哪个库。'
+
 export const ownerFace = {
   /** The owner commands with these plugins installed: the kernel's, then each plugin's in order. A name already taken is not listed again. */
   commands(plugins: readonly Plugin[]): OwnerCommandInfo[] {
-    const info = (c: KernelCommand | OwnerCommand, by: OwnerCommandInfo['by']): OwnerCommandInfo => ({
+    const kernel = KERNEL_COMMANDS.map((c): OwnerCommandInfo => ({
       name: c.name,
       summary: c.summary,
-      usage: c.usage ?? null,
+      usage: usageOf(c.params) || null,
+      params: c.params,
       destructive: c.destructive,
       ownerOnly: c.ownerOnly,
-      by,
-    })
-    const all = [...KERNEL_COMMANDS.map((c) => info(c, 'kernel')), ...plugins.flatMap((p) => p.ownerCommands.map((c) => info(c, p.name)))]
+      machine: c.scope === 'machine',
+      by: 'kernel',
+    }))
+    const own = plugins.flatMap((p) =>
+      p.ownerCommands.map((c): OwnerCommandInfo => ({
+        name: c.name,
+        summary: c.summary,
+        usage: c.params === undefined ? (c.usage ?? null) : usageOf(c.params) || null,
+        params: c.params ?? null,
+        destructive: c.destructive,
+        ownerOnly: c.ownerOnly,
+        machine: false,
+        by: p.name,
+      })),
+    )
+    const all = [...kernel, ...own]
     return all.filter((c, i) => all.findIndex((d) => d.name === c.name) === i)
   },
 
   /**
    * Runs the owner command `name`, the kernel's or an installed plugin's, through the gate. An
-   * unknown name is refused before any operation begins, so it sends no event.
+   * unknown name, or a command that needs a library called without one, is refused before any
+   * operation begins, so it sends no event.
    */
   dispatch(call: OwnerCall, name: string, args: OwnerArgs): Promise<OwnerResult> {
+    const refuse = (reason: string, text: string): Promise<OwnerResult> => Promise.resolve({ outcome: 'refused', reason, text, problems: [] })
     const kernel = KERNEL_COMMANDS.find((c) => c.name === name)
-    if (kernel) return gated(call, name, kernel, args, () => kernel.run(args, call))
-    for (const plugin of call.ctx.library.plugins) {
+    const ctx = call.ctx
+    if (kernel?.scope === 'machine') return gated(call, name, kernel, args, kernel.params, (values) => kernel.run(values, call))
+    if (ctx.library === null) return kernel ? refuse('no-library', `「${name}」${NEEDS_LIBRARY}`) : refuse('unknown-command', `没有这条主人命令：${name}。插件的命令${NEEDS_LIBRARY}`)
+    const bound: LibraryCall = { ...call, ctx }
+    if (kernel) return gated(bound, name, kernel, args, kernel.params, (values) => kernel.run(values, bound))
+    for (const plugin of ctx.library.plugins) {
       const command = plugin.ownerCommands.find((c) => c.name === name)
-      if (command) return gated(call, name, command, args, async () => ({ answer: await command.run(args, pluginContext(call.ctx, plugin.name)) }))
+      if (!command) continue
+      return gated(bound, name, command, args, command.params ?? null, async (values) => ({ answer: await command.run({ ...args, values }, pluginContext(ctx, plugin.name)) }))
     }
-    return Promise.resolve({ outcome: 'refused', reason: 'unknown-command', text: `没有这条主人命令：${name}`, problems: [] })
+    return refuse('unknown-command', `没有这条主人命令：${name}`)
   },
 }
