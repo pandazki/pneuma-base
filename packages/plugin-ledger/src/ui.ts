@@ -278,8 +278,10 @@ const table = (columns: [key: string, label: string][], rows: TableRow[], empty:
 function sceneDoing(ledger: Ledger, scene: SceneRecord): Cell {
   const doing = [...new Set(scene.said.filter((s) => s.flavor === 'doing').map((s) => s.text))]
   if (doing.length > 0) return { text: doing.join('；') }
-  const commands = [...new Set(ledger.ownerOps.filter((op) => op.scene === scene.id).map((op) => op.command))]
-  return commands.length > 0 ? { text: `主人面的操作：${commands.join('、')}`, muted: true } : none
+  const ops = ledger.ownerOps.filter((op) => op.scene === scene.id)
+  const commands = [...new Set(ops.map((op) => op.command))]
+  const prefix = ops.every((op) => op.actor.kind === 'owner') ? '主人面的操作' : '执行命令'
+  return commands.length > 0 ? { text: `${prefix}：${commands.join('、')}`, muted: true } : none
 }
 
 const newestFirst = (a: SceneRecord, b: SceneRecord) => (a.first === b.first ? (a.id < b.id ? -1 : 1) : a.first > b.first ? -1 : 1)
@@ -347,7 +349,8 @@ export function sceneAnswer(ledger: Ledger, params: Record<string, string>): Vie
   const ops = ledger.ownerOps.filter((op) => op.scene === scene.id)
   if (ops.length > 0) {
     const entries = ops.map((op) => ({ at: op.at, title: { text: op.command, mono: true }, lines: [op.summary], tag: op.destructive ? { text: '丢了数据', tone: 'bad' as const } : null }))
-    blocks.push(counted('主人面的操作', entries.length, [{ kind: 'timeline', entries }]))
+    const title = ops.every((op) => op.actor.kind === 'owner') ? '主人面的操作' : '执行的命令'
+    blocks.push(counted(title, entries.length, [{ kind: 'timeline', entries }]))
   }
   const items = scene.items.flatMap((id) => ledger.items.get(id) ?? [])
   if (items.length > 0) {
@@ -410,7 +413,7 @@ function kindTag(f: Fact): Tag {
     case 'item.remove':
       return { text: '除掉', tone: 'bad' }
     case 'owner.op':
-      return { text: '主人面', tone: 'info' }
+      return f.actor.kind === 'owner' ? { text: '主人面', tone: 'info' } : { text: '命令', tone: 'neutral' }
   }
 }
 

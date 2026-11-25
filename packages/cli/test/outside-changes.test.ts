@@ -82,6 +82,16 @@ describe('changes made outside the tool (C4)', () => {
     expect(edited.versions.map((v: any) => v.claimed)).toEqual([false, true])
   })
 
+  it('say revised --by owner records an owner edit told to the agent, and refuses unknown --by values', () => {
+    expect(agent(['say', 'revised', 'edited.md', '--by', 'someone', '--json']).json()).toMatchObject({ outcome: 'not-heard', reason: 'refused' })
+    const said = ok(agent(['say', 'revised', 'edited.md', '--by', 'owner', '--json'])).json()
+    expect(said).toMatchObject({ outcome: 'heard', by: 'ledger', note: expect.stringContaining('主人') })
+    expect(section(check(), '被直接改过的')).toBeUndefined()
+    const edited = ok(agent(['inspect', 'edited.md', '--json'])).json().sections[0].data
+    expect(edited.versions.at(-1)).toMatchObject({ claimed: true, actor: { kind: 'owner', name: 'owner' } })
+    expect(ok(agent(['inspect', 'edited.md'])).stdout).toMatch(/主人\s+认了直接改动/)
+  })
+
   it('say revised on a file nobody registered or one that did not change is answered plainly', () => {
     expect(agent(['say', 'revised', 'dropped.md', '--json']).json()).toMatchObject({ outcome: 'not-heard', reason: 'refused' })
     expect(agent(['say', 'revised', 'kept.md', '--json']).json()).toMatchObject({ outcome: 'heard' })

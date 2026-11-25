@@ -245,7 +245,7 @@ export function factLine(ledger: Ledger, f: Fact): string {
     case 'item.remove':
       return `${pathOf(ledger, f.item)} 随归档区一起清掉了`
     case 'owner.op':
-      return `主人面的操作 ${f.command}：${f.summary}`
+      return f.actor.kind === 'owner' ? `主人面的操作 ${f.command}：${f.summary}` : `执行 ${f.command}：${f.summary}`
   }
 }
 
@@ -315,7 +315,7 @@ export function standingSections(ledger: Ledger, standing: Standing, includeArch
     ['来源不在', gone, gone.map((r) => `  ${r.path} ← 依据 ${names(r.sources)} 不在了`)],
     ['上游有标记', upstream, upstream.map((r) => `  ${r.path} ← 上游 ${names(r.via)} 有标记`)],
     ['没人登记过的', unowned, [...unowned.map((r) => `  ${r.path}${r.adopted ? '（入了册，来历不明）' : ''}`), '它们不是经 put 放进来的。要留着用的，知道来历就用 put <库内路径> --brought 或 --made 补上；不要的归档。']],
-    ['被直接改过的', changed, [...changed.map((r) => `  ${r.path}`), '是你改的，就用 say revised <库内路径> 认下。']],
+    ['被直接改过的', changed, [...changed.map((r) => `  ${r.path}`), '是你改的，就用 say revised <库内路径> 认下；主人在对话里明确说是他改的，加 --by owner。']],
     ['不在了的', missing, missing.map((r) => `  ${r.path}`)],
     ['挪过的', moved, moved.map((r) => `  ${r.from} → ${r.to}，已接回`)],
   ]
