@@ -52,7 +52,8 @@ describe('a plugin project from plugin new', () => {
       run(project, 'npm', ['install', '--prefer-offline', '--no-audit', '--no-fund'])
       run(project, 'npm', ['run', 'build'])
       expect(['dist/index.js', 'dist/cognition.md', 'dist/ui/panel.html'].filter((f) => !existsSync(join(project, f)))).toEqual([])
-      expect(run(project, 'npm', ['test'])).toMatch(/ℹ fail 0/)
+      // Node's test runner prints `ℹ fail 0` or, where it reports in TAP, `# fail 0`.
+      expect(run(project, 'npm', ['test'])).toMatch(/^(ℹ|#) fail 0$/m)
       run(project, 'npm', ['run', 'install-local'])
       expect(existsSync(join(home, '.pneuma-base/plugins', name, 'index.js'))).toBe(true)
 
