@@ -38,6 +38,9 @@ importers:
       '@pneuma-base/plugin-ledger':
         specifier: workspace:*
         version: link:../plugin-ledger
+      '@pneuma-base/plugin-version':
+        specifier: workspace:*
+        version: link:../plugin-version
       '@pneuma-base/viewer':
         specifier: workspace:*
         version: link:../viewer
@@ -45,6 +48,12 @@ importers:
   packages/kernel: {}
 
   packages/plugin-ledger:
+    dependencies:
+      '@pneuma-base/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+
+  packages/plugin-version:
     dependencies:
       '@pneuma-base/kernel':
         specifier: workspace:*
