@@ -249,6 +249,8 @@ export interface Plugin {
   onView?(req: ViewRequest, ctx: PluginContext): Promise<ViewAnswer>
   /** What it knows about one library path, as one section of the kernel's item panel: onInspect's counterpart in the UI. */
   onItemView?(path: LibraryPath, ctx: PluginContext): Promise<ItemSection | null>
+  /** The absolute path of the directory its `custom` blocks' pages are in, such as `ui/` beside its `index.js`. */
+  readonly ui?: string
 }
 
 export type PluginTable = ReadonlyMap<string, Plugin>
@@ -264,9 +266,10 @@ export type Link = { view: string; params: Record<string, string>; target: 'main
 /**
  * `at`: the cell is a moment. The page shows it in the viewer's local time, short, with the whole
  * time on hover; `text` is what a reader without a clock shows. `icon`: a lucide icon name shown
- * before the text, such as `folder`, `file` or `package` for a bundle.
+ * before the text, such as `folder`, `file` or `package` for a bundle. `href`: an outside address the
+ * cell opens in a new tab; only http and https are links. `copy`: a button that copies `href`, else `text`.
  */
-export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; link?: Link; at?: Instant; icon?: string }
+export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; link?: Link; at?: Instant; icon?: string; href?: string; copy?: true }
 
 /**
  * What a button does: one verb of the agent face, or one owner command. Strings may hold `{input}`,
@@ -277,7 +280,8 @@ export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; l
 export type Call =
   | { [V in Verb]: { face: 'agent'; verb: V; request: Parameters<AgentFace[V]>[0] } }[Verb]
   | { face: 'owner'; command: string; args: OwnerArgs }
-export type ActionInput = { name: string; label: string; placeholder: string | null; value: string | null; options: { value: string; label: string }[] | null; multiple?: boolean }
+/** `pattern`: a regular expression a filled value must match whole, each line of a `multiple` one; `hint` says what fits. */
+export type ActionInput = { name: string; label: string; placeholder: string | null; value: string | null; options: { value: string; label: string }[] | null; multiple?: boolean; pattern?: string; hint?: string }
 /** `confirm`: a question the person answers before the call; the answer is the in-person confirmation a destructive command needs. */
 export type Action = { label: string; tone: 'default' | 'danger'; confirm: string | null; inputs: ActionInput[]; call: Call }
 
@@ -285,23 +289,31 @@ export type TableRow = { key: string; cells: Record<string, Cell>; link: Link | 
 /** An `optional` column steps aside, the last one first, when the table has no room to show every column whole. */
 export type TableColumn = { key: string; label: string; optional?: boolean }
 
-/** A section with `collapse` can be folded by the viewer; the value is how it starts. */
+/**
+ * A section with `collapse` can be folded by the viewer; the value is how it starts. `embed`: an
+ * outside http or https page in a sandboxed frame. `custom`: a page of the plugin's own, `entry`
+ * relative to its `ui` directory, sent `data` and the names of `actions`, which it may ask to run;
+ * `plugin` is stamped by the kernel.
+ */
 export type Block =
   | { kind: 'section'; title: string; note: string | null; count: number | null; blocks: Block[]; actions: Action[]; collapse?: 'open' | 'closed' }
   | { kind: 'table'; columns: TableColumn[]; rows: TableRow[]; empty: string }
   | { kind: 'fields'; fields: { label: string; value: Cell }[] }
   | { kind: 'list'; items: { cell: Cell; note: string | null; actions: Action[] }[] }
-  | { kind: 'timeline'; entries: { at: Instant; title: Cell; lines: string[]; tag: Tag | null }[] }
+  | { kind: 'timeline'; entries: { at: Instant; title: Cell; lines: string[]; tag: Tag | null; actions?: Action[] }[] }
   | { kind: 'text'; text: string; tone: Tone }
   | { kind: 'preview'; path: LibraryPath }
   | { kind: 'actions'; actions: Action[] }
   | { kind: 'empty'; title: string; hint: string | null }
+  | { kind: 'embed'; url: string; title: string; height: number }
+  | { kind: 'custom'; entry: string; height: number; data: unknown; actions: Record<string, Action>; plugin?: PluginName }
 
 export type ViewFilter = { name: string; label: string; options: { value: string; label: string }[]; default: string }
 /** `icon` is a lucide icon name. A view with `nav` false is reached only through links, as a detail. */
 export type ViewDecl = { id: string; title: string; icon: string; nav: boolean; filters: ViewFilter[] }
 export type ViewRequest = { view: string; params: Record<string, string> }
-export type ViewAnswer = { title: string; subtitle: string | null; blocks: Block[] }
+/** `refresh`: seconds after which the page asks again, for a view showing state from outside the library; at least 5. */
+export type ViewAnswer = { title: string; subtitle: string | null; blocks: Block[]; refresh?: number }
 export type ViewResult =
   | ({ outcome: 'shown' } & ViewAnswer & { problems: PluginProblem[] })
   | { outcome: 'no-such-view'; problems: PluginProblem[] }
