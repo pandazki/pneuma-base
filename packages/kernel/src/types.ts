@@ -79,12 +79,16 @@ export type PutRequest =
   | { kind: 'place'; from: PlaceSource; to: string; origin: Origin<string> }
   | { kind: 'move'; from: string; to: string }
 
-/** `inside-bundle`: the path lies inside a bundle, which changes only as a whole; `subject` is the bundle. */
+/**
+ * `inside-bundle`: the path lies inside a bundle, which changes only as a whole; `subject` is the
+ * bundle. A put refused because no plugin held the replaced content carries, as `notes`, why each
+ * plugin with `revise` declined.
+ */
 export type PutRefusal = 'outside-library' | 'outside-grant' | 'no-such-file' | 'would-overwrite' | 'inside-bundle'
 
 export type PutResult =
   | { outcome: 'accepted'; path: LibraryPath; fingerprint: Fingerprint; copied: boolean; notes: Note[]; problems: PluginProblem[] }
-  | { outcome: 'refused'; reason: PutRefusal; subject: string; problems: PluginProblem[] }
+  | { outcome: 'refused'; reason: PutRefusal; subject: string; notes: Note[]; problems: PluginProblem[] }
 
 /** What `onPut` receives after the kernel accepted a put. */
 export type AcceptedPut =
@@ -179,11 +183,18 @@ export type OwnerResult =
 /** What an owner command's `run` answers. The kernel adds `problems`. */
 export type OwnerAnswer = { outcome: 'done'; text: string; data?: unknown } | { outcome: 'refused'; reason: string; text: string }
 
-/** A command a plugin adds to the owner face. The kernel refuses a destructive one in an agent session or without confirmation. */
+/**
+ * A command a plugin adds to the owner face. The kernel refuses a destructive one in an agent session
+ * or without confirmation, and an `ownerOnly` one in an agent session, without asking: it changes no
+ * data but decides for the owner, such as what goes online or where the library syncs.
+ */
 export interface OwnerCommand {
   readonly name: string // one or more words, e.g. 'held restore'
   readonly summary: string
+  /** How its arguments are written after the name, for help, e.g. '<库内路径> --to <库内路径>'. */
+  readonly usage?: string
   readonly destructive: boolean
+  readonly ownerOnly: boolean
   run(args: OwnerArgs, ctx: PluginContext): Promise<OwnerAnswer>
 }
 
@@ -205,6 +216,11 @@ export type StorageDecl = { dir: string; kind: 'body' | 'cache' } // relative to
 export interface Plugin {
   readonly name: PluginName
   readonly cognition: CognitionSection | null
+  /**
+   * With `revise`: whether it holds every replaced content (`every`) or only some (`some`, the
+   * default), such as only what an agent declared. The description's same-name rule follows (K6).
+   */
+  readonly keeps?: 'every' | 'some'
   readonly storage: readonly StorageDecl[]
   readonly statements: readonly string[]
   readonly ownerCommands: readonly OwnerCommand[]

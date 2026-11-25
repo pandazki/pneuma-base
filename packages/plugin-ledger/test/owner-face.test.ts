@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { agentFace, initLibrary, makeContext, openLibrary, ownerFace, type Actor, type Instant, type Library, type OwnerCall, type Session } from '@pneuma-base/kernel'
 import { describe, expect, it } from 'vitest'
-import { ledger } from '../src/index.js'
+import { ledger, ownerSummary } from '../src/index.js'
 
 const table = new Map([[ledger.name as string, ledger]])
 const owner: Actor = { kind: 'owner' }
@@ -31,6 +31,15 @@ const sinceLines = async (ctx: ReturnType<typeof makeContext>) => {
   const r = await agentFace.check({ since: 'last', includeArchived: false }, ctx)
   return { r, lines: (r.sections.find((s) => s.title === '自上次以来')?.body ?? '').split('\n') }
 }
+
+describe('an owner operation in the record', () => {
+  it('names a path by its last name, so a line in check or the activity list is not a long absolute path', () => {
+    expect(ownerSummary('已把 /private/var/folders/x/lib 建成库。说明在 PNEUMA-BASE.md。')).toBe('已把 lib 建成库。说明在 PNEUMA-BASE.md。')
+    expect(ownerSummary('已发授权 c 给 claude-code。本机副本：/Users/me/.pneuma-base/grants/c.json')).toBe('已发授权 c 给 claude-code。本机副本：c.json')
+    expect(ownerSummary('部署目标已设为目录 /tmp/a/www。开着的 2 样还没发到新目标：运行 deploy sync。')).toBe('部署目标已设为目录 www。开着的 2 样还没发到新目标：运行 deploy sync。')
+    expect(ownerSummary('已打开 sites/a：在线 · 开关开')).toBe('已打开 sites/a：在线 · 开关开')
+  })
+})
 
 describe('confirmed destructive owner commands', () => {
   it('held drop deletes the held copies, and an agent sees it in check', async () => {

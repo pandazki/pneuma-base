@@ -2,10 +2,10 @@ import { mkdir, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { exists } from './files.js'
 import { CONFIG_FILE, newConfig, saveConfig } from './library.js'
-import { KERNEL_COMMANDS, type Outcome } from './owner-commands.js'
+import { KERNEL_COMMANDS, type KernelCommand, type Outcome } from './owner-commands.js'
 import { makeContext, performOwner, pluginContext } from './pipeline.js'
 import { agentSessionSign, type Env } from './session.js'
-import type { Actor, Context, OwnerArgs, OwnerResult, Plugin, PluginName, PluginTable, Session } from './types.js'
+import type { Actor, Context, OwnerArgs, OwnerCommand, OwnerResult, Plugin, PluginName, PluginTable, Session } from './types.js'
 
 /** What every owner command needs besides its own arguments. This machine's home is `ctx.home`. */
 export type OwnerCall = {
@@ -17,24 +17,36 @@ export type OwnerCall = {
 }
 
 /** An owner command as the owner face lists it, and who provides it. */
-export type OwnerCommandInfo = { name: string; summary: string; destructive: boolean; by: PluginName | 'kernel' }
+export type OwnerCommandInfo = { name: string; summary: string; usage: string | null; destructive: boolean; ownerOnly: boolean; by: PluginName | 'kernel' }
+
+/** How a command is gated: destructive ones lose data; owner-only ones decide for the owner. */
+type Gate = { destructive: boolean; ownerOnly: boolean }
 
 /**
- * The one place owner commands pass through. A destructive command is refused in an agent session
- * and without a confirmation the person gives in person (K7). Refused or not, it ends at the
- * pipeline's single exit.
+ * What shows the call comes from an agent: a grant or an agent session variable (the second line of
+ * defence, K7), or an actor named an agent with `--as`. Null when nothing does.
  */
-async function gated(call: OwnerCall, name: string, destructive: boolean, args: OwnerArgs, body: () => Promise<Outcome>): Promise<OwnerResult> {
-  return performOwner(call.ctx, name, args, destructive, async () => {
-    if (destructive) {
-      const sign = agentSessionSign(call.env, call.viaGrant)
-      if (sign !== null) {
-        const text = `「${name}」会丢数据，不能在 agent 的会话里做（${sign}）。在你自己的终端里做；要用界面，就在自己的终端里运行 pneuma-base view。`
-        return { answer: { outcome: 'refused', reason: 'agent-session', text } }
-      }
-      if (!(await call.confirm(`「${name}」会丢数据，不能撤回。确认要做吗？`))) {
-        return { answer: { outcome: 'refused', reason: 'not-confirmed', text: '没有得到当面确认，什么都没做。' } }
-      }
+function agentSign(call: OwnerCall): string | null {
+  const sign = agentSessionSign(call.env, call.viaGrant)
+  if (sign !== null) return sign
+  return call.ctx.actor.kind === 'agent' ? `调用者是 agent ${call.ctx.actor.name}` : null
+}
+
+/**
+ * The one place owner commands pass through. In an agent session a destructive or owner-only
+ * command is refused, naming what showed the session; a destructive one also needs a confirmation
+ * the person gives in person (K7). Refused or not, it ends at the pipeline's single exit.
+ */
+async function gated(call: OwnerCall, name: string, gate: Gate, args: OwnerArgs, body: () => Promise<Outcome>): Promise<OwnerResult> {
+  return performOwner(call.ctx, name, args, gate.destructive, async () => {
+    const sign = gate.destructive || gate.ownerOnly ? agentSign(call) : null
+    if (sign !== null) {
+      const why = gate.destructive ? '会丢数据' : '是替主人做的决定'
+      const text = `「${name}」${why}，只有主人能做，不能在 agent 的会话里做（${sign}）。需要的话告诉主人；主人在自己的终端里做，或在自己的终端里运行 pneuma-base view 用界面做。`
+      return { answer: { outcome: 'refused', reason: 'agent-session', text } }
+    }
+    if (gate.destructive && !(await call.confirm(`「${name}」会丢数据，不能撤回。确认要做吗？`))) {
+      return { answer: { outcome: 'refused', reason: 'not-confirmed', text: '没有得到当面确认，什么都没做。' } }
     }
     return body()
   })
@@ -64,10 +76,15 @@ export async function initLibrary(
 export const ownerFace = {
   /** The owner commands with these plugins installed: the kernel's, then each plugin's in order. A name already taken is not listed again. */
   commands(plugins: readonly Plugin[]): OwnerCommandInfo[] {
-    const all: OwnerCommandInfo[] = [
-      ...KERNEL_COMMANDS.map((c) => ({ name: c.name, summary: c.summary, destructive: c.destructive, by: 'kernel' as const })),
-      ...plugins.flatMap((p) => p.ownerCommands.map((c) => ({ name: c.name, summary: c.summary, destructive: c.destructive, by: p.name }))),
-    ]
+    const info = (c: KernelCommand | OwnerCommand, by: OwnerCommandInfo['by']): OwnerCommandInfo => ({
+      name: c.name,
+      summary: c.summary,
+      usage: c.usage ?? null,
+      destructive: c.destructive,
+      ownerOnly: c.ownerOnly,
+      by,
+    })
+    const all = [...KERNEL_COMMANDS.map((c) => info(c, 'kernel')), ...plugins.flatMap((p) => p.ownerCommands.map((c) => info(c, p.name)))]
     return all.filter((c, i) => all.findIndex((d) => d.name === c.name) === i)
   },
 
@@ -77,10 +94,10 @@ export const ownerFace = {
    */
   dispatch(call: OwnerCall, name: string, args: OwnerArgs): Promise<OwnerResult> {
     const kernel = KERNEL_COMMANDS.find((c) => c.name === name)
-    if (kernel) return gated(call, name, kernel.destructive, args, () => kernel.run(args, call))
+    if (kernel) return gated(call, name, kernel, args, () => kernel.run(args, call))
     for (const plugin of call.ctx.library.plugins) {
       const command = plugin.ownerCommands.find((c) => c.name === name)
-      if (command) return gated(call, name, command.destructive, args, async () => ({ answer: await command.run(args, pluginContext(call.ctx, plugin.name)) }))
+      if (command) return gated(call, name, command, args, async () => ({ answer: await command.run(args, pluginContext(call.ctx, plugin.name)) }))
     }
     return Promise.resolve({ outcome: 'refused', reason: 'unknown-command', text: `没有这条主人命令：${name}`, problems: [] })
   },

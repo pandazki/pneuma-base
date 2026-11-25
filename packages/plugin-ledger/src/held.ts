@@ -90,20 +90,23 @@ const RESTORE_USAGE = '用法：held restore <库内路径或条目号> [--finge
 export const heldCommands: OwnerCommand[] = [
   {
     name: 'held list',
-    summary: '列出留存：被新的一版换下来的旧内容',
+    summary: '列出留存：被新内容换下来的旧内容',
     destructive: false,
+    ownerOnly: false,
     async run(_args, ctx) {
       const ledger = await load(ctx)
       const copies = (await heldCopies(ctx)).map((c) => ({ ...c, current: ledger.items.get(c.item)?.path ?? null }))
       if (copies.length === 0) return done('没有留存。', { copies })
-      const lines = copies.map((c) => `${c.current ?? c.item}  旧版 ${c.fingerprint.slice(0, 8)}  ${c.size} 字节  ${c.path}`)
+      const lines = copies.map((c) => `${c.current ?? c.item}  留存 ${c.fingerprint.slice(0, 8)}  ${c.size} 字节  ${c.path}`)
       return done(lines.join('\n'), { copies })
     },
   },
   {
     name: 'held restore',
     summary: '把一份留存取回到一个新路径',
+    usage: '<库内路径|条目号> [--fingerprint <指纹>] --to <库内路径>',
     destructive: false,
+    ownerOnly: true,
     async run(args, ctx) {
       const input = args.positional[0]
       const to = flag(args, 'to')
@@ -137,16 +140,17 @@ export const heldCommands: OwnerCommand[] = [
         await rm(tmp, { recursive: true, force: true })
       }
       const short = copy.fingerprint.slice(0, 8)
-      const origin = { kind: 'brought' as const, source: `留存：${item.path} 的旧版 ${short}`, by: 'owner' }
+      const origin = { kind: 'brought' as const, source: `留存：${item.path} 换下的旧内容 ${short}`, by: 'owner' }
       const enter = { kind: 'item.enter' as const, item: newItemId(), path: target, fingerprint: copy.fingerprint, size: copy.size, origin, ...(copy.bundle ? { bundle: true as const } : {}) }
       await writeFacts(ctx.dir, [fact(ctx, 'tool', enter)])
-      return done(`已把 ${item.path} 的旧版 ${short} 取回到 ${target}。`, { item: item.id, fingerprint: copy.fingerprint, to: target })
+      return done(`已把 ${item.path} 换下的旧内容 ${short} 从留存取回到 ${target}。`, { item: item.id, fingerprint: copy.fingerprint, to: target })
     },
   },
   {
     name: 'held drop',
-    summary: '清掉全部留存（会丢数据）',
+    summary: '清掉全部留存',
     destructive: true,
+    ownerOnly: true,
     async run(_args, ctx) {
       const copies = await heldCopies(ctx)
       await rm(join(ctx.dir, HELD_DIR), { recursive: true, force: true })

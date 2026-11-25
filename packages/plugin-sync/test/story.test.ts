@@ -86,6 +86,12 @@ describe('two libraries, one target (C6)', () => {
     const check = ok(b.agent(['check', '--json'])).json().sections.find((s: any) => s.title === '同步冲突')
     expect(check.data.conflicts).toEqual([{ copy, original: 'plan.md' }])
     expect(ok(b.agent(['check'])).stdout).toContain(`${copy}（plan.md 的另一份）`)
+    // The ledger also lists the copy among files nobody registered; both sections end in archiving what is not wanted.
+    const sections = ok(b.agent(['check', '--json'])).json().sections
+    const unowned = sections.find((s: any) => s.title === '没人登记过的')
+    expect(unowned.body).toContain(copy)
+    expect(unowned.body).toContain('不要的归档')
+    expect(check.body).toContain('再把冲突副本归档')
     ok(b.agent(['archive', copy]))
     expect(ok(b.agent(['check', '--json'])).json().sections.find((s: any) => s.title === '同步冲突')).toBeUndefined()
   })

@@ -2,6 +2,7 @@
 // "the view is decided by the files and the facts alone", and ledger-design.md section 3.
 import { describe, expect, it } from 'vitest'
 import { fold } from '../src/fold.js'
+import { sceneText, sceneView } from '../src/views.js'
 import { basis, codex, enter, f, fp, id, p } from './support.js'
 
 describe('fold', () => {
@@ -107,5 +108,16 @@ describe('fold', () => {
     ])
     expect(ledger.scenes.get('s1' as never)).toMatchObject({ first: f(1, enter('x', 'x', 'x')).at, actors: [{ name: 'claude-code' }], cwds: ['/work'], items: ['i_a'] })
     expect(ledger.scenes.get('s1' as never)?.said.map((s) => s.text)).toEqual(['选支付服务', '用 Paddle'])
+  })
+})
+
+describe('a scene seen by one agent with and without a grant', () => {
+  it('names the agent once in its heading and card', () => {
+    const viaGrant = { kind: 'agent' as const, name: 'claude-code', grant: 'g-1' }
+    const ledger = fold([f(1, enter('i_a', 'a.md', 'a')), f(2, enter('i_b', 'b.md', 'b'), { actor: viaGrant }), f(3, enter('i_c', 'c.md', 'c'), { actor: codex })])
+    const scene = ledger.scenes.get('s1' as never)
+    if (!scene) throw new Error('no scene')
+    expect(scene.actors).toHaveLength(3)
+    expect(sceneText(sceneView(ledger, scene)).split('\n')[1]).toMatch(/^claude-code、codex · /)
   })
 })

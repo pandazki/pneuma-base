@@ -8,6 +8,11 @@ import { marksOf, type ItemState, type Mark, type Standing } from './reconcile.j
 
 export const when = (at: Instant) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`
 export const who = (a: FactActor) => (a.kind === 'owner' ? '主人' : a.name)
+/**
+ * The actors of a scene by name, each name once: one agent can act in a scene both with a grant and
+ * without one, or under two grants, which are distinct actors with the same name.
+ */
+export const actorNames = (actors: FactActor[]) => [...new Set(actors.map(who))].join('、')
 
 /** A scene id as text shows it: its first 8 characters; an ad hoc scene's id whole. */
 export const shortScene = (id: SceneId) => (id.startsWith(ADHOC_SCENE) ? id : id.slice(0, 8))
@@ -24,7 +29,7 @@ export function scenesNamed(ledger: Ledger, input: string): SceneRecord[] {
 /** Who was in a scene, when it began, what it was doing. */
 function sceneParts(scene: SceneRecord): string[] {
   const doing = [...new Set(scene.said.filter((s) => s.flavor === 'doing').map((s) => s.text))]
-  return [scene.actors.map(who).join('、'), when(scene.first), ...(doing.length ? [`在做：${doing.join('；')}`] : [])]
+  return [actorNames(scene.actors), when(scene.first), ...(doing.length ? [`在做：${doing.join('；')}`] : [])]
 }
 
 /** The heading find puts a scene's hits under. */
@@ -135,12 +140,13 @@ export function itemText(v: ItemView): string {
   if (v.dependents.length > 0) lines.push(`被依据：${v.dependents.map((d) => d.path).join('、')}`)
   for (const s of v.said) lines.push(`${SAID_LABEL[s.flavor]}：${s.text}${s.about !== null && s.about !== v.path ? `（关于 ${s.about}）` : ''}`)
   const state = v.state.kind === 'moved' ? `已搬到 ${v.state.to}` : v.absorbedInto !== null ? `并入了 ${v.absorbedInto}，是它的一部分` : STATE_LABEL[v.state.kind]
-  lines.push(`现状：${state}${v.archived ? ' · 已归档' : ''} · ${v.versions.length} 个版本，${v.held.length} 份留存 · 条目 ${v.item}`)
+  const changed = v.versions.length > 1 ? `内容换过 ${v.versions.length - 1} 次，` : ''
+  lines.push(`现状：${state}${v.archived ? ' · 已归档' : ''} · ${changed}${v.held.length} 份留存 · 条目 ${v.item}`)
   if (v.versions.length > 1) {
     // A held copy lies at held/<item>/<fingerprint>/<name>, so the version it keeps is the one with that fingerprint.
     const kept = new Set(v.held.flatMap((path) => path.split('/').slice(-2, -1)))
     for (const ver of v.versions) {
-      const how = [...(ver.claimed ? ['认了直接改动'] : []), ...(kept.has(ver.fingerprint) ? ['被换下，留存着'] : [])].join('，')
+      const how = [...(ver.claimed ? ['认了直接改动'] : []), ...(kept.has(ver.fingerprint) ? ['被换下，在留存里'] : [])].join('，')
       lines.push(`  ${ver.fingerprint.slice(0, 8)}  ${when(ver.at)}  ${who(ver.actor)}${how ? `  ${how}` : ''}`)
     }
   }
@@ -177,7 +183,7 @@ export function sceneView(ledger: Ledger, scene: SceneRecord): SceneView {
 }
 
 export function sceneText(v: SceneView): string {
-  const lines = [`场景 ${shortScene(v.id)}`, `${v.actors.map(who).join('、')} · ${when(v.first)} 到 ${when(v.last)}${v.cwds.length ? ` · 在 ${v.cwds.map((d) => shortDir(d)).join('、')}` : ''}`]
+  const lines = [`场景 ${shortScene(v.id)}`, `${actorNames(v.actors)} · ${when(v.first)} 到 ${when(v.last)}${v.cwds.length ? ` · 在 ${v.cwds.map((d) => shortDir(d)).join('、')}` : ''}`]
   for (const s of v.said) lines.push(`${SAID_LABEL[s.flavor]}：${s.text}${s.about !== null ? `（关于 ${s.about}）` : ''}`)
   if (v.items.length > 0) lines.push('条目：', ...v.items.map((i) => `  ${i.path}  ${i.enteredHere ? `在这里放入，${originLabel(i.origin)}` : '在这里改过或挪过'}`))
   return lines.join('\n')
@@ -226,7 +232,7 @@ export function factLine(ledger: Ledger, f: Fact): string {
     case 'item.enter':
       return `放入 ${now(f.item, f.path)}（${originLabel(f.origin)}）`
     case 'item.revise':
-      return f.claimed ? `认了 ${pathOf(ledger, f.item)} 的直接改动` : `${pathOf(ledger, f.item)} 有了新的一版`
+      return f.claimed ? `认了 ${pathOf(ledger, f.item)} 的直接改动` : `${pathOf(ledger, f.item)} 换了新内容`
     case 'item.move': {
       const seen = f.how === 'observed' ? '（看到的）' : ''
       if (f.archive === 'in') return `归档 ${f.from}${seen}`
@@ -307,7 +313,7 @@ export function standingSections(ledger: Ledger, standing: Standing, includeArch
     ['可能过期', stale, stale.map((r) => `  ${r.path} ← 依据 ${names(r.sources)} 变了`)],
     ['来源不在', gone, gone.map((r) => `  ${r.path} ← 依据 ${names(r.sources)} 不在了`)],
     ['上游有标记', upstream, upstream.map((r) => `  ${r.path} ← 上游 ${names(r.via)} 有标记`)],
-    ['没人登记过的', unowned, [...unowned.map((r) => `  ${r.path}${r.adopted ? '（入了册，来历不明）' : ''}`), '知道来历就用 put <库内路径> --brought 或 --made 补上。']],
+    ['没人登记过的', unowned, [...unowned.map((r) => `  ${r.path}${r.adopted ? '（入了册，来历不明）' : ''}`), '它们不是经 put 放进来的。要留着用的，知道来历就用 put <库内路径> --brought 或 --made 补上；不要的归档。']],
     ['被直接改过的', changed, [...changed.map((r) => `  ${r.path}`), '是你改的，就用 say revised <库内路径> 认下。']],
     ['不在了的', missing, missing.map((r) => `  ${r.path}`)],
     ['挪过的', moved, moved.map((r) => `  ${r.from} → ${r.to}，已接回`)],

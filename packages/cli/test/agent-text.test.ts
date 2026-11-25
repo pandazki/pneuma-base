@@ -130,12 +130,12 @@ describe('inspect', () => {
 })
 
 describe('put over an existing file', () => {
-  it('says in one line that the old version was kept for the owner, without the held copy’s path', () => {
+  it('says in one line that the old content went into the owner’s 留存, without the held copy’s path', () => {
     writeFileSync(join(dirA, 'comparison.md'), '# 三家印刷厂的报价比较\n\n改了：首选速印通。\n')
     const out = lines(A(['put', 'comparison.md', '--to', 'print/comparison.md', '--made', '--from', 'print/quotes/fast.txt']).stdout)
     expect(out).toHaveLength(2)
     expect(out[0]).toBe('已放入 print/comparison.md')
-    expect(out[1]).toMatch(/^ {2}ledger：已记为新的一版，旧的一版已留存，主人可以取回 · 条目 i_[0-9a-f]+$/)
+    expect(out[1]).toMatch(/^ {2}ledger：已记下换了新内容，旧内容进了留存，主人取得回 · 条目 i_[0-9a-f]+$/)
   })
 })
 

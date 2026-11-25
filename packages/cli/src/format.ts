@@ -4,7 +4,7 @@ const REFUSAL: Record<string, (subject: string) => string> = {
   'outside-library': (s) => `${s} 不在库的内容里。库内路径相对库的根目录写，不能是 .pneuma-base/ 或 PNEUMA-BASE.md；_archive/ 只经 archive 和 unarchive 进出。`,
   'outside-grant': (s) => `${s} 不在你的授权范围内。`,
   'no-such-file': (s) => `没有这个文件：${s}`,
-  'would-overwrite': (s) => `${s} 已有内容不同的文件，没有动它。换一个名字。`,
+  'would-overwrite': (s) => `${s} 已有内容不同的东西，没有动它。换一个名字。`,
   'original-path-taken': (s) => `原路径 ${s} 已有文件，什么都没动。`,
   'inside-bundle': (s) => `${s} 是一样东西（带 .pneuma-item 标记的目录），它里面的文件不单独放、挪或归档。要改它，把整个目录重新放进来。`,
 }
@@ -18,7 +18,11 @@ function refusal(reason: string, subject: string): string {
 }
 
 export function putText(req: PutRequest, r: PutResult): string[] {
-  if (r.outcome === 'refused') return [refusal(r.reason, r.subject), ...tail([], r.problems)]
+  if (r.outcome === 'refused') {
+    // Plugins that could have held the replaced content say why they did not, and what would let them.
+    const head = r.notes.length > 0 ? `拒绝（${r.reason}）：${r.subject} 已有内容不同的东西，没有插件替它留住旧内容，所以没有动它。` : refusal(r.reason, r.subject)
+    return [head, ...tail(r.notes, r.problems)]
+  }
   const head =
     req.kind === 'register' ? `已登记 ${r.path}` : req.kind === 'move' ? `已挪到 ${r.path}` : r.copied ? `已放入 ${r.path}` : `${r.path} 已有相同的内容，没有复制`
   return [head, ...tail(r.notes, r.problems)]

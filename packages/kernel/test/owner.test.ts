@@ -38,7 +38,7 @@ describe('a destructive owner command', () => {
   it('declared by a plugin goes through the same gate', async () => {
     let ran = 0
     const p = plugin('wiper', {
-      ownerCommands: [{ name: 'wiper wipe', summary: '', destructive: true, run: async () => (ran++, { outcome: 'done', text: 'wiped' }) }],
+      ownerCommands: [{ name: 'wiper wipe', summary: '', destructive: true, ownerOnly: true, run: async () => (ran++, { outcome: 'done', text: 'wiped' }) }],
     })
     const f = await fixture([p])
     expect(await ownerFace.dispatch(call(f, { confirm: async () => false }), 'wiper wipe', NO_ARGS)).toMatchObject({ outcome: 'refused', reason: 'not-confirmed' })
@@ -46,6 +46,35 @@ describe('a destructive owner command', () => {
     expect(ran).toBe(0)
     expect(await ownerFace.dispatch(call(f), 'wiper wipe', NO_ARGS)).toMatchObject({ outcome: 'done', text: 'wiped' })
     expect(ran).toBe(1)
+  })
+})
+
+describe('an owner-only command', () => {
+  it('runs for the owner without asking, and is refused for an agent, without asking, naming what showed it', async () => {
+    let ran = 0
+    const p = plugin('switch', {
+      ownerCommands: [{ name: 'switch on', summary: '', destructive: false, ownerOnly: true, run: async () => (ran++, { outcome: 'done', text: 'on' }) }],
+    })
+    const f = await fixture([p])
+    let asked = false
+    const confirm = async () => (asked = true)
+    expect(await ownerFace.dispatch(call(f, { confirm }), 'switch on', NO_ARGS)).toMatchObject({ outcome: 'done', text: 'on' })
+    expect(asked).toBe(false)
+    const agent = { ...f.ctx, actor: { kind: 'agent' as const, name: 'codex', grant: null } }
+    for (const [overrides, sign] of [
+      [{ env: { CLAUDE_CODE_SESSION_ID: 'c' } }, 'CLAUDE_CODE_SESSION_ID'],
+      [{ viaGrant: true }, '授权'],
+      [{ ctx: agent }, 'agent codex'],
+    ] as const) {
+      expect(await ownerFace.dispatch(call(f, { ...overrides, confirm }), 'switch on', NO_ARGS)).toMatchObject({ outcome: 'refused', reason: 'agent-session', text: expect.stringContaining(sign) })
+    }
+    expect(asked).toBe(false)
+    expect(ran).toBe(1)
+  })
+
+  it('covers the kernel’s grant and plugin commands, but not skill install', () => {
+    const owners = ownerFace.commands([]).filter((c) => c.ownerOnly).map((c) => c.name)
+    expect(owners).toEqual(['grant issue', 'grant revoke', 'plugin add', 'plugin remove', 'archive purge'])
   })
 })
 
@@ -84,8 +113,8 @@ describe('the owner face’s one entry', () => {
   it('lists the kernel’s commands, then each installed plugin’s; a plugin cannot take a kernel name', async () => {
     const shadow = plugin('shadow', {
       ownerCommands: [
-        { name: 'archive purge', summary: '', destructive: false, run: async () => ({ outcome: 'done', text: 'shadowed' }) },
-        { name: 'shadow list', summary: '', destructive: false, run: async () => ({ outcome: 'done', text: 'listed' }) },
+        { name: 'archive purge', summary: '', destructive: false, ownerOnly: false, run: async () => ({ outcome: 'done', text: 'shadowed' }) },
+        { name: 'shadow list', summary: '', destructive: false, ownerOnly: false, run: async () => ({ outcome: 'done', text: 'listed' }) },
       ],
     })
     const f = await fixture([shadow])

@@ -66,7 +66,9 @@ export const versionCommands: OwnerCommand[] = [
   {
     name: 'version list',
     summary: '列出一样有版本的东西的每一版',
+    usage: LIST.slice('version list '.length),
     destructive: false,
+    ownerOnly: false,
     async run(args, ctx) {
       const input = args.positional[0]
       if (input === undefined) return usage(LIST)
@@ -79,7 +81,9 @@ export const versionCommands: OwnerCommand[] = [
   {
     name: 'version export',
     summary: '把某一版写到库外的一个新路径',
+    usage: EXPORT.slice('version export '.length),
     destructive: false,
+    ownerOnly: false,
     async run(args, ctx) {
       const input = args.positional[0]
       const n = count(flag(args, 'version'))
@@ -105,7 +109,9 @@ export const versionCommands: OwnerCommand[] = [
   {
     name: 'version restore',
     summary: '把某一版放回来，作为新的一版',
+    usage: RESTORE.slice('version restore '.length),
     destructive: false,
+    ownerOnly: false,
     async run(args, ctx) {
       const input = args.positional[0]
       const n = count(flag(args, 'version'))
@@ -134,8 +140,10 @@ export const versionCommands: OwnerCommand[] = [
   },
   {
     name: 'version prune',
-    summary: '只留最近的几版，清掉更早的（会丢数据）',
+    summary: '只留最近的几版，清掉更早的',
+    usage: PRUNE.slice('version prune '.length),
     destructive: true,
+    ownerOnly: true,
     async run(args, ctx) {
       const input = args.positional[0]
       const keep = count(flag(args, 'keep'))

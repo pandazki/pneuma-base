@@ -82,11 +82,33 @@ const USAGE = `用法：
       say <种类> [<关于>] [<内容>] | check [--since <时间>|last] [--include-archived]
       archive <库内路径> | unarchive <库内路径>
 主人：view [<目录>] [--port <端口>] [--no-open]（在浏览器里打开管理界面；pneuma-base <目录> 也一样）
-      init <目录> [--bare] | plugin add|remove <名字> --library <目录>
-      grant issue <名字> --library <目录> --agent <给谁> [--area <子文件夹>] [--read-only] | grant revoke <名字> --library <目录>
-      skill install <授权名> --agent claude|codex --dir <目录> | archive purge --library <目录>（会丢数据，要当面确认）
-      记账插件：held list | held restore <库内路径|条目号> [--fingerprint <指纹>] --to <库内路径> | held drop（会丢数据，要当面确认），都带 --library <目录>
+      init <目录> [--bare]
 加 --json 输出结果对象。`
+
+/**
+ * The owner commands of the library at hand, from the owner face, or the kernel's when there is
+ * none: each with its arguments, what it does, and how it is gated.
+ */
+function ownerHelp(commands: OwnerCommandInfo[], library: Library | null): string {
+  const lines = commands.map((c) => {
+    const gate = c.destructive ? '；会丢数据，只有主人能做，要当面确认' : c.ownerOnly ? '；只有主人能做' : ''
+    return `  ${[c.name, ...(c.usage === null ? [] : [c.usage])].join(' ')}\n      ${c.summary}${gate}${c.by === 'kernel' ? '' : `（${c.by}）`}`
+  })
+  const head = `主人命令${library === null ? '' : `（${library.root} 能用的）`}，都带 --library <库的目录>，skill install 除外：`
+  const more = library === null ? ['库里装的插件各带自己的命令，pneuma-base --help --library <库的目录> 列出那个库能用的全部。'] : []
+  return [head, ...lines, ...more].join('\n')
+}
+
+/** Help, with the owner commands of the library `--library` or `@<grant>` names, if any. */
+async function help(argv: readonly string[], io: Io, table: PluginTable, home: string): Promise<string> {
+  const parsed = parseArgs(argv.filter((a) => a !== '--help' && a !== 'help'))
+  const dir = flagValue(parsed, 'library')
+  const library =
+    parsed.grant !== null
+      ? await resolveGrant(home, parsed.grant, table).then((r) => (r.ok ? r.library : null))
+      : dir === null ? null : await openLibrary(resolve(io.cwd, dir), table)
+  return `${USAGE}\n${ownerHelp(ownerFace.commands(library?.plugins ?? []), library)}`
+}
 
 /** 0 answered; 2 refused; 3 accepted but a plugin reported a problem. Usage errors are 1. */
 type Answer = { json: unknown; lines: string[]; exit: number }
@@ -371,13 +393,13 @@ function impliedView(parsed: Parsed, cwd: string): Parsed {
 /** `builtins` is the command line's own plugin table; the owner's plugins in `$PNEUMA_BASE_HOME/plugins/` join it. */
 export async function main(argv: readonly string[], builtins: PluginTable, io: Io): Promise<number> {
   try {
-    if (argv.length === 0 || argv[0] === '--help' || argv[0] === 'help') {
-      io.out(USAGE)
+    const home = io.env.PNEUMA_BASE_HOME ?? join(homedir(), '.pneuma-base')
+    const table = await loadPlugins(home, builtins)
+    if (argv.length === 0 || argv.includes('--help') || argv[0] === 'help') {
+      io.out(await help(argv, io, table, home))
       return argv.length === 0 ? 1 : 0
     }
     const parsed = impliedView(parseArgs(argv), io.cwd)
-    const home = io.env.PNEUMA_BASE_HOME ?? join(homedir(), '.pneuma-base')
-    const table = await loadPlugins(home, builtins)
     const spec = verbSpec(parsed.positional)
     const inv: Invocation = { parsed, args: parsed.positional.slice(spec?.words.length ?? 0), io, table, home }
     const result = spec ? await runSpec(spec, inv) : await ownerCommand(inv)
@@ -386,7 +408,7 @@ export async function main(argv: readonly string[], builtins: PluginTable, io: I
   } catch (error) {
     if (error instanceof UsageError) {
       io.err(`用法错误：${error.message}`)
-      io.err(USAGE)
+      io.err(`${USAGE}\n主人命令：pneuma-base --help --library <库的目录> 列出一个库能用的全部。`)
       return 1
     }
     io.err(`出错：${error instanceof Error ? error.message : String(error)}`)

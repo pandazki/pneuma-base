@@ -45,11 +45,11 @@ export const PUT_TABLE = {
 } as const satisfies Record<PutRequest['kind'], Record<TargetState, PutAction>>
 
 type Accepted = { put: AcceptedPut; copied: boolean; notes: Note[]; problems: PluginProblem[] }
-type Refused = { refused: PutRefusal; subject: string; problems: PluginProblem[] }
+type Refused = { refused: PutRefusal; subject: string; notes: Note[]; problems: PluginProblem[] }
 
 export async function put(req: PutRequest, ctx: Context): Promise<PutResult> {
   const step = req.kind === 'register' ? await register(req, ctx) : req.kind === 'place' ? await place(req, ctx) : await move(req, ctx)
-  if ('refused' in step) return { outcome: 'refused', reason: step.refused, subject: step.subject, problems: step.problems }
+  if ('refused' in step) return { outcome: 'refused', reason: step.refused, subject: step.subject, notes: step.notes, problems: step.problems }
   const heard = await eachPlugin(ctx, (plugin, pctx) => plugin.onPut?.(step.put, pctx))
   return {
     outcome: 'accepted',
@@ -61,7 +61,7 @@ export async function put(req: PutRequest, ctx: Context): Promise<PutResult> {
   }
 }
 
-const refuse = (refused: PutRefusal, subject: string, problems: PluginProblem[] = []): Refused => ({ refused, subject, problems })
+const refuse = (refused: PutRefusal, subject: string, problems: PluginProblem[] = [], notes: Note[] = []): Refused => ({ refused, subject, notes, problems })
 
 /** A path the agent face writes: in the content, in the grant, and not inside a bundle. */
 async function writable(ctx: Context, input: string): Promise<{ path: LibraryPath } | Refused> {
@@ -129,7 +129,8 @@ async function place(req: Extract<PutRequest, { kind: 'place' }>, ctx: Context):
     // Revise: ask every plugin that keeps replaced content; replace when at least one kept it.
     const asked = await eachPlugin(ctx, (plugin, pctx) => plugin.revise?.({ path: target.path, current: there.current, incoming: fingerprint }, pctx))
     const held = asked.values.flatMap(({ plugin, value }) => (value.outcome === 'held' ? [{ plugin, note: value.note }] : []))
-    if (held.length === 0) return refuse('would-overwrite', req.to, asked.problems)
+    const declined = asked.values.flatMap(({ plugin, value }) => (value.outcome === 'declined' ? [{ plugin, text: value.reason }] : []))
+    if (held.length === 0) return refuse('would-overwrite', req.to, asked.problems, declined)
     await replaceWith(incoming, file, scratch)
     const notes = held.flatMap(({ plugin, note }) => (note === null ? [] : [{ plugin, text: note }]))
     return accepted(true, there.current, notes, asked.problems)

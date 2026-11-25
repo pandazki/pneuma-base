@@ -79,27 +79,41 @@ async function find(req: FindRequest, ctx: Context): Promise<FindResult> {
   const heard = await eachPlugin(ctx, (plugin, pctx) => plugin.onFind?.(req, pctx))
   const answers = heard.values.map(({ plugin, value }) => ({ plugin, ...(Array.isArray(value) ? { hits: value, problems: [] } : value) }))
   return {
-    hits: mergeHits(named, answers.flatMap(({ plugin, hits }) => hits.map((h) => ({ ...h, by: plugin })))),
+    hits: mergeHits(named, answers.map(({ plugin, hits }) => hits.map((h) => ({ ...h, by: plugin })))),
     problems: [...heard.problems, ...answers.flatMap(({ plugin, problems }) => problems.map((message) => ({ plugin, message })))],
   }
 }
 
 /**
- * The kernel's hits by name and the plugins' hits as one list, one hit per path between the kernel
- * and the plugins: a path a plugin found is given by the first plugin that found it, at its place,
- * with the kernel's mark (目录, 已归档) in front of its detail. Two plugins' hits on one path stay
- * apart, since each says what its plugin knows.
+ * The kernel's hits by name and each plugin's ranked hits as one list. The hits on one path stay
+ * together, at the best rank any answerer gave that path; on equal ranks the kernel comes first,
+ * then the plugins in configuration order. A path a plugin found is given by the plugins that found
+ * it, in configuration order, the kernel's mark (目录, 已归档) in front of the first one's detail;
+ * each plugin's hit stays its own, since each says what its plugin knows. A hit without a path is
+ * its own entry at its rank.
  */
-function mergeHits(named: Hit[], heard: Hit[]): Hit[] {
-  const byName = new Map(named.map((h) => [h.path, h]))
-  const taken = new Set<LibraryPath>()
-  const merged = heard.map((h) => {
-    if (h.path === null || taken.has(h.path)) return h
-    taken.add(h.path)
-    const mark = byName.get(h.path)?.detail ?? null
-    return mark === null ? h : { ...h, detail: h.detail === null ? mark : `${mark}，${h.detail}` }
+function mergeHits(named: Hit[], heard: Hit[][]): Hit[] {
+  type Entry = { rank: number; answerer: number; order: number; hits: Hit[] }
+  const entries = new Map<string, Entry>()
+  const lists = [named, ...heard]
+  let order = 0
+  lists.forEach((hits, answerer) =>
+    hits.forEach((hit, rank) => {
+      const key = hit.path === null ? `\0${order}` : hit.path
+      const entry = entries.get(key) ?? { rank, answerer, order: order++, hits: [] }
+      entries.set(key, entry)
+      entry.hits.push(hit)
+      if (rank < entry.rank) Object.assign(entry, { rank, answerer })
+    }),
+  )
+  const ranked = [...entries.values()].sort((a, b) => a.rank - b.rank || a.answerer - b.answerer || a.order - b.order)
+  return ranked.flatMap(({ hits }) => {
+    // The kernel answers first, so its hit on a path, if any, is the entry's first.
+    const [named, found, ...others] = hits as [Hit, ...Hit[]]
+    if (named.by !== 'kernel' || found === undefined) return hits
+    const mark = named.detail
+    return [mark === null ? found : { ...found, detail: found.detail === null ? mark : `${mark}，${found.detail}` }, ...others]
   })
-  return [...named.filter((h) => h.path === null || !taken.has(h.path)), ...merged]
 }
 
 /** A bundle is one hit, marked 目录; the files inside it are none. */

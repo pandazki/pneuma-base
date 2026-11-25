@@ -262,10 +262,13 @@ describe('the owner commands', () => {
     expect(existsSync(join(lib, '.pneuma-base', 'search', 'embedder'))).toBe(false)
   })
 
-  it('none is destructive: an agent with a grant runs them', async () => {
+  it('none is destructive: an agent with a grant runs status and rebuild; the embedder is the owner’s to choose', async () => {
     ok(await owner(['grant', 'issue', 'claude', '--agent', 'claude-code']))
-    for (const args of [['search', 'status'], ['search', 'rebuild'], ['search', 'embedder', 'set', '--kind', 'hash'], ['search', 'embedder', 'clear']]) {
-      ok(await sb.run(['@claude', ...args], { cwd: outside, env: { CLAUDE_CODE_SESSION_ID: 's-1' } }))
+    for (const args of [['search', 'status'], ['search', 'rebuild']]) ok(await sb.run(['@claude', ...args], { cwd: outside, env: { CLAUDE_CODE_SESSION_ID: 's-1' } }))
+    for (const args of [['search', 'embedder', 'set', '--kind', 'hash'], ['search', 'embedder', 'clear']]) {
+      const r = await sb.run(['@claude', ...args, '--json'], { cwd: outside, env: { CLAUDE_CODE_SESSION_ID: 's-1' } })
+      expect(r.code).toBe(2)
+      expect(r.json()).toMatchObject({ outcome: 'refused', reason: 'agent-session' })
     }
   })
 })
@@ -275,21 +278,36 @@ describe('the cognition section comes and goes with the plugin (C8)', () => {
     await newLibrary('bare')
     await put('a.md', 'zebra crossings\n')
     const description = () => readFileSync(join(lib, 'PNEUMA-BASE.md'), 'utf8')
-    expect(description()).not.toContain('查找插件')
+    expect(description()).not.toContain('**查找**插件')
     expect(await hits('zebra')).toEqual([])
     const unknown = await owner(['search', 'status'])
     expect(unknown.code).toBe(1)
     expect(unknown.stderr).toContain('不认识的命令')
 
     ok(await owner(['plugin', 'add', 'search']))
-    expect(description()).toContain('查找插件')
+    expect(description()).toContain('**查找**插件')
     expect(description()).toMatch(/主人配了嵌入器时[^\n]*按意思/)
-    expect(description()).toMatch(/没配[^\n]*只按文字/)
     expect((await hits('zebra')).map((h) => h.path)).toEqual(['a.md'])
 
     ok(await owner(['plugin', 'remove', 'search']))
-    expect(description()).not.toContain('查找插件')
+    expect(description()).not.toContain('**查找**插件')
     expect(await hits('zebra')).toEqual([])
+  })
+
+  it('beside the ledger, a path stands at the best rank either gave it, so the most relevant file is not pushed down by the ledger’s order', async () => {
+    await newLibrary('ledger+search')
+    const filler = '天气、交通、工作安排、读书计划、周末的打算、房租、快递、体检、旅行、搬家。'
+    await put('notes/y.md', `一份杂记，提到一次咖啡。${filler}\n`)
+    await put('notes/z.md', `另一份杂记，也提到一次咖啡。${filler}${filler}\n`)
+    await put('notes/x.md', '咖啡 咖啡 咖啡：手冲咖啡的咖啡豆。\n')
+    const order = (all: { path: string | null }[]) => [...new Set(all.flatMap((h) => (h.path === null ? [] : [h.path])))]
+    // The ledger alone lists them as they came, x last. Search alone ranks x first (bm25: short, three times).
+    ok(await owner(['plugin', 'remove', 'search']))
+    expect(order(await hits('咖啡'))).toEqual(['notes/y.md', 'notes/z.md', 'notes/x.md'])
+    ok(await owner(['plugin', 'add', 'search']))
+    // y and x are each one answerer's first; y comes first as the ledger comes first in the configuration.
+    expect(order(await hits('咖啡'))).toEqual(['notes/y.md', 'notes/x.md', 'notes/z.md'])
+    expect(ok(await agent(['find', '咖啡'])).stdout.split('\n').filter((l) => l.startsWith('  notes/')).map((l) => l.trim().split(' ')[0])).toEqual(['notes/y.md', 'notes/x.md', 'notes/z.md'])
   })
 
   it('sits beside the ledger: one entry per path in the text, the ledger’s detail and the snippet on its line', async () => {
@@ -299,18 +317,5 @@ describe('the cognition section comes and goes with the plugin (C8)', () => {
     expect(r.hits.filter((h: any) => h.path === 'notes/zebra.md').map((h: any) => h.by).sort()).toEqual(['ledger', 'search'])
     const text = ok(await agent(['find', 'crossings'])).stdout
     expect(text).toMatch(/notes\/zebra\.md {2}做出来的 {2}正文：zebra crossings near the shop/)
-  })
-
-  it('its commands run as written for an agent with a grant, and the example finds what it promises', async () => {
-    await newLibrary('search')
-    await put('support/refunds.md', '# 退款流程\n\n客户申请退款后，三天内原路退回。\n')
-    ok(await owner(['grant', 'issue', 'claude', '--agent', 'claude-code']))
-    const section = readFileSync(new URL('../cognition/search-section.md', import.meta.url), 'utf8')
-    const commands = [...section.matchAll(/```sh\n([\s\S]*?)```/g), ...section.matchAll(/`(pneuma-base [^`]+)`/g)].map((m) => (m[1] as string).trim())
-    expect(commands).toEqual(['pneuma-base @{{授权的名字}} find 退款 流程', 'pneuma-base @{{授权的名字}} search status'])
-    for (const command of commands) {
-      const r = ok(await sb.run(command.replace('{{授权的名字}}', 'claude').split(' ').slice(1), { cwd: outside, env: { CLAUDE_CODE_SESSION_ID: 's-2' } }))
-      if (command.includes(' find ')) expect(r.stdout.split('\n')[0]).toBe('support/refunds.md')
-    }
   })
 })

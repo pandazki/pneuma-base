@@ -30,7 +30,7 @@ test('every owner operation from the page leaves a trace an agent sees in check'
 
   // Take back the held first version of doc.md, from its panel, to a path the owner types.
   await main.getByRole('row', { name: /^doc\.md/ }).click()
-  await panel.getByRole('region', { name: '留存的旧版' }).getByRole('button', { name: '取回到新路径' }).click()
+  await panel.getByRole('region', { name: '留存' }).getByRole('button', { name: '取回到新路径' }).click()
   await dialog.getByLabel('取回到').fill('doc.first.md')
   await dialog.getByRole('button', { name: '取回到新路径' }).click()
   await expect(status).toContainText('取回到 doc.first.md')

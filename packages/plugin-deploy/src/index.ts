@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { abs, archivedPath, pluginName, regionOf, thingAt, type Event, type LibraryPath, type Plugin, type PluginNote, type SayAnswer } from '@pneuma-base/kernel'
+import { abs, archivedPath, pluginName, regionOf, thingAt, type Event, type LibraryPath, type Plugin, type PluginContext, type PluginNote, type SayAnswer } from '@pneuma-base/kernel'
 import { COMMANDS } from './commands.js'
 import { newThingId } from './facts.js'
 import { declaredAt, look, looks, record, settle, thingPath, withRun, type Settled } from './reconcile.js'
@@ -9,13 +9,18 @@ const heard = (note: string): SayAnswer => ({ outcome: 'heard', note })
 const refused = (note: string): SayAnswer => ({ outcome: 'not-heard', reason: 'refused', note })
 
 /**
- * What the agent whose put or archive moved the target is told. A target that failed is a problem
- * the kernel lists while the verb still succeeds (K8); a missing target is a note, as nothing is
- * online anywhere then.
+ * What the caller whose put or archive moved the target is told. A target that failed is a problem
+ * the kernel lists while the verb still succeeds (K8), worded so an agent whose sandbox cannot reach
+ * the target reads that its work is in and going online waits for the owner; a missing target is a
+ * note, as nothing is online anywhere then.
  */
-function followed(r: Settled): PluginNote | null {
+function followed(r: Settled, ctx: PluginContext, done: '放入' | '挪动' | '归档' | '取回'): PluginNote | null {
   const { path } = r.thing
-  if (r.problem?.kind === 'failed') throw new Error(`${path} 没能跟上：${r.problem.message}。现在是${STATUS[r.status].text}；目标好了之后可以运行 deploy sync。`)
+  if (r.problem?.kind === 'failed') {
+    const who = ctx.actor.kind === 'agent' ? `这不是你的${done}出了问题，你不用重做；上线要等主人在自己的终端里运行 deploy sync，需要时告诉主人。` : '目标好了之后运行 deploy sync。'
+    const now = r.status === 'retiring' ? '它还在线上' : r.status === 'pending' ? '线上还不是库里现在的内容' : `现在是${STATUS[r.status].text}`
+    throw new Error(`${done}本身已经成功，只是 ${path} 没能跟着上线：${r.problem.message}。${now}。${who}`)
+  }
   if (r.problem?.kind === 'no-target') return { text: `${path} 开着，但还没配部署目标，没有发布` }
   const published = r.done.find((d) => d.kind === 'publish')
   const dropped = r.done.filter((d) => d.kind === 'unpublish').map((d) => d.site)
@@ -66,7 +71,7 @@ export const deploy: Plugin = {
         if (moved !== undefined) record(run, { kind: 'move', thing: moved, from: req.from, to: req.path })
       }
       const id = run.d.byPath.get(req.path)
-      return id === undefined ? null : followed(await settle(run, id))
+      return id === undefined ? null : followed(await settle(run, id), ctx, req.kind === 'move' ? '挪动' : '放入')
     })
   },
 
@@ -77,7 +82,7 @@ export const deploy: Plugin = {
       const id = run.d.byPath.get(req.from)
       if (id === undefined) return null
       record(run, { kind: 'move', thing: id, from: req.from, to: req.to })
-      return followed(await settle(run, id))
+      return followed(await settle(run, id), ctx, req.kind === 'archive' ? '归档' : '取回')
     })
   },
 

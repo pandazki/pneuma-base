@@ -13,6 +13,7 @@ const clear: OwnerCommand = {
   name: 'recorder clear',
   summary: 'Forget every recorded event.',
   destructive: true,
+  ownerOnly: true,
   run: async (_args, ctx) => {
     await writeFile(join(ctx.dir, 'events.jsonl'), '')
     return { outcome: 'done', text: 'cleared' }
@@ -62,7 +63,7 @@ export const pager: Plugin = {
   cognition: null,
   storage: [],
   statements: [],
-  ownerCommands: [{ name: 'pager ping', summary: 'Answer pong.', destructive: false, run: async () => ({ outcome: 'done', text: 'pong' }) }],
+  ownerCommands: [{ name: 'pager ping', summary: 'Answer pong.', destructive: false, ownerOnly: false, run: async () => ({ outcome: 'done', text: 'pong' }) }],
   views: [{ id: 'pager.blocks', title: '块的样例', icon: 'flask-conical', nav: true, filters: [] }],
   onView: async () => ({
     title: '块的样例',

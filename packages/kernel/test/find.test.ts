@@ -49,7 +49,7 @@ describe('find in words mode', () => {
 describe('find with plugins that read content', () => {
   const contentHit = (path: string, detail: string | null): PluginHit => ({ path: path as LibraryPath, title: path.split('/').at(-1) as string, group: null, detail })
 
-  it('gives a path both the kernel and a plugin found once, from the plugin, at the plugin’s place', async () => {
+  it('gives a path both the kernel and a plugin found once, from the plugin, at the best rank either gave it', async () => {
     const reader = plugin('reader', { onFind: async () => [contentHit('notes/zebra.md', '正文：…zebra…')] })
     const f = await fixture([reader])
     f.write('notes/zebra.md', 'zebra')
@@ -68,6 +68,21 @@ describe('find with plugins that read content', () => {
     f.write(`sites/zebra/${BUNDLE_MARKER}`, '{"format":1}\n')
     expect((await agentFace.find(request('zebra', 'terms'), f.ctx)).hits).toEqual([
       { path: 'sites/zebra', title: 'zebra', by: 'reader', group: null, detail: '目录，index.html：…zebra…' },
+    ])
+  })
+
+  it('places each path at the best rank any answerer gave it, so a later plugin’s relevance order holds', async () => {
+    const names = plugin('names', { onFind: async () => ['y.md', 'z.md', 'x.md'].map((p) => contentHit(p, `名字：${p}`)) })
+    const relevance = plugin('relevance', { onFind: async () => ['x.md', 'z.md'].map((p) => contentHit(p, `正文：${p}`)) })
+    const f = await fixture([names, relevance])
+    const r = await agentFace.find(request('q', 'terms'), f.ctx)
+    // y and x are each someone's first: y first, since its answerer comes first; z is second for both.
+    expect(r.hits.map((h) => [h.path, h.by])).toEqual([
+      ['y.md', 'names'],
+      ['x.md', 'names'],
+      ['x.md', 'relevance'],
+      ['z.md', 'names'],
+      ['z.md', 'relevance'],
     ])
   })
 

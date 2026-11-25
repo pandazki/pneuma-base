@@ -25,7 +25,9 @@ const isAnswer = (x: object): x is OwnerAnswer => 'outcome' in x
 const targetSet: OwnerCommand = {
   name: 'sync target set',
   summary: '设同步目标：本机上的一个目录',
+  usage: '--kind dir --to <目录>',
   destructive: false,
+  ownerOnly: true,
   async run(args, ctx) {
     const f = flags('sync target set', args, ['kind', 'to'])
     if (isAnswer(f)) return f
@@ -67,6 +69,7 @@ const now: OwnerCommand = {
   name: 'sync now',
   summary: '现在同步：不合并内容，不让任何内容找不回',
   destructive: false,
+  ownerOnly: false,
   async run(args, ctx) {
     const f = flags('sync now', args, [])
     if (isAnswer(f)) return f
@@ -82,6 +85,7 @@ const statusCommand: OwnerCommand = {
   name: 'sync status',
   summary: '看同步目标、上次同步、待同步的数目和还在的冲突副本',
   destructive: false,
+  ownerOnly: false,
   async run(args, ctx) {
     const f = flags('sync status', args, [])
     if (isAnswer(f)) return f

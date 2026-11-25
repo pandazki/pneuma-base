@@ -16,6 +16,7 @@ export {
   enclosingBundle,
   fingerprintOf,
   fingerprintOfManifest,
+  listThings,
   thingAt,
   type BundleFile,
   type ManifestEntry,

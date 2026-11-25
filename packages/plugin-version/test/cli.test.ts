@@ -2,7 +2,6 @@
 // what holds an old version over a put is this plugin and nothing else.
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { readTree, sandbox, tempDir, writeTree, type Run, type Sandbox } from './run.js'
 
@@ -51,10 +50,10 @@ describe('not installed (C8)', () => {
     ok(sb.run(['init', lib, '--bare']))
     expect(description()).not.toContain('say versioned')
     ok(owner(['plugin', 'add', 'version']))
-    expect(description()).toContain('## 有版本的东西')
+    expect(description()).toContain('## 版本：留住每一版')
     expect(description()).toContain('say versioned')
     ok(owner(['plugin', 'remove', 'version']))
-    expect(description()).not.toContain('## 有版本的东西')
+    expect(description()).not.toContain('## 版本：留住每一版')
     expect(description()).not.toContain('say versioned')
   })
 })
@@ -266,42 +265,5 @@ describe('versions of a declared thing (C4)', () => {
     expect(files.filter((f) => f.startsWith('objects/'))).toHaveLength(2)
     for (const file of files) expect(file).toMatch(/^(objects\/[0-9a-f]{2}\/[0-9a-f]{64}|facts\/s1\/\d+-[0-9a-f]{8}\.jsonl)$/)
     expect(readdirSync(lib).sort()).toEqual(['.pneuma-base', 'PNEUMA-BASE.md', 'a.md', 'b.md'])
-  })
-})
-
-const SECTION = readFileSync(fileURLToPath(new URL('../cognition/version-section.md', import.meta.url)), 'utf8')
-
-/** The commands in the section's sh blocks, comments dropped, each split into words as a shell splits plain and double-quoted words. */
-function shellCommands(markdown: string): string[][] {
-  return [...markdown.matchAll(/```sh\n([\s\S]*?)```/g)]
-    .flatMap((m) => (m[1] as string).split('\n'))
-    .map((line) => line.trim())
-    .filter((line) => line !== '' && !line.startsWith('#'))
-    .map((line) => [...line.matchAll(/"([^"]*)"|(\S+)/g)].map((w) => (w[1] ?? w[2]) as string))
-}
-
-describe('the cognition section', () => {
-  it('its commands run as written, in order, and leave what they promise', () => {
-    versionOnly()
-    ok(owner(['grant', 'issue', 'claude', '--agent', 'claude-code']))
-    const cwd = tempDir('pb-v-agent-')
-    const V1 = { 'index.html': '<h1>小店</h1>', 'css/site.css': 'body{color:red}' }
-    writeTree(join(cwd, 'shop'), V1)
-    ok(sb.run(['@claude', 'put', './shop', '--to', 'sites/shop', '--made'], { cwd }))
-    writeTree(join(cwd, 'shop'), { 'css/site.css': 'body{color:blue}' })
-
-    const commands = shellCommands(SECTION)
-    expect(commands).toHaveLength(6)
-    for (const argv of commands) {
-      expect(argv[0]).toBe('pneuma-base')
-      ok(sb.run(argv.slice(1).map((w) => w.replaceAll('{{授权的名字}}', 'claude')), { cwd }))
-    }
-    expect(versions('sites/shop').map((v) => [v.n, v.note, v.same])).toEqual([
-      [1, '第一版', null],
-      [2, '换了配色', null],
-      [3, null, 1],
-    ])
-    expect(readTree(join(cwd, 'shop-v1'))).toEqual(V1)
-    expect(readTree(join(lib, 'sites/shop'), ['.pneuma-item'])).toEqual(V1)
   })
 })

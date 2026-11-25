@@ -70,7 +70,9 @@ export const searchCommands: OwnerCommand[] = [
   {
     name: 'search embedder set',
     summary: '设按意思找用的嵌入器：hash，或 OpenAI 兼容的 http 服务',
+    usage: '--kind hash | --kind http --url <地址> --model <模型名> [--key-env <存密钥的环境变量名>]',
     destructive: false,
+    ownerOnly: true,
     async run(args, ctx) {
       const flag = flagsOf('search embedder set', args, ['kind', 'url', 'model', 'key-env'])
       if (typeof flag === 'string') return usage(flag)
@@ -89,6 +91,7 @@ export const searchCommands: OwnerCommand[] = [
     name: 'search embedder clear',
     summary: '清除嵌入器，find 只按文字找',
     destructive: false,
+    ownerOnly: true,
     async run(args, ctx) {
       const flag = flagsOf('search embedder clear', args, [])
       if (typeof flag === 'string') return usage(flag)
@@ -101,6 +104,7 @@ export const searchCommands: OwnerCommand[] = [
     name: 'search rebuild',
     summary: '删掉查找的索引，从库里的文件重建',
     destructive: false,
+    ownerOnly: false,
     async run(args, ctx) {
       const flag = flagsOf('search rebuild', args, [])
       return typeof flag === 'string' ? usage(flag) : rebuild(ctx)
@@ -110,6 +114,7 @@ export const searchCommands: OwnerCommand[] = [
     name: 'search status',
     summary: '查找的索引有多少、待更新多少、配了什么嵌入器',
     destructive: false,
+    ownerOnly: false,
     async run(args, ctx) {
       const flag = flagsOf('search status', args, [])
       if (typeof flag === 'string') return usage(flag)

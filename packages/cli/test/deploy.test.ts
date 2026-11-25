@@ -4,11 +4,9 @@
 // switch is refused in an agent session; a failed publish fails no put and is listed as a problem.
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { sandbox, tempDir, type Run, type Sandbox } from './helpers.js'
 
-const COGNITION = fileURLToPath(new URL('../../plugin-deploy/cognition/deploy-section.md', import.meta.url))
 
 let sb: Sandbox
 let lib: string
@@ -83,14 +81,14 @@ describe('declaring', () => {
   it('without the plugin, say deployable is heard by no plugin; with it, the description has its section until it is removed', () => {
     ok(agent(['put', site('a'), '--to', 'sites/a', '--made']))
     expect(agent(['say', 'deployable', 'sites/a']).json()).toMatchObject({ outcome: 'not-heard', reason: 'no-plugin-for-kind' })
-    expect(readFileSync(join(lib, 'PNEUMA-BASE.md'), 'utf8')).not.toContain('## 部署')
+    expect(readFileSync(join(lib, 'PNEUMA-BASE.md'), 'utf8')).not.toContain('## 上线：主人开关')
 
     ok(owner(['plugin', 'add', 'deploy']))
-    expect(readFileSync(join(lib, 'PNEUMA-BASE.md'), 'utf8')).toContain('## 部署')
+    expect(readFileSync(join(lib, 'PNEUMA-BASE.md'), 'utf8')).toContain('## 上线：主人开关')
     expect(ok(agent(['say', 'deployable', 'sites/a']))).toMatchObject({ outcome: 'heard', by: 'deploy' })
 
     ok(owner(['plugin', 'remove', 'deploy']))
-    expect(readFileSync(join(lib, 'PNEUMA-BASE.md'), 'utf8')).not.toContain('## 部署')
+    expect(readFileSync(join(lib, 'PNEUMA-BASE.md'), 'utf8')).not.toContain('## 上线：主人开关')
     expect(agent(['say', 'deployable', 'sites/a']).json()).toMatchObject({ outcome: 'not-heard', reason: 'no-plugin-for-kind' })
   })
 
@@ -103,22 +101,6 @@ describe('declaring', () => {
     const missing = agent(['say', 'deployable', 'sites/nope'])
     expect(missing.code).toBe(2)
     expect(missing.json()).toMatchObject({ outcome: 'not-heard', reason: 'refused' })
-  })
-
-  it('the command in the cognition section runs as written', () => {
-    ok(owner(['plugin', 'add', 'deploy']))
-    ok(owner(['grant', 'issue', 'claude', '--agent', 'claude-code']))
-    const commands = [...readFileSync(COGNITION, 'utf8').matchAll(/```sh\n([\s\S]*?)```/g)].flatMap((m) => (m[1] as string).trim().split('\n'))
-    expect(commands.length).toBeGreaterThan(0)
-    for (const command of commands) {
-      const argv = command.replaceAll('{{授权的名字}}', 'claude').split(/\s+/)
-      expect(argv[0]).toBe('pneuma-base')
-      const path = argv.at(-1) as string
-      ok(sb.run(['@claude', 'put', site(path.replaceAll('/', '-')), '--to', path, '--made', '--json'], { cwd: outside }))
-      const r = sb.run([...argv.slice(1), '--json'], { cwd: outside })
-      expect(r.code, r.stdout + r.stderr).toBe(0)
-      expect(r.json()).toMatchObject({ outcome: 'heard', by: 'deploy' })
-    }
   })
 })
 
@@ -272,6 +254,21 @@ describe('a command target', () => {
 
     const check = ok(agent(['check'])).sections.find((s: any) => s.plugin === 'deploy')
     expect(check.body).toMatch(/sites\/s1.*待发布/)
+  })
+
+  it('that an agent’s put cannot reach, as from a sandbox: the text says the put worked and going online waits for the owner', () => {
+    const fail = script('fail.mjs', `process.stderr.write('EACCES: permission denied\\n')\nprocess.exit(1)\n`)
+    commandTarget(`'${node}' '${fail}' {dir} {name}`, `'${node}' '${fail}' {name}`)
+    owner(['deploy', 'on', 'sites/s1'])
+    const put = sb.run(['--library', lib, '--as', 'codex', 'put', site('site-1-sandbox', 'from the sandbox'), '--to', 'sites/s1', '--made'], { cwd: outside })
+    expect(put.code).toBe(3)
+    const [head, ...rest] = put.stdout.trim().split('\n')
+    expect(head).toBe('已放入 sites/s1')
+    const problem = rest.find((l) => l.includes('deploy')) as string
+    expect(problem).toContain('放入本身已经成功')
+    expect(problem).toContain('这不是你的放入出了问题，你不用重做')
+    expect(problem).toContain('等主人在自己的终端里运行 deploy sync')
+    expect(problem).toContain('EACCES')
   })
 
   it('that runs too long is stopped at its timeout', () => {

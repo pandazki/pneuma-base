@@ -46,7 +46,7 @@ test('the items page and the provenance chain of a relayed library', async ({ pa
   await expect(provenance.getByRole('region', { name: '决定与备注' })).toContainText(DECIDED)
   await expect(basis).toContainText('主人在对话里说：客户主要在欧洲')
   for (const source of Object.keys(SOURCES)) await expect(basis.getByRole('listitem').filter({ hasText: source })).toContainText('一致')
-  await expect(provenance.getByRole('region', { name: '版本' })).toContainText('当前')
+  await expect(provenance.getByRole('region', { name: '内容的变化' })).toContainText('当前')
   await expect(row('payments/comparison.md')).toHaveAttribute('aria-selected', 'true')
   // With the panel open, the paths keep their width; other columns give way.
   expect(await cutTexts(items, 'td:first-child')).toEqual([])

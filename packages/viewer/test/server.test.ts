@@ -73,6 +73,11 @@ const refused = (host: string, port: number) =>
       resolve(false)
     })
     socket.once('error', () => resolve(true))
+    // A link-local address given without its interface can neither connect nor fail; it is not reached either.
+    socket.setTimeout(2000, () => {
+      socket.destroy()
+      resolve(true)
+    })
   })
 
 describe('who reaches the server (C8)', () => {

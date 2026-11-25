@@ -148,7 +148,7 @@ async function recordPut(w: Writing, req: AcceptedPut): Promise<PluginNote> {
   const claimed = req.kind === 'register'
   const basis = origin.kind === 'made' ? { basis: origin.basis } : {}
   w.facts.push(fact(ctx, claimed ? 'reported' : 'tool', { kind: 'item.revise', item: item.id, base: item.fingerprint, fingerprint: req.fingerprint, size, ...basis, held, claimed }))
-  const text = held ? '已记为新的一版，旧的一版已留存，主人可以取回' : claimed ? '已认下这次直接改动，记为新的一版' : '已记为新的一版'
+  const text = held ? '已记下换了新内容，旧内容进了留存，主人取得回' : claimed ? '已认下这次直接改动' : '已记下换了新内容'
   return { text: `${text} · 条目 ${item.id}`, data: { item: item.id } }
 }
 
@@ -185,7 +185,7 @@ async function recordSay(w: Writing, req: SayRequest): Promise<SayAnswer> {
     if (!disk) return refused(`文件不在：${input}`)
     if (disk.fingerprint === item.fingerprint) return heard(`${input} 的内容和记录一致，没有要认的改动`)
     w.facts.push(fact(ctx, 'reported', { kind: 'item.revise', item: item.id, base: item.fingerprint, fingerprint: disk.fingerprint, size: disk.size, held: null, claimed: true }))
-    return heard(`已认下 ${input} 的直接改动，记为新的一版`)
+    return heard(`已认下 ${input} 的直接改动`)
   }
   return refused(`记账插件不认识这个种类：${req.kind}`)
 }
@@ -201,6 +201,13 @@ function purged(event: Extract<Event, { face: 'owner' }>): LibraryPath[] {
   const paths = (event.result.data as { paths?: unknown } | undefined)?.paths
   return Array.isArray(paths) ? paths.filter((p): p is LibraryPath => typeof p === 'string') : []
 }
+
+/**
+ * An owner command's answer as one line of the record: each absolute path shortened to its last
+ * name, since the answer is read in check, on the scene card and in the activity list, where a
+ * name will do and the whole path only crowds the line.
+ */
+export const ownerSummary = (text: string) => text.replace(/(^|[\s：:（(「，,])\/(?:[^\s/：:，,。；、）)」]+\/)*([^\s/：:，,。；、）)」]+)/gu, '$1$2')
 
 /** An item as inspect and the item panel show it: its state and its direct sources' states from their own files, and its held copies. */
 async function viewOfItem(ctx: PluginContext, ledger: Ledger, item: ItemRecord): Promise<ItemView> {
@@ -239,6 +246,7 @@ async function panelView(ctx: PluginContext, ledger: Ledger, path: LibraryPath):
 export const ledger: Plugin = {
   name: pluginName('ledger'),
   cognition: { title: '记账与对账', text: readFileSync(new URL('../cognition/2-ledger-section.md', import.meta.url), 'utf8') },
+  keeps: 'every',
   storage: [
     { dir: 'facts', kind: 'body' },
     { dir: 'held', kind: 'body' },
@@ -259,7 +267,7 @@ export const ledger: Plugin = {
     const w = await writing(ctx)
     const thing = await thingAt(abs(ctx.library.root, req.path))
     const id = w.ledger.pathIndex.get(req.path) ?? adopt(w, req.path, { fingerprint: req.current, size: thing?.size ?? 0, bundle: thing?.kind === 'bundle' })
-    if ((await keep(ctx, id, req.path, req.current)) === null) return { outcome: 'declined', reason: `${req.path} 正在被改动，没能留存旧的一版` }
+    if ((await keep(ctx, id, req.path, req.current)) === null) return { outcome: 'declined', reason: `${req.path} 正在被改动，没能留存旧内容；稍后再放。` }
     await writeFacts(ctx.dir, w.facts)
     return { outcome: 'held', note: null }
   },
@@ -374,7 +382,7 @@ export const ledger: Plugin = {
   async observe(event, ctx) {
     if (event.face !== 'owner' || event.result.outcome !== 'done') return
     const w = await writing(ctx)
-    w.facts.push(fact(ctx, 'tool', { kind: 'owner.op', command: event.command, summary: event.result.text, destructive: event.destructive }))
+    w.facts.push(fact(ctx, 'tool', { kind: 'owner.op', command: event.command, summary: ownerSummary(event.result.text), destructive: event.destructive }))
     for (const path of purged(event)) {
       const id = w.ledger.pathIndex.get(path)
       if (id !== undefined) w.facts.push(fact(ctx, 'tool', { kind: 'item.remove', item: id }))

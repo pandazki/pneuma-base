@@ -4,7 +4,7 @@ import { originalPath, shortDir, withSuffix, type Action, type ActionInput, type
 import type { Fact, LedgerOrigin, SceneId } from './facts.js'
 import { isArchived, type ItemRecord, type Ledger, type SceneRecord } from './fold.js'
 import type { ItemState, Mark, Standing } from './reconcile.js'
-import { doingAt, factLine, MARK_LABEL, originLabel, SAID_LABEL, scenesNamed, shortScene, standingData, STATE_LABEL, when, who, type ItemView } from './views.js'
+import { actorNames, doingAt, factLine, MARK_LABEL, originLabel, SAID_LABEL, scenesNamed, shortScene, standingData, STATE_LABEL, when, who, type ItemView } from './views.js'
 
 const ORIGINS: { value: string; label: string }[] = [
   { value: '', label: '全部' },
@@ -236,17 +236,17 @@ export function itemSection(v: ItemView): ItemSection {
     at: ver.at,
     title: { text: ver.fingerprint.slice(0, 12), mono: true },
     lines: [`${who(ver.actor)} · 场景 ${shortScene(ver.scene)}`],
-    tag: i === 0 ? { text: '当前', tone: 'good' as const } : ver.claimed ? { text: '认了直接改动', tone: 'warn' as const } : ver.held ? { text: '换下的旧版留存了', tone: 'neutral' as const } : null,
+    tag: i === 0 ? { text: '当前', tone: 'good' as const } : ver.claimed ? { text: '认了直接改动', tone: 'warn' as const } : ver.held ? { text: '换下的进了留存', tone: 'neutral' as const } : null,
   }))
-  blocks.push(counted('版本', versions.length, [{ kind: 'timeline', entries: versions }]))
+  blocks.push(counted('内容的变化', versions.length, [{ kind: 'timeline', entries: versions }]))
 
   if (v.held.length > 0) {
     // A held copy lies at held/<item>/<fingerprint>/<name>.
     const items = v.held.map((path) => {
       const fingerprint = path.split('/').at(-2) ?? ''
-      return { cell: { text: `旧版 ${fingerprint.slice(0, 8)}`, mono: true }, note: path, actions: [restoreAction(v, path, fingerprint)] }
+      return { cell: { text: `留存 ${fingerprint.slice(0, 8)}`, mono: true }, note: path, actions: [restoreAction(v, path, fingerprint)] }
     })
-    blocks.push(counted('留存的旧版', items.length, [{ kind: 'text', text: '被新的一版换下来的旧内容。取回时复制到一个新路径，现在的这一版不动。', tone: 'neutral' }, { kind: 'list', items }]))
+    blocks.push(counted('留存', items.length, [{ kind: 'text', text: '被新内容换下来的旧内容，给主人的保险。取回时复制到一个新路径，现在的内容不动。', tone: 'neutral' }, { kind: 'list', items }]))
   }
   return { title: '来历', blocks }
 }
@@ -292,7 +292,7 @@ export function scenesAnswer(ledger: Ledger): ViewAnswer {
     key: scene.id,
     cells: {
       at: moment(scene.first),
-      who: { text: scene.actors.map(who).join('、') },
+      who: { text: actorNames(scene.actors) },
       where: scene.cwds.length > 0 ? { text: scene.cwds.map((d) => shortDir(d)).join('、'), mono: true, muted: true } : none,
       doing: sceneDoing(ledger, scene),
       things: scene.items.length > 0 ? { text: String(scene.items.length) } : none,
@@ -324,7 +324,7 @@ export function sceneAnswer(ledger: Ledger, params: Record<string, string>): Vie
     {
       kind: 'fields',
       fields: [
-        { label: '谁', value: { text: scene.actors.map(who).join('、') } },
+        { label: '谁', value: { text: actorNames(scene.actors) } },
         { label: '开始', value: { text: when(scene.first), at: scene.first } },
         { label: '最后', value: { text: when(scene.last), at: scene.last } },
         ...(scene.cwds.length > 0 ? [{ label: '在哪', value: { text: scene.cwds.map((d) => shortDir(d, 36)).join('、'), mono: true } }] : []),
@@ -356,7 +356,7 @@ export function sceneAnswer(ledger: Ledger, params: Record<string, string>): Vie
     }))
     blocks.push(counted('条目', items.length, [{ kind: 'list', items: entries }]))
   }
-  return { title: `场景 ${shortScene(scene.id)}`, subtitle: `${scene.actors.map(who).join('、')} · ${items.length} 样东西`, blocks }
+  return { title: `场景 ${shortScene(scene.id)}`, subtitle: `${actorNames(scene.actors)} · ${items.length} 样东西`, blocks }
 }
 
 // ---- standing ----
@@ -399,7 +399,7 @@ function kindTag(f: Fact): Tag {
     case 'item.enter':
       return { text: '放入', tone: 'neutral' }
     case 'item.revise':
-      return f.claimed ? { text: '认改动', tone: 'warn' } : { text: '新的一版', tone: 'neutral' }
+      return f.claimed ? { text: '认改动', tone: 'warn' } : { text: '换内容', tone: 'neutral' }
     case 'item.move':
       return { text: f.archive === 'in' ? '归档' : f.archive === 'out' ? '取回' : '挪动', tone: 'neutral' }
     case 'item.basis':

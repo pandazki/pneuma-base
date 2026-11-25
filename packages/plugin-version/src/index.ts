@@ -93,6 +93,7 @@ function purged(event: Event): LibraryPath[] {
 export const version: Plugin = {
   name: pluginName('version'),
   cognition: { title: '版本', text: readFileSync(new URL('../cognition/version-section.md', import.meta.url), 'utf8') },
+  keeps: 'some',
   storage: [
     { dir: 'objects', kind: 'body' },
     { dir: 'facts', kind: 'body' },
@@ -121,7 +122,7 @@ export const version: Plugin = {
   async revise(req, ctx) {
     const w = await writing(ctx)
     const thing = declaredExactly(w.model, req.path)
-    if (!thing) return { outcome: 'declined', reason: `${req.path} 没有声明有版本` }
+    if (!thing) return { outcome: 'declined', reason: `${req.path} 没有声明有版本。要改它并留住旧版，先 say versioned ${req.path}，再放。` }
     const r = await record(w, thing, 'outside')
     if (r === null || r.version.fingerprint !== req.current) return { outcome: 'declined', reason: `${req.path} 正在被改动，没能留住当前的内容` }
     await commit(w)

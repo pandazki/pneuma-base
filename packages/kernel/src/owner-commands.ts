@@ -19,7 +19,9 @@ export type Outcome = { answer: OwnerAnswer; library?: Library }
 export type KernelCommand = {
   readonly name: string
   readonly summary: string
+  readonly usage?: string
   readonly destructive: boolean
+  readonly ownerOnly: boolean
   run(args: OwnerArgs, call: OwnerCall): Promise<Outcome>
 }
 
@@ -52,7 +54,9 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
   {
     name: 'grant issue',
     summary: '发一份授权：给谁、哪个区域、只读还是读写',
+    usage: '<授权名> --agent <给谁> [--area <子文件夹>] [--read-only]',
     destructive: false,
+    ownerOnly: true,
     async run(args, call) {
       const a = read('grant issue', args, 1, ['agent', 'area', 'read-only'])
       if (typeof a === 'string') return usage(a)
@@ -87,7 +91,9 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
   {
     name: 'grant revoke',
     summary: '撤回一份授权',
+    usage: '<授权名>',
     destructive: false,
+    ownerOnly: true,
     async run(args, call) {
       const a = read('grant revoke', args, 1, [])
       if (typeof a === 'string') return usage(a)
@@ -104,7 +110,9 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
   {
     name: 'plugin add',
     summary: '装上一个插件',
+    usage: '<插件名>',
     destructive: false,
+    ownerOnly: true,
     async run(args, call) {
       const a = read('plugin add', args, 1, [])
       if (typeof a === 'string') return usage(a)
@@ -123,7 +131,9 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
   {
     name: 'plugin remove',
     summary: '卸下一个插件；它名下的目录原样留着',
+    usage: '<插件名>',
     destructive: false,
+    ownerOnly: true,
     async run(args, call) {
       const a = read('plugin remove', args, 1, [])
       if (typeof a === 'string') return usage(a)
@@ -137,7 +147,9 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
   {
     name: 'skill install',
     summary: '为一个 agent 产品写一份指向说明的技能',
+    usage: '<授权名> --agent claude|codex --dir <目录>',
     destructive: false,
+    ownerOnly: false,
     /** Writes `<dir>/pneuma-base-<grant>/SKILL.md`. A relative `--dir` is taken from the caller's working directory; `~` is the home directory. */
     async run(args, call) {
       const a = read('skill install', args, 1, ['agent', 'dir'])
@@ -162,8 +174,9 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
   },
   {
     name: 'archive purge',
-    summary: '清空归档区（会丢数据）',
+    summary: '清空归档区',
     destructive: true,
+    ownerOnly: true,
     /** Deletes everything in `_archive/`. The answer's data names the library paths it deleted. */
     async run(args, call) {
       const a = read('archive purge', args, 0, [])

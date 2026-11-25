@@ -83,7 +83,7 @@ describe('the items view', () => {
 })
 
 describe('the item panel’s provenance section', () => {
-  it('gives provenance, scene, basis with each source’s state and a link to it, dependents, decisions, versions', async () => {
+  it('gives provenance, scene, basis with each source’s state and a link to it, dependents, decisions, content changes', async () => {
     const { show } = await relayed()
     const r = shown(await show('item', { path: 'comparison.md' }))
     const provenance = sectionNamed(r.blocks, '来历')
@@ -105,7 +105,7 @@ describe('the item panel’s provenance section', () => {
     })
     expect(sectionNamed(provenance.blocks, '被什么依据')).toMatchObject({ blocks: [{ items: [{ cell: { text: 'recommendation.md', link: { params: { path: 'recommendation.md' } } } }] }] })
     expect(sectionNamed(provenance.blocks, '决定与备注')).toMatchObject({ blocks: [{ kind: 'timeline', entries: [{ title: { text: '用 Paddle' }, tag: { text: '决定' } }] }] })
-    expect(sectionNamed(provenance.blocks, '版本')).toMatchObject({ count: 1, blocks: [{ kind: 'timeline', entries: [{ tag: { text: '当前' } }] }] })
+    expect(sectionNamed(provenance.blocks, '内容的变化')).toMatchObject({ count: 1, blocks: [{ kind: 'timeline', entries: [{ tag: { text: '当前' } }] }] })
   })
 
   it('shows a brought source with where it came from', async () => {
@@ -280,7 +280,7 @@ describe('the owner’s operations on the ledger’s blocks', () => {
   it('a held copy can be taken back to a new path, as the owner command held restore', async () => {
     const { show, codex } = await relayed()
     await agentFace.put({ kind: 'place', from: text('cmp v2'), to: 'comparison.md', origin: { kind: 'made', from: ['src/stripe.html'], outside: [] } }, codex())
-    const held = sectionNamed(sectionNamed(shown(await show('item', { path: 'comparison.md' })).blocks, '来历').blocks, '留存的旧版')
+    const held = sectionNamed(sectionNamed(shown(await show('item', { path: 'comparison.md' })).blocks, '来历').blocks, '留存')
     expect(held.blocks.find((b) => b.kind === 'list')).toMatchObject({
       items: [
         {

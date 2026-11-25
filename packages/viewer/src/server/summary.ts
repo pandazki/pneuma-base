@@ -32,7 +32,7 @@ export function archiveSummary(kind: 'archive' | 'unarchive', r: ArchiveResult):
 }
 
 export function putSummary(r: PutResult): Summary {
-  if (r.outcome === 'refused') return withProblems({ tone: 'bad', text: refusal(r.reason, r.subject) }, r.problems)
+  if (r.outcome === 'refused') return withProblems({ tone: 'bad', text: [refusal(r.reason, r.subject), ...r.notes.map((n) => n.text)].join('\n') }, r.problems)
   return withProblems({ tone: 'good', text: [`已放好 ${r.path}`, ...r.notes.map((n) => n.text)].join('\n') }, r.problems)
 }
 

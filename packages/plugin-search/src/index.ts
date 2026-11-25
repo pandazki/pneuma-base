@@ -11,7 +11,7 @@ import { itemSection, STATUS_VIEW, statusView } from './views.js'
  */
 export const search: Plugin = {
   name: pluginName('search'),
-  cognition: { title: '查找：按正文找，配了嵌入器时也按意思找', text: readFileSync(new URL('../cognition/search-section.md', import.meta.url), 'utf8') },
+  cognition: { title: '查找', text: readFileSync(new URL('../cognition/search-section.md', import.meta.url), 'utf8') },
   storage: [{ dir: 'embedder', kind: 'body' }],
   statements: [],
   ownerCommands: searchCommands,

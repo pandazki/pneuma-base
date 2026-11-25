@@ -15,12 +15,11 @@ export const DESCRIPTION_GRANT_NAME = '<你的授权名>'
 /**
  * PNEUMA-BASE.md, assembled only from the configuration and the installed plugins' cognition
  * sections (K6): the kernel's intro, each plugin's section in configuration order, the kernel's
- * rules, and the current configuration. The same-name sentence follows from whether an installed
- * plugin provides `revise`.
+ * rules, and the current configuration. The same-name sentence says what an installed plugin
+ * with `revise` keeps: nothing, some things, or every replaced thing.
  */
 export function assembleDescription(library: Pick<Library, 'config' | 'plugins'>): string {
-  const revises = library.plugins.some((p) => p.revise)
-  const sameName = text(revises ? '3-same-name-with-revise.txt' : '3-same-name-bare.txt').trim()
+  const sameName = text(`3-same-name-${replacedKept(library.plugins)}.txt`).trim()
   const parts = [
     text('1-kernel-intro.md'),
     ...library.plugins.flatMap((p) => (p.cognition ? [p.cognition.text] : [])),
@@ -28,6 +27,13 @@ export function assembleDescription(library: Pick<Library, 'config' | 'plugins'>
     library.config.plugins.length === 0 ? text('4-config-bare.md') : configuration(library),
   ]
   return `${parts.map((p) => p.trimEnd()).join('\n\n').replaceAll(GRANT_NAME, DESCRIPTION_GRANT_NAME)}\n`
+}
+
+/** What happens to a replaced thing's content with these plugins: no plugin holds it, some are held, or every one is. */
+function replacedKept(plugins: Library['plugins']): 'bare' | 'some' | 'every' {
+  const revisers = plugins.filter((p) => p.revise)
+  if (revisers.length === 0) return 'bare'
+  return revisers.some((p) => p.keeps === 'every') ? 'every' : 'some'
 }
 
 function configuration(library: Pick<Library, 'config' | 'plugins'>): string {

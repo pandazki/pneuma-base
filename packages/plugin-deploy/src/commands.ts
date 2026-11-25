@@ -1,6 +1,5 @@
 // The deploy plugin's owner commands. None loses anything, so none is destructive. Publishing faces
-// outward, so the switch and the target are the owner's alone: the kernel's gate stops only
-// destructive commands, and these check the session themselves.
+// outward, so the switch and the target are owner-only: the kernel refuses them in an agent session.
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { parseLibraryPath, regionOf, type OwnerAnswer, type OwnerArgs, type OwnerCommand, type PluginContext } from '@pneuma-base/kernel'
 import type { Status } from './model.js'
@@ -13,18 +12,10 @@ const refused = (reason: string, text: string): OwnerAnswer => ({ outcome: 'refu
 /** A malformed call; the command line shows it as a usage error. */
 const usage = (text: string) => refused('usage', text)
 
-/**
- * An agent session as the kernel tells it, read from the context: an agent actor (a grant, `--as`,
- * or an agent product's own variable), or a session id taken from the environment.
- */
-const inAgentSession = (ctx: PluginContext) => ctx.actor.kind === 'agent' || ctx.session.source === 'env'
-
 type Who = 'owner' | 'anyone'
 
-function command(name: string, summary: string, who: Who, run: OwnerCommand['run']): OwnerCommand {
-  const ownerOnly: OwnerCommand['run'] = async (args, ctx) =>
-    inAgentSession(ctx) ? refused('agent-session', `「${name}」决定什么对外发布，只能由主人在自己的终端或管理界面里做，不能在 agent 的会话里做。要上线或下线，告诉主人。`) : run(args, ctx)
-  return { name, summary, destructive: false, run: who === 'owner' ? ownerOnly : run }
+function command(name: string, summary: string, who: Who, run: OwnerCommand['run'], args?: string): OwnerCommand {
+  return { name, summary, ...(args === undefined ? {} : { usage: args }), destructive: false, ownerOnly: who === 'owner', run }
 }
 
 type Read = { positional: string[]; value(flag: string): string | null; values(flag: string): string[] }
@@ -66,7 +57,7 @@ function switchCommand(on: boolean): OwnerCommand {
       }
       return done(`已${verb} ${path}：${lookText(r)}`, { path, status: r.status, site: r.site, url: r.url })
     })
-  })
+  }, '<库内路径>')
 }
 
 const sync = command('deploy sync', '把全部可部署的东西对一遍：该发布的发布，该下线的下线；跑几遍结果都一样', 'anyone', async (args, ctx) => {
@@ -162,6 +153,6 @@ const targetSet = command('deploy target set', '配部署目标：一个本地�
     const notes = [...(on > 0 ? [`开着的 ${on} 样还没发到新目标：运行 deploy sync。`] : []), ...(left > 0 ? [`旧目标上的 ${left} 个站点没有撤下。`] : [])]
     return done([head, ...notes].join(''), { target: config })
   })
-})
+}, '--kind dir --to <目录> | --kind command --publish "<命令>" --unpublish "<命令>" [--url <模板>] [--timeout <秒>]')
 
 export const COMMANDS: readonly OwnerCommand[] = [switchCommand(true), switchCommand(false), sync, list, targetSet]
