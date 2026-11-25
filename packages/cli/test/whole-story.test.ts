@@ -26,14 +26,15 @@ const ONLINE = ['coffee', 'hiking', 'books', 'pets']
 const ARCHIVED = ['plants', 'music', 'camping']
 
 const sb = sandbox()
-const root = tempDir('pb-story-')
+// Longer than shortDir's 45-character cap even under Linux `/tmp`, as macOS `/private/var/...` is.
+const root = join(tempDir('pb-story-'), 'workspace-outside-every-library')
 const lib = join(root, 'lib')
 const lib2 = join(root, 'lib2')
 const www = join(root, 'www')
 const syncTarget = join(root, 'sync-target')
 const claudeDir = join(root, 'claude-work')
 const codexDir = join(root, 'codex-work')
-for (const dir of [syncTarget, claudeDir, codexDir]) mkdirSync(dir, { recursive: true })
+for (const dir of [root, syncTarget, claudeDir, codexDir]) mkdirSync(dir, { recursive: true })
 
 const ok = (r: Run): Run => {
   expect(r.code, `${r.stdout}${r.stderr}`).toBe(0)
