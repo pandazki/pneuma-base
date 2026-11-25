@@ -46,7 +46,7 @@ function embedderOf(flag: (name: string) => string | null): EmbedderConfig | str
 async function rebuild(ctx: PluginContext): Promise<OwnerAnswer> {
   const config = await currentEmbedder(ctx)
   await rm(ctx.cacheDir, { recursive: true, force: true })
-  const index = SearchIndex.open(ctx.cacheDir, ctx.now)
+  const index = await SearchIndex.open(ctx.cacheDir, ctx.now)
   let failure: string | null = null
   try {
     await refresh(index, ctx.library.root)

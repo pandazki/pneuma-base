@@ -138,7 +138,7 @@ export async function findHits(req: FindRequest, ctx: PluginContext): Promise<Pl
   const text = req.text?.trim() ?? ''
   if (text === '' || Object.keys(req.filters).length > 0) return []
   const config = await currentEmbedder(ctx)
-  const index = SearchIndex.open(ctx.cacheDir, ctx.now)
+  const index = await SearchIndex.open(ctx.cacheDir, ctx.now)
   try {
     await refresh(index, ctx.library.root)
     const problems: string[] = []

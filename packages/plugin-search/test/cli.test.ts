@@ -318,4 +318,12 @@ describe('the cognition section comes and goes with the plugin (C8)', () => {
     const text = ok(await agent(['find', 'crossings'])).stdout
     expect(text).toMatch(/notes\/zebra\.md {2}做出来的 {2}正文：zebra crossings near the shop/)
   })
+
+  it('keeps stderr completely clean of SQLite experimental warnings across put and find', async () => {
+    await newLibrary('ledger+search')
+    const placed = ok(await agent(['put', '-', '--to', 'clean.md', '--made'], { input: '干净的标准错误输出\n' }))
+    expect(placed.stderr).toBe('')
+    const searched = ok(await agent(['find', '干净']))
+    expect(searched.stderr).toBe('')
+  })
 })

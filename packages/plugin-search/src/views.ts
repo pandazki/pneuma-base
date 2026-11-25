@@ -27,7 +27,7 @@ const embedderId = (config: EmbedderConfig | null) => (config === null ? null : 
 export async function statusOf(ctx: PluginContext): Promise<Status> {
   const embedder = await currentEmbedder(ctx)
   const none: Status = { indexed: false, files: 0, textFiles: 0, chunks: 0, stale: 0, vectors: 0, builtAt: null, embedder, cacheDir: ctx.cacheDir }
-  const index = SearchIndex.peek(ctx.cacheDir)
+  const index = await SearchIndex.peek(ctx.cacheDir)
   if (index === null) return none
   try {
     const plan = freshness(await diskStamps(ctx.library.root), index.stamps())
@@ -99,7 +99,7 @@ export async function itemSection(path: LibraryPath, ctx: PluginContext): Promis
   const disk: Stamp[] =
     thing.kind === 'file' ? [{ path, inner: '', size: thing.size, modifiedAt: thing.modifiedAt }] : (await bundleFiles(file)).map((f) => ({ path, inner: f.path, size: f.size, modifiedAt: f.modifiedAt }))
   const embedder = await currentEmbedder(ctx)
-  const index = SearchIndex.peek(ctx.cacheDir)
+  const index = await SearchIndex.peek(ctx.cacheDir)
   const docs = index?.docsAt(path, embedderId(embedder)) ?? []
   index?.close()
   const plan = freshness(disk, docs.map((d) => ({ path, inner: d.inner, size: d.size, modifiedAt: d.modifiedAt })))

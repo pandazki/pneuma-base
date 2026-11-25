@@ -8,9 +8,28 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
+import type { DatabaseSync as DatabaseSyncType } from 'node:sqlite'
 import { regionOf, type Instant, type LibraryPath } from '@pneuma-base/kernel'
 import type { FileKey, Stamp } from './fresh.js'
+
+let cachedDatabaseSync: typeof DatabaseSyncType | null = null
+
+/**
+ * Loads `node:sqlite` only when the index is actually opened, and silences Node's experimental
+ * SQLite warning so stderr stays clean for agents running CLI commands.
+ */
+async function loadDatabaseSync(): Promise<typeof DatabaseSyncType> {
+  if (cachedDatabaseSync) return cachedDatabaseSync
+  const original = process.emitWarning.bind(process)
+  process.emitWarning = ((warning: string | Error, ...args: unknown[]) => {
+    const text = typeof warning === 'string' ? warning : warning.message
+    if (text.includes('SQLite is an experimental feature')) return
+    ;(original as (...a: unknown[]) => void)(warning, ...args)
+  }) as typeof process.emitWarning
+  const mod = await import('node:sqlite')
+  cachedDatabaseSync = mod.DatabaseSync
+  return cachedDatabaseSync
+}
 
 const SCHEMA = '1'
 const FILE = 'index.sqlite'
@@ -58,7 +77,7 @@ function vectorOf(blob: Uint8Array): Float32Array {
 }
 
 export class SearchIndex {
-  private constructor(private readonly db: DatabaseSync) {
+  private constructor(private readonly db: DatabaseSyncType) {
     db.exec('PRAGMA busy_timeout = 30000')
     db.function('archived', { deterministic: true }, (path) => (regionOf(String(path) as LibraryPath) === 'archive' ? 1 : 0))
   }
@@ -67,23 +86,25 @@ export class SearchIndex {
    * Opens the index in `cacheDir`, made anew when it is missing, of another schema, or not a sqlite
    * file. A busy one is waited for, never made anew: another find may be using it.
    */
-  static open(cacheDir: string, now: Instant): SearchIndex {
+  static async open(cacheDir: string, now: Instant): Promise<SearchIndex> {
+    const DatabaseSync = await loadDatabaseSync()
     mkdirSync(cacheDir, { recursive: true })
     const file = join(cacheDir, FILE)
     try {
-      return SearchIndex.ready(file, now)
+      return SearchIndex.ready(DatabaseSync, file, now)
     } catch (error) {
       if (!(error instanceof ForeignIndex) && !UNUSABLE.has((error as { errcode?: unknown }).errcode)) throw error
       for (const f of [file, `${file}-journal`]) rmSync(f, { force: true })
-      return SearchIndex.ready(file, now)
+      return SearchIndex.ready(DatabaseSync, file, now)
     }
   }
 
   /** The index as it is, without building one; null when there is none this version can read. */
-  static peek(cacheDir: string): SearchIndex | null {
+  static async peek(cacheDir: string): Promise<SearchIndex | null> {
     const file = join(cacheDir, FILE)
     if (!existsSync(file)) return null
     try {
+      const DatabaseSync = await loadDatabaseSync()
       const index = new SearchIndex(new DatabaseSync(file))
       if (index.schema() === SCHEMA) return index
       index.close()
@@ -94,7 +115,7 @@ export class SearchIndex {
   }
 
   /** The index in `file` with this schema, its tables made when the file is empty. Throws for anything else. */
-  private static ready(file: string, now: Instant): SearchIndex {
+  private static ready(DatabaseSync: typeof DatabaseSyncType, file: string, now: Instant): SearchIndex {
     const index = new SearchIndex(new DatabaseSync(file))
     try {
       if (index.schema() !== SCHEMA) {
