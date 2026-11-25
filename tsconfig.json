@@ -9,6 +9,8 @@
     { "path": "packages/plugin-version/test" },
     { "path": "packages/plugin-sync" },
     { "path": "packages/plugin-sync/test" },
+    { "path": "packages/plugin-deploy" },
+    { "path": "packages/plugin-deploy/test" },
     { "path": "packages/viewer" },
     { "path": "packages/viewer/web" },
     { "path": "packages/viewer/test" },
