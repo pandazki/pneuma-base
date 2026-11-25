@@ -80,4 +80,4 @@ agent 用 `say deployable <库内路径>` 声明一样东西可以部署；主�
 | `deploy sync` | 主人和 agent | 把全部声明过的东西对一遍 |
 | `deploy list` | 主人和 agent | 列出声明过的东西、状态和地址 |
 
-都不是破坏性的。对外发布是对外的动作，所以开关和目标只给主人：内核的门只拦破坏性的命令，这几条由插件自己看上下文，行动者是 agent、或会话来自 agent 产品的环境变量时，以 `agent-session` 拒绝。
+都不是破坏性的。对外发布是对外的动作，所以开关和目标只给主人：这几条声明 `ownerOnly`，内核的门在 agent 的会话里以 `agent-session` 拒绝（行动者是 agent、调用带着授权、或环境里有 agent 产品的会话变量）。

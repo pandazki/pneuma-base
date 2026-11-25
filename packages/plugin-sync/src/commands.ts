@@ -36,7 +36,9 @@ const targetSet: OwnerCommand = {
     const root = ctx.library.root
     const wanted = resolve(ctx.session.cwd, f.to)
     if (overlaps(root, wanted)) return refused('target-overlaps', `${wanted} 和库的目录互相包含，不能当同步目标。换一个库外的目录。`)
-    await mkdir(wanted, { recursive: true })
+    // A disk that is not mounted, or a folder this user cannot write, is the owner's to fix, not a crash.
+    const made = await mkdir(wanted, { recursive: true }).then(() => null, (error: unknown) => (error instanceof Error ? error.message : String(error)))
+    if (made !== null) return refused('target-unreachable', `建不了这个目录：${made}。盘没挂上就先挂上，或换一个能写的目录。`)
     const path = await realpath(wanted)
     if (overlaps(root, path)) return refused('target-overlaps', `${path} 和库的目录互相包含，不能当同步目标。换一个库外的目录。`)
     const machine = ctx.session.machine

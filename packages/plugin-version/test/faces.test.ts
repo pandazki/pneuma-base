@@ -87,7 +87,10 @@ describe('archive purge', () => {
     expect(await owned('archive purge', [])).toMatchObject({ outcome: 'done' })
     const check = await agentFace.check({ since: null, includeArchived: true }, as())
     expect(check.sections.filter((s) => s.plugin === 'version')).toEqual([])
-    expect(await owned('version list', ['_archive/a.md'])).toMatchObject({ outcome: 'refused', reason: 'not-versioned' })
+    // Its versions stay in the store and no command reaches them; the refusal says that, not that it was never declared.
+    for (const input of ['_archive/a.md', 'a.md']) {
+      expect(await owned('version list', [input])).toMatchObject({ outcome: 'refused', reason: 'gone', text: expect.stringContaining('_archive/a.md 随归档区清掉了。它的 1 版内容还在版本存放里') })
+    }
   })
 })
 

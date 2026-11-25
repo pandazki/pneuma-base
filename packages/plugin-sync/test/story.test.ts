@@ -2,7 +2,7 @@
 // in it gives the same provenance. Conflicts keep both and are reported, in sync now and in check.
 // C8: the description carries the sync section exactly while the plugin is installed. Plus the
 // commands' refusals: no target, a target missing on this machine, a target overlapping the library.
-import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -270,6 +270,17 @@ describe('refusals', () => {
       expect(r.stdout).toContain('target-overlaps')
     }
     expect(existsSync(join(dir, 'inner'))).toBe(false)
+  })
+
+  it('a target that cannot be made, such as one on a disk that is not mounted, is refused with the reason', () => {
+    const dir = join(root, 'lib')
+    ok(m.run(['init', dir, '--bare']))
+    ok(m.run(['plugin', 'add', 'sync', '--library', dir]))
+    const locked = join(root, 'locked')
+    mkdirSync(locked, { mode: 0o555 })
+    const r = m.run(['sync', 'target', 'set', '--kind', 'dir', '--to', join(locked, 'disk', 'base'), '--library', dir])
+    expect(r.code).toBe(2)
+    expect(r.stdout).toContain('拒绝（target-unreachable）：建不了这个目录')
   })
 
   it('an unknown kind or a missing --to is a usage error', () => {

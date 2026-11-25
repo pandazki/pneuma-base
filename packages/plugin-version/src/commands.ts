@@ -6,6 +6,7 @@ import { dirname, join, posix, resolve } from 'node:path'
 import {
   abs,
   agentFace,
+  archivedPath,
   fingerprintOf,
   originalPath,
   parseLibraryPath,
@@ -33,11 +34,18 @@ const count = (text: string | null) => (text !== null && /^[1-9]\d*$/.test(text)
 const numbers = (versions: Version[]) => versions.map((v) => v.n).join('、')
 const problemLines = (problems: PluginProblem[]) => problems.map((p) => `\n插件 ${p.plugin} 出错：${p.message}`).join('')
 
-/** The declared thing an input names, or the refusal to answer with. */
+/**
+ * The declared thing an input names, or the refusal to answer with. A thing the owner deleted with
+ * the archive is no longer named by any path: its versions stay in the store, out of every command's
+ * reach, and the refusal says so rather than that it was never declared.
+ */
 async function named(ctx: PluginContext, model: Model, input: string): Promise<Thing | OwnerAnswer> {
   const path = await thingPath(ctx.library.root, input)
   const thing = path === null ? undefined : declaredAt(model, path)
-  return thing ?? refused('not-versioned', `${input} 没有声明有版本。要留住它的每一版，agent 用 say versioned ${input} 声明。`)
+  if (thing) return thing
+  const gone = path === null ? undefined : [...model.things.values()].find((t) => t.gone && (t.path === path || t.path === archivedPath(path)))
+  if (gone) return refused('gone', `${gone.path} 随归档区清掉了。它的 ${gone.versions.filter((v) => !v.pruned).length} 版内容还在版本存放里，没有命令能取回或清掉它们。`)
+  return refused('not-versioned', `${input} 没有声明有版本。要留住它的每一版，agent 用 say versioned ${input} 声明。`)
 }
 
 /** Version `n` of the thing, with its content in the store, or the refusal to answer with. */
