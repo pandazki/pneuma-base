@@ -3,7 +3,7 @@
 // why, and is listed as a problem (K8); the rest of the page stands. Optional fields are checked
 // only when given; fields the kernel does not know are left as they are.
 import { isAbsolute } from 'node:path'
-import type { Block, Plugin, PluginProblem } from './types.js'
+import type { Block, Plugin, PluginProblem } from '@pneuma-base/sdk'
 
 /** What is wrong with `value` at `at`, or null when it fits. */
 type Check = (value: unknown, at: string) => string | null

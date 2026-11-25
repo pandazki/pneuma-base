@@ -345,7 +345,7 @@ describe('a plugin’s own pages and the kit they load (custom blocks)', () => {
     symlinkSync(join(dir, 'secret.txt'), join(dir, 'ui', 'out.txt'))
     return join(dir, 'ui')
   }
-  const drawn = (ui: string): Plugin => ({ name: name('drawn'), cognition: null, storage: [], statements: [], ownerCommands: [], ui })
+  const drawn = (ui: string): Plugin => ({ contract: 1, name: name('drawn'), cognition: null, storage: [], statements: [], ownerCommands: [], ui })
 
   it('serves an installed plugin’s ui files without the token, as pages that cannot reach the viewer’s origin', async () => {
     const plugin = drawn(uiDir())
@@ -367,7 +367,7 @@ describe('a plugin’s own pages and the kit they load (custom blocks)', () => {
 
   it('serves nothing for a plugin the library has not installed, or one without ui, and nothing outside the ui directory', async () => {
     const plugin = drawn(uiDir())
-    const bare: Plugin = { name: name('bare'), cognition: null, storage: [], statements: [], ownerCommands: [] }
+    const bare: Plugin = { contract: 1, name: name('bare'), cognition: null, storage: [], statements: [], ownerCommands: [] }
     const lib = await library([bare])
     const server = await serve(lib.root, { table: new Map([['drawn', plugin], ['bare', bare]]) })
     expect((await http(server, '/plugin-ui/drawn/page.html', { token: null })).status).toBe(404)
@@ -396,6 +396,7 @@ describe('a plugin’s own pages and the kit they load (custom blocks)', () => {
 
   it('a malformed block in a plugin’s view becomes a block saying so, and a problem; the rest of the page stands', async () => {
     const odd: Plugin = {
+      contract: 1,
       name: name('odd'),
       cognition: null,
       storage: [],
