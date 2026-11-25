@@ -31,24 +31,24 @@ async function decodeUtf8(file: string): Promise<string> {
 }
 
 /**
- * The thing's UTF-8 text, up to 1 MB: a single file's content, or for a bundle each inner relative
- * path and the UTF-8 text of the inner files that fit within the remaining budget.
+ * The thing's text for find: a file's content when it is UTF-8 and at most 1 MB; for a bundle the
+ * relative path of every file in it, and the text of its files, smallest first, until 1 MB has been
+ * read. Every file read counts, text or not: a site's text is small beside its images, and a find
+ * reads no more than the limit of any one thing.
  */
 export async function textOf(root: string, path: LibraryPath): Promise<string> {
   const file = abs(root, path)
   const thing = await thingAt(file)
   if (!thing) return ''
   if (thing.kind === 'file') return thing.size > TEXT_LIMIT ? '' : decodeUtf8(file)
+  const inner = await bundleFiles(file)
+  const parts = inner.map((f) => f.path)
   let budget = TEXT_LIMIT
-  const parts: string[] = []
-  for (const inner of await bundleFiles(file)) {
-    parts.push(inner.path)
-    if (inner.size > budget) continue
-    const text = await decodeUtf8(join(file, inner.path))
-    if (text !== '') {
-      parts.push(text)
-      budget -= inner.size
-    }
+  for (const f of [...inner].sort((a, b) => a.size - b.size)) {
+    if (f.size > budget) break
+    budget -= f.size
+    const text = await decodeUtf8(join(file, f.path))
+    if (text !== '') parts.push(text)
   }
   return parts.join('\n')
 }

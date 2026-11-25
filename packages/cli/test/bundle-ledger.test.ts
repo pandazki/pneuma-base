@@ -119,6 +119,14 @@ describe('a bundle with the ledger', () => {
     expect(withSearch).toContain('在做：做早鸟预订页')
     expect(withSearch).toMatch(/sites\/landing\s+做出来的\s+index\.html：.*一块铝/)
   })
+
+  it('find reaches a bundle’s text past images that sort before it and outweigh the reading limit', () => {
+    const image = Buffer.alloc(400 * 1024, 0xff)
+    write(outside, { 'shop/assets/a.png': image, 'shop/assets/b.png': image, 'shop/assets/c.png': image, 'shop/index.html': '<h1>黄铜镇纸</h1>' })
+    ok(agent(['put', 'shop', '--to', 'sites/shop', '--made']))
+    expect(ok(agent(['find', '黄铜镇纸'], 's2')).stdout).toMatch(/sites\/shop\s+做出来的/)
+    expect(ok(agent(['find', 'b.png'], 's2')).stdout).toMatch(/sites\/shop\s+做出来的/)
+  })
 })
 
 describe('registering a folder whose files are on record', () => {
