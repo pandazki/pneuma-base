@@ -123,6 +123,4 @@ pnpm test:slow    # 脚手架和 PLUGINS.md 的五分钟：生成插件项目，
 
 ## 许可
 
-[MIT](LICENSE)，只有一个文件夹例外。
-
-管理界面的 `packages/viewer/web/src/aui/` 里的代码改自 [affectUI Pro](https://www.affectui.com)，按它自己的许可（https://www.affectui.com/license）使用，不在 MIT 之内，不要把它复制到这个项目外面。那里的每个文件第一行都写着这句声明；它们只打进构建出来的管理界面，不在 sdk、插件开发包、`plugin new` 生成的项目和 `plugins/` 里。详见 [`NOTICE`](NOTICE)。
+[MIT](LICENSE)
