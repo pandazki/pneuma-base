@@ -210,6 +210,31 @@ describe('the store', () => {
     expect(ok(claude(['inspect', id, '--json'])).json().request.status).toMatchObject({ kind: 'declined', reason: '另一台机器上拒绝的' })
   })
 
+  it('request list --all lists the 50 latest settled requests and how many older ones it left out; --older lists them all; every file stays', () => {
+    const dir = join(lib, '.pneuma-base/requests')
+    mkdirSync(dir, { recursive: true })
+    const by = { name: 'claude', grant: null }
+    for (let i = 0; i < 55; i++) {
+      const at = new Date(Date.UTC(2026, 10, 1, 8, i)).toISOString()
+      const asked = { kind: 'asked', at, by, session: 's', why: `第 ${i} 个`, command: 'grant revoke', args: { positional: [`g${i}`], flags: {} } }
+      const decided = { kind: 'decided', at, decision: 'declined', reason: null }
+      writeFileSync(join(dir, `r-${i.toString(16).padStart(8, '0')}.jsonl`), `${JSON.stringify(asked)}\n${JSON.stringify(decided)}\n`)
+    }
+    const all = ok(owner(['request', 'list', '--all'])).stdout
+    expect(all).toContain('grant revoke g54')
+    expect(all).toContain('grant revoke g5 ')
+    expect(all).not.toContain('grant revoke g4 ')
+    expect(all).toContain('更早的 5 个没有列出')
+    expect(all).toContain('--older')
+    expect(ok(owner(['request', 'list', '--all', '--json'])).json().data).toMatchObject({ requests: expect.any(Array), older: 5 })
+    expect(ok(owner(['request', 'list', '--all', '--json'])).json().data.requests).toHaveLength(50)
+
+    const older = ok(owner(['request', 'list', '--all', '--older'])).stdout
+    expect(older).toContain('grant revoke g0 ')
+    expect(older).not.toContain('更早的')
+    expect(readdirSync(dir)).toHaveLength(55)
+  })
+
   it('works in a library with no plugin', () => {
     sb = sandbox()
     lib = library(['--bare'])
@@ -220,6 +245,46 @@ describe('the store', () => {
     expect(ok(owner(['show', 'home'])).stdout).toContain('帮手要一份授权')
     ok(owner(['request', 'approve', id]))
     expect(ok(claude(['check'])).stdout).toContain(`${id} grant issue helper --agent helper：已批准`)
+  })
+})
+
+describe('a request standing in for a plugin’s ask about the same command', () => {
+  const homeAsks = () => (ok(owner(['show', 'home', '--json'])).json().blocks as any[]).flatMap((b) => b.blocks ?? []).find((b: any) => b.kind === 'asks').asks as any[]
+  const SHOP = '店要上线给客户看'
+
+  beforeEach(() => {
+    ok(owner(['plugin', 'add', 'deploy']))
+    const site = join(tempDir('pb-site-'), 'shop')
+    mkdirSync(site)
+    writeFileSync(join(site, 'index.html'), '<h1>shop</h1>')
+    ok(claude(['put', site, '--to', 'sites/shop', '--made']))
+    ok(claude(['say', 'deployable', 'sites/shop']))
+  })
+
+  it('is the one row while it waits: the agent’s reason stands, the plugin’s ask about sites/shop is not raised beside it, on the home page or in check', () => {
+    expect(homeAsks().map((a) => a.about)).toEqual(['sites/shop'])
+    const id = claude(['ask', SHOP, 'deploy', 'on', 'sites/shop', '--json']).json().request.id as string
+    expect(homeAsks()).toEqual([expect.objectContaining({ key: `request:${id}`, text: SHOP, command: 'deploy on sites/shop' })])
+    expect(ok(as('codex')(['check', '--json'])).json().asks).toEqual([])
+    expect(ok(owner(['show', 'home'])).stdout).not.toContain('可以部署，还没上线')
+  })
+
+  it('settles both when declined: nothing is left to decide', () => {
+    const id = claude(['ask', SHOP, 'deploy', 'on', 'sites/shop', '--json']).json().request.id as string
+    ok(owner(['request', 'decline', id, '还没好']))
+    expect(homeAsks()).toEqual([])
+  })
+
+  it('settles both when approved', () => {
+    ok(owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', join(tempDir('pb-target-'), 'www')]))
+    const id = claude(['ask', SHOP, 'deploy', 'on', 'sites/shop', '--json']).json().request.id as string
+    ok(owner(['request', 'approve', id]))
+    expect(homeAsks()).toEqual([])
+  })
+
+  it('stands in for nothing when it asks for another command or other arguments', () => {
+    claude(['ask', SHOP, 'deploy', 'on', 'sites/other'])
+    expect(homeAsks().map((a) => a.about ?? a.command)).toEqual(['deploy on sites/other', 'sites/shop'])
   })
 })
 

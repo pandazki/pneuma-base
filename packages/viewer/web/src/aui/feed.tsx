@@ -11,8 +11,11 @@ import { ActorBadge } from './actor'
 
 type Feed = Extract<Block, { kind: 'feed' }>
 
-/** Whose act it was, as a dot and two or three words. */
-const WHOSE: Record<NonNullable<FeedRow['whose']>, string> = { agent: '自己做的', owner: '主人做的', approved: '主人批准的', observed: '看到的' }
+/**
+ * Whose act it was, as a dot and two or three words, where it departs from the ordinary: an agent
+ * acting on its own is what nearly every row is, so it goes unmarked; the text form says it on every row.
+ */
+const WHOSE: Partial<Record<NonNullable<FeedRow['whose']>, string>> = { owner: '主人做的', approved: '主人批准的', observed: '看到的' }
 
 function Row({ row }: { row: FeedRow }) {
   const { onLink, selected } = useEnv()
@@ -29,8 +32,13 @@ function Row({ row }: { row: FeedRow }) {
           {row.text}
         </span>
         <span className="aui-feed-meta">
+          {/* Where the time column has no room, as in the panel, the moment leads the grey line. */}
+          <span className="aui-feed-meta-time">
+            <Moment at={row.at} format={clockOrAgo} />
+            <span aria-hidden>·</span>
+          </span>
           <span className="aui-feed-who">{name}</span>
-          {row.whose ? (
+          {row.whose && WHOSE[row.whose] ? (
             <span className="aui-feed-whose" data-whose={row.whose}>
               <span className="aui-feed-dot" aria-hidden />
               {WHOSE[row.whose]}

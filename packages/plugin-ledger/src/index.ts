@@ -23,11 +23,12 @@ import {
   type SayRequest,
 } from '@pneuma-base/kernel'
 import { conversationOf } from './conversation.js'
-import { itemNamed, load, onDisk, snapshot, statesOf, textOf, type Disk } from './disk.js'
+import { itemNamed, load, onDisk, snapshot, standingNow, statesOf, textOf, type Disk } from './disk.js'
 import { fact, factActor, LEDGER_ACTOR, newItemId, sceneOf, writeFacts, type Basis, type Fact, type FactBody, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
 import type { ItemRecord, Ledger, SceneRecord } from './fold.js'
 import { heldCommands, heldCopies, heldPath, keep } from './held.js'
-import { confirm, findsAnything, reconcile, type Standing } from './reconcile.js'
+import { reconcile } from './reconcile.js'
+import { LEAVE, REGISTER, unownedAsks } from './unowned.js'
 import { activityAnswer, homeAnswer, noSuchScene, sceneAnswer, scenesAnswer } from './feeds.js'
 import { ACTIVITY_VIEW, heldAnswer, HELD_VIEW, HOME_VIEW, itemSection, itemsAnswer, ITEMS_VIEW, LEDGER_VIEWS, partOfSection, SCENE_VIEW, SCENES_VIEW, STANDING_VIEW, standingAnswer, unownedSection } from './ui.js'
 import {
@@ -265,19 +266,6 @@ async function viewOfItem(ctx: PluginContext, ledger: Ledger, item: ItemRecord):
   return itemView(ledger, item, states, held)
 }
 
-/**
- * check's reconciliation. A put lands its file before its record, so whatever the first look finds is
- * confirmed: against the paths being put, read after the files were looked at, and the facts read
- * once more after that.
- */
-async function standingNow(ctx: PluginContext): Promise<{ ledger: Ledger; standing: Standing }> {
-  const ledger = await load(ctx)
-  const standing = await reconcile(ledger, await snapshot(ctx.library.root))
-  if (!findsAnything(standing)) return { ledger, standing }
-  const putting = new Set(await ctx.tools.putting())
-  return { ledger, standing: confirm(ledger, standing, await load(ctx), putting) }
-}
-
 /** Whether a file is at a content or archive path, or at its archived copy. */
 async function fileAt(root: string, path: LibraryPath): Promise<boolean> {
   if (regionOf(path) === 'kernel') return false
@@ -332,7 +320,7 @@ export const ledger: Plugin = {
     { dir: 'held', kind: 'body' },
   ],
   statements: ['doing', 'decided', 'note', 'from', 'revised'],
-  ownerCommands: heldCommands,
+  ownerCommands: [...heldCommands, REGISTER, LEAVE],
   views: LEDGER_VIEWS,
 
   async onPut(req, ctx) {
@@ -424,6 +412,9 @@ export const ledger: Plugin = {
     const since = sinceView(ledger, factActor(ctx.actor), sceneOf(ctx), req.since)
     return [...(since.scenes.length > 0 ? [{ title: '自上次以来', body: sinceText(since), data: since }] : []), ...standingSections(ledger, standing, req.includeArchived)]
   },
+
+  /** Things nobody registered, one ask for all of them, until they are registered or the owner leaves them so. */
+  onAsks: unownedAsks,
 
   async onArchive(req, ctx) {
     if (!req.moved) return null

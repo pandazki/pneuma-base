@@ -605,11 +605,22 @@ html[data-window='inactive'] .fresh {
   line-height: 20px;
   white-space: nowrap;
   overflow: hidden;
-  mask-image: linear-gradient(90deg, #000 calc(100% - 30px), transparent calc(100% - 18px));
   transition:
     background-color 140ms ease,
     color 140ms ease,
     box-shadow 140ms ease;
+}
+.tab-name {
+  display: flex;
+  min-width: 0;
+}
+.tab-name-start {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab-name-end {
+  flex: none;
 }
 .tab > svg {
   width: 14px;
@@ -625,11 +636,6 @@ html[data-window='inactive'] .fresh {
   background: var(--surface);
   box-shadow: var(--shadow-card);
   color: var(--ink);
-  mask-image: none;
-}
-.tab[aria-selected='true'] > span {
-  mask-image: linear-gradient(90deg, #000 calc(100% - 12px), transparent);
-  overflow: hidden;
 }
 .tab-close {
   position: absolute;

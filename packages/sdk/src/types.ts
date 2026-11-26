@@ -657,8 +657,10 @@ export type ViewRequest = { view: string; params: Record<string, string> }
  * outside the library, or one whose content changes with the clock. A view runs on the machine of
  * the viewer's server, in its time zone; a cell's `at` is shown in the browser's. `filters`: the
  * options of declared filters as this answer sees them, such as the agents there are, with counts.
+ * `open`: what the page shows in the detail panel when it opens with the panel closed and the window
+ * has room for both, such as a list's first row; a panel link. The text form leaves it out.
  */
-export type ViewAnswer = { title: string; subtitle: string | null; blocks: Block[]; refresh?: number; filters?: { name: string; options: FilterOption[] }[] }
+export type ViewAnswer = { title: string; subtitle: string | null; blocks: Block[]; refresh?: number; filters?: { name: string; options: FilterOption[] }[]; open?: Link }
 export type ViewResult =
   | ({ outcome: 'shown' } & ViewAnswer & { problems: PluginProblem[] })
   | { outcome: 'no-such-view'; problems: PluginProblem[] }

@@ -104,7 +104,7 @@ test('the agents page: a row per connected agent with its mark and reach, 断开
   const main = page.getByRole('main')
   const connected = main.getByRole('region', { name: '接上的 agent', exact: true })
   const row = connected.getByRole('listitem').filter({ hasText: 'Claude Code' })
-  await expect(row.locator('.aui-actor')).toHaveText('C')
+  await expect(row.locator('.aui-actor')).toHaveText('CC')
   await expect(row).toContainText('技能 · 区域 notes/ · 读写 · 写在 ~/.claude/skills/pneuma-base-claude-code/SKILL.md · 最近来过：')
   await expect(row).toContainText('1 次会话，放进 0 样东西')
   const found = main.getByRole('region', { name: '这台机器上找到的' })
