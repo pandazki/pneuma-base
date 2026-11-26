@@ -1,7 +1,7 @@
 // The pages that say what the owner came for: the home page with what waits on the owner, what
 // agents did since the owner last looked and what needs looking at; the activity page's filters
 // with counts; the library's folder tree; a scene's page.
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DOING, expect, navTitles, relay, shoot, tempDir, test, write, type Cli } from './support.ts'
 
@@ -61,6 +61,36 @@ test('deciding an ask runs its answer and folds it in place into what was decide
   await expect(receipt).toBeVisible()
   expect(pb.run(['deploy', 'list', '--library', lib]).stdout).toContain('sites/shop')
   expect(pb.run(['@claude', 'check', '--session', 'later']).stdout).not.toContain('要主人来做的')
+})
+
+test('an agent’s request: its reason with the command under it; approving or declining in the browser folds it, and the command line then shows it decided', async ({ page, pb }) => {
+  const lib = relay(pb)
+  pb.run(['@codex', 'ask', '要给支付方案留住每一版', 'plugin', 'add', 'version'], { env: { PNEUMA_BASE_SESSION: 'sess-b' } })
+  const { url } = await pb.view(lib)
+  await page.goto(url)
+  const decide = page.getByRole('main').getByRole('region', { name: '等你决定' })
+  await expect(decide).toContainText('要给支付方案留住每一版')
+  await expect(decide.getByText('plugin add version', { exact: true })).toBeVisible()
+  await expect(decide).toContainText('codex')
+  await expect(decide.getByRole('button', { name: '批准', exact: true })).toHaveClass(/btn-primary/)
+  await shoot(page, 'r1-request')
+  await decide.getByRole('button', { name: '批准', exact: true }).click()
+  const receipt = decide.getByRole('status')
+  await expect(receipt).toContainText('批准')
+  await expect(receipt).toContainText('已装上插件 version')
+  expect(pb.run(['request', 'list', '--all', '--library', lib]).stdout).toMatch(/plugin add version · 已批准/)
+  expect(pb.run(['@codex', 'check'], { env: { PNEUMA_BASE_SESSION: 'sess-later' } }).stdout).toContain('plugin add version：已批准')
+
+  // A request asked while the page is open shows up on its own; declining asks for a reason first.
+  pb.run(['@claude', 'ask', '支付接好了，codex 用不着写了', 'grant', 'revoke', 'codex'], { env: { PNEUMA_BASE_SESSION: 'sess-a2' } })
+  await expect(decide.getByText('grant revoke codex', { exact: true })).toBeVisible()
+  await decide.getByRole('button', { name: '拒绝', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('理由').fill('codex 还要改接入说明')
+  await dialog.getByRole('button', { name: '拒绝', exact: true }).click()
+  await expect(decide.getByRole('status').filter({ hasText: '拒绝' })).toContainText('codex 还要改接入说明')
+  expect(pb.run(['request', 'list', '--all', '--library', lib]).stdout).toMatch(/grant revoke codex · 已拒绝.*codex 还要改接入说明/)
+  expect(JSON.parse(readFileSync(join(lib, '.pneuma-base/config.json'), 'utf8')).grants.map((g: { name: string }) => g.name)).toContain('codex')
 })
 
 test('都看过了 empties 自上次以来 until an agent does something new', async ({ page, pb }) => {

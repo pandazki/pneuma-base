@@ -72,7 +72,7 @@ describe('a library with no plugin', () => {
   it('check reports no sections', () => {
     const r = agent(['check', '--since', 'last'])
     expect(r.code, r.stderr).toBe(0)
-    expect(r.json()).toEqual({ sections: [], asks: [], problems: [] })
+    expect(r.json()).toEqual({ sections: [], asks: [], requests: { ended: [], pending: 0 }, problems: [] })
   })
 
   it('archive moves the file into _archive/ under the same relative path', () => {
@@ -90,7 +90,7 @@ describe('a library with no plugin', () => {
     expect(r.code, r.stderr).toBe(0)
     const out = r.json()
     expect(out.say).toMatchObject({ outcome: 'not-heard', reason: 'no-plugin-for-kind' })
-    expect(out.check).toEqual({ sections: [], asks: [], problems: [] })
+    expect(out.check).toEqual({ sections: [], asks: [], requests: { ended: [], pending: 0 }, problems: [] })
     expect(out.find.hits.map((h: { path: string }) => h.path)).toEqual(['payments/comparison.md'])
   })
 

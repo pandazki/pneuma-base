@@ -3,9 +3,11 @@ import { archive } from './archive.js'
 import { asksOf } from './asks.js'
 import { callableIn } from './blocks.js'
 import { contentOf } from './content.js'
+import { ownerFace } from './owner.js'
 import { ARCHIVE_DIR, DESCRIPTION_FILE, KERNEL_DIR, abs, archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
 import { eachPlugin, messageOf, performVerb, pluginContext, type Collected } from './pipeline.js'
 import { put } from './put.js'
+import { ask, requestNamed, requestsFor } from './requests.js'
 import { rankHits, searchTerms } from './terms.js'
 import { fingerprintOf, listThings, thingAt } from './things.js'
 import type {
@@ -30,7 +32,7 @@ import type {
 
 export const NO_HEARER = '这个库没配能记下这句话的插件'
 
-/** The six verbs. Each ends at the pipeline's single exit, which sends its event (K5). */
+/** The seven verbs. Each ends at the pipeline's single exit, which sends its event (K5). */
 export const agentFace: AgentFace = {
   put: (req, ctx) => performVerb('put', req, ctx, () => put(req, ctx)),
   find: (req, ctx) => performVerb('find', req, ctx, () => find(req, ctx)),
@@ -38,6 +40,7 @@ export const agentFace: AgentFace = {
   say: (req, ctx) => performVerb('say', req, ctx, () => say(req, ctx)),
   check: (req, ctx) => performVerb('check', req, ctx, () => check(req, ctx)),
   archive: (req, ctx) => performVerb('archive', req, ctx, () => archive(req, ctx)),
+  ask: (req, ctx) => performVerb('ask', req, ctx, () => ask(req, ctx, ownerFace.commands(ctx.library.plugins))),
 }
 
 async function find(req: FindRequest, ctx: Context): Promise<FindResult> {
@@ -123,7 +126,8 @@ async function nameHits(req: FindRequest, root: string): Promise<Hit[]> {
 async function inspect(req: InspectRequest, ctx: Context): Promise<InspectResult> {
   const file = await fileFacts(ctx.library.root, req.target)
   const heard = await eachPlugin(ctx, (plugin, pctx) => plugin.onInspect?.(req, pctx))
-  const result: InspectResult = { file, sections: stamp(heard), problems: heard.problems }
+  const request = file === null ? await requestNamed(ctx.library.root, req.target) : null
+  const result: InspectResult = { file, sections: stamp(heard), problems: heard.problems, ...(request === null ? {} : { request }) }
   if (req.content === undefined) return result
   return { ...result, content: file === null ? { kind: 'unavailable', path: null, reason: 'no-such-file' } : await contentOf(ctx, file, req.content.file) }
 }
@@ -160,7 +164,7 @@ async function say(req: SayRequest, ctx: Context): Promise<SayResult> {
 async function check(req: CheckRequest, ctx: Context): Promise<CheckResult> {
   const heard = await eachPlugin(ctx, (plugin, pctx) => plugin.onCheck?.(req, pctx))
   const asked = await asksOf(ctx, callableIn(ctx.library))
-  return { sections: stamp(heard), asks: asked.asks, problems: [...heard.problems, ...asked.problems] }
+  return { sections: stamp(heard), asks: asked.asks, requests: await requestsFor(ctx), problems: [...heard.problems, ...asked.problems] }
 }
 
 function stamp(heard: Collected<PluginSection[]>): Section[] {

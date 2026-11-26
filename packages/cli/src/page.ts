@@ -1,7 +1,7 @@
 // A page of the management UI as the command line prints it: the same typed blocks in words, so an
 // agent reading it knows what the person sees, and every button written as the command line that
 // does the same thing. ARCHITECTURE.md section 6.
-import { usageOf, type Action, type ActorMark, type Block, type Call, type Cell, type FeedRow, type FlagParam, type Link, type OwnerCommandInfo, type PositionalParam, type TreeNode, type ViewDecl, type ViewList, type ViewRequest, type ViewResult } from '@pneuma-base/kernel'
+import { commandLine, quote, usageOf, type Action, type ActorMark, type Block, type Call, type Cell, type FeedRow, type FlagParam, type Link, type OwnerCommandInfo, type PositionalParam, type TreeNode, type ViewDecl, type ViewList, type ViewRequest, type ViewResult } from '@pneuma-base/kernel'
 
 type Shown = Extract<ViewResult, { outcome: 'shown' }>
 type OwnerCall = Extract<Call, { face: 'owner' }>
@@ -27,10 +27,6 @@ function aligned(rows: string[][], indent: string): string[] {
 }
 
 // ---- the command an action or a link is ----
-
-const SAFE = /^[\p{L}\p{N}_@%+=:,./~-]+$/u
-/** A literal value as a shell takes it. */
-export const quote = (v: string) => (SAFE.test(v) ? v : `'${v.replaceAll("'", `'\\''`)}'`)
 
 const PLACEHOLDER = /\{([^{}]+)\}/g
 const exactly = (v: string) => /^\{([^{}]+)\}$/.exec(v)?.[1] ?? null
@@ -103,6 +99,8 @@ function agentWords({ verb, request }: AgentCall, action: Action): string[] {
       return ['check', ...(request.since === null ? [] : ['--since', v(request.since)]), ...(request.includeArchived ? ['--include-archived'] : [])]
     case 'archive':
       return [request.kind, v(request.path)]
+    case 'ask':
+      return request.kind === 'withdraw' ? ['ask', '--withdraw', v(request.id)] : ['ask', v(request.why), commandLine(request.command, request.args)]
   }
 }
 
@@ -148,7 +146,7 @@ function cellText(cell: Cell, rowLink: Link | null = null): string {
 const TONE_WORD: Partial<Record<string, string>> = { warn: '警告：', bad: '错误：' }
 
 /** Whose act a feed row is, in the words the page shows beside it. */
-export const WHOSE: Record<NonNullable<FeedRow['whose']>, string> = { agent: '自己做的', owner: '主人做的', observed: '看到的' }
+export const WHOSE: Record<NonNullable<FeedRow['whose']>, string> = { agent: '自己做的', owner: '主人做的', approved: '主人批准的', observed: '看到的' }
 
 const whoText = (who: ActorMark | string) => (typeof who === 'string' ? who : who.name)
 
@@ -221,6 +219,7 @@ function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: 
       if (block.asks.length === 0) return [`${indent}${block.empty}`]
       return block.asks.flatMap((a) => [
         `${indent}- ${a.text}（${whoText(a.by)}）${a.about === null ? '' : `  关于 ${a.about} → ${linkCommand({ view: 'item', params: { path: a.about }, target: 'panel' })}`}`,
+        ...(a.command === undefined ? [] : [`${indent}    ${a.command}`]),
         ...a.actions.map((x, i) => `${actionLine(x, commands, `${indent}    `)}${i === a.suggested ? '（推荐）' : ''}`),
       ])
   }

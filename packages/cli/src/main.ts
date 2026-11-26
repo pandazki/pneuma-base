@@ -19,13 +19,12 @@ import {
   type Instant,
   type Library,
   type MachineContext,
-  type OwnerArgs,
   type OwnerCall,
   type OwnerCommandInfo,
   type OwnerResult,
   type PluginTable,
 } from '@pneuma-base/kernel'
-import { UsageError, flagList, flagValue, hasFlag, leadingWords, ownFlags, parseCommand, splitLine, type FlagKind, type Line, type Parsed } from './args.js'
+import { UsageError, argsOf, flagList, flagValue, hasFlag, leadingWords, matchCommand, ownFlags, parseCommand, splitLine, type FlagKind, type Line, type Parsed } from './args.js'
 import { ownerText } from './format.js'
 import { serve } from './mcp/server.js'
 import { libraryFace } from './mcp/tools.js'
@@ -170,8 +169,11 @@ async function help(argv: readonly string[], io: Io, table: PluginTable, home: s
 /** `table`: every plugin this machine has; `builtins`: the command line's own, which the UI's server joins with the machine's on each request. */
 type Invocation = { parsed: Parsed; args: string[]; io: Io; table: PluginTable; builtins: PluginTable; home: string }
 
-/** `flags`: how each of its own flags takes values; `any` for say, whose flags are the plugins'; `params` for show, whose flags are a page's parameters, each with one value. */
-type Spec = { words: string[]; flags: Readonly<Record<string, FlagKind>> | 'any' | 'params'; arity: [min: number, max: number] } & (
+/**
+ * `flags`: how each of its own flags takes values; `any` for say, whose flags are the plugins'; `params` for show, whose flags are a page's parameters, each with one value.
+ * `rawAfter`: after this many positionals, the rest of the line is taken as written, as ask takes the command it asks for.
+ */
+type Spec = { words: string[]; flags: Readonly<Record<string, FlagKind>> | 'any' | 'params'; arity: [min: number, max: number]; rawAfter?: number } & (
   | { library: true; run: (inv: Invocation, bound: Bound) => Promise<Answer> }
   | { library: false; run: (inv: Invocation) => Promise<Answer> }
 )
@@ -214,12 +216,13 @@ function verbValues({ params }: Verb, parsed: Parsed): VerbInput {
 
 /** A verb of the table as the command line's own command: its flags and how many words it takes, read from its `params`. */
 function specOf(verb: Verb): Spec {
-  const { positional = [], flags = [], more } = verb.params
+  const { positional = [], flags = [], more, raw } = verb.params
   const takesRest = positional.some((p) => p.words || p.many)
   return {
     words: [verb.name],
     flags: more ? (more.each === 'list' ? 'any' : 'params') : Object.fromEntries(flags.map((f) => [f.name, f.kind])),
     arity: [positional.filter((p) => p.required).length, takesRest ? Infinity : positional.length],
+    ...(raw === undefined ? {} : { rawAfter: positional.findIndex((p) => p.name === raw) }),
     library: true,
     run: (inv, bound) => verb.run(verbValues(verb, inv.parsed), { bound, table: inv.table, env: inv.io.env, cwd: inv.io.cwd, stdin: () => inv.io.readStdin() }),
   }
@@ -333,21 +336,6 @@ const GRANT_BOUND: ReadonlySet<string> = new Set(['skill install'])
 
 const words = (name: string) => name.split(' ')
 
-/** The owner command with the most words that start the typed words. */
-function matchCommand(commands: OwnerCommandInfo[], typed: readonly string[]): OwnerCommandInfo | undefined {
-  return commands.filter((c) => words(c.name).every((w, i) => typed[i] === w)).sort((a, b) => words(b.name).length - words(a.name).length)[0]
-}
-
-/**
- * The arguments after the command's name, read by its `params`: a flag it does not declare is a
- * switch, which the owner face then refuses with the usage line.
- */
-function argsOf(command: OwnerCommandInfo, line: Line): OwnerArgs {
-  const kinds = Object.fromEntries((command.params.flags ?? []).map((f) => [f.name, f.kind]))
-  const parsed = parseCommand(line, words(command.name).length, kinds, 'switch', command.name)
-  return { positional: parsed.positional, flags: Object.fromEntries(ownFlags(parsed)) }
-}
-
 /** The library of a grant-bound command: the one its grant points at, used by the owner. */
 async function bindByGrant(inv: Invocation, grantName: string | undefined, command: string): Promise<Bound | Answer> {
   if (grantName === undefined) throw new UsageError(`${command} 要写授权名`)
@@ -407,7 +395,7 @@ function parseSpec(line: Line, spec: Spec): Parsed {
   const name = spec.words.join(' ')
   if (spec.flags === 'any') return parseCommand(line, spec.words.length, {}, 'table', name)
   if (spec.flags === 'params') return parseCommand(line, spec.words.length, {}, 'value', name)
-  return parseCommand(line, spec.words.length, spec.flags, 'error', name)
+  return parseCommand(line, spec.words.length, spec.flags, 'error', name, spec.rawAfter)
 }
 
 /** `pneuma-base <directory>`, with nothing else but flags, is `pneuma-base view <directory>`. */

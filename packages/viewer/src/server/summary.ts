@@ -1,5 +1,5 @@
 // One line for the page to show after a call: what happened, and how it went.
-import type { ArchiveResult, OwnerResult, PluginProblem, PutResult, SayResult } from '@pneuma-base/kernel'
+import type { ArchiveResult, AskResult, OwnerResult, PluginProblem, PutResult, SayResult } from '@pneuma-base/kernel'
 
 export type Summary = { tone: 'good' | 'warn' | 'bad'; text: string }
 
@@ -38,6 +38,11 @@ export function putSummary(r: PutResult): Summary {
 
 export function saySummary(r: SayResult): Summary {
   return withProblems({ tone: r.outcome === 'heard' ? 'good' : 'bad', text: r.note }, r.problems)
+}
+
+export function askSummary(r: AskResult): Summary {
+  if (r.outcome === 'refused') return withProblems({ tone: 'bad', text: r.text }, r.problems)
+  return withProblems({ tone: 'good', text: `${r.outcome === 'withdrawn' ? '已撤回' : '已请主人做'}：${r.request.line}` }, r.problems)
 }
 
 /** For a verb that only reads: nothing to say unless a plugin failed. */

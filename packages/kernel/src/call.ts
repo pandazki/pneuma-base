@@ -65,6 +65,13 @@ function agentCall(verb: unknown, r: Raw): Call {
     case 'archive':
       need((r.kind === 'archive' || r.kind === 'unarchive') && isString(r.path), 'archive needs kind and path')
       return { face: 'agent', verb, request: { kind: r.kind as 'archive' | 'unarchive', path: r.path as string } }
+    case 'ask':
+      if (r.kind === 'withdraw') {
+        need(isString(r.id), 'withdrawing needs an id')
+        return { face: 'agent', verb, request: { kind: 'withdraw', id: r.id as string } }
+      }
+      need(r.kind === 'ask' && isString(r.why) && isString(r.command), 'ask needs why and command')
+      return { face: 'agent', verb, request: { kind: 'ask', why: r.why as string, command: r.command as string, args: ownerArgs(r.args) } }
     default:
       throw new Malformed('not a verb of the agent face')
   }

@@ -268,8 +268,8 @@ function commandWrong(cmd: unknown, plugin: string): string | null {
   if (!name.startsWith(`${plugin} `)) return `主人命令「${name}」不以「${plugin} 」开头`
   if ((KERNEL_COMMAND_NAMES as readonly string[]).includes(name)) return `主人命令「${name}」是内核自己的`
   const typed = isText(cmd.summary) && isBoolean(cmd.destructive) && isBoolean(cmd.ownerOnly) && typeof cmd.run === 'function'
-  const flags = optional(cmd.readOnly, isBoolean) && optional(cmd.setup, isBoolean)
-  if (!typed || !flags) return `主人命令「${name}」要有文字的 summary、真假的 destructive 和 ownerOnly、函数 run，readOnly 和 setup 是真假`
+  const flags = optional(cmd.readOnly, isBoolean) && optional(cmd.setup, isBoolean) && optional(cmd.askable, (v) => v === false)
+  if (!typed || !flags) return `主人命令「${name}」要有文字的 summary、真假的 destructive 和 ownerOnly、函数 run，readOnly 和 setup 是真假，askable 没有或是 false`
   if (cmd.params === undefined) return `主人命令「${name}」没有 params：每条命令都声明它的参数，什么都不带的写 params: {}`
   const wrong = paramsWrong(cmd.params)
   return wrong === null ? null : `主人命令「${name}」的 params：${wrong}`

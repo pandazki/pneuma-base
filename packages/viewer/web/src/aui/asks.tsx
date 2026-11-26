@@ -23,6 +23,7 @@ function AskRow({ ask, busy, onAnswer }: { ask: Ask; busy: boolean; onAnswer(i: 
   return (
     <div className="aui-asks-row" aria-busy={busy || undefined}>
       <p className="aui-asks-title">{ask.text}</p>
+      {ask.command !== undefined ? <code className="aui-asks-command">{ask.command}</code> : null}
       <p className="aui-asks-detail">
         {typeof ask.by === 'string' ? null : <ActorBadge actor={ask.by} />}
         <span>{typeof ask.by === 'string' ? ask.by : ask.by.name}</span>

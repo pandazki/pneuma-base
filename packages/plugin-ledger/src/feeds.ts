@@ -33,8 +33,9 @@ function grouped<T>(list: readonly T[], titleOf: (t: T) => string): { title: str
 
 // ---- one fact as a row ----
 
-/** Whose act a fact was: the owner's, one the ledger or the app only saw, or an agent's on its own. */
-const whoseOf = (f: Fact): FeedRow['whose'] => (f.actor.kind === 'owner' ? 'owner' : f.how === 'observed' || f.actor.kind === 'plugin' ? 'observed' : 'agent')
+/** Whose act a fact was: one the owner approved at an agent's request, the owner's, one the ledger or the app only saw, or an agent's on its own. */
+const whoseOf = (f: Fact): FeedRow['whose'] =>
+  f.kind === 'owner.op' && f.request ? 'approved' : f.actor.kind === 'owner' ? 'owner' : f.how === 'observed' || f.actor.kind === 'plugin' ? 'observed' : 'agent'
 
 /** Where a fact opens: the thing it is about, while it is there; else its scene. */
 function factLink(ledger: Ledger, f: Fact): FeedRow['link'] {
@@ -65,10 +66,17 @@ function endOf(ledger: Ledger, f: Fact): Pick<FeedRow, 'action' | 'settled'> {
   return {}
 }
 
-/** One fact as a feed row: when, who, the sentence check says, in which scene and by which grant, and what can still be done. */
+/** For a command the owner approved: the agent that asked, with its mark, and the request. */
+function askedBy(f: Fact, grants: readonly Grant[]): Cell[] {
+  if (f.kind !== 'owner.op' || !f.request) return []
+  const mark = actorMark(f.request.by, grants)
+  return [{ text: `应 ${f.request.by.name} 的请求 ${f.request.id}`, ...(typeof mark === 'string' ? {} : { actor: mark }) }]
+}
+
+/** One fact as a feed row: when, who, the sentence check says, who asked for it, in which scene and by which grant, and what can still be done. */
 function factRow(ledger: Ledger, f: Fact, grants: readonly Grant[], withScene: boolean): FeedRow {
   const grant = grantCell(f.actor, grants)
-  const meta: Cell[] = [...(withScene ? [sceneCell(ledger, f.scene)] : []), ...(grant ? [grant] : [])]
+  const meta: Cell[] = [...askedBy(f, grants), ...(withScene ? [sceneCell(ledger, f.scene)] : []), ...(grant ? [grant] : [])]
   return { key: f.id, at: f.at, actor: actorMark(f.actor, grants), text: factLine(ledger, f), meta, whose: whoseOf(f), link: factLink(ledger, f), ...endOf(ledger, f) }
 }
 
