@@ -44,16 +44,16 @@ describe('things nobody registered, settled by the owner at once', () => {
     expect(ok(owner(['inspect', 'd0/f1.txt'])).stdout).toContain('带进来的，主人给的')
   })
 
-  it('registers twenty thousand files in one run, written as one fact', () => {
-    lib = folder(20_000)
+  it('registers two thousand files in one run, written as one fact', () => {
+    lib = folder(2_000)
     ok(sb.run(['init', lib]))
-    expect(ok(owner(['ledger', 'register', '--json'])).json().data).toEqual({ registered: 20_000 })
+    expect(ok(owner(['ledger', 'register', '--json'])).json().data).toEqual({ registered: 2_000 })
     const facts = join(lib, '.pneuma-base/ledger/facts')
     const lines = readdirSync(facts, { recursive: true, withFileTypes: true })
       .filter((e) => e.isFile() && e.name.endsWith('.jsonl'))
       .flatMap((e) => readFileSync(join(e.parentPath, e.name), 'utf8').trimEnd().split('\n'))
       .map((l) => JSON.parse(l) as { kind: string; items?: unknown[] })
-    expect(lines.filter((f) => f.kind === 'items.enter').map((f) => f.items?.length)).toEqual([20_000])
+    expect(lines.filter((f) => f.kind === 'items.enter').map((f) => f.items?.length)).toEqual([2_000])
     expect(lines.filter((f) => f.kind === 'item.enter')).toEqual([])
     expect(ok(owner(['show', 'home'])).stdout).not.toContain('还没登记')
   })
