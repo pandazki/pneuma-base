@@ -4,6 +4,7 @@
 // nothing goes into. Storage is looked at only where these say.
 import { createHash } from 'node:crypto'
 import { eachPlugin } from './pipeline.js'
+import { learn } from './changes.js'
 import { storageOf } from './storage.js'
 import { DESCRIPTION_FILE, KERNEL_DIR, ARCHIVE_DIR } from './paths.js'
 import { isDescribed, type Context, type LibraryPath, type Place } from '@pneuma-base/sdk'
@@ -47,13 +48,13 @@ export async function openDirectories(ctx: Context): Promise<Place[]> {
 
 /**
  * A short stamp that changes when the management UI's page has something new to show: where each
- * plugin's facts end now, and the tokens of the open directories. Nothing else is looked at, so a
- * file changed in place without the library knowing shows on the next look the page makes for another reason.
+ * plugin's facts end now, and what the kernel's cursor learned changed in the content. When storage
+ * cannot say what changed, the tokens of the open directories stand in, as the fallback never walks.
  */
 export async function changeStamp(ctx: Context): Promise<string> {
   const store = storageOf(ctx.library.root)
   const ends = await Promise.all(ctx.library.plugins.map(async (p) => (await store.records(p.name).since(null, 0))?.cursor ?? ''))
-  const open = await openDirectories(ctx)
-  const tokens = (await store.glance(open)).map((g) => `${g.place}\0${isDescribed(g) ? (g.token ?? g.kind) : g.reason}`)
-  return createHash('sha1').update([...ends, ...tokens].join('\n')).digest('hex').slice(0, 16)
+  const { seq, sure } = await learn(store)
+  const content = sure ? [`changes ${seq}`] : (await store.glance(await openDirectories(ctx))).map((g) => `${g.place}\0${isDescribed(g) ? (g.token ?? g.kind) : g.reason}`)
+  return createHash('sha1').update([...ends, ...content].join('\n')).digest('hex').slice(0, 16)
 }

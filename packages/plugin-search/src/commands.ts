@@ -28,7 +28,7 @@ async function rebuild(ctx: PluginContext): Promise<OwnerAnswer> {
   const index = SearchIndex.open(ctx.cacheDir, ctx.now)
   let failure: string | null = null
   try {
-    await refresh(index, ctx.library.root)
+    await refresh(index, ctx)
     if (config !== null) {
       try {
         await embedMissing(index, embedderFor(config, key))

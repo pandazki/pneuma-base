@@ -1,15 +1,11 @@
-import { createHash, randomUUID } from 'node:crypto'
-import { createReadStream } from 'node:fs'
+// Files on this machine that are no library's: under $PNEUMA_BASE_HOME (grants, endpoints, pairings,
+// plugins, secrets, the launcher) and the files of other programs an owner command writes (an agent's
+// configuration, a skill). A library's folder and record area are storage's (storage.ts), never these.
+import { randomUUID } from 'node:crypto'
 import { link, mkdir, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
-import type { Fingerprint, Instant } from '@pneuma-base/sdk'
-
-export async function fingerprintOfFile(path: string): Promise<Fingerprint> {
-  const hash = createHash('sha256')
-  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer)
-  return hash.digest('hex') as Fingerprint
-}
+import type { Instant } from '@pneuma-base/sdk'
 
 export type RegularFile = { size: number; modifiedAt: Instant }
 

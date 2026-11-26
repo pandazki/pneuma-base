@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { CONTRACT, PNEUMA_BASE_VERSION, pluginName, type Plugin } from '@pneuma-base/kernel'
+import { PNEUMA_BASE_VERSION, pluginName, type Plugin } from '@pneuma-base/kernel'
 import { searchCommands } from './commands.js'
 import { KEY_SECRET } from './embed.js'
 import { findHits } from './search.js'
@@ -11,7 +11,7 @@ import { itemSection, STATUS_VIEW, statusView } from './views.js'
  * record in the library is the owner's choice of embedder.
  */
 export const search: Plugin = {
-  contract: CONTRACT,
+  contract: 1,
   name: pluginName('search'),
   version: PNEUMA_BASE_VERSION,
   summary: '在文本文件的正文里找，按相关度排；主人配了嵌入器时也按意思找。',

@@ -1,15 +1,12 @@
 // Requests: an agent asks the owner to run one of the owner's commands, saying why, and the owner
-// approves or declines with one act. They are the kernel's, in the library's record area, so they work
-// with no plugin and travel with the folder and with sync: one file per request under
-// `.pneuma-base/requests/`, lines only appended, which several writers can share. ARCHITECTURE.md
+// approves or declines with one act. They are the kernel's, so they work with no plugin, and travel with
+// the folder and with sync: facts of the kernel's record place `requests`, only appended, which several
+// writers share without conflict; each request's state is a row derived from them. ARCHITECTURE.md
 // section 4, 「请」.
-import { createHash, randomBytes } from 'node:crypto'
-import { appendFile, mkdir, open, readdir, readFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { alone } from './files.js'
+import { randomBytes } from 'node:crypto'
 import type { OwnerCommandInfo } from './owner.js'
 import { checkArgs } from './params.js'
-import { KERNEL_DIR, scratchDir } from './paths.js'
+import { storageOf } from './storage.js'
 import {
   formOf,
   type Action,
@@ -25,6 +22,7 @@ import {
   type OwnerRequest,
   type RequestId,
   type RequestOutcome,
+  type Row,
 } from '@pneuma-base/sdk'
 
 /** How many requests one agent may have waiting on the owner at once. */
@@ -32,7 +30,10 @@ export const MAX_PENDING = 20
 
 const REQUEST_ID = /^r-[0-9a-f]{8}$/
 
-const dirOf = (root: string) => join(root, KERNEL_DIR, 'requests')
+/** The kernel's record place for requests. */
+const PLACE = 'requests'
+/** The shape of the rows; rows of another shape are derived again from the facts. */
+const ROWS_VERSION = 1
 
 type Asker = OwnerRequest['by']
 
@@ -74,27 +75,24 @@ export function askLine(ctx: Pick<Context, 'actor'> & { library: Library | null 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const isString = (v: unknown): v is string => typeof v === 'string'
 
-/** A line as written, or null for one that is not a line of a request, such as half a line a killed writer left. */
-function parseLine(text: string): Line | null {
-  let raw: unknown
-  try {
-    raw = JSON.parse(text)
-  } catch {
-    return null
-  }
-  if (!isObject(raw) || !isString(raw.at)) return null
+/** A fact as written, or null for one that is not a line of a request. */
+function parseLine(raw: unknown): { id: RequestId; line: Line } | null {
+  if (!isObject(raw) || !isString(raw.at) || !isString(raw.request) || !REQUEST_ID.test(raw.request)) return null
+  const { request, ...rest } = raw
+  const line = rest as Line
+  const id = request as RequestId
   switch (raw.kind) {
     case 'asked': {
       const { by, args } = raw
       const asker = isObject(by) && isString(by.name) && (by.grant === null || isString(by.grant))
       const written = isObject(args) && Array.isArray(args.positional) && isObject(args.flags)
-      return asker && written && isString(raw.why) && isString(raw.command) ? (raw as Line) : null
+      return asker && written && isString(raw.why) && isString(raw.command) ? { id, line } : null
     }
     case 'decided':
-      return raw.decision === 'approved' ? (isObject(raw.outcome) ? (raw as Line) : null) : raw.decision === 'declined' ? (raw as Line) : null
+      return (raw.decision === 'approved' && isObject(raw.outcome)) || raw.decision === 'declined' ? { id, line } : null
     case 'withdrawn':
     case 'seen':
-      return raw as Line
+      return { id, line }
     default:
       return null
   }
@@ -119,62 +117,101 @@ function folded(id: RequestId, lines: readonly Line[]): OwnerRequest | null {
 }
 
 /**
- * Every request of the library, oldest first. A request's file may have copies a sync left beside it
- * (`<id>.conflict-…`): their lines are read as one.
+ * A request's row: its lines, and, when its `asked` came while the same asker already waited on the same
+ * line (`same`) or on as many requests as one may (`over`), that it is none of its own: two asks at
+ * once from two processes are settled here, in the order storage gives the facts, and both see it.
  */
-export async function readRequests(root: string): Promise<OwnerRequest[]> {
-  const dir = dirOf(root)
-  const lines = new Map<RequestId, Set<string>>()
-  for (const name of await readdir(dir).catch(() => [] as string[])) {
-    const id = name.slice(0, name.indexOf('.')) as RequestId
-    if (!REQUEST_ID.test(id) || !name.endsWith('.jsonl')) continue
-    const text = await readFile(join(dir, name), 'utf8').catch(() => '')
-    const seen = lines.get(id) ?? new Set<string>()
-    lines.set(id, seen)
-    for (const line of text.split('\n')) if (line.trim() !== '') seen.add(line)
+type RequestRow = { id: RequestId; lines: Line[]; same?: RequestId; over?: true }
+
+const askerKey = (by: Asker) => `${by.name}\0${by.grant ?? ''}`
+const fieldsOf = (row: RequestRow) => {
+  const r = folded(row.id, row.lines)
+  const pending = r !== null && row.same === undefined && row.over === undefined && isPending(r)
+  return { asker: r === null ? '' : askerKey(r.by), pending: pending ? '1' : '0' }
+}
+
+/** The rows, with the facts after their cursor folded in and saved; answers nothing, the rows are read by query after. */
+async function caughtUp(root: string): Promise<void> {
+  const records = storageOf(root).records(PLACE)
+  for (let tries = 0; ; tries++) {
+    const { rows: meta, cursor } = await records.get<number>('meta', ['version'])
+    if (cursor !== null && meta[0]?.value !== ROWS_VERSION) {
+      await records.reset()
+      continue
+    }
+    const batch = await records.since(cursor, 10_000)
+    if (batch === null) {
+      await records.reset()
+      continue
+    }
+    if (batch.facts.length === 0) return
+    const parsed = batch.facts.flatMap((f) => parseLine(f.fact) ?? [])
+    const ids = [...new Set(parsed.map((p) => p.id))]
+    const known = new Map((await records.get<RequestRow>('requests', ids)).rows.map((r) => [r.key, r.value]))
+    const touched = new Map<RequestId, RequestRow>()
+    for (const { id, line } of parsed) {
+      const row = touched.get(id) ?? known.get(id) ?? { id, lines: [] }
+      if (line.kind === 'asked' && row.lines.every((l) => l.kind !== 'asked')) {
+        const waiting = (await records.where<RequestRow>('requests', 'asker', askerKey(line.by), { limit: 10_000 })).rows.map((r) => touched.get(r.value.id) ?? r.value)
+        for (const t of touched.values()) if (!waiting.some((w) => w.id === t.id) && fieldsOf(t).asker === askerKey(line.by)) waiting.push(t)
+        const pending = waiting.filter((w) => w.id !== id && fieldsOf(w).pending === '1')
+        const same = pending.find((w) => folded(w.id, w.lines)?.line === commandLine(line.command, line.args))
+        if (same !== undefined) row.same = same.id
+        else if (pending.length >= MAX_PENDING) row.over = true
+      }
+      row.lines = [...row.lines, line]
+      touched.set(id, row)
+    }
+    const rows: Row[] = [...touched.values()].map((row) => ({ key: row.id, fields: fieldsOf(row), value: row }))
+    const put = await records.put({ requests: rows, ...(cursor === null ? { meta: [{ key: 'version', value: ROWS_VERSION }] } : {}) }, { cursor: batch.cursor, expect: cursor })
+    if (put.written && !batch.more) return
+    if (tries > 50) throw new Error('请求的行一直在被别的进程改写')
   }
-  const requests = [...lines].flatMap(([id, raw]) => folded(id, [...raw].flatMap((l) => parseLine(l) ?? [])) ?? [])
-  return requests.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.id < b.id ? -1 : 1))
+}
+
+const requestOf = (row: RequestRow): OwnerRequest | null => (row.same !== undefined || row.over !== undefined ? null : folded(row.id, row.lines))
+
+/** Every request of the library, oldest first. */
+export async function readRequests(root: string): Promise<OwnerRequest[]> {
+  await caughtUp(root)
+  const records = storageOf(root).records(PLACE)
+  const out: OwnerRequest[] = []
+  let after: string | undefined
+  for (;;) {
+    const page = await records.under<RequestRow>('requests', '', { limit: 10_000, ...(after === undefined ? {} : { after }) })
+    for (const { value } of page.rows) {
+      const r = requestOf(value)
+      if (r !== null) out.push(r)
+    }
+    if (page.more === null) break
+    after = page.more.after
+  }
+  return out.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.id < b.id ? -1 : 1))
+}
+
+/** The pending requests: all of them, or one asker's. */
+async function pendingRequests(root: string, by?: Asker): Promise<OwnerRequest[]> {
+  await caughtUp(root)
+  const records = storageOf(root).records(PLACE)
+  const rows = by === undefined ? (await records.where<RequestRow>('requests', 'pending', '1', { limit: 10_000 })).rows : (await records.where<RequestRow>('requests', 'asker', askerKey(by), { limit: 10_000 })).rows
+  return rows.flatMap(({ value }) => requestOf(value) ?? []).filter(isPending).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
 }
 
 /** The request a target names, if it is a request's id. */
 export async function requestNamed(root: string, target: string): Promise<OwnerRequest | null> {
   if (!REQUEST_ID.test(target)) return null
-  return (await readRequests(root)).find((r) => r.id === target) ?? null
+  await caughtUp(root)
+  const [row] = (await storageOf(root).records(PLACE).get<RequestRow>('requests', [target])).rows
+  return row === undefined ? null : requestOf(row.value)
 }
 
 // ---- writing ----
 
-async function create(root: string, line: Extract<Line, { kind: 'asked' }>): Promise<RequestId> {
-  const dir = dirOf(root)
-  await mkdir(dir, { recursive: true })
-  for (;;) {
-    const id = `r-${randomBytes(4).toString('hex')}` as RequestId
-    try {
-      const handle = await open(join(dir, `${id}.jsonl`), 'wx')
-      try {
-        await handle.writeFile(`${JSON.stringify(line)}\n`)
-      } finally {
-        await handle.close()
-      }
-      return id
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-    }
-  }
-}
-
-const append = (root: string, id: RequestId, line: Line) => appendFile(join(dirOf(root), `${id}.jsonl`), `${JSON.stringify(line)}\n`)
+const append = (root: string, id: RequestId, line: Line) => storageOf(root).records(PLACE).append([{ request: id, ...line }])
 
 /** Records the owner's decision on a request. */
 export const recordDecision = (root: string, id: RequestId, at: Instant, decision: { decision: 'approved'; outcome: RequestOutcome } | { decision: 'declined'; reason: string | null }) =>
   append(root, id, { kind: 'decided', at, ...decision })
-
-/**
- * The lock of one agent's asks on this machine, so two at once neither both add the same request nor
- * pass the cap together: a directory in the kernel's scratch area.
- */
-const askingLock = (root: string, asker: Asker) => join(scratchDir(root), 'asking', createHash('sha256').update(`${asker.name}\0${asker.grant ?? ''}`).digest('hex').slice(0, 16))
 
 // ---- in words ----
 
@@ -238,15 +275,23 @@ export async function ask(req: AskRequest, ctx: Context, commands: readonly Owne
   const checked = checkArgs(c.name, c.params, req.args)
   if ('usage' in checked) return refusal('usage', checked.usage)
   const line = commandLine(c.name, req.args)
-  return alone(askingLock(root, by), async () => {
-    const mine = (await readRequests(root)).filter((r) => isPending(r) && sameAsker(r.by, by))
-    const same = mine.find((r) => r.line === line)
-    if (same) return { outcome: 'asked', request: same, again: true, problems: [] }
-    if (mine.length >= MAX_PENDING) return refusal('too-many', `你已经有 ${MAX_PENDING} 个请求在等主人决定。等主人处理，或用 ask --withdraw <请求号> 撤回不再需要的。`)
-    const asked = { kind: 'asked' as const, at: ctx.now, by, session: ctx.session.id, why, command: c.name, args: req.args }
-    const id = await create(root, asked)
-    return { outcome: 'asked', request: folded(id, [asked]) as OwnerRequest, again: false, problems: [] }
-  })
+  const mine = await pendingRequests(root, by)
+  const same = mine.find((r) => r.line === line)
+  if (same) return { outcome: 'asked', request: same, again: true, problems: [] }
+  const tooMany = refusal('too-many', `你已经有 ${MAX_PENDING} 个请求在等主人决定。等主人处理，或用 ask --withdraw <请求号> 撤回不再需要的。`)
+  if (mine.length >= MAX_PENDING) return tooMany
+  const asked = { kind: 'asked' as const, at: ctx.now, by, session: ctx.session.id, why, command: c.name, args: req.args }
+  const id = `r-${randomBytes(4).toString('hex')}` as RequestId
+  await append(root, id, asked)
+  // Another ask of the same agent may have come at the same moment: the rows settle which one stands.
+  await caughtUp(root)
+  const [row] = (await storageOf(root).records(PLACE).get<RequestRow>('requests', [id])).rows
+  if (row?.value.same !== undefined) {
+    const first = await requestNamed(root, row.value.same)
+    if (first !== null) return { outcome: 'asked', request: first, again: true, problems: [] }
+  }
+  if (row?.value.over) return tooMany
+  return { outcome: 'asked', request: folded(id, [asked]) as OwnerRequest, again: false, problems: [] }
 }
 
 async function withdraw(root: string, id: string, by: Asker, now: Instant): Promise<AskResult> {
@@ -265,9 +310,11 @@ async function withdraw(root: string, id: string, by: Asker, now: Instant): Prom
 export async function requestsFor(ctx: Context): Promise<CheckResult['requests']> {
   const by = askerOf(ctx.actor)
   if (by === null) return { ended: [], pending: 0 }
-  const mine = (await readRequests(ctx.library.root)).filter((r) => sameAsker(r.by, by))
+  await caughtUp(ctx.library.root)
+  const rows = (await storageOf(ctx.library.root).records(PLACE).where<RequestRow>('requests', 'asker', askerKey(by), { limit: 10_000 })).rows
+  const mine = rows.flatMap(({ value }) => requestOf(value) ?? []).filter((r) => sameAsker(r.by, by))
   const ended = mine.filter((r) => (r.status.kind === 'approved' || r.status.kind === 'declined') && !r.seen)
-  for (const r of ended) await append(ctx.library.root, r.id, { kind: 'seen', at: ctx.now })
+  if (ended.length > 0) await storageOf(ctx.library.root).records(PLACE).append(ended.map((r) => ({ request: r.id, kind: 'seen', at: ctx.now })))
   return { ended, pending: mine.filter(isPending).length }
 }
 
@@ -282,7 +329,7 @@ const declineAction = (id: RequestId): Action => ({ label: '拒绝', tone: 'defa
 
 /** A pending request as an ask of the home page: raised by the agent, its reason the sentence, the command under it. */
 export async function requestAsks(library: Library): Promise<Ask[]> {
-  return (await readRequests(library.root)).filter(isPending).map((r) => {
+  return (await pendingRequests(library.root)).map((r) => {
     const grant = r.by.grant === null ? undefined : library.config.grants.find((g) => g.id === r.by.grant)?.name
     return { key: `request:${r.id}`, by: { kind: 'agent', name: r.by.name, ...(grant === undefined ? {} : { grant }) }, text: r.why, command: r.line, about: null, actions: [approveAction(r.id), declineAction(r.id)], suggested: 0 }
   })

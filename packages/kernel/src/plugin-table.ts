@@ -6,10 +6,10 @@ import * as nodeModule from 'node:module'
 import { join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { CONTRACT, KERNEL_COMMAND_NAMES, PLUGIN_NAME, RESERVED_PLUGIN_NAMES, SECRET_NAME, type Plugin, type PluginTable } from '@pneuma-base/sdk'
-import { exists, regularFile, replaceWith } from './files.js'
+import { exists, regularFile, replaceWith } from './machine-files.js'
 
 /** The plugin contract versions this kernel runs. */
-export const SUPPORTED_CONTRACTS: readonly number[] = [CONTRACT]
+export const SUPPORTED_CONTRACTS: readonly number[] = [1, CONTRACT]
 
 /** Flags every command line call takes; no command declares one of these. */
 export const GLOBAL_FLAG_NAMES: readonly string[] = ['library', 'as', 'session', 'json', 'help']

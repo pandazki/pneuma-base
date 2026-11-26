@@ -4,14 +4,11 @@ import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, posix, resolve } from 'node:path'
 import {
-  abs,
   agentFace,
   archivedPath,
   defineCommand,
-  fingerprintOf,
   originalPath,
   parseLibraryPath,
-  thingAt,
   type OwnerAnswer,
   type OwnerCommand,
   type PluginContext,
@@ -34,7 +31,7 @@ const problemLines = (problems: PluginProblem[]) => problems.map((p) => `\n插�
  * reach, and the refusal says so rather than that it was never declared.
  */
 async function named(ctx: PluginContext, model: Model, input: string): Promise<Thing | OwnerAnswer> {
-  const path = await thingPath(ctx.library.root, input)
+  const path = await thingPath(ctx, input)
   const thing = path === null ? undefined : declaredAt(model, path)
   if (thing) return thing
   const gone = path === null ? undefined : [...model.things.values()].find((t) => t.gone && (t.path === path || t.path === archivedPath(path)))
@@ -107,8 +104,7 @@ export const VERSION_RESTORE = defineCommand({
     if ('outcome' in found) return found
     const { thing, v } = found
     if (archived(thing)) return refused('archived', `${thing.path} 已归档。先 unarchive ${originalPath(thing.path) ?? thing.path}，再放回旧版。`)
-    const file = abs(ctx.library.root, thing.path)
-    if ((await thingAt(file)) && (await fingerprintOf(file)) === v.fingerprint) return done(`${thing.path} 现在就是第 ${n} 版的内容，没有动。`)
+    if ((await ctx.tools.thing(thing.path)) && (await ctx.tools.fingerprint(thing.path)) === v.fingerprint) return done(`${thing.path} 现在就是第 ${n} 版的内容，没有动。`)
     // Through the kernel's put, so every plugin sees it and it sends its event; the export is its source outside the library.
     const scratch = await mkdtemp(join(tmpdir(), 'pneuma-base-version-'))
     try {
@@ -167,7 +163,7 @@ export const versionCommands: OwnerCommand[] = [
     async run({ path: input }, ctx) {
       const thing = await named(ctx, await load(ctx), input)
       if ('outcome' in thing) return thing
-      const state = await diskState(ctx.library.root, thing)
+      const state = await diskState(ctx, thing)
       return done(timelineText(thing, state), timelineData(thing, state))
     },
   }),

@@ -14,19 +14,7 @@ export { identifySession, identifyActor, looksLikeAgentSession, type Env } from 
 export { resolveGrant, GRANT_NAME, type ResolvedGrant } from './grants.js'
 export { abs, archivedPath, originalPath, parseLibraryPath, regionOf, shortDir, withSuffix } from './paths.js'
 export { changeStamp, dirKind, dirsAbove, KERNEL_ENTRIES, openDirectories, openDirsOf, placeIn, type DirKind, type Registered } from './places.js'
-export { fingerprintOfFile } from './files.js'
-export {
-  BUNDLE_MARKER,
-  bundleFiles,
-  bundleManifest,
-  copyBundle,
-  enclosingBundle,
-  fingerprintOf,
-  fingerprintOfManifest,
-  libraryFiles,
-  listThings,
-  thingAt,
-} from './things.js'
+export { BUNDLE_MARKER, fingerprintOfManifest } from './things.js'
 export { loadPlugins, whyNotLoaded } from './plugin-table.js'
 export { FIRST_WORDS } from './products.js'
 export { ensureLauncher } from './launcher.js'

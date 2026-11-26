@@ -1,12 +1,9 @@
 import { readFileSync } from 'node:fs'
 import {
-  abs,
   archivedPath,
-  CONTRACT,
   PNEUMA_BASE_VERSION,
   pluginName,
   regionOf,
-  thingAt,
   type Event,
   type LibraryPath,
   type Plugin,
@@ -39,15 +36,14 @@ async function describe(w: Writing, thing: Thing, text: string): Promise<SayAnsw
 
 /** `say versioned <path> [一句话]`: declares the thing and records its current content as version 1. */
 async function declare(w: Writing, input: string, text: string | null): Promise<SayAnswer> {
-  const { root } = w.ctx.library
-  const path = await thingPath(root, input)
+  const path = await thingPath(w.ctx, input)
   if (path === null) return refused(`${input} 不在库的内容里。`)
   const known = declaredAt(w.model, path)
   if (known) return text ? describe(w, known, text) : heard(`${known.path} 早已声明有版本，现在有 ${known.versions.length} 版。`)
   const candidates = regionOf(path) === 'content' ? [path, archivedPath(path)] : [path]
   let at: LibraryPath | undefined
   for (const candidate of candidates) {
-    if (await thingAt(abs(root, candidate))) {
+    if (await w.ctx.tools.thing(candidate)) {
       at = candidate
       break
     }
@@ -68,7 +64,7 @@ async function hear(w: Writing, req: SayRequest): Promise<SayAnswer> {
     return declare(w, input, req.about === null ? null : req.text)
   }
   if (req.about === null || !req.text) return refused('要写是哪样东西和一句话：say version <库内路径> "<一句话>"')
-  const path = await thingPath(w.ctx.library.root, req.about)
+  const path = await thingPath(w.ctx, req.about)
   const thing = path === null ? undefined : declaredAt(w.model, path)
   if (!thing) return refused(`${req.about} 没有声明有版本，先 say versioned ${req.about}。`)
   return describe(w, thing, req.text)
@@ -93,7 +89,7 @@ function purged(event: Event): LibraryPath[] {
 
 /** 版本：things declared versioned keep every version's content. */
 export const version: Plugin = {
-  contract: CONTRACT,
+  contract: 1,
   name: pluginName('version'),
   version: PNEUMA_BASE_VERSION,
   summary: '声明了有版本的东西，每一版的内容都留着，能列出、导出、放回。',
@@ -162,10 +158,10 @@ export const version: Plugin = {
   },
 
   async onInspect(req, ctx) {
-    const path = await thingPath(ctx.library.root, req.target)
+    const path = await thingPath(ctx, req.target)
     const thing = path === null ? undefined : declaredAt(await load(ctx), path)
     if (!thing) return []
-    const state = await diskState(ctx.library.root, thing)
+    const state = await diskState(ctx, thing)
     return [{ title: '版本', body: timelineText(thing, state, INSPECT_VERSIONS), data: timelineData(thing, state) }]
   },
 
@@ -184,16 +180,15 @@ export const version: Plugin = {
   async onView(req, ctx) {
     const model = await load(ctx)
     const things = [...model.things.values()].filter((t) => !t.gone)
-    const rows = await Promise.all(things.map(async (thing) => ({ thing, state: await diskState(ctx.library.root, thing) })))
+    const rows = await Promise.all(things.map(async (thing) => ({ thing, state: await diskState(ctx, thing) })))
     return thingsPage(rows, req.params.archived === 'show')
   },
 
   async onItemView(path, ctx) {
-    const { root } = ctx.library
-    const named = await thingPath(root, path)
+    const named = await thingPath(ctx, path)
     if (named === null) return null
     const thing = declaredAt(await load(ctx), named)
-    if (thing) return itemSection(thing, await diskState(root, thing))
-    return regionOf(named) === 'content' && (await thingAt(abs(root, named))) ? undeclaredSection(named) : null
+    if (thing) return itemSection(thing, await diskState(ctx, thing))
+    return regionOf(named) === 'content' && (await ctx.tools.thing(named)) ? undeclaredSection(named) : null
   },
 }

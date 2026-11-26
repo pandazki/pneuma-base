@@ -1,6 +1,6 @@
 // The plugin contract's shapes, which a plugin and the kernel exchange. ARCHITECTURE.md sections 4 and 5.
 import type { IconName } from './icons.js'
-import type { PluginStorage } from './storage.js'
+import type { Description, PluginStorage } from './storage.js'
 
 // Semantic primitives. Parsed once at the kernel's boundary.
 export type LibraryPath = string & { readonly __brand: 'LibraryPath' } // library-relative, '/'-separated
@@ -93,9 +93,17 @@ export type BundleFile = { path: string; size: number; modifiedAt: Instant }
 export type ManifestEntry = { path: string; fingerprint: Fingerprint; size: number }
 
 /**
+ * What a place holds as a thing, from one glance: a file, a bundle (a directory with the marker), a
+ * folder (a directory without it), something else (a link, a device), or nothing; with what storage
+ * says the place is, null when nothing is there.
+ */
+export type ThingAt = { path: LibraryPath; kind: ThingKind | 'folder' | 'other' | 'none'; entry: Description | null }
+
+/**
  * The kernel's helpers a plugin needs, bound to the operation's library so no call takes the root.
- * They are the running kernel's own code: what a bundle counts, how a fingerprint is taken, how find
- * splits and ranks never drift from a plugin's copy. Paths are library paths unless named absolute.
+ * They are the running kernel's own code: what a bundle counts, how find splits and ranks never drift
+ * from a plugin's copy. Paths are library paths unless named absolute. Storage is looked at only where
+ * a plugin's records point: no tool walks the library.
  */
 export interface PluginTools {
   /** What an agent wrote, relative to the library or absolute inside it; null when it names nothing in the library. */
@@ -105,28 +113,8 @@ export interface PluginTools {
   archivedPath(path: LibraryPath): LibraryPath
   /** The content path of an archived one; null for the archive itself. */
   originalPath(path: LibraryPath): LibraryPath | null
-  abs(path: LibraryPath): string
-  /** The file or bundle at a path; null when neither is there. */
-  thing(path: LibraryPath): Promise<Thing | null>
-  /** Every thing in the content and the archive: each file outside bundles, and each bundle. */
-  things(): Promise<LibraryPath[]>
-  /** The files the bundle at a path counts, in fingerprint order; null when no bundle is there. */
-  files(path: LibraryPath): Promise<BundleFile[] | null>
-  /**
-   * Copies the thing at a path into the absolute directory `to`, which must not exist: a bundle's
-   * counted files without its marker, a file under its own name. Answers the fingerprint of the copy,
-   * to compare with the content decided on; null when nothing is there. Throws when `to` lies in the
-   * library outside the plugin's own directory.
-   */
-  copyOut(path: LibraryPath, to: string): Promise<Fingerprint | null>
-  /** The fingerprint of the file or bundle at a path; null when neither is there. */
-  fingerprint(path: LibraryPath): Promise<Fingerprint | null>
-  /** Each file the bundle at a path counts, with its sha256; null when no bundle is there. */
-  manifest(path: LibraryPath): Promise<ManifestEntry[] | null>
-  /** A bundle's fingerprint from its manifest, reading no file. */
-  fingerprintOfManifest(entries: readonly Pick<ManifestEntry, 'path' | 'fingerprint'>[]): Fingerprint
-  /** The fingerprint of a regular file anywhere on this machine, such as a copy the plugin keeps. */
-  fingerprintOfFile(absolute: string): Promise<Fingerprint>
+  /** What each path holds as a thing, from one glance at the paths and their markers. */
+  what(paths: readonly LibraryPath[]): Promise<ThingAt[]>
   /** The terms of a find's text, as the kernel splits them. */
   searchTerms(text: string | null, match: FindRequest['match']): string[]
   /** The hits to give from candidates, ranked as the kernel ranks its own. */
@@ -135,13 +123,31 @@ export interface PluginTools {
   readonly sentenceHits: number
   /** A put through the agent face, as the operation's actor and session, so every plugin hears it and it sends its event. */
   put(req: PutRequest): Promise<PutResult>
-  /**
-   * The paths a put is placing, registering or moving right now, sorted. A put lands its file before
-   * any plugin records it, so a file at one of these paths is no stray: its put has not finished.
-   */
-  putting(): Promise<LibraryPath[]>
-  /** Storage, where the plugin's records point: looking at places, and its own record place under its name. */
+  /** Storage, where the plugin's records point: looking at places, content when asked, writes with expectations, its own record place. */
   readonly storage: PluginStorage
+
+  // ---- contract version 1, kept for the plugins written against it; removed when they move (written on the tools above) ----
+
+  /** @deprecated contract 1: a plugin reads the library only through `storage`. */
+  abs(path: LibraryPath): string
+  /** @deprecated contract 1: `what` and `storage.glance`. */
+  thing(path: LibraryPath): Promise<Thing | null>
+  /** @deprecated contract 1: walks the library, one level at a time. A plugin follows its own records instead. */
+  things(): Promise<LibraryPath[]>
+  /** @deprecated contract 1: walks a bundle, one level at a time. */
+  files(path: LibraryPath): Promise<BundleFile[] | null>
+  /** @deprecated contract 1: `storage.read` with `to`, or `storage.own.write` from the place. */
+  copyOut(path: LibraryPath, to: string): Promise<Fingerprint | null>
+  /** @deprecated contract 1: `storage.content`. */
+  fingerprint(path: LibraryPath): Promise<Fingerprint | null>
+  /** @deprecated contract 1: `storage.content` of each file of a walked bundle. */
+  manifest(path: LibraryPath): Promise<ManifestEntry[] | null>
+  /** @deprecated contract 1. */
+  fingerprintOfManifest(entries: readonly Pick<ManifestEntry, 'path' | 'fingerprint'>[]): Fingerprint
+  /** @deprecated contract 1: `storage.content` or `storage.own.content`; outside the library, the plugin hashes its own files. */
+  fingerprintOfFile(absolute: string): Promise<Fingerprint>
+  /** @deprecated contract 1: always empty; a write under way shows as `held` in `storage.look` and `storage.overview`. */
+  putting(): Promise<LibraryPath[]>
 }
 
 export type Note = { plugin: PluginName; text: string; data?: unknown }
@@ -185,30 +191,60 @@ export type PutRequest =
  * `inside-bundle`: the path lies inside a bundle, which changes only as a whole; `subject` is the
  * bundle. A put refused because no plugin held the replaced content carries, as `notes`, why each
  * plugin with `revise` declined. `agent-session`: an agent put with `observed`, which is the owner's.
+ * `noise`: the library's noise names the path. `busy`: another write holds the place, or it changed
+ * while this one went; nothing changed. `too-many`: a directory with more files than one thing takes
+ * (5000); `subject` says how many at least.
  */
-export type PutRefusal = 'outside-library' | 'outside-grant' | 'no-such-file' | 'would-overwrite' | 'inside-bundle' | 'agent-session'
+export type PutRefusal = 'outside-library' | 'outside-grant' | 'no-such-file' | 'would-overwrite' | 'inside-bundle' | 'agent-session' | 'noise' | 'busy' | 'too-many'
 
 export type PutResult =
-  | { outcome: 'accepted'; path: LibraryPath; fingerprint: Fingerprint; copied: boolean; notes: Note[]; problems: PluginProblem[] }
+  | { outcome: 'accepted'; path: LibraryPath; fingerprint: Fingerprint | null; copied: boolean; notes: Note[]; problems: PluginProblem[] }
   | { outcome: 'refused'; reason: PutRefusal; subject: string; notes: Note[]; problems: PluginProblem[] }
 
-/** What `onPut` receives after the kernel accepted a put. `note` is trimmed; blank or absent is null. */
+/**
+ * What storage says a thing is now: its state token, which is its identity until its content is read,
+ * and its moment. `size` and `files` are a bundle's bytes and files when its content passed through
+ * the kernel (copied in), else null; a file's `size` is its bytes and `files` 1.
+ */
+export type ThingNow = { token: string; kind: ThingKind; size: number | null; files: number | null; modifiedAt: Instant }
+
+/**
+ * What `onPut` receives after the kernel accepted a put. `note` is trimmed; blank or absent is null.
+ * `fingerprint` is the content's when it passed through the kernel (a place copies it in and
+ * fingerprints it in the same pass); a register or a move reads no content and gives null, and the
+ * thing is known by `now.token` until something asks for its content. A plugin written against
+ * contract 1 gets the fingerprint filled in: the kernel reads the content for it.
+ */
 export type AcceptedPut =
-  | { kind: 'register'; path: LibraryPath; fingerprint: Fingerprint; origin: Origin; note: string | null; observed?: true }
+  | { kind: 'register'; path: LibraryPath; fingerprint: Fingerprint | null; now: ThingNow; origin: Origin; note: string | null; observed?: true }
   | {
       kind: 'place'
       path: LibraryPath
       fingerprint: Fingerprint
+      now: ThingNow
       origin: Origin
       note: string | null
       source: { kind: 'file'; path: string } | { kind: 'directory'; path: string } | { kind: 'stdin' }
       copied: boolean
-      previous: Fingerprint | null // the content it replaced through `revise`, if any
+      /** The content it replaced through `revise`: its token, and its fingerprint when one was read. */
+      previous: { token: string; fingerprint: Fingerprint | null } | null
     }
-  | { kind: 'move'; from: LibraryPath; path: LibraryPath; fingerprint: Fingerprint }
+  | { kind: 'move'; from: LibraryPath; path: LibraryPath; fingerprint: Fingerprint | null; now: ThingNow }
+  /**
+   * A register of a directory that holds registered things (an open directory): the loose files of its
+   * one level, a page of them at a time, each with what storage said of it; none of their content read.
+   * A plugin registers the ones it does not know and leaves the ones it knows as they are. A plugin of
+   * contract 1 gets one `register` per file instead.
+   */
+  | { kind: 'register-files'; path: LibraryPath; files: { path: LibraryPath; now: ThingNow }[]; origin: Origin; note: string | null; observed?: true }
 
-/** What `revise` receives: a place onto a path that holds different content. */
-export type PlaceOverExisting = { path: LibraryPath; current: Fingerprint; incoming: Fingerprint }
+/**
+ * What `revise` receives: a place onto a path whose content is to be replaced. `token` is the state of
+ * what is there now, which the kernel's write expects; `current` its fingerprint when one is known
+ * (always, for a plugin written against contract 1); `incoming` the new content's, null for a
+ * directory not copied in yet.
+ */
+export type PlaceOverExisting = { path: LibraryPath; token: string; current: Fingerprint | null; incoming: Fingerprint | null }
 
 /**
  * `held`: the plugin keeps the current content where the owner can get it back. The kernel then
@@ -237,21 +273,50 @@ export type FindResult = { hits: Hit[]; problems: PluginProblem[] }
 export type InspectRequest = { target: string; content?: { file: string | null } }
 /** One thing of the library: a regular file, or a directory with the marker `.pneuma-item`. */
 export type ThingKind = 'file' | 'bundle'
-/** A bundle's `size` and `files` count the files its fingerprint counts; `modifiedAt` is the latest of theirs. */
-export type FileFacts = { path: LibraryPath; kind: ThingKind; files: number; size: number; modifiedAt: Instant; fingerprint: Fingerprint; archived: boolean }
+/**
+ * A thing as storage says it is now, read without its content: a file's size, a bundle's first level
+ * (`entries`, at most 200, and at least how many more), the token. `fingerprint` only when the request
+ * asked for content.
+ */
+export type FileFacts = {
+  path: LibraryPath
+  kind: ThingKind
+  size: number | null
+  modifiedAt: Instant
+  token: string
+  fingerprint: Fingerprint | null
+  archived: boolean
+  level?: Level
+}
+/** One level of a directory: its first entries by name, and at least how many follow. */
+export type Level = { entries: { name: string; kind: 'file' | 'dir' | 'other'; size: number | null }[]; more: number }
+/**
+ * A directory that is no thing, as inspect sees it: `open` when something registered lies in it (its
+ * first level), `closed` otherwise (a probe within a budget: at least how many files, which project
+ * markers at its top). `noise`: a place the library's noise names, and by which name or path.
+ */
+export type PlaceFacts =
+  | { kind: 'open'; path: LibraryPath; level: Level }
+  | { kind: 'closed'; path: LibraryPath; files: number; exceeded: boolean; markers: string[] }
+  | { kind: 'noise'; path: LibraryPath; by: { name: string } | { path: string } }
 /**
  * A thing's content, as inspect gives it when asked. `text`: a file of UTF-8 text within the kernel's
  * limit (256 KB). `other`: any other file, with its size and the media type its name says, null when
- * the name says none. `files`: a bundle's files. `unavailable`: outside the caller's grant, no such
- * file in the bundle or nothing at the target, or a file asked of a thing that is no bundle.
+ * the name says none. `level`: one level of a bundle, or of a directory in it. `unavailable`: outside
+ * the caller's grant, no such file in the bundle or nothing at the target, or a file asked of a thing
+ * that is no bundle.
  */
 export type Content =
   | { kind: 'text'; path: LibraryPath; size: number; text: string }
   | { kind: 'other'; path: LibraryPath; size: number; type: string | null; why: 'not-utf8' | 'too-large' }
-  | { kind: 'files'; path: LibraryPath; files: BundleFile[] }
+  | { kind: 'level'; path: LibraryPath; level: Level }
   | { kind: 'unavailable'; path: LibraryPath | null; reason: 'outside-grant' | 'no-such-file' | 'not-a-bundle' }
-/** `content` is there only when the request asked for it; `request`, when the target is a request's id. */
-export type InspectResult = { file: FileFacts | null; sections: Section[]; problems: PluginProblem[]; content?: Content; request?: OwnerRequest }
+/**
+ * `file`: the thing the target names. `place`: a directory that is no thing, or noise, when that is
+ * what the target names. `content` is there only when the request asked for it; `request`, when the
+ * target is a request's id.
+ */
+export type InspectResult = { file: FileFacts | null; place?: PlaceFacts; sections: Section[]; problems: PluginProblem[]; content?: Content; request?: OwnerRequest }
 
 export type SayRequest = { kind: string; about: string | null; text: string | null; args: Record<string, string[]> }
 export type SayResult =
@@ -263,7 +328,11 @@ export type SayAnswer =
   | { outcome: 'heard'; note: string; problems?: string[] }
   | { outcome: 'not-heard'; reason: 'refused'; note: string }
 
-export type CheckRequest = { since: Instant | 'last' | null; includeArchived: boolean }
+/**
+ * `deep`: the named whole pass, which reads the content of every registered thing (under `dir`, all of
+ * them when null) and says how much first; without it check compares state tokens and reads no content.
+ */
+export type CheckRequest = { since: Instant | 'last' | null; includeArchived: boolean; deep?: { dir: LibraryPath | null } }
 /**
  * `asks`: what only the owner can settle now, from every plugin's `onAsks`; an agent tells the owner.
  * `requests`: the caller's own requests (`ask`) the owner decided since it last saw them, and how many
@@ -333,7 +402,8 @@ export type AskResult =
 // ---- archive ----
 
 export type ArchiveRequest = { kind: 'archive' | 'unarchive'; path: string }
-export type ArchiveRefusal = 'outside-library' | 'outside-grant' | 'no-such-file' | 'original-path-taken' | 'inside-bundle'
+/** `noise`: the library's noise names the path. `busy`: another write holds it, or it changed while this one went; nothing moved. */
+export type ArchiveRefusal = 'outside-library' | 'outside-grant' | 'no-such-file' | 'original-path-taken' | 'inside-bundle' | 'noise' | 'busy'
 export type ArchiveResult =
   | { outcome: 'accepted'; from: LibraryPath; to: LibraryPath; moved: boolean; notes: Note[]; problems: PluginProblem[] }
   | { outcome: 'refused'; reason: ArchiveRefusal; subject: string; problems: PluginProblem[] }
@@ -460,7 +530,7 @@ export type StorageDecl = { dir: string; kind: 'body' | 'cache' } // relative to
 
 /** An object with only a contract, a name and empty lists is a valid plugin. */
 export interface Plugin {
-  /** The plugin contract it is written against: the sdk's `CONTRACT`. The kernel refuses a version it does not run. */
+  /** The plugin contract it is written against: the sdk's `CONTRACT` (2), or 1 for a plugin not moved yet. The kernel refuses a version it does not run. */
   readonly contract: number
   readonly name: PluginName
   /** Its own version, for people. */

@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { CONTRACT, PNEUMA_BASE_VERSION, pluginName, type Plugin } from '@pneuma-base/kernel'
+import { PNEUMA_BASE_VERSION, pluginName, type Plugin } from '@pneuma-base/kernel'
 import { syncCommands } from './commands.js'
 import { SCRATCH } from './facts.js'
 import { recordDeletions } from './sync.js'
@@ -7,7 +7,7 @@ import { checkSections, itemSection, STATUS_VIEW, statusView } from './views.js'
 
 /** 同步: a library and a target in two-way sync, without merging contents and without losing any. design.md 五. */
 export const sync: Plugin = {
-  contract: CONTRACT,
+  contract: 1,
   name: pluginName('sync'),
   version: PNEUMA_BASE_VERSION,
   summary: '和主人设的目标双向同步，只整份地复制文件，不合并内容，也不丢内容。',

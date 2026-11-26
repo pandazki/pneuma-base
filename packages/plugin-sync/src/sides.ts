@@ -1,9 +1,17 @@
 // A local directory as one side of a sync: the library itself, or the built-in `dir` target, which
 // stands in for object storage.
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { createReadStream } from 'node:fs'
 import { mkdir, readdir, readFile, rename, rm, rmdir, unlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { fingerprintOfFile, type Fingerprint, type LibraryPath } from '@pneuma-base/kernel'
+import type { Fingerprint, LibraryPath } from '@pneuma-base/kernel'
+
+/** The sha256 of a file on one side. */
+async function fingerprintOfFile(path: string): Promise<Fingerprint> {
+  const hash = createHash('sha256')
+  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer)
+  return hash.digest('hex') as Fingerprint
+}
 import type { SyncTarget } from './execute.js'
 import { TARGET_DIR } from './scope.js'
 

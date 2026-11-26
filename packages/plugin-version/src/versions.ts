@@ -1,5 +1,5 @@
 // What the hooks and the owner commands share: reading the model, recording a version, naming a thing.
-import { abs, enclosingBundle, fingerprintOf, parseLibraryPath, regionOf, thingAt, type LibraryPath, type PluginContext } from '@pneuma-base/kernel'
+import { parseLibraryPath, regionOf, type LibraryPath, type PluginContext } from '@pneuma-base/kernel'
 import { fact, readFacts, writeFacts, type Fact, type FactBody, type Via } from './facts.js'
 import { fold, latest, step, type Model, type Thing, type Version } from './model.js'
 import { snapshot, store } from './store.js'
@@ -29,10 +29,10 @@ export const commit = (w: Writing) => writeFacts(w.ctx.dir, w.facts)
  * records it as a new one. `added` says whether it did. Null when nothing is at the path.
  */
 export async function record(w: Writing, thing: Thing, via: Via): Promise<{ version: Version; added: boolean } | null> {
-  const file = abs(w.ctx.library.root, thing.path)
-  const shot = await snapshot(file)
+  const file = w.ctx.tools.abs(thing.path)
+  const shot = await snapshot(w.ctx, thing.path)
   if (shot === null) return null
-  await store(w.ctx.dir, file, shot.manifest)
+  await store(w.ctx, file, shot.manifest)
   const last = latest(thing)
   if (last?.fingerprint === shot.fingerprint) return { version: last, added: false }
   apply(w, { kind: 'version', thing: thing.id, path: thing.path, fingerprint: shot.fingerprint, manifest: shot.manifest, via })
@@ -40,17 +40,16 @@ export async function record(w: Writing, thing: Thing, via: Via): Promise<{ vers
 }
 
 /** The library path of the thing an input names: itself, or the bundle it lies in. Null outside the content and the archive. */
-export async function thingPath(root: string, input: string): Promise<LibraryPath | null> {
-  const path = parseLibraryPath(root, input)
+export async function thingPath(ctx: PluginContext, input: string): Promise<LibraryPath | null> {
+  const path = parseLibraryPath(ctx.library.root, input)
   if (path === null || regionOf(path) === 'kernel') return null
-  return (await enclosingBundle(root, path)) ?? path
+  return (await ctx.tools.resolve(path))?.bundle ?? path
 }
 
 /** What is at the thing's path against its latest version. */
 export type DiskState = 'current' | 'changed' | 'missing'
 
-export async function diskState(root: string, thing: Thing): Promise<DiskState> {
-  const file = abs(root, thing.path)
-  if ((await thingAt(file)) === null) return 'missing'
-  return (await fingerprintOf(file)) === latest(thing)?.fingerprint ? 'current' : 'changed'
+export async function diskState(ctx: PluginContext, thing: Thing): Promise<DiskState> {
+  if ((await ctx.tools.thing(thing.path)) === null) return 'missing'
+  return (await ctx.tools.fingerprint(thing.path)) === latest(thing)?.fingerprint ? 'current' : 'changed'
 }

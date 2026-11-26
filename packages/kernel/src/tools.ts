@@ -1,55 +1,58 @@
-// The kernel's helpers on a plugin's context, `PluginContext.tools`, bound to the operation's library.
-import { copyFile, mkdir } from 'node:fs/promises'
-import { dirname, isAbsolute, join, posix } from 'node:path'
-import type { Context, LibraryPath, PluginName, PluginTools } from '@pneuma-base/sdk'
-import { fingerprintOfFile } from './files.js'
-import { abs, archivedPath, isWithin, originalPath, parseLibraryPath, regionOf } from './paths.js'
-import { puttingNow } from './putting.js'
-import { pluginStorage } from './storage.js'
+// The kernel's helpers on a plugin's context, `PluginContext.tools`, bound to the operation's library:
+// storage in its own words, at the places a plugin's records point, through the one door.
+import { type Context, type LibraryPath, type PlaceStore, type PluginName, type PluginStorage, type PluginTools, type WriteSource } from '@pneuma-base/sdk'
+import { changesSince } from './changes.js'
+import { v1Tools } from './contract-v1.js'
+import { archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
+import { storageOf, type Area, type Source, type Storage } from './storage.js'
 import { rankHits, searchTerms, SENTENCE_HITS } from './terms.js'
-import { bundleFiles, bundleManifest, copyCounted, enclosingBundle, fingerprintOf, fingerprintOfManifest, kindAt, libraryFiles, thingAt } from './things.js'
+import { enclosingBundle, THING_FILES, THING_RULE, whatIs } from './things.js'
 
-/** The tools of the plugin `name`, whose own directory is `dir`, for the operation `ctx`. */
-export function pluginTools(ctx: Context, dir: string, name: PluginName): PluginTools {
+/** One area as a plugin sees it: a directory's content always counted by the rule things follow. */
+function placeStore(area: Area, own: PluginName): PlaceStore {
+  const source = (from: WriteSource): Source => ('place' in from ? { place: from.place, ...(from.own ? { records: own } : {}) } : from)
+  return {
+    glance: (places) => area.glance(places),
+    overview: (place, opts) => area.overview(place, opts),
+    look: (places) => area.look(places),
+    content: (place, opts = {}) => area.content(place, { rule: THING_RULE, limit: opts.limit ?? THING_FILES }),
+    read: (place, opts) => area.read(place, opts),
+    write: (place, from, expect, opts = {}) => area.write(place, source(from), expect, { rule: THING_RULE, limit: opts.limit ?? THING_FILES, ...(opts.hold === undefined ? {} : { hold: opts.hold }) }),
+    move: (from, to, expect, opts) => area.move(from, to, expect, opts),
+    remove: (place, expect, opts) => area.remove(place, expect, opts),
+  }
+}
+
+/** What a plugin gets of storage: the content, its own record place and its content, holds, and change learned from the kernel's cursor. */
+export function pluginStorage(store: Storage, name: PluginName): PluginStorage {
+  return {
+    ...placeStore(store, name),
+    probe: store.probe,
+    async noise() {
+      const { names, paths } = await store.noise.list()
+      return { names, paths }
+    },
+    hold: (places, ttl) => store.hold(places, ttl),
+    release: (hold) => store.release(hold),
+    changed: (mark) => changesSince(store, mark),
+    own: placeStore(store.own(name), name),
+    records: store.records(name),
+  }
+}
+
+/** The tools of the plugin `name` for the operation `ctx`. */
+export function pluginTools(ctx: Context, name: PluginName): PluginTools {
   const root = ctx.library.root
-  const at = (path: LibraryPath) => abs(root, path)
-  const isBundle = async (path: LibraryPath) => (await kindAt(at(path))) === 'bundle'
-  const own = parseLibraryPath(root, dir) as LibraryPath
+  const store = storageOf(root)
   return {
     async resolve(input) {
       const path = parseLibraryPath(root, input)
-      return path === null ? null : { path, region: regionOf(path), bundle: await enclosingBundle(root, path) }
+      return path === null ? null : { path, region: regionOf(path), bundle: regionOf(path) === 'kernel' ? null : await enclosingBundle(store, path) }
     },
     regionOf,
     archivedPath,
     originalPath,
-    abs: at,
-    thing: (path) => thingAt(at(path)),
-    things: () => libraryFiles(root),
-    files: async (path) => ((await isBundle(path)) ? bundleFiles(at(path)) : null),
-    async copyOut(path, to) {
-      if (!isAbsolute(to)) throw new Error(`copyOut 要写到一个绝对路径：${to}`)
-      const inLibrary = parseLibraryPath(root, to)
-      if (inLibrary !== null && !isWithin(inLibrary, own)) throw new Error(`copyOut 不往库里写，除了插件自己名下的目录：${to}`)
-      const kind = await kindAt(at(path))
-      if (kind !== 'file' && kind !== 'bundle') return null
-      await mkdir(dirname(to), { recursive: true })
-      if (kind === 'bundle') {
-        await copyCounted(at(path), to)
-        return fingerprintOfManifest(await bundleManifest(to))
-      }
-      await mkdir(to)
-      const copy = join(to, posix.basename(path))
-      await copyFile(at(path), copy)
-      return fingerprintOfFile(copy)
-    },
-    async fingerprint(path) {
-      const kind = await kindAt(at(path))
-      return kind === 'file' || kind === 'bundle' ? fingerprintOf(at(path)) : null
-    },
-    manifest: async (path) => ((await isBundle(path)) ? bundleManifest(at(path)) : null),
-    fingerprintOfManifest,
-    fingerprintOfFile,
+    what: async (paths) => (await whatIs(store, paths as LibraryPath[])).map(({ path, kind, entry }) => ({ path, kind, entry })),
     searchTerms,
     rankHits,
     sentenceHits: SENTENCE_HITS,
@@ -58,7 +61,7 @@ export function pluginTools(ctx: Context, dir: string, name: PluginName): Plugin
       const { agentFace } = await import('./agent.js')
       return agentFace.put(req, ctx)
     },
-    putting: () => puttingNow(root),
-    storage: pluginStorage(root, name),
+    storage: pluginStorage(store, name),
+    ...v1Tools(store, root, name),
   }
 }

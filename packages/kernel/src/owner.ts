@@ -1,8 +1,6 @@
-import { mkdir, realpath } from 'node:fs/promises'
-import { join } from 'node:path'
+import { makeAddress } from './address.js'
 import { said, takenBy } from './claims.js'
-import { exists } from './files.js'
-import { CONFIG_FILE, newConfig, saveConfig } from './library.js'
+import { newConfig, openLibrary, saveConfig } from './library.js'
 import { KERNEL_COMMANDS, type Outcome } from './owner-commands.js'
 import { checkArgs } from './params.js'
 import { makeContext, performOwner, pluginContext } from './pipeline.js'
@@ -93,7 +91,7 @@ export async function initLibrary(
   dir: string,
   opts: { plugins: string[]; table: PluginTable; actor: Actor; session: Session; home: string },
 ): Promise<OwnerResult> {
-  if (await exists(join(dir, CONFIG_FILE))) {
+  if ((await openLibrary(dir, new Map())) !== null) {
     return { outcome: 'refused', reason: 'already-a-library', text: `${dir} 已经是一个库了`, problems: [] }
   }
   const unknown = opts.plugins.filter((name) => !opts.table.has(name))
@@ -108,10 +106,10 @@ export async function initLibrary(
     const pairs = [...new Set(clashes.map((c) => `${c.holder} 和 ${c.plugin}`))].join('、')
     return { outcome: 'refused', reason: 'name-taken', text: `没有建库：${what}。一个名字只归一个插件，${pairs} 只能选一个。`, problems: [] }
   }
-  await mkdir(dir, { recursive: true })
+  const root = await makeAddress(dir)
   // Storage's part first (tmp/run-7 architecture.md section 4): its cache area, and the noise declared at the root with the default names.
-  await storageOf(await realpath(dir)).init()
-  const library = await saveConfig(await realpath(dir), newConfig(opts.plugins as PluginName[]), opts.table)
+  await storageOf(root).init()
+  const library = await saveConfig(root, newConfig(opts.plugins as PluginName[]), opts.table)
   const ctx = makeContext(library, opts.actor, opts.session, opts.home)
   const args: OwnerArgs = { positional: [library.root], flags: opts.plugins.length === 0 ? { bare: true } : {} }
   return performOwner(ctx, 'init', args, { destructive: false, readOnly: false }, async () => ({
