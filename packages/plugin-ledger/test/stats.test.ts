@@ -3,8 +3,11 @@
 import type { Instant } from '@pneuma-base/kernel'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Fact, FactActor, FactBody, SceneId } from '../src/facts.js'
-import { statsOf } from '../src/stats.js'
-import { basis, claude, codex, enter, fp, id, p } from './support.js'
+import { statsFrom, type Period } from '../src/stats.js'
+import { basis, claude, codex, enter, folded, fp, id, p } from './support.js'
+
+/** The figures of `period` ending `now`, from the rows the facts fold into. */
+const statsOf = async (facts: readonly Fact[], period: Period, now: Instant) => statsFrom((await folded(facts)).records, period, now)
 
 const gemini: FactActor = { kind: 'agent', name: 'gemini', grant: null }
 const owner: FactActor = { kind: 'owner', name: 'owner', grant: null }
@@ -33,48 +36,48 @@ const made = (rows: [string, string][], outside: string[] = []) => ({ kind: 'mad
 const said = (flavor: 'doing' | 'decided' | 'note', text: string): FactBody => ({ kind: 'said', flavor, text, about: null })
 
 describe('the period and its buckets', () => {
-  it('counts nothing in a library with no facts: thirty empty days, or for all, today alone', () => {
-    const month = statsOf([], '30d', NOW)
+  it('counts nothing in a library with no facts: thirty empty days, or for all, today alone', async () => {
+    const month = await statsOf([], '30d', NOW)
     expect(month).toMatchObject({ facts: 0, grain: 'day', put: { brought: 0, made: 0 }, sessions: { total: 0, byAgent: [] }, agents: [], reuse: { made: 0, top: [] } })
     expect(month.buckets).toHaveLength(30)
     expect(month.buckets.at(-1)).toBe('11月26日')
     expect(month.order).toMatchObject({ now: { stale: 0, changed: 0, unknown: 0, archived: 0 }, archived: 0 })
-    const all = statsOf([], 'all', NOW)
+    const all = await statsOf([], 'all', NOW)
     expect(all.buckets).toEqual(['11月26日'])
     expect(all.from).toBe(new Date('2026-11-26T00:00:00+08:00').toISOString())
   })
 
-  it('starts each period at local midnight: the last 7 days are today and the six before', () => {
+  it('starts each period at local midnight: the last 7 days are today and the six before', async () => {
     const facts = [
       on('2026-11-19 23:59', enter('i_out', 'out.md', 'o')),
       on('2026-11-20 00:00', enter('i_first', 'first.md', 'f')),
       on('2026-11-26 01:00', enter('i_today', 'today.md', 't')),
     ]
-    const week = statsOf(facts, '7d', NOW)
+    const week = await statsOf(facts, '7d', NOW)
     expect(week.from).toBe(new Date('2026-11-20T00:00:00+08:00').toISOString())
     expect(week.buckets).toEqual(['11月20日', '11月21日', '11月22日', '11月23日', '11月24日', '11月25日', '11月26日'])
     expect(week.put.brought).toBe(2)
     expect(week.put.byBucket.brought).toEqual([1, 0, 0, 0, 0, 0, 1])
     // 01:00 on the 26th in Shanghai is the 25th in UTC: the local day decides.
-    expect(statsOf(facts, '30d', NOW).put.byBucket.brought.slice(-8)).toEqual([1, 1, 0, 0, 0, 0, 0, 1])
+    expect((await statsOf(facts, '30d', NOW)).put.byBucket.brought.slice(-8)).toEqual([1, 1, 0, 0, 0, 0, 0, 1])
   })
 
-  it('counts one day of facts as one bucket for all', () => {
+  it('counts one day of facts as one bucket for all', async () => {
     const facts = [on('2026-11-26 08:00', enter('i_a', 'a.md', 'a')), on('2026-11-26 09:00', enter('i_b', 'b.md', 'b', made([['i_a', 'a']])))]
-    const all = statsOf(facts, 'all', NOW)
+    const all = await statsOf(facts, 'all', NOW)
     expect(all.buckets).toEqual(['11月26日'])
     expect(all.put).toMatchObject({ brought: 1, made: 1, byBucket: { brought: [1], made: [1] } })
   })
 
-  it('counts years by month and a couple of months by week, the bars adding up to the totals', () => {
+  it('counts years by month and a couple of months by week, the bars adding up to the totals', async () => {
     const years = Array.from({ length: 40 }, (_, i) => on(`${2023 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}-15 12:00`, enter(`i_${i}`, `n/${i}.md`, `${i}`), { scene: `s${i}` }))
-    const all = statsOf(years.filter((f) => f.at <= NOW), 'all', NOW)
+    const all = await statsOf(years.filter((f) => f.at <= NOW), 'all', NOW)
     expect(all.grain).toBe('month')
     expect(all.buckets[0]).toBe('2023年1月')
     expect(all.buckets.at(-1)).toBe('2026年11月')
     expect(all.put.brought).toBe(all.put.byBucket.brought.reduce((a, b) => a + b, 0))
     expect(all.sessions.total).toBe(all.put.brought)
-    const weeks = statsOf([on('2026-09-30 12:00', enter('i_a', 'a.md', 'a')), on('2026-11-25 12:00', enter('i_b', 'b.md', 'b'))], 'all', NOW)
+    const weeks = await statsOf([on('2026-09-30 12:00', enter('i_a', 'a.md', 'a')), on('2026-11-25 12:00', enter('i_b', 'b.md', 'b'))], 'all', NOW)
     expect(weeks.grain).toBe('week')
     expect(weeks.buckets[0]).toBe('9月28日那周')
     expect(weeks.put.byBucket.brought.filter((x) => x > 0)).toEqual([1, 1])
@@ -82,7 +85,7 @@ describe('the period and its buckets', () => {
 })
 
 describe('is it used', () => {
-  it('counts each thing once when it first enters, by how it came; aliases, adoptions and the owner registering what was there are not puts', () => {
+  it('counts each thing once when it first enters, by how it came; aliases, adoptions and the owner registering what was there are not puts', async () => {
     const facts = [
       on('2026-11-25 09:00', enter('i_a', 'a.md', 'a')),
       on('2026-11-25 09:01', enter('i_b', 'b.md', 'b', made([['i_a', 'a']]))),
@@ -91,13 +94,13 @@ describe('is it used', () => {
       on('2026-11-25 09:04', { kind: 'items.enter', items: [{ item: id('i_r1'), path: p('r1.md'), fingerprint: fp('r1'), size: 1 }, { item: id('i_r2'), path: p('r2.md'), fingerprint: fp('r2'), size: 1 }], origin: { kind: 'brought', source: null, by: 'owner' } }, { actor: owner, scene: 'adhoc-owner' }),
       on('2026-11-25 09:05', enter('i_o', 'o.md', 'o', { kind: 'brought', source: null, by: 'owner' }), { actor: owner, scene: 'adhoc-owner', how: 'observed' }),
     ]
-    const s = statsOf(facts, '7d', NOW)
+    const s = await statsOf(facts, '7d', NOW)
     expect(s.put).toMatchObject({ brought: 2, made: 1 })
     expect(s.owner).toMatchObject({ brought: 1, registered: 2 })
     expect(s.agents).toMatchObject([{ name: 'claude-code', brought: 1, made: 1 }])
   })
 
-  it('counts a session on the day an agent first acted in it, under that agent; a look alone, and a session begun before the period, are not counted', () => {
+  it('counts a session on the day an agent first acted in it, under that agent; a look alone, and a session begun before the period, are not counted', async () => {
     const facts = [
       on('2026-11-10 09:00', said('doing', '旧的一件事'), { scene: 'old' }),
       on('2026-11-24 09:00', said('doing', '还在做旧的'), { scene: 'old' }),
@@ -107,7 +110,7 @@ describe('is it used', () => {
       on('2026-11-25 12:00', { kind: 'checked' }, { scene: 'g1', actor: gemini }),
       on('2026-11-25 13:00', { kind: 'owner.op', command: 'grant issue', summary: '已发', destructive: false }, { scene: 'adhoc-owner', actor: owner }),
     ]
-    const s = statsOf(facts, '7d', NOW)
+    const s = await statsOf(facts, '7d', NOW)
     expect(s.sessions.total).toBe(3)
     expect(s.sessions.byAgent).toEqual([
       { agent: 'codex', total: 2, byBucket: [0, 0, 0, 0, 1, 1, 0] },
@@ -127,33 +130,33 @@ describe('is earlier work built on', () => {
     on('2026-11-23 09:30', enter('i_e', 'e.md', 'e', made([], ['主人说的'])), { scene: 's3', actor: codex }),
   ]
 
-  it('says how many things made were made from the library, from another session, from another agent', () => {
-    const s = statsOf(facts, '7d', NOW)
+  it('says how many things made were made from the library, from another session, from another agent', async () => {
+    const s = await statsOf(facts, '7d', NOW)
     expect(s.reuse).toMatchObject({ made: 4, fromLibrary: 3, otherSession: 2, otherAgent: 1 })
     expect(s.reuse.byBucket).toEqual({ otherSession: [0, 0, 1, 1, 0, 0, 0], rest: [0, 1, 0, 1, 0, 0, 0] })
   })
 
-  it('counts a source given later with say from, and never the thing itself', () => {
+  it('counts a source given later with say from, and never the thing itself', async () => {
     const later = [...facts, on('2026-11-24 09:00', { kind: 'item.basis', item: id('i_e'), fingerprint: fp('e'), basis: basis([['i_b', 'b'], ['i_e', 'e']]) }), on('2026-11-24 10:00', enter('i_f', 'f.md', 'f', made([['i_f', 'f']])), { scene: 's4', actor: gemini })]
-    expect(statsOf(later, '7d', NOW).reuse).toMatchObject({ made: 5, fromLibrary: 4, otherSession: 3, otherAgent: 2 })
+    expect((await statsOf(later, '7d', NOW)).reuse).toMatchObject({ made: 5, fromLibrary: 4, otherSession: 3, otherAgent: 2 })
   })
 
-  it('ranks the most built-upon things by how many things made in the period name them, with who built on them', () => {
-    expect(statsOf(facts, '7d', NOW).reuse.top).toEqual([
+  it('ranks the most built-upon things by how many things made in the period name them, with who built on them', async () => {
+    expect((await statsOf(facts, '7d', NOW)).reuse.top).toEqual([
       { item: 'i_a', path: 'src/a.md', uses: 2, by: ['claude-code', 'codex'] },
       { item: 'i_b', path: 'b.md', uses: 1, by: ['claude-code'] },
       { item: 'i_c', path: 'c.md', uses: 1, by: ['codex'] },
     ])
   })
 
-  it('counts only what was made in the period', () => {
-    const s = statsOf(facts, '7d', new Date('2026-11-29T10:00:00+08:00').toISOString() as Instant)
+  it('counts only what was made in the period', async () => {
+    const s = await statsOf(facts, '7d', new Date('2026-11-29T10:00:00+08:00').toISOString() as Instant)
     expect(s.reuse).toMatchObject({ made: 2, fromLibrary: 1, otherSession: 1, otherAgent: 1 })
   })
 })
 
 describe('who did what', () => {
-  it('counts each agent’s sessions, things, decisions and notes, and how its requests were decided; the owner’s own acts', () => {
+  it('counts each agent’s sessions, things, decisions and notes, and how its requests were decided; the owner’s own acts', async () => {
     const op = (command: string, extra: object = {}): FactBody => ({ kind: 'owner.op', command, summary: '做了', destructive: false, ...extra })
     const ask = (request: string, act: 'asked' | 'withdrawn' = 'asked'): FactBody => ({ kind: 'request', act, request, line: 'deploy online site' })
     const facts = [
@@ -175,7 +178,7 @@ describe('who did what', () => {
       on('2026-11-24 10:06', said('note', '主人记的一句'), { actor: owner, scene: 'adhoc-owner' }),
       on('2026-11-25 09:00', said('doing', '接入'), { scene: 'b1', actor: codex }),
     ]
-    const s = statsOf(facts, '7d', NOW)
+    const s = await statsOf(facts, '7d', NOW)
     expect(s.agents).toEqual([
       { name: 'claude-code', sessions: 1, brought: 0, made: 0, decided: 1, notes: 2, asked: 6, approved: 1, refused: 1, declined: 2, withdrawn: 1, pending: 1 },
       { name: 'codex', sessions: 1, brought: 0, made: 0, decided: 0, notes: 0, asked: 0, approved: 0, refused: 0, declined: 0, withdrawn: 0, pending: 0 },
@@ -204,8 +207,8 @@ describe('is it kept in order', () => {
     on('2026-11-25 09:02', { kind: 'item.move', item: id('i_x'), from: p('x.md'), to: p('_archive/x.md'), archive: 'in' }),
   ]
 
-  it('counts what needs looking at as recorded at the end of each day, and now', () => {
-    const s = statsOf(facts, '7d', NOW)
+  it('counts what needs looking at as recorded at the end of each day, and now', async () => {
+    const s = await statsOf(facts, '7d', NOW)
     expect(s.order.byBucket.map((o) => [o.stale, o.changed, o.unknown, o.archived])).toEqual([
       [0, 0, 0, 0],
       [0, 0, 0, 0],
@@ -220,12 +223,12 @@ describe('is it kept in order', () => {
     expect(s.order).toMatchObject({ archived: 2, takenBack: 1, purged: 0, changes: 2 })
   })
 
-  it('counts a thing whose source is gone as possibly out of date, and leaves out what was removed', () => {
+  it('counts a thing whose source is gone as possibly out of date, and leaves out what was removed', async () => {
     const gone = [...facts.slice(0, 4), on('2026-11-23 09:00', { kind: 'item.remove', item: id('i_s') })]
-    expect(statsOf(gone, '7d', NOW).order.now).toMatchObject({ stale: 1, unknown: 1 })
+    expect((await statsOf(gone, '7d', NOW)).order.now).toMatchObject({ stale: 1, unknown: 1 })
   })
 
-  it('starts from how things stood when the period began', () => {
-    expect(statsOf(facts.slice(0, 6), '7d', new Date('2026-11-30T10:00:00+08:00').toISOString() as Instant).order.start).toEqual({ stale: 1, changed: 1, unknown: 1, archived: 0 })
+  it('starts from how things stood when the period began', async () => {
+    expect((await statsOf(facts.slice(0, 6), '7d', new Date('2026-11-30T10:00:00+08:00').toISOString() as Instant)).order.start).toEqual({ stale: 1, changed: 1, unknown: 1, archived: 0 })
   })
 })

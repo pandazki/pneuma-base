@@ -1,15 +1,16 @@
 // Things nobody registered, asked about by place (tmp/run-7 architecture.md section 7). The loose files
 // of an open directory: register them all as brought in by the owner, or leave them as they are and
 // stop asking. A closed directory: register it as one thing, register every file in it (a named act
-// over all of it, which says how much first and shows its progress), or leave it alone, which adds it
-// to the library's noise so nothing mentions it again.
+// over all of it, which says how much first, shows its progress and stops cleanly when interrupted), or
+// leave it alone, which adds it to the library's noise so nothing mentions it again. Registering reads
+// no content: each thing is entered with what one listing of its directory said of it.
 import {
   defineCommand,
   formOf,
-  isDescribed,
   isFailure,
   KERNEL_ENTRIES,
   type Action,
+  type Description,
   type LibraryPath,
   type OwnerAnswer,
   type OwnerCommand,
@@ -18,84 +19,71 @@ import {
   type PluginContext,
 } from '@pneuma-base/kernel'
 import { fact, newItemId, writeFacts, type Entered } from './facts.js'
-import { rebase, sparseStanding } from './sparse.js'
-import { stateOf } from './state.js'
+import { refresh, stateOf } from './look.js'
+import { nameOf, type SeenRow } from './model.js'
+import { getAll, looseDirs, partialDirs, standingList } from './queries.js'
 
 /** How many places one look at the home page or one check asks about. */
 export const ASKS = 20
+/** How many entries of a directory one listing brings while registering. */
+const LISTING = 1000
 /** How many things one fact of a register-everything act enters, so an interrupted act keeps what it did. */
 const BATCH = 500
-/** How many things are fingerprinted at once while registering. */
-const AT_ONCE = 32
 
-const parentOf = (path: LibraryPath): Place => (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '')
 const dirName = (dir: Place) => (dir === '' ? '库的根目录' : `${dir}/`)
 
-async function eachAtMost<T, R>(list: readonly T[], limit: number, f: (t: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = []
-  let next = 0
-  const worker = async () => {
-    for (let i = next++; i < list.length; i = next++) out[i] = await f(list[i] as T)
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, list.length) }, worker))
-  return out
+/** The entries of one listing nobody registered (and, with `skipLeft`, the owner did not leave): its files, and its directories that are no thing. */
+async function strays(ctx: PluginContext, dir: Place, entries: readonly Description[], skipLeft: boolean): Promise<{ files: Description[]; dirs: Description[] }> {
+  const records = ctx.tools.storage.records
+  const own = entries.filter((e) => !e.held && !(dir === '' && KERNEL_ENTRIES.has(nameOf(e.place))))
+  const places = own.map((e) => e.place)
+  const [held, left] = await Promise.all([getAll(records, 'paths', places), skipLeft ? getAll(records, 'left', places) : new Map()])
+  const free = own.filter((e) => !held.has(e.place) && !left.has(e.place))
+  return { files: free.filter((e) => e.kind === 'file'), dirs: free.filter((e) => e.kind === 'dir') }
 }
 
-/** The loose files nobody registered and the owner did not leave, by the open directory they are in. */
-async function looseByDir(ctx: PluginContext): Promise<Map<Place, LibraryPath[]>> {
-  const { standing, state } = await sparseStanding(ctx)
-  const byDir = new Map<Place, LibraryPath[]>()
-  for (const path of standing.unowned) {
-    if (state.left.has(path)) continue
-    const dir = parentOf(path)
-    byDir.set(dir, [...(byDir.get(dir) ?? []), path])
+const entered = (e: Description): Entered => ({
+  item: newItemId(),
+  path: e.place as LibraryPath,
+  fingerprint: null,
+  size: e.size ?? 0,
+  ...(e.token === undefined ? {} : { token: e.token }),
+  ...(e.modified === undefined ? {} : { modified: e.modified }),
+})
+
+/** Enters these files as brought in by the owner, BATCH to a fact. */
+async function enter(ctx: PluginContext, files: readonly Description[]): Promise<number> {
+  for (let i = 0; i < files.length; i += BATCH) {
+    const items = files.slice(i, i + BATCH).map(entered)
+    await writeFacts(ctx, [fact(ctx, 'tool', { kind: 'items.enter', items, origin: { kind: 'brought', source: null, by: 'owner' } })])
   }
-  return byDir
+  return files.length
 }
 
-/** Enters these files as brought in by the owner, BATCH to a fact; each one's fingerprint read on the way. Answers how many. */
-async function enter(ctx: PluginContext, paths: readonly LibraryPath[], progress: (n: number) => void = () => undefined): Promise<number> {
-  let entered = 0
-  for (let i = 0; i < paths.length; i += BATCH) {
-    const batch = paths.slice(i, i + BATCH)
-    const found = await eachAtMost(batch, AT_ONCE, async (path): Promise<Entered | null> => {
-      const [d] = await ctx.tools.storage.glance([path])
-      const fingerprint = await ctx.tools.fingerprint(path)
-      return d && isDescribed(d) && d.kind === 'file' && fingerprint !== null ? { item: newItemId(), path, fingerprint, size: d.size ?? 0 } : null
-    })
-    const items = found.filter((e) => e !== null)
-    if (items.length > 0) {
-      await writeFacts(ctx, [fact(ctx, 'tool', { kind: 'items.enter', items, origin: { kind: 'brought', source: null, by: 'owner' } })])
-      await rebase(ctx, items.map((e) => e.path))
-    }
-    entered += items.length
-    progress(entered)
+/** Each listing of one level of `dir`, a page at a time. */
+async function* listings(ctx: PluginContext, dir: Place): AsyncGenerator<Description[]> {
+  let after: string | undefined
+  for (;;) {
+    const page = await ctx.tools.storage.overview(dir, { limit: LISTING, ...(after === undefined ? {} : { after }) })
+    if (isFailure(page)) return
+    yield page.entries
+    if (page.more === null) return
+    after = page.more.after
   }
-  return entered
 }
 
-/**
- * Every file below `dir` nobody registered, one level of one directory at a time, a page at a time:
- * storage leaves noise out, the kernel's own entries at the root are not the library's things, and
- * nothing below a registered directory-thing is a file of its own.
- */
-async function filesBelow(ctx: PluginContext, dir: Place, registered: (path: LibraryPath) => boolean): Promise<LibraryPath[]> {
-  const out: LibraryPath[] = []
-  const queue: Place[] = [dir]
-  for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
-    let after: string | undefined
-    for (;;) {
-      const page = await ctx.tools.storage.overview(next, { limit: 1000, ...(after === undefined ? {} : { after }) })
-      if (isFailure(page)) break
-      for (const e of page.entries) {
-        if (registered(e.place as LibraryPath) || (next === '' && KERNEL_ENTRIES.has(e.place))) continue
-        if (e.kind === 'file') out.push(e.place as LibraryPath)
-        else if (e.kind === 'dir') queue.push(e.place)
-      }
-      if (page.more === null) break
-      after = page.more.after
-    }
-  }
+/** Does `act` with the loose files of one level of `dir`, a listing at a time; answers how many. */
+async function eachLevel(ctx: PluginContext, dir: Place, act: (files: Description[]) => Promise<number>): Promise<number> {
+  let n = 0
+  for await (const entries of listings(ctx, dir)) n += await act((await strays(ctx, dir, entries, true)).files)
+  return n
+}
+
+/** The open directories with loose files nobody registered or left, as the last looks saw them. */
+async function looseDirsNow(ctx: PluginContext): Promise<Place[]> {
+  await refresh(ctx)
+  const out: Place[] = []
+  for await (const page of looseDirs(ctx.tools.storage.records)) out.push(...page.map((r) => r.key))
   return out
 }
 
@@ -108,6 +96,54 @@ async function placeOf(ctx: PluginContext, input: string | null): Promise<Place 
 
 const done = (text: string, data: unknown): OwnerAnswer => ({ outcome: 'done', text, data })
 const NOTHING = '没有还没登记的散文件。'
+
+/**
+ * The named whole act: every file below `dir` nobody registered, one listing at a time, each listing
+ * entered as one fact before the next is read. Storage leaves noise out; the kernel's own entries at
+ * the root are not the library's things; nothing below a registered directory-thing is a file of its
+ * own. Says how far it is after each listing, and stops after the one under way when interrupted.
+ */
+async function registerInside(ctx: PluginContext, dir: Place, input: string): Promise<OwnerAnswer> {
+  const scope = await ctx.tools.storage.probe(dir, 5000)
+  if (isFailure(scope)) return { outcome: 'refused', reason: scope.reason, text: `没能看这个目录（${scope.reason}）：${input}` }
+  const total = scope.exceeded ? `至少 ${scope.files}` : `${scope.files}`
+  const say = (text: string) => void process.stderr.write(`${text}\n`)
+  say(`要登记 ${dirName(dir)}里的全部文件：${total} 个，不含噪音。可以随时打断（Ctrl-C），登记过的不会重来。`)
+  await stateOf(ctx)
+  let stop = false
+  const interrupt = () => {
+    stop = true
+  }
+  process.on('SIGINT', interrupt)
+  let n = 0
+  // What was listed and not entered yet, across directories: entered BATCH at a time.
+  let pending: Description[] = []
+  const flush = async (all: boolean) => {
+    while (pending.length >= BATCH || (all && pending.length > 0)) {
+      n += await enter(ctx, pending.slice(0, BATCH))
+      pending = pending.slice(BATCH)
+      say(`已登记 ${n} / ${total}`)
+      if (stop) return
+    }
+  }
+  try {
+    const queue: Place[] = [dir]
+    walk: for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+      for await (const entries of listings(ctx, next)) {
+        if (stop) break walk
+        const found = await strays(ctx, next, entries, false)
+        queue.push(...found.dirs.map((d) => d.place))
+        pending.push(...found.files)
+        await flush(false)
+      }
+    }
+    await flush(true)
+  } finally {
+    process.off('SIGINT', interrupt)
+  }
+  if (stop) return done(`停下了：已把 ${dirName(dir)}里的 ${n} 个文件记为主人带进来的，共 ${total} 个。登记过的都留着，再运行同一条命令接着登记剩下的。`, { registered: n, of: scope.files, stopped: true })
+  return done(n === 0 ? `${dirName(dir)}里没有还没登记的文件。` : `已把 ${dirName(dir)}里的 ${n} 个文件记为主人带进来的。`, { registered: n })
+}
 
 export const REGISTER = defineCommand({
   name: 'ledger register',
@@ -123,18 +159,11 @@ export const REGISTER = defineCommand({
     if (dir === null) return { outcome: 'refused', reason: 'not-in-library', text: `这不是库里的目录：${input}` }
     if (inside) {
       if (input === null) return { outcome: 'refused', reason: 'usage', text: '--inside 要写是哪个目录，整个库写 .：ledger register <目录> --inside' }
-      const scope = await ctx.tools.storage.probe(dir, 5000)
-      if (isFailure(scope)) return { outcome: 'refused', reason: scope.reason, text: `没能看这个目录（${scope.reason}）：${input}` }
-      const say = (text: string) => void process.stderr.write(`${text}\n`)
-      say(`要登记 ${dirName(dir)}里的全部文件：${scope.exceeded ? `至少 ${scope.files} 个` : `${scope.files} 个`}，不含噪音。可以随时打断，登记过的不会重来。`)
-      const { state } = await stateOf(ctx)
-      const files = await filesBelow(ctx, dir, (path) => state.paths.has(path))
-      const n = await enter(ctx, files, (k) => say(`已登记 ${k} / ${files.length}`))
-      return done(n === 0 ? `${dirName(dir)}里没有还没登记的文件。` : `已把 ${dirName(dir)}里的 ${n} 个文件记为主人带进来的。`, { registered: n })
+      return registerInside(ctx, dir, input)
     }
-    const byDir = await looseByDir(ctx)
-    const pile = input === null ? [...byDir.values()].flat() : (byDir.get(dir) ?? [])
-    const n = await enter(ctx, pile)
+    await stateOf(ctx)
+    let n = 0
+    for (const at of input === null ? await looseDirsNow(ctx) : [dir]) n += await eachLevel(ctx, at, (files) => enter(ctx, files))
     return done(n === 0 ? NOTHING : `已把 ${n} 样东西记为主人带进来的。`, { registered: n })
   },
 })
@@ -148,11 +177,15 @@ export const LEAVE = defineCommand({
   async run({ dir: input }, ctx) {
     const dir = await placeOf(ctx, input)
     if (dir === null) return { outcome: 'refused', reason: 'not-in-library', text: `这不是库里的目录：${input}` }
-    const byDir = await looseByDir(ctx)
-    const pile = input === null ? [...byDir.values()].flat() : (byDir.get(dir) ?? [])
-    if (pile.length === 0) return done(NOTHING, { left: 0 })
-    await writeFacts(ctx, [fact(ctx, 'tool', { kind: 'unowned.left', paths: pile })])
-    return done(`${pile.length} 样还没登记的东西照原样留着，不再为它们问主人；状况页仍列着它们，要登记时在那里补上来历。`, { left: pile.length })
+    await stateOf(ctx)
+    const leave = async (files: Description[]) => {
+      if (files.length > 0) await writeFacts(ctx, [fact(ctx, 'tool', { kind: 'unowned.left', paths: files.map((f) => f.place as LibraryPath) })])
+      return files.length
+    }
+    let n = 0
+    for (const at of input === null ? await looseDirsNow(ctx) : [dir]) n += await eachLevel(ctx, at, leave)
+    if (n === 0) return done(NOTHING, { left: 0 })
+    return done(`${n} 样还没登记的东西照原样留着，不再为它们问主人；状况页仍列着它们，要登记时在那里补上来历。`, { left: n })
   },
 })
 
@@ -170,28 +203,24 @@ export function closedActions(path: LibraryPath): Action[] {
 /**
  * One ask for each place with things nobody registered, at most ASKS of them: the loose files of an
  * open directory, while the owner has not left them; a closed directory. Past that many, one more says
- * how many places are left and where they are all listed.
+ * how many places are left and where they are all listed. Each place is asked about until it is
+ * answered: registered, left, or made noise.
  */
 export async function unownedAsks(ctx: PluginContext): Promise<PluginAsk[]> {
-  const { standing, state } = await sparseStanding(ctx)
-  const loose = new Map<Place, LibraryPath[]>()
-  for (const path of standing.unowned) if (!state.left.has(path)) loose.set(parentOf(path), [...(loose.get(parentOf(path)) ?? []), path])
-  const partial = new Set((standing.more ?? []).map((m) => m.dir))
-  const asks: PluginAsk[] = []
-  for (const [dir, paths] of loose) {
-    const n = partial.has(dir as LibraryPath | '') ? `至少 ${paths.length}` : `${paths.length}`
-    asks.push({
-      key: `ledger:unregistered:${dir}`,
-      text: `${dirName(dir)}有 ${n} 个文件还没登记。都记为你带进来的吗？`,
-      about: dir === '' ? null : (dir as LibraryPath),
-      actions: [ownerAction('都记为我带进来的', REGISTER, { dir: dir === '' ? '.' : dir, inside: false }), ownerAction('不登记，不再问', LEAVE, { dir: dir === '' ? '.' : dir })],
-      suggested: 0,
-    })
-  }
-  for (const path of standing.closed ?? []) {
-    asks.push({ key: `ledger:closed:${path}`, text: `${path}/ 没登记。`, about: path, actions: closedActions(path) })
-  }
-  if (asks.length <= ASKS) return asks
-  const rest = asks.length - (ASKS - 1)
-  return [...asks.slice(0, ASKS - 1), { key: 'ledger:unregistered:more', text: `还有 ${rest} 个地方有没登记的东西，都在状况页上：pneuma-base show ledger.standing --kind unowned`, about: null, actions: [] }]
+  await refresh(ctx)
+  const records = ctx.tools.storage.records
+  const page = await records.where<SeenRow>('seen', 'loose', 'y', { limit: ASKS })
+  const partial = new Set((await partialDirs(records)).map((m) => m.dir))
+  const asks: PluginAsk[] = page.rows.map(({ key: dir, value }) => ({
+    key: `ledger:unregistered:${dir}`,
+    text: `${dirName(dir)}有 ${partial.has(dir) ? `至少 ${value.loose.length}` : value.loose.length} 个文件还没登记。都记为你带进来的吗？`,
+    about: dir === '' ? null : (dir as LibraryPath),
+    actions: [ownerAction('都记为我带进来的', REGISTER, { dir: dir === '' ? '.' : dir, inside: false }), ownerAction('不登记，不再问', LEAVE, { dir: dir === '' ? '.' : dir })],
+    suggested: 0,
+  }))
+  const closed = await standingList(records, 'closed', false, ASKS)
+  for (const m of closed.rows) asks.push({ key: `ledger:closed:${m.path}`, text: `${m.path}/ 没登记。`, about: m.path, actions: closedActions(m.path) })
+  const places = (page.more === null ? page.rows.length : await records.count('seen', 'loose', 'y')) + closed.count
+  if (places <= ASKS) return asks
+  return [...asks.slice(0, ASKS - 1), { key: 'ledger:unregistered:more', text: `还有 ${places - (ASKS - 1)} 个地方有没登记的东西，都在状况页上：pneuma-base show ledger.standing --kind unowned`, about: null, actions: [] }]
 }

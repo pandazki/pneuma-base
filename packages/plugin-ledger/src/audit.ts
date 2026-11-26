@@ -1,15 +1,17 @@
 // What the owner takes out of the ledger: the statistics as text (`ledger stats`, which an agent may
 // run too), and every row of the activity as a file outside the library (`ledger export`).
-import { mkdir, open } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
-import { defineCommand, type Grant, type OwnerAnswer } from '@pneuma-base/kernel'
-import { readFacts, requestOf, type Fact } from './facts.js'
-import { told, whoseOf } from './feeds.js'
-import { fold, type Ledger } from './fold.js'
-import { DEFAULT_PERIOD, isPeriod, PERIODS, statsOf } from './stats.js'
+import { isAbsolute, relative, resolve } from 'node:path'
+import { defineCommand, type Grant, type OwnerAnswer, type PluginContext } from '@pneuma-base/kernel'
+import { createOutside } from './export-file.js'
+import { requestOf, type Fact } from './facts.js'
+import { whoseOf } from './feeds.js'
+import { stateOf } from './look.js'
+import { lookupOf } from './queries.js'
+import { pagesOf } from './rows.js'
+import { DEFAULT_PERIOD, isPeriod, PERIODS, statsFrom } from './stats.js'
 import { statsText } from './stats-page.js'
-import { factLine, who } from './views.js'
+import { factLine, who, type Lookup } from './views.js'
 
 const done = (text: string, data?: unknown): OwnerAnswer => ({ outcome: 'done', text, ...(data === undefined ? {} : { data }) })
 const refused = (reason: string, text: string): OwnerAnswer => ({ outcome: 'refused', reason, text })
@@ -22,27 +24,31 @@ export const LEDGER_STATS = defineCommand({
   ownerOnly: false,
   readOnly: true,
   async run({ period }, ctx) {
-    const stats = statsOf(await readFacts(ctx), isPeriod(period) ? period : DEFAULT_PERIOD, ctx.now)
+    await stateOf(ctx)
+    const stats = await statsFrom(ctx.tools.storage.records, isPeriod(period) ? period : DEFAULT_PERIOD, ctx.now)
     return done(statsText(stats), stats)
   },
 })
 
 // ---- the export ----
 
+/** How many rows of the log one page of the export reads. */
+const EXPORT_PAGE = 1000
+
 /** The columns of an exported row, in order: names that stay as they are. */
 export const EXPORT_COLUMNS = ['id', 'at', 'actor', 'actor_kind', 'grant', 'session', 'kind', 'path', 'text', 'whose', 'request'] as const
 export type ExportRow = Record<(typeof EXPORT_COLUMNS)[number], string>
 
 /** The library path a fact is about: the one it records, where it records one; else where that thing is now. */
-function pathOf(ledger: Ledger, f: Fact): string {
+function pathOf(lookup: Lookup, f: Fact): string {
   if (f.kind === 'item.enter') return f.path
   if (f.kind === 'item.move') return f.to
   const id = 'item' in f ? f.item : f.kind === 'said' ? f.about : null
-  return id === null ? '' : (ledger.items.get(id)?.path ?? '')
+  return id === null ? '' : (lookup.items.get(id)?.path ?? '')
 }
 
 /** One fact as a row: what the activity page shows of it, in columns. */
-function rowOf(ledger: Ledger, f: Fact, grants: readonly Grant[]): ExportRow {
+function rowOf(lookup: Lookup, f: Fact, grants: readonly Grant[]): ExportRow {
   const grant = f.actor.grant === null ? '' : (grants.find((g) => g.id === f.actor.grant)?.name ?? f.actor.grant)
   return {
     id: f.id,
@@ -52,32 +58,43 @@ function rowOf(ledger: Ledger, f: Fact, grants: readonly Grant[]): ExportRow {
     grant,
     session: f.scene,
     kind: f.kind,
-    path: pathOf(ledger, f),
-    text: factLine(ledger, f),
+    path: pathOf(lookup, f),
+    text: factLine(lookup, f),
     whose: whoseOf(f) ?? '',
     request: requestOf(f) ?? '',
   }
 }
 
-/** The activity's rows, newest first, from `since` (inclusive) to `until` (exclusive), in milliseconds; null leaves that side open. */
-export function exportRows(ledger: Ledger, grants: readonly Grant[], since: number | null, until: number | null): ExportRow[] {
-  return told(ledger.facts)
-    .reverse()
-    .filter((f) => {
+/**
+ * The activity's rows, newest first as the activity shows them, from `since` (inclusive) to `until`
+ * (exclusive), in milliseconds (null leaves that side open): read from the log a page at a time, each
+ * page's paths as they are now, read from the rows for that page alone.
+ */
+export async function* exportRows(ctx: PluginContext, grants: readonly Grant[], since: number | null, until: number | null): AsyncGenerator<ExportRow[]> {
+  const records = ctx.tools.storage.records
+  for await (const page of pagesOf<Fact>(records, 'log', '', EXPORT_PAGE)) {
+    const facts = page.map((r) => r.value)
+    const kept = facts.filter((f) => {
       const t = Date.parse(f.at)
       return (since === null || t >= since) && (until === null || t < until)
     })
-    .map((f) => rowOf(ledger, f, grants))
+    const lookup = await lookupOf(records, kept)
+    if (kept.length > 0) yield kept.map((f) => rowOf(lookup, f, grants))
+    // Newest first: past the start of the span there is nothing more to give.
+    if (since !== null && facts.some((f) => Date.parse(f.at) < since)) return
+  }
 }
 
 /** A CSV field: quoted when it holds a comma, a quote or a line break, a quote doubled. */
 const field = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replaceAll('"', '""')}"` : v)
 
-/** The rows as a file: JSON Lines, or CSV with a header, CRLF line ends and a byte-order mark so spreadsheets read it as UTF-8. */
+/** The head of the file: CSV's byte-order mark, so spreadsheets read it as UTF-8, and its header; nothing for JSON Lines. */
+export const exportHead = (format: 'jsonl' | 'csv') => (format === 'jsonl' ? '' : `\uFEFF${EXPORT_COLUMNS.join(',')}\r\n`)
+
+/** Rows as lines of the file: JSON Lines, or CSV with CRLF line ends. */
 export function exportText(rows: readonly ExportRow[], format: 'jsonl' | 'csv'): string {
   if (format === 'jsonl') return rows.map((r) => `${JSON.stringify(r)}\n`).join('')
-  const lines = [EXPORT_COLUMNS.join(','), ...rows.map((r) => EXPORT_COLUMNS.map((c) => field(r[c])).join(','))]
-  return `\uFEFF${lines.map((l) => `${l}\r\n`).join('')}`
+  return rows.map((r) => `${EXPORT_COLUMNS.map((c) => field(r[c])).join(',')}\r\n`).join('')
 }
 
 /** A moment as written: a day (`2026-11-20`) is that day in local time, from its start or, for an end, through its end; else an ISO time. */
@@ -116,20 +133,19 @@ export const LEDGER_EXPORT = defineCommand({
     const inside = relative(ctx.library.root, path)
     if (!inside.startsWith('..') && !isAbsolute(inside)) return refused('inside-library', `导出的文件要放在库外，${to} 在库里。换一个库外的路径，比如 ~/Desktop/pneuma-base-活动.csv。`)
     const kind = format === 'csv' || format === 'jsonl' ? format : path.toLowerCase().endsWith('.csv') ? 'csv' : 'jsonl'
-    const rows = exportRows(fold(await readFacts(ctx)), ctx.library.config.grants, from, till)
-    await mkdir(dirname(path), { recursive: true })
-    let handle
+    await stateOf(ctx)
+    const file = await createOutside(path)
+    if (file === null) return refused('would-overwrite', `${path} 已经有文件了，没有动它。换一个文件名。`)
+    let n = 0
     try {
-      handle = await open(path, 'wx')
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') return refused('would-overwrite', `${path} 已经有文件了，没有动它。换一个文件名。`)
-      throw error
-    }
-    try {
-      await handle.writeFile(exportText(rows, kind))
+      await file.write(exportHead(kind))
+      for await (const rows of exportRows(ctx, ctx.library.config.grants, from, till)) {
+        await file.write(exportText(rows, kind))
+        n += rows.length
+      }
     } finally {
-      await handle.close()
+      await file.close()
     }
-    return done(`已把 ${rows.length} 条记录导出到 ${path}（${kind === 'csv' ? 'CSV' : 'JSON Lines'}）。`, { to: path, format: kind, rows: rows.length, columns: EXPORT_COLUMNS })
+    return done(`已把 ${n} 条记录导出到 ${path}（${kind === 'csv' ? 'CSV' : 'JSON Lines'}）。`, { to: path, format: kind, rows: n, columns: EXPORT_COLUMNS })
   },
 })

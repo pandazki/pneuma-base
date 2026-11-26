@@ -1,7 +1,7 @@
 // Times the ledger on a large library: about 20,000 things and 100,000 facts by default, written as
 // two years of use by three agents and the owner (the browser tests' generator). Reports the first
-// and a later read of the facts in one process, the fold, the statistics of each period with their
-// page, and `ledger stats` run as a command. Run after `pnpm build`:
+// command, which folds every fact into the ledger's rows once, then the statistics of each period
+// and their page as commands, which read only the rows of the period. Run after `pnpm build`:
 //   node scripts/bench-ledger.mjs [days] [sessions per day] [notes per session] [--keep]
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -9,10 +9,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { fileURLToPath } from 'node:url'
-import { readFacts } from '../packages/plugin-ledger/dist/facts.js'
-import { fold } from '../packages/plugin-ledger/dist/fold.js'
-import { statsAnswer } from '../packages/plugin-ledger/dist/stats-page.js'
-import { statsOf } from '../packages/plugin-ledger/dist/stats.js'
 import { writeHistory } from '../packages/viewer/e2e/month.ts'
 
 const args = process.argv.slice(2).filter((a) => a !== '--keep')
@@ -35,16 +31,11 @@ for (const [grant, agent] of [['claude', 'claude-code'], ['codex', 'codex'], ['g
 const made = writeHistory(lib, { days, sessions, talk, seed: 7 })
 console.log(`library: ${made.things} things, ${made.facts} facts, in ${lib}`)
 
-const dir = join(lib, '.pneuma-base/ledger')
-let t = performance.now()
-const facts = await readFacts(dir)
-console.log(`read the facts, first time in this process: ${ms(performance.now() - t)}`)
-t = performance.now()
-await readFacts(dir)
-console.log(`read the facts again (files parsed once are kept): ${ms(performance.now() - t)}`)
-console.log(`fold: ${ms(median([0, 1, 2].map(() => time(() => fold(facts)))))}`)
-for (const period of ['7d', '30d', 'all']) console.log(`statistics and page, ${period}: ${ms(median([0, 1, 2, 3, 4].map(() => time(() => statsAnswer(statsOf(facts, period, new Date()))))))}`)
-for (const period of ['30d', 'all']) console.log(`ledger stats --period ${period} as a command: ${ms(time(() => cli('--library', lib, 'ledger', 'stats', '--period', period)))}`)
+console.log(`first command, folding every fact into the rows: ${ms(time(() => cli('--library', lib, 'ledger', 'stats', '--period', '7d')))}`)
+for (const period of ['7d', '30d', 'all']) {
+  console.log(`ledger stats --period ${period}: ${ms(median([0, 1, 2].map(() => time(() => cli('--library', lib, 'ledger', 'stats', '--period', period)))))}`)
+  console.log(`show ledger.stats --period ${period}: ${ms(median([0, 1, 2].map(() => time(() => cli('--library', lib, 'show', 'ledger.stats', '--period', period)))))}`)
+}
 
 if (process.argv.includes('--keep')) console.log(`kept: ${home}`)
 else rmSync(home, { recursive: true, force: true })

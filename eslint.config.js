@@ -138,6 +138,8 @@ const OFF_STORAGE = {
   },
   ledger: {
     'conversation.ts': "agents' conversation transcripts, outside the library",
+    'cognition.ts': "the package's own texts",
+    'export-file.ts': 'the audit export the owner names: one file outside the library, written page by page',
   },
 }
 const DOOR = 'On storage: read and write the folder and the record area only through the storage door (the kernel\'s storage.ts; a plugin\'s tools.storage). tmp/run-7 architecture.md section 7; eslint.config.js lists the files that may use the file system and why.'

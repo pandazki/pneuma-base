@@ -3,12 +3,12 @@
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { SceneRecord } from './fold.js'
+import type { SceneRow } from './model.js'
 
 /** `machine`: where the pointer was recorded. `status`: the file is on this machine now, was and is gone, or is on another machine. */
 export type Conversation = { path: string; resume: string | null; machine: string; status: 'here' | 'gone' | 'elsewhere' }
 
-export function conversationOf(scene: SceneRecord, machine: string): Conversation | null {
+export function conversationOf(scene: Pick<SceneRow, 'transcript'>, machine: string): Conversation | null {
   const pointer = scene.transcript
   if (pointer === null) return null
   const local = pointer.path.startsWith('~/') ? join(homedir(), pointer.path.slice(2)) : pointer.path
