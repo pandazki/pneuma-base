@@ -1,5 +1,6 @@
 {
   "name": "pneuma-base-workspace",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.21.0",
