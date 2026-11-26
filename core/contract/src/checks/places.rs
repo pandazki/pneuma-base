@@ -393,3 +393,218 @@ pub fn describe_lists_no_whole_library_operation(env: &Env) -> Outcome {
     }
     Ok(())
 }
+
+/// The places of a look's answer that differ, by kind of difference.
+fn differences(answer: &Value) -> (BTreeSet<String>, BTreeSet<String>, BTreeSet<String>) {
+    let changed = answer["changed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["place"].as_str().unwrap().to_owned())
+        .collect();
+    let gone = strings_of(&answer["gone"]).into_iter().collect();
+    let failed = answer["failed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| {
+            format!(
+                "{}:{}",
+                f["place"].as_str().unwrap(),
+                f["reason"].as_str().unwrap()
+            )
+        })
+        .collect();
+    (changed, gone, failed)
+}
+
+/// A row of a table whose field `token` holds what is expected at its key.
+fn expecting(key: &str, token: Option<&str>) -> Value {
+    match token {
+        Some(token) => {
+            json!({ "key": key, "fields": { "token": token, "other": "x" }, "value": 1 })
+        }
+        None => json!({ "key": key, "fields": { "other": "x" }, "value": 1 }),
+    }
+}
+
+/// `look` takes what it expects from a record place's table: a token, `empty`, or nothing when the
+/// row has no such field; it answers only the places that differ, and how many rows it compared.
+pub fn look_takes_expectations_from_a_table(env: &Env) -> Outcome {
+    let lib = env.lib();
+    for name in ["same", "grows", "goes", "untold", "untold-gone"] {
+        lib.write(&format!("d/{name}"), "x");
+    }
+    let token = |name: &str| lib.token(&format!("d/{name}"));
+    let rows = vec![
+        expecting("d/same", Some(&token("same"))),
+        expecting("d/grows", Some(&token("grows"))),
+        expecting("d/goes", Some(&token("goes"))),
+        expecting("d/still-empty", Some("empty")),
+        expecting("d/filled", Some("empty")),
+        expecting("d/untold", None),
+        expecting("d/untold-gone", None),
+        expecting("/not-a-place", Some("empty")),
+    ];
+    assert_done(&lib.run(
+        "rows.put",
+        json!({ "place": "looker", "table": "expected", "rows": rows }),
+    ));
+    lib.write("d/grows", "xxxxxxxx");
+    fs::remove_file(lib.at("d/goes")).unwrap();
+    fs::remove_file(lib.at("d/untold-gone")).unwrap();
+    lib.write("d/filled", "x");
+    let answer = lib.run(
+        "look",
+        json!({ "rows": { "place": "looker", "table": "expected", "field": "token" } }),
+    );
+    assert_done(&answer);
+    let (changed, gone, failed) = differences(&answer);
+    let set =
+        |names: &[&str]| -> BTreeSet<String> { names.iter().map(|n| n.to_string()).collect() };
+    assert_eq!(
+        changed,
+        set(&["d/filled", "d/grows", "d/untold"]),
+        "{answer}"
+    );
+    assert_eq!(gone, set(&["d/goes", "d/untold-gone"]), "{answer}");
+    assert_eq!(failed, set(&["/not-a-place:bad_request"]), "{answer}");
+    assert_eq!(answer["same"], 2, "{answer}");
+    assert_eq!(answer["compared"], 8, "{answer}");
+    assert_eq!(answer["more"], Value::Null, "{answer}");
+    let grown = answer["changed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["place"] == "d/grows")
+        .unwrap();
+    assert_eq!(grown["entry"]["size"], 8, "a new description: {answer}");
+    let none = lib.run(
+        "look",
+        json!({ "rows": { "place": "looker", "table": "nothing-here", "field": "token" } }),
+    );
+    assert_eq!(none["compared"], 0, "{none}");
+    assert_eq!(none["more"], Value::Null, "{none}");
+    Ok(())
+}
+
+/// The rows of a table are compared a page at a time in the byte order of their keys, from where
+/// the previous page's `more.after` says; the pages together compare every row once.
+pub fn look_from_a_table_pages_by_key(env: &Env) -> Outcome {
+    let lib = env.lib();
+    let names = ["b", "a", "é", "B", "a-b"];
+    for name in names {
+        lib.write(&format!("p/{name}"), "x");
+    }
+    let rows: Vec<Value> = names
+        .iter()
+        .map(|n| expecting(&format!("p/{n}"), Some(&lib.token(&format!("p/{n}")))))
+        .collect();
+    assert_done(&lib.run(
+        "rows.put",
+        json!({ "place": "looker", "table": "paged", "rows": rows }),
+    ));
+    for name in names {
+        lib.write(&format!("p/{name}"), "changed");
+    }
+    let mut keys = Vec::new();
+    let mut after = Value::Null;
+    let mut pages = 0;
+    loop {
+        let mut request = json!({ "rows": { "place": "looker", "table": "paged", "field": "token" }, "limit": 2 });
+        if !after.is_null() {
+            request["after"] = after.clone();
+        }
+        let answer = lib.run("look", request);
+        assert_done(&answer);
+        let compared = answer["compared"].as_u64().unwrap();
+        assert!(compared <= 2, "at most limit rows: {answer}");
+        let (changed, _, _) = differences(&answer);
+        assert_eq!(changed.len() as u64, compared, "{answer}");
+        let mut page: Vec<String> = changed.into_iter().collect();
+        page.sort_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
+        keys.extend(page);
+        pages += 1;
+        after = answer["more"]["after"].clone();
+        if answer["more"].is_null() {
+            break;
+        }
+        assert!(after.is_string(), "{answer}");
+        assert!(pages < 10, "the pages never end: {answer}");
+    }
+    let mut sorted: Vec<String> = names.iter().map(|n| format!("p/{n}")).collect();
+    sorted.sort_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
+    assert_eq!(keys, sorted, "every row once, by the bytes of its key");
+    assert_eq!(pages, 3);
+    Ok(())
+}
+
+/// Comparing a table's rows leaves the rows as they were, whatever it found.
+pub fn look_from_a_table_changes_no_row(env: &Env) -> Outcome {
+    let lib = env.lib();
+    lib.write("f", "x");
+    let token = lib.token("f");
+    let row = expecting("f", Some(&token));
+    assert_done(&lib.run(
+        "rows.put",
+        json!({ "place": "looker", "table": "kept", "rows": [row] }),
+    ));
+    lib.write("f", "longer now");
+    let answer = lib.run(
+        "look",
+        json!({ "rows": { "place": "looker", "table": "kept", "field": "token" } }),
+    );
+    assert_eq!(answer["changed"][0]["place"], "f", "{answer}");
+    let after = lib.run(
+        "rows.get",
+        json!({ "place": "looker", "table": "kept", "keys": ["f"] }),
+    );
+    assert_eq!(
+        after["rows"][0]["fields"]["token"],
+        token.as_str(),
+        "{after}"
+    );
+    Ok(())
+}
+
+/// `empty` as a look's expectation holds while nothing is at the place.
+pub fn an_empty_expectation_holds_while_nothing_is_there(env: &Env) -> Outcome {
+    let lib = env.lib();
+    let ask = || {
+        lib.run(
+            "look",
+            json!({ "places": [{ "place": "later", "token": "empty" }] }),
+        )
+    };
+    let before = ask();
+    assert_eq!(before["same"], 1, "{before}");
+    assert_eq!(before["gone"], json!([]), "{before}");
+    lib.write("later", "here");
+    let after = ask();
+    assert_eq!(after["same"], 0, "{after}");
+    assert_eq!(after["changed"][0]["place"], "later", "{after}");
+    assert_eq!(after["changed"][0]["entry"]["kind"], "file", "{after}");
+    Ok(())
+}
+
+/// A directory's token stands for its own level: an entry added, removed or renamed there changes
+/// it; a file of that level written again, or anything deeper, does not.
+pub fn a_directory_token_stands_for_its_own_level(env: &Env) -> Outcome {
+    let lib = env.lib();
+    lib.write("d/a.txt", "a");
+    lib.write("d/sub/deep.txt", "deep");
+    let token = lib.token("d");
+    lib.write("d/a.txt", "a, written again and longer");
+    lib.write("d/sub/deep.txt", "deeper");
+    lib.write("d/sub/new.txt", "new, one level down");
+    assert!(lib.same("d", &token), "only the level counts");
+    lib.write("d/b.txt", "b");
+    assert!(!lib.same("d", &token), "an entry was added");
+    let token = lib.token("d");
+    fs::rename(lib.at("d/b.txt"), lib.at("d/c.txt")).unwrap();
+    assert!(!lib.same("d", &token), "an entry was renamed");
+    let token = lib.token("d");
+    fs::remove_file(lib.at("d/c.txt")).unwrap();
+    assert!(!lib.same("d", &token), "an entry was removed");
+    Ok(())
+}

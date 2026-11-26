@@ -133,6 +133,15 @@ fn synthetic_cases<'a>(
         .iter()
         .map(|e| json!({ "place": e["place"], "token": e["token"] }))
         .collect();
+    let expected: Vec<Value> = look_places
+        .iter()
+        .map(|p| json!({ "key": p["place"], "fields": { "token": p["token"] }, "value": 1 }))
+        .collect();
+    env.one_shot(
+        lib,
+        "rows.put",
+        &json!({ "place": "bench", "table": "expected", "rows": expected }),
+    )?;
     let read_at = Instant::now();
     let cursor = facts_end_cursor(env, lib)?;
     let (quiet, busy) = change_cursors(env, lib)?;
@@ -219,6 +228,20 @@ fn synthetic_cases<'a>(
             op: "look",
             prepare: fixed(json!({ "places": look_places })),
             check: |a| a["same"] == PLACE_DIRS * PLACES_PER_DIR,
+        },
+        Case {
+            name: "look, 20,000 places from a table, all same",
+            target_ms: Some(50.0),
+            op: "look",
+            prepare: fixed(json!({
+                "rows": { "place": "bench", "table": "expected", "field": "token" },
+                "limit": 100_000
+            })),
+            check: |a| {
+                a["compared"] == PLACE_DIRS * PLACES_PER_DIR
+                    && a["same"] == PLACE_DIRS * PLACES_PER_DIR
+                    && a["changed"].as_array().is_some_and(Vec::is_empty)
+            },
         },
         Case {
             name: "facts.since, nothing new, 100,000 facts",

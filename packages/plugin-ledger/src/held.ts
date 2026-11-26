@@ -3,7 +3,6 @@
 // from the content, and back from the own place to a new path. ledger-design.md section 5.
 import { posix, relative, sep } from 'node:path'
 import {
-  BUNDLE_MARKER,
   defineCommand,
   isDescribed,
   isFailure,
@@ -54,13 +53,10 @@ export async function keep(ctx: PluginContext, item: ItemId, path: LibraryPath, 
   return fromRoot(ctx, place)
 }
 
-/** The marker the kernel writes in a directory-thing (things.ts), whose content is not the thing's. */
-const MARKER_TEXT = `${JSON.stringify({ format: 1 })}\n`
-
 /** Marks a directory written back from a held copy as one thing; answers what it is then. */
 async function marked(ctx: PluginContext, dir: LibraryPath): Promise<Description> {
   const store = ctx.tools.storage
-  await store.write(`${dir}/${BUNDLE_MARKER}`, { data: MARKER_TEXT }, 'empty')
+  await ctx.tools.markBundle(dir)
   const [now] = await store.glance([dir])
   return now && isDescribed(now) ? now : { place: dir, kind: 'dir' }
 }

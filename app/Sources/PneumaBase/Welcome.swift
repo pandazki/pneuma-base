@@ -1,12 +1,30 @@
 import AppKit
 
-/// The first launch, with no library yet: one small window, two sentences and one button. Choosing a
-/// folder makes it a library if it is not one, and the main window opens on its home page, where
-/// 「开始」 takes the owner on.
+/// A place the library can be kept, as `storage list` offers it: a provider this machine has, or an
+/// official one not installed yet (`install` is the repository it comes from).
+struct StorageChoice: Equatable {
+  let name: String
+  let summary: String
+  let forms: [String]
+  let install: String?
+  var answersFolders: Bool { forms.contains("path") }
+  var title: String { "\(summary)（\(name)）\(install == nil ? "" : " · 没装")" }
+}
+
+/// The first launch, with no library yet: one small window that offers where to keep the library:
+/// the providers this machine has, the official ones not installed, and 安装别的存储… (a repository).
+/// With one provider it is simply choosing a folder. Choosing one makes a library there, and the main
+/// window opens on its home page, where 「开始」 takes the owner on.
 @MainActor
 final class WelcomeWindow: NSObject, NSWindowDelegate {
   private var window: NSWindow?
-  var onChoose: (() -> Void)?
+  private let picker = NSPopUpButton()
+  private let choose = NSButton()
+  private let other = NSButton()
+  private let status = NSTextField(wrappingLabelWithString: "")
+  private(set) var choices: [StorageChoice] = []
+  var onChoose: ((StorageChoice) -> Void)?
+  var onInstallOther: (() -> Void)?
   var onClose: (() -> Void)?
 
   var isOpen: Bool { window?.isVisible ?? false }
@@ -18,18 +36,50 @@ final class WelcomeWindow: NSObject, NSWindowDelegate {
     window.makeKeyAndOrderFront(nil)
     window.orderFrontRegardless()
     NSApp.activate()
-    Log.line("welcome: shown")
+    Log.line("welcome: shown, \(choices.count) place(s) to keep a library")
   }
 
   func close() {
     window?.orderOut(nil)
   }
 
+  /// The places offered, the first selected; with one, the picker is not shown.
+  func offer(_ choices: [StorageChoice]) {
+    if window == nil { _ = make() }
+    let selected = picker.indexOfSelectedItem
+    self.choices = choices
+    picker.removeAllItems()
+    picker.addItems(withTitles: choices.map(\.title))
+    picker.isHidden = choices.count <= 1
+    if selected >= 0 && selected < choices.count { picker.selectItem(at: selected) }
+    picked()
+  }
+
+  /// A line under the buttons: an install under way, or what it answered.
+  func say(_ text: String) {
+    status.stringValue = text
+    status.isHidden = text.isEmpty
+  }
+
   func windowWillClose(_ notification: Notification) { onClose?() }
+
+  private var selected: StorageChoice? {
+    let i = picker.indexOfSelectedItem
+    return choices.indices.contains(i) ? choices[i] : choices.first
+  }
+
+  @objc private func picked() {
+    guard let choice = selected else {
+      choose.title = "选一个文件夹…"
+      return
+    }
+    choose.isEnabled = choice.answersFolders
+    choose.title = !choice.answersFolders ? "\(choice.name) 答的地址不是文件夹" : choice.install == nil ? "选一个文件夹…" : "装上，再选一个文件夹…"
+  }
 
   private func make() -> NSWindow {
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 460, height: 320),
+      contentRect: NSRect(x: 0, y: 0, width: 460, height: 360),
       styleMask: [.titled, .closable, .fullSizeContentView],
       backing: .buffered, defer: true)
     window.isReleasedWhenClosed = false
@@ -46,30 +96,44 @@ final class WelcomeWindow: NSObject, NSWindowDelegate {
     let title = NSTextField(labelWithString: "Pneuma Base")
     title.font = .systemFont(ofSize: 20, weight: .medium)
 
-    func sentence(_ text: String, _ color: NSColor) -> NSTextField {
-      let field = NSTextField(wrappingLabelWithString: text)
-      field.font = .systemFont(ofSize: 13)
+    func sentence(_ field: NSTextField, _ text: String, _ color: NSColor, size: CGFloat = 13) -> NSTextField {
+      field.stringValue = text
+      field.font = .systemFont(ofSize: size)
       field.textColor = color
       field.alignment = .center
       field.preferredMaxLayoutWidth = 360
       field.widthAnchor.constraint(equalToConstant: 360).isActive = true
       return field
     }
-    let what = sentence("你和你的 agent 共用的资料库：带进来的资料、做出来的东西都放在这里，每样都记得是怎么来的。", .labelColor)
-    let how = sentence("选一个文件夹当库，空的或已经放着资料的都行；之后 Pneuma Base 待在菜单栏里。", .secondaryLabelColor)
+    let what = sentence(NSTextField(wrappingLabelWithString: ""), "你和你的 agent 共用的资料库：带进来的资料、做出来的东西都放在这里，每样都记得是怎么来的。", .labelColor)
+    let how = sentence(NSTextField(wrappingLabelWithString: ""), "选一个文件夹当库，空的或已经放着资料的都行；之后 Pneuma Base 待在菜单栏里。", .secondaryLabelColor)
+    _ = sentence(status, "", .secondaryLabelColor, size: 12)
+    status.isHidden = true
 
-    let choose = NSButton(title: "选一个文件夹…", target: self, action: #selector(chose))
+    picker.target = self
+    picker.action = #selector(picked)
+    picker.isHidden = true
+    choose.title = "选一个文件夹…"
+    choose.target = self
+    choose.action = #selector(chose)
     choose.bezelStyle = .push
     choose.controlSize = .large
     choose.keyEquivalent = "\r"
+    other.title = "安装别的存储…"
+    other.target = self
+    other.action = #selector(installOther)
+    other.isBordered = false
+    other.contentTintColor = .linkColor
+    other.font = .systemFont(ofSize: 12)
 
-    let stack = NSStackView(views: [icon, title, what, how, choose])
+    let stack = NSStackView(views: [icon, title, what, how, picker, choose, other, status])
     stack.orientation = .vertical
     stack.alignment = .centerX
     stack.spacing = 10
     stack.setCustomSpacing(14, after: icon)
     stack.setCustomSpacing(6, after: what)
     stack.setCustomSpacing(22, after: how)
+    stack.setCustomSpacing(6, after: choose)
     stack.translatesAutoresizingMaskIntoConstraints = false
 
     let content = NSView()
@@ -83,7 +147,18 @@ final class WelcomeWindow: NSObject, NSWindowDelegate {
     return window
   }
 
-  @objc private func chose() { onChoose?() }
+  @objc private func chose() {
+    if let choice = selected { onChoose?(choice) }
+  }
+
+  @objc private func installOther() { onInstallOther?() }
+
+  /// What the window offers, in words, for the checks verify.sh runs.
+  var textForTest: String {
+    var lines = ["places: \(choices.map(\.title).joined(separator: " | "))", "picker: \(picker.isHidden ? "hidden" : "shown")", "button: \(choose.title)", "other: \(other.title)"]
+    if !status.isHidden { lines.append("status: \(status.stringValue)") }
+    return lines.joined(separator: "\n") + "\n"
+  }
 
   /// A picture of the window with its title bar, for the screenshots verify.sh takes.
   func snapshotForTest(to url: URL) {

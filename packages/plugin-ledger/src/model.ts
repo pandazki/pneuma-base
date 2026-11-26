@@ -7,7 +7,7 @@ import type { Basis, Envelope, FactActor, How, ItemId, LedgerOrigin, SceneId } f
 import type { Tx } from './rows.js'
 
 /** The shape of the rows; rows of another shape are derived again from the facts. */
-export const ROWS_VERSION = 2
+export const ROWS_VERSION = 3
 
 /** An origin as a row keeps it: a made one's sources are the item's `basis`. */
 export type OriginLike = Exclude<LedgerOrigin, { kind: 'made' }> | { kind: 'made' }
@@ -102,8 +102,14 @@ export type ActorRow = { actor: FactActor; first: Instant; checked: Instant | nu
 
 /** One entry of an open directory's listing. */
 export type Entry = { name: string; kind: 'file' | 'dir' | 'other' | 'none'; size: number | null; modified: string | null; token: string | null; held?: true }
-/** An open directory as last listed: its token then, its first entries by name, at least how many more, its strays' mark keys, and its loose files nobody registered or left. */
+/**
+ * An open directory as last listed: its token then (`empty` while nothing is there, '' while it was
+ * never listed or could not be read), its first entries by name, at least how many more, its strays'
+ * mark keys, and its loose files nobody registered or left.
+ */
 export type SeenRow = { token: string; entries: Entry[]; more: number; unreadable?: true; strays: string[]; loose: LibraryPath[] }
+/** An open directory not listed yet: storage's look answers it as changed, and it is listed. */
+export const unlisted = (): SeenRow => ({ token: '', entries: [], more: 0, strays: [], loose: [] })
 
 export type MarkKind = 'stale' | 'gone' | 'upstream' | 'unowned' | 'closed' | 'changed' | 'missing' | 'moved'
 export type Ref = { item: ItemId; path: LibraryPath | ItemId }
@@ -194,13 +200,33 @@ export function staleAsRecorded(row: Basis['items'][number], source: ItemRow | u
   return false
 }
 
+/**
+ * What the look expects at a thing's places when it asks storage to compare every registered place
+ * (`lookRows` over table `tokens`): as recorded while it is consistent, what the last look found while
+ * it is changed, nothing there while it is missing. No expectation, so storage always answers it, while
+ * its token or a directory-thing's first level is unknown, and while it is moved: each look finds it
+ * missing and finds where it went again. A directory-thing expects each entry of its first level as
+ * recorded. A thing not registered at its path expects nothing anywhere.
+ */
+export function expectations(item: ItemRow): [Place, string | null][] {
+  if (!live(item) || !item.holds) return []
+  if (item.state === 'missing') return [[item.path, 'empty']]
+  const own = item.state === 'moved' ? null : item.state === 'changed' ? (item.now?.token ?? null) : item.bundle && item.entries === null ? null : item.token
+  return [[item.path, own], ...(item.entries ?? []).map((e): [Place, string | null] => [`${item.path}/${e.name}`, e.token || null])]
+}
+
 // ---- writing the tables, each with the fields it is asked by ----
 
-export const putItem = (tx: Tx, item: ItemRow) => tx.set('items', item.id, item)
+/** A thing's row, and what the look expects at its places: a row of `tokens` each, the place its key and the thing its value. A row no thing expects any more goes when storage answers it. */
+export function putItem(tx: Tx, item: ItemRow): void {
+  tx.set('items', item.id, item)
+  for (const [place, token] of expectations(item)) tx.set('tokens', place, item.id, token === null ? undefined : { token })
+}
 export const putPath = (tx: Tx, path: LibraryPath, id: ItemId | null) => tx.set('paths', path, id === null ? null : { id }, { parent: parentOf(path) })
 export const putDir = (tx: Tx, dir: Place, n: number) => tx.set('dirs', dir, n > 0 ? n : null, { parent: parentOf(dir) })
+/** An open directory's listing; its token is what the look expects of the directory's own level (`lookRows` over `seen`). */
 export const putSeen = (tx: Tx, dir: Place, seen: SeenRow | null) =>
-  tx.set('seen', dir, seen, seen === null ? undefined : { ...(seen.loose.length > 0 ? { loose: 'y' } : {}), ...(seen.more > 0 ? { more: 'y' } : {}) })
+  tx.set('seen', dir, seen, seen === null ? undefined : { ...(seen.loose.length > 0 ? { loose: 'y' } : {}), ...(seen.more > 0 ? { more: 'y' } : {}), ...(seen.token === '' ? {} : { token: seen.token }) })
 export const markKey = (kind: MarkKind, path: LibraryPath | Place) => `${kind}:${regionOf(path as LibraryPath) === 'archive' ? 'a' : '-'}:${path}`
 export const sigOf = (kind: 'file' | 'dir', size: number | null, modified: string | null) => (size === null || modified === null ? null : `${kind}|${size}|${modified}`)
 export function putMark(tx: Tx, key: string, mark: MarkRow | null, sig: string | null = null): void {

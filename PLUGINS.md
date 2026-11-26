@@ -617,6 +617,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CODEX_THREAD_ID -u ANTIGRAVITY_CO
 | `archivedPath(路径)` | 库内路径 | 内容路径在归档区的位置：`a.md` 是 `_archive/a.md` |
 | `originalPath(路径)` | 库内路径或 `null` | 归档区路径原来的位置；`_archive` 本身是 `null` |
 | `what(路径列表)`，异步 | `{ path, kind, entry }` 的列表，一个路径一项 | 每个路径上作为东西是什么，看一眼这些路径和它们的标记就答：`kind` 是 `file`、`bundle`（带标记的目录）、`folder`（没有标记的目录）、`other`（链接、设备）或 `none`；`entry` 是存储对它的描述（见下表的 `glance`），什么都没有时 `null`。带标记的目录里面的文件照样是 `file` |
+| `markBundle(目录, { hold })`，异步 | `{ entry, fingerprint, bytes }` 或失败 | 往这个目录里写内核的标记，让它成为一样东西：标记的内容归内核，插件不抄它。那里已有标记时以 `refused` 拒绝。`hold` 是调用方占住这个目录的那个 |
 | `searchTerms(文字, match)` | 词的列表 | 内核找的时候怎么切词 |
 | `rankHits(候选, 词, match)` | 候选里的 `hit` 的列表 | 内核怎么排，`words` 匹配时最多 `sentenceHits` 条 |
 | `sentenceHits` | 数 | `words` 匹配时每个答复者最多给几条 |
@@ -629,8 +630,9 @@ env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CODEX_THREAD_ID -u ANTIGRAVITY_CO
 | --- | --- | --- |
 | `glance(位置列表)`，异步 | 描述的列表，一个位置一项 | 这些位置现在是什么。描述是 `{ place, kind, token, size, modified, held? }`：`kind` 是 `file`、`dir`、`other`、`none`；`token` 是状态的令牌，不透明，只存下、交回去，从不解读；文件的 `size` 是字节数，目录的是它这一层有几项，不一览就说不出时是 `null`；`held` 是正被一次写占着。看不了的那一个答 `{ place, outcome: 'failed', reason }`，`isDescribed` 分得出 |
 | `overview(目录, { limit, after })`，异步 | `{ entries, more, total, noise }` 或失败 | 目录的一层的一页，按名字排，至多 `limit` 项（缺省 200，最多 1000），从 `after` 之后起。噪音不列，名字在 `noise` 里。`more` 是 `{ at_least, after }`，没有下一页时 `null` |
-| `look(列表)`，异步 | `{ same, changed, gone, failed, held }` | 给一组 `{ place, token }`，答哪些已经不是令牌说的样子：`changed` 带新的描述，`gone` 是没了的，`held` 是正被写的；其余的都没变，只给个数 `same`。平常的查用它，不读内容 |
-| `content(位置, { limit })`，异步 | `{ kind: 'file', fingerprint, token, size }`、`{ kind: 'dir', fingerprint, token, files, bytes }` 或失败 | 内容的指纹（64 位十六进制的 sha256），因为问了才读，`token` 是读的那一版的。目录按内容规则算（见下）；超过 `limit` 个文件（缺省 5000）答 `too_many` |
+| `look(列表)`，异步 | `{ same, changed, gone, failed, held }` | 给一组 `{ place, token }`，答哪些已经不是预期的样子：`changed` 带新的描述，`gone` 是没了的，`held` 是正被写的；其余的都没变，只给个数 `same`。`token` 写 `'empty'` 是记得那里什么都没有，有了东西才算变。平常的查用它，不读内容 |
+| `lookRows(表, 字段, { limit, after })`，异步 | `{ same, changed, gone, failed, held, compared, more }` | 同 `look`，预期从插件自己的记录处的一张表里取：每行的键是位置，`字段` 是一个令牌或 `'empty'`；没有这个字段的行没有预期，那里有什么都答。存储在它里面比，只把不同的答回来；一页至多 `limit` 行（缺省 10000，最多 100000），`more` 是 `{ after }`，没有下一页时 `null`。存储说不出变了什么时，插件用它比记过的每个位置 |
+| `content(位置, { limit, manifest })`，异步 | `{ kind: 'file', fingerprint, token, size }`、`{ kind: 'dir', fingerprint, token, files, bytes, manifest? }` 或失败 | 内容的指纹（64 位十六进制的 sha256），因为问了才读，`token` 是读的那一版的。目录按内容规则算（见下）；超过 `limit` 个文件（缺省 5000）答 `too_many`。带 `manifest`（`true` 或 `{ limit, after }`）时，目录另答它算出的清单的一页：`{ entries: [{ path, fingerprint, size }], more }`，按内容规则算进的每个文件，路径相对这个目录、按字节序，一页缺省 1000 个，所以插件不用自己再实现一遍内容规则 |
 | `read(文件, { offset, length, to })`，异步 | `{ token, size, offset, length, data }` 或失败 | 文件的字节，或其中一段。带 `to`（库外的绝对路径）时字节写到那个文件，`data` 是 `null` |
 | `write(位置, 来源, 预期, { hold, limit })`，异步 | `{ entry, fingerprint, files?, bytes }` 或失败 | 预期成立时把内容整个放到那里，要么全成，要么什么都没变；不成立时以 `refused` 拒绝，`actual` 是那里实际的。来源是库外的 `{ path }`、字节 `{ data }`，或库里的 `{ place }`（带 `own: true` 时是自己记录处的）。预期是 `'empty'`（那里什么都没有）或一个令牌（那里还是那一版）。答复是放下的东西的描述和同一趟算的指纹 |
 | `move(从, 到, { from, to }, { hold })`，异步 | `{ entry }` 或失败 | 挪：`from` 是来处的令牌，`to` 是去处的预期 |
@@ -639,8 +641,8 @@ env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CODEX_THREAD_ID -u ANTIGRAVITY_CO
 | `noise()`，异步 | `{ names, paths }` | 库根上声明的噪音：哪里都算的名字，和库内的路径 |
 | `hold(位置列表, 毫秒)`，异步 | `{ hold, until }` 或失败 | 说这些位置正在被写、记录随后就来，管 `毫秒`（缺省 30000）。期间别人的 `look` 把它们列进 `held`，`overview` 和 `glance` 标 `held`，别的写以 `held` 拒绝；带着这个 `hold` 的写照常 |
 | `release(hold)`，异步 | 无 | 放开 |
-| `changed(mark)`，异步 | `{ places, mark }` | 从插件存下的上一个 `mark` 起内容里变了什么。`places` 是变了的位置（一个位置可以代表它的目录）；`null` 是存储说不出，这时插件要把记过的每个位置都比一遍；`mark` 是 `null` 时（还没有过）`places` 也是 `null`。有常驻的进程（界面的服务）在听这个库时答得出，代价跟着变了的东西走；没有时说不出。存下新的 `mark`，下次接着问；它不花什么，只对这个库有用 |
-| `own` | 上面 `glance` 到 `remove` 这八个 | 插件记录处里事实以外的地方：留存的副本、配置这类内容，位置相对 `.pneuma-base/<插件名>/`。还没写过时根是一个空目录；第一次写就建立它。这里没有噪音，`hold` 管不到，`changed` 从不报告；放事实的 `facts` 不在其中，答 `outside` |
+| `changed(mark)`，异步 | `{ places, mark }` | 从插件存下的上一个 `mark` 起内容里变了什么。`places` 是变了的位置（一个位置可以代表它的目录）；`null` 是存储说不出，这时插件要把记过的每个位置都比一遍（`lookRows`）；`mark` 是 `null` 时（还没有过）`places` 也是 `null`。有常驻的进程（界面的服务）在听这个库时答得出，代价跟着变了的东西走；没有时说不出。存下新的 `mark`，下次接着问；它不花什么，只对这个库有用 |
+| `own` | 上面 `glance` 到 `remove` 这九个 | 插件记录处里事实以外的地方：留存的副本、配置这类内容，位置相对 `.pneuma-base/<插件名>/`。还没写过时根是一个空目录；第一次写就建立它。这里没有噪音，`hold` 管不到，`changed` 从不报告；放事实的 `facts` 不在其中，答 `outside` |
 | `records` | 见下 | 插件的记录处：只追加的事实，和从事实推出的行 |
 
 `records` 的：
@@ -747,7 +749,7 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 
 一个名字在一条命令里只出现一次。`run` 收到的值：必填的是文字，可省的可能是 `null`，`list` 和 `many` 是列表，`boolean` 是 `true` 或 `false`。值去掉两头空白，空的算没给，所以表单里留空的一项等于没写。少了、多了、不认识、格式不对、不在可选的值里，内核都以 `usage` 拒绝。
 
-内核自己的命令 `KERNEL_COMMAND_NAMES` 是 `grant issue`、`grant revoke`、`plugin add`、`plugin remove`、`skill install`、`archive purge`、`plugin install`、`plugin uninstall`、`plugin list`、`secret set`、`secret list`、`secret remove`、`agent detect`、`agent connect`、`agent disconnect`、`agent list`、`launcher install`、`request list`、`request approve`、`request decline`。
+内核自己的命令 `KERNEL_COMMAND_NAMES` 是 `grant issue`、`grant revoke`、`plugin add`、`plugin remove`、`skill install`、`archive purge`、`plugin install`、`plugin uninstall`、`plugin list`、`secret set`、`secret list`、`secret remove`、`agent detect`、`agent connect`、`agent disconnect`、`agent list`、`launcher install`、`request list`、`request approve`、`request decline`、`storage list`、`storage install`、`storage remove`、`storage update`。
 
 ### 4.4 块
 
@@ -1262,7 +1264,7 @@ pneuma-base plugin uninstall marks
 | --- | --- |
 | `index.js` | 在目录里，载入不抛错，缺省导出一个对象 |
 | `contract` | 写了，是这个 pneuma-base 跑的版本：现在是 `1` 和 `2` |
-| `name` | 合 `PLUGIN_NAME`：小写字母开头，只用小写字母、数字、连字符，最长 41 个字符；装到本机之后和目录名相同；不是 `RESERVED_PLUGIN_NAMES` 里的词：`tmp`、`requests`、`kernel`、`trash`、`holds`、`ask`、`request`、`start`、`show`、`find`、`inspect`、`put`、`say`、`check`、`archive`、`unarchive`、`init`、`view`、`help`、`grant`、`plugin`、`skill`、`secret`、`agent`、`launcher`、`noise`、`cache`（命令行的词、内核命令的头一个词、和插件记录处并排的内核的记录处与存储自己的几处） |
+| `name` | 合 `PLUGIN_NAME`：小写字母开头，只用小写字母、数字、连字符，最长 41 个字符；装到本机之后和目录名相同；不是 `RESERVED_PLUGIN_NAMES` 里的词：`tmp`、`requests`、`kernel`、`trash`、`holds`、`ask`、`request`、`start`、`show`、`find`、`inspect`、`put`、`say`、`check`、`archive`、`unarchive`、`init`、`view`、`help`、`grant`、`plugin`、`skill`、`secret`、`agent`、`launcher`、`noise`、`storage`、`cache`（命令行的词、内核命令的头一个词、和插件记录处并排的内核的记录处与存储自己的几处） |
 | `version`、`summary` | 没有，或是文字 |
 | `keeps` | 没有，或是 `every`、`some` |
 | `cognition` | `null`，或 `{ title, text }`，两样都是文字 |

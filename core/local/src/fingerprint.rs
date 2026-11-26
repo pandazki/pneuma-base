@@ -11,8 +11,8 @@ use std::os::fd::{AsRawFd, OwnedFd};
 use std::path::Path;
 
 use pneuma_base_storage::{
-    ContentAnswer, ContentRequest, Ctx, Failure, Kind, Place, ReadAnswer, ReadRequest, Reason,
-    base64, request::DATA_MAX,
+    After, ContentAnswer, ContentRequest, Ctx, Failure, Kind, Manifest, ManifestEntry,
+    ManifestPage, Place, ReadAnswer, ReadRequest, Reason, base64, request::DATA_MAX,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -337,11 +337,16 @@ impl LocalFolder {
             place: &req.place,
             stat: &after,
         };
+        let manifest = req
+            .manifest
+            .as_ref()
+            .map(|page| manifest_page(&walked.files, &fingerprints, page));
         Ok(Some(ContentAnswer::Dir {
             fingerprint,
             files: walked.files.len() as u64,
             bytes: walked.bytes,
             token: facets::token(&at, None),
+            manifest,
         }))
     }
 
@@ -440,6 +445,27 @@ impl LocalFolder {
         }
         Ok(())
     }
+}
+
+/// The page of a manifest after `page.after`: the walk's files are in the byte order of their paths.
+fn manifest_page(files: &[rule::Found], fingerprints: &[String], page: &ManifestPage) -> Manifest {
+    let start = page.after.as_deref().map_or(0, |after| {
+        files.partition_point(|f| f.path.as_bytes() <= after.as_bytes())
+    });
+    let end = files.len().min(start.saturating_add(page.limit));
+    let entries = files[start..end]
+        .iter()
+        .zip(&fingerprints[start..end])
+        .map(|(file, fingerprint)| ManifestEntry {
+            path: file.path.clone(),
+            fingerprint: fingerprint.clone(),
+            size: file.stat.size,
+        })
+        .collect();
+    let more = (end < files.len()).then(|| After {
+        after: files[end - 1].path.clone(),
+    });
+    Manifest { entries, more }
 }
 
 /// An owned duplicate of a borrowed descriptor, so a walk can keep it.

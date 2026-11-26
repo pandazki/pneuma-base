@@ -6,17 +6,15 @@ import { archivePage, filesPage } from './files-page.js'
 import { homePage } from './home.js'
 import { itemPage } from './item-page.js'
 import { noiseSection } from './noise-commands.js'
-import { KERNEL_COMMANDS } from './owner-commands.js'
 import { DESCRIPTION_FILE } from './paths.js'
 import { machineDirOf } from './plugin-table.js'
 import { pluginPage, pluginViews, shown, type KernelPage, type Shown } from './plugin-views.js'
 import { codexHint } from './products.js'
 import { secretNames } from './secrets.js'
+import { storageSection } from './storage-commands.js'
 import { agentSign, ownerOnlyRefusal, OWNER_DECIDES, type Env } from './session.js'
-import { storageOf } from './storage.js'
 import { kernelAction, kernelForm } from './view-parts.js'
 import {
-  formOf,
   rowsOf,
   type Action,
   type ActionInput,
@@ -77,59 +75,6 @@ async function secretsSection(ctx: Context): Promise<Block | null> {
     count: rows.length,
     blocks: [{ kind: 'table', columns: [{ key: 'plugin', label: '插件' }, { key: 'name', label: '密钥' }, { key: 'description', label: '做什么用' }, { key: 'state', label: '状态' }], rows, empty: '' }],
     actions: [],
-  }
-}
-
-const ADDRESSES: Record<string, string> = { path: '本机路径' }
-const listText = (v: unknown, names: Record<string, string> = {}) => (Array.isArray(v) && v.length > 0 ? v.map((x) => names[String(x)] ?? String(x)).join('、') : '—')
-
-/** A button of a kernel command found by name, from its params; none while this pneuma-base has no such command. */
-function commandAction(name: string, label: string, opts: { fixed?: Record<string, string>; tone?: Action['tone']; confirm?: string } = {}): Action[] {
-  const c = KERNEL_COMMANDS.find((k) => (k.name as string) === name)
-  return c === undefined ? [] : [{ label, tone: opts.tone ?? 'default', confirm: opts.confirm ?? null, ...formOf(c, { fixed: opts.fixed ?? {} }) }]
-}
-
-/**
- * The storage provider the library uses, as it describes itself: its name, version, the addresses it
- * answers and the facets it gives; the storage commands' buttons where this pneuma-base has them.
- * Then the library's noise.
- */
-async function storageSection(ctx: Context): Promise<Block> {
-  const dash: Cell = { text: '—', muted: true }
-  let row: TableRow
-  try {
-    const d = await storageOf(ctx.library.root).describe()
-    const name = typeof d.name === 'string' ? d.name : '?'
-    row = {
-      key: name,
-      cells: {
-        name: { text: name, mono: true },
-        version: typeof d.version === 'string' ? { text: d.version, mono: true } : dash,
-        addresses: { text: listText(d.addresses, ADDRESSES) },
-        facets: { text: listText(d.facets), mono: true, muted: true },
-        state: { text: '随 pneuma-base 带着', muted: true, tag: { text: '这个库在用', tone: 'good' } },
-      },
-      link: null,
-      actions: [...commandAction('storage update', '更新', { fixed: { name } }), ...commandAction('storage remove', '卸掉', { fixed: { name }, tone: 'danger', confirm: `卸掉存储提供者 ${name}？用它的库在这台机器上打不开，直到再装上。` })],
-    }
-  } catch (error) {
-    row = { key: '?', cells: { name: { text: '?', mono: true }, version: dash, addresses: dash, facets: dash, state: { text: error instanceof Error ? error.message : String(error), tag: { text: '答不上来', tone: 'bad' } } }, link: null, actions: [] }
-  }
-  return {
-    kind: 'section',
-    title: '存储',
-    note: '存储提供者以主人的身份运行，看得到库里的全部内容。',
-    count: null,
-    blocks: [
-      {
-        kind: 'table',
-        columns: [{ key: 'name', label: '提供者' }, { key: 'version', label: '版本', optional: true }, { key: 'addresses', label: '地址的写法' }, { key: 'facets', label: '给得出的面', optional: true }, { key: 'state', label: '状态' }],
-        rows: [row],
-        empty: '',
-      },
-      await noiseSection(ctx.library.root),
-    ],
-    actions: commandAction('storage install', '安装别的存储…'),
   }
 }
 
@@ -226,7 +171,7 @@ async function configPage(_params: Record<string, string>, { ctx, table }: Viewe
     actions: [kernelAction('grant issue', '发授权')],
   }
   const secrets = await secretsSection(ctx)
-  return shown('配置', null, [about, plugins, grants, ...(secrets ? [secrets] : []), await storageSection(ctx)])
+  return shown('配置', null, [about, plugins, grants, ...(secrets ? [secrets] : []), await storageSection(ctx, [await noiseSection(root)])])
 }
 
 // ---- the face ----

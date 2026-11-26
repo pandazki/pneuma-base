@@ -33,6 +33,7 @@ const READS: Record<string, string> = {
   'request list': 'home',
   'noise list': 'config',
   'pair list': 'home',
+  'storage list': 'config',
 }
 
 /** What has no button on any page, and why. */
@@ -204,6 +205,13 @@ beforeAll(async () => {
   await write(join(work, 'extra/index.js'), "export default { contract: 1, name: 'extra', cognition: null, storage: [], statements: [], ownerCommands: [] }\n")
   expect(sb.run(['plugin', 'install', join(work, 'extra')], { cwd: work }).code).toBe(0)
   expect(sb.run(['secret', 'set', 'search', 'key'], { cwd: work, input: 'sk-test\n' }).code).toBe(0)
+  // A storage provider installed on this machine, so the config page has 换新版本 and 卸掉: its registry entry, as
+  // storage install writes it last (installing for real runs the contract suite, which the slow tests do).
+  await write(join(home, 'storage/providers/test-folder/v1.0.0/test-folder'), '#!/bin/sh\n')
+  await write(
+    join(home, 'storage/providers/test-folder/provider.json'),
+    JSON.stringify({ format: 1, name: 'test-folder', version: 'v1.0.0', contract: 1, addresses: ['testfs'], executable: 'v1.0.0/test-folder', sha256: '0'.repeat(64), official: false, installed: '2026-11-27T00:00:00.000Z', from: { repository: 'acme/test-folder', tag: 'v1.0.0' } }),
+  )
   await write(join(lib, 'notes/dropped.md'), '主人直接放进来的\n')
   await write(join(lib, 'sources/pricing.html'), '<p>价格，手改过</p>\n')
   // More things in one folder than a page of show holds, so the library's table comes in pages; and a

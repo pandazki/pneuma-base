@@ -208,21 +208,31 @@ pub const SENTENCES: &[Sentence] = &[
         "在预算内数到的文件数、目录数、字节数，`exceeded`，顶层发现的标记名",
     ),
     outside("4.probe.cost", "`budget`", COST),
-    checked("4.look.input", "「位置、令牌」的列表"),
+    checked(
+        "4.look.input",
+        "「位置、预期」的列表，预期是一个令牌或 `empty`；或者一个记录处里的一张表和放着令牌的那个可查的字段，行的键就是位置，带 `limit`（默认 10000）和 `after`（续页）",
+    ),
     checked(
         "4.look.answer",
-        "每个位置：`same`、`changed`（带新描述）、`gone`",
+        "每个位置：`same`、`changed`（带新描述）、`gone`；从表里取预期时只列出不同的，另答这一页比过的个数和续页用的 `after`",
     ),
-    outside("4.look.cost", "位置的个数", COST),
+    outside("4.look.cost", "位置的个数；从表里取预期时是 `limit`", COST),
     checked("4.changed.input", "游标（没有则只取当前游标）、时间预算"),
     checked(
         "4.changed.answer",
         "`places`（位置，粒度可以是它所在的目录）和新游标；或 `cannot_say`（这段时间的日志不可靠，或在预算内答不出）和新游标",
     ),
     outside("4.changed.cost", "变化的个数", COST),
-    checked("4.content.input", "位置；目录另带内容规则和文件数上限"),
+    checked(
+        "4.content.input",
+        "位置；目录另带内容规则和文件数上限，要清单时带 `manifest`（`limit`、`after`）",
+    ),
     checked("4.content.file", "文件：指纹、令牌、大小。"),
     checked("4.content.dir", "目录：清单的指纹、文件数、令牌；"),
+    checked(
+        "4.content.manifest",
+        "带 `manifest` 时另答它算出的清单的一页：内容规则算进的每个文件的相对路径、指纹和大小，按路径的字节序，和续页用的 `after`；",
+    ),
     checked("4.content.too-many", "超过上限答 `too_many` 和至少的个数。"),
     checked("4.content.progress", "过程中发进度"),
     outside("4.content.cost", "内容的大小；有标识内容的分量时为零", COST),
@@ -271,6 +281,35 @@ pub const SENTENCES: &[Sentence] = &[
         "`probe` 发现的标记是顶层几个众所周知的文件名（`package.json`、`.git`、`pyproject.toml`、`Cargo.toml`、`go.mod` 等），由实现列出；",
     ),
     outside("4.s5", "内核据此判断它像不像一个项目。", KERNEL),
+    checked(
+        "4.look.empty",
+        "`look` 的预期是 `empty` 时，那里还是什么都没有就是 `same`，有了东西就是 `changed`。",
+    ),
+    checked(
+        "4.look.dir",
+        "拿一个目录的令牌比，问的是它自己的这一层变了没有：这一层多了、少了或改了名的条目，令牌就变；它里面的文件改了内容不算，也不往下走。",
+    ),
+    checked(
+        "4.look.rows.1",
+        "`look` 从表里取预期时，按键的字节序比 `after` 之后的至多 `limit` 行；",
+    ),
+    checked("4.look.rows.2", "存储只读这些行，不改它们。"),
+    checked(
+        "4.look.rows.3",
+        "字段的值是一个令牌或 `empty`，和列表里的预期一样；",
+    ),
+    checked(
+        "4.look.rows.4",
+        "行里没有这个字段，就是没有预期：那里有东西答 `changed`，没有答 `gone`。",
+    ),
+    checked(
+        "4.look.rows.5",
+        "键不是一个位置的行，答在 `failed` 里，带 `bad_request`。",
+    ),
+    checked(
+        "4.manifest.pages",
+        "`content` 的清单每一页都按当时的内容算，答复带那时整份内容的指纹；几页之间内容变了，指纹就不同。",
+    ),
     checked("4.s6", "`changed` 的粒度由存储定。"),
     outside(
         "4.s7",
@@ -379,6 +418,10 @@ pub const SENTENCES: &[Sentence] = &[
         "5.s7",
         "存储不理解它们。",
         "what the storage understands is internal; how the fields behave outside is checked under 5.s6",
+    ),
+    checked(
+        "5.s7.look",
+        "`look` 从表里取预期时，调用方说哪一个字段放着令牌。",
     ),
     checked("5.s8", "不提供任意查询。"),
     outside("5.s9", "需要别的问法，就多维护一张表。", KERNEL),

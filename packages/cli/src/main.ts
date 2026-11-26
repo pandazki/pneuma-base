@@ -23,6 +23,8 @@ import {
   requestPairing,
   resolveGrant,
   sentenceFor,
+  typedAddress,
+  useMachineHome,
   type Env,
   type Grant,
   type Instant,
@@ -161,7 +163,7 @@ const USAGE = `用法：
 让 agent 自己接上：guide [<产品>] [--library <库的目录>] [--url]（给 agent 读的说明，和本机地址 /guide 给的一样；--url 印出那个地址）
       pair request <产品> "<为什么>" [--library <库的目录>]（请主人允许接入，答复里有配对码）| pair status <配对号>
 主人：view [<目录>] [--port <端口>] [--no-open]（在浏览器里打开管理界面；pneuma-base <目录> 也一样）
-      init <目录> [--bare]
+      init <地址> [--bare] [--provider <存储提供者>]（地址是一个文件夹，或别的存储提供者答的写法）
 插件作者：plugin new <目录> [--kind blank|deploy] [--name <插件名>] [--packages <两个包文件所在的目录>]（生成一个插件项目）
 加 --json 输出结果对象。`
 
@@ -196,7 +198,7 @@ async function help(argv: readonly string[], io: Io, table: PluginTable, home: s
   const library =
     line.grant !== null
       ? await resolveGrant(home, line.grant, table).then((r) => (r.ok ? r.library : null))
-      : dir === null ? null : await openLibrary(resolve(io.cwd, dir), table)
+      : dir === null ? null : await openLibrary(typedAddress(dir, io.cwd), table)
   return `${USAGE}\n${ownerHelp(ownerFace.commands(library?.plugins ?? []), library)}`
 }
 
@@ -267,7 +269,7 @@ const NO_ENDPOINT = '现在没有开着的 Pneuma Base 地址：它在 Pneuma Ba
 /** The library of a command for an agent not connected yet: `--library`, else the one the running endpoint serves. */
 async function servedLibrary({ parsed, io, table, home }: Invocation): Promise<Library | Answer> {
   const dir = flagValue(parsed, 'library')
-  const root = dir === null ? ((await endpointOf(home, null))?.library ?? null) : resolve(io.cwd, dir)
+  const root = dir === null ? ((await endpointOf(home, null))?.library ?? null) : typedAddress(dir, io.cwd)
   if (root === null) throw new UsageError('没有开着的 Pneuma Base 地址，用 --library <库的目录> 指明是哪个库。')
   return (await openLibrary(root, table)) ?? refusal('not-a-library', `${dir ?? root} 不是一个库。`)
 }
@@ -289,7 +291,7 @@ const SPECS: Spec[] = [
       const product = args[0] === undefined ? null : productArg(args[0])
       if (hasFlag(parsed, 'url')) {
         const dir = flagValue(parsed, 'library')
-        const library = dir === null ? null : await openLibrary(resolve(io.cwd, dir), table)
+        const library = dir === null ? null : await openLibrary(typedAddress(dir, io.cwd), table)
         if (dir !== null && library === null) return refusal('not-a-library', `${dir} 不是一个库。`)
         const endpoint = await endpointOf(home, library?.root ?? null)
         if (endpoint === null) return refusal('no-endpoint', NO_ENDPOINT)
@@ -356,14 +358,15 @@ const SPECS: Spec[] = [
   },
   {
     words: ['init'],
-    flags: { bare: 'boolean' },
+    flags: { bare: 'boolean', provider: 'value' },
     arity: [1, 1],
     library: false,
     run: async ({ args, parsed, io, table, home }) => {
       const actor = identifyActor({ grant: null, as: flagValue(parsed, 'as'), env: io.env })
       const session = identifySession({ flag: flagValue(parsed, 'session'), env: io.env, cwd: io.cwd, machine: hostname() })
       const plugins = hasFlag(parsed, 'bare') ? [] : ['ledger']
-      return owner(await initLibrary(resolve(io.cwd, args[0] as string), { plugins, table, actor, session, home }))
+      const provider = flagValue(parsed, 'provider')
+      return owner(await initLibrary(typedAddress(args[0] as string, io.cwd), { plugins, table, actor, session, home, env: io.env, provider }))
     },
   },
   {
@@ -421,8 +424,8 @@ async function bind(inv: Invocation): Promise<Bound | Answer> {
     return r.ok ? contextFor(inv, r.library, r.grant) : refusal(r.reason, r.text)
   }
   if (dir === null) throw new UsageError('要用 @<授权名> 或 --library <库的目录> 指明是哪个库。')
-  const library = await openLibrary(resolve(io.cwd, dir), table)
-  return library ? contextFor(inv, library, null) : refusal('not-a-library', `${dir} 不是一个库。先用 pneuma-base init <目录> 建库。`)
+  const library = await openLibrary(typedAddress(dir, io.cwd), table)
+  return library ? contextFor(inv, library, null) : refusal('not-a-library', `${dir} 不是一个库。先用 pneuma-base init <地址> 建库。`)
 }
 
 function contextFor({ parsed, io, home }: Invocation, library: Library, grant: Grant | null): Bound {
@@ -511,6 +514,7 @@ function impliedView(line: Line, cwd: string): Line {
 export async function main(argv: readonly string[], builtins: PluginTable, io: Io): Promise<number> {
   try {
     const home = io.env.PNEUMA_BASE_HOME ?? join(homedir(), '.pneuma-base')
+    useMachineHome(home)
     const table = await loadPlugins(home, builtins)
     if (argv.length === 0 || argv.includes('--help') || argv[0] === 'help') {
       io.out(await help(argv, io, table, home))

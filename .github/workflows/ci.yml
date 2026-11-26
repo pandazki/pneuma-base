@@ -81,6 +81,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:slow
         timeout-minutes: 15
+      # The package built here carries storage's programs built on Linux, for these tests only; the
+      # product package and the app are built on an Apple-silicon Mac (PROVIDERS.md).
       - name: Plugins written outside the repository still pass
         run: pnpm pack:dist && sh scripts/test-example-plugins.sh
         timeout-minutes: 10

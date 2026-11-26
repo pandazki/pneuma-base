@@ -6,7 +6,7 @@ import { v1Tools } from './contract-v1.js'
 import { archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
 import { storageOf, type Area, type Source, type Storage, type StorageProgress } from './storage.js'
 import { rankHits, searchTerms, SENTENCE_HITS } from './terms.js'
-import { enclosingBundle, THING_FILES, THING_RULE, whatIs } from './things.js'
+import { enclosingBundle, markBundle, THING_FILES, THING_RULE, whatIs } from './things.js'
 
 /** Hears storage's progress on one read or write of the place, for the operation's named whole pass. */
 export type StorageHeard = (place: Place, verb: '读' | '写', progress: StorageProgress) => void
@@ -42,7 +42,8 @@ function placeStore(area: Area, own: PluginName, heard?: StorageHeard): PlaceSto
     glance: (places) => area.glance(places),
     overview: (place, opts) => area.overview(place, opts),
     look: (places) => area.look(places),
-    content: (place, opts = {}) => area.content(place, { rule: THING_RULE, limit: opts.limit ?? THING_FILES, ...progress(place, '读') }),
+    lookRows: (table, field, opts) => area.lookRows({ place: own, table, field }, opts),
+    content: (place, opts = {}) => area.content(place, { rule: THING_RULE, limit: opts.limit ?? THING_FILES, ...(opts.manifest === undefined ? {} : { manifest: opts.manifest }), ...progress(place, '读') }),
     read: (place, opts) => area.read(place, opts),
     write: (place, from, expect, opts = {}) =>
       area.write(place, source(from), expect, { rule: THING_RULE, limit: opts.limit ?? THING_FILES, ...(opts.hold === undefined ? {} : { hold: opts.hold }), ...progress(place, '写') }),
@@ -81,6 +82,7 @@ export function pluginTools(ctx: Context, name: PluginName, heard?: StorageHeard
     archivedPath,
     originalPath,
     what: async (paths) => (await whatIs(store, paths as LibraryPath[])).map(({ path, kind, entry }) => ({ path, kind, entry })),
+    markBundle: (dir, opts = {}) => markBundle(store, dir, opts.hold),
     searchTerms,
     rankHits,
     sentenceHits: SENTENCE_HITS,

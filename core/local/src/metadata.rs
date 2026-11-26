@@ -6,8 +6,8 @@ use std::collections::VecDeque;
 use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 
 use pneuma_base_storage::{
-    Changed, Ctx, Description, Failure, GlanceAnswer, GlanceRequest, Kind, LookAnswer, LookItem,
-    More, OverviewAnswer, OverviewRequest, Place, PlaceArg, PlaceFailure, ProbeAnswer,
+    Changed, Ctx, Description, Expect, Failure, GlanceAnswer, GlanceRequest, Kind, LookAnswer,
+    LookItem, More, OverviewAnswer, OverviewRequest, Place, PlaceArg, PlaceFailure, ProbeAnswer,
     ProbeRequest, Reason, Seen, Token, Trust,
 };
 
@@ -343,24 +343,35 @@ impl LocalFolder {
         let PlaceArg::Valid(place) = &item.place else {
             return Verdict::Failed(Failure::bad_request());
         };
-        if item.token.components().is_none() {
+        if let Some(Expect::Token(token)) = &item.expect
+            && token.components().is_none()
+        {
             return Verdict::Failed(Failure::bad_request());
         }
+        let nothing = || match item.expect {
+            Some(Expect::Empty) => Verdict::Same,
+            _ => Verdict::Gone(place.clone()),
+        };
         let found = self
             .admit(place, noise)
             .and_then(|()| self.locate(walker, place));
-        match found {
-            Err(failure) => Verdict::Failed(failure),
-            Ok(None) => Verdict::Gone(place.clone()),
-            Ok(Some(found)) => match self.still(walker, place, &found, &item.token) {
-                Ok(true) => Verdict::Same,
-                Ok(false) => match self.once_settled(found, || self.locate(walker, place)) {
-                    Ok(Some(found)) => Verdict::Changed(self.describe(place, &found, &[])),
-                    Ok(None) => Verdict::Gone(place.clone()),
-                    Err(failure) => Verdict::Failed(failure),
-                },
+        let found = match found {
+            Err(failure) => return Verdict::Failed(failure),
+            Ok(None) => return nothing(),
+            Ok(Some(found)) => found,
+        };
+        let same = match &item.expect {
+            Some(Expect::Token(token)) => self.still(walker, place, &found, token),
+            Some(Expect::Empty) | None => Ok(false),
+        };
+        match same {
+            Ok(true) => Verdict::Same,
+            Ok(false) => match self.once_settled(found, || self.locate(walker, place)) {
+                Ok(Some(found)) => Verdict::Changed(self.describe(place, &found, &[])),
+                Ok(None) => nothing(),
                 Err(failure) => Verdict::Failed(failure),
             },
+            Err(failure) => Verdict::Failed(failure),
         }
     }
 

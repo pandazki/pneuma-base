@@ -19,10 +19,10 @@ pub use place::{Area, Place, PlaceArg, RecordPlace, STORAGE_NAMES};
 use request::Req;
 pub use request::{
     ChangedRequest, ContentRequest, ContentRule, CursorExpect, DeclarationWriteRequest, Expect,
-    FactsAppendRequest, FactsSinceRequest, GlanceRequest, HoldRequest, LookItem, LookRequest,
-    MoveRequest, NoiseEdit, OverviewRequest, ProbeRequest, ReadRequest, RemoveRequest, RowChange,
-    RowsGetRequest, RowsPutRequest, RowsUnderRequest, RowsWhereRequest, Source, SubscribeRequest,
-    WriteRequest,
+    FactsAppendRequest, FactsSinceRequest, GlanceRequest, HoldRequest, LookFrom, LookItem,
+    LookRequest, LookRows, ManifestPage, MoveRequest, NoiseEdit, OverviewRequest, ProbeRequest,
+    ReadRequest, RemoveRequest, RowChange, RowsGetRequest, RowsPutRequest, RowsUnderRequest,
+    RowsWhereRequest, Source, SubscribeRequest, WriteRequest,
 };
 pub use time::Time;
 pub use token::{Token, Trust};

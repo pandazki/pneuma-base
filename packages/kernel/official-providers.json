@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "providers": [
+    {
+      "name": "local-folder",
+      "summary": "本机文件夹",
+      "addresses": ["path"],
+      "repository": "pandazki/pneuma-base",
+      "version": null,
+      "builtIn": true,
+      "sha256": {}
+    }
+  ]
+}

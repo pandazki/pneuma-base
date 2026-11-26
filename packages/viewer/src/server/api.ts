@@ -171,6 +171,6 @@ export async function init(served: Served, body: unknown): Promise<Reply> {
   const plugins = typeof body === 'object' && body !== null ? (body as Record<string, unknown>).plugins : undefined
   if (!Array.isArray(plugins) || !plugins.every((p) => typeof p === 'string')) return failure(400, 'plugins is not a list of names')
   const session = identifySession({ flag: null, env: served.env, cwd: process.cwd(), machine: hostname() })
-  const r = await initLibrary(served.dir, { plugins, table: await tableOf(served), actor: OWNER, session, home: served.home })
+  const r = await initLibrary(served.dir, { plugins, table: await tableOf(served), actor: OWNER, session, home: served.home, env: served.env })
   return reply({ ...ownerSummary(r), result: r })
 }

@@ -55,6 +55,10 @@ export const KERNEL_COMMAND_NAMES = [
   'noise list',
   'noise add',
   'noise remove',
+  'storage list',
+  'storage install',
+  'storage remove',
+  'storage update',
 ] as const
 
 /**
@@ -89,6 +93,7 @@ export const RESERVED_PLUGIN_NAMES: readonly string[] = [
   'agent',
   'launcher',
   'noise',
+  'storage',
   'cache',
 ]
 

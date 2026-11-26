@@ -10,7 +10,7 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist", "cognition", "bin"],
+  "files": ["dist", "cognition", "bin", "official-providers.json"],
   "dependencies": {
     "@pneuma-base/sdk": "workspace:*"
   }

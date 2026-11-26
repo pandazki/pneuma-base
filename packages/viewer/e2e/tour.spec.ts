@@ -122,8 +122,20 @@ test('unregistered project and 500 loose files', async ({ page, pb }) => {
     await page.getByRole('main').getByRole('navigation', { name: '分页' }).scrollIntoViewIfNeeded()
   })
   await extra(page, `${url}#view=ledger.items`, 'loose-items-closed')
+  // A provider installed from a repository beside the built-in one, as storage install leaves its entry.
+  write(pb.home, '.pneuma-base/storage/providers/acme-folder/v1.0.0/acme-folder', '#!/bin/sh\n')
+  write(
+    pb.home,
+    '.pneuma-base/storage/providers/acme-folder/provider.json',
+    JSON.stringify({ format: 1, name: 'acme-folder', version: 'v1.0.0', contract: 1, addresses: ['acme'], executable: 'v1.0.0/acme-folder', sha256: '0'.repeat(64), official: false, installed: '2026-11-27T00:00:00.000Z', from: { repository: 'acme/acme-folder', tag: 'v1.0.0' } }),
+  )
   await extra(page, `${url}#view=config`, 'loose-config-storage', async () => {
-    await page.getByRole('main').getByRole('region', { name: '存储', exact: true }).scrollIntoViewIfNeeded()
+    // Its heading just under the page's own, which stays at the top.
+    await page.getByRole('main').getByRole('region', { name: '存储', exact: true }).evaluate((el) => {
+      let pane = el.parentElement
+      while (pane && !(pane.scrollHeight > pane.clientHeight && getComputedStyle(pane).overflowY !== 'visible')) pane = pane.parentElement
+      if (pane) pane.scrollTop += el.getBoundingClientRect().top - pane.getBoundingClientRect().top - 64
+    })
   })
   await extra(page, `${url}#view=files&panel=item&panel.path=app`, 'loose-closed-panel')
   await extra(page, `${url}#view=files&view.dir=downloads&panel=item&panel.path=downloads/report.pdf`, 'loose-facets')
