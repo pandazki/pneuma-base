@@ -1,10 +1,11 @@
 // C8 and the server's contract: only this machine and the token holder reach /api; the file
 // endpoint gives the content and the archive and nothing else; views and calls over HTTP; a
 // directory that is not a library can be made one. Runs the built server, as the command line does.
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, existsSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, existsSync, symlinkSync, writeFileSync } from 'node:fs'
 import { request } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { initLibrary, type Plugin, type PluginTable } from '@pneuma-base/kernel'
 import { FRAME_CLASSES } from '@pneuma-base/sdk/frame'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -43,14 +44,14 @@ async function serve(dir: string, opts: { table?: PluginTable; env?: Record<stri
 type Answer = { status: number; type: string; headers: Record<string, string | string[] | undefined>; text: string; json(): any }
 
 /** A raw HTTP request, so the test can send any Host header. */
-function http(server: RunningServer, path: string, opts: { token?: string | null; host?: string; body?: unknown } = {}): Promise<Answer> {
+function http(server: RunningServer, path: string, opts: { token?: string | null; host?: string; body?: unknown; headers?: Record<string, string> } = {}): Promise<Answer> {
   const token = opts.token === undefined ? server.token : opts.token
   const sep = path.includes('?') ? '&' : '?'
   const full = token === null ? path : `${path}${sep}token=${token}`
   return new Promise((resolve, reject) => {
     const body = opts.body === undefined ? undefined : JSON.stringify(opts.body)
     const req = request(
-      { host: '127.0.0.1', port: server.port, path: full, method: body === undefined ? 'GET' : 'POST', headers: { host: opts.host ?? `127.0.0.1:${server.port}`, ...(body ? { 'content-type': 'application/json' } : {}) } },
+      { host: '127.0.0.1', port: server.port, path: full, method: body === undefined ? 'GET' : 'POST', headers: { host: opts.host ?? `127.0.0.1:${server.port}`, ...(body ? { 'content-type': 'application/json' } : {}), ...opts.headers } },
       (res) => {
         const chunks: Buffer[] = []
         res.on('data', (c: Buffer) => chunks.push(c))
@@ -158,6 +159,68 @@ describe('the file endpoint (C8)', () => {
     expect(html.headers['x-content-type-options']).toBe('nosniff')
     expect((await http(server, '/api/file?path=pic.svg')).headers['content-security-policy']).toContain('sandbox')
     expect((await http(server, '/api/file?path=blob.bin')).type).toBe('application/octet-stream')
+  })
+})
+
+describe('the file endpoint reads through storage', () => {
+  it('gives one range of a file when asked, and says it takes ranges', async () => {
+    const lib = await library()
+    lib.write('notes/long.txt', 'abcdefghij')
+    const server = await serve(lib.root)
+    const whole = await http(server, '/api/file?path=notes/long.txt')
+    expect(whole.headers['accept-ranges']).toBe('bytes')
+    const part = await http(server, '/api/file?path=notes/long.txt', { headers: { range: 'bytes=2-5' } })
+    expect(part).toMatchObject({ status: 206, text: 'cdef' })
+    expect(part.headers['content-range']).toBe('bytes 2-5/10')
+    expect((await http(server, '/api/file?path=notes/long.txt', { headers: { range: 'bytes=-3' } })).text).toBe('hij')
+    expect((await http(server, '/api/file?path=notes/long.txt', { headers: { range: 'bytes=20-' } })).status).toBe(416)
+  })
+
+  it('does not fetch a placeholder’s content unless asked', async () => {
+    // A storage program that answers as a sync service's placeholder would for files named *.placeholder.
+    const dir = tempDir('pb-v-core-')
+    const proxy = join(dir, 'core')
+    writeFileSync(
+      proxy,
+      `#!/usr/bin/env node
+const { spawn } = require('node:child_process')
+const { createInterface } = require('node:readline')
+const real = spawn(process.env.REAL_CORE, process.argv.slice(2), { stdio: ['pipe', 'pipe', 'inherit'] })
+const asked = new Map()
+createInterface({ input: process.stdin }).on('line', (line) => {
+  const r = JSON.parse(line)
+  if (r.op === 'read' && String(r.place).endsWith('.placeholder') && r.fetch !== true) return process.stdout.write(JSON.stringify({ id: r.id, outcome: 'failed', reason: 'elsewhere', size: 4096 }) + '\\n')
+  if (r.op === 'read') require('node:fs').appendFileSync(process.env.READS, r.place + (r.fetch ? ' fetch' : '') + '\\n')
+  real.stdin.write(line + '\\n')
+}).on('close', () => real.stdin.end())
+real.stdout.pipe(process.stdout)
+real.on('exit', (code) => process.exit(code ?? 0))
+`,
+    )
+    chmodSync(proxy, 0o755)
+    const reads = join(dir, 'reads.txt')
+    writeFileSync(reads, '')
+    const before = { core: process.env.PNEUMA_BASE_CORE, real: process.env.REAL_CORE, reads: process.env.READS }
+    process.env.REAL_CORE = fileURLToPath(new URL('../../../core/target/release/pneuma-base-core', import.meta.url))
+    process.env.READS = reads
+    process.env.PNEUMA_BASE_CORE = proxy
+    try {
+      const lib = await library()
+      lib.write('cloud/report.placeholder', 'the bytes of the report')
+      const server = await serve(lib.root)
+      const unasked = await http(server, `/api/file?path=${encodeURIComponent('cloud/report.placeholder')}`)
+      expect(unasked.status).toBe(409)
+      expect(unasked.json()).toEqual({ error: 'elsewhere', size: 4096 })
+      expect(readFileSync(reads, 'utf8')).toBe('')
+      const asked = await http(server, `/api/file?path=${encodeURIComponent('cloud/report.placeholder')}&fetch=1`)
+      expect(asked).toMatchObject({ status: 200, text: 'the bytes of the report' })
+      expect(readFileSync(reads, 'utf8')).toContain('cloud/report.placeholder fetch')
+    } finally {
+      for (const [k, v] of [['PNEUMA_BASE_CORE', before.core], ['REAL_CORE', before.real], ['READS', before.reads]] as const) {
+        if (v === undefined) delete process.env[k]
+        else process.env[k] = v
+      }
+    }
   })
 })
 
