@@ -31,7 +31,9 @@ function switchCommand(kit: Kit, on: boolean): OwnerCommand {
       return withRun(kit, ctx, async (run) => {
         const id = await declaredAt(run, input)
         if (id === null) return refused('not-declared', `${input} 没有声明过可以部署。先 say deployable ${input}。`)
-        if (run.d.things.get(id)?.on !== on) record(run, { kind: 'switch', thing: id, on })
+        // Switching off what was never switched still records the owner's decision, so nobody asks again.
+        const thing = run.d.things.get(id)
+        if (thing?.on !== on || !thing.decided) record(run, { kind: 'switch', thing: id, on })
         const r = await settle(run, id)
         const path = r.thing.path
         if (r.problem?.kind === 'no-target') return refused('no-target', `已${verb} ${path} 的开关，但没有${effect}。${noTarget(kit)}，再 ${kit.name} sync。`)
