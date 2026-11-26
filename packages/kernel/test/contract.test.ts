@@ -264,6 +264,29 @@ describe('the tools on a plugin’s context', () => {
     expect(await kernel.agentFace.inspect({ target: 'out.md' }, ctx)).toMatchObject({ file: null })
   })
 
+  it('mark a directory as one thing with the kernel’s marker, compare the places its own rows expect, and hand back a bundle’s manifest', async () => {
+    const { f, ctx } = await probe()
+    const t = ctx.tools
+    f.write('made/page.html', '<p>')
+    expect(await t.what(['made' as sdk.LibraryPath])).toMatchObject([{ kind: 'folder' }])
+    expect(sdk.isFailure(await t.markBundle('made' as sdk.LibraryPath))).toBe(false)
+    expect(await t.what(['made' as sdk.LibraryPath])).toMatchObject([{ kind: 'bundle' }])
+    expect(readFileSync(join(f.root, 'made', kernel.BUNDLE_MARKER), 'utf8')).toBe(readFileSync(join(f.root, 'site', kernel.BUNDLE_MARKER), 'utf8'))
+    expect(await t.markBundle('made' as sdk.LibraryPath)).toMatchObject({ outcome: 'refused' })
+
+    const [a] = await t.storage.glance(['notes/a.md'])
+    const token = (a as sdk.Description).token as string
+    await t.storage.records.put({ expected: [{ key: 'notes/a.md', fields: { token }, value: 1 }, { key: 'notes/b.md', fields: { token: 'empty' }, value: 1 }] })
+    expect(await t.storage.lookRows('expected', 'token')).toMatchObject({ compared: 2, same: 2, changed: [], gone: [], more: null })
+    f.write('notes/b.md', 'b')
+    expect(await t.storage.lookRows('expected', 'token')).toMatchObject({ compared: 2, same: 1, changed: [{ place: 'notes/b.md' }], more: null })
+
+    const answer = await t.storage.content('site', { manifest: true })
+    expect(answer).toMatchObject({ kind: 'dir', manifest: { entries: [{ path: 'index.html', size: 4 }], more: null } })
+    if (sdk.isFailure(answer) || answer.kind !== 'dir' || !answer.manifest) throw new Error('no manifest')
+    expect(answer.fingerprint).toBe(kernel.fingerprintOfManifest(answer.manifest.entries))
+  })
+
   it('split and rank find terms as the kernel does, and put through the agent face so every plugin hears it', async () => {
     const { ctx, heard } = await probe()
     const t = ctx.tools

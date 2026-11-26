@@ -1,6 +1,6 @@
 // The plugin contract's shapes, which a plugin and the kernel exchange. ARCHITECTURE.md sections 4 and 5.
 import type { IconName } from './icons.js'
-import type { Description, PluginStorage } from './storage.js'
+import type { Description, PluginStorage, StorageFailure, Written } from './storage.js'
 
 // Semantic primitives. Parsed once at the kernel's boundary.
 export type LibraryPath = string & { readonly __brand: 'LibraryPath' } // library-relative, '/'-separated
@@ -116,6 +116,12 @@ export interface PluginTools {
   originalPath(path: LibraryPath): LibraryPath | null
   /** What each path holds as a thing, from one glance at the paths and their markers. */
   what(paths: readonly LibraryPath[]): Promise<ThingAt[]>
+  /**
+   * Writes the marker into the directory at `dir`, making it one thing: the kernel's marker, so no plugin
+   * keeps a copy of its text. Expects no marker there; refused, with what is there, when one is. `hold`:
+   * the hold the caller took on `dir`.
+   */
+  markBundle(dir: LibraryPath, opts?: { hold?: string }): Promise<Written | StorageFailure>
   /** The terms of a find's text, as the kernel splits them. */
   searchTerms(text: string | null, match: FindRequest['match']): string[]
   /** The hits to give from candidates, ranked as the kernel ranks its own. */

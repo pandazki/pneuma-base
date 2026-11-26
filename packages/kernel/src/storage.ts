@@ -13,6 +13,7 @@ import {
   type FactsSince,
   type Glanced,
   type Looked,
+  type LookedPage,
   type Overview,
   type Place,
   type Probe,
@@ -202,12 +203,15 @@ function areaOf(s: Served, records: string | undefined) {
     glance: async (places: readonly Place[], facets?: readonly string[]) =>
       places.length === 0 ? [] : (await done<{ entries: Glanced[] }>('glance', s.request('glance', { ...where, places, ...(facets ? { facets } : {}) }))).entries,
     overview: (place: Place, opts: { limit?: number; after?: string } = {}) => doneOrFailure<Overview>(s.request('overview', { ...where, place, ...opts })),
-    look: async (places: readonly { place: Place; token: string }[]): Promise<Looked> => {
+    look: async (places: readonly { place: Place; token: Expect }[]): Promise<Looked> => {
       if (places.length === 0) return { same: 0, changed: [], gone: [], failed: [], held: [] }
       const a = await done<Looked>('look', s.request('look', { ...where, places }))
       return { ...a, held: a.held ?? [] }
     },
-    content: (place: Place, opts: { rule?: ContentRule; limit?: number; fetch?: boolean } = {}) => doneOrFailure<ContentAnswer>(s.request('content', { ...where, place, ...opts })),
+    /** A look whose expectations are the rows of a table of the record place `rows.place`: a page of them, compared inside storage. */
+    lookRows: (rows: { place: string; table: string; field: string }, opts: { limit?: number; after?: string } = {}) => done<LookedPage>('look', s.request('look', { ...where, rows, ...opts })),
+    content: (place: Place, opts: { rule?: ContentRule; limit?: number; fetch?: boolean; manifest?: true | { limit?: number; after?: string } } = {}) =>
+      doneOrFailure<ContentAnswer>(s.request('content', { ...where, place, ...opts })),
     async read(place: Place, opts: { offset?: number; length?: number; to?: string; fetch?: boolean } = {}): Promise<ReadAnswer | StorageFailure> {
       const a = await doneOrFailure<Omit<ReadAnswer, 'data'> & { data?: string }>(s.request('read', { ...where, place, ...opts }))
       if (isFailure(a)) return a
