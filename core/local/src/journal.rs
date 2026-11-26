@@ -14,8 +14,10 @@
 //!   KernelDropped, EventIdsWrapped, RootChanged, or a mount or unmount under the library.
 //!   UserDropped alone (lost between the system and this process, the history itself whole) is
 //!   replayed again after a pause, as long as the time limit allows;
-//! - the replay does not finish within `REPLAY_LIMIT` (a cursor far in the past makes FSEvents
-//!   read that much of the volume's history: about 5 s a day on a busy volume).
+//! - the replay does not finish within `REPLAY_LIMIT`. A replay reads the volume's whole history
+//!   since the cursor, whatever lies in the library: measured at about 0.17 us an event, so 2.4 s
+//!   for a cursor three hours old on a busy development machine. Past the limit, looking again
+//!   at what the records point to is cheaper than waiting.
 //!
 //! Elsewhere (Linux) there is no such journal: always `cannot_say`.
 
@@ -74,7 +76,7 @@ mod fsevents {
 
     use crate::{LocalFolder, RECORD_AREA, sys};
 
-    pub const REPLAY_LIMIT: Duration = Duration::from_secs(15);
+    pub const REPLAY_LIMIT: Duration = Duration::from_secs(5);
     /// How long to wait before replaying again after events were dropped on their way here.
     const RETRY_PAUSE: Duration = Duration::from_millis(500);
 
