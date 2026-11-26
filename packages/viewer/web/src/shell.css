@@ -715,3 +715,116 @@ html[data-window='inactive'] .fresh {
 .detail .blocks {
   gap: 22px;
 }
+
+/*
+ * The menu bar panel (tray.tsx): the home page's content in the app's small window, which sizes
+ * itself to it. The panel's own ground, a head with the library, the parts with small grey titles,
+ * a foot with the two buttons.
+ */
+html[data-panel='tray'],
+html[data-panel='tray'] body {
+  height: auto;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--panel);
+}
+.tray {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 12px 10px;
+  container-type: inline-size;
+}
+.tray-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+.tray-library {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  margin-left: -6px;
+  padding: 2px 6px;
+  border-radius: var(--radius-control);
+  color: var(--ink-strong);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  transition: background-color 140ms ease;
+}
+.tray-library:hover {
+  background: var(--wash);
+}
+.tray-library > svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  color: var(--ink-3);
+}
+.tray-head .tag {
+  margin-left: auto;
+}
+.tray-note {
+  color: var(--bad);
+  font-size: 12px;
+  line-height: 18px;
+}
+.tray-start,
+.tray-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-item);
+  background: var(--tray);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+  color: var(--ink);
+  font-size: 12.5px;
+  line-height: 18px;
+  text-align: left;
+  transition: background-color 140ms ease;
+}
+.tray-start:hover,
+.tray-more:hover {
+  background: var(--wash);
+}
+.tray-start > svg {
+  width: 13px;
+  height: 13px;
+  color: var(--ink-3);
+}
+.tray-more {
+  margin-top: 6px;
+  color: var(--ink-2);
+}
+.tray-part > h2 {
+  margin-bottom: 6px;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+.tray .aui-feed-head {
+  display: none;
+}
+.tray .aui-feed-main {
+  padding-left: 4px;
+}
+.tray .aui-feed-end {
+  min-width: 0;
+}
+.tray .aui-asks-row {
+  padding: 10px 12px 12px;
+}
+.tray-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 2px -12px -10px;
+  padding: 10px 12px;
+  box-shadow: inset 0 0.5px 0 var(--line);
+}
