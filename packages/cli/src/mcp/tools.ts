@@ -29,6 +29,7 @@ const PREAMBLE = [
   '`put` 放这台机器上库外的文件或目录时，`what` 写它的绝对路径；把一段内容直接放进来时不写 `what`，文字写在 `text`，字节用 base64 写在 `base64`，再写 `to`。',
   '库里的文件你读不到磁盘，要看内容就用 `inspect` 加 `content: true`；带标记的目录先给出文件清单，再写 `file` 读其中一个。',
   '这次连接是一次会话，你做的事都记在你的授权名下；发授权、装卸插件、设密钥、清空归档区这些管理的事由主人在管理界面上做，这里没有它们的工具。',
+  '需要主人做其中一件不丢数据的，用 `ask`：`why` 写为什么，`command` 是那条命令的词和参数，比如 `["plugin", "add", "version"]`；主人批准就照原样运行，结果在你下次 `check` 里。',
 ].join('')
 
 const DESCRIPTION_URI = 'pneuma-base://library/description'

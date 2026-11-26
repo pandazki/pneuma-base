@@ -16,6 +16,7 @@ import type { OwnerCall } from './owner.js'
 import { ARCHIVE_DIR, parseLibraryPath, regionOf } from './paths.js'
 import { eachPlugin, messageOf, pluginContext } from './pipeline.js'
 import { codexHint } from './products.js'
+import { REQUEST_COMMANDS } from './request-commands.js'
 import { readSecret, removeSecret, SECRET_LIMIT, secretNames, secretsDir, writeSecret } from './secrets.js'
 import {
   formOf,
@@ -270,6 +271,8 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
     destructive: false,
     ownerOnly: true,
     setup: true,
+    // The value is the owner's own to give, in person.
+    askable: false,
     scope: 'machine',
     async run({ plugin, name }, call) {
       const declared = await declaredSecrets(call, plugin)
@@ -320,6 +323,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
     },
   }),
   ...agentCommands({ grantIssue, grantRevoke, skillInstall }),
+  ...REQUEST_COMMANDS,
 ]
 
 /** A plugin by name and version, as `pager 0.2.0`. */

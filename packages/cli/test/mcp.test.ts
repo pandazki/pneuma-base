@@ -17,7 +17,7 @@ import { builtinPlugins } from '../dist/plugins.js'
 import { sandbox, tempDir, type Run, type Sandbox } from './helpers.js'
 
 const BIN = fileURLToPath(new URL('../dist/bin.js', import.meta.url))
-const VERBS = ['start', 'find', 'inspect', 'put', 'say', 'check', 'archive', 'unarchive', 'show']
+const VERBS = ['start', 'find', 'inspect', 'put', 'say', 'check', 'archive', 'unarchive', 'ask', 'show']
 type Era = 'legacy' | 'modern'
 type CallResult = { content: { type: string; text?: string }[]; structuredContent?: unknown; isError?: boolean }
 
@@ -103,6 +103,8 @@ describe('the tool list', () => {
     expect(Object.keys(put?.inputSchema.properties ?? {})).toEqual(['what', 'to', 'brought', 'made', 'source', 'by', 'from', 'from-outside', 'note', 'observed', 'text', 'base64'])
     const inspect = (await client.listTools()).tools.find((t) => t.name === 'inspect')
     expect(inspect?.inputSchema).toMatchObject({ properties: { target: { type: 'string' }, file: { type: 'string' }, content: { type: 'boolean' } }, required: ['target'] })
+    const ask = (await client.listTools()).tools.find((t) => t.name === 'ask')
+    expect(ask?.inputSchema).toMatchObject({ properties: { why: { type: 'string' }, command: { type: 'array', items: { type: 'string' } }, withdraw: { type: 'string' } } })
   })
 })
 
@@ -121,6 +123,8 @@ describe('a tool and the command line with the same arguments', () => {
     reader = await connect(sb, 'ro', 'modern')
     await call(client, 'find', { text: '甲' })
     ok(sb.run(['@g', '--session', 'both-faces', 'find', '甲']))
+    // Asked once before, so each face's ask below finds the same pending request.
+    ok(sb.run(['@g', '--session', 'both-faces', 'ask', '帮手要一份授权', 'grant', 'issue', 'helper', '--agent', 'helper']))
   })
   afterAll(async () => {
     await client?.close()
@@ -145,6 +149,8 @@ describe('a tool and the command line with the same arguments', () => {
     ['archive', { path: 'old.md' }, ['archive', 'old.md']],
     ['unarchive', { path: 'notes/a.md' }, ['unarchive', 'notes/a.md']],
     ['archive', { path: 'notes/missing.md' }, ['archive', 'notes/missing.md']],
+    ['ask', { why: '帮手要一份授权', command: ['grant', 'issue', 'helper', '--agent', 'helper'] }, ['ask', '帮手要一份授权', 'grant', 'issue', 'helper', '--agent', 'helper']],
+    ['ask', { why: '想清空', command: ['archive', 'purge'] }, ['ask', '想清空', 'archive', 'purge']],
     ['show', {}, ['show']],
     ['show', { view: 'files', params: { dir: 'notes' } }, ['show', 'files', '--dir', 'notes']],
     ['show', { view: 'item', params: { path: 'notes/b.md' } }, ['show', 'item', '--path', 'notes/b.md']],

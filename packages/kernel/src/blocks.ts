@@ -124,13 +124,13 @@ const both =
     a(v, at) ?? b(v, at)
 
 const feedRow = both(
-  shape({ key: string, at: string, actor: who, text: string, meta: listOf(cell), 'whose?': oneOf('agent', 'owner', 'observed'), 'action?': action, 'settled?': string, link: nullable(link) }),
+  shape({ key: string, at: string, actor: who, text: string, meta: listOf(cell), 'whose?': oneOf('agent', 'owner', 'approved', 'observed'), 'action?': action, 'settled?': string, link: nullable(link) }),
   (v, at) => ((v as Raw).action !== undefined && (v as Raw).settled !== undefined ? `${at} 不能同时有 action 和 settled` : null),
 )
 const feedGroup = shape({ title: string, count: nullable(number), 'link?': link, rows: listOf(feedRow) })
 const treeNode: Check = (v, at) => shape({ value: string, label: string, count: nullable(number), children: listOf(treeNode) })(v, at)
 const ask = both(
-  shape({ key: string, by: who, text: string, about: nullable(string), actions, 'suggested?': number }),
+  shape({ key: string, by: who, text: string, 'command?': string, about: nullable(string), actions, 'suggested?': number }),
   (v, at) => {
     const { suggested, actions: list } = v as { suggested?: number; actions: unknown[] }
     return suggested === undefined || (Number.isInteger(suggested) && suggested >= 0 && suggested < list.length) ? null : `${at}.suggested 应是 actions 里的一个位置`

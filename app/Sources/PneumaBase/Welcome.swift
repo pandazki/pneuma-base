@@ -55,7 +55,7 @@ final class WelcomeWindow: NSObject, NSWindowDelegate {
       field.widthAnchor.constraint(equalToConstant: 360).isActive = true
       return field
     }
-    let what = sentence("给你的 agent 一个自己的库：带进来的资料、做出来的东西都放在这里，每样都记得是怎么来的。", .labelColor)
+    let what = sentence("你和你的 agent 共用的资料库：带进来的资料、做出来的东西都放在这里，每样都记得是怎么来的。", .labelColor)
     let how = sentence("选一个文件夹当库，空的或已经放着资料的都行；之后 Pneuma Base 待在菜单栏里。", .secondaryLabelColor)
 
     let choose = NSButton(title: "选一个文件夹…", target: self, action: #selector(chose))

@@ -121,9 +121,10 @@ export function leadingWords(line: Line): string[] {
  * The arguments after a command's `words`, read by the command's flags. `kinds` gives each flag the
  * command declares; a flag it does not declare is read as `undeclared` says: a switch the command
  * then refuses, a usage error, for `say` as the undeclared table says, or, for `show`, whose flags
- * are a page's parameters, as taking one value.
+ * are a page's parameters, as taking one value. Once `rawAfter` positionals are read, every token
+ * after is one more as written, flags too: `ask`'s command line is another command's.
  */
-export function parseCommand(line: Line, words: number, kinds: Readonly<Record<string, FlagKind>>, undeclared: 'switch' | 'error' | 'table' | 'value', command: string): Parsed {
+export function parseCommand(line: Line, words: number, kinds: Readonly<Record<string, FlagKind>>, undeclared: 'switch' | 'error' | 'table' | 'value', command: string, rawAfter = Infinity): Parsed {
   const flags: Flags = new Map(line.global)
   const positional: string[] = []
   const tokens = line.rest.slice(words)
@@ -137,10 +138,30 @@ export function parseCommand(line: Line, words: number, kinds: Readonly<Record<s
   }
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i] as string
-    if (!isFlag(token)) positional.push(token)
+    if (!isFlag(token) || positional.length >= rawAfter) positional.push(token)
     else i = readFlag(tokens, i, kindOf, flags) as number
   }
   return { grant: line.grant, positional, flags }
+}
+
+/** An owner command as the command line reads one: its name, and how each of its flags takes values. */
+type Readable = { readonly name: string; readonly params: { readonly flags?: readonly { readonly name: string; readonly kind: FlagKind }[] } }
+
+const nameWords = (name: string) => name.split(' ')
+
+/** The owner command with the most words that start the typed words. */
+export function matchCommand<C extends Readable>(commands: readonly C[], typed: readonly string[]): C | undefined {
+  return commands.filter((c) => nameWords(c.name).every((w, i) => typed[i] === w)).sort((a, b) => nameWords(b.name).length - nameWords(a.name).length)[0]
+}
+
+/**
+ * The arguments after the command's name, read by its `params`: a flag it does not declare is a
+ * switch, which the owner face then refuses with the usage line.
+ */
+export function argsOf(command: Readable, line: Line): { positional: string[]; flags: Record<string, string[] | true> } {
+  const kinds = Object.fromEntries((command.params.flags ?? []).map((f) => [f.name, f.kind]))
+  const parsed = parseCommand(line, nameWords(command.name).length, kinds, 'switch', command.name)
+  return { positional: parsed.positional, flags: Object.fromEntries(ownFlags(parsed)) }
 }
 
 export function flagValue(parsed: { flags: Flags }, name: string): string | null {

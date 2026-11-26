@@ -12,7 +12,7 @@ import { ActorBadge } from './actor'
 type Feed = Extract<Block, { kind: 'feed' }>
 
 /** Whose act it was, as a dot and two or three words. */
-const WHOSE: Record<NonNullable<FeedRow['whose']>, string> = { agent: '自己做的', owner: '主人做的', observed: '看到的' }
+const WHOSE: Record<NonNullable<FeedRow['whose']>, string> = { agent: '自己做的', owner: '主人做的', approved: '主人批准的', observed: '看到的' }
 
 function Row({ row }: { row: FeedRow }) {
   const { onLink, selected } = useEnv()

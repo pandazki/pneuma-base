@@ -18,7 +18,7 @@ import {
   type Library,
   type PluginTable,
 } from '@pneuma-base/kernel'
-import { archiveSummary, ownerSummary, putSummary, readSummary, saySummary, type Summary } from './summary.js'
+import { archiveSummary, askSummary, ownerSummary, putSummary, readSummary, saySummary, type Summary } from './summary.js'
 
 /** What the server was started with. `builtins` are the caller's plugins; this machine's own join them on each request, as their files are then. */
 export type Served = { dir: string; builtins: PluginTable; home: string; env: Env }
@@ -98,6 +98,10 @@ async function perform(call: Call, confirmed: boolean, library: Library, table: 
     case 'check': {
       const r = await agentFace.check(call.request, ctx)
       return { result: r, summary: readSummary(r.problems) }
+    }
+    case 'ask': {
+      const r = await agentFace.ask(call.request, ctx)
+      return { result: r, summary: askSummary(r) }
     }
   }
 }

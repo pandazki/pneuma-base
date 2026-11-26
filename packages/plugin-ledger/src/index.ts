@@ -24,7 +24,7 @@ import {
 } from '@pneuma-base/kernel'
 import { conversationOf } from './conversation.js'
 import { itemNamed, load, onDisk, snapshot, statesOf, textOf, type Disk } from './disk.js'
-import { fact, factActor, LEDGER_ACTOR, newItemId, sceneOf, writeFacts, type Basis, type Fact, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
+import { fact, factActor, LEDGER_ACTOR, newItemId, sceneOf, writeFacts, type Basis, type Fact, type FactBody, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
 import type { ItemRecord, Ledger, SceneRecord } from './fold.js'
 import { heldCommands, heldCopies, heldPath, keep } from './held.js'
 import { confirm, findsAnything, reconcile, type Standing } from './reconcile.js'
@@ -217,6 +217,32 @@ function purged(event: Extract<Event, { face: 'owner' }>): LibraryPath[] {
   if (event.command !== 'archive purge' || event.result.outcome !== 'done') return []
   const paths = (event.result.data as { paths?: unknown } | undefined)?.paths
   return Array.isArray(paths) ? paths.filter((p): p is LibraryPath => typeof p === 'string') : []
+}
+
+/**
+ * The fact an event makes, if any. Approving a request is no row of its own: the run it approved is
+ * the row, carrying who asked, whether the command did it or refused, since the owner decided either way.
+ */
+function recordOf(event: Event): FactBody | null {
+  if (event.face === 'agent') {
+    if (event.verb !== 'ask') return null
+    const r = event.result
+    if (r.outcome === 'asked' && !r.again) return { kind: 'request', act: 'asked', request: r.request.id, line: r.request.line, why: r.request.why }
+    if (r.outcome === 'withdrawn') return { kind: 'request', act: 'withdrawn', request: r.request.id, line: r.request.line }
+    return null
+  }
+  const r = event.result
+  if (event.command === 'request approve' || r.outcome === 'failed' || (r.outcome === 'refused' && !event.request)) return null
+  return {
+    kind: 'owner.op',
+    command: event.command,
+    summary: ownerSummary(r.text),
+    destructive: event.destructive,
+    ...(event.readOnly ? { readOnly: true as const } : {}),
+    ...(event.setup ? { setup: true as const } : {}),
+    ...(event.request ? { request: { id: event.request.id, by: { kind: 'agent' as const, name: event.request.by.name, grant: event.request.by.grant } } } : {}),
+    ...(r.outcome === 'refused' ? { refused: r.reason } : {}),
+  }
 }
 
 /**
@@ -458,14 +484,21 @@ export const ledger: Plugin = {
     return (await fileAt(root, path)) ? unownedSection(path) : null
   },
 
-  /** Records each owner operation that was done, so agents see it in check; an archive purge removes the items it deleted. */
+  /**
+   * Records each owner operation that was done, and an approved request's run however it ended, so
+   * agents see them in check; an archive purge removes the items it deleted. An agent's ask and its
+   * withdrawal are facts too.
+   */
   async observe(event, ctx) {
-    if (event.face !== 'owner' || event.result.outcome !== 'done') return
+    const body = recordOf(event)
+    if (body === null) return
     const w = await writing(ctx)
-    w.facts.push(fact(ctx, 'tool', { kind: 'owner.op', command: event.command, summary: ownerSummary(event.result.text), destructive: event.destructive, ...(event.readOnly ? { readOnly: true as const } : {}), ...(event.setup ? { setup: true as const } : {}) }))
-    for (const path of purged(event)) {
-      const id = w.ledger.pathIndex.get(path)
-      if (id !== undefined) w.facts.push(fact(ctx, 'tool', { kind: 'item.remove', item: id }))
+    w.facts.push(fact(ctx, 'tool', body))
+    if (event.face === 'owner') {
+      for (const path of purged(event)) {
+        const id = w.ledger.pathIndex.get(path)
+        if (id !== undefined) w.facts.push(fact(ctx, 'tool', { kind: 'item.remove', item: id }))
+      }
     }
     await writeFacts(ctx.dir, w.facts)
   },
