@@ -3,7 +3,7 @@
 // with the product folders the test makes, and a PATH with no agent program on it.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Block, Step } from '@pneuma-base/kernel'
+import { instant, recordEndpoint, type Block, type Step } from '@pneuma-base/kernel'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { sandbox, tempDir, type Sandbox } from './helpers.js'
 
@@ -83,6 +83,24 @@ describe('「开始」 on the home page', () => {
     const r = empty.run(['--library', lib, 'show', 'home', '--json'], { env: { PATH: tempDir('pb-bin-') }, cwd: work })
     const [connect] = stepsOf((r.json() as { blocks: Block[] }).blocks) as Step[]
     expect(connect?.blocks).toMatchObject([{ kind: 'text', text: expect.stringContaining('这台机器上还没找到能接上的 agent（看了 Claude Code：PATH 上的 claude、~/.claude') }])
+  })
+
+  it('shows the sentence to say to any agent, to copy, only while an endpoint runs for this library, and so does the agents page', async () => {
+    run(['init', lib])
+    const origin = 'http://127.0.0.1:7638'
+    const sentence = `读一下 ${origin}/guide，接上我的 Pneuma Base 库。`
+    const connect = () => (stepsOf(home()) as Step[])[0] as Step
+    const agents = () => (run(['--library', lib, 'show', 'agents', '--json']).json() as { blocks: { kind: string; title: string; blocks: Block[] }[] }).blocks
+    const record = (library: string) => recordEndpoint(join(sb.home, '.pneuma-base'), { url: origin, port: 7638, pid: process.pid, library, at: instant(Date.now()) })
+    await record(join(tempDir(), 'another'))
+    expect(JSON.stringify(connect().blocks)).not.toContain(sentence)
+    expect(agents().map((b) => b.title)).not.toContain('让 agent 自己接上')
+
+    await record(lib)
+    const item = { kind: 'list', items: [{ cell: { text: sentence, copy: true }, note: expect.stringContaining('点「允许」'), actions: [] }] }
+    expect(connect().blocks).toContainEqual(item)
+    expect(agents().find((b) => b.title === '让 agent 自己接上')?.blocks).toEqual([item])
+    expect(run(['--library', lib, 'show', 'home']).stdout).toContain(`- ${sentence}\n`)
   })
 
   it('prints with show home: each step with whether it is done and its commands', () => {

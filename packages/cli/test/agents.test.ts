@@ -2,6 +2,7 @@
 // with configuration files the test makes itself, and a PATH of its own.
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
+import { instant, recordEndpoint } from '@pneuma-base/kernel'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { sandbox, tempDir, type Run, type Sandbox } from './helpers.js'
 
@@ -220,13 +221,78 @@ describe('agent connect, list and disconnect', () => {
     put('.cursor/x', '')
     const found = ok(run(['agent', 'detect', '--json'])).json().data.products as { name: string; found: boolean; signs: string[]; ways: { way: string }[] }[]
     const byName = Object.fromEntries(found.map((p) => [p.name, p]))
-    expect(byName['claude-code']).toMatchObject({ found: true, signs: ['有 ~/.claude'], ways: [{ way: 'skill' }, { way: 'mcp' }] })
+    expect(byName['claude-code']).toMatchObject({ found: true, signs: ['有 ~/.claude'], ways: [{ way: 'skill' }, { way: 'mcp' }, { way: 'mcp-http' }] })
     expect(byName.codex).toMatchObject({ found: true, signs: ['PATH 上有 codex'] })
     expect(byName['claude-desktop']).toMatchObject({ found: false, ways: [{ way: 'mcp' }] })
     expect(byName.cursor).toMatchObject({ found: true })
     expect(Object.keys(byName)).not.toContain('antigravity')
     const text = ok(run(['agent', 'detect', '--library', lib])).stdout
     expect(text).toContain(`agent connect cursor --library ${lib}`)
+  })
+})
+
+describe('agent connect --via mcp-http', () => {
+  const origin = 'http://127.0.0.1:7638'
+  const serve = () => recordEndpoint(pbHome(), { url: origin, port: 7638, pid: process.pid, library: lib, at: instant(Date.now()) })
+
+  const URL_CASES = [
+    { product: 'claude-code', setup: { '.claude.json': '{"numStartups": 3}\n', '.claude/settings.json': '{}' }, file: '.claude.json', entry: { type: 'http', url: `${origin}/mcp/claude-code` } },
+    { product: 'codex', setup: { '.codex/config.toml': 'model = "o3"\n' }, file: '.codex/config.toml', entry: `\n[mcp_servers.pneuma-base-codex]\nurl = "${origin}/mcp/codex"\n` },
+    { product: 'cursor', setup: { '.cursor/mcp.json': '{"mcpServers":{}}' }, file: '.cursor/mcp.json', entry: { url: `${origin}/mcp/cursor` } },
+  ]
+
+  for (const c of URL_CASES) {
+    it(`${c.product}: writes the endpoint's MCP address, and disconnect leaves HOME exactly as it was`, async () => {
+      for (const [path, content] of Object.entries(c.setup)) put(path, content)
+      await serve()
+      const before = tree(sb.home)
+      const connected = ok(run(['agent', 'connect', c.product, '--library', lib, '--via', 'mcp-http']))
+      expect(connected.stdout).toContain(`${origin}/mcp/${c.product}`)
+      const text = readFileSync(join(sb.home, c.file), 'utf8')
+      if (typeof c.entry === 'string') expect(text).toBe(`model = "o3"\n${c.entry}`)
+      else expect((JSON.parse(text) as { mcpServers: Record<string, unknown> }).mcpServers[`pneuma-base-${c.product}`]).toEqual(c.entry)
+      expect(ok(run(['agent', 'list', '--library', lib, '--json'])).json().data.connections).toEqual([expect.objectContaining({ grant: c.product, way: 'mcp-http', inPlace: true })])
+      ok(run(['agent', 'disconnect', c.product]))
+      expect(tree(sb.home)).toEqual(before)
+      expect(grants()).toEqual([])
+    })
+  }
+
+  it('connects a product the table does not know by MCP alone: a grant under its name, nothing written, and the ways to reach the library', async () => {
+    await serve()
+    const before = tree(sb.home)
+    const r = ok(run(['agent', 'connect', 'my-agent', '--library', lib]))
+    expect(grants()).toEqual([expect.objectContaining({ name: 'my-agent', agent: 'my-agent' })])
+    expect(r.stdout).toContain(`${launcher()} @my-agent`)
+    expect(r.stdout).toContain(`${origin}/mcp/my-agent`)
+    expect(r.stdout).toContain(`${launcher()} @my-agent mcp`)
+    expect(tree(sb.home)).toEqual(before)
+    expect(ok(run(['agent', 'list', '--library', lib, '--json'])).json().data.connections).toEqual([expect.objectContaining({ grant: 'my-agent', product: 'my-agent', way: 'mcp-http', inPlace: true })])
+    expect(ok(run(['agent', 'connect', 'my-agent', '--library', lib])).stdout).toContain('已经接上')
+    ok(run(['agent', 'disconnect', 'my-agent']))
+    expect(grants()).toEqual([])
+    expect(ok(run(['agent', 'list', '--library', lib, '--json'])).json().data.connections).toEqual([])
+  })
+
+  it('connects a product the table does not know without an endpoint too, giving the command and the stdio form', () => {
+    const r = ok(run(['agent', 'connect', 'antigravity', '--library', lib]))
+    expect(r.stdout).toContain(`${launcher()} @antigravity mcp`)
+    expect(r.stdout).not.toContain('/mcp/antigravity')
+  })
+
+  it('refuses Claude Desktop, whose configuration takes no address, and a product with an address but no endpoint running', () => {
+    put('Library/Application Support/Claude/claude_desktop_config.json', '{}\n')
+    put('.claude.json', '{}\n')
+    put('.claude/settings.json', '{}')
+    const before = tree(sb.home)
+    const desktop = run(['agent', 'connect', 'claude-desktop', '--library', lib, '--via', 'mcp-http'])
+    expect(desktop.code, desktop.stdout).toBe(2)
+    expect(desktop.stdout).toContain('no-such-way')
+    const none = run(['agent', 'connect', 'claude-code', '--library', lib, '--via', 'mcp-http'])
+    expect(none.code, none.stdout).toBe(2)
+    expect(none.stdout).toContain('no-endpoint')
+    expect(tree(sb.home)).toEqual(before)
+    expect(grants()).toEqual([])
   })
 })
 
