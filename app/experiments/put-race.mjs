@@ -32,7 +32,6 @@ if (!library || !process.env.PNEUMA_BASE_HOME || !['window', 'marks', 'app', 're
 }
 const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDE|CODEX|ANTIGRAVITY|PNEUMA_BASE_SESSION)/.test(k)))
 const pb = (...args) => spawnSync(process.execPath, [CLI, '--library', library, ...args], { env, encoding: 'utf8' })
-const agentPut = (from, to) => pb('--as', 'race-agent', 'put', from, '--to', to, '--made', '--json')
 const outside = mkdtempSync(join(tmpdir(), 'put-race-'))
 const factsDir = join(library, '.pneuma-base/ledger/facts')
 // Wall-clock milliseconds, the clock of the app's log and of the readers.
