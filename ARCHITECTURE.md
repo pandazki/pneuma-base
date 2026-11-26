@@ -378,7 +378,7 @@ type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems: string
 
 ### 主人面的一个入口
 
-主人面的命令都是数据：名字、一句说明、参数表、是否破坏性、是否只给主人、是否只读（可选）、是否配置（可选）、能不能被请（`askable: false`，可选）、`run`。内核自己的十九条在 `owner-commands.ts`、`agent-commands.ts` 和 `request-commands.ts`，都带参数表，和插件的 `OwnerCommand` 同形，只是 `run` 收到整个主人调用（上下文、插件表、环境、是否带授权、怎么问当面确认、怎么读主人另给的值；本机的家目录就是上下文的 `home`），并可交回重开的库。其中十条要一个库（`grant issue`、`grant revoke`、`plugin add`、`plugin remove`、`skill install`、`archive purge`、`agent connect`、`request list`、`request approve`、`request decline`）；九条只动这台机器，有没有库都能跑（`plugin install`、`plugin uninstall`、`plugin list`、`secret set`、`secret list`、`secret remove`、`agent detect`、`agent list`、`agent disconnect`）：没有库时上下文的 `library` 是 null，没有插件可告诉，不发事件；带着库（比如从界面）时照常在单一出口发事件。
+主人面的命令都是数据：名字、一句说明、参数表、是否破坏性、是否只给主人、是否只读（可选）、是否配置（可选）、能不能被请（`askable: false`，可选）、`run`。内核自己的二十条在 `owner-commands.ts`、`agent-commands.ts`、`launcher.ts` 和 `request-commands.ts`，都带参数表，和插件的 `OwnerCommand` 同形，只是 `run` 收到整个主人调用（上下文、插件表、环境、是否带授权、怎么问当面确认、怎么读主人另给的值；本机的家目录就是上下文的 `home`），并可交回重开的库。其中十条要一个库（`grant issue`、`grant revoke`、`plugin add`、`plugin remove`、`skill install`、`archive purge`、`agent connect`、`request list`、`request approve`、`request decline`）；十条只动这台机器，有没有库都能跑（`plugin install`、`plugin uninstall`、`plugin list`、`secret set`、`secret list`、`secret remove`、`agent detect`、`agent list`、`agent disconnect`、`launcher install`）：没有库时上下文的 `library` 是 null，没有插件可告诉，不发事件；带着库（比如从界面）时照常在单一出口发事件。
 
 - `ownerFace.commands(插件表)` 列出可用的命令：先内核的，后各插件的，按配置次序；名字已被占的不再列，插件盖不住内核的命令。命令行的 `--help` 用它列出主人命令：带 `--library` 或 `@<授权名>` 时是那个库的，否则是内核的。
 - 门：破坏性的和只给主人的，在 agent 的会话里都以 `agent-session` 拒绝；然后按参数表核对；破坏性的再要当面确认。终端里只有输入 `yes` 才算确认；别的回答、输入结束（Ctrl+D）、不在终端里，都以 `not-confirmed` 拒绝。内核自己的命令里，`archive purge` 是破坏性的，`skill install` 和 `plugin list` 谁都能跑，其余只给主人。能被请的命令在 agent 的会话里被拒时，话的最后一行是请主人做它的那条 `ask`（`ownerOnlyRefusal`）；破坏性的和 `askable: false` 的没有这一行。
@@ -387,7 +387,7 @@ type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems: string
 - 参数不对：以 `usage` 拒绝，说出哪一样不对，带参数表生成的用法；命令行把它当用法错误，退出码 1。表单里留空的可选值等于没给；开关在表单里写成值 `yes` 或 `no`。
 - 主人另给的值，比如密钥：命令行从标准输入读，在终端里不回显地问；界面的服务取 `Call` 的 `stdin`。它不在参数里，所以不进事件。
 
-命令行只做三件事：认出命令名（第一个开关之前的那几个词，取字数最多的那条，内核命令的字数多过同名的动词时取内核命令，所以 `archive purge` 不是归档一个叫 purge 的文件），按那条命令的参数表读其余的（第 5 节「命令的参数表」），以及定库。`skill install` 的库由它的授权名经本机的授权副本定出；不用指明库的六条没给库就不带库跑；其余用 `@<授权名>` 或 `--library`。
+命令行只做三件事：认出命令名（第一个开关之前的那几个词，取字数最多的那条，内核命令的字数多过同名的动词时取内核命令，所以 `archive purge` 不是归档一个叫 purge 的文件），按那条命令的参数表读其余的（第 5 节「命令的参数表」），以及定库。`skill install` 的库由它的授权名经本机的授权副本定出；不用指明库的那几条没给库就不带库跑；其余用 `@<授权名>` 或 `--library`。
 
 ### 只读的一面：视图
 
@@ -513,11 +513,12 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
 主人在应用里的主路是：选一个文件夹，把自己的 agent 一个一个接上，开始干活。接上是一条主人命令，断开是它的逆，界面的按钮就是这两条命令：
 
 - `agent detect`：这台机器上有哪些 agent 产品、各能怎么接上。只看程序和文件夹在不在。
-- `agent connect <产品> [--name <授权名>] [--area <子文件夹>] [--read-only] [--via skill|mcp]`：先发授权（缺省以产品命名；这个库里同名、给同一个产品、区域和权限也一样的授权接着用，撞名的拒绝，说用 `--name`），再按产品能用的方式写：读技能的，把技能装进它读技能的目录；不读的，把 MCP 服务 `pneuma-base @<授权名> mcp` 登记进它的配置。两种都行时装技能，`--via` 改。先看能不能写、再发授权，所以拒绝时什么都没留下。答复说写了什么、写在哪、在那个产品里接着做什么（重启它，或对它说一句话），Codex 另有把库加进可写目录的提示。
+- `agent connect <产品> [--name <授权名>] [--area <子文件夹>] [--read-only] [--via skill|mcp]`：先发授权（缺省以产品命名；这个库里同名、给同一个产品、区域和权限也一样的授权接着用，撞名的拒绝，说用 `--name`），再按产品能用的方式写：读技能的，把技能装进它读技能的目录；不读的，把 MCP 服务 `<本机的命令> @<授权名> mcp` 登记进它的配置。两种都行时装技能，`--via` 改。先看能不能写、再发授权，所以拒绝时什么都没留下。答复说写了什么、写在哪、在那个产品里接着做什么（重启它，或对它说一句话），Codex 另有把库加进可写目录的提示。
 - `agent disconnect <授权名> [--keep-grant]`：拿掉接上时写的，再撤回授权。它只动这台机器，不用指明库；授权在记录里的那个库里撤回，作为那个库的一次操作发事件。
-- `agent list`：接上的 agent，各自的产品、授权、方式、区域、只读与否，接上时写的还在不在，条目里的 node 和命令行还在不在。
+- `agent list`：接上的 agent，各自的产品、授权、方式、区域、只读与否，接上时写的还在不在，它运行的本机命令在不在、指向的 node 和命令行在不在。
+- `launcher install`：让本机的命令指向现在这个命令行（见下）。
 
-四条都只给主人，不是 MCP 服务的工具。`grant issue`、`grant revoke`、`skill install` 原样留着，接上就是用它们拼出来的。
+五条都只给主人，不是 MCP 服务的工具。`grant issue`、`grant revoke`、`skill install` 原样留着，接上就是用它们拼出来的。
 
 **产品表**（`products.ts`）是关于每个 agent 产品知道的一切的唯一一处：怎么认出它的会话、找它的对话（第 4 节），怎么看出它装在这台机器上，从哪个目录读技能，MCP 服务登记在哪个文件、什么格式、哪个键下，还要告诉主人什么。一个产品一行；没在产品自己的文档或它自己的行为上核过的事实不写，这个产品就少一种接法：
 
@@ -535,7 +536,8 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
 - 文件按字改，不经解析器重写（`config-edit.ts`）。JSON 先用 `JSON.parse` 确认读得懂，再在原文里找出对象和成员的位置，在服务那一层的最后加一个成员，缩进和换行照文件自己的，其余每个字节不动，所以数字、键的次序、格式都还是主人的。读不懂的（带注释、最外层不是对象、键重复）不改，拒绝，答复里给要自己粘的那段和先发授权的命令。TOML（Codex）在末尾空一行追加两张表，拿掉时按追加的原文精确匹配。不引 TOML 库：已经写着这个名字、或服务表写成了一行里的表的，不加，同样给那段。
 - 写回时在同一个目录里先写临时名，带原来的权限，再改名；文件是链接时写它指向的那个，链接还是链接。
 - 断开只拿掉自己写的，而且只在它还是写的时候的样子：主人改过的，断开说出来，原样留着。接上之后没人动过那个文件时，断开后的文件和接上前一个字节都不差；接上时造出来的文件和文件夹，空了就删。
-- 条目里的命令写 node 和命令行入口文件此刻的绝对路径（PATH 上的 `node` 就是这个 node 时写 PATH 上的那个：包管理器升级时它不变），环境变量写 `PNEUMA_BASE_HOME`，所以没有 shell 配置的应用也启动得了。哪个不在了，`agent list` 说出来；再接一次换成新的。
+- 写进去的都按绝对路径指名本机的命令 `$PNEUMA_BASE_HOME/bin/pneuma-base`：MCP 条目的 `command` 是它，`args` 是 `@<授权名> mcp`，没有自己的环境变量；技能里的命令行也用它，并说明说明里写 `pneuma-base` 的地方都用这个路径（技能是这台机器的文件，说明是库的，跟着库走，仍写 `pneuma-base`）。所以没有 shell 配置、PATH 上只有系统工具的应用也启动得了。
+- **本机的命令**是一个小脚本：导出它所在的家目录作 `PNEUMA_BASE_HOME`，再 `exec` 一个写明的 node 和一个写明的命令行入口文件。路径从不变，内容由提供命令行的一方保持最新：Mac 应用每次启动时让它指向应用里自带的 node 和命令行；从包装的，`pneuma-base launcher install` 让它指向现在这个命令行（PATH 上的 `node` 就是这个 node 时写 PATH 上的那个：包管理器升级时它不变）。两种都只在内容不同时才写，先写临时名、带上可执行位再改名。`agent connect` 和 `skill install` 在它不在、读不懂、指向的东西不在了或家目录不对时写它，好好的就不动。应用挪了位置或升级了，接上的 agent 不受影响：下次启动应用，命令跟着改；在这之前 `agent list` 说出它指向的东西不在了，再接一次也修好。接上之前写的记录（条目里写 node 和入口文件的）照旧按那两个路径查。
 - 接两次，第二次什么都不改；断开两次，第二次安静地说没有这个连接。
 
 **授权**在内核里，只有最小的形状：编号、名字、给谁、哪个区域、读还是读写。没配任何授权时，谁都能用整个库。区域是库里的一个子文件夹。
@@ -557,7 +559,7 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
 
 说明里许诺的能力不超出已装插件提供的。没装记账插件，说明里就没有「每样东西都能回到它出现的场景」这句话。
 
-技能是一个指向说明的短文件，带着库的位置和授权的编号，为每个 agent 产品各放一份。
+技能是一个指向说明的短文件，带着库的位置、授权的名字和这台机器上的命令（第 6 节「接上一个 agent」），为每个 agent 产品各放一份。
 
 ## 8. 库的结构
 
@@ -578,8 +580,10 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
 
 ```
 $PNEUMA_BASE_HOME/
+  bin/pneuma-base             本机的命令：接上的 agent 按这个路径运行，内容由提供命令行的一方保持最新（第 6 节）
   grants/<名字>.json          发给 agent 的授权副本
   connections/<授权名>/        agent connect 写进别的程序的东西的记录，和改之前那份文件的副本（before/）
+  app/                        Mac 应用自己的小配置和日志（app/README.md）
   plugins/<名字>/              装到这台机器上的插件：index.js、它导入的文件、可选的 ui/
   secrets/<插件名>/<密钥名>     插件的凭证，只有用户能读，不进任何库
   cache/<库的 id>/<插件名>/    插件的缓存，删了能重建
