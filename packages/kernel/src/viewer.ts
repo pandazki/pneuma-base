@@ -5,7 +5,7 @@ import { fileFacts } from './agent.js'
 import { agentsPage } from './agents-page.js'
 import { callableIn, checkBlocks, type Callable } from './blocks.js'
 import { storageOf } from './storage.js'
-import { BUNDLE_MARKER, enclosingBundle, LEVEL } from './things.js'
+import { BUNDLE_MARKER, enclosingBundle } from './things.js'
 import { KERNEL_COMMANDS } from './owner-commands.js'
 import { noiseSection } from './noise-commands.js'
 import { codexHint } from './products.js'
@@ -477,17 +477,23 @@ function thingSections(facts: FileFacts, bundle: LibraryPath | null): Block[] {
   const own = section('文件', [fields, ...partOf])
   if (facts.kind === 'file') return [own, { kind: 'section', title: '预览', note: null, count: null, blocks: [{ kind: 'preview', path: facts.path }], actions: [], collapse: 'open' }]
   const level = facts.level ?? { entries: [], more: 0 }
-  const rows: TableRow[] = level.entries.map((e) => ({
+  const total = level.entries.length + level.more
+  const rows: TableRow[] = level.entries.slice(0, PAGE).map((e) => ({
     key: e.name,
     cells: { path: { text: e.kind === 'dir' ? `${e.name}/` : e.name, mono: true, icon: e.kind === 'dir' ? 'folder' : IMAGE.test(e.name) ? 'image' : 'file' }, size: { text: e.kind === 'file' && e.size !== null ? sizeText(e.size) : '', muted: true } },
     link: itemLink(`${facts.path}/${e.name}`),
     actions: [],
   }))
+  if (total > PAGE) {
+    const link = folderLink(facts.path)
+    const rest = `其余的${level.more > 0 ? `（共至少 ${total} 项）` : `（共 ${total} 项）`}，一页 ${PAGE} 项`
+    rows.push({ key: '…', cells: { path: { text: rest, icon: 'list', link }, size: blank }, link, actions: [] })
+  }
   const inner: Block = {
     kind: 'section',
     title: '第一层',
-    note: level.more > 0 ? `前 ${LEVEL} 项，至少还有 ${level.more} 项。` : null,
-    count: level.entries.length + level.more,
+    note: null,
+    count: total,
     blocks: [{ kind: 'table', columns: [{ key: 'path', label: '名字' }, { key: 'size', label: '大小' }], rows, empty: '这个目录是空的。' }],
     actions: [],
   }

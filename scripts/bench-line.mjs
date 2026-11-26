@@ -1,5 +1,6 @@
-// Times the four reads an agent and the owner start with: an agent's `start` and `check`, the owner's
-// `show home`, and the home page's request to the management UI, on an empty library, on a large
+// Times what an agent and the owner do most: an agent's `start`, `check`, `inspect`, `find`, a `put` of
+// one file and an `archive`, the owner's `show home`, and the home page's request to the management UI
+// (and its poll), on an empty library, on a large
 // synthetic one (about 20,000 registered things and 100,000 facts as two years of use, plus a closed
 // directory of 60,000 files made unreadable), and on any library given with --real. For each: the
 // median wall time, the output's size, and the peak memory of the process. Run after `pnpm build`:
@@ -98,10 +99,21 @@ async function homeRequest(env, lib) {
 async function bench(name, lib) {
   const env = machine(name)
   const agent = (i, tag) => ({ env: { ...env, CLAUDE_CODE_SESSION_ID: `bench-${tag}-${i}` }, args: ['--library', lib, ...(tag === 'start' ? ['start', '看看库里有什么'] : ['check'])] })
+  const as = (i, tag, args) => ({ env: { ...env, CLAUDE_CODE_SESSION_ID: `bench-${tag}-${i}` }, args: ['--library', lib, ...args] })
+  // What inspect, put and archive act on: one file put first, and one file per archive run, put but not timed.
+  const source = join(scratch, `source-${name}.md`)
+  writeFileSync(source, '# 一页笔记\n\n用来量放入。\n')
+  const quiet = (args) => spawnSync(process.execPath, [bin, '--library', lib, ...args], { env: { ...env, CLAUDE_CODE_SESSION_ID: 'bench-setup' }, stdio: 'ignore' })
+  quiet(['put', source, '--to', 'bench/known.md', '--brought'])
+  for (let i = 0; i <= runs; i++) quiet(['put', source, '--to', `bench/old-${i}.md`, '--brought'])
   const rows = {
     start: measure((i) => agent(i, 'start')),
     check: measure((i) => agent(i, 'check')),
     'show home': measure(() => ({ env, args: ['--library', lib, 'show', 'home'] })),
+    inspect: measure((i) => as(i, 'inspect', ['inspect', 'bench/known.md'])),
+    find: measure((i) => as(i, 'find', ['find', '笔记'])),
+    'put one file': measure((i) => as(i, 'put', ['put', source, '--to', `bench/put-${i}-${Date.now()}.md`, '--brought'])),
+    archive: measure((i) => as(i, 'archive', ['archive', `bench/old-${i}.md`])),
   }
   const home = await homeRequest(env, lib)
   rows['home page'] = home.view

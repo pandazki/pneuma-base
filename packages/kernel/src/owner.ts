@@ -1,6 +1,6 @@
-import { makeAddress } from './address.js'
+import { makeAddress, resolveAddress } from './address.js'
 import { said, takenBy } from './claims.js'
-import { newConfig, openLibrary, saveConfig } from './library.js'
+import { newConfig, saveConfig } from './library.js'
 import { KERNEL_COMMANDS, type Outcome } from './owner-commands.js'
 import { checkArgs } from './params.js'
 import { makeContext, performOwner, pluginContext } from './pipeline.js'
@@ -91,7 +91,7 @@ export async function initLibrary(
   dir: string,
   opts: { plugins: string[]; table: PluginTable; actor: Actor; session: Session; home: string },
 ): Promise<OwnerResult> {
-  if ((await openLibrary(dir, new Map())) !== null) {
+  if (await isLibrary(dir)) {
     return { outcome: 'refused', reason: 'already-a-library', text: `${dir} 已经是一个库了`, problems: [] }
   }
   const unknown = opts.plugins.filter((name) => !opts.table.has(name))
@@ -115,6 +115,12 @@ export async function initLibrary(
   return performOwner(ctx, 'init', args, { destructive: false, readOnly: false }, async () => ({
     answer: { outcome: 'done', text: `已把 ${library.root} 建成库。说明在 PNEUMA-BASE.md。`, data: { root: library.root } },
   }))
+}
+
+/** Whether a folder holds a library's declaration, readable or not: init never writes over one. */
+async function isLibrary(dir: string): Promise<boolean> {
+  const root = await resolveAddress(dir)
+  return root !== null && (await storageOf(root).declaration.read()).token !== null
 }
 
 const NEEDS_LIBRARY = '要用 @<授权名> 或 --library <库的目录> 指明是哪个库。'
