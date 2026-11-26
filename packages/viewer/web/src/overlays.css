@@ -327,6 +327,10 @@
   transform-origin: top left;
   animation: menu-in 220ms var(--ease) both;
 }
+/* The lit item shows where the keyboard is; the panel that holds the focus draws no ring of its own. */
+.menu:focus-visible {
+  outline: none;
+}
 @keyframes menu-in {
   from {
     opacity: 0;

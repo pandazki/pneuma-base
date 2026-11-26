@@ -123,6 +123,9 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
     web.uiDelegate = self
     web.onFiles = { [weak self] urls in self?.onFiles?(urls) }
     window?.contentView = web
+    // Made first responder now, while the window is not key: becoming key with no first responder
+    // selects the first key view as Tab would, and WebKit then puts a focus ring on the first row.
+    window?.makeFirstResponder(web)
     webView = web
     return web
   }
