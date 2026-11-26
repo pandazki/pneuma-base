@@ -148,14 +148,14 @@ function cellText(cell: Cell, rowLink: Link | null = null): string {
 const TONE_WORD: Partial<Record<string, string>> = { warn: '警告：', bad: '错误：' }
 
 /** Whose act a feed row is, in the words the page shows beside it. */
-export const WHOSE: Record<FeedRow['whose'], string> = { agent: '自己做的', owner: '主人做的', observed: '看到的' }
+export const WHOSE: Record<NonNullable<FeedRow['whose']>, string> = { agent: '自己做的', owner: '主人做的', observed: '看到的' }
 
 const whoText = (who: ActorMark | string) => (typeof who === 'string' ? who : who.name)
 
 /** One feed row on one line: when, who, what, whose act, its meta, and where it opens; its action below, as its command. */
 function feedRowLines(row: FeedRow, commands: readonly OwnerCommandInfo[], indent: string): string[] {
   const meta = row.meta.map((c) => cellText(c, row.link)).filter((t) => t !== '')
-  const line = [minute(row.at), whoText(row.actor), row.text, `[${WHOSE[row.whose]}]`, ...(meta.length > 0 ? [meta.join(' · ')] : []), ...(row.settled === undefined ? [] : [`[${row.settled}]`]), ...(row.link ? [`→ ${linkCommand(row.link)}`] : [])]
+  const line = [minute(row.at), whoText(row.actor), row.text, ...(row.whose === undefined ? [] : [`[${WHOSE[row.whose]}]`]), ...(meta.length > 0 ? [meta.join(' · ')] : []), ...(row.settled === undefined ? [] : [`[${row.settled}]`]), ...(row.link ? [`→ ${linkCommand(row.link)}`] : [])]
   return [`${indent}- ${line.join('  ')}`, ...(row.action ? [actionLine(row.action, commands, `${indent}    `)] : [])]
 }
 

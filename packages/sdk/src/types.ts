@@ -493,9 +493,9 @@ export type TableColumn = { key: string; label: string; optional?: boolean }
 
 /**
  * One thing that happened, as a feed tells it: when, who, one sentence, a grey line of `meta`, and
- * `whose` act it was: an agent's on its own, the owner's, or one the app only observed. It carries
- * one quiet `action`, such as the one that undoes it, or `settled`, a grey word saying nothing is
- * left to do; not both. A row with a `link` opens it.
+ * `whose` act it was, where that says something: an agent's on its own, the owner's, or one the app
+ * only observed. It carries one quiet `action`, such as the one that undoes it, or `settled`, a grey
+ * word saying how it ended, such as that it was taken back; not both. A row with a `link` opens it.
  */
 export type FeedRow = {
   key: string
@@ -503,7 +503,7 @@ export type FeedRow = {
   actor: ActorMark | string
   text: string
   meta: Cell[]
-  whose: 'agent' | 'owner' | 'observed'
+  whose?: 'agent' | 'owner' | 'observed'
   action?: Action
   settled?: string
   link: Link | null

@@ -124,7 +124,7 @@ const both =
     a(v, at) ?? b(v, at)
 
 const feedRow = both(
-  shape({ key: string, at: string, actor: who, text: string, meta: listOf(cell), whose: oneOf('agent', 'owner', 'observed'), 'action?': action, 'settled?': string, link: nullable(link) }),
+  shape({ key: string, at: string, actor: who, text: string, meta: listOf(cell), 'whose?': oneOf('agent', 'owner', 'observed'), 'action?': action, 'settled?': string, link: nullable(link) }),
   (v, at) => ((v as Raw).action !== undefined && (v as Raw).settled !== undefined ? `${at} 不能同时有 action 和 settled` : null),
 )
 const feedGroup = shape({ title: string, count: nullable(number), 'link?': link, rows: listOf(feedRow) })

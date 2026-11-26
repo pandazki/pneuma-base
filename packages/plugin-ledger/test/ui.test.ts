@@ -248,9 +248,10 @@ describe('a scene’s page', () => {
       '放入 src/stripe.html（带进来的）',
       '在做：给小店选支付服务',
     ])
-    // An archive that still stands can be taken back from its row; the rest are settled.
+    // An archive that still stands can be taken back from its row; a fact with no undo says nothing there.
     expect(rows[0]).toMatchObject({ action: { label: '取回', call: { verb: 'archive', request: { kind: 'unarchive', path: '_archive/old.md' } } } })
-    expect(rows[1]).toMatchObject({ settled: '已定' })
+    expect(rows[1]?.action).toBeUndefined()
+    expect(rows[1]?.settled).toBeUndefined()
   })
 
   it('says so when there is no such scene', async () => {

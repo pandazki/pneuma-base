@@ -53,16 +53,16 @@ const archiveAction = (kind: 'archive' | 'unarchive', path: string): Action => (
 
 /**
  * What can still be done about a fact: an archive taken back, a taking back archived again, while the
- * thing is still where that left it; anything else is settled, and says how when it was undone since.
+ * thing is still where that left it; when it was undone since, how. Anything else says nothing.
  */
 function endOf(ledger: Ledger, f: Fact): Pick<FeedRow, 'action' | 'settled'> {
-  if (f.kind !== 'item.move' || f.archive === null) return { settled: '已定' }
+  if (f.kind !== 'item.move' || f.archive === null) return {}
   const item = ledger.items.get(f.item)
   if (!item || item.removed) return { settled: '已清掉' }
   if (item.path === f.to) return { action: archiveAction(f.archive === 'in' ? 'unarchive' : 'archive', item.path) }
   if (f.archive === 'in' && !isArchived(item)) return { settled: '已取回' }
   if (f.archive === 'out' && isArchived(item)) return { settled: '又归档了' }
-  return { settled: '已定' }
+  return {}
 }
 
 /** One fact as a feed row: when, who, the sentence check says, in which scene and by which grant, and what can still be done. */
@@ -179,7 +179,7 @@ export function scenesAnswer(ledger: Ledger, grants: readonly Grant[], now: Inst
       ...(others ? [{ text: `还有 ${others}`, muted: true }] : []),
     ]
     const doing = sceneDoing(ledger, scene)
-    return { key: scene.id, at: scene.first, actor: actorMark(lead, grants), text: doing ?? `场景 ${shortScene(scene.id)}`, meta, whose: lead.kind === 'owner' ? 'owner' : 'agent', link: sceneLink(scene.id) }
+    return { key: scene.id, at: scene.first, actor: actorMark(lead, grants), text: doing ?? `场景 ${shortScene(scene.id)}`, meta, link: sceneLink(scene.id) }
   }
   const groups = grouped(scenes, (s) => dayTitle(s.first, now)).map(({ title, members }) => ({ title, count: members.length, rows: members.map(row) }))
   return { title: '场景', subtitle: `${scenes.length} 次会话`, blocks: [{ kind: 'feed', groups, empty: '' }] }
