@@ -226,6 +226,7 @@ function purged(event: Extract<Event, { face: 'owner' }>): LibraryPath[] {
 /**
  * The fact an event makes, if any. Approving a request is no row of its own: the run it approved is
  * the row, carrying who asked, whether the command did it or refused, since the owner decided either way.
+ * `ledger stats` is the page 统计 read as text and leaves no row, as looking at the page leaves none.
  */
 function recordOf(event: Event): FactBody | null {
   if (event.face === 'agent') {
@@ -236,7 +237,7 @@ function recordOf(event: Event): FactBody | null {
     return null
   }
   const r = event.result
-  if (event.command === 'request approve' || r.outcome === 'failed' || (r.outcome === 'refused' && !event.request)) return null
+  if (event.command === 'request approve' || event.command === LEDGER_STATS.name || r.outcome === 'failed' || (r.outcome === 'refused' && !event.request)) return null
   return {
     kind: 'owner.op',
     command: event.command,

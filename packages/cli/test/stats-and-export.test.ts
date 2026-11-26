@@ -91,6 +91,15 @@ describe('ledger stats', () => {
     expect(r.code, r.stdout).toBe(0)
     expect(r.stdout).toContain('## 谁做了什么')
   })
+
+  it('leaves no record, as the page leaves none when it is looked at: reading the statistics twice says the same', () => {
+    const before = ok(owner(['ledger', 'stats', '--json'])).json().data
+    ok(owner(['ledger', 'stats']))
+    ok(as('claude', 'session-a')(['ledger', 'stats']))
+    expect(ok(owner(['ledger', 'stats', '--json'])).json().data).toEqual({ ...before, to: expect.any(String) })
+    const rows = ok(owner(['show', 'ledger.activity', '--json'])).json().blocks.find((b: Block) => b.kind === 'feed').groups.flatMap((g: { rows: { text: string }[] }) => g.rows)
+    expect(rows.filter((row: { text: string }) => row.text.includes('ledger stats'))).toEqual([])
+  })
 })
 
 /** The rows of a CSV text: fields split at commas outside quotes, a doubled quote a quote, line breaks inside quotes kept. */
