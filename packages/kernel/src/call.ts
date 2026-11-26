@@ -1,5 +1,6 @@
-// The boundary of POST /api/call: JSON from the page parsed into the kernel's Call, or what is wrong with it.
-import type { Call, Instant, Origin, OwnerArgs, PutRequest } from '@pneuma-base/kernel'
+// A Call parsed from JSON, or what is wrong with it: at the viewer's POST /api/call, and for the
+// actions a view's blocks carry (blocks.ts).
+import type { Call, Instant, Origin, OwnerArgs, PutRequest } from '@pneuma-base/sdk'
 
 type Raw = Record<string, unknown>
 

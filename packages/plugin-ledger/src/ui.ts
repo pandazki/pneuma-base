@@ -2,7 +2,7 @@
 // panel. Pure: built from the same fold, reconcile and views that inspect and check answer from.
 import { formOf, originalPath, shortDir, withSuffix, type Action, type ActionInput, type Block, type Cell, type Instant, type ItemSection, type LibraryPath, type Link, type Tag, type TableRow, type ViewAnswer, type ViewDecl } from '@pneuma-base/kernel'
 import type { Fact, LedgerOrigin, SceneId } from './facts.js'
-import { HELD_RESTORE } from './held.js'
+import { HELD_DROP, HELD_RESTORE, type HeldCopy } from './held.js'
 import { isArchived, type ItemRecord, type Ledger, type SceneRecord } from './fold.js'
 import type { ItemState, Mark, Standing } from './reconcile.js'
 import { actorNames, doingAt, factLine, MARK_LABEL, originLabel, SAID_LABEL, scenesNamed, shortScene, standingData, STATE_LABEL, when, who, type ItemView } from './views.js'
@@ -28,6 +28,7 @@ export const SCENES_VIEW = 'ledger.scenes'
 export const SCENE_VIEW = 'ledger.scene'
 export const STANDING_VIEW = 'ledger.standing'
 export const ACTIVITY_VIEW = 'ledger.activity'
+export const HELD_VIEW = 'ledger.held'
 
 export const LEDGER_VIEWS: readonly ViewDecl[] = [
   {
@@ -50,6 +51,7 @@ export const LEDGER_VIEWS: readonly ViewDecl[] = [
     nav: true,
     filters: [{ name: 'who', label: '谁', options: [{ value: '', label: '全部' }, { value: 'agent', label: 'agent' }, { value: 'owner', label: '主人' }], default: '' }],
   },
+  { id: HELD_VIEW, title: '留存', icon: 'box', nav: true, filters: [] },
   { id: SCENE_VIEW, title: '场景卡', icon: 'history', nav: false, filters: [] },
 ]
 
@@ -105,11 +107,32 @@ export const acceptAction = (path: string): Action => ({
 })
 
 /** Taking a held copy back to a new path: ledger held restore. The suggested path is the item's with the old version's fingerprint in its name. */
-function restoreAction(v: ItemView, fingerprint: string): Action {
-  const base = v.archived ? (originalPath(v.path) ?? v.path) : v.path
-  const form = formOf(HELD_RESTORE, { fixed: { item: v.item, fingerprint }, values: { to: withSuffix(base, fingerprint.slice(0, 8)) } })
+function restoreAction(item: string, path: LibraryPath, archived: boolean, fingerprint: string): Action {
+  const base = archived ? (originalPath(path) ?? path) : path
+  const form = formOf(HELD_RESTORE, { fixed: { item, fingerprint }, values: { to: withSuffix(base, fingerprint.slice(0, 8)) } })
   return { label: '取回到新路径', tone: 'default', confirm: null, ...form }
 }
+
+/** Saying something about a thing: a decision or a note, in one sentence. */
+const sayAction = (path: string, kind: 'decided' | 'note', label: string, placeholder: string): Action => ({
+  label,
+  tone: 'default',
+  confirm: null,
+  inputs: [input('text', '一句话', { placeholder })],
+  call: { face: 'agent', verb: 'say', request: { kind, about: path, text: '{text}', args: {} } },
+})
+
+/** Adding to what a thing was made from: say from, with paths in the library and sentences about what is outside. */
+const basisAction = (path: string): Action => ({
+  label: '补上依据',
+  tone: 'default',
+  confirm: null,
+  inputs: [
+    input('from', '依据库里的哪些', { placeholder: '库内路径，一行一个', multiple: true }),
+    input('outside', '库外的依据', { placeholder: '一行一句，比如：主人在对话里说的', multiple: true }),
+  ],
+  call: { face: 'agent', verb: 'say', request: { kind: 'from', about: path, text: null, args: { from: ['{from}'], 'from-outside': ['{outside}'] } } },
+})
 
 const ORIGIN_TONE: Record<LedgerOrigin['kind'], Tag['tone']> = { made: 'info', brought: 'neutral', adopted: 'warn' }
 const STATE_TONE: Record<ItemState['kind'], Tag['tone']> = { consistent: 'good', changed: 'warn', moved: 'info', missing: 'bad', removed: 'neutral', absorbed: 'neutral' }
@@ -201,16 +224,18 @@ export function itemSection(v: ItemView): ItemSection {
   const actions = v.archived ? [] : [...(v.unknownOrigin ? provenanceActions(v.path) : []), ...(v.state.kind === 'changed' ? [acceptAction(v.path)] : [])]
   const blocks: Block[] = [...(actions.length > 0 ? [{ kind: 'actions' as const, actions }] : []), fields]
 
-  if (v.basis.length > 0 || v.outside.length > 0) {
-    const items = [
-      ...v.basis.map((b) => ({
-        cell: { text: b.path, mono: true, link: itemLink(b.path), tag: b.mark ? { text: MARK_LABEL[b.mark], tone: MARK_TONE[b.mark] } : { text: STATE_LABEL[b.state], tone: STATE_TONE[b.state] } },
-        note: null,
-        actions: [],
-      })),
-      ...v.outside.map((text) => ({ cell: { text }, note: '库外', actions: [] })),
-    ]
-    blocks.push(counted('依据', items.length, [{ kind: 'list', items }]))
+  // What it was made from, and what was said about it, each with the buttons that add to it; an archived thing is added to only once taken back.
+  const live = !v.archived
+  const basis = [
+    ...v.basis.map((b) => ({
+      cell: { text: b.path, mono: true, link: itemLink(b.path), tag: b.mark ? { text: MARK_LABEL[b.mark], tone: MARK_TONE[b.mark] } : { text: STATE_LABEL[b.state], tone: STATE_TONE[b.state] } },
+      note: null,
+      actions: [],
+    })),
+    ...v.outside.map((text) => ({ cell: { text }, note: '库外', actions: [] })),
+  ]
+  if (basis.length > 0 || live) {
+    blocks.push({ kind: 'section', title: '依据', note: null, count: basis.length, blocks: basis.length > 0 ? [{ kind: 'list', items: basis }] : [], actions: live ? [basisAction(v.path)] : [] })
   }
 
   if (v.dependents.length > 0) {
@@ -218,14 +243,15 @@ export function itemSection(v: ItemView): ItemSection {
     blocks.push(counted('被什么依据', items.length, [{ kind: 'list', items }]))
   }
 
-  if (v.said.length > 0) {
+  if (v.said.length > 0 || live) {
     const entries = v.said.map((s) => ({
       at: s.at,
       title: { text: s.text },
       lines: [`${who(s.actor)} · 场景 ${shortScene(s.scene)}${s.about !== null && s.about !== v.path ? ` · 关于 ${s.about}` : ''}`],
       tag: { text: SAID_LABEL[s.flavor], tone: s.flavor === 'decided' ? ('info' as const) : ('neutral' as const) },
     }))
-    blocks.push(counted('决定与备注', entries.length, [{ kind: 'timeline', entries }]))
+    const said = live ? [sayAction(v.path, 'decided', '记一条决定', '比如：用 Paddle，因为它替我们处理欧洲的税'), sayAction(v.path, 'note', '记一条备注', '留给主人和下一个 agent 的一句话')] : []
+    blocks.push({ kind: 'section', title: '决定与备注', note: null, count: entries.length, blocks: entries.length > 0 ? [{ kind: 'timeline', entries }] : [], actions: said })
   }
 
   // An edit the owner made and an agent recorded names both, also on the current version, whose tag says only 当前.
@@ -244,11 +270,38 @@ export function itemSection(v: ItemView): ItemSection {
       // Whose content it was, as the changes above show it; where it lies is the plugin's business.
       const ver = v.versions.find((x) => x.fingerprint === fingerprint)
       const note = !ver ? null : ver.by === 'owner' ? `主人直接改的那份内容，${who(ver.actor)} 代记` : `${who(ver.actor)} 放进来的那份内容`
-      return { cell: { text: `留存 ${fingerprint.slice(0, 8)}`, mono: true }, note, actions: [restoreAction(v, fingerprint)] }
+      return { cell: { text: `留存 ${fingerprint.slice(0, 8)}`, mono: true }, note, actions: [restoreAction(v.item, v.path, v.archived, fingerprint)] }
     })
     blocks.push(counted('留存', items.length, [{ kind: 'text', text: '被新内容换下来的旧内容，给主人的保险。取回时复制到一个新路径，现在的内容不动。', tone: 'neutral' }, { kind: 'list', items }]))
   }
   return { title: '来历', blocks }
+}
+
+/** Every held copy: whose content it was, where its thing is now, with the way back to a new path; and dropping them all, which asks first. */
+export function heldAnswer(ledger: Ledger, copies: readonly HeldCopy[]): ViewAnswer {
+  const rows: TableRow[] = copies.map((c) => {
+    const item = ledger.items.get(c.item)
+    return {
+      key: `${c.item}/${c.fingerprint}`,
+      cells: {
+        path: item === undefined ? { text: c.item, mono: true, muted: true } : pathCell(item),
+        held: { text: `留存 ${c.fingerprint.slice(0, 8)}`, mono: true, ...(c.bundle ? { icon: 'package' as const } : {}) },
+        size: { text: `${c.size} 字节`, muted: true },
+      },
+      link: item === undefined ? null : itemLink(item.path),
+      actions: item === undefined ? [] : [restoreAction(item.id, item.path, isArchived(item), c.fingerprint)],
+    }
+  })
+  const drop: Action = { label: '清掉全部留存', tone: 'danger', confirm: `${copies.length} 份留存会被删掉，不能撤回。`, ...formOf(HELD_DROP) }
+  const section: Block = {
+    kind: 'section',
+    title: '留存',
+    note: '被新内容换下来的旧内容，给主人的保险。取回时复制到一个新路径，现在的内容不动。',
+    count: rows.length,
+    blocks: [{ kind: 'table', columns: [{ key: 'path', label: '东西' }, { key: 'held', label: '留存' }, { key: 'size', label: '大小' }], rows, empty: '没有留存。放进内容不同的同名东西时，换下的旧内容留在这里。' }],
+    actions: rows.length > 0 ? [drop] : [],
+  }
+  return { title: '留存', subtitle: `${rows.length} 份`, blocks: [section] }
 }
 
 /** A file nobody registered, with the ways to give it its provenance. */

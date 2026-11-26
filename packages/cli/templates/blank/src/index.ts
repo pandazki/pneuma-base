@@ -49,7 +49,15 @@ const LIST: Action = { label: '列出全部', tone: 'default', confirm: null, in
 function page(all: readonly (Envelope & Mark)[]): Block[] {
   const latest = all.at(-1)
   return [
-    { kind: 'custom', entry: 'panel.html', height: 72, data: { count: all.length, latest: latest === undefined ? null : { text: latest.text, path: latest.path } }, actions: { list: LIST } },
+    {
+      kind: 'custom',
+      entry: 'panel.html',
+      height: 72,
+      // What the panel shows, in words: the command line prints it, and screen readers read it.
+      text: `${all.length} 条标记，${latest === undefined ? '还没有' : `最近一条：${latest.text}（${latest.path}）`}`,
+      data: { count: all.length, latest: latest === undefined ? null : { text: latest.text, path: latest.path } },
+      actions: { list: LIST },
+    },
     {
       kind: 'table',
       columns: [

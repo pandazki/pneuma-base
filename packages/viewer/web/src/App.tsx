@@ -143,6 +143,7 @@ function Filters({ decl, params, onChange }: { decl: ViewDecl | undefined; param
 function Shown({ result, failed }: { result: ViewResult | null; failed: boolean }) {
   if (result === null) return failed ? <p className="text-[13px] text-red">这一页没能取到。</p> : <div className="h-32 animate-pulse rounded-card bg-inset" />
   if (result.outcome === 'no-such-view') return <p className="text-[13px] text-ink-2">没有这一页。</p>
+  if (result.outcome === 'refused') return <p className="text-[13px] text-red">{result.text}</p>
   return (
     <div className="flex flex-col gap-4">
       <Problems problems={result.problems} />

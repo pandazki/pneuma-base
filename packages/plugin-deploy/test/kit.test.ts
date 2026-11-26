@@ -69,7 +69,7 @@ function fakeTarget(opts: Options = {}) {
             columns: [{ key: 'files', label: '文件数' }],
             cells: (l) => ({ files: { text: String(fake.served.get(l.site ?? '')?.files.length ?? 0) } }),
             fields: (l) => [{ label: '文件数', value: { text: String(fake.served.get(l.site ?? '')?.files.length ?? 0) } }],
-            page: (all) => [{ kind: 'custom', entry: 'chart.html', height: 120, data: { sites: all.length }, actions: {} }],
+            page: (all) => [{ kind: 'custom', entry: 'chart.html', height: 120, text: `${all.length} 个站点`, data: { sites: all.length }, actions: {} }],
             item: () => [{ kind: 'text', tone: 'info', text: '假的目标的说明' }],
           },
         }
@@ -586,6 +586,7 @@ describe('what a target shows', () => {
               kind: 'custom',
               entry: 'board.html',
               height: 100,
+              text: all.map((l) => `${l.thing.path}：${STATUS[l.status].text}`).join('\n'),
               data: all.map((l) => ({ path: l.thing.path, state: STATUS[l.status], note: l.detail?.note ?? null })),
               actions: Object.fromEntries(
                 all.flatMap((l) => {

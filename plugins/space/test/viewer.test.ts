@@ -73,6 +73,11 @@ test('the page, the item section and the board page', { skip: down ?? false }, a
     const data = board.data as BoardData
     assert.deepEqual(data.cards.map((c) => [c.path, c.url, c.release, c.spark?.length]), [['sites/live', url, 1, 24]])
     assert.deepEqual(data.off.map((o) => o.path), ['sites/idle'])
+    // The same board in words, for the command line and screen readers: each card, then what is switched off.
+    const lines = board.text.split('\n')
+    assert.ok(lines[0]?.startsWith(`sites/live：在线 · ${url} · 第 1 版 · `), board.text)
+    assert.match(lines[0] as string, /过去 24 小时每小时的请求 (\d+ ){23}\d+$/)
+    assert.equal(lines.at(-1), '开关关着的：sites/idle（离线）')
     const rowAction = (path: string) => table.rows.find((r) => r.cells.path?.text === path)?.actions[0]
     assert.deepEqual(board.actions[data.cards[0]!.key], rowAction('sites/live'), 'the board’s switch is the page’s')
     assert.deepEqual(board.actions[data.off[0]!.key], rowAction('sites/idle'))

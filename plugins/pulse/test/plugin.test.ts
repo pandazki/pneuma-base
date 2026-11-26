@@ -93,6 +93,10 @@ test('puts and archives are counted per actor; moves and taking back are not', a
   const data = heat.data as { days: { count: number }[]; total: number }
   assert.equal(data.days.length, DAYS)
   assert.equal(data.days.at(-1)!.count, 4)
+  // The same days in words, for the command line and screen readers: the total, the active days, the busiest, each day's count.
+  const today = (data.days.at(-1) as unknown as { day: string }).day
+  const label = `${Number(today.slice(5, 7))} 月 ${Number(today.slice(8))} 日`
+  assert.equal(heat.text, `最近 ${DAYS} 天的放入和归档：4 次，有活动的天数：1。最忙的一天是 ${label}：4 次。\n每天（按这台机器的时区分天）：${label} 4 次`)
   const table = find(shown.blocks, 'table')
   assert.deepEqual(
     table?.rows.map((r) => [r.cells.who!.text, r.cells.total!.text, r.cells.put!.text, r.cells.archive!.text]),

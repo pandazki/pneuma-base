@@ -48,6 +48,7 @@ export const KERNEL_COMMAND_NAMES = [
 export const RESERVED_PLUGIN_NAMES: readonly string[] = [
   'tmp',
   'start',
+  'show',
   'find',
   'inspect',
   'put',

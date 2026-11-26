@@ -111,7 +111,11 @@ describe('the deploy section of the item panel', () => {
     expect(section?.blocks.some((b) => b.kind === 'actions')).toBe(false)
   })
 
-  it('for a thing nobody declared: nothing', async () => {
-    expect(await deploy.onItemView?.('sites/other' as LibraryPath, pctx)).toBeNull()
+  it('for a thing nobody declared: what that means, and the declaration as a say; for no thing, or a file inside a bundle, nothing', async () => {
+    const section = await deploy.onItemView?.('sites/other' as LibraryPath, pctx)
+    const actions = section?.blocks.find((b): b is Extract<Block, { kind: 'actions' }> => b.kind === 'actions')?.actions ?? []
+    expect(actions.map((a) => [a.label, a.call])).toEqual([['声明可以部署', { face: 'agent', verb: 'say', request: { kind: 'deployable', about: 'sites/other', text: null, args: {} } }]])
+    expect(await deploy.onItemView?.('sites/nothing-here' as LibraryPath, pctx)).toBeNull()
+    expect(await deploy.onItemView?.('sites/other/index.html' as LibraryPath, pctx)).toBeNull()
   })
 })

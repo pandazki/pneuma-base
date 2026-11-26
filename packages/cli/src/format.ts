@@ -1,4 +1,5 @@
 import type { ArchiveResult, CheckResult, FindResult, InspectResult, OwnerResult, PluginProblem, PutRequest, PutResult, SayResult, Section } from '@pneuma-base/kernel'
+import { minute } from './page.js'
 
 const REFUSAL: Record<string, (subject: string) => string> = {
   'outside-library': (s) => `${s} 不在库的内容里。库内路径相对库的根目录写，不能是 .pneuma-base/ 或 PNEUMA-BASE.md；_archive/ 只经 archive 和 unarchive 进出。`,
@@ -27,8 +28,6 @@ export function putText(req: PutRequest, r: PutResult): string[] {
     req.kind === 'register' ? `已登记 ${r.path}` : req.kind === 'move' ? `已挪到 ${r.path}` : r.copied ? `已放入 ${r.path}` : `${r.path} 已有相同的内容，没有复制`
   return [head, ...tail(r.notes, r.problems)]
 }
-
-const minute = (at: string) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`
 
 type Entry = { key: string; path: string | null; marks: string[]; details: string[]; group: string | null }
 

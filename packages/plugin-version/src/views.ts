@@ -1,7 +1,7 @@
 // What the management UI shows, in the kernel's block types only: a thing's section of the item
 // panel, and the page of every versioned thing. Pure.
 import { formOf, type Action, type Block, type ItemSection, type LibraryPath, type Link, type Tag, type TableRow, type ViewAnswer, type ViewDecl } from '@pneuma-base/kernel'
-import { VERSION_EXPORT, VERSION_RESTORE } from './commands.js'
+import { VERSION_EXPORT, VERSION_PRUNE, VERSION_RESTORE } from './commands.js'
 import { latest, type Thing, type Version } from './model.js'
 import { aboutVersion, archived, minute, whoText } from './text.js'
 import type { DiskState } from './versions.js'
@@ -41,7 +41,22 @@ function actions(thing: Thing): Action[] {
     confirm: `把选中的那一版放回 ${thing.path}，作为新的一版？现在的内容已经是一版，不会丢。`,
     ...formOf(VERSION_RESTORE, { fixed, ...versionChoice(thing) }),
   }
-  return archived(thing) ? [exported] : [exported, restored]
+  // 「说 version」 writes the current version's note, as the command line's say version does.
+  const noted: Action = {
+    label: '给当前这一版写说明',
+    tone: 'default',
+    confirm: null,
+    inputs: [{ name: 'note', label: '说明', placeholder: '一句话，说这一版改了什么', value: latest(thing)?.note ?? null, options: null }],
+    call: { face: 'agent', verb: 'say', request: { kind: 'version', about: thing.path, text: '{note}', args: {} } },
+  }
+  const kept = thing.versions.filter((v) => !v.pruned).length
+  const pruned: Action = {
+    label: '只留最近几版',
+    tone: 'danger',
+    confirm: `${thing.path} 更早的版本会被清掉，只属于它们的内容一并删掉，不能撤回。`,
+    ...formOf(VERSION_PRUNE, { fixed, values: { keep: String(Math.max(1, Math.min(kept, 3))) } }),
+  }
+  return archived(thing) ? [exported, pruned] : [exported, restored, noted, pruned]
 }
 
 const STATE_NOTE: Record<Exclude<DiskState, 'current'>, string> = {

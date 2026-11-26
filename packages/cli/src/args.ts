@@ -120,9 +120,10 @@ export function leadingWords(line: Line): string[] {
 /**
  * The arguments after a command's `words`, read by the command's flags. `kinds` gives each flag the
  * command declares; a flag it does not declare is read as `undeclared` says: a switch the command
- * then refuses, a usage error, or, for `say`, as the undeclared table says.
+ * then refuses, a usage error, for `say` as the undeclared table says, or, for `show`, whose flags
+ * are a page's parameters, as taking one value.
  */
-export function parseCommand(line: Line, words: number, kinds: Readonly<Record<string, FlagKind>>, undeclared: 'switch' | 'error' | 'table', command: string): Parsed {
+export function parseCommand(line: Line, words: number, kinds: Readonly<Record<string, FlagKind>>, undeclared: 'switch' | 'error' | 'table' | 'value', command: string): Parsed {
   const flags: Flags = new Map(line.global)
   const positional: string[] = []
   const tokens = line.rest.slice(words)
@@ -131,6 +132,7 @@ export function parseCommand(line: Line, words: number, kinds: Readonly<Record<s
     if (declared !== undefined) return declared
     if (undeclared === 'error') throw new UsageError(`${command} 不认识 --${name}`)
     if (undeclared === 'switch') return 'boolean'
+    if (undeclared === 'value') return 'value'
     return UNDECLARED_FLAGS[name] ?? 'greedy'
   }
   for (let i = 0; i < tokens.length; i++) {

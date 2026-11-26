@@ -50,6 +50,19 @@ async function current(ctx: PluginContext) {
 export const who = (actor: RecordActor): string => (actor.kind === 'owner' ? '主人' : actor.name)
 
 /** `YYYY-MM-DD` of a moment in this process's local time. */
+/**
+ * The heat map in words, from the same days the frame draws: the total, how many days had activity,
+ * the busiest one, and the count of each day that had any.
+ */
+export function heatText(grid: readonly { day: string; count: number }[], total: number): string {
+  const label = (d: { day: string; count: number }) => `${Number(d.day.slice(5, 7))} 月 ${Number(d.day.slice(8))} 日`
+  const active = grid.filter((d) => d.count > 0)
+  const peak = active.reduce<{ day: string; count: number } | null>((best, d) => (best === null || d.count > best.count ? d : best), null)
+  const head = `最近 ${DAYS} 天的放入和归档：${total} 次，有活动的天数：${active.length}。`
+  if (peak === null) return `${head}还没有活动。`
+  return [`${head}最忙的一天是 ${label(peak)}：${peak.count} 次。`, `每天（按这台机器的时区分天）：${active.map((d) => `${label(d)} ${d.count} 次`).join('，')}`].join('\n')
+}
+
 export function dayOf(at: Date): string {
   const p = (n: number) => String(n).padStart(2, '0')
   return `${at.getFullYear()}-${p(at.getMonth() + 1)}-${p(at.getDate())}`
@@ -148,7 +161,7 @@ export default definePlugin({
     const actors = byActor(inWindow)
     const total = inWindow.length
     const blocks: Block[] = [
-      { kind: 'custom', entry: 'heat.html', height: 190, data: { days: grid, total }, actions: {} },
+      { kind: 'custom', entry: 'heat.html', height: 190, text: heatText(grid, total), data: { days: grid, total }, actions: {} },
       {
         kind: 'section',
         title: '按 agent',
