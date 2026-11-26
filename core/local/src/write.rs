@@ -100,10 +100,16 @@ fn remove_tree(dir: RawFd, name: &CStr, removed: &mut dyn FnMut(u64)) {
     }
 }
 
-/// Whether the process that named a leftover (`<kind>-<pid>-…`) is gone.
+/// Whether a name in `tmp/` or `trash/` is one of this program's leftovers (`w-`, `i-` or `t-`,
+/// then the pid that made it) and that process is gone. Anything else there belongs to someone
+/// else and is left alone.
 fn orphaned(name: &str) -> bool {
-    let Some(pid) = name.split('-').nth(1).and_then(|p| p.parse::<i32>().ok()) else {
-        return true;
+    let mut parts = name.split('-');
+    if !matches!(parts.next(), Some("w" | "i" | "t")) {
+        return false;
+    }
+    let Some(pid) = parts.next().and_then(|p| p.parse::<i32>().ok()) else {
+        return false;
     };
     if pid == std::process::id() as i32 {
         return false;
@@ -615,6 +621,21 @@ impl LocalFolder {
             progress.tick();
         });
         self.clear_leftovers(&trash);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::orphaned;
+
+    #[test]
+    fn only_this_programs_leftovers_are_cleared() {
+        assert!(!orphaned("putting"));
+        assert!(!orphaned("w-notapid-1"));
+        assert!(!orphaned(&format!("w-{}-0-ff", std::process::id())));
+        // No process has pid 2^31 - 1.
+        assert!(orphaned("w-2147483647-0-ff"));
+        assert!(orphaned("t-2147483647-3-ab"));
     }
 }
 
