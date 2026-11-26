@@ -18,8 +18,16 @@ export type Session = {
   source: 'flag' | 'env' | 'minted'
   cwd: string
   machine: string
-  transcript: string | null
+  /** Null unless the id came from an agent product whose layout the kernel knows and the file is there. */
+  transcript: Transcript | null
 }
+
+/**
+ * Where the session's conversation is on `Session.machine`: a pointer, never a copy. `path` writes the
+ * home folder as `~`; `resume` is the command that continues the conversation there, null for a
+ * product that has none.
+ */
+export type Transcript = { path: string; resume: string | null }
 
 export type Grant = {
   id: GrantId

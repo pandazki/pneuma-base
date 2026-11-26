@@ -1,5 +1,5 @@
 // fold: facts in, the ledger out. Pure; reads no disk. ledger-design.md section 3.
-import { regionOf, type Fingerprint, type Instant, type LibraryPath } from '@pneuma-base/kernel'
+import { regionOf, type Fingerprint, type Instant, type LibraryPath, type Transcript } from '@pneuma-base/kernel'
 import type { Basis, Fact, FactActor, How, ItemId, LedgerOrigin, SceneId } from './facts.js'
 
 export type Said = Extract<Fact, { kind: 'said' }>
@@ -44,6 +44,7 @@ export type SceneRecord = {
   last: Instant
   actors: FactActor[]
   cwds: string[]
+  transcript: (Transcript & { machine: string }) | null // the last pointer the scene's facts carry
   said: Said[]
   items: ItemId[] // entered, revised, moved or given a basis here, in order
 }
@@ -198,12 +199,13 @@ function remove(ledger: Ledger, item: ItemRecord): void {
 function touchScene(ledger: Ledger, f: Fact): void {
   let scene = ledger.scenes.get(f.scene)
   if (!scene) {
-    scene = { id: f.scene, first: f.at, last: f.at, actors: [], cwds: [], said: [], items: [] }
+    scene = { id: f.scene, first: f.at, last: f.at, actors: [], cwds: [], transcript: null, said: [], items: [] }
     ledger.scenes.set(f.scene, scene)
   }
   scene.last = f.at
   if (!scene.actors.some((a) => actorKey(a) === actorKey(f.actor))) scene.actors.push(f.actor)
   if (f.where?.cwd && !scene.cwds.includes(f.where.cwd)) scene.cwds.push(f.where.cwd)
+  if (f.where?.transcript) scene.transcript = { ...f.where.transcript, machine: f.where.machine }
   if ('item' in f && f.kind !== 'item.remove' && !scene.items.includes(f.item)) scene.items.push(f.item)
 }
 

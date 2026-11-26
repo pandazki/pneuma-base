@@ -3,6 +3,7 @@
 import { posix } from 'node:path'
 import { originalPath, regionOf, shortDir, type Instant, type LibraryPath, type PluginHit, type PluginSection } from '@pneuma-base/kernel'
 import { ADHOC_SCENE, type Fact, type FactActor, type How, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
+import type { Conversation } from './conversation.js'
 import { actorKey, isArchived, type Enter, type ItemRecord, type Ledger, type Said, type SceneRecord, type Version } from './fold.js'
 import { marksOf, type ItemState, type Mark, type Standing } from './reconcile.js'
 
@@ -185,11 +186,12 @@ export type SceneView = {
   last: Instant
   actors: FactActor[]
   cwds: string[]
+  conversation: Conversation | null
   said: SaidRow[]
   items: { item: ItemId; path: LibraryPath; enteredHere: boolean; origin: LedgerOrigin; how: How }[]
 }
 
-export function sceneView(ledger: Ledger, scene: SceneRecord): SceneView {
+export function sceneView(ledger: Ledger, scene: SceneRecord, conversation: Conversation | null): SceneView {
   return {
     kind: 'scene',
     id: scene.id,
@@ -197,6 +199,7 @@ export function sceneView(ledger: Ledger, scene: SceneRecord): SceneView {
     last: scene.last,
     actors: scene.actors,
     cwds: scene.cwds,
+    conversation,
     said: scene.said.map((s) => saidRow(ledger, s)),
     items: scene.items.flatMap((id) => {
       const item = ledger.items.get(id)
@@ -207,9 +210,17 @@ export function sceneView(ledger: Ledger, scene: SceneRecord): SceneView {
 
 export function sceneText(v: SceneView): string {
   const lines = [`场景 ${shortScene(v.id)}`, `${actorNames(v.actors)} · ${when(v.first)} 到 ${when(v.last)}${v.cwds.length ? ` · 在 ${v.cwds.map((d) => shortDir(d)).join('、')}` : ''}`]
+  if (v.conversation) {
+    lines.push(`对话：${v.conversation.path}（${whereConversation(v.conversation)}）`)
+    if (v.conversation.status === 'here' && v.conversation.resume) lines.push(`接着聊：${v.conversation.resume}`)
+  }
   for (const s of v.said) lines.push(`${SAID_LABEL[s.flavor]}：${s.text}${s.about !== null ? `（关于 ${s.about}）` : ''}`)
   if (v.items.length > 0) lines.push('条目：', ...v.items.map((i) => `  ${i.path}  ${i.enteredHere ? `在这里放入，${originLabel(i.origin, i.how)}` : '在这里改过或挪过'}`))
   return lines.join('\n')
+}
+
+export function whereConversation(c: Conversation): string {
+  return c.status === 'here' ? '在这台机器上' : c.status === 'gone' ? '这台机器上已经没有了' : `在 ${c.machine} 上，不是这台机器`
 }
 
 // ---- check: since last time ----

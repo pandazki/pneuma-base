@@ -1,11 +1,12 @@
 // What the ledger shows in the management UI: its pages, and its section of the kernel's item
 // panel. Pure: built from the same fold, reconcile and views that inspect and check answer from.
 import { formOf, originalPath, shortDir, withSuffix, type Action, type ActionInput, type Block, type Cell, type Instant, type ItemSection, type LibraryPath, type Link, type Tag, type TableRow, type ViewAnswer, type ViewDecl } from '@pneuma-base/kernel'
+import type { Conversation } from './conversation.js'
 import type { Fact, How, LedgerOrigin, SceneId } from './facts.js'
 import { HELD_DROP, HELD_RESTORE, type HeldCopy } from './held.js'
 import { isArchived, type ItemRecord, type Ledger, type SceneRecord } from './fold.js'
 import type { ItemState, Mark, Standing } from './reconcile.js'
-import { actorNames, doingAt, earlierText, factLine, MARK_LABEL, originLabel, SAID_LABEL, scenesNamed, shortScene, standingData, STATE_LABEL, when, who, type ItemView } from './views.js'
+import { actorNames, doingAt, earlierText, factLine, MARK_LABEL, originLabel, SAID_LABEL, scenesNamed, shortScene, standingData, STATE_LABEL, when, whereConversation, who, type ItemView } from './views.js'
 
 const ORIGINS: { value: string; label: string }[] = [
   { value: '', label: '全部' },
@@ -374,8 +375,17 @@ export function scenesAnswer(ledger: Ledger): ViewAnswer {
   return { title: '场景', subtitle: `${scenes.length} 次会话`, blocks: [{ kind: 'table', columns, rows, empty: '' }] }
 }
 
-/** One scene's card: who, when, where, what was said, the owner operations, and the things entered, changed or moved in it. */
-export function sceneAnswer(ledger: Ledger, params: Record<string, string>): ViewAnswer {
+const CONVERSATION_TONE = { here: 'good', gone: 'warn', elsewhere: 'neutral' } as const
+
+/** The conversation's file, to copy, with whether it is here; the command that resumes it, only when it is. */
+function conversationFields(c: Conversation | null): { label: string; value: Cell }[] {
+  if (c === null) return []
+  const file = { label: '对话', value: { text: c.path, mono: true, copy: true as const, tag: { text: whereConversation(c), tone: CONVERSATION_TONE[c.status] } } }
+  return c.status === 'here' && c.resume ? [file, { label: '接着聊', value: { text: c.resume, mono: true, copy: true } }] : [file]
+}
+
+/** One scene's card: who, when, where, its conversation, what was said, the owner operations, and the things entered, changed or moved in it. */
+export function sceneAnswer(ledger: Ledger, params: Record<string, string>, conversationOf: (scene: SceneRecord) => Conversation | null): ViewAnswer {
   const input = params.scene ?? ''
   const named = scenesNamed(ledger, input)
   const scene = named.length === 1 ? named[0] : undefined
@@ -391,6 +401,7 @@ export function sceneAnswer(ledger: Ledger, params: Record<string, string>): Vie
         { label: '开始', value: { text: when(scene.first), at: scene.first } },
         { label: '最后', value: { text: when(scene.last), at: scene.last } },
         ...(scene.cwds.length > 0 ? [{ label: '在哪', value: { text: scene.cwds.map((d) => shortDir(d, 36)).join('、'), mono: true } }] : []),
+        ...conversationFields(conversationOf(scene)),
         { label: '场景号', value: { text: scene.id, mono: true, muted: true } },
       ],
     },

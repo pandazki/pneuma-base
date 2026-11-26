@@ -86,8 +86,10 @@ type Session = {
   source: 'flag' | 'env' | 'minted'     // 会话标识是怎么拿到的
   cwd: string
   machine: string
-  transcript: string | null
+  transcript: Transcript | null         // 这次会话的对话在哪，见下
 }
+
+type Transcript = { path: string; resume: string | null }   // path 把家目录写成 ~；resume：接着这段对话的命令
 
 type Context = { library: Library; actor: Actor; session: Session; now: Instant; home: string }   // home：本机的 $PNEUMA_BASE_HOME
 
@@ -100,6 +102,16 @@ interface AgentFace {
   archive(req: ArchiveRequest, ctx: Context): Promise<ArchiveResult>
 }
 ```
+
+**会话指回对话。** 会话号来自某个 agent 产品的环境变量时，内核按 `session.ts` 里的产品表找这次会话的对话文件，找到了就放进 `session.transcript`：只是一个指针，不复制、也不读里面的内容，只看文件在不在。表里每个产品一行：带会话号的变量、只表示它在跑的变量、怎么找对话：
+
+| 产品 | 会话号 | 对话文件 | 接着聊 |
+| --- | --- | --- | --- |
+| `claude-code` | `CLAUDE_CODE_SESSION_ID` | `~/.claude/projects/<目录>/<会话号>.jsonl`（设了 `CLAUDE_CONFIG_DIR` 就在它下面），`<目录>` 是会话开始时所在的目录，字母和数字以外的字符都换成 `-`；调用可能在它下面的目录里，所以往上逐级试。目录名超过 200 个字符时 Claude Code 在后面加一段内核不知道的散列，不给指针 | `cd <目录> && claude --resume <会话号>` |
+| `codex` | `CODEX_THREAD_ID` | `~/.codex/sessions/<年>/<月>/<日>/rollout-<时间>-<会话号>.jsonl`（设了 `CODEX_HOME` 就在它下面），日期是会话开始的那天，从新到旧找 | `codex resume <会话号>` |
+| `antigravity` | `ANTIGRAVITY_CONVERSATION_ID` | 没见过它的目录，不给规则 | 无 |
+
+两条规则都按这台机器上真的会话核过：按会话号找到了文件，也只看了名字；两个接着聊的命令都在各自的 `--help` 里。会话号要是一个干净的名字（字母、数字和 `-`），否则不找。会话号来自 `--session` 或 `PNEUMA_BASE_SESSION`、文件不在、产品没有规则时，`transcript` 是 `null`。经 MCP 的会话号是连接自己的，也是 `null`。路径在家目录下时写成 `~/…`，指针里不写家目录的绝对路径；在哪台机器上由 `session.machine` 记。Claude Code 里的子代理带的是主会话的号，指针指向主会话的对话。记账插件把它记在事实的 `where.transcript` 上，`inspect <场景号>` 和场景卡显示对话在哪、此刻在不在这台机器上，在的话给接着聊的命令（第 10 节）。
 
 ### 放
 
@@ -517,7 +529,7 @@ $PNEUMA_BASE_HOME/
 | `onArchive` | 记下归档和取回；已归档的条目不出现在可能过期等清单里 |
 | `onCheck` | 自某时以来的变化；来历不明的；可能过期的；来源不在的；挪过的（已接回，记一条看到的挪动）；不在了的 |
 | `observe` | 把做成了的主人面操作记成事实；清归档时，被删的路径上的条目记为已除 |
-| `views`、`onView` | `ledger.items`（条目）：每个没除掉的条目的路径、来历、谁、当时在做什么（可让的列：面板里也有）、现状（对账后的状态，依据上有标记时显示标记）、时间；过滤来历、现状、是否带归档的，默认不带；行链到内核的 `item` 面板。`ledger.scenes`（场景）：每次会话，新的在前：开始的时间、谁、在哪（可让的列：场景卡里也有）、在做什么（没说过就是其中的主人面操作）、动了几样东西；行链到场景卡。`ledger.scene`（场景卡，不进导航，参数 `scene`）：谁、起止、在哪、说过的话、主人面的操作，和在其中放入或改过的条目，条目是一个列表，路径完整，下面一句在这个场景里怎样了。`ledger.standing`（状况）：`check` 的那几节，用同一份 `standingData`；每节是一个列表，路径链到那样东西的面板，挪过的链到新位置，只在比节名多说了什么时带一句。`ledger.activity`（动态）：最近 200 条事实，新的在前，含主人面的操作；可按 agent 或主人过滤 |
+| `views`、`onView` | `ledger.items`（条目）：每个没除掉的条目的路径、来历、谁、当时在做什么（可让的列：面板里也有）、现状（对账后的状态，依据上有标记时显示标记）、时间；过滤来历、现状、是否带归档的，默认不带；行链到内核的 `item` 面板。`ledger.scenes`（场景）：每次会话，新的在前：开始的时间、谁、在哪（可让的列：场景卡里也有）、在做什么（没说过就是其中的主人面操作）、动了几样东西；行链到场景卡。`ledger.scene`（场景卡，不进导航，参数 `scene`）：谁、起止、在哪、对话在哪（可复制，标着在这台机器上、这台机器上已经没有了或在别的机器上；在这台机器上时下一行是接着聊的命令，可复制）、说过的话、主人面的操作，和在其中放入或改过的条目，条目是一个列表，路径完整，下面一句在这个场景里怎样了。`ledger.standing`（状况）：`check` 的那几节，用同一份 `standingData`；每节是一个列表，路径链到那样东西的面板，挪过的链到新位置，只在比节名多说了什么时带一句。`ledger.activity`（动态）：最近 200 条事实，新的在前，含主人面的操作；可按 agent 或主人过滤 |
 | `onItemView` | 条目详情里「来历」一节：怎么来的与出处、谁、何时、在哪、场景、当时在做、现状、并入了哪个目录；依据（每个依据的现状，链到上游的 `item`）；被什么依据；决定与备注；内容的变化（每次换内容和那次放入带的一句话，标出哪一份在留存里）；留存，每份说是谁放进来的那份内容，不说它放在哪。数据就是 `inspect` 用的 `itemView`。没人登记过的文件说明来历不明；带标记的目录里面从没入册的文件说明它是谁的一部分。动作都经两个面：来历不明的给「记为带进来的」「记为做出来的」（`put` 登记）；被直接改过的给「认下这次改动」（`say revised`）；每份留存给「取回到新路径」（`ledger held restore`）。状况页的「没人登记过的」「被直接改过的」两节，每一项带同样的动作 |
 
 它给主人面加三条命令，名字和别的插件一样以它的名字开头：`ledger held list` 列出留存，只读；`ledger held restore <库内路径或条目号> [--fingerprint <指纹>] --to <新的库内路径>` 把一份留存复制到一个空着的新路径，目录条目整棵复制回去，并把它以「主人带进来的」入册，只给主人；`ledger held drop` 清掉全部留存，是破坏性的。两条都由内核的门拦。

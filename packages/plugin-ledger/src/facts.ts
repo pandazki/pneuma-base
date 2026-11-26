@@ -3,7 +3,7 @@
 import { randomBytes } from 'node:crypto'
 import { link, mkdir, open, readdir, readFile, unlink } from 'node:fs/promises'
 import { basename, join } from 'node:path'
-import type { Actor, Context, Fingerprint, Instant, LibraryPath } from '@pneuma-base/kernel'
+import type { Actor, Context, Fingerprint, Instant, LibraryPath, Transcript } from '@pneuma-base/kernel'
 
 export type ItemId = string & { readonly __brand: 'ItemId' }
 export type SceneId = string & { readonly __brand: 'SceneId' }
@@ -34,7 +34,7 @@ export type Envelope = {
   at: Instant
   scene: SceneId
   actor: FactActor
-  where: { cwd: string; machine: string; sessionSource: 'flag' | 'env' | 'minted'; transcript: string | null }
+  where: { cwd: string; machine: string; sessionSource: 'flag' | 'env' | 'minted'; transcript: Transcript | null }
   how: How
 }
 

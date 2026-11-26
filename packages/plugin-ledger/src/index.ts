@@ -21,6 +21,7 @@ import {
   type SayAnswer,
   type SayRequest,
 } from '@pneuma-base/kernel'
+import { conversationOf } from './conversation.js'
 import { itemNamed, load, onDisk, snapshot, statesOf, textOf, type Disk } from './disk.js'
 import { fact, factActor, LEDGER_ACTOR, newItemId, sceneOf, writeFacts, type Basis, type Fact, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
 import type { ItemRecord, Ledger, SceneRecord } from './fold.js'
@@ -356,7 +357,7 @@ export const ledger: Plugin = {
     const ledger = await load(ctx)
     const { root } = ctx.library
     const card = (scene: SceneRecord) => {
-      const view = sceneView(ledger, scene)
+      const view = sceneView(ledger, scene, conversationOf(scene, ctx.session.machine))
       return [{ title: '场景', body: sceneText(view), data: view }]
     }
     const scene = ledger.scenes.get(req.target as SceneId)
@@ -422,7 +423,7 @@ export const ledger: Plugin = {
       case SCENES_VIEW:
         return scenesAnswer(await load(ctx))
       case SCENE_VIEW:
-        return sceneAnswer(await load(ctx), req.params)
+        return sceneAnswer(await load(ctx), req.params, (scene) => conversationOf(scene, ctx.session.machine))
       case ACTIVITY_VIEW:
         return activityAnswer(await load(ctx), req.params)
       case HELD_VIEW:
