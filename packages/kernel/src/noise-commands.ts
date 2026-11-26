@@ -82,7 +82,7 @@ export async function noiseSection(root: string): Promise<Block> {
   return {
     kind: 'section',
     title: '噪音',
-    note: `库不报告、不进入的名字和路径，${n.declared ? '记在库根上，跟着库走' : '现在是默认的那份'}。主人对一个没看过的目录答「不用管」，它就加到这里。`,
+    note: `库不报告、不进入的名字和路径，${n.declared ? '记在库根上，跟着库走' : '现在是默认的那份'}。`,
     count: rows.length,
     blocks: [{ kind: 'table', columns: [{ key: 'value', label: '名字或路径' }, { key: 'kind', label: '按什么算' }], rows, empty: '没有噪音：库里的一切都会被报告。' }],
     actions: [{ label: '加一条', tone: 'default', confirm: null, ...formOf(NOISE_COMMANDS.find((x) => x.name === 'noise add') as KernelCommand) }],

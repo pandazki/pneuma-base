@@ -459,7 +459,7 @@ export const STANDING_KINDS: readonly { kind: keyof StandingData; title: string;
   { kind: 'gone', title: '来源不在', note: '它依据的东西不在了。' },
   { kind: 'upstream', title: '上游有标记', note: '它更上游的依据可能过期或不在了。' },
   { kind: 'unowned', title: '没人登记过的', note: '不知道从哪来的东西。知道来历，就给它补上。' },
-  { kind: 'closed', title: '没看过的目录', note: '里面的东西都没登记，也没有打开看过：登记成一样东西、登记里面的文件，还是不用管。' },
+  { kind: 'closed', title: '没登记的目录', note: '' },
   { kind: 'changed', title: '被直接改过的', note: '有人绕过工具改了它，内容和记录的不一样。是你改的，就认下这次改动。' },
   { kind: 'missing', title: '不在了的', note: '账上有，磁盘上找不到：可能被删掉了，或挪到了认不出的地方。' },
   { kind: 'moved', title: '挪过的', note: '东西挪到了新的位置。agent 下次 check 时，记账会把新位置接上。' },

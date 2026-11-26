@@ -37,9 +37,9 @@ describe('a directory no record points into', () => {
   it('is one line in check and one question on the home page, and is never opened', () => {
     const check = agent(['check', '--json']).json()
     expect(check.problems).toEqual([])
-    expect(check.sections.find((s: any) => s.title === '没看过的目录').data).toEqual({ count: 1, shown: [{ path: 'vendor' }] })
+    expect(check.sections.find((s: any) => s.title === '没登记的目录').data).toEqual({ count: 1, shown: [{ path: 'vendor' }] })
     const home = owner(['show', 'home']).stdout
-    expect(home).toContain('vendor/ 还没看过，里面的东西都没登记。')
+    expect(home).toContain('vendor/ 没登记。')
     expect(agent(['start', '看看库里有什么']).stdout).toContain('vendor/')
   })
 

@@ -102,8 +102,8 @@ test('4: a folder that had files before it became a library asks about each dire
   await page.goto(url)
   const main = page.getByRole('main')
   const decide = main.getByRole('region', { name: '等你决定' })
-  for (const dir of ['contracts', 'notes', 'photos']) await expect(decide).toContainText(`${dir}/ 还没看过，里面的东西都没登记。登记成一样东西、登记里面的文件，还是不用管？`)
-  await expect(main.getByRole('region', { name: '需要留意' })).not.toContainText('没看过的目录')
+  for (const dir of ['contracts', 'notes', 'photos']) await expect(decide).toContainText(`${dir}/ 没登记。`)
+  await expect(main.getByRole('region', { name: '需要留意' })).not.toContainText('没登记的目录')
   await shoot(page, '4-ask', SHOTS)
   // The questions come in the order of the root's listing: contracts/, notes/, photos/.
   await decide.getByRole('button', { name: '登记里面的文件' }).nth(1).click()

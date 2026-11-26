@@ -372,7 +372,7 @@ export function standingSections(ledger: LedgerLike, standing: Standing, include
     ['gone', '来源不在', d.gone, (r: StandingData['gone'][number]) => `  ${r.path} ← 依据 ${names(r.sources)} 不在了`, []],
     ['upstream', '上游有标记', d.upstream, (r: StandingData['upstream'][number]) => `  ${r.path} ← 上游 ${names(r.via)} 有标记`, []],
     ['unowned', '没人登记过的', d.unowned, (r: StandingData['unowned'][number]) => `  ${r.path}${r.adopted ? '（入了册，来历不明）' : ''}`, [...partial, '它们不是经 put 放进来的。要留着用的，知道来历就用 put <库内路径> --brought 或 --made 补上；不要的归档。']],
-    ['closed', '没看过的目录', d.closed, (r: StandingData['closed'][number]) => `  ${r.path}/`, ['里面的东西都没登记，也没有打开看过。登记成一样东西、登记里面的文件，还是不用管，由主人定。']],
+    ['closed', '没登记的目录', d.closed, (r: StandingData['closed'][number]) => `  ${r.path}/`, []],
     ['changed', '被直接改过的', d.changed, (r: StandingData['changed'][number]) => `  ${r.path}`, ['是你改的，就用 say revised <库内路径> 认下；主人说是自己改的，加 --by owner。']],
     ['missing', '不在了的', d.missing, (r: StandingData['missing'][number]) => `  ${r.path}`, []],
     ['moved', '挪过的', d.moved, (r: StandingData['moved'][number]) => `  ${r.from} → ${r.to}，已接回`, []],
