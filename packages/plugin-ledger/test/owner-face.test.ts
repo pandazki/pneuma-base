@@ -113,7 +113,7 @@ describe('confirmed destructive owner commands', () => {
 
     const { r, lines } = await sinceLines(as(claude, 's2'))
     expect(lines).toContain('  _archive/s.md 随归档区一起清掉了')
-    expect(r.sections.find((s) => s.title === '来源不在')?.data).toMatchObject([{ path: 'a.md', sources: [{ path: '_archive/s.md' }] }])
+    expect(r.sections.find((s) => s.title === '来源不在')?.data).toMatchObject({ count: 1, shown: [{ path: 'a.md', sources: [{ path: '_archive/s.md' }] }] })
     expect(r.sections.find((s) => s.title === '不在了的')).toBeUndefined()
     const inspected = await agentFace.inspect({ target: 'a.md' }, as(claude, 's2'))
     expect(inspected.sections[0]?.body).toMatch(/_archive\/s\.md\s+已除 ← 来源不在/)

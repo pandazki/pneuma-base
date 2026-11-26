@@ -1,15 +1,16 @@
 // The kernel's helpers on a plugin's context, `PluginContext.tools`, bound to the operation's library.
 import { copyFile, mkdir } from 'node:fs/promises'
 import { dirname, isAbsolute, join, posix } from 'node:path'
-import type { Context, LibraryPath, PluginTools } from '@pneuma-base/sdk'
+import type { Context, LibraryPath, PluginName, PluginTools } from '@pneuma-base/sdk'
 import { fingerprintOfFile } from './files.js'
 import { abs, archivedPath, isWithin, originalPath, parseLibraryPath, regionOf } from './paths.js'
 import { puttingNow } from './putting.js'
+import { pluginStorage } from './storage.js'
 import { rankHits, searchTerms, SENTENCE_HITS } from './terms.js'
 import { bundleFiles, bundleManifest, copyCounted, enclosingBundle, fingerprintOf, fingerprintOfManifest, kindAt, libraryFiles, thingAt } from './things.js'
 
-/** The tools of the plugin whose own directory is `dir`, for the operation `ctx`. */
-export function pluginTools(ctx: Context, dir: string): PluginTools {
+/** The tools of the plugin `name`, whose own directory is `dir`, for the operation `ctx`. */
+export function pluginTools(ctx: Context, dir: string, name: PluginName): PluginTools {
   const root = ctx.library.root
   const at = (path: LibraryPath) => abs(root, path)
   const isBundle = async (path: LibraryPath) => (await kindAt(at(path))) === 'bundle'
@@ -58,5 +59,6 @@ export function pluginTools(ctx: Context, dir: string): PluginTools {
       return agentFace.put(req, ctx)
     },
     putting: () => puttingNow(root),
+    storage: pluginStorage(root, name),
   }
 }

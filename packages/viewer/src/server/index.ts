@@ -8,7 +8,7 @@ import { extname, isAbsolute, join, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { dropEndpoint, openLibrary, PREFERRED_PORT, recordEndpoint, type Env, type Instant, type PluginTable } from '@pneuma-base/kernel'
 import { agentRoutes, type McpEndpoint } from './agent.js'
-import { call, init, state, tableOf, view, type Served } from './api.js'
+import { call, changes, init, state, tableOf, view, type Served } from './api.js'
 import { libraryFile, pluginUiFile, revision } from './files.js'
 import { readBody, sendJson, TooLarge } from './http.js'
 import { listenLoopback } from './listen.js'
@@ -140,7 +140,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, served: 
       return sendLibraryFile(res, served, url.searchParams)
     case 'GET /api/rev':
       // Pairings are machine state, not the library's: the home page hears of one through the same stamp.
-      return sendJson(res, { status: 200, json: { rev: `${await revision(served.dir)}-${await revision(join(served.home, 'pairings'))}` } })
+      return sendJson(res, { status: 200, json: { rev: `${await changes(served)}-${await revision(join(served.home, 'pairings'))}` } })
     case 'POST /api/init':
       return sendJson(res, await init(served, await readJson(req)))
     default:

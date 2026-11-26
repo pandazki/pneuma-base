@@ -62,7 +62,7 @@ describe('「开始」 on the home page', () => {
 
     writeFileSync(join(work, 'paper.pdf'), '%PDF')
     run(['--library', lib, 'put', join(work, 'paper.pdf'), '--to', 'inbox/paper.pdf', '--brought', '--by', 'owner'])
-    expect(states(stepsOf(home()))).toEqual(['connect:已接上 Claude Code', 'first:库里有 1 样东西', 'say:todo'])
+    expect(states(stepsOf(home()))).toEqual(['connect:已接上 Claude Code', 'first:库的根目录里有 1 样东西', 'say:todo'])
 
     run(['@claude-code', 'start', '看看库里有什么'])
     expect(stepsOf(home())).toBeNull()

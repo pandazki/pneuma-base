@@ -27,7 +27,7 @@ describe('scope', () => {
   const inScope = scopeOf([sync, withCache])
 
   it('takes content, the archive, records and bundle markers', () => {
-    for (const path of ['a.md', 'sites/one/.pneuma-item', '_archive/old.md', '.pneuma-base/ledger/facts/s/1.jsonl', '.pneuma-base/sync/facts/1.jsonl', '.pneuma-base/search/facts/x']) expect(inScope(path), path).toBe(true)
+    for (const path of ['a.md', 'sites/one/.pneuma-item', '_archive/old.md', '.pneuma-base/noise.json', '.pneuma-base/ledger/facts/2026-11-26/1.jsonl', '.pneuma-base/ledger/facts/s/1.jsonl', '.pneuma-base/sync/facts/1.jsonl', '.pneuma-base/search/facts/x']) expect(inScope(path), path).toBe(true)
   })
 
   it('leaves out this machine’s configuration, caches, temporary files, OS junk and what is not content', () => {
@@ -37,6 +37,7 @@ describe('scope', () => {
       '.pneuma-base/tmp/x.partial',
       '.pneuma-base/sync/tmp/1',
       '.pneuma-base/search/index/db.sqlite',
+      '.pneuma-base/cache/rows/ledger.sqlite',
       '.pneuma-base/ledger/facts/s/.tmp-1.jsonl',
       'notes/.DS_Store',
       'notes/._a.md',
@@ -112,7 +113,7 @@ describe('the sync.status view', () => {
     const pending = sectionNamed(before, '待同步')
     expect(pending?.actions).toMatchObject([{ label: '现在同步', call: { face: 'owner', command: 'sync now' } }])
     const table = flat(before).find((b) => b.kind === 'table')
-    expect(table?.kind === 'table' && table.rows.find((r) => r.key === 'pushed')?.cells.count?.text).toBe('2') // a.md and the target record
+    expect(table?.kind === 'table' && table.rows.find((r) => r.key === 'pushed')?.cells.count?.text).toBe('3') // a.md, the target record and the noise declared at init
 
     await f.owner('sync now')
     const after = (await f.view())?.blocks ?? []

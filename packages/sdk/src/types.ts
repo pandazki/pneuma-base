@@ -1,5 +1,6 @@
 // The plugin contract's shapes, which a plugin and the kernel exchange. ARCHITECTURE.md sections 4 and 5.
 import type { IconName } from './icons.js'
+import type { PluginStorage } from './storage.js'
 
 // Semantic primitives. Parsed once at the kernel's boundary.
 export type LibraryPath = string & { readonly __brand: 'LibraryPath' } // library-relative, '/'-separated
@@ -139,6 +140,8 @@ export interface PluginTools {
    * any plugin records it, so a file at one of these paths is no stray: its put has not finished.
    */
   putting(): Promise<LibraryPath[]>
+  /** Storage, where the plugin's records point: looking at places, and its own record place under its name. */
+  readonly storage: PluginStorage
 }
 
 export type Note = { plugin: PluginName; text: string; data?: unknown }
@@ -501,6 +504,12 @@ export interface Plugin {
    * do first. `plugin remove <name> --anyway` removes it all the same, and the answer repeats the sentence.
    */
   readonly onRemove?: (ctx: PluginContext) => Promise<void | { refuse: string }>
+
+  /**
+   * The directories its records make open: each holds, at some depth, something registered. The kernel
+   * adds the root; the management UI's change poll looks at these and at no other directory.
+   */
+  readonly openDirs?: (ctx: PluginContext) => Promise<LibraryPath[]>
 
   /** The views it adds to the management UI. Each id starts with `<name>.`. */
   readonly views?: readonly ViewDecl[]

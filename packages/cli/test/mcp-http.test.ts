@@ -7,14 +7,13 @@
 // - legacy: one connection is one scene of the grant's agent, an unknown session 404, DELETE ends it,
 //   the GET stream hears a plugin added.
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
-import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { startServer, type RunningServer } from '@pneuma-base/viewer'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mcpOverHttp } from '../dist/mcp/http.js'
 import { builtinPlugins } from '../dist/plugins.js'
-import { sandbox, tempDir, type Sandbox } from './helpers.js'
+import { factsOf, sandbox, tempDir, type Sandbox } from './helpers.js'
 import { BOTH_FACES, call, connect, eraOptions, expectParity, library, ok, PARITY_CASES, sameStart, sceneRows, textOf, type Era } from './mcp-cases.js'
 
 const servers: RunningServer[] = []
@@ -216,7 +215,7 @@ describe('a 2026-07-28 request', () => {
     const anonymous = await connectHttp(server, 'g', 'modern')
     expect(await call(anonymous.client, 'put', { text: '# 别的\n', to: 'docs/other.md', made: true })).toMatchObject({ isError: false })
     await anonymous.client.close()
-    const scenes = readdirSync(join(lib, '.pneuma-base', 'ledger', 'facts'))
+    const scenes = [...new Set(factsOf(lib).map((f) => f.scene as string))]
     expect(scenes).toContain('named-scene')
     expect(scenes.filter((s) => s.startsWith('adhoc-claude-'))).toHaveLength(1)
     const claude = sceneRows(sb, lib).filter((row) => row.actor.name === 'claude')

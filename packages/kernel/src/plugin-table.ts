@@ -180,6 +180,7 @@ const HOOKS: Record<Hook, true> = {
   onSay: true,
   onCheck: true,
   onAsks: true,
+  openDirs: true,
   onArchive: true,
   observe: true,
   onPurged: true,

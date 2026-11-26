@@ -279,8 +279,7 @@ describe('the standing view', () => {
     writeFileSync(join(root, 'src/stripe.html'), 'stripe, new prices')
     writeFileSync(join(root, 'dropped.md'), 'by hand')
     rmSync(join(root, 'gone-src.md'))
-    mkdirSync(join(root, 'moved'))
-    renameSync(join(root, 'moving.md'), join(root, 'moved/here.md'))
+    renameSync(join(root, 'moving.md'), join(root, 'src/here.md'))
 
     const r = shown(await show('ledger.standing'))
     const sections = r.blocks.filter((b) => b.kind === 'section')
@@ -293,12 +292,24 @@ describe('the standing view', () => {
     expect(itemsOf('没人登记过的')).toEqual([{ path: 'dropped.md', note: null, open: 'dropped.md' }])
     expect(itemsOf('被直接改过的')).toEqual([{ path: 'src/stripe.html', note: null, open: 'src/stripe.html' }])
     expect(itemsOf('不在了的')).toEqual([{ path: 'gone-src.md', note: null, open: 'gone-src.md' }])
-    expect(itemsOf('挪过的')).toEqual([{ path: 'moving.md', note: '挪到了 moved/here.md', open: 'moved/here.md' }])
+    expect(itemsOf('挪过的')).toEqual([{ path: 'moving.md', note: '挪到了 src/here.md', open: 'src/here.md' }])
     expect(listIn(sectionNamed(r.blocks, '可能过期'))[0]?.cell.link).toEqual({ view: 'item', params: { path: 'comparison.md' }, target: 'panel' })
 
     // The panel at the new path knows the thing that moved there.
-    const panel = sectionNamed(shown(await show('item', { path: 'moved/here.md' })).blocks, '来历').blocks[0]
-    expect(panel?.kind === 'fields' && panel.fields.find((f) => f.label === '现状')?.value.tag?.text).toBe('已搬到 moved/here.md')
+    const panel = sectionNamed(shown(await show('item', { path: 'src/here.md' })).blocks, '来历').blocks[0]
+    expect(panel?.kind === 'fields' && panel.fields.find((f) => f.label === '现状')?.value.tag?.text).toBe('已搬到 src/here.md')
+  })
+
+  // tmp/run-7: nothing below a directory no record points into is opened, so a thing moved there is
+  // not followed: it is not where it was, and the directory is one line to answer.
+  it('does not follow a thing into a directory nobody looked into', async () => {
+    const { root, show, codex } = await relayed()
+    await agentFace.put({ kind: 'place', from: text('moving'), to: 'moving.md', origin: { kind: 'brought', source: null, by: null } }, codex())
+    mkdirSync(join(root, 'moved'))
+    renameSync(join(root, 'moving.md'), join(root, 'moved/here.md'))
+    const r = shown(await show('ledger.standing'))
+    expect(r.blocks.filter((b) => b.kind === 'section').map((s) => s.kind === 'section' && `${s.title}:${s.count}`)).toEqual(['没看过的目录:1', '不在了的:1'])
+    expect(listIn(sectionNamed(r.blocks, '没看过的目录')).map((i) => [i.cell.text, i.actions?.map((a) => a.label)])).toEqual([['moved/', ['登记成一样东西', '登记里面的文件', '不用管']]])
   })
 
   it('says there is nothing to look at when all is in order', async () => {
@@ -406,41 +417,56 @@ describe('things nobody registered', () => {
     return { root, show, run, asks }
   }
 
-  it('is one question on the home page, not something to look at: register them all as brought in by the owner, or leave them', async () => {
+  // tmp/run-7 section 7: asked per place. The loose files of an open directory are one question; a
+  // directory nothing registered is in is another, with its three answers, and is never opened.
+  it('is one question per place on the home page, not something to look at', async () => {
     const { show, asks } = await folderWithFiles(3)
-    const [ask, ...more] = await asks()
+    const [loose, closed, ...more] = await asks()
     expect(more).toEqual([])
-    expect(ask).toMatchObject({ by: '记账与对账', text: '这里原来有 3 样东西，还没登记。都记为你带进来的吗？', suggested: 0 })
-    expect(ask?.actions.map((a) => [a.label, a.call])).toEqual([
-      ['都记为我带进来的', { face: 'owner', command: 'ledger register', args: { positional: [], flags: {} } }],
-      ['不登记，不再问', { face: 'owner', command: 'ledger leave', args: { positional: [], flags: {} } }],
+    expect(loose).toMatchObject({ by: '记账与对账', text: '库的根目录有 2 个文件还没登记。都记为你带进来的吗？', suggested: 0 })
+    expect(loose?.actions.map((a) => [a.label, a.call])).toEqual([
+      ['都记为我带进来的', { face: 'owner', command: 'ledger register', args: { positional: ['.'], flags: {} } }],
+      ['不登记，不再问', { face: 'owner', command: 'ledger leave', args: { positional: ['.'], flags: {} } }],
+    ])
+    expect(closed).toMatchObject({ text: 'notes/ 还没看过，里面的东西都没登记。登记成一样东西、登记里面的文件，还是不用管？', about: 'notes' })
+    expect(closed?.actions.map((a) => [a.label, a.call])).toEqual([
+      ['登记成一样东西', { face: 'agent', verb: 'put', request: { kind: 'register', path: 'notes', origin: { kind: 'brought', source: null, by: 'owner' }, note: null } }],
+      ['登记里面的文件', { face: 'owner', command: 'ledger register', args: { positional: ['notes'], flags: { inside: true } } }],
+      ['不用管', { face: 'owner', command: 'noise add', args: { positional: ['notes'], flags: {} } }],
     ])
     // Nothing else to look at, said without claiming the unregistered things match a record.
     expect(sectionNamed(shown(await show('home')).blocks, '需要留意').blocks).toEqual([{ kind: 'text', tone: 'neutral', text: '没有要留意的：登记过的东西都和记录的一样。' }])
   })
 
-  it('registered all at once: each is the owner’s, brought in; the activity has one row for the act; nothing is asked any more', async () => {
+  it('registered place by place: each is the owner’s, brought in; the activity has one row for each act; nothing is asked any more', async () => {
     const { show, run, asks } = await folderWithFiles(3)
     const register = (await asks())[0]?.actions[0]?.call
     if (register?.face !== 'owner') throw new Error('no owner call')
-    expect(await run(register)).toMatchObject({ outcome: 'done', text: '已把 3 样东西记为主人带进来的。', data: { registered: 3 } })
+    expect(await run(register)).toMatchObject({ outcome: 'done', text: '已把 2 样东西记为主人带进来的。', data: { registered: 2 } })
+    const inside = (await asks()).find((a) => a.about === 'notes')?.actions[1]?.call
+    if (inside?.face !== 'owner') throw new Error('no owner call')
+    expect(await run(inside)).toMatchObject({ outcome: 'done', text: '已把 notes/里的 1 个文件记为主人带进来的。', data: { registered: 1 } })
     expect(await asks()).toEqual([])
     const came = sectionNamed(sectionNamed(shown(await show('item', { path: 'notes/n1.md' })).blocks, '来历').blocks, '怎么来的').blocks[0]
     expect(came?.kind === 'fields' && came.fields[0]?.value.text).toBe('带进来的，主人给的')
     const rows = feedRows(shown(await show('ledger.activity')).blocks)
-    expect(rows.map((r) => r.text).filter((t) => t.includes('ledger register') || t.includes('放入'))).toEqual(['主人面的操作 ledger register：已把 3 样东西记为主人带进来的。'])
+    expect(rows.map((r) => r.text).filter((t) => t.includes('ledger register') || t.includes('放入'))).toEqual([
+      '主人面的操作 ledger register：已把 notes/里的 1 个文件记为主人带进来的。',
+      '主人面的操作 ledger register：已把 2 样东西记为主人带进来的。',
+    ])
     expect(shown(await show('ledger.standing')).blocks).toMatchObject([{ kind: 'empty' }])
   })
 
   it('left as they are: not asked about again, still on the standing page; a later pile is asked about anew', async () => {
-    const { root, show, run, asks } = await folderWithFiles(2)
+    const { root, show, run, asks } = await folderWithFiles(4)
     const leave = (await asks())[0]?.actions[1]?.call
     if (leave?.face !== 'owner') throw new Error('no owner call')
     expect(await run(leave)).toMatchObject({ outcome: 'done', data: { left: 2 } })
-    expect(await asks()).toEqual([])
+    const closedOnly = ['notes/ 还没看过，里面的东西都没登记。登记成一样东西、登记里面的文件，还是不用管？']
+    expect((await asks()).map((a) => a.text)).toEqual(closedOnly)
     expect(sectionNamed(shown(await show('ledger.standing')).blocks, '没人登记过的').count).toBe(2)
     writeFileSync(join(root, 'later.md'), 'dropped in later')
-    expect((await asks()).map((a) => a.text)).toEqual(['这里有 1 样东西，还没登记。都记为你带进来的吗？'])
+    expect((await asks()).map((a) => a.text)).toEqual(['库的根目录有 1 个文件还没登记。都记为你带进来的吗？', ...closedOnly])
   })
 })
 

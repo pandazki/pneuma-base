@@ -4,6 +4,7 @@
 import type { Instant, Plugin, PluginName } from './types.js'
 
 export * from './types.js'
+export * from './storage.js'
 export { ICON_NAMES, type IconName } from './icons.js'
 export { defineCommand, formOf, usageOf, type FixedValue } from './params.js'
 
@@ -46,6 +47,9 @@ export const KERNEL_COMMAND_NAMES = [
   'request list',
   'request approve',
   'request decline',
+  'noise list',
+  'noise add',
+  'noise remove',
 ] as const
 
 /**
@@ -76,6 +80,8 @@ export const RESERVED_PLUGIN_NAMES: readonly string[] = [
   'secret',
   'agent',
   'launcher',
+  'noise',
+  'cache',
 ]
 
 /** The name of a secret a plugin declares; it is also a file name under `$PNEUMA_BASE_HOME/secrets/<plugin>/`. */

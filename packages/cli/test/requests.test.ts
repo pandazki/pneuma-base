@@ -253,6 +253,8 @@ describe('a request standing in for a plugin’s ask about the same command', ()
   const SHOP = '店要上线给客户看'
 
   beforeEach(() => {
+    // The notetaker's area is an empty directory nothing registered is in: leave it, so only the asks under test stand.
+    ok(owner(['noise', 'add', 'notes']))
     ok(owner(['plugin', 'add', 'deploy']))
     const site = join(tempDir('pb-site-'), 'shop')
     mkdirSync(site)

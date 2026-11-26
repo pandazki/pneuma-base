@@ -91,7 +91,9 @@ describe('a library with no plugin', () => {
     const out = r.json()
     expect(out.say).toMatchObject({ outcome: 'not-heard', reason: 'no-plugin-for-kind' })
     expect(out.check).toEqual({ sections: [], asks: [], requests: { ended: [], pending: 0 }, problems: [] })
-    expect(out.find.hits.map((h: { path: string }) => h.path)).toEqual(['payments/comparison.md'])
+    // start's find asks the records (tmp/run-7), and a library with no plugin keeps none; find walks names still.
+    expect(out.find.hits).toEqual([])
+    expect(agent(['find', 'payments']).json().hits.map((h: { path: string }) => h.path)).toEqual(['payments/comparison.md'])
   })
 
   it('prints short Chinese text without --json', () => {

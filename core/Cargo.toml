@@ -1,0 +1,22 @@
+[workspace]
+members = ["storage", "local", "cli", "bench"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+pneuma-base-storage = { path = "storage" }
+pneuma-base-local = { path = "local" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+libc = "0.2"
+rusqlite = { version = "0.37", features = ["bundled"] }
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4

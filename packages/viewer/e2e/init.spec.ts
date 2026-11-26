@@ -22,7 +22,7 @@ test('a directory that is not a library becomes one from the UI, with the ledger
   // The home page says nobody did anything yet and asks about the file that was there; the standing page still lists it.
   const main = page.getByRole('main')
   await expect(main.getByRole('region', { name: '自上次以来' })).toContainText('还没有谁做过什么。')
-  await expect(main.getByRole('region', { name: '等你决定' })).toContainText('这里原来有 1 样东西，还没登记。都记为你带进来的吗？')
+  await expect(main.getByRole('region', { name: '等你决定' })).toContainText('库的根目录有 1 个文件还没登记。都记为你带进来的吗？')
   await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '状况' }).click()
   await expect(main.getByRole('region', { name: '没人登记过的' }).getByRole('listitem').filter({ hasText: 'kept.md' }).getByRole('button', { name: '记为带进来的' })).toBeVisible()
   await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '文件' }).click()

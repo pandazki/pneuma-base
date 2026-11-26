@@ -1,0 +1,19 @@
+[package]
+name = "pneuma-base-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "pneuma-base-core"
+path = "src/main.rs"
+
+[dependencies]
+pneuma-base-storage.workspace = true
+pneuma-base-local.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+tempfile.workspace = true

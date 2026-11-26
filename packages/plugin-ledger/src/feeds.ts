@@ -3,10 +3,10 @@
 import { FIRST_WORDS, shortDir, type Action, type Block, type Cell, type FeedGroup, type FeedRow, type Grant, type Instant, type Stat, type ViewAnswer } from '@pneuma-base/kernel'
 import type { Conversation } from './conversation.js'
 import type { Fact, FactActor, SceneId } from './facts.js'
-import { isArchived, type Ledger, type SceneRecord } from './fold.js'
+import { isArchived, type Ledger, type LedgerLike, type SceneRecord } from './fold.js'
 import type { Standing } from './reconcile.js'
 import { ACTIVITY_VIEW, actorMark, grantCell, itemLink, sceneCell, sceneDoing, sceneLink, standingCounts, STANDING_VIEW, WHO_OPTIONS } from './ui.js'
-import { actorNames, factLine, shortScene, sinceFacts, toldByItsCommand, when, whereConversation } from './views.js'
+import { actorNames, factLine, shortScene, toldByItsCommand, when, whereConversation } from './views.js'
 
 /** A day as a feed's heading, in this machine's time zone, as the view runs: 今天, 昨天, else the date and the weekday. */
 export function dayTitle(at: Instant, now: Instant): string {
@@ -38,7 +38,7 @@ export const whoseOf = (f: Fact): FeedRow['whose'] =>
   f.kind === 'owner.op' && f.request ? 'approved' : f.actor.kind === 'owner' ? 'owner' : f.how === 'observed' || f.actor.kind === 'plugin' ? 'observed' : 'agent'
 
 /** Where a fact opens: the thing it is about, while it is there; else its scene. */
-function factLink(ledger: Ledger, f: Fact): FeedRow['link'] {
+function factLink(ledger: LedgerLike, f: Fact): FeedRow['link'] {
   const id = 'item' in f ? f.item : f.kind === 'said' ? f.about : null
   const item = id === null ? undefined : ledger.items.get(id)
   return item && !item.removed ? itemLink(item.path) : sceneLink(f.scene)
@@ -56,7 +56,7 @@ const archiveAction = (kind: 'archive' | 'unarchive', path: string): Action => (
  * What can still be done about a fact: an archive taken back, a taking back archived again, while the
  * thing is still where that left it; when it was undone since, how. Anything else says nothing.
  */
-function endOf(ledger: Ledger, f: Fact): Pick<FeedRow, 'action' | 'settled'> {
+function endOf(ledger: LedgerLike, f: Fact): Pick<FeedRow, 'action' | 'settled'> {
   if (f.kind !== 'item.move' || f.archive === null) return {}
   const item = ledger.items.get(f.item)
   if (!item || item.removed) return { settled: '已清掉' }
@@ -74,7 +74,7 @@ function askedBy(f: Fact, grants: readonly Grant[]): Cell[] {
 }
 
 /** One fact as a feed row: when, who, the sentence check says, who asked for it, in which scene and by which grant, and what can still be done. */
-function factRow(ledger: Ledger, f: Fact, grants: readonly Grant[], withScene: boolean): FeedRow {
+function factRow(ledger: LedgerLike, f: Fact, grants: readonly Grant[], withScene: boolean): FeedRow {
   const grant = grantCell(f.actor, grants)
   const meta: Cell[] = [...askedBy(f, grants), ...(withScene ? [sceneCell(ledger, f.scene)] : []), ...(grant ? [grant] : [])]
   return { key: f.id, at: f.at, actor: actorMark(f.actor, grants), text: factLine(ledger, f), meta, whose: whoseOf(f), link: factLink(ledger, f), ...endOf(ledger, f) }
@@ -86,7 +86,7 @@ export const told = (facts: readonly Fact[]) => facts.filter((f) => f.kind !== '
 // ---- home ----
 
 /** What the scene was doing, or its short id: a group's heading. */
-const sceneTitle = (ledger: Ledger, id: SceneId) => {
+const sceneTitle = (ledger: LedgerLike, id: SceneId) => {
   const scene = ledger.scenes.get(id)
   return (scene ? sceneDoing(ledger, scene) : null) ?? `场景 ${shortScene(id)}`
 }
@@ -99,8 +99,8 @@ const SEEN_ALL: Action = { label: '都看过了', tone: 'default', confirm: null
  * by what it said it was doing, with 都看过了, which is `me` checking; then what needs looking at,
  * one line for each kind with how many, opening the standing page on that kind.
  */
-export function homeAnswer(ledger: Ledger, standing: Standing, me: FactActor, current: SceneId, grants: readonly Grant[]): ViewAnswer {
-  const { since, facts } = sinceFacts(ledger, me, current, 'last')
+export function homeAnswer(ledger: LedgerLike, standing: Standing, news: { since: Instant | null; facts: readonly Fact[] }, agents: readonly FactActor[], grants: readonly Grant[]): ViewAnswer {
+  const { since, facts } = news
   const groups: FeedGroup[] = grouped(facts, (f) => f.scene).map(({ members }) => {
     const scene = (members[0] as Fact).scene
     const title = sceneTitle(ledger, scene)
@@ -125,7 +125,7 @@ export function homeAnswer(ledger: Ledger, standing: Standing, me: FactActor, cu
     actions: done > 0 ? [SEEN_ALL] : [],
   }
   // Things nobody registered are a question on the home page, the ledger's ask, not something to look at.
-  const kinds = standingCounts(ledger, standing).filter((k) => k.kind !== 'unowned')
+  const kinds = standingCounts(ledger, standing).filter((k) => k.kind !== 'unowned' && k.kind !== 'closed')
   const attention: Block = {
     kind: 'section',
     title: '需要留意',
@@ -137,15 +137,14 @@ export function homeAnswer(ledger: Ledger, standing: Standing, me: FactActor, cu
         : [{ kind: 'list', items: kinds.map((k) => ({ cell: { text: `${k.count} 样${k.title}`, link: { view: STANDING_VIEW, params: { kind: k.kind }, target: 'main' } }, note: k.note, actions: [] })) }],
     actions: [],
   }
-  return { title: '自上次以来', subtitle: since === null ? null : `你上次看是 ${when(since)}`, blocks: [sayStep(ledger), sinceSection, attention] }
+  return { title: '自上次以来', subtitle: since === null ? null : `你上次看是 ${when(since)}`, blocks: [sayStep(agents), sinceSection, attention] }
 }
 
 /**
  * The step of getting started only the ledger can tell: whether an agent has worked here yet. It
  * joins the kernel's steps in the home page's 「开始」, which is gone once all are done.
  */
-function sayStep(ledger: Ledger): Block {
-  const agents = ledger.facts.filter((f) => f.actor.kind === 'agent').map((f) => f.actor)
+function sayStep(agents: readonly FactActor[]): Block {
   const blocks: Block[] = [{ kind: 'list', items: [{ cell: { text: FIRST_WORDS, copy: true }, note: '在接上的 agent 里说这一句，它会先看看库里有什么，再接着做你要它做的事。', actions: [] }] }]
   const done = agents.length > 0
   return { kind: 'steps', steps: [{ key: 'say', title: '对你的 agent 说一句', done, summary: done ? `${actorNames(agents)} 在这里做过事了` : null, blocks }] }

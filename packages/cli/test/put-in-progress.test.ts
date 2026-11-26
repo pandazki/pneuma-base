@@ -46,8 +46,8 @@ it('check never reports a path being put as nobody’s or as changed directly', 
     while (putting) {
       const r = await run(sb, ['--library', lib, 'check', '--json'])
       samples++
-      for (const s of JSON.parse(r.stdout).sections as { title: string; data: unknown[] }[]) {
-        if (STRAYS.includes(s.title)) reported.push(...s.data.map((row) => `${s.title} ${JSON.stringify(row)}`))
+      for (const s of JSON.parse(r.stdout).sections as { title: string; data: { shown: unknown[] } }[]) {
+        if (STRAYS.includes(s.title)) reported.push(...s.data.shown.map((row) => `${s.title} ${JSON.stringify(row)}`))
       }
     }
   }

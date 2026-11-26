@@ -22,7 +22,7 @@ export const LEDGER_STATS = defineCommand({
   ownerOnly: false,
   readOnly: true,
   async run({ period }, ctx) {
-    const stats = statsOf(await readFacts(ctx.dir), isPeriod(period) ? period : DEFAULT_PERIOD, ctx.now)
+    const stats = statsOf(await readFacts(ctx), isPeriod(period) ? period : DEFAULT_PERIOD, ctx.now)
     return done(statsText(stats), stats)
   },
 })
@@ -116,7 +116,7 @@ export const LEDGER_EXPORT = defineCommand({
     const inside = relative(ctx.library.root, path)
     if (!inside.startsWith('..') && !isAbsolute(inside)) return refused('inside-library', `导出的文件要放在库外，${to} 在库里。换一个库外的路径，比如 ~/Desktop/pneuma-base-活动.csv。`)
     const kind = format === 'csv' || format === 'jsonl' ? format : path.toLowerCase().endsWith('.csv') ? 'csv' : 'jsonl'
-    const rows = exportRows(fold(await readFacts(ctx.dir)), ctx.library.config.grants, from, till)
+    const rows = exportRows(fold(await readFacts(ctx)), ctx.library.config.grants, from, till)
     await mkdir(dirname(path), { recursive: true })
     let handle
     try {

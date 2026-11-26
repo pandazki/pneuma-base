@@ -30,6 +30,7 @@ const READS: Record<string, string> = {
   'agent list': 'agents',
   'agent detect': 'agents',
   'request list': 'home',
+  'noise list': 'config',
   'pair list': 'home',
 }
 

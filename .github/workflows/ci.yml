@@ -27,6 +27,11 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
+      # pnpm build compiles storage's program, core/ (tmp/run-7), which the kernel starts.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm typecheck
@@ -43,6 +48,11 @@ jobs:
         with:
           node-version: '26'
           cache: pnpm
+      # pnpm build compiles storage's program, core/ (tmp/run-7), which the kernel starts.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
       - run: pnpm install --frozen-lockfile
       - name: Install Chrome and CJK fonts
         run: |
@@ -63,6 +73,11 @@ jobs:
         with:
           node-version: '22.18'
           cache: pnpm
+      # pnpm build compiles storage's program, core/ (tmp/run-7), which the kernel starts.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:slow
         timeout-minutes: 15
