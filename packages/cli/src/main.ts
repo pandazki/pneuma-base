@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { statSync } from 'node:fs'
 import { homedir, hostname } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -234,7 +235,7 @@ const SPECS: Spec[] = [
     run: async ({ parsed, io, table, builtins, home }) => {
       const grant = parsed.grant
       if (grant === null) throw new UsageError('mcp 要写 @<授权名>：授权定了是哪个库、是谁。')
-      if (['library', 'as', 'session'].some((f) => hasFlag(parsed, f))) throw new UsageError('mcp 只认 @<授权名>：库和身份由授权定，一次连接是一次会话，不写 --library、--as 或 --session。')
+      if (['library', 'as'].some((f) => hasFlag(parsed, f))) throw new UsageError('mcp 只认 @<授权名>：库和身份由授权定，不写 --library 或 --as。')
       // Standard output carries the protocol alone: a refusal before it starts, and whatever a plugin logs, go to standard error.
       const resolved = await resolveGrant(home, grant, table)
       if (!resolved.ok) {
@@ -242,7 +243,9 @@ const SPECS: Spec[] = [
         return { json: undefined, lines: [], exit: 2 }
       }
       for (const method of ['log', 'info', 'debug'] as const) console[method] = console.error
-      const session = identifySession({ flag: null, env: {}, cwd: io.cwd, machine: hostname() })
+      // One connection is one session, so one scene: the client's own name for it when it gives one, else a new one.
+      // Unnamed, it would join the agent's ad hoc scene of the day.
+      const session = identifySession({ flag: flagValue(parsed, 'session') ?? `mcp-${randomUUID()}`, env: {}, cwd: io.cwd, machine: hostname() })
       const face = libraryFace({ grant, home, builtins, env: io.env, cwd: io.cwd, session })
       await serve({ incoming: io.readLines(), send: (message) => io.out(JSON.stringify(message)) }, face)
       return { json: undefined, lines: [], exit: 0 }

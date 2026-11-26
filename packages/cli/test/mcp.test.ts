@@ -22,9 +22,9 @@ type Era = 'legacy' | 'modern'
 type CallResult = { content: { type: string; text?: string }[]; structuredContent?: unknown; isError?: boolean }
 
 /** A real MCP client on `pneuma-base @<grant> mcp`, in the era asked for: legacy opens with initialize, modern pins 2026-07-28. */
-async function connect(sb: Sandbox, grant: string, era: Era): Promise<Client> {
+async function connect(sb: Sandbox, grant: string, era: Era, session?: string): Promise<Client> {
   const env = { PATH: process.env.PATH ?? '', HOME: sb.home, PNEUMA_BASE_HOME: join(sb.home, '.pneuma-base') }
-  const transport = new StdioClientTransport({ command: process.execPath, args: [BIN, `@${grant}`, 'mcp'], env, cwd: sb.home, stderr: 'pipe' })
+  const transport = new StdioClientTransport({ command: process.execPath, args: [BIN, `@${grant}`, 'mcp', ...(session === undefined ? [] : ['--session', session])], env, cwd: sb.home, stderr: 'pipe' })
   const client = new Client({ name: 'pneuma-base-test', version: '0' }, era === 'modern' ? { versionNegotiation: { mode: { pin: '2026-07-28' } } } : {})
   await client.connect(transport)
   return client
@@ -114,11 +114,11 @@ describe('a tool and the command line with the same arguments', () => {
   beforeAll(async () => {
     sb = sandbox()
     library(sb)
-    client = await connect(sb, 'g', 'legacy')
+    // The same session on both faces: what a verb answers depends on the session it is in.
+    client = await connect(sb, 'g', 'legacy', 'both-faces')
     reader = await connect(sb, 'ro', 'modern')
-    // Both faces have been here before, so start's look back is from the other one's last visit either way.
     await call(client, 'find', { text: '甲' })
-    ok(sb.run(['@g', 'find', '甲']))
+    ok(sb.run(['@g', '--session', 'both-faces', 'find', '甲']))
   })
   afterAll(async () => {
     await client?.close()
@@ -153,8 +153,8 @@ describe('a tool and the command line with the same arguments', () => {
 
   for (const [tool, args, argv, input] of cases) {
     it(`${tool} ${JSON.stringify(args)} is ${argv.join(' ')}`, async () => {
-      const text = sb.run(['@g', ...argv], { input })
-      const json = sb.run(['@g', ...argv, '--json'], { input })
+      const text = sb.run(['@g', '--session', 'both-faces', ...argv], { input })
+      const json = sb.run(['@g', '--session', 'both-faces', ...argv, '--json'], { input })
       const r = await call(client, tool, args)
       expect(r.isError).toBe(json.code === 2)
       expect(steady(JSON.stringify(r.structuredContent))).toBe(steady(JSON.stringify(json.json())))
@@ -223,6 +223,17 @@ describe.each(['legacy', 'modern'] as const)('a whole task through a real MCP cl
     expect(claude).toHaveLength(1)
     expect(claude[0].cells.doing.text).toBe('写一份下单流程的说明')
     expect(claude[0].cells.things.text).toBe('2')
+  })
+
+  it('a second connection on the same day is a scene of its own', async () => {
+    const other = await connect(sb, 'g', era)
+    try {
+      expect(textOf(await call(other, 'start', { sentence: '另一件事' }))).toContain('【记下】')
+    } finally {
+      await other.close()
+    }
+    const scenes = (sb.run(['--library', lib, 'show', 'ledger.scenes', '--json']).json().blocks as any[]).find((b) => b.kind === 'table').rows as any[]
+    expect(scenes.filter((row) => row.cells.who.text === 'claude').map((row) => row.cells.doing.text).sort()).toEqual(['另一件事', '写一份下单流程的说明'].sort())
   })
 
   it('serves the description and the pages as resources', async () => {
