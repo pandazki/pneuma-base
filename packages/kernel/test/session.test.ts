@@ -29,7 +29,7 @@ describe('identifySession', () => {
 
 // The products' folders are faked under a temp HOME, with empty files: only names are looked at.
 describe('the conversation a session points back to', () => {
-  const id = '4a15fc04-1b2a-4666-9038-1e6c3b6cba75'
+  const id = '11111111-2222-4333-8444-555555555555'
   let home: string
   beforeEach(() => {
     home = realpathSync(mkdtempSync(join(tmpdir(), 'pb-home-')))

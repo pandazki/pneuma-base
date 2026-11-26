@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { sandbox, tempDir, type Run, type Sandbox } from './helpers.js'
 
-const id = '4a15fc04-1b2a-4666-9038-1e6c3b6cba75'
+const id = '11111111-2222-4333-8444-555555555555'
 let sb: Sandbox
 let lib: string
 let project: string
