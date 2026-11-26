@@ -56,7 +56,8 @@ describe('start, for the agent that comes next', () => {
     expect(text).not.toContain(SA)
     expect(text).not.toContain('主人面的操作') // init, grant issue and skill install change neither content nor capabilities
 
-    const since = B(['check', '--json']).json().sections.find((s: any) => s.title === '自上次以来')
+    // start was a look, so this check asks from before anything happened.
+    const since = B(['check', '--json', '--since', '2000-01-01T00:00:00Z']).json().sections.find((s: any) => s.title === '自上次以来')
     expect(since.data.scenes).toMatchObject([{ scene: SA, cwds: [dirA] }])
   })
 

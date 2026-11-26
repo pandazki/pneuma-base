@@ -181,10 +181,15 @@ describe('versions of a declared thing (C4)', () => {
       const r = ok(sb.run(['--library', lib, '--as', 'codex', '--session', 's2', 'check', '--json'], { cwd: outside })).json()
       return r.sections.find((s: any) => s.title === '自上次以来')?.body as string
     }
-    expect(since()).toContain('report.md 换了新内容')
-    expect(since()).not.toContain('version export')
+    const first = since()
+    expect(first).toContain('放入 report.md')
+    expect(first).toContain('report.md 换了新内容')
+    expect(first).not.toContain('version export')
     ok(agent(['version', 'restore', 'report.md', '--version', '1']))
-    expect(since()).toContain('执行 version restore')
+    // That check was a look: the next one has the restore, and only what came after the look.
+    const next = since()
+    expect(next).toContain('执行 version restore')
+    expect(next).not.toContain('放入 report.md')
   })
 
   it('a bundle version is exported as the tree it had', () => {

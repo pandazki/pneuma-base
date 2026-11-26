@@ -159,6 +159,8 @@ describe('a tool and the command line with the same arguments', () => {
 
   for (const [tool, args, argv, input] of cases) {
     it(`${tool} ${JSON.stringify(args)} is ${argv.join(' ')}`, async () => {
+      // start records that the agent looked; one look first, so the three starts all see what is newer than it.
+      if (tool === 'start') expect(sb.run(['@g', '--session', 'both-faces', 'check']).code).toBe(0)
       const text = sb.run(['@g', '--session', 'both-faces', ...argv], { input })
       const json = sb.run(['@g', '--session', 'both-faces', ...argv, '--json'], { input })
       const r = await call(client, tool, args)
@@ -224,11 +226,11 @@ describe.each(['legacy', 'modern'] as const)('a whole task through a real MCP cl
     expect(await call(client, 'search_status')).toMatchObject({ isError: false, structuredContent: { outcome: 'done' } })
     expect(await call(client, 'grant_issue', { name: 'x', agent: 'y' })).toMatchObject({ isError: true, structuredContent: { reason: 'agent-session' } })
 
-    const scenes = (sb.run(['--library', lib, 'show', 'ledger.scenes', '--json']).json().blocks as any[]).find((b) => b.kind === 'table').rows as any[]
-    const claude = scenes.filter((row) => row.cells.who.text === 'claude')
+    const scenes = (sb.run(['--library', lib, 'show', 'ledger.scenes', '--json']).json().blocks as any[]).find((b) => b.kind === 'feed').groups.flatMap((g: any) => g.rows) as any[]
+    const claude = scenes.filter((row) => row.actor.name === 'claude')
     expect(claude).toHaveLength(1)
-    expect(claude[0].cells.doing.text).toBe('写一份下单流程的说明')
-    expect(claude[0].cells.things.text).toBe('2')
+    expect(claude[0].text).toBe('写一份下单流程的说明')
+    expect(claude[0].meta[0].text).toBe('放入 2 样')
   })
 
   it('a second connection on the same day is a scene of its own', async () => {
@@ -238,8 +240,8 @@ describe.each(['legacy', 'modern'] as const)('a whole task through a real MCP cl
     } finally {
       await other.close()
     }
-    const scenes = (sb.run(['--library', lib, 'show', 'ledger.scenes', '--json']).json().blocks as any[]).find((b) => b.kind === 'table').rows as any[]
-    expect(scenes.filter((row) => row.cells.who.text === 'claude').map((row) => row.cells.doing.text).sort()).toEqual(['另一件事', '写一份下单流程的说明'].sort())
+    const scenes = (sb.run(['--library', lib, 'show', 'ledger.scenes', '--json']).json().blocks as any[]).find((b) => b.kind === 'feed').groups.flatMap((g: any) => g.rows) as any[]
+    expect(scenes.filter((row) => row.actor.name === 'claude').map((row) => row.text).sort()).toEqual(['另一件事', '写一份下单流程的说明'].sort())
   })
 
   it('serves the description and the pages as resources', async () => {

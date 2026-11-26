@@ -234,20 +234,36 @@ export type SinceFact = { kind: Fact['kind']; at: Instant; actor: string; text: 
 export type SinceView = { since: Instant | null; scenes: { scene: SceneId; actors: string[]; cwds: string[]; facts: SinceFact[] }[] }
 
 /**
- * What others did since this actor was last here: from its latest fact in another scene, else
- * from the start, at most the latest `SINCE_LIMIT` facts that are news, by scene. Read-only owner
- * commands are never news; setup commands (installing plugins, setting targets or an embedder) are
- * already reflected in PNEUMA-BASE.md when an agent first comes, so they are news only once they
- * happened after this actor's earliest visit.
+ * When this actor was last here: its latest look (a check, or the owner's 都看过了), else, before it
+ * ever looked, its latest fact in another scene; null when it never was.
  */
-export function sinceView(ledger: Ledger, me: FactActor, current: SceneId, since: Instant | 'last' | null): SinceView {
+export function lastHere(ledger: Ledger, me: FactActor, current: SceneId): Instant | null {
+  const mine = actorKey(me)
+  const looked = ledger.facts.findLast((f) => f.kind === 'checked' && actorKey(f.actor) === mine)
+  return looked?.at ?? ledger.facts.findLast((f) => actorKey(f.actor) === mine && f.scene !== current)?.at ?? null
+}
+
+/**
+ * What others did since this actor was last here (`lastHere`), else from the start: at most the
+ * latest `SINCE_LIMIT` facts that are news, by scene. Looks and read-only owner commands are never
+ * news; setup commands (installing plugins, setting targets or an embedder) are already reflected in
+ * PNEUMA-BASE.md when an agent first comes, so they are news only once they happened after this
+ * actor's earliest visit.
+ */
+export function sinceFacts(ledger: Ledger, me: FactActor, current: SceneId, since: Instant | 'last' | null): { since: Instant | null; facts: Fact[] } {
   const mine = actorKey(me)
   const explicit = since !== null && since !== 'last'
-  const start = explicit ? since : (ledger.facts.filter((f) => actorKey(f.actor) === mine && f.scene !== current).at(-1)?.at ?? null)
+  const start = explicit ? since : lastHere(ledger, me, current)
   const firstSeen = ledger.facts.find((f) => actorKey(f.actor) === mine)?.at ?? null
   const isNews = (f: Fact) =>
-    f.kind !== 'owner.op' || !(QUIET_OWNER_COMMANDS.has(f.command) || f.readOnly || (!explicit && f.setup && (firstSeen === null || f.at <= firstSeen)))
-  const recent = ledger.facts.filter((f) => actorKey(f.actor) !== mine && f.scene !== current && (start === null || f.at > start) && isNews(f)).slice(-SINCE_LIMIT)
+    f.kind !== 'checked' && (f.kind !== 'owner.op' || !(QUIET_OWNER_COMMANDS.has(f.command) || f.readOnly || (!explicit && f.setup && (firstSeen === null || f.at <= firstSeen))))
+  const facts = ledger.facts.filter((f) => actorKey(f.actor) !== mine && f.scene !== current && (start === null || f.at > start) && isNews(f)).slice(-SINCE_LIMIT)
+  return { since: start, facts }
+}
+
+/** `sinceFacts` by scene, each fact as one line: check's section. */
+export function sinceView(ledger: Ledger, me: FactActor, current: SceneId, since: Instant | 'last' | null): SinceView {
+  const { since: start, facts: recent } = sinceFacts(ledger, me, current, since)
   const scenes = new Map<SceneId, SinceView['scenes'][number]>()
   for (const f of recent) {
     const entry = scenes.get(f.scene) ?? { scene: f.scene, actors: [], cwds: [], facts: [] }
@@ -295,6 +311,8 @@ export function factLine(ledger: Ledger, f: Fact): string {
       return `${pathOf(ledger, f.item)} 随归档区一起清掉了`
     case 'owner.op':
       return f.actor.kind === 'owner' ? `主人面的操作 ${f.command}：${f.summary}` : `执行 ${f.command}：${f.summary}`
+    case 'checked':
+      return '看过了库的变化'
   }
 }
 

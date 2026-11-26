@@ -1,29 +1,34 @@
-// What the ledger shows in the management UI: its pages, and its section of the kernel's item
-// panel. Pure: built from the same fold, reconcile and views that inspect and check answer from.
-import { formOf, originalPath, shortDir, withSuffix, type Action, type ActionInput, type Block, type Cell, type Instant, type ItemSection, type LibraryPath, type Link, type Tag, type TableRow, type ViewAnswer, type ViewDecl } from '@pneuma-base/kernel'
-import type { Conversation } from './conversation.js'
-import type { Fact, How, LedgerOrigin, SceneId } from './facts.js'
+// What the ledger shows in the management UI: the library page, the standing page, the held copies,
+// its section of the kernel's item panel, and the pieces its feeds share (feeds.ts). Pure: built from
+// the same fold, reconcile and views that inspect and check answer from.
+import {
+  formOf,
+  originalPath,
+  shortDir,
+  withSuffix,
+  type Action,
+  type ActionInput,
+  type ActorMark,
+  type Block,
+  type Cell,
+  type Grant,
+  type Instant,
+  type ItemSection,
+  type LibraryPath,
+  type Link,
+  type Tag,
+  type TableRow,
+  type TreeNode,
+  type ViewAnswer,
+  type ViewDecl,
+} from '@pneuma-base/kernel'
+import type { FactActor, How, LedgerOrigin, SceneId } from './facts.js'
 import { HELD_DROP, HELD_RESTORE, type HeldCopy } from './held.js'
 import { isArchived, type ItemRecord, type Ledger, type SceneRecord } from './fold.js'
 import type { ItemState, Mark, Standing } from './reconcile.js'
-import { actorNames, doingAt, earlierText, factLine, MARK_LABEL, originLabel, SAID_LABEL, scenesNamed, shortScene, standingData, STATE_LABEL, when, whereConversation, who, type ItemView } from './views.js'
+import { earlierText, MARK_LABEL, originLabel, SAID_LABEL, shortScene, standingData, STATE_LABEL, when, who, type ItemView, type StandingData } from './views.js'
 
-const ORIGINS: { value: string; label: string }[] = [
-  { value: '', label: '全部' },
-  { value: 'brought', label: '带进来的' },
-  { value: 'made', label: '做出来的' },
-  { value: 'adopted', label: '来历不明' },
-]
-
-const STATES: { value: string; label: string }[] = [
-  { value: '', label: '全部' },
-  { value: 'consistent', label: '一致' },
-  { value: 'changed', label: '已变' },
-  { value: 'moved', label: '已搬' },
-  { value: 'missing', label: '不在' },
-  { value: 'marked', label: '可能过期或来源不在' },
-]
-
+export const HOME_VIEW = 'ledger.home'
 export const ITEMS_VIEW = 'ledger.items'
 export const SCENES_VIEW = 'ledger.scenes'
 export const SCENE_VIEW = 'ledger.scene'
@@ -31,35 +36,94 @@ export const STANDING_VIEW = 'ledger.standing'
 export const ACTIVITY_VIEW = 'ledger.activity'
 export const HELD_VIEW = 'ledger.held'
 
+/** What the library page shows: the things not archived, those brought in or made of them, or the archived ones. */
+const SHOWS: { value: string; label: string }[] = [
+  { value: '', label: '全部' },
+  { value: 'brought', label: '带进来的' },
+  { value: 'made', label: '做出来的' },
+  { value: 'archived', label: '已归档' },
+]
+
+export const WHO_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: '全部' },
+  { value: 'agent', label: 'agent 做的' },
+  { value: 'owner', label: '主人做的' },
+]
+
+// The library page takes `dir` from its folder tree and the standing page `kind` from the home
+// page's links; neither is a filter of the page's head, so neither is declared.
 export const LEDGER_VIEWS: readonly ViewDecl[] = [
+  { id: ITEMS_VIEW, title: '库', icon: 'layers', nav: true, filters: [{ name: 'show', label: '显示', options: SHOWS, default: '' }] },
   {
-    id: ITEMS_VIEW,
-    title: '条目',
-    icon: 'layers',
+    id: ACTIVITY_VIEW,
+    title: '活动',
+    icon: 'activity',
     nav: true,
     filters: [
-      { name: 'origin', label: '来历', options: ORIGINS, default: '' },
-      { name: 'state', label: '现状', options: STATES, default: '' },
-      { name: 'archived', label: '归档', options: [{ value: 'no', label: '不带归档的' }, { value: 'yes', label: '带上归档的' }], default: 'no' },
+      { name: 'who', label: '谁做的', options: WHO_OPTIONS, default: '' },
+      { name: 'agent', label: '哪个 agent', options: [{ value: '', label: '全部 agent' }], default: '' },
     ],
   },
   { id: SCENES_VIEW, title: '场景', icon: 'history', nav: true, filters: [] },
   { id: STANDING_VIEW, title: '状况', icon: 'gauge', nav: true, filters: [] },
-  {
-    id: ACTIVITY_VIEW,
-    title: '动态',
-    icon: 'activity',
-    nav: true,
-    filters: [{ name: 'who', label: '谁', options: [{ value: '', label: '全部' }, { value: 'agent', label: 'agent' }, { value: 'owner', label: '主人' }], default: '' }],
-  },
   { id: HELD_VIEW, title: '留存', icon: 'box', nav: true, filters: [] },
-  { id: SCENE_VIEW, title: '场景卡', icon: 'history', nav: false, filters: [] },
+  { id: SCENE_VIEW, title: '场景', icon: 'history', nav: false, filters: [] },
+  { id: HOME_VIEW, title: '自上次以来', icon: 'house', nav: false, filters: [], home: true },
 ]
 
-const itemLink = (path: string): Link => ({ view: 'item', params: { path }, target: 'panel' })
-const sceneLink = (scene: SceneId): Link => ({ view: SCENE_VIEW, params: { scene }, target: 'panel' })
-const moment = (at: Instant): Cell => ({ text: when(at), muted: true, at })
-const none: Cell = { text: '—', muted: true }
+export const itemLink = (path: string): Link => ({ view: 'item', params: { path }, target: 'panel' })
+export const sceneLink = (scene: SceneId): Link => ({ view: SCENE_VIEW, params: { scene }, target: 'panel' })
+export const moment = (at: Instant): Cell => ({ text: when(at), muted: true, at })
+export const none: Cell = { text: '—', muted: true }
+
+// ---- who ----
+
+/** An actor as blocks draw it: an agent with the name of the grant it used, the owner; the ledger's own observations by its name. */
+export function actorMark(a: FactActor, grants: readonly Grant[]): ActorMark | string {
+  if (a.kind === 'owner') return { kind: 'owner', name: '主人' }
+  if (a.kind === 'plugin') return a.name
+  const grant = a.grant === null ? undefined : (grants.find((g) => g.id === a.grant)?.name ?? a.grant)
+  return { kind: 'agent', name: a.name, ...(grant === undefined ? {} : { grant }) }
+}
+
+/** A cell that says who: the actor's mark, and its name as the text. */
+export function actorCell(a: FactActor, grants: readonly Grant[]): Cell {
+  const mark = actorMark(a, grants)
+  return typeof mark === 'string' ? { text: mark, muted: true } : { text: mark.name, actor: mark }
+}
+
+/** By which grant an actor acted, in words: its name, area and access; the owner needs none. */
+export function grantText(a: FactActor, grants: readonly Grant[]): string {
+  if (a.kind !== 'agent') return a.kind === 'owner' ? '主人自己，不用授权' : `${a.name} 自己看到的`
+  if (a.grant === null) return '没带授权：这个库没发授权时，谁都能用整个库'
+  const g = grants.find((x) => x.id === a.grant)
+  if (g === undefined) return `授权 ${a.grant}，已经撤回了`
+  return `授权 ${g.name} · ${g.area === null ? '整个库' : g.area} · ${g.readOnly ? '只读' : '读写'}`
+}
+
+/** By which grant an agent acted, as a feed's meta: the grant's name, or that it had none; nothing for the owner. */
+export function grantCell(a: FactActor, grants: readonly Grant[]): Cell | null {
+  if (a.kind !== 'agent') return null
+  if (a.grant === null) return { text: '没带授权', muted: true }
+  return { text: `凭授权 ${grants.find((g) => g.id === a.grant)?.name ?? a.grant}`, muted: true }
+}
+
+/** What a scene was doing: what it said it was doing, else the owner operations done in it; null when neither. */
+export function sceneDoing(ledger: Ledger, scene: SceneRecord): string | null {
+  const doing = [...new Set(scene.said.filter((s) => s.flavor === 'doing').map((s) => s.text))]
+  if (doing.length > 0) return doing.join('；')
+  const ops = ledger.ownerOps.filter((op) => op.scene === scene.id)
+  const commands = [...new Set(ops.map((op) => op.command))]
+  const prefix = ops.every((op) => op.actor.kind === 'owner') ? '主人面的操作' : '执行命令'
+  return commands.length > 0 ? `${prefix}：${commands.join('、')}` : null
+}
+
+/** A scene as a link: what it was doing, else its short id. */
+export function sceneCell(ledger: Ledger, id: SceneId): Cell {
+  const scene = ledger.scenes.get(id)
+  const doing = scene ? sceneDoing(ledger, scene) : null
+  return { text: doing ?? `场景 ${shortScene(id)}`, link: sceneLink(id) }
+}
 
 // ---- the owner's operations: each a call to one of the two faces ----
 
@@ -135,23 +199,31 @@ const basisAction = (path: string): Action => ({
   call: { face: 'agent', verb: 'say', request: { kind: 'from', about: path, text: null, args: { from: ['{from}'], 'from-outside': ['{outside}'] } } },
 })
 
-const ORIGIN_TONE: Record<LedgerOrigin['kind'], Tag['tone']> = { made: 'info', brought: 'neutral', adopted: 'warn' }
-const STATE_TONE: Record<ItemState['kind'], Tag['tone']> = { consistent: 'good', changed: 'warn', moved: 'info', missing: 'bad', removed: 'neutral', absorbed: 'neutral' }
+// ---- states, quiet when normal ----
+
+// Where a thing came from is a kind, not a state: grey, except that nobody knowing is worth a look.
+const ORIGIN_TONE: Record<LedgerOrigin['kind'], Tag['tone']> = { made: 'neutral', brought: 'neutral', adopted: 'warn' }
+const STATE_TONE: Record<ItemState['kind'], Tag['tone']> = { consistent: 'neutral', changed: 'warn', moved: 'info', missing: 'bad', removed: 'neutral', absorbed: 'neutral' }
 const MARK_TONE: Record<Mark['kind'], Tag['tone']> = { stale: 'warn', 'source-gone': 'bad' }
 
 const originTag = (origin: LedgerOrigin, how: How): Tag => ({ text: originLabel(origin, how), tone: ORIGIN_TONE[origin.kind] })
-const stateTag = (state: ItemState): Tag => ({ text: state.kind === 'moved' ? `已搬到 ${state.to}` : STATE_LABEL[state.kind], tone: STATE_TONE[state.kind] })
+const stateText = (state: ItemState) => (state.kind === 'moved' ? `已搬到 ${state.to}` : STATE_LABEL[state.kind])
+const stateTag = (state: ItemState): Tag => ({ text: stateText(state), tone: STATE_TONE[state.kind] })
 
-/** An item's state with the worst mark on its basis: the mark as the tag, the state as the text before it. */
-function standingCell(state: ItemState, marks: Mark[]): Cell {
+/** A normal state is grey words; a departure from it is a tag, the worst mark on the basis before the state. */
+function stateCell(state: ItemState, marks: readonly Mark[]): Cell {
   const mark = marks.find((m) => m.kind === 'source-gone') ?? marks[0]
-  if (!mark) return { text: '', tag: stateTag(state) }
-  return { text: STATE_LABEL[state.kind], muted: true, tag: { text: MARK_LABEL[mark.kind], tone: MARK_TONE[mark.kind] } }
+  if (mark) return { text: '', tag: { text: MARK_LABEL[mark.kind], tone: MARK_TONE[mark.kind] } }
+  return state.kind === 'consistent' ? { text: STATE_LABEL.consistent, muted: true } : { text: '', tag: stateTag(state) }
 }
 
+/** A basis row's state: grey words when it is as it was, else its mark or state as a tag. */
+const basisState = (state: ItemState['kind'], mark: Mark['kind'] | null): Tag | null =>
+  mark ? { text: MARK_LABEL[mark], tone: MARK_TONE[mark] } : state === 'consistent' ? null : { text: STATE_LABEL[state], tone: STATE_TONE[state] }
+
 /** The path as people know it: an archived item by the path it came from. */
-const shownPath = (item: ItemRecord) => (isArchived(item) ? (originalPath(item.path) ?? item.path) : item.path)
-const pathCell = (item: ItemRecord): Cell => ({
+export const shownPath = (item: ItemRecord) => (isArchived(item) ? (originalPath(item.path) ?? item.path) : item.path)
+export const pathCell = (item: ItemRecord): Cell => ({
   text: shownPath(item),
   mono: true,
   icon: item.bundle ? 'package' : 'file',
@@ -159,118 +231,150 @@ const pathCell = (item: ItemRecord): Cell => ({
 })
 const lastAt = (item: ItemRecord) => item.versions.at(-1)?.at ?? item.entered.at
 
-// What was being done is in the panel too: it steps aside first when the panel needs the room.
+// ---- the library page ----
+
+/** The folders of `paths`, each with how many of them lie under it, folders before their children, by name. */
+export function folderTree(paths: readonly string[]): TreeNode[] {
+  type Folder = { count: number; children: Map<string, Folder> }
+  const root: Folder = { count: 0, children: new Map() }
+  for (const path of paths) {
+    let at = root
+    for (const part of path.split('/').slice(0, -1)) {
+      const next = at.children.get(part) ?? { count: 0, children: new Map() }
+      at.children.set(part, next)
+      next.count++
+      at = next
+    }
+  }
+  const nodes = (folder: Folder, prefix: string): TreeNode[] =>
+    [...folder.children]
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .map(([name, f]) => ({ value: `${prefix}${name}`, label: name, count: f.count, children: nodes(f, `${prefix}${name}/`) }))
+  return nodes(root, '')
+}
+
+// Who and where it came from step aside first when the panel needs the room; the panel has both.
 const COLUMNS = [
   { key: 'path', label: '路径' },
-  { key: 'origin', label: '来历' },
-  { key: 'who', label: '谁' },
-  { key: 'doing', label: '当时在做什么', optional: true },
+  { key: 'origin', label: '来历', optional: true },
+  { key: 'who', label: '谁', optional: true },
   { key: 'state', label: '现状' },
   { key: 'at', label: '时间' },
 ]
 
-/** Every item not removed, newest change first, filtered by origin, state and whether archived ones are in. */
-export function itemsAnswer(ledger: Ledger, standing: Standing, params: Record<string, string>): ViewAnswer {
-  const origin = params.origin ?? ''
-  const state = params.state ?? ''
-  const withArchived = params.archived === 'yes'
-  const stateOf = (item: ItemRecord): ItemState => standing.states.get(item.id) ?? { kind: 'missing' }
-  const items = [...ledger.items.values()]
-    .filter((item) => !item.removed && item.absorbedInto === null && (withArchived || !isArchived(item)))
-    .filter((item) => origin === '' || item.origin.kind === origin)
-    .filter((item) => state === '' || (state === 'marked' ? standing.marks.has(item.id) : stateOf(item).kind === state))
+const inShow = (item: ItemRecord, show: string) => (show === 'archived' ? isArchived(item) : !isArchived(item) && (show === '' || item.origin.kind === show))
+
+/**
+ * Every item not removed, newest change first: the ones `show` keeps (all not archived, those
+ * brought in or made, or the archived ones) in the folder `dir`, with a tree of their folders and
+ * how many each segment holds.
+ */
+export function itemsAnswer(ledger: Ledger, standing: Standing, params: Record<string, string>, grants: readonly Grant[]): ViewAnswer {
+  const show = params.show ?? ''
+  const dir = params.dir ?? ''
+  const live = [...ledger.items.values()].filter((item) => !item.removed && item.absorbedInto === null)
+  const counted = SHOWS.map((o) => ({ ...o, count: live.filter((item) => inShow(item, o.value)).length }))
+  const shown = live.filter((item) => inShow(item, show))
+  const items = shown
+    .filter((item) => dir === '' || shownPath(item).startsWith(`${dir}/`))
     .sort((a, b) => (lastAt(a) === lastAt(b) ? (a.path < b.path ? -1 : 1) : lastAt(a) > lastAt(b) ? -1 : 1))
-  const rows: TableRow[] = items.map((item) => {
-    const doing = doingAt(ledger.scenes.get(item.entered.scene), item.entered.at)
-    return {
-      key: item.id,
-      cells: {
-        path: pathCell(item),
-        origin: { text: '', tag: originTag(item.origin, item.entered.how) },
-        who: { text: who(item.entered.actor) },
-        doing: doing === null ? none : { text: doing },
-        state: standingCell(stateOf(item), standing.marks.get(item.id) ?? []),
-        at: moment(lastAt(item)),
-      },
-      link: itemLink(item.path),
-      actions: [],
-    }
-  })
-  const filtered = origin !== '' || state !== ''
-  const table: Block = { kind: 'table', columns: COLUMNS, rows, empty: filtered ? '没有符合条件的条目。' : '库里还没有登记过的东西。让 agent 用 put 放东西进来；库里原有的文件在「状况」页，可以在那里给它们补上来历。' }
-  return { title: '条目', subtitle: `${rows.length} 样东西`, blocks: [table] }
+  const rows: TableRow[] = items.map((item) => ({
+    key: item.id,
+    cells: {
+      path: pathCell(item),
+      origin: { text: '', tag: originTag(item.origin, item.entered.how) },
+      who: actorCell(item.entered.actor, grants),
+      state: stateCell(standing.states.get(item.id) ?? { kind: 'missing' }, standing.marks.get(item.id) ?? []),
+      at: moment(lastAt(item)),
+    },
+    link: itemLink(item.path),
+    actions: [],
+  }))
+  const empty =
+    show !== '' || dir !== ''
+      ? '这里没有东西。'
+      : '库里还没有登记过的东西。让 agent 用 put 放东西进来；库里原有的文件在「状况」页，可以在那里给它们补上来历。'
+  const tree: Block = { kind: 'tree', param: 'dir', selected: dir, nodes: [{ value: '', label: '全部文件夹', count: shown.length, children: folderTree(shown.map(shownPath)) }] }
+  const table: Block = { kind: 'table', columns: COLUMNS, rows, empty }
+  return { title: '库', subtitle: `${rows.length} 样东西${dir === '' ? '' : ` · 在 ${dir}/`}`, blocks: [tree, table], filters: [{ name: 'show', options: counted }] }
 }
 
-/** A direct change as a tag: claimed, recorded for the owner, or only seen. */
-const claimTag = (ver: ItemView['versions'][number]) => (ver.how === 'observed' ? '直接改的（自动登记）' : ver.by === 'owner' ? '主人直接改的' : '认了直接改动')
+// ---- the item panel ----
 
-const counted = (title: string, count: number, blocks: Block[]): Block => ({ kind: 'section', title, note: null, count, blocks, actions: [] })
+/** A direct change as words: claimed, recorded for the owner, or only seen. */
+const claimWords = (ver: ItemView['versions'][number]) => (ver.how === 'observed' ? '直接改的（自动登记）' : ver.by === 'owner' ? '主人直接改的' : '认了直接改动')
 
-/** The ledger's part of the item panel: provenance and scene, basis with each source's state, dependents, what was said, versions and held copies. */
-export function itemSection(v: ItemView): ItemSection {
+const counted = (title: string, count: number | null, blocks: Block[]): Block => ({ kind: 'section', title, note: null, count, blocks, actions: [] })
+
+/**
+ * The ledger's part of the item panel, in the panel's order: when, who and in which scene, with its
+ * state only when it is not as recorded; how it came, from where or from what, each source with its
+ * state; what happened to it, each change and what was said; by which grant; what was made from it;
+ * its held copies. Its actions go to the panel's bottom row.
+ */
+export function itemSection(v: ItemView, ledger: Ledger, grants: readonly Grant[]): ItemSection {
   const { entered } = v
+  const off = v.state.kind !== 'consistent' && !(v.state.kind === 'absorbed' && v.absorbedInto !== null)
   const fields: Block = {
     kind: 'fields',
     fields: [
-      { label: '怎么来的', value: { text: '', tag: originTag(v.origin, v.entered.how) } },
-      ...(v.origin.kind === 'brought' && v.origin.source ? [{ label: '出处', value: { text: v.origin.source } }] : []),
-      ...v.earlier.map((e) => ({ label: '先前', value: { text: earlierText(e), muted: true } })),
-      { label: '谁', value: { text: who(entered.actor) } },
-      { label: '何时', value: { text: when(entered.at), at: entered.at } },
-      ...(entered.where?.cwd ? [{ label: '在哪', value: { text: shortDir(entered.where.cwd, 36), mono: true } }] : []),
-      { label: '场景', value: { text: shortScene(entered.scene), mono: true } },
-      ...(v.doing ? [{ label: '当时在做', value: { text: v.doing } }] : []),
-      { label: '现状', value: { text: v.archived ? '已归档' : '', muted: true, tag: stateTag(v.state) } },
+      { label: '何时', value: moment(entered.at) },
+      { label: '谁', value: actorCell(entered.actor, grants) },
+      { label: '场景', value: { ...sceneCell(ledger, entered.scene), ...(v.doing ? { text: v.doing } : {}) } },
+      ...(entered.where?.cwd ? [{ label: '在哪', value: { text: shortDir(entered.where.cwd, 36), mono: true, muted: true } }] : []),
+      ...(off ? [{ label: '现状', value: { text: '', tag: stateTag(v.state) } }] : []),
       ...(v.absorbedInto !== null ? [{ label: '并入', value: { text: v.absorbedInto, mono: true, icon: 'package' as const, link: itemLink(v.absorbedInto) } }] : []),
-      { label: '条目号', value: { text: v.item, mono: true, muted: true } },
     ],
   }
-  // Provenance for a thing nobody gave one; a direct change accepted. An archived thing is changed only once taken back.
-  const actions = v.archived ? [] : [...(v.unknownOrigin ? provenanceActions(v.path) : []), ...(v.state.kind === 'changed' ? [acceptAction(v.path)] : [])]
-  const blocks: Block[] = [...(actions.length > 0 ? [{ kind: 'actions' as const, actions }] : []), fields]
+  const blocks: Block[] = [fields]
 
-  // What it was made from, and what was said about it, each with the buttons that add to it; an archived thing is added to only once taken back.
-  const live = !v.archived
+  // How it came: brought from where, or made from what, each source with its state now.
+  const came: Block[] = [
+    {
+      kind: 'fields',
+      fields: [
+        { label: '来历', value: { text: '', tag: originTag(v.origin, v.entered.how) } },
+        ...(v.origin.kind === 'brought' && v.origin.source ? [{ label: '出处', value: { text: v.origin.source } }] : []),
+        ...v.earlier.map((e) => ({ label: '先前', value: { text: earlierText(e), muted: true } })),
+      ],
+    },
+  ]
   const basis = [
-    ...v.basis.map((b) => ({
-      cell: { text: b.path, mono: true, link: itemLink(b.path), tag: b.mark ? { text: MARK_LABEL[b.mark], tone: MARK_TONE[b.mark] } : { text: STATE_LABEL[b.state], tone: STATE_TONE[b.state] } },
-      note: null,
-      actions: [],
-    })),
+    ...v.basis.map((b) => {
+      const tag = basisState(b.state, b.mark)
+      return { cell: { text: b.path, mono: true, link: itemLink(b.path), ...(tag ? { tag } : {}) }, note: tag ? null : '一致', actions: [] }
+    }),
     ...v.outside.map((text) => ({ cell: { text }, note: '库外', actions: [] })),
   ]
-  if (basis.length > 0 || live) {
-    blocks.push({ kind: 'section', title: '依据', note: null, count: basis.length, blocks: basis.length > 0 ? [{ kind: 'list', items: basis }] : [], actions: live ? [basisAction(v.path)] : [] })
-  }
+  if (basis.length > 0) came.push({ kind: 'list', items: basis })
+  blocks.push(counted('怎么来的', basis.length > 0 ? basis.length : null, came))
+
+  // What happened to it: each content change with the sentence it came with, and what was said about it, newest first.
+  const changes = v.versions.map((ver, i) => ({
+    at: ver.at,
+    title: { text: i === 0 ? '放进来' : ver.claimed ? claimWords(ver) : '换了新内容' },
+    lines: [
+      `${ver.by === 'owner' ? `主人，${who(ver.actor)} 代记` : who(ver.actor)} · 场景 ${shortScene(ver.scene)} · ${ver.fingerprint.slice(0, 8)}`,
+      ...(ver.seen === null ? [] : [`先是自动登记：${who(ver.seen.actor)} · ${when(ver.seen.at)}`]),
+      ...(ver.note === null ? [] : [ver.note]),
+    ],
+    tag: i === v.versions.length - 1 && i > 0 ? { text: '当前', tone: 'neutral' as const } : ver.held ? { text: '换下的进了留存', tone: 'neutral' as const } : null,
+  }))
+  const said = v.said.map((s) => ({
+    at: s.at,
+    title: { text: s.text },
+    lines: [`${SAID_LABEL[s.flavor]} · ${who(s.actor)} · 场景 ${shortScene(s.scene)}${s.about !== null && s.about !== v.path ? ` · 关于 ${s.about}` : ''}`],
+    tag: s.flavor === 'decided' ? { text: SAID_LABEL.decided, tone: 'neutral' as const } : null,
+  }))
+  const happened = [...changes, ...said].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+  blocks.push(counted('发生过什么', happened.length, [{ kind: 'timeline', entries: happened }]))
+
+  blocks.push(counted('凭什么', null, [{ kind: 'text', tone: 'neutral', text: grantText(entered.actor, grants) }]))
 
   if (v.dependents.length > 0) {
     const items = v.dependents.map((d) => ({ cell: { text: d.path, mono: true, link: itemLink(d.path) }, note: null, actions: [] }))
     blocks.push(counted('被什么依据', items.length, [{ kind: 'list', items }]))
   }
-
-  if (v.said.length > 0 || live) {
-    const entries = v.said.map((s) => ({
-      at: s.at,
-      title: { text: s.text },
-      lines: [`${who(s.actor)} · 场景 ${shortScene(s.scene)}${s.about !== null && s.about !== v.path ? ` · 关于 ${s.about}` : ''}`],
-      tag: { text: SAID_LABEL[s.flavor], tone: s.flavor === 'decided' ? ('info' as const) : ('neutral' as const) },
-    }))
-    const said = live ? [sayAction(v.path, 'decided', '记一条决定', '比如：用 Paddle，因为它替我们处理欧洲的税'), sayAction(v.path, 'note', '记一条备注', '留给主人和下一个 agent 的一句话')] : []
-    blocks.push({ kind: 'section', title: '决定与备注', note: null, count: entries.length, blocks: entries.length > 0 ? [{ kind: 'timeline', entries }] : [], actions: said })
-  }
-
-  // An edit the owner made and an agent recorded names both, also on the current version, whose tag says only 当前; so does a change only seen.
-  const versions = [...v.versions].reverse().map((ver, i) => ({
-    at: ver.at,
-    title: { text: ver.fingerprint.slice(0, 12), mono: true },
-    lines: [
-      `${ver.by === 'owner' ? `主人，${who(ver.actor)} 代记` : who(ver.actor)} · 场景 ${shortScene(ver.scene)}${ver.claimed && ver.how === 'observed' ? ` · ${claimTag(ver)}` : ''}`,
-      ...(ver.seen === null ? [] : [`先是自动登记：${who(ver.seen.actor)} · ${when(ver.seen.at)}`]),
-      ...(ver.note === null ? [] : [ver.note]),
-    ],
-    tag: i === 0 ? { text: '当前', tone: 'good' as const } : ver.claimed ? { text: claimTag(ver), tone: 'warn' as const } : ver.held ? { text: '换下的进了留存', tone: 'neutral' as const } : null,
-  }))
-  blocks.push(counted('内容的变化', versions.length, [{ kind: 'timeline', entries: versions }]))
 
   if (v.held.length > 0) {
     // A held copy lies at held/<item>/<fingerprint>/<name>.
@@ -283,7 +387,18 @@ export function itemSection(v: ItemView): ItemSection {
     })
     blocks.push(counted('留存', items.length, [{ kind: 'text', text: '被新内容换下来的旧内容，给主人的保险。取回时复制到一个新路径，现在的内容不动。', tone: 'neutral' }, { kind: 'list', items }]))
   }
-  return { title: '来历', blocks }
+
+  // An archived thing is changed and added to only once taken back.
+  const actions = v.archived
+    ? []
+    : [
+        ...(v.unknownOrigin ? provenanceActions(v.path) : []),
+        ...(v.state.kind === 'changed' ? [acceptAction(v.path)] : []),
+        basisAction(v.path),
+        sayAction(v.path, 'decided', '记一条决定', '比如：用 Paddle，因为它替我们处理欧洲的税'),
+        sayAction(v.path, 'note', '记一条备注', '留给主人和下一个 agent 的一句话'),
+      ]
+  return { title: '来历', blocks, actions }
 }
 
 /** Every held copy: whose content it was, where its thing is now, with the way back to a new path; and dropping them all, which asks first. */
@@ -313,9 +428,9 @@ export function heldAnswer(ledger: Ledger, copies: readonly HeldCopy[]): ViewAns
   return { title: '留存', subtitle: `${rows.length} 份`, blocks: [section] }
 }
 
-/** A file nobody registered, with the ways to give it its provenance. */
+/** A file nobody registered, with the ways to give it its provenance in the panel's bottom row. */
 export function unownedSection(path: LibraryPath): ItemSection {
-  return { title: '来历', blocks: [{ kind: 'text', tone: 'warn', text: '没人登记过这个文件，来历不明。知道它从哪来，就给它补上。' }, { kind: 'actions', actions: provenanceActions(path) }] }
+  return { title: '来历', blocks: [{ kind: 'text', tone: 'warn', text: '没人登记过这个文件，来历不明。知道它从哪来，就给它补上。' }], actions: provenanceActions(path) }
 }
 
 /** A file inside a bundle that the ledger knows nothing of on its own: its provenance is the bundle's. */
@@ -329,191 +444,60 @@ export function partOfSection(bundle: LibraryPath): ItemSection {
   }
 }
 
-const table = (columns: [key: string, label: string][], rows: TableRow[], empty: string): Block => ({ kind: 'table', columns: columns.map(([key, label]) => ({ key, label })), rows, empty })
-
-// ---- scenes ----
-
-/** What a scene was doing: what it said it was doing, else the owner operations done in it. */
-function sceneDoing(ledger: Ledger, scene: SceneRecord): Cell {
-  const doing = [...new Set(scene.said.filter((s) => s.flavor === 'doing').map((s) => s.text))]
-  if (doing.length > 0) return { text: doing.join('；') }
-  const ops = ledger.ownerOps.filter((op) => op.scene === scene.id)
-  const commands = [...new Set(ops.map((op) => op.command))]
-  const prefix = ops.every((op) => op.actor.kind === 'owner') ? '主人面的操作' : '执行命令'
-  return commands.length > 0 ? { text: `${prefix}：${commands.join('、')}`, muted: true } : none
-}
-
-const newestFirst = (a: SceneRecord, b: SceneRecord) => (a.first === b.first ? (a.id < b.id ? -1 : 1) : a.first > b.first ? -1 : 1)
-
-/** Every session, newest first: when it began, who, where, what it was doing, how many things it touched. */
-export function scenesAnswer(ledger: Ledger): ViewAnswer {
-  const scenes = [...ledger.scenes.values()].sort(newestFirst)
-  if (scenes.length === 0) {
-    const hint = 'agent 用 pneuma-base start "<在做什么>" 开始一件事时，这里多出一行：哪次会话、谁、在哪、在做什么、动了几样东西。'
-    return { title: '场景', subtitle: null, blocks: [{ kind: 'empty', title: '还没有场景', hint }] }
-  }
-  const rows: TableRow[] = scenes.map((scene) => ({
-    key: scene.id,
-    cells: {
-      at: moment(scene.first),
-      who: { text: actorNames(scene.actors) },
-      where: scene.cwds.length > 0 ? { text: scene.cwds.map((d) => shortDir(d)).join('、'), mono: true, muted: true } : none,
-      doing: sceneDoing(ledger, scene),
-      things: scene.items.length > 0 ? { text: String(scene.items.length) } : none,
-    },
-    link: sceneLink(scene.id),
-    actions: [],
-  }))
-  // Where is in the scene's card too: it steps aside first when the panel needs the room.
-  const columns = [
-    { key: 'at', label: '时间' },
-    { key: 'who', label: '谁' },
-    { key: 'where', label: '在哪', optional: true },
-    { key: 'doing', label: '在做什么' },
-    { key: 'things', label: '几样东西' },
-  ]
-  return { title: '场景', subtitle: `${scenes.length} 次会话`, blocks: [{ kind: 'table', columns, rows, empty: '' }] }
-}
-
-const CONVERSATION_TONE = { here: 'good', gone: 'warn', elsewhere: 'neutral' } as const
-
-/** The conversation's file, to copy, with whether it is here; the command that resumes it, only when it is. */
-function conversationFields(c: Conversation | null): { label: string; value: Cell }[] {
-  if (c === null) return []
-  const file = { label: '对话', value: { text: c.path, mono: true, copy: true as const, tag: { text: whereConversation(c), tone: CONVERSATION_TONE[c.status] } } }
-  return c.status === 'here' && c.resume ? [file, { label: '接着聊', value: { text: c.resume, mono: true, copy: true } }] : [file]
-}
-
-/** One scene's card: who, when, where, its conversation, what was said, the owner operations, and the things entered, changed or moved in it. */
-export function sceneAnswer(ledger: Ledger, params: Record<string, string>, conversationOf: (scene: SceneRecord) => Conversation | null): ViewAnswer {
-  const input = params.scene ?? ''
-  const named = scenesNamed(ledger, input)
-  const scene = named.length === 1 ? named[0] : undefined
-  if (!scene) {
-    const title = named.length === 0 ? '没有这个场景' : `有 ${named.length} 个场景的编号以 ${input} 开头`
-    return { title: '场景', subtitle: input || null, blocks: [{ kind: 'empty', title, hint: null }] }
-  }
-  const blocks: Block[] = [
-    {
-      kind: 'fields',
-      fields: [
-        { label: '谁', value: { text: actorNames(scene.actors) } },
-        { label: '开始', value: { text: when(scene.first), at: scene.first } },
-        { label: '最后', value: { text: when(scene.last), at: scene.last } },
-        ...(scene.cwds.length > 0 ? [{ label: '在哪', value: { text: scene.cwds.map((d) => shortDir(d, 36)).join('、'), mono: true } }] : []),
-        ...conversationFields(conversationOf(scene)),
-        { label: '场景号', value: { text: scene.id, mono: true, muted: true } },
-      ],
-    },
-  ]
-  if (scene.said.length > 0) {
-    const entries = scene.said.map((s) => ({
-      at: s.at,
-      title: { text: s.text },
-      lines: [[who(s.actor), ...(s.about !== null ? [`关于 ${ledger.items.get(s.about)?.path ?? s.about}`] : [])].join(' · ')],
-      tag: { text: SAID_LABEL[s.flavor], tone: s.flavor === 'decided' ? ('info' as const) : ('neutral' as const) },
-    }))
-    blocks.push(counted('说过的话', entries.length, [{ kind: 'timeline', entries }]))
-  }
-  const ops = ledger.ownerOps.filter((op) => op.scene === scene.id)
-  if (ops.length > 0) {
-    const entries = ops.map((op) => ({ at: op.at, title: { text: op.command, mono: true }, lines: [op.summary], tag: op.destructive ? { text: '丢了数据', tone: 'bad' as const } : null }))
-    const title = ops.every((op) => op.actor.kind === 'owner') ? '主人面的操作' : '执行的命令'
-    blocks.push(counted(title, entries.length, [{ kind: 'timeline', entries }]))
-  }
-  const items = scene.items.flatMap((id) => ledger.items.get(id) ?? [])
-  if (items.length > 0) {
-    // A list, as the panel is narrow: each path whole, what happened to it in this scene below.
-    const entries: Entry[] = items.map((item) => ({
-      cell: { ...pathCell(item), link: itemLink(item.path) },
-      note: item.entered.scene === scene.id ? `放入 · ${originLabel(item.origin, item.entered.how)}` : '改过或挪过',
-      actions: [],
-    }))
-    blocks.push(counted('条目', items.length, [{ kind: 'list', items: entries }]))
-  }
-  return { title: `场景 ${shortScene(scene.id)}`, subtitle: `${actorNames(scene.actors)} · ${items.length} 样东西`, blocks }
-}
-
 // ---- standing ----
 
-/** What needs looking at, one section for each kind, each row opening the thing's panel. */
 type Entry = Extract<Block, { kind: 'list' }>['items'][number]
 
-export function standingAnswer(ledger: Ledger, standing: Standing): ViewAnswer {
-  const d = standingData(ledger, standing, false)
+/** What needs looking at, by kind: the key the home page's links give, the title, and what it means. */
+export const STANDING_KINDS: readonly { kind: keyof StandingData; title: string; note: string }[] = [
+  { kind: 'stale', title: '可能过期', note: '它依据的东西变了，可能要重做。让 agent 看一下。' },
+  { kind: 'gone', title: '来源不在', note: '它依据的东西不在了。' },
+  { kind: 'upstream', title: '上游有标记', note: '它更上游的依据可能过期或不在了。' },
+  { kind: 'unowned', title: '没人登记过的', note: '不知道从哪来的东西。知道来历，就给它补上。' },
+  { kind: 'changed', title: '被直接改过的', note: '有人绕过工具改了它，内容和记录的不一样。是你改的，就认下这次改动。' },
+  { kind: 'missing', title: '不在了的', note: '账上有，磁盘上找不到：可能被删掉了，或挪到了认不出的地方。' },
+  { kind: 'moved', title: '挪过的', note: '东西挪到了新的位置。agent 下次 check 时，记账会把新位置接上。' },
+]
+
+/** The entries of one kind, each opening the thing's panel, with the actions that settle it. */
+function standingEntries(d: StandingData, kind: keyof StandingData): Entry[] {
   const names = (refs: { path: string }[]) => refs.map((r) => r.path).join('、')
   // The path opens the item panel; a note only where it says more than the section's title.
   const entry = (path: string, note: string | null, open: string, actions: Action[] = []): Entry => ({ cell: { text: path, mono: true, link: itemLink(open) }, note, actions })
-  const sections: [title: string, note: string, entries: Entry[]][] = [
-    ['可能过期', '它依据的东西变了，可能要重做。让 agent 看一下。', d.stale.map((r) => entry(r.path, `依据 ${names(r.sources)} 变了`, r.path))],
-    ['来源不在', '它依据的东西不在了。', d.gone.map((r) => entry(r.path, `依据 ${names(r.sources)} 不在了`, r.path))],
-    ['上游有标记', '它更上游的依据可能过期或不在了。', d.upstream.map((r) => entry(r.path, `上游 ${names(r.via)} 有标记`, r.path))],
-    ['没人登记过的', '不知道从哪来的东西。知道来历，就给它补上。', d.unowned.map((r) => entry(r.path, r.adopted ? '入了册，来历不明' : null, r.path, provenanceActions(r.path)))],
-    ['被直接改过的', '有人绕过工具改了它，内容和记录的不一样。是你改的，就认下这次改动。', d.changed.map((r) => entry(r.path, null, r.path, [acceptAction(r.path)]))],
-    ['不在了的', '账上有，磁盘上找不到：可能被删掉了，或挪到了认不出的地方。', d.missing.map((r) => entry(r.path, null, r.path))],
-    ['挪过的', '东西挪到了新的位置。agent 下次 check 时，记账会把新位置接上。', d.moved.map((r) => entry(r.from, `挪到了 ${r.to}`, r.to))],
-  ]
-  const shown = sections.filter(([, , rows]) => rows.length > 0)
-  const total = shown.reduce((n, [, , rows]) => n + rows.length, 0)
+  switch (kind) {
+    case 'stale':
+      return d.stale.map((r) => entry(r.path, `依据 ${names(r.sources)} 变了`, r.path))
+    case 'gone':
+      return d.gone.map((r) => entry(r.path, `依据 ${names(r.sources)} 不在了`, r.path))
+    case 'upstream':
+      return d.upstream.map((r) => entry(r.path, `上游 ${names(r.via)} 有标记`, r.path))
+    case 'unowned':
+      return d.unowned.map((r) => entry(r.path, r.adopted ? '入了册，来历不明' : null, r.path, provenanceActions(r.path)))
+    case 'changed':
+      return d.changed.map((r) => entry(r.path, null, r.path, [acceptAction(r.path)]))
+    case 'missing':
+      return d.missing.map((r) => entry(r.path, null, r.path))
+    case 'moved':
+      return d.moved.map((r) => entry(r.from, `挪到了 ${r.to}`, r.to))
+  }
+}
+
+/** How many of each kind need looking at, empty kinds left out. */
+export function standingCounts(ledger: Ledger, standing: Standing): { kind: keyof StandingData; title: string; note: string; count: number }[] {
+  const d = standingData(ledger, standing, false)
+  return STANDING_KINDS.map((k) => ({ ...k, count: d[k.kind].length })).filter((k) => k.count > 0)
+}
+
+/** What needs looking at, one section for each kind, or only the kind `params.kind` names; each row opens the thing's panel. */
+export function standingAnswer(ledger: Ledger, standing: Standing, params: Record<string, string>): ViewAnswer {
+  const d = standingData(ledger, standing, false)
+  const only = STANDING_KINDS.find((k) => k.kind === params.kind)
+  const shown = (only ? [only] : STANDING_KINDS).map((k) => ({ ...k, items: standingEntries(d, k.kind) })).filter((k) => k.items.length > 0)
+  const total = shown.reduce((n, k) => n + k.items.length, 0)
   if (total === 0) {
     const hint = '可能过期的、没人登记过的、被直接改过的东西会出现在这里，每样都带着对应的处理。'
-    return { title: '状况', subtitle: '一切正常', blocks: [{ kind: 'empty', title: '没有要处理的事', hint }] }
+    return { title: only ? `状况 · ${only.title}` : '状况', subtitle: '一切正常', blocks: [{ kind: 'empty', title: '没有要处理的事', hint }] }
   }
-  const blocks: Block[] = shown.map(([title, note, items]) => ({ kind: 'section', title, note, count: items.length, blocks: [{ kind: 'list', items }], actions: [] }))
-  return { title: '状况', subtitle: `${total} 样要看`, blocks }
-}
-
-// ---- activity ----
-
-export const ACTIVITY_LIMIT = 200
-
-function kindTag(f: Fact): Tag {
-  switch (f.kind) {
-    case 'said':
-      return { text: SAID_LABEL[f.flavor], tone: f.flavor === 'decided' ? 'info' : 'neutral' }
-    case 'item.enter':
-      return { text: '放入', tone: 'neutral' }
-    case 'item.revise':
-      if (!f.claimed) return { text: '换内容', tone: 'neutral' }
-      return { text: f.how === 'observed' ? '看到改动' : f.by === 'owner' ? '主人直接改的' : '认改动', tone: 'warn' }
-    case 'item.move':
-      return { text: f.archive === 'in' ? '归档' : f.archive === 'out' ? '取回' : '挪动', tone: 'neutral' }
-    case 'item.basis':
-      return { text: '补依据', tone: 'neutral' }
-    case 'item.remove':
-      return { text: '除掉', tone: 'bad' }
-    case 'owner.op':
-      return f.actor.kind === 'owner' ? { text: '主人面', tone: 'info' } : { text: '命令', tone: 'neutral' }
-  }
-}
-
-/** Where a fact opens: the thing it is about, while it is there; else its scene. */
-function factLink(ledger: Ledger, f: Fact): Link {
-  const id = 'item' in f ? f.item : f.kind === 'said' ? f.about : null
-  const item = id === null ? undefined : ledger.items.get(id)
-  return item && !item.removed ? itemLink(item.path) : sceneLink(f.scene)
-}
-
-/** The latest facts, newest first, owner operations included; `who` keeps the owner's or the agents'. */
-export function activityAnswer(ledger: Ledger, params: Record<string, string>): ViewAnswer {
-  const by = params.who ?? ''
-  if (ledger.facts.length === 0) {
-    return { title: '动态', subtitle: null, blocks: [{ kind: 'empty', title: '还没有任何记录', hint: 'agent 放东西、说在做什么，主人在这里做操作，都会一条条出现在这里。' }] }
-  }
-  const facts = ledger.facts.filter((f) => by === '' || f.actor.kind === by).reverse()
-  const rows: TableRow[] = facts.slice(0, ACTIVITY_LIMIT).map((f) => ({
-    key: f.id,
-    cells: {
-      at: moment(f.at),
-      who: { text: who(f.actor) },
-      kind: { text: '', tag: kindTag(f) },
-      what: { text: factLine(ledger, f) },
-      scene: { text: shortScene(f.scene), mono: true, muted: true, link: sceneLink(f.scene) },
-    },
-    link: factLink(ledger, f),
-    actions: [],
-  }))
-  const columns: [string, string][] = [['at', '时间'], ['who', '谁'], ['kind', '种类'], ['what', '内容'], ['scene', '场景']]
-  const subtitle = facts.length > ACTIVITY_LIMIT ? `最近 ${ACTIVITY_LIMIT} 条，共 ${facts.length} 条` : `${facts.length} 条`
-  return { title: '动态', subtitle, blocks: [table(columns, rows, '没有符合条件的记录。')] }
+  const blocks: Block[] = shown.map((k) => ({ kind: 'section', title: k.title, note: k.note, count: k.items.length, blocks: [{ kind: 'list', items: k.items }], actions: [] }))
+  return { title: only ? `状况 · ${only.title}` : '状况', subtitle: `${total} 样要看`, blocks }
 }

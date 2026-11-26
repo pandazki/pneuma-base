@@ -25,6 +25,7 @@ export type FactBody =
   | { kind: 'item.basis'; item: ItemId; fingerprint: Fingerprint; basis: Basis }
   | { kind: 'item.remove'; item: ItemId }
   | { kind: 'owner.op'; command: string; summary: string; destructive: boolean; readOnly?: true; setup?: true }
+  | { kind: 'checked' } // the actor looked at what changed: its check, or the owner's 都看过了 on the home page
 
 export type FactActor = { kind: 'agent' | 'owner' | 'plugin'; name: string; grant: string | null }
 export type How = 'tool' | 'reported' | 'observed' // the tool did it; the actor said so; seen mechanically

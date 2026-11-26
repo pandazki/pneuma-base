@@ -90,6 +90,7 @@ function resolved(f: Fact, resolve: (id: ItemId) => ItemId): Fact {
     case 'said':
       return f.about === null ? f : { ...f, about: resolve(f.about) }
     case 'owner.op':
+    case 'checked':
       return f
     case 'item.enter':
       return { ...f, item: resolve(f.item), origin: f.origin.kind === 'made' ? { ...f.origin, basis: basis(f.origin.basis) } : f.origin }
@@ -103,6 +104,8 @@ function resolved(f: Fact, resolve: (id: ItemId) => ItemId): Fact {
 }
 
 function apply(ledger: Ledger, f: Fact): void {
+  // A look is no work in a scene: it only marks when its actor was last here.
+  if (f.kind === 'checked') return
   touchScene(ledger, f)
   const item = 'item' in f ? ledger.items.get(f.item) : undefined
   switch (f.kind) {
