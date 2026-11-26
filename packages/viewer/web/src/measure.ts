@@ -5,10 +5,24 @@ import { shortTime } from './time'
 
 type Table = Extract<Block, { kind: 'table' }>
 
-const SANS = '"Inter Variable", ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif'
-const MONO = '"JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, monospace'
-/** The fonts the page's CSS sets: table cells 13px, monospaced 12.5px, tags and small buttons 12px, headers 12.5px. */
-export const FONT = { cell: `500 13px ${SANS}`, mono: `500 12.5px ${MONO}`, small: `500 12px ${SANS}`, head: `500 12.5px ${SANS}`, monoSmall: `400 11px ${MONO}` }
+type Fonts = { cell: string; first: string; mono: string; monoFirst: string; small: string; head: string }
+let fonts: Fonts | null = null
+/**
+ * The fonts the page's CSS sets, in its font stacks (the Mac app's are the system's): a table's
+ * first column 500 13px, its other cells 400 13px, monospaced 12.5px at the same weights, headers,
+ * tags and small buttons 500 12px. Read once the page's styles apply.
+ */
+export function pageFonts(): Fonts {
+  if (fonts) return fonts
+  const style = getComputedStyle(document.documentElement)
+  const sans = style.getPropertyValue('--font-sans').trim() || 'ui-sans-serif, system-ui, sans-serif'
+  const mono = style.getPropertyValue('--font-mono').trim() || 'ui-monospace, monospace'
+  fonts = { cell: `400 13px ${sans}`, first: `500 13px ${sans}`, mono: `400 12.5px ${mono}`, monoFirst: `500 12.5px ${mono}`, small: `500 12px ${sans}`, head: `500 12px ${sans}` }
+  return fonts
+}
+
+/** The font of a cell's text, in the first column or another. */
+export const cellFont = (cell: Cell, first: boolean) => (cell.mono ? (first ? pageFonts().monoFirst : pageFonts().mono) : first ? pageFonts().first : pageFonts().cell)
 
 let canvas: CanvasRenderingContext2D | null = null
 export function textWidth(text: string, font: string): number {
@@ -43,18 +57,18 @@ export function fitMiddle(text: string, font: string, width: number): string {
 
 const ICON = 16
 const GAP = 8
-const TAG_PADDING = 14
-const COPY = 20 // the copy button, size-5
-const PADDING = 16 // px-2 on each side
-const FIRST_PADDING = 20 // pl-3, pr-2
-const BUTTON_PADDING = 16 // a small button's px-2
+const TAG_PADDING = 12 // a tag's 6px each side
+const COPY = 20 // the copy button
+const PADDING = 24 // a cell's 12px each side
+const FIRST_PADDING = 28 // the first cell's 16px on the left
+const BUTTON_PADDING = 16 // a small button's 8px each side
 const SLACK = 4 // rounding and font fallback
 
 /** What a cell draws besides its text: its icon, its tag and its copy button, with their gaps. */
 function extras(cell: Cell, text: boolean): number {
   let w = cell.icon ? ICON + (text ? GAP : 0) : 0
   if (cell.copy) w += (text || w > 0 ? GAP : 0) + COPY
-  if (cell.tag) w += (text || w > 0 ? GAP : 0) + textWidth(cell.tag.text, FONT.small) + TAG_PADDING
+  if (cell.tag) w += (text || w > 0 ? GAP : 0) + textWidth(cell.tag.text, pageFonts().small) + TAG_PADDING
   return w
 }
 
@@ -87,9 +101,10 @@ function momentWidth(text: string, font: string, seen: Map<string, number>): num
   return width
 }
 
-function cellWidth(cell: Cell, moments: Map<string, number>): number {
+function cellWidth(cell: Cell, first: boolean, moments: Map<string, number>): number {
   const text = cell.at ? shortTime(cell.at) : cell.text
-  const w = text === '' ? 0 : cell.at ? momentWidth(text, FONT.cell, moments) : textWidth(text, cell.mono ? FONT.mono : FONT.cell)
+  const font = cellFont(cell, first)
+  const w = text === '' ? 0 : cell.at ? momentWidth(text, font, moments) : textWidth(text, font)
   return w + extras(cell, text !== '')
 }
 
@@ -106,13 +121,13 @@ export function naturalColumns(block: Table, withActions: boolean): Column[] {
   const moments = new Map<string, number>()
   const columns = block.columns.map((c, i): Column => {
     const cells = block.rows.flatMap((r) => r.cells[c.key] ?? [])
-    const content = Math.max(textWidth(c.label, FONT.head), ...cells.map((cell) => cellWidth(cell, moments)))
+    const content = Math.max(textWidth(c.label, pageFonts().head), ...cells.map((cell) => cellWidth(cell, i === 0, moments)))
     const natural = Math.ceil(content) + SLACK + (i === 0 ? FIRST_PADDING : PADDING)
     const give: Give = cells.some((cell) => cell.mono && cell.text !== '') ? 'mono' : cells.some((cell) => cell.text !== '' && !cell.at) ? 'text' : 'fixed'
     return { natural, give, optional: c.optional === true }
   })
   if (!withActions) return columns
-  const buttons = Math.max(0, ...block.rows.map((r) => r.actions.reduce((sum, a, i) => sum + textWidth(a.label, FONT.small) + BUTTON_PADDING + (i > 0 ? GAP : 0), 0)))
+  const buttons = Math.max(0, ...block.rows.map((r) => r.actions.reduce((sum, a, i) => sum + textWidth(a.label, pageFonts().small) + BUTTON_PADDING + (i > 0 ? GAP : 0), 0)))
   return [...columns, { natural: Math.ceil(buttons) + SLACK + PADDING, give: 'fixed', optional: false }]
 }
 

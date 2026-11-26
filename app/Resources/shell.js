@@ -37,7 +37,7 @@
   const checkReady = () => {
     if (ready) return
     const root = document.getElementById('root')
-    if (!root || root.childElementCount === 0 || document.querySelector('.animate-pulse')) return
+    if (!root || root.childElementCount === 0 || document.querySelector('.loading')) return
     ready = true
     post({ type: 'ready' })
     requestAnimationFrame(() => requestAnimationFrame(() => post({ type: 'painted' })))

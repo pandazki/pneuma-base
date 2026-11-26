@@ -7,25 +7,35 @@ import type { ActionInput, Link } from './types.js'
 
 /**
  * The classes /plugin-kit/frame.css gives, the ones the management UI draws with: `card` (a raised
- * surface); `btn`, with `btn-primary` and `btn-danger`; `field` (a text input), `field-area` (a
- * textarea); `tag` (a small label) with a tone, `tone-good`, `tone-warn`, `tone-bad`, `tone-info`;
- * `segmented` (buttons in a row, the checked one `aria-checked="true"`); `select` (a wrapper around a
- * `<select>`); `link`; `mono` (monospace), `muted` and `faint` (quieter ink).
+ * surface); `btn` (secondary), with `btn-primary` (near-black, the one main action), `btn-quiet` (no
+ * ground until hovered), `btn-danger` (red as a tint) and `btn-sm` (24px high instead of 28);
+ * `icon-btn` (an icon alone, named by `aria-label`); `field` (a text input), `field-area` (a
+ * textarea); `select` (a wrapper around a `<select>`); `segmented` (buttons in a row, the checked one
+ * `aria-checked="true"`, a count in a `<span class="count">`); `check` (a checkbox), `switch` (a
+ * checkbox with `role="switch"`); `tag` (a small label) with a tone, `tone-good`, `tone-warn`,
+ * `tone-bad`, `tone-info`; `kbd` (a key cap); `link`; `mono` (monospace), `muted` and `faint`
+ * (quieter ink). Each draws its own hover, pressed, focus and disabled states.
  */
 export const FRAME_CLASSES = [
   'card',
   'btn',
   'btn-primary',
+  'btn-quiet',
   'btn-danger',
+  'btn-sm',
+  'icon-btn',
   'field',
   'field-area',
+  'select',
+  'segmented',
+  'check',
+  'switch',
   'tag',
   'tone-good',
   'tone-warn',
   'tone-bad',
   'tone-info',
-  'segmented',
-  'select',
+  'kbd',
   'link',
   'mono',
   'muted',
@@ -33,52 +43,67 @@ export const FRAME_CLASSES = [
 ] as const
 
 /**
- * The UI's tokens, CSS custom properties set on the page's root, current for light or dark: surfaces
- * from the page back to the front (`--page`, `--canvas`, `--surface`, `--inset`, `--hover`,
- * `--hover-2`); ink, strong to faint (`--ink`, `--ink-2`, `--ink-3`); lines; `--field`; the accent and
- * the three tones with their tints (`--green` good, `--orange` warn, `--red` bad); the tooltip and the
- * scrim; a tag's fill and ring as percentages; shadows; radii; and the two font stacks.
+ * The UI's tokens, CSS custom properties set on the page's root, current for light or dark: ink,
+ * strongest to faintest (`--ink-strong`, `--ink` … `--ink-4`); surfaces from the back (`--page`,
+ * `--panel`, `--surface`, `--overlay`) and `--tray`, a grey layer inside one; washes for hover,
+ * chips, the selected pill and a table row's hover; lines; shadows for cards, popovers and dialogs,
+ * and a field's rings; the near-black `--primary` with its hover and the ink on it; `--focus`, the
+ * keyboard ring, the only blue besides `--info`; the scrim; the four states, each with its soft
+ * ground; `--chart`, for a chart's line or a heat map's shade; the tooltip's ground and ink; seven
+ * radii; the motion curves; and the two font stacks.
  */
 export const FRAME_TOKENS = [
-  '--page',
-  '--canvas',
-  '--surface',
-  '--inset',
-  '--hover',
-  '--hover-2',
+  '--ink-strong',
   '--ink',
   '--ink-2',
   '--ink-3',
+  '--ink-4',
+  '--page',
+  '--panel',
+  '--surface',
+  '--overlay',
+  '--tray',
+  '--wash',
+  '--chip',
+  '--select',
+  '--row-hover',
   '--line',
   '--line-strong',
-  '--line-soft',
-  '--field',
-  '--accent',
-  '--accent-ink',
-  '--accent-tint',
-  '--green',
-  '--green-tint',
-  '--orange',
-  '--orange-tint',
-  '--red',
-  '--red-tint',
-  '--tooltip-bg',
-  '--tooltip-fg',
-  '--scrim',
-  '--tag-fill',
-  '--tag-ring',
-  '--shadow-xs',
-  '--shadow-sm',
-  '--shadow-lg',
-  '--shadow-hairline',
-  '--shadow-btn',
   '--shadow-card',
-  '--shadow-overlay',
-  '--shadow-inset-field',
-  '--radius-chip',
+  '--shadow-card-hover',
+  '--shadow-popover',
+  '--shadow-dialog',
+  '--ring-field',
+  '--ring-field-hover',
+  '--ring-field-focus',
+  '--ring-field-error',
+  '--primary',
+  '--primary-hover',
+  '--on-primary',
+  '--focus',
+  '--scrim',
+  '--good',
+  '--good-soft',
+  '--warn',
+  '--warn-soft',
+  '--bad',
+  '--bad-soft',
+  '--bad-soft-hover',
+  '--info',
+  '--info-soft',
+  '--chart',
+  '--tip-bg',
+  '--tip-ink',
+  '--radius-tag',
   '--radius-control',
+  '--radius-field',
+  '--radius-item',
   '--radius-card',
-  '--radius-window',
+  '--radius-panel',
+  '--radius-dialog',
+  '--ease',
+  '--ease-glide',
+  '--ease-pop',
   '--font-sans',
   '--font-mono',
 ] as const

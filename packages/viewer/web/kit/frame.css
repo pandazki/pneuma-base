@@ -1,7 +1,7 @@
 /*
  * The frame kit's stylesheet: what a plugin's own page loads, by <link rel="stylesheet"
  * href="/plugin-kit/frame.css">, to look like the management UI around it. The UI sends its tokens
- * (--surface, --ink, --accent, ...) and frame.js sets them on the root, so the page follows light
+ * (--surface, --ink, --primary, ...) and frame.js sets them on the root, so the page follows light
  * and dark without a colour of its own. The UI's components follow this base. The classes and tokens
  * a plugin's page may use are listed in @pneuma-base/sdk/frame.
  */
@@ -36,8 +36,7 @@ body {
   color: var(--ink);
   font-family: var(--font-sans);
   font-size: 13px;
-  line-height: 1.5;
-  letter-spacing: -0.01em;
+  line-height: 20px;
   font-feature-settings: 'cv11', 'ss01';
   -webkit-font-smoothing: antialiased;
 }
@@ -46,7 +45,6 @@ input,
 select,
 textarea {
   font: inherit;
-  letter-spacing: inherit;
   color: inherit;
   border: 0;
 }
@@ -56,7 +54,7 @@ button {
   padding: 0;
 }
 :focus-visible {
-  outline: 2px solid color-mix(in oklch, var(--accent) 75%, transparent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 h1,
@@ -66,21 +64,26 @@ p {
   margin: 0;
 }
 h2 {
+  color: var(--ink-strong);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 500;
+  line-height: 22px;
 }
 h3 {
-  font-size: 13px;
-  font-weight: 600;
-}
-code,
-.mono {
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-}
-.muted {
   color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
 }
-.faint {
-  color: var(--ink-3);
+code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+  }
 }

@@ -1,5 +1,5 @@
 // The page's only way to the library: the server's /api, with the token from the page's address.
-import type { Call, PluginProblem, ViewDecl, ViewRequest, ViewResult } from '@pneuma-base/kernel'
+import type { Call, ListedView, PluginProblem, ViewRequest, ViewResult } from '@pneuma-base/kernel'
 
 export const TOKEN = new URLSearchParams(window.location.search).get('token') ?? ''
 
@@ -7,7 +7,8 @@ export type State = {
   dir: string
   /** `shown` is the root as people read it, the home directory as ~. */
   library: { root: string; shown: string; id: string } | null
-  views: ViewDecl[]
+  /** In the navigation's order: each plugin's in configuration order, then the kernel's. */
+  views: ListedView[]
   problems: PluginProblem[]
   available: { name: string; title: string | null }[]
 }

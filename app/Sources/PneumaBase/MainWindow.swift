@@ -123,6 +123,9 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
     web.uiDelegate = self
     web.onFiles = { [weak self] urls in self?.onFiles?(urls) }
     window?.contentView = web
+    // Made first responder now, while the window is not key: becoming key with no first responder
+    // selects the first key view as Tab would, and WebKit then puts a focus ring on the first row.
+    window?.makeFirstResponder(web)
     webView = web
     return web
   }
@@ -139,11 +142,21 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
     Log.line("window: closed")
   }
 
+  /// The page dims its chrome while the window is not the key window, as the system's own windows do.
+  func windowDidBecomeKey(_ notification: Notification) { tellWindowState() }
+  func windowDidResignKey(_ notification: Notification) { tellWindowState() }
+
+  private func tellWindowState() {
+    let state = window?.isKeyWindow ?? true ? "active" : "inactive"
+    webView?.evaluateJavaScript("window.dispatchEvent(new CustomEvent('pneuma-shell', { detail: { window: '\(state)' } }))")
+  }
+
   func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
     guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
     switch type {
     case "ready":
       show(reason: "ready")
+      tellWindowState()
     case "painted":
       if let requestedAt { Log.line(String(format: "window: page drawn %.0f ms after open", Date().timeIntervalSince(requestedAt) * 1000)) }
       requestedAt = nil
@@ -249,8 +262,8 @@ extension MainWindow: NSToolbarDelegate, NSSearchFieldDelegate {
 /// The page's background, so that a resize or the moment before the first paint shows its colour.
 private let pageColor = NSColor(name: nil) { appearance in
   appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-    ? NSColor(srgbRed: 0.090, green: 0.094, blue: 0.106, alpha: 1)
-    : NSColor(srgbRed: 0.980, green: 0.980, blue: 0.984, alpha: 1)
+    ? NSColor(srgbRed: 0.055, green: 0.055, blue: 0.063, alpha: 1)
+    : NSColor(srgbRed: 0.973, green: 0.973, blue: 0.973, alpha: 1)
 }
 
 /// The content controller keeps its handlers strongly; this breaks the cycle with the window.
