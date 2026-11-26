@@ -6,8 +6,9 @@ import { CONFIG_FILE, newConfig, saveConfig } from './library.js'
 import { KERNEL_COMMANDS, type Outcome } from './owner-commands.js'
 import { checkArgs } from './params.js'
 import { makeContext, performOwner, pluginContext } from './pipeline.js'
+import { askLine } from './requests.js'
 import { agentSign, ownerOnlyRefusal, OWNER_DECIDES, type Env } from './session.js'
-import { usageOf, type Actor, type Context, type OwnerArgs, type OwnerParams, type OwnerResult, type OwnerValues, type Plugin, type PluginName, type PluginTable, type Session } from '@pneuma-base/sdk'
+import { usageOf, type Actor, type Context, type OwnerArgs, type OwnerParams, type OwnerResult, type OwnerValues, type Plugin, type PluginName, type PluginTable, type Requested, type Session } from '@pneuma-base/sdk'
 
 /** Who acts, in which session, on this machine, with no library at hand: the context of a command that needs none. */
 export type MachineContext = Omit<Context, 'library'> & { library: null }
@@ -24,12 +25,17 @@ export type OwnerCall = {
    * standard input; from the page, the call's `stdin`. Absent or null: none was given.
    */
   readSecret?: (question: string) => Promise<string | null>
+  /** The call runs a request the owner approved: its operation's event carries it. */
+  request?: Requested
 }
 
 /** An owner call with a library. */
 export type LibraryCall = OwnerCall & { ctx: Context }
 
-/** An owner command as the owner face lists it, and who provides it. `machine`: it needs no library. `readOnly`: it changes nothing. */
+/**
+ * An owner command as the owner face lists it, and who provides it. `machine`: it needs no library.
+ * `readOnly`: it changes nothing. `askable`: an agent may ask the owner for it with `ask`.
+ */
 export type OwnerCommandInfo = {
   name: string
   summary: string
@@ -38,25 +44,32 @@ export type OwnerCommandInfo = {
   destructive: boolean
   ownerOnly: boolean
   readOnly: boolean
+  askable: boolean
   machine: boolean
   by: PluginName | 'kernel'
 }
 
-/** How a command is gated: destructive ones lose data; owner-only ones decide for the owner. Read-only ones change nothing; setup ones configure plugins or targets. */
-type Gate = { destructive: boolean; ownerOnly: boolean; readOnly?: boolean; setup?: boolean }
+/**
+ * How a command is gated: destructive ones lose data; owner-only ones decide for the owner, and may be
+ * asked for unless `askable` is false. Read-only ones change nothing; setup ones configure plugins or targets.
+ */
+type Gate = { destructive: boolean; ownerOnly: boolean; readOnly?: boolean; setup?: boolean; askable?: false }
+
+const isAskable = (gate: Gate) => gate.ownerOnly && !gate.destructive && gate.askable !== false
 
 /**
  * The one place owner commands pass through. In an agent session a destructive or owner-only
- * command is refused, naming what showed the session; a call that does not fit the command's
- * `params` is refused as `usage`; a destructive one then needs a confirmation the person gives in
- * person (K7). With a library, refused or not, it ends at the pipeline's single exit; with none,
- * there is no plugin to tell.
+ * command is refused, naming what showed the session, and an agent refused one it may ask for is
+ * given the line that asks; a call that does not fit the command's `params` is refused as `usage`; a
+ * destructive one then needs a confirmation the person gives in person (K7). With a library, refused
+ * or not, it ends at the pipeline's single exit; with none, there is no plugin to tell.
  */
 async function gated(call: OwnerCall, name: string, gate: Gate, args: OwnerArgs, params: OwnerParams, body: (values: OwnerValues) => Promise<Outcome>): Promise<OwnerResult> {
   const decide = async (): Promise<Outcome> => {
     const sign = gate.destructive || gate.ownerOnly ? agentSign(call.env, call.viaGrant, call.ctx.actor) : null
     if (sign !== null) {
-      const text = ownerOnlyRefusal(name, gate.destructive ? '会丢数据' : OWNER_DECIDES, sign)
+      const ask = isAskable(gate) && call.ctx.actor.kind === 'agent' ? askLine(call.ctx, name, args) : null
+      const text = ownerOnlyRefusal(name, gate.destructive ? '会丢数据' : OWNER_DECIDES, sign, ask)
       return { answer: { outcome: 'refused', reason: 'agent-session', text } }
     }
     const checked = checkArgs(name, params, args)
@@ -71,7 +84,7 @@ async function gated(call: OwnerCall, name: string, gate: Gate, args: OwnerArgs,
     const { answer, problems } = await decide()
     return { ...answer, problems: problems ?? [] }
   }
-  return performOwner(ctx, name, args, { destructive: gate.destructive, readOnly: gate.readOnly ?? false, setup: gate.setup ?? false }, decide)
+  return performOwner(ctx, name, args, { destructive: gate.destructive, readOnly: gate.readOnly ?? false, setup: gate.setup ?? false, ...(call.request ? { request: call.request } : {}) }, decide)
 }
 
 /** Makes `dir` a library. Refused before anything is written, so a refused init has no library to send an event to. */
@@ -116,6 +129,7 @@ export const ownerFace = {
       destructive: c.destructive,
       ownerOnly: c.ownerOnly,
       readOnly: c.readOnly ?? false,
+      askable: isAskable(c),
       machine: c.scope === 'machine',
       by: 'kernel',
     }))
@@ -128,6 +142,7 @@ export const ownerFace = {
         destructive: c.destructive,
         ownerOnly: c.ownerOnly,
         readOnly: c.readOnly ?? false,
+        askable: isAskable(c),
         machine: false,
         by: p.name,
       })),

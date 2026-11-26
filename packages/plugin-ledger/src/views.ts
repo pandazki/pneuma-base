@@ -310,7 +310,10 @@ export function factLine(ledger: Ledger, f: Fact): string {
     case 'item.remove':
       return `${pathOf(ledger, f.item)} 随归档区一起清掉了`
     case 'owner.op':
+      if (f.request) return `批准了 ${f.request.by.name} 的请求，执行 ${f.command}${f.refused === undefined ? '' : ` 被拒绝（${f.refused}）`}：${f.summary}`
       return f.actor.kind === 'owner' ? `主人面的操作 ${f.command}：${f.summary}` : `执行 ${f.command}：${f.summary}`
+    case 'request':
+      return f.act === 'asked' ? `请主人做 ${f.line}：${f.why ?? ''}` : `撤回了请求 ${f.request}：${f.line}`
     case 'checked':
       return '看过了库的变化'
   }

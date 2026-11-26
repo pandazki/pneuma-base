@@ -10,6 +10,7 @@ import { exists } from './files.js'
 import { bundleFiles, enclosingBundle, kindAt, listThings, thingAt } from './things.js'
 import { KERNEL_COMMANDS } from './owner-commands.js'
 import { codexHint } from './products.js'
+import { requestAsks } from './requests.js'
 import { agentSign, ownerOnlyRefusal, OWNER_DECIDES, type Env } from './session.js'
 import type { KernelCommandName } from './claims.js'
 import { machineDirOf } from './plugin-table.js'
@@ -469,20 +470,22 @@ async function thingSections(root: string, facts: FileFacts, bundle: LibraryPath
 // ---- home ----
 
 /**
- * The page the owner opens on: what waits on the owner, from every plugin's `onAsks`; then each
- * plugin view declared `home`, its blocks as they are, in configuration order. With no such view the
- * page says so and shows the library's top folder, so a library without plugins has a home too.
+ * The page the owner opens on: what waits on the owner, the agents' pending requests first, oldest
+ * first, then every plugin's `onAsks`; then each plugin view declared `home`, its blocks as they are,
+ * in configuration order. With no such view the page says so and shows the library's top folder, so
+ * a library without plugins has a home too.
  */
 async function homePage(_params: Record<string, string>, call: ViewerCall): Promise<Shown> {
   const { ctx } = call
   const asked = await asksOf(ctx, callableIn(ctx.library))
   const titleOf = (by: string | ActorMark) => (typeof by === 'string' ? (ctx.library.plugins.find((p) => p.name === by)?.cognition?.title ?? by) : by)
+  const asks = [...(await requestAsks(ctx.library)), ...asked.asks.map((a) => ({ ...a, by: titleOf(a.by) }))]
   const decide: Block = {
     kind: 'section',
     title: '等你决定',
     note: null,
-    count: asked.asks.length > 0 ? asked.asks.length : null,
-    blocks: [{ kind: 'asks', asks: asked.asks.map((a) => ({ ...a, by: titleOf(a.by) })), empty: '没有要你决定的事。' }],
+    count: asks.length > 0 ? asks.length : null,
+    blocks: [{ kind: 'asks', asks, empty: '没有要你决定的事。' }],
     actions: [],
   }
   const parts = pluginViews(ctx.library).views.filter((v) => v.decl.home === true)

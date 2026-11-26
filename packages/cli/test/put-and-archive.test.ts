@@ -109,8 +109,8 @@ describe('archive through the command line, no plugin (C15)', () => {
   })
 
   it('check answers with and without the switch', () => {
-    expect(agent(['check', '--json']).json()).toEqual({ sections: [], asks: [], problems: [] })
-    expect(agent(['check', '--include-archived', '--json']).json()).toEqual({ sections: [], asks: [], problems: [] })
+    expect(agent(['check', '--json']).json()).toEqual({ sections: [], asks: [], requests: { ended: [], pending: 0 }, problems: [] })
+    expect(agent(['check', '--include-archived', '--json']).json()).toEqual({ sections: [], asks: [], requests: { ended: [], pending: 0 }, problems: [] })
   })
 
   it('inspect marks it archived, by its original path or its archived path', () => {

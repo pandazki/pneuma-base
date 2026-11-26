@@ -42,15 +42,21 @@ export const KERNEL_COMMAND_NAMES = [
   'agent connect',
   'agent disconnect',
   'agent list',
+  'request list',
+  'request approve',
+  'request decline',
 ] as const
 
 /**
  * Names no plugin takes. A plugin's commands start with its name, so it is none of the command line's
  * own words or the first words of the kernel's commands; and its directory sits beside the kernel's
- * scratch directory `.pneuma-base/tmp/`.
+ * scratch directory `.pneuma-base/tmp/` and its requests `.pneuma-base/requests/`.
  */
 export const RESERVED_PLUGIN_NAMES: readonly string[] = [
   'tmp',
+  'requests',
+  'ask',
+  'request',
   'start',
   'show',
   'find',

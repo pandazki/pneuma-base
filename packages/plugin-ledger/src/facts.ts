@@ -24,7 +24,8 @@ export type FactBody =
   | { kind: 'item.move'; item: ItemId; from: LibraryPath; to: LibraryPath; archive: 'in' | 'out' | null }
   | { kind: 'item.basis'; item: ItemId; fingerprint: Fingerprint; basis: Basis }
   | { kind: 'item.remove'; item: ItemId }
-  | { kind: 'owner.op'; command: string; summary: string; destructive: boolean; readOnly?: true; setup?: true }
+  | { kind: 'owner.op'; command: string; summary: string; destructive: boolean; readOnly?: true; setup?: true; request?: { id: string; by: FactActor }; refused?: string } // request: the owner approved it at an agent's request; refused: the command's reason when it then refused
+  | { kind: 'request'; act: 'asked' | 'withdrawn'; request: string; line: string; why?: string } // an agent asked the owner to run a command, or took the request back
   | { kind: 'checked' } // the actor looked at what changed: its check, or the owner's 都看过了 on the home page
 
 export type FactActor = { kind: 'agent' | 'owner' | 'plugin'; name: string; grant: string | null }

@@ -28,12 +28,14 @@ const READS: Record<string, string> = {
   'search status': 'search.status',
   'agent list': 'agents',
   'agent detect': 'agents',
+  'request list': 'home',
 }
 
 /** What has no button on any page, and why. */
 const NO_PLACE: Record<string, string> = {
   find: '一个搜索框要一个人自己打字的页面参数，界面的页现在只从筛选的选项和链接拿参数；要等界面能问一个自由的输入。找按名字时，人翻「文件」和「库」',
   'say doing': '说的是 agent 这次会话在做什么；人在界面里的操作自成一个主人的场景，场景里记的就是做了哪些操作',
+  ask: '请是 agent 请主人做一条主人命令；主人在界面里直接按那条命令的按钮，用不着请谁',
 }
 
 let sb: Sandbox
@@ -182,6 +184,8 @@ beforeAll(async () => {
   agent(['put', 'notes/draft.md', '--to', 'notes/draft-moved.md'])
   agent(['put', '-', '--to', 'notes/old.md', '--made'], '旧的\n')
   agent(['archive', 'notes/old.md'])
+  // A request waiting on the owner, so the home page has 批准 and 拒绝.
+  agent(['ask', '要给博客也设一个部署目标', 'deploy', 'target', 'set', '--kind', 'dir', '--to', join(tempDir('pb-www2-'), 'www')])
   // A plugin on this machine the library has not installed, and a secret set, so their buttons are on the config page.
   await write(join(work, 'extra/index.js'), "export default { contract: 1, name: 'extra', cognition: null, storage: [], statements: [], ownerCommands: [] }\n")
   expect(sb.run(['plugin', 'install', join(work, 'extra')], { cwd: work }).code).toBe(0)
@@ -235,7 +239,7 @@ describe('every page of a library with every built-in plugin', () => {
         if (block.kind === 'section') expect(text, where).toContain(block.title)
         if (block.kind === 'text') expect(text, where).toContain(block.text)
         if (block.kind === 'feed') for (const row of block.groups.flatMap((g) => g.rows)) expect(text, `${where}: ${row.text}`).toContain(row.text)
-        if (block.kind === 'asks') for (const ask of block.asks) expect(text, `${where}: ${ask.text}`).toContain(ask.text)
+        if (block.kind === 'asks') for (const ask of block.asks) expect(text, `${where}: ${ask.text}`).toContain(`${ask.text}${ask.command === undefined ? '' : `（${typeof ask.by === 'string' ? ask.by : ask.by.name}）\n    ${ask.command}`}`)
         if (block.kind === 'stats') for (const stat of block.stats) expect(text, `${where}: ${stat.label}`).toContain(`${stat.label}：${stat.value}`)
         if (block.kind === 'tree') for (const node of block.nodes) expect(text, `${where}: ${node.label}`).toContain(node.label)
         for (const action of actionsOf(block)) expect(text, `${where}: ${action.label}`).toContain(`$ ${commandOf(action, commands)}  # ${action.label}`)
@@ -259,7 +263,7 @@ describe('every page of a library with every built-in plugin', () => {
     const buttons = new Set(pages.flatMap((p) => allBlocks(p.json.blocks).flatMap(actionsOf).map(capability)))
     const shown = new Set(pages.map((p) => p.link.view))
     const said = library.plugins.flatMap((p) => (p.onSay ? p.statements.map((k) => `say ${k}`) : []))
-    const verbs = ['put register', 'put place', 'put move', 'find', 'inspect', 'check', 'archive', 'unarchive', ...said]
+    const verbs = ['put register', 'put place', 'put move', 'find', 'inspect', 'check', 'archive', 'unarchive', 'ask', ...said]
     const commands = ownerFace.commands(library.plugins)
     const business = [...verbs, ...commands.filter((c) => !c.ownerOnly && !c.destructive).map((c) => c.name)]
     const management = commands.filter((c) => c.ownerOnly || c.destructive).map((c) => c.name)

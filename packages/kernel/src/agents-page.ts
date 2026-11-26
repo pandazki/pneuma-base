@@ -14,9 +14,10 @@ function kernelAction(name: string, label: string, fixed: Record<string, FixedVa
 }
 
 /** The verbs an agent's session runs, which no plugin changes (K3), and the two the command line adds. */
-const VERBS_LINE = 'start、find、inspect、put、say、check、archive、unarchive、show：放、找、看、说、查、归档，和开始一件事、看管理界面的一页'
+const VERBS_LINE = 'start、find、inspect、put、say、check、archive、unarchive、ask、show：放、找、看、说、查、归档、请你做一条下面的命令，和开始一件事、看管理界面的一页'
 
 const commandItem = (c: OwnerCommandInfo) => ({ cell: { text: c.name, mono: true }, note: `${c.summary}${c.by === 'kernel' ? '' : `（${c.by}）`}`, actions: [] })
+const askedItem = (c: OwnerCommandInfo) => (c.askable ? commandItem(c) : { ...commandItem(c), note: `${commandItem(c).note}（它请不了，要你亲自来）` })
 
 /**
  * What an agent may do, in three groups: what its session runs itself (the verbs, and the commands
@@ -32,7 +33,7 @@ function mayDo(commands: OwnerCommandInfo[]): Block {
     count: null,
     blocks: [
       group('自己能做的', '在它的会话里直接做', [{ cell: { text: '动词', mono: false }, note: VERBS_LINE, actions: [] }, ...commands.filter((c) => !c.destructive && !c.ownerOnly).map(commandItem)]),
-      group('要你来做的', '替你做决定的事：在它的会话里被拒绝，它会请你来做', commands.filter((c) => c.ownerOnly && !c.destructive).map(commandItem)),
+      group('要你来做的', '替你做决定的事：它在会话里用 ask 写明为什么、请你批准，请求出现在首页的「等你决定」里', commands.filter((c) => c.ownerOnly && !c.destructive).map(askedItem)),
       group('红线', '会丢数据的事：只有你能做，要你当面确认', commands.filter((c) => c.destructive).map(commandItem)),
     ],
     actions: [],

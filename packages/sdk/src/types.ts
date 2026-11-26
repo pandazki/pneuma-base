@@ -247,8 +247,8 @@ export type Content =
   | { kind: 'other'; path: LibraryPath; size: number; type: string | null; why: 'not-utf8' | 'too-large' }
   | { kind: 'files'; path: LibraryPath; files: BundleFile[] }
   | { kind: 'unavailable'; path: LibraryPath | null; reason: 'outside-grant' | 'no-such-file' | 'not-a-bundle' }
-/** `content` is there only when the request asked for it. */
-export type InspectResult = { file: FileFacts | null; sections: Section[]; problems: PluginProblem[]; content?: Content }
+/** `content` is there only when the request asked for it; `request`, when the target is a request's id. */
+export type InspectResult = { file: FileFacts | null; sections: Section[]; problems: PluginProblem[]; content?: Content; request?: OwnerRequest }
 
 export type SayRequest = { kind: string; about: string | null; text: string | null; args: Record<string, string[]> }
 export type SayResult =
@@ -261,8 +261,71 @@ export type SayAnswer =
   | { outcome: 'not-heard'; reason: 'refused'; note: string }
 
 export type CheckRequest = { since: Instant | 'last' | null; includeArchived: boolean }
-/** `asks`: what only the owner can settle now, from every plugin's `onAsks`; an agent tells the owner. */
-export type CheckResult = { sections: Section[]; asks: Ask[]; problems: PluginProblem[] }
+/**
+ * `asks`: what only the owner can settle now, from every plugin's `onAsks`; an agent tells the owner.
+ * `requests`: the caller's own requests (`ask`) the owner decided since it last saw them, and how many
+ * still wait.
+ */
+export type CheckResult = { sections: Section[]; asks: Ask[]; requests: { ended: OwnerRequest[]; pending: number }; problems: PluginProblem[] }
+
+// ---- ask ----
+
+export type RequestId = string & { readonly __brand: 'RequestId' }
+
+/**
+ * `ask`: an agent asks the owner to run one of the owner's commands, saying why; `command` and `args`
+ * are what the owner face's dispatch takes. `withdraw`: the agent that asked takes back one still pending.
+ */
+export type AskRequest = { kind: 'ask'; why: string; command: string; args: OwnerArgs } | { kind: 'withdraw'; id: string }
+
+/** What the command answered when the owner approved: done, refused, or failed with a throw. */
+export type RequestOutcome = { outcome: 'done'; text: string } | { outcome: 'refused'; reason: string; text: string } | Failure
+
+export type RequestStatus =
+  | { kind: 'pending' }
+  | { kind: 'withdrawn'; at: Instant }
+  | { kind: 'declined'; at: Instant; reason: string | null }
+  | { kind: 'approved'; at: Instant; outcome: RequestOutcome }
+
+/**
+ * A request as the kernel reads it from its file: the agent that asked (its grant's id, null without
+ * one), when and why, the command and its arguments, `line` the command as the owner would type it,
+ * where it stands, and whether the asker has seen how it ended.
+ */
+export type OwnerRequest = {
+  id: RequestId
+  by: { name: string; grant: GrantId | null }
+  at: Instant
+  why: string
+  command: string
+  args: OwnerArgs
+  line: string
+  status: RequestStatus
+  seen: boolean
+}
+
+/**
+ * Why an ask is refused. `red-line`: a destructive command, which needs the owner in person.
+ * `not-askable`: one that needs the owner's own input, or a request command. `run-it-yourself`: one
+ * an agent may run. `too-many`: the agent already has the most requests pending.
+ */
+export type AskRefusal =
+  | 'not-an-agent'
+  | 'unknown-command'
+  | 'usage'
+  | 'red-line'
+  | 'not-askable'
+  | 'run-it-yourself'
+  | 'too-many'
+  | 'no-such-request'
+  | 'not-yours'
+  | 'not-pending'
+
+/** `again`: the same request from the same agent was already pending; it is the one answered. */
+export type AskResult =
+  | { outcome: 'asked'; request: OwnerRequest; again: boolean; problems: PluginProblem[] }
+  | { outcome: 'withdrawn'; request: OwnerRequest; problems: PluginProblem[] }
+  | { outcome: 'refused'; reason: AskRefusal; text: string; problems: PluginProblem[] }
 
 // ---- archive ----
 
@@ -284,6 +347,8 @@ export interface AgentFace {
   say(req: SayRequest, ctx: Context): Promise<SayResult>
   check(req: CheckRequest, ctx: Context): Promise<CheckResult>
   archive(req: ArchiveRequest, ctx: Context): Promise<ArchiveResult>
+  /** The kernel's own: no plugin hook stands behind it, so it answers the same in a library with no plugin. */
+  ask(req: AskRequest, ctx: Context): Promise<AskResult>
 }
 
 export type Verb = keyof AgentFace
@@ -362,6 +427,11 @@ export interface OwnerCommand {
   readonly readOnly?: boolean
   /** It configures plugins, targets or embedders without changing items; its event is news only after an agent's first visit. */
   readonly setup?: boolean
+  /**
+   * An owner-only command that loses no data can be asked for: an agent asks with `ask`, and the
+   * owner approves with one act. `false`: it cannot, as one the owner has to do in person.
+   */
+  readonly askable?: false
   readonly run: (args: CommandArgs, ctx: PluginContext) => Promise<OwnerAnswer>
 }
 
@@ -369,10 +439,16 @@ export interface OwnerCommand {
 
 export type Failure = { outcome: 'failed'; message: string }
 
-/** One per operation of either face, sent to every plugin's `observe` after the operation. */
+/** An owner command run because the owner approved an agent's request: which request, and who asked. */
+export type Requested = { id: RequestId; by: OwnerRequest['by'] }
+
+/**
+ * One per operation of either face, sent to every plugin's `observe` after the operation. An owner
+ * operation that runs an approved request carries `request`.
+ */
 export type Event =
   | { [V in Verb]: { face: 'agent'; verb: V; request: Parameters<AgentFace[V]>[0]; result: Awaited<ReturnType<AgentFace[V]>> | Failure } }[Verb]
-  | { face: 'owner'; command: string; args: OwnerArgs; destructive: boolean; readOnly: boolean; setup: boolean; result: OwnerResult | Failure }
+  | { face: 'owner'; command: string; args: OwnerArgs; destructive: boolean; readOnly: boolean; setup: boolean; request?: Requested; result: OwnerResult | Failure }
 
 // ---- the extension point ----
 
@@ -493,9 +569,10 @@ export type TableColumn = { key: string; label: string; optional?: boolean }
 
 /**
  * One thing that happened, as a feed tells it: when, who, one sentence, a grey line of `meta`, and
- * `whose` act it was, where that says something: an agent's on its own, the owner's, or one the app
- * only observed. It carries one quiet `action`, such as the one that undoes it, or `settled`, a grey
- * word saying how it ended, such as that it was taken back; not both. A row with a `link` opens it.
+ * `whose` act it was, where that says something: an agent's on its own, the owner's, one the owner
+ * approved at an agent's request, or one the app only observed. It carries one quiet `action`, such
+ * as the one that undoes it, or `settled`, a grey word saying how it ended, such as that it was taken
+ * back; not both. A row with a `link` opens it.
  */
 export type FeedRow = {
   key: string
@@ -503,7 +580,7 @@ export type FeedRow = {
   actor: ActorMark | string
   text: string
   meta: Cell[]
-  whose?: 'agent' | 'owner' | 'observed'
+  whose?: 'agent' | 'owner' | 'approved' | 'observed'
   action?: Action
   settled?: string
   link: Link | null
@@ -516,10 +593,11 @@ export type Stat = { label: string; value: string; note: string | null }
 export type TreeNode = { value: string; label: string; count: number | null; children: TreeNode[] }
 /**
  * Something only the owner can settle: who raises it, a plugin's name or an actor; one sentence, a
- * question or a statement; the library path it is `about`, which opens its panel; the answers, each an
- * action, and which of them is the `suggested` one, by its place in `actions`.
+ * question or a statement; `command`, a command line it is about, shown under the sentence exactly as
+ * it would run; the library path it is `about`, which opens its panel; the answers, each an action,
+ * and which of them is the `suggested` one, by its place in `actions`.
  */
-export type Ask = { key: string; by: string | ActorMark; text: string; about: LibraryPath | null; actions: Action[]; suggested?: number }
+export type Ask = { key: string; by: string | ActorMark; text: string; command?: string; about: LibraryPath | null; actions: Action[]; suggested?: number }
 /** What `onAsks` answers: an ask without naming its plugin, which the kernel stamps as `by`. */
 export type PluginAsk = Omit<Ask, 'by'>
 

@@ -90,6 +90,7 @@ function resolved(f: Fact, resolve: (id: ItemId) => ItemId): Fact {
     case 'said':
       return f.about === null ? f : { ...f, about: resolve(f.about) }
     case 'owner.op':
+    case 'request':
     case 'checked':
       return f
     case 'item.enter':

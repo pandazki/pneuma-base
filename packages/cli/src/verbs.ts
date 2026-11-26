@@ -19,9 +19,11 @@ import {
   type PluginTable,
   type PositionalParam,
   type PutRequest,
+  type AskRequest,
+  type OwnerArgs,
 } from '@pneuma-base/kernel'
-import { UsageError } from './args.js'
-import { archiveText, checkText, findText, inspectText, putText, sayText, startText } from './format.js'
+import { UsageError, argsOf, leadingWords, matchCommand, type Line } from './args.js'
+import { archiveText, askText, checkText, findText, inspectText, putText, sayText, startText } from './format.js'
 import { pageText, viewListText } from './page.js'
 
 /** 0 answered; 2 refused; 3 accepted but a plugin reported a problem. Usage errors are 1. */
@@ -52,7 +54,8 @@ type VerbPositional = PositionalParam & { readonly words?: true }
  * under one name: `say`'s belong to the plugin that hears the kind, each a list; `show`'s are the
  * page's parameters, each one value. `stdin`: the positional whose value `-` means standard input.
  * `fromEnd`: when fewer positionals are written than declared, the optional ones are filled from the
- * last, as `say <种类> <内容>`.
+ * last, as `say <种类> <内容>`. `raw`: the `many` positional that takes the rest of the command line as
+ * written, flags too, as `ask` takes the owner's command it asks for.
  */
 export type VerbParams = {
   readonly positional?: readonly VerbPositional[]
@@ -60,6 +63,7 @@ export type VerbParams = {
   readonly more?: { readonly name: string; readonly hint: string; readonly each: 'list' | 'value' }
   readonly stdin?: string
   readonly fromEnd?: true
+  readonly raw?: string
 }
 
 /** A verb's values by argument name, as either face read them. */
@@ -137,6 +141,16 @@ function sinceOf(value: string | null): Instant | 'last' | null {
 }
 
 const INCLUDE_ARCHIVED = { name: 'include-archived', hint: '也找归档区里的', kind: 'boolean' } as const
+
+const ASK_HELP = 'ask 要写为什么，再跟上主人的命令和它的参数：ask "<为什么>" <主人的命令…>；撤回自己提的：ask --withdraw <请求号>。'
+
+/** The owner command the words name, and its arguments read by its params; words that name none are left for the kernel to refuse. */
+function askedCommand(words: readonly string[], library: Library): { command: string; args: OwnerArgs } {
+  const line: Line = { grant: null, global: new Map(), rest: [...words] }
+  const typed = leadingWords(line)
+  const named = matchCommand(ownerFace.commands(library.plugins), typed)
+  return named === undefined ? { command: (typed.length > 0 ? typed : words).join(' '), args: { positional: [], flags: {} } } : { command: named.name, args: argsOf(named, line) }
+}
 
 const archiving = (kind: 'archive' | 'unarchive', summary: string): Verb =>
   verb({
@@ -250,6 +264,27 @@ export const VERBS: readonly Verb[] = [
   }),
   archiving('archive', '不用了，把一样东西归档：不删，默认的找和查不再带它'),
   archiving('unarchive', '把归档的东西取回原来的路径'),
+  verb({
+    name: 'ask',
+    summary: '请主人做一条只有主人能做的命令：写明为什么，跟上那条命令和它的参数；主人在首页上批准或拒绝，结果在你下次 check 里',
+    readOnly: false,
+    params: {
+      positional: [
+        { name: 'why', hint: '为什么：一句话，主人据它决定批不批' },
+        { name: 'command', hint: '主人的命令和它的参数，照命令行的写法，比如 plugin add version', many: true },
+      ],
+      flags: [{ name: 'withdraw', hint: '撤回自己提的、还在等的一个请求：请求号', kind: 'value' }],
+      raw: 'command',
+    },
+    run: async ({ why, command, withdraw }, { bound: { library, ctx } }) => {
+      if (withdraw !== null && (why !== null || command.length > 0)) throw new UsageError('撤回只写 ask --withdraw <请求号>。')
+      if (withdraw === null && (why === null || command.length === 0)) throw new UsageError(ASK_HELP)
+      const req: AskRequest = withdraw !== null ? { kind: 'withdraw', id: withdraw } : { kind: 'ask', why: why as string, ...askedCommand(command, library) }
+      const r = await agentFace.ask(req, ctx)
+      if (r.outcome === 'refused' && r.reason === 'usage') throw new UsageError(r.text)
+      return answer(r, askText(r))
+    },
+  }),
   verb({
     name: 'show',
     summary: '看主人在管理界面上看到的一页，只读；不写编号列出这个库的页',
