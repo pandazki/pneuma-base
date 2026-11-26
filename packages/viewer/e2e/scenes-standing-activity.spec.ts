@@ -9,7 +9,7 @@ test('scenes, standing and activity: what happened and what needs attention', as
   const lib = relay(pb)
   const { url } = await pb.view(lib)
   await page.goto(url)
-  expect(await navTitles(page)).toEqual(['条目', '场景', '状况', '动态', '文件', '归档区', '配置'])
+  expect(await navTitles(page)).toEqual(['条目', '场景', '状况', '动态', '留存', '文件', '归档区', '配置'])
   const nav = page.getByRole('navigation', { name: '导航' })
   const main = page.getByRole('main')
   const panel = page.getByRole('complementary', { name: '详情' })

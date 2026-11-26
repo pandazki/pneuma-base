@@ -30,7 +30,7 @@ async function relayed() {
   await agentFace.put({ kind: 'place', from: text('rec'), to: 'recommendation.md', origin: { kind: 'made', from: ['comparison.md'], outside: [] } }, ctx())
   await agentFace.say({ kind: 'decided', about: 'comparison.md', text: '用 Paddle', args: {} }, ctx())
   await agentFace.archive({ kind: 'archive', path: 'old.md' }, ctx())
-  const show = (view: string, params: Record<string, string> = {}) => viewerFace.show({ view, params }, { ctx: makeContext(lib, { kind: 'owner' }, session('ui'), home, next()), table })
+  const show = (view: string, params: Record<string, string> = {}) => viewerFace.show({ view, params }, { ctx: makeContext(lib, { kind: 'owner' }, session('ui'), home, next()), table, env: {}, viaGrant: false })
   /** Later work by codex in another scene. */
   const codex = () => makeContext(lib, { kind: 'agent', name: 'codex', grant: null }, session('sess-b'), home, next())
   return { root, show, codex }
@@ -174,7 +174,7 @@ describe('the scenes view', () => {
     rmSync(join(root, '.pneuma-base/ledger/facts'), { recursive: true, force: true })
     const lib = await openLibrary(root, table)
     if (!lib) throw new Error('no library')
-    const r = shown(await viewerFace.show({ view: 'ledger.scenes', params: {} }, { ctx: makeContext(lib, { kind: 'owner' }, session('ui'), home, next()), table }))
+    const r = shown(await viewerFace.show({ view: 'ledger.scenes', params: {} }, { ctx: makeContext(lib, { kind: 'owner' }, session('ui'), home, next()), table, env: {}, viaGrant: false }))
     expect(r.blocks).toMatchObject([{ kind: 'empty', hint: expect.stringContaining('start') }])
   })
 })

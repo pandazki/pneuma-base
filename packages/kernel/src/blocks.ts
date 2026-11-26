@@ -1,9 +1,13 @@
 // What a plugin's view answers, checked at the kernel's boundary (ARCHITECTURE section 6). A block
-// that is not a known kind or lacks a required field is replaced by one that says whose it was and
-// why, and is listed as a problem (K8); the rest of the page stands. Optional fields are checked
-// only when given; fields the kernel does not know are left as they are.
+// that is not a known kind, lacks a required field, or carries an action that calls nothing the
+// library runs is replaced by one that says whose it was and why, and is listed as a problem (K8);
+// the rest of the page stands. Optional fields are checked only when given; fields the kernel does
+// not know are left as they are.
 import { isAbsolute } from 'node:path'
-import type { Block, Plugin, PluginProblem } from '@pneuma-base/sdk'
+import { parseCall } from './call.js'
+import { ownerFace } from './owner.js'
+import { checkArgs } from './params.js'
+import type { Action, Block, Library, OwnerParams, Plugin, PluginProblem } from '@pneuma-base/sdk'
 
 /** What is wrong with `value` at `at`, or null when it fits. */
 type Check = (value: unknown, at: string) => string | null
@@ -93,10 +97,8 @@ const link = shape({ view: string, params: recordOf(string), target: oneOf('main
 const cell = shape({ text: string, 'mono?': boolean, 'muted?': boolean, 'tag?': tag, 'link?': link, 'at?': string, 'icon?': string, 'href?': string, 'copy?': boolean })
 
 const call: Check = (v, at) => {
-  if (!isObject(v)) return `${at} 应是对象`
-  if (v.face === 'owner') return shape({ command: string, args: shape({ positional: listOf(string), flags: recordOf((f, a) => (f === true ? null : listOf(string)(f, a))) }), 'stdin?': string })(v, at)
-  if (v.face === 'agent') return shape({ verb: string, request: shape({}) })(v, at)
-  return `${at}.face 应是 agent 或 owner`
+  const parsed = parseCall(v)
+  return typeof parsed === 'string' ? `${at} 不是一个动词或一条主人命令的调用：${parsed}` : null
 }
 const input = shape({
   name: string,
@@ -128,29 +130,91 @@ const KINDS: Record<Block['kind'], Check> = {
   actions: shape({ actions }),
   empty: shape({ title: string, hint: nullable(string) }),
   embed: shape({ url: httpUrl, title: string, height: number }),
-  custom: shape({ entry, height: number, 'data?': anything, actions: recordOf(action) }),
+  custom: shape({ entry, height: number, text: string, 'data?': anything, actions: recordOf(action) }),
+}
+
+/** What a page's buttons may call: the owner commands the library runs, with their `params`, and the kinds of 「说」 its plugins hear. */
+export type Callable = { commands: ReadonlyMap<string, OwnerParams>; heard: ReadonlySet<string> }
+
+export function callableIn(library: Library): Callable {
+  return {
+    commands: new Map(ownerFace.commands(library.plugins).map((c) => [c.name, c.params])),
+    heard: new Set(library.plugins.flatMap((p) => (p.onSay ? p.statements : []))),
+  }
+}
+
+const PLACEHOLDER = /\{([^{}]+)\}/g
+const open = (value: string) => /\{[^{}]+\}/.test(value)
+const strings = (v: unknown): string[] => (typeof v === 'string' ? [v] : Array.isArray(v) ? v.flatMap(strings) : isObject(v) ? Object.values(v).flatMap(strings) : [])
+
+/**
+ * What is wrong with an action of a well-formed block, or null when it resolves: its call is a verb,
+ * or an owner command the library runs with arguments its `params` take, a `say` is of a kind some
+ * plugin hears, and every `{input}` it writes is one of its inputs. An input's value is checked when
+ * the person gives it.
+ */
+export function actionFault(action: Action, callable: Callable): string | null {
+  const asked = new Set(action.inputs.map((i) => i.name))
+  const unasked = strings(action.call)
+    .flatMap((s) => [...s.matchAll(PLACEHOLDER)].map((m) => m[1] as string))
+    .find((name) => !asked.has(name))
+  if (unasked !== undefined) return `动作「${action.label}」写了 {${unasked}}，却没有叫这个名字的输入`
+  const call = parseCall(action.call)
+  if (typeof call === 'string') return `动作「${action.label}」不是一个动词或一条主人命令的调用：${call}`
+  if (call.face === 'owner') {
+    const params = callable.commands.get(call.command)
+    if (params === undefined) return `动作「${action.label}」调的主人命令「${call.command}」这个库里没有`
+    const checked = checkArgs(call.command, params, call.args, open)
+    return 'usage' in checked ? `动作「${action.label}」的参数不合「${call.command}」的参数表：${checked.usage.split('\n')[0]}` : null
+  }
+  if (call.verb === 'say' && !open(call.request.kind) && !callable.heard.has(call.request.kind)) return `动作「${action.label}」说的「${call.request.kind}」这个库里没有插件听`
+  return null
+}
+
+/** The actions a block carries itself, a section's own blocks aside. */
+function ownActions(block: Block): Action[] {
+  switch (block.kind) {
+    case 'section':
+    case 'actions':
+      return block.actions
+    case 'table':
+      return block.rows.flatMap((r) => r.actions)
+    case 'list':
+      return block.items.flatMap((i) => i.actions)
+    case 'timeline':
+      return block.entries.flatMap((e) => e.actions ?? [])
+    case 'custom':
+      return Object.values(block.actions)
+    default:
+      return []
+  }
 }
 
 const known = (kind: unknown): kind is Block['kind'] => typeof kind === 'string' && Object.hasOwn(KINDS, kind)
 
 /** What is wrong with one block of `plugin`'s, its own blocks aside; null when nothing is. */
-function wrongWith(value: unknown, where: string, plugin: Plugin): string | null {
+function wrongWith(value: unknown, where: string, plugin: Plugin, callable: Callable): string | null {
   if (!isObject(value)) return `${where} 应是对象`
   const { kind } = value
   if (!known(kind)) return `${where} 是不认识的块：${String(kind)}`
   const wrong = KINDS[kind](value, where)
   if (wrong !== null) return wrong
-  return kind === 'custom' && typeof plugin.ui !== 'string' ? `${where} 是 custom 块，插件却没有声明 ui 目录` : null
+  if (kind === 'custom' && typeof plugin.ui !== 'string') return `${where} 是 custom 块，插件却没有声明 ui 目录`
+  for (const action of ownActions(value as Block)) {
+    const fault = actionFault(action, callable)
+    if (fault !== null) return `${where} 的${fault}`
+  }
+  return null
 }
 
 type Checked = { blocks: Block[]; problems: PluginProblem[] }
 
 /** The plugin's blocks, each malformed one replaced by a block saying so; a custom block carries the plugin's name. */
-export function checkBlocks(blocks: unknown[], plugin: Plugin, at = 'blocks'): Checked {
+export function checkBlocks(blocks: unknown[], plugin: Plugin, callable: Callable, at = 'blocks'): Checked {
   const problems: PluginProblem[] = []
   const checked = blocks.map((value, i): Block => {
     const where = `${at}[${i}]`
-    const wrong = wrongWith(value, where, plugin)
+    const wrong = wrongWith(value, where, plugin, callable)
     if (wrong !== null) {
       problems.push({ plugin: plugin.name, message: `一块没法显示：${wrong}` })
       return { kind: 'text', tone: 'bad', text: `插件 ${plugin.name} 的一块没法显示：${wrong}` }
@@ -158,7 +222,7 @@ export function checkBlocks(blocks: unknown[], plugin: Plugin, at = 'blocks'): C
     const block = value as Block
     if (block.kind === 'custom') return { ...block, plugin: plugin.name }
     if (block.kind !== 'section') return block
-    const inner = checkBlocks(block.blocks, plugin, `${where}.blocks`)
+    const inner = checkBlocks(block.blocks, plugin, callable, `${where}.blocks`)
     problems.push(...inner.problems)
     return { ...block, blocks: inner.blocks }
   })

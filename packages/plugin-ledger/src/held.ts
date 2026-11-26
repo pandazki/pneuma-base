@@ -127,6 +127,19 @@ export const HELD_RESTORE = defineCommand({
   },
 })
 
+export const HELD_DROP = defineCommand({
+  name: 'ledger held drop',
+  summary: '清掉全部留存',
+  params: {},
+  destructive: true,
+  ownerOnly: true,
+  async run(_values, ctx) {
+    const copies = await heldCopies(ctx)
+    await rm(join(ctx.dir, HELD_DIR), { recursive: true, force: true })
+    return done(`已清掉 ${copies.length} 份留存。`, { dropped: copies.length })
+  },
+})
+
 /** `ledger held list`, `ledger held restore`, `ledger held drop`: the owner's commands over held copies. */
 export const heldCommands: OwnerCommand[] = [
   defineCommand({
@@ -145,16 +158,5 @@ export const heldCommands: OwnerCommand[] = [
     },
   }),
   HELD_RESTORE,
-  defineCommand({
-    name: 'ledger held drop',
-    summary: '清掉全部留存',
-    params: {},
-    destructive: true,
-    ownerOnly: true,
-    async run(_values, ctx) {
-      const copies = await heldCopies(ctx)
-      await rm(join(ctx.dir, HELD_DIR), { recursive: true, force: true })
-      return done(`已清掉 ${copies.length} 份留存。`, { dropped: copies.length })
-    },
-  }),
+  HELD_DROP,
 ]

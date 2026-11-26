@@ -136,7 +136,7 @@ describe('the item panel section', () => {
     expect(only(after?.blocks ?? [], 'timeline')?.entries[0]?.lines).toContain('在工具之外改的')
   })
 
-  it('a path inside a bundle shows the bundle; an archived thing offers export only', async () => {
+  it('a path inside a bundle shows the bundle; an archived thing offers export and pruning only', async () => {
     const { dir, put, plugin, as } = await library()
     writeTree(join(dir, 'site'), { 'index.html': '1' })
     await agentFace.put({ kind: 'place', from: { kind: 'directory', path: join(dir, 'site') }, to: 'sites/a', origin: { kind: 'made', from: [], outside: [] } }, as())
@@ -146,7 +146,7 @@ describe('the item panel section', () => {
     await put('x', 'b.md')
     await agentFace.archive({ kind: 'archive', path: 'sites/a' }, as())
     const archived = await version.onItemView?.('_archive/sites/a' as LibraryPath, plugin())
-    expect(only(archived?.blocks ?? [], 'actions')?.actions.map((a) => a.label)).toEqual(['导出到库外'])
+    expect(only(archived?.blocks ?? [], 'actions')?.actions.map((a) => a.label)).toEqual(['导出到库外', '只留最近几版'])
   })
 
   it('an undeclared thing offers the declaration, which works as a say; no thing, no section', async () => {

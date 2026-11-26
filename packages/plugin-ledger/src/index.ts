@@ -29,6 +29,8 @@ import { reconcile } from './reconcile.js'
 import {
   ACTIVITY_VIEW,
   activityAnswer,
+  heldAnswer,
+  HELD_VIEW,
   itemSection,
   itemsAnswer,
   ITEMS_VIEW,
@@ -395,6 +397,8 @@ export const ledger: Plugin = {
         return sceneAnswer(ledger, req.params)
       case ACTIVITY_VIEW:
         return activityAnswer(ledger, req.params)
+      case HELD_VIEW:
+        return heldAnswer(ledger, await heldCopies(ctx))
       default:
         throw new Error(`the ledger has no view ${req.view}`)
     }

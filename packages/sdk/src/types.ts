@@ -456,7 +456,8 @@ export type TableColumn = { key: string; label: string; optional?: boolean }
  * item panel carries `plugin`, the plugin whose part it is, stamped by the kernel. `embed`: an
  * outside http or https page in a sandboxed frame. `custom`: a page of the plugin's own, `entry`
  * relative to its `ui` directory, sent `data` and the names of `actions`, which it may ask to run;
- * `plugin` is stamped by the kernel.
+ * `text` says in words what the frame shows, for the command line, screen readers and the page
+ * that failed to load; `plugin` is stamped by the kernel.
  */
 export type Block =
   | { kind: 'section'; title: string; note: string | null; count: number | null; blocks: Block[]; actions: Action[]; collapse?: 'open' | 'closed'; plugin?: PluginName }
@@ -469,11 +470,16 @@ export type Block =
   | { kind: 'actions'; actions: Action[] }
   | { kind: 'empty'; title: string; hint: string | null }
   | { kind: 'embed'; url: string; title: string; height: number }
-  | { kind: 'custom'; entry: string; height: number; data: unknown; actions: Record<string, Action>; plugin?: PluginName }
+  | { kind: 'custom'; entry: string; height: number; text: string; data: unknown; actions: Record<string, Action>; plugin?: PluginName }
 
 export type ViewFilter = { name: string; label: string; options: { value: string; label: string }[]; default: string }
-/** `icon` is one of `ICON_NAMES`. A view with `nav` false is reached only through links, as a detail. */
-export type ViewDecl = { id: string; title: string; icon: IconName; nav: boolean; filters: ViewFilter[] }
+/**
+ * `icon` is one of `ICON_NAMES`. A view with `nav` false is reached only through links, as a detail.
+ * `ownerOnly`: a page of management, refused in an agent's session as an owner-only command is.
+ */
+export type ViewDecl = { id: string; title: string; icon: IconName; nav: boolean; filters: ViewFilter[]; ownerOnly?: boolean }
+/** A view as the library lists it, with who gives it. */
+export type ListedView = ViewDecl & { by: PluginName | 'kernel' }
 export type ViewRequest = { view: string; params: Record<string, string> }
 /**
  * `refresh`: seconds after which the page asks again, at least 5: for a view showing state from
@@ -484,7 +490,8 @@ export type ViewAnswer = { title: string; subtitle: string | null; blocks: Block
 export type ViewResult =
   | ({ outcome: 'shown' } & ViewAnswer & { problems: PluginProblem[] })
   | { outcome: 'no-such-view'; problems: PluginProblem[] }
+  | { outcome: 'refused'; reason: 'agent-session'; text: string; problems: PluginProblem[] }
 /** Every view of a library: the plugins' first, in configuration order, then the kernel's. */
-export type ViewList = { views: ViewDecl[]; problems: PluginProblem[] }
+export type ViewList = { views: ListedView[]; problems: PluginProblem[] }
 /** A plugin's part of the item panel: its own section title and blocks. */
 export type ItemSection = { title: string; blocks: Block[] }

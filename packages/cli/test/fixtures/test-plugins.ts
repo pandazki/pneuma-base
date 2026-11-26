@@ -69,7 +69,7 @@ const count = async (ctx: PluginContext) => Number(await readFile(join(ctx.dir, 
 export const LONG_URL = 'http://127.0.0.1:18080/apps/a-rather-long-application-name-for-the-demo-site/index.html'
 
 const bump: Action = { label: '加一', tone: 'default', confirm: '把计数加一？', inputs: [], call: owner('pager bump') }
-const counter = (data: unknown, entry = 'counter.html'): Block => ({ kind: 'custom', entry, height: 140, data, actions: { bump } })
+const counter = (data: unknown, entry = 'counter.html'): Block => ({ kind: 'custom', entry, height: 140, text: `计数：${JSON.stringify(data)}`, data, actions: { bump } })
 
 /** The view with each thing the first tier added, and the second tier's own page. */
 async function newThings(ctx: PluginContext): Promise<Block[]> {

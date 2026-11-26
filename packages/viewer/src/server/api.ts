@@ -8,6 +8,7 @@ import {
   makeContext,
   openLibrary,
   ownerFace,
+  parseCall,
   shortDir,
   viewerFace,
   type Actor,
@@ -17,7 +18,6 @@ import {
   type Library,
   type PluginTable,
 } from '@pneuma-base/kernel'
-import { parseCall } from './call.js'
 import { archiveSummary, ownerSummary, putSummary, readSummary, saySummary, type Summary } from './summary.js'
 
 /** What the server was started with. `builtins` are the caller's plugins; this machine's own join them on each request, as their files are then. */
@@ -59,7 +59,7 @@ export async function view(served: Served, query: URLSearchParams): Promise<Repl
   const id = query.get('view')
   if (id === null) return failure(400, 'view is missing')
   const params = Object.fromEntries([...query].filter(([name]) => name !== 'view' && name !== 'token'))
-  return reply(await viewerFace.show({ view: id, params }, { ctx: ownerContext(library, served), table }))
+  return reply(await viewerFace.show({ view: id, params }, { ctx: ownerContext(library, served), table, env: served.env, viaGrant: false }))
 }
 
 /**
