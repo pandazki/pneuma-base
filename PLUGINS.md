@@ -253,6 +253,7 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('greet'), cog
 
 - 命令名必须是 `<插件名> ` 加一个或几个词，不得是内核自己的命令 `KERNEL_COMMAND_NAMES`（检查：`names`、`loads`）。两个插件的命令因此不会撞，`--help` 里也看得出是谁的。
 - 每条命令都必须声明参数表 `params`，什么都不带的写 `{}`（检查：`loads`）。命令行按它读参数，内核按它核对，`--help` 的用法和界面的表单都从它生成，几处说的不会不一样。字段在 4.3。参数不合参数表时，内核以 `usage` 拒绝，说出哪一样，跟着用法，`run` 不被调。
+- 既不是 `destructive` 也不是 `ownerOnly` 的命令 agent 也能用，所以它自动成为 MCP 服务（`pneuma-base @<授权名> mcp`）的一个工具，插件什么都不用多写：工具名是命令名的词用 `_` 连起来（`greet hello` 是 `greet_hello`），工具的说明是 `summary`，输入由参数表生成：每个位置参数和开关是同名的属性，`value` 是文字，`list` 和 `many` 是文字的列表，`boolean` 是真假，`hint` 是属性的说明，`pattern`、`options` 和必填照搬，`readOnly` 成了工具的只读标记。答复和命令行的一样：`text` 是工具答的文字，整个结果是结构化的内容，拒绝标成出错。破坏性的和只给主人的命令不列出，按名字调也被同一道门拒绝。所以 `summary` 和 `hint` 是写给看不到源码、也看不到 `--help` 的 agent 的：`summary` 一句话说命令做什么，`hint` 说这个值要写什么。
 
 四个标志说命令是哪一种。前两个是门，内核在同一处拦，插件不用自己看上下文；后两个只改事件上的记号：
 
@@ -623,7 +624,7 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | 字段 | 位置参数 `positional` | 开关 `flags` |
 | --- | --- | --- |
 | `name` | 值在 `values` 里的名字 | `--<name>`，合 `^[a-z][a-z0-9-]*$`，不得是 `library`、`as`、`session`、`json`、`help` |
-| `hint` | 几个中文字，说要写什么：用法里是 `<hint>`，表单里是这一项的名字 | 同左 |
+| `hint` | 几个中文字，说要写什么：用法里是 `<hint>`，表单里是这一项的名字，MCP 工具里是这个属性的说明 | 同左 |
 | `kind` | 没有 | `value` 收一个值，`list` 收到下一个开关为止的一个或几个，`boolean` 不收值 |
 | `required` | 必填的不得在可省的后面 | `boolean` 不得必填 |
 | `many` | 收下其余的值；只有最后一个可以 | 没有 |

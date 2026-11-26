@@ -63,6 +63,21 @@ pneuma-base --help
 
    界面里能看条目、场景、状况和动态，开关部署，同步，取回留存，装卸插件，发授权。在界面里做的操作，agent 下次 `check` 时会看到。界面的每一页也是一条只读的命令：`pneuma-base show --library ~/base` 列出各页，`show <页的编号>` 把一页印成字，每个按钮写成做同一件事的命令。
 
+5. **给只能接 MCP 的应用。** 桌面的对话应用、编辑器这类跑不了 shell、也装不了技能的 agent 应用，经 MCP 用库。先为它发一份授权，再在它的 MCP 配置里加一个 stdio 服务，命令是 `pneuma-base @<授权名> mcp`：
+
+   ```json
+   {
+     "mcpServers": {
+       "pneuma-base": {
+         "command": "pneuma-base",
+         "args": ["@<授权名>", "mcp"]
+       }
+     }
+   }
+   ```
+
+   应用找不到 `pneuma-base` 时，`command` 写 `which pneuma-base` 印出的完整路径；你的 `PNEUMA_BASE_HOME` 不是缺省的 `~/.pneuma-base` 时，加 `"env": { "PNEUMA_BASE_HOME": "<那个目录>" }`。连上之后，每个动词和 agent 能用的命令都是一个工具，库的说明随连接给出，管理界面导航里的页是资源。管理的命令不在里面，仍在你自己的终端或界面里做。
+
 `pneuma-base --help --library ~/base` 列出这个库能用的全部命令。
 
 ## 写一个插件

@@ -27,6 +27,7 @@
     "@pneuma-base/viewer": "workspace:*"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
     "@pneuma-base/sdk": "workspace:*"
   }
 }
