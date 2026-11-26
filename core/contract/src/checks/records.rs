@@ -383,6 +383,7 @@ pub fn the_old_layout_is_still_read(env: &Env) -> Outcome {
         "{\"old\":1}\nnot json\n{\"old\":2}\n",
     );
     lib.write(".pneuma-base/log/facts/scene-b/001.jsonl", "{\"old\":3}\n");
+    lib.write(".pneuma-base/log/facts/0001-flat.jsonl", "{\"flat\":1}\n");
     lib.run(
         "facts.append",
         json!({ "place": "log", "facts": [{ "new": 1 }] }),
@@ -391,6 +392,7 @@ pub fn the_old_layout_is_still_read(env: &Env) -> Outcome {
     assert_eq!(
         facts_of(&since),
         [
+            json!({ "flat": 1 }),
             json!({ "old": 1 }),
             json!({ "old": 2 }),
             json!({ "old": 3 }),
@@ -399,8 +401,9 @@ pub fn the_old_layout_is_still_read(env: &Env) -> Outcome {
     );
     let orders = orders_of(&since);
     assert_eq!(
-        orders[..3],
+        orders[..4],
         [
+            "old//0001-flat.jsonl#1",
             "old/scene-a/001.jsonl#1",
             "old/scene-a/001.jsonl#3",
             "old/scene-b/001.jsonl#1"
