@@ -29,6 +29,7 @@ const READS: Record<string, string> = {
   'agent list': 'agents',
   'agent detect': 'agents',
   'request list': 'home',
+  'pair list': 'home',
 }
 
 /** What has no button on any page, and why. */
@@ -187,6 +188,8 @@ beforeAll(async () => {
   agent(['archive', 'notes/old.md'])
   // A request waiting on the owner, so the home page has 批准 and 拒绝.
   agent(['ask', '要给博客也设一个部署目标', 'deploy', 'target', 'set', '--kind', 'dir', '--to', join(tempDir('pb-www2-'), 'www')])
+  // An agent asking to be connected, so the home page has 允许 and 拒绝.
+  expect(sb.run(['pair', 'request', 'codex', '想接上这个库', '--library', lib], { cwd: work }).code).toBe(0)
   // A plugin on this machine the library has not installed, and a secret set, so their buttons are on the config page.
   await write(join(work, 'extra/index.js'), "export default { contract: 1, name: 'extra', cognition: null, storage: [], statements: [], ownerCommands: [] }\n")
   expect(sb.run(['plugin', 'install', join(work, 'extra')], { cwd: work }).code).toBe(0)

@@ -17,6 +17,7 @@ import type { OwnerCall } from './owner.js'
 import { ARCHIVE_DIR, parseLibraryPath, regionOf } from './paths.js'
 import { eachPlugin, messageOf, pluginContext } from './pipeline.js'
 import { codexHint } from './products.js'
+import { PAIR_COMMANDS } from './pair-commands.js'
 import { REQUEST_COMMANDS } from './request-commands.js'
 import { readSecret, removeSecret, SECRET_LIMIT, secretNames, secretsDir, writeSecret } from './secrets.js'
 import {
@@ -327,6 +328,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
   ...agentCommands({ grantIssue, grantRevoke, skillInstall }),
   launcherInstall,
   ...REQUEST_COMMANDS,
+  ...PAIR_COMMANDS,
 ]
 
 /** A plugin by name and version, as `pager 0.2.0`. */

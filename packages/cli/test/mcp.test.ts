@@ -8,50 +8,12 @@
 // - a plugin added while connected is told as a changed tool list and resources.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { Client } from '@modelcontextprotocol/client'
-import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
+import type { Client } from '@modelcontextprotocol/client'
 import { ownerFace } from '@pneuma-base/kernel'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { builtinPlugins } from '../dist/plugins.js'
-import { sandbox, tempDir, type Run, type Sandbox } from './helpers.js'
-
-const BIN = fileURLToPath(new URL('../dist/bin.js', import.meta.url))
-const VERBS = ['start', 'find', 'inspect', 'put', 'say', 'check', 'archive', 'unarchive', 'ask', 'show']
-type Era = 'legacy' | 'modern'
-type CallResult = { content: { type: string; text?: string }[]; structuredContent?: unknown; isError?: boolean }
-
-/** A real MCP client on `pneuma-base @<grant> mcp`, in the era asked for: legacy opens with initialize, modern pins 2026-07-28. */
-async function connect(sb: Sandbox, grant: string, era: Era, session?: string): Promise<Client> {
-  const env = { PATH: process.env.PATH ?? '', HOME: sb.home, PNEUMA_BASE_HOME: join(sb.home, '.pneuma-base') }
-  const transport = new StdioClientTransport({ command: process.execPath, args: [BIN, `@${grant}`, 'mcp', ...(session === undefined ? [] : ['--session', session])], env, cwd: sb.home, stderr: 'pipe' })
-  const client = new Client({ name: 'pneuma-base-test', version: '0' }, era === 'modern' ? { versionNegotiation: { mode: { pin: '2026-07-28' } } } : {})
-  await client.connect(transport)
-  return client
-}
-
-const call = async (client: Client, name: string, args: Record<string, unknown> = {}) => (await client.callTool({ name, arguments: args })) as CallResult
-const textOf = (r: CallResult) => r.content.map((c) => c.text ?? '').join('\n')
-
-function ok(r: Run): Run {
-  expect(r.code, r.stdout + r.stderr).toBe(0)
-  return r
-}
-
-/** A library with the five built-in plugins, something in it, a read-write grant `g` for claude and a read-only `ro` for reader. */
-function library(sb: Sandbox): string {
-  const lib = join(tempDir(), 'lib')
-  ok(sb.run(['init', lib]))
-  for (const p of ['version', 'sync', 'deploy', 'search']) ok(sb.run(['--library', lib, 'plugin', 'add', p]))
-  ok(sb.run(['--library', lib, 'grant', 'issue', 'g', '--agent', 'claude']))
-  ok(sb.run(['--library', lib, 'grant', 'issue', 'ro', '--agent', 'reader', '--read-only']))
-  ok(sb.run(['--library', lib, 'put', '-', '--to', 'notes/a.md', '--brought', '--source', 'https://example.com/a'], { input: '# 甲\n下单流程\n' }))
-  ok(sb.run(['--library', lib, 'put', '-', '--to', 'notes/b.md', '--made', '--from', 'notes/a.md'], { input: '# 乙\n' }))
-  ok(sb.run(['--library', lib, 'say', 'versioned', 'notes/b.md', '第一版']))
-  ok(sb.run(['--library', lib, 'put', '-', '--to', 'old.md', '--made'], { input: '旧的\n' }))
-  ok(sb.run(['--library', lib, 'archive', 'old.md']))
-  return lib
-}
+import { sandbox, tempDir, type Sandbox } from './helpers.js'
+import { BOTH_FACES, call, connect, expectParity, library, ok, PARITY_CASES, sameStart, sceneRows, textOf, VERBS } from './mcp-cases.js'
 
 describe('the tool list', () => {
   let sb: Sandbox
@@ -108,9 +70,6 @@ describe('the tool list', () => {
   })
 })
 
-/** Moments differ between two calls made one after the other; everything else must be the same. */
-const steady = (s: string) => s.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, '<at>').replace(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}Z/g, '<at>')
-
 describe('a tool and the command line with the same arguments', () => {
   let sb: Sandbox
   let client: Client
@@ -118,63 +77,16 @@ describe('a tool and the command line with the same arguments', () => {
   beforeAll(async () => {
     sb = sandbox()
     library(sb)
-    // The same session on both faces: what a verb answers depends on the session it is in.
-    client = await connect(sb, 'g', 'legacy', 'both-faces')
+    client = await connect(sb, 'g', 'legacy', BOTH_FACES)
     reader = await connect(sb, 'ro', 'modern')
-    await call(client, 'find', { text: '甲' })
-    ok(sb.run(['@g', '--session', 'both-faces', 'find', '甲']))
-    // Asked once before, so each face's ask below finds the same pending request.
-    ok(sb.run(['@g', '--session', 'both-faces', 'ask', '帮手要一份授权', 'grant', 'issue', 'helper', '--agent', 'helper']))
+    await sameStart(sb, client)
   })
   afterAll(async () => {
     await client?.close()
     await reader?.close()
   })
 
-  const cases: [string, Record<string, unknown>, string[], string?][] = [
-    ['start', { sentence: '改一下 下单流程' }, ['start', '改一下', '下单流程']],
-    ['find', { text: 'notes', 'include-archived': true }, ['find', 'notes', '--include-archived']],
-    ['find', { text: '乙', origin: 'made' }, ['find', '乙', '--origin', 'made']],
-    ['inspect', { target: 'notes/b.md' }, ['inspect', 'notes/b.md']],
-    // An agent that cannot read files reads a thing through inspect: the tool gains it from the verbs table.
-    ['inspect', { target: 'notes/a.md', content: true }, ['inspect', 'notes/a.md', '--content']],
-    ['put', { text: '# 甲\n下单流程\n', to: 'notes/a.md', brought: true }, ['put', '-', '--to', 'notes/a.md', '--brought'], '# 甲\n下单流程\n'],
-    ['put', { what: 'notes/b.md', to: 'notes/a.md' }, ['put', 'notes/b.md', '--to', 'notes/a.md']],
-    // An agent declares; what the owner's side saw is the owner's to record.
-    ['put', { what: 'notes/a.md', brought: true, by: 'owner', observed: true }, ['put', 'notes/a.md', '--brought', '--by', 'owner', '--observed']],
-    ['say', { kind: 'note', about: 'notes/a.md', text: '要再核对一遍' }, ['say', 'note', 'notes/a.md', '要再核对一遍']],
-    ['say', { kind: 'from', text: 'notes/b.md', args: { from: ['notes/a.md'] } }, ['say', 'from', 'notes/b.md', '--from', 'notes/a.md']],
-    ['say', { kind: 'nobody-hears' }, ['say', 'nobody-hears']],
-    ['check', { since: '2020-01-01T00:00:00Z' }, ['check', '--since', '2020-01-01T00:00:00Z']],
-    ['archive', { path: 'old.md' }, ['archive', 'old.md']],
-    ['unarchive', { path: 'notes/a.md' }, ['unarchive', 'notes/a.md']],
-    ['archive', { path: 'notes/missing.md' }, ['archive', 'notes/missing.md']],
-    ['ask', { why: '帮手要一份授权', command: ['grant', 'issue', 'helper', '--agent', 'helper'] }, ['ask', '帮手要一份授权', 'grant', 'issue', 'helper', '--agent', 'helper']],
-    ['ask', { why: '想清空', command: ['archive', 'purge'] }, ['ask', '想清空', 'archive', 'purge']],
-    ['show', {}, ['show']],
-    ['show', { view: 'files', params: { dir: 'notes' } }, ['show', 'files', '--dir', 'notes']],
-    ['show', { view: 'item', params: { path: 'notes/b.md' } }, ['show', 'item', '--path', 'notes/b.md']],
-    ['show', { view: 'config' }, ['show', 'config']],
-    ['version_list', { path: 'notes/b.md' }, ['version', 'list', 'notes/b.md']],
-    ['ledger_held_list', {}, ['ledger', 'held', 'list']],
-    ['sync_status', {}, ['sync', 'status']],
-    ['deploy_list', {}, ['deploy', 'list']],
-    ['search_status', {}, ['search', 'status']],
-    ['plugin_list', {}, ['plugin', 'list']],
-  ]
-
-  for (const [tool, args, argv, input] of cases) {
-    it(`${tool} ${JSON.stringify(args)} is ${argv.join(' ')}`, async () => {
-      // start records that the agent looked; one look first, so the three starts all see what is newer than it.
-      if (tool === 'start') expect(sb.run(['@g', '--session', 'both-faces', 'check']).code).toBe(0)
-      const text = sb.run(['@g', '--session', 'both-faces', ...argv], { input })
-      const json = sb.run(['@g', '--session', 'both-faces', ...argv, '--json'], { input })
-      const r = await call(client, tool, args)
-      expect(r.isError).toBe(json.code === 2)
-      expect(steady(JSON.stringify(r.structuredContent))).toBe(steady(JSON.stringify(json.json())))
-      expect(steady(textOf(r))).toBe(steady(text.stdout.trimEnd()))
-    })
-  }
+  for (const c of PARITY_CASES) it(`${c[0]} ${JSON.stringify(c[1])} is ${c[2].join(' ')}`, () => expectParity(sb, client, c))
 
   it('a usage error is the command line’s, as a refusal', async () => {
     for (const [tool, args, argv] of [
@@ -232,8 +144,7 @@ describe.each(['legacy', 'modern'] as const)('a whole task through a real MCP cl
     expect(await call(client, 'search_status')).toMatchObject({ isError: false, structuredContent: { outcome: 'done' } })
     expect(await call(client, 'grant_issue', { name: 'x', agent: 'y' })).toMatchObject({ isError: true, structuredContent: { reason: 'agent-session' } })
 
-    const scenes = (sb.run(['--library', lib, 'show', 'ledger.scenes', '--json']).json().blocks as any[]).find((b) => b.kind === 'feed').groups.flatMap((g: any) => g.rows) as any[]
-    const claude = scenes.filter((row) => row.actor.name === 'claude')
+    const claude = sceneRows(sb, lib).filter((row) => row.actor.name === 'claude')
     expect(claude).toHaveLength(1)
     expect(claude[0].text).toBe('写一份下单流程的说明')
     expect(claude[0].meta[0].text).toBe('放入 2 样')
@@ -246,8 +157,7 @@ describe.each(['legacy', 'modern'] as const)('a whole task through a real MCP cl
     } finally {
       await other.close()
     }
-    const scenes = (sb.run(['--library', lib, 'show', 'ledger.scenes', '--json']).json().blocks as any[]).find((b) => b.kind === 'feed').groups.flatMap((g: any) => g.rows) as any[]
-    expect(scenes.filter((row) => row.actor.name === 'claude').map((row) => row.text).sort()).toEqual(['另一件事', '写一份下单流程的说明'].sort())
+    expect(sceneRows(sb, lib).filter((row) => row.actor.name === 'claude').map((row) => row.text).sort()).toEqual(['另一件事', '写一份下单流程的说明'].sort())
   })
 
   it('serves the description and the pages as resources', async () => {

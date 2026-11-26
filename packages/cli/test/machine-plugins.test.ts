@@ -141,7 +141,7 @@ afterEach(() => {
 
 /** Starts `pneuma-base view` and answers its address and token once it printed them. */
 function serve(): Promise<{ origin: string; token: string }> {
-  const child = sb.start(['view', lib, '--no-open'])
+  const child = sb.start(['view', lib, '--no-open', '--port', '0'])
   running.push(child)
   return new Promise((resolve, reject) => {
     let out = ''

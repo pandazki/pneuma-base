@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { link, mkdir, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { setTimeout as sleep } from 'node:timers/promises'
 import type { Fingerprint, Instant } from '@pneuma-base/sdk'
 
 export async function fingerprintOfFile(path: string): Promise<Fingerprint> {
@@ -69,4 +70,43 @@ export async function replaceWith(from: string, to: string, scratch: string): Pr
     throw error
   }
   await discard(aside)
+}
+
+/** A lock not touched for this long was left by a process that died. */
+const LOCK_STALE_MS = 10_000
+
+/** Runs `body` alone among the processes on this machine that lock the directory `lock`. */
+export async function alone<T>(lock: string, body: () => Promise<T>): Promise<T> {
+  await mkdir(dirname(lock), { recursive: true })
+  for (;;) {
+    try {
+      await mkdir(lock)
+      break
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      const held = await stat(lock).catch(() => null)
+      if (held !== null && Date.now() - held.mtimeMs > LOCK_STALE_MS) await rm(lock, { recursive: true, force: true })
+      else await sleep(20)
+    }
+  }
+  try {
+    return await body()
+  } finally {
+    await rm(lock, { recursive: true, force: true })
+  }
+}
+
+/** Writes `text` to `target` whole, only if nothing is there yet; false when something is. */
+export async function writeOnce(target: string, text: string): Promise<boolean> {
+  const tmp = await scratchName(dirname(target))
+  await writeFile(tmp, text)
+  try {
+    await link(tmp, target)
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false
+    throw error
+  } finally {
+    await unlink(tmp)
+  }
 }

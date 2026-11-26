@@ -11,6 +11,7 @@ import { bundleFiles, enclosingBundle, kindAt, listThings, thingAt } from './thi
 import { KERNEL_COMMANDS } from './owner-commands.js'
 import { codexHint } from './products.js'
 import { kernelSteps, startPart } from './start.js'
+import { pairingAsks } from './pairing.js'
 import { requestAsks } from './requests.js'
 import { agentSign, ownerOnlyRefusal, OWNER_DECIDES, type Env } from './session.js'
 import type { KernelCommandName } from './claims.js'
@@ -472,7 +473,8 @@ async function thingSections(root: string, facts: FileFacts, bundle: LibraryPath
 
 /**
  * The page the owner opens on: 「开始」 while a step of getting started is left (start.ts); what waits
- * on the owner, the agents' pending requests first, oldest first, then every plugin's `onAsks`; then
+ * on the owner, the agents asking to be connected first, then the agents' pending requests, each
+ * oldest first, then every plugin's `onAsks`; then
  * each plugin view declared `home`, its blocks as they are, in configuration order, but for the steps
  * they give, which join 「开始」. With no such view the page says so and shows the library's top
  * folder, so a library without plugins has a home too.
@@ -481,7 +483,7 @@ async function homePage(_params: Record<string, string>, call: ViewerCall): Prom
   const { ctx } = call
   const asked = await asksOf(ctx, callableIn(ctx.library))
   const titleOf = (by: string | ActorMark) => (typeof by === 'string' ? (ctx.library.plugins.find((p) => p.name === by)?.cognition?.title ?? by) : by)
-  const asks = [...(await requestAsks(ctx.library)), ...asked.asks.map((a) => ({ ...a, by: titleOf(a.by) }))]
+  const asks = [...(await pairingAsks(ctx.home, call.env, ctx.library, ctx.now)), ...(await requestAsks(ctx.library)), ...asked.asks.map((a) => ({ ...a, by: titleOf(a.by) }))]
   const decide: Block = {
     kind: 'section',
     title: '等你决定',

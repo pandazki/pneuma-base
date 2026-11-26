@@ -1,13 +1,17 @@
 // The kernel's `agents` page: the agents connected to this library, a two-line row each with its mark,
-// how it is connected, what its grant reaches, what the plugins know of it, and 断开; the products
-// found on this machine and not connected, each with 接上; and what a connected agent may do, from the
-// same command table and by the same rule as the MCP face. ARCHITECTURE.md section 6.
-import { formOf, type Action, type Block, type FixedValue, type PluginProblem, type ViewAnswer } from '@pneuma-base/sdk'
-import { connectionFacts, WAY_WORD, whereOf } from './agent-commands.js'
+// how it is connected, what its grant reaches, what the plugins know of it, and 断开; agents connecting
+// themselves, by the sentence and by pairing; the products found on this machine and not connected,
+// each with 接上; and what a connected agent may do, from the same command table and by the same rule
+// as the MCP face. ARCHITECTURE.md section 6.
+import { formOf, type Action, type Block, type FixedValue, type PluginProblem, type Tag, type ViewAnswer } from '@pneuma-base/sdk'
+import { connectionFacts, NOTHING_WRITTEN, titleOf, WAY_WORD, whereOf } from './agent-commands.js'
+import { endpointOf } from './endpoint.js'
 import { KERNEL_COMMANDS } from './owner-commands.js'
 import { ownerFace, type OwnerCommandInfo } from './owner.js'
+import { pairingActions, pairingsOf, pairingState, sentenceBlock, type PairingState } from './pairing.js'
 import { eachPlugin } from './pipeline.js'
 import { CONNECTABLE, lookedFor, signsOf, waysOf, type Way } from './products.js'
+import { when } from './requests.js'
 import type { ViewerCall } from './viewer.js'
 
 function kernelAction(name: string, label: string, fixed: Record<string, FixedValue>, opts: { tone?: Action['tone']; confirm?: string } = {}): Action {
@@ -54,7 +58,43 @@ async function knownAbout(ctx: ViewerCall['ctx'], grant: string): Promise<{ text
 
 const accessWord = (readOnly: boolean | null) => (readOnly === null ? null : readOnly ? '只读' : '读写')
 
-export async function agentsPage(_params: Record<string, string>, { ctx, table, env }: ViewerCall): Promise<ViewAnswer & { problems: PluginProblem[] }> {
+/** How many pairings the page lists, the latest. */
+const PAIRINGS_SHOWN = 20
+
+const PAIRING_TAG: Record<PairingState, Tag> = { waiting: { text: '等你决定', tone: 'warn' }, connected: { text: '已接上', tone: 'good' }, declined: { text: '已拒绝', tone: 'neutral' }, expired: { text: '已过期', tone: 'neutral' } }
+
+/**
+ * Agents connecting themselves: the sentence to say to any agent while an endpoint runs for this
+ * library, and the latest pairings, latest first, the waiting ones with 允许 and 拒绝. Null when
+ * there is neither.
+ */
+async function pairingSection({ ctx }: ViewerCall): Promise<Block | null> {
+  const { home, library, now } = ctx
+  const endpoint = await endpointOf(home, library.root)
+  const pairings = (await pairingsOf(home, library.root)).slice(-PAIRINGS_SHOWN).reverse()
+  if (endpoint === null && pairings.length === 0) return null
+  const items = pairings.map((p) => {
+    const state = pairingState(p, now)
+    const d = p.decision
+    const settled = d?.outcome === 'connected' ? [`授权 ${d.grant}`] : d?.outcome === 'declined' && d.reason !== null ? [`理由：${d.reason}`] : []
+    return {
+      cell: { text: titleOf(p.product), actor: { kind: 'agent' as const, name: p.product }, tag: PAIRING_TAG[state] },
+      note: [`配对码 ${p.code}`, when(p.at), p.why, ...settled].join(' · '),
+      actions: state === 'waiting' ? pairingActions(p.id) : [],
+    }
+  })
+  return {
+    kind: 'section',
+    title: '让 agent 自己接上',
+    note: '每次请求接入都记在这里：等你决定的、接上的、拒绝的和过期的。',
+    count: pairings.length,
+    blocks: [...(endpoint === null ? [] : [sentenceBlock(endpoint.url, '这一页或首页上')]), ...(items.length === 0 ? [] : [{ kind: 'list' as const, items }])],
+    actions: [],
+  }
+}
+
+export async function agentsPage(_params: Record<string, string>, call: ViewerCall): Promise<ViewAnswer & { problems: PluginProblem[] }> {
+  const { ctx, table, env } = call
   const { root } = ctx.library
   const connections = await connectionFacts(ctx.home, env, table, root)
   const problems: PluginProblem[] = []
@@ -62,7 +102,7 @@ export async function agentsPage(_params: Record<string, string>, { ctx, table, 
   for (const c of connections) {
     const known = await knownAbout(ctx, c.grant)
     problems.push(...known.problems)
-    const note = [WAY_WORD[c.way], c.area === null ? '整个库' : `区域 ${c.area}/`, accessWord(c.readOnly), c.grant === c.product ? null : `凭授权 ${c.grant}`, ...(c.inPlace ? [`写在 ${c.where}`] : []), ...(known.text === null ? [] : [known.text])]
+    const note = [WAY_WORD[c.way], c.area === null ? '整个库' : `区域 ${c.area}/`, accessWord(c.readOnly), c.grant === c.product ? null : `凭授权 ${c.grant}`, ...(c.inPlace && c.where !== NOTHING_WRITTEN ? [`写在 ${c.where}`] : []), ...(known.text === null ? [] : [known.text])]
     rows.push({
       cell: { text: c.title, actor: { kind: 'agent' as const, name: c.product, grant: c.grant }, ...(c.inPlace ? {} : { tag: { text: c.problems.join('；'), tone: 'warn' as const } }) },
       note: note.filter((part) => part !== null).join(' · '),
@@ -100,5 +140,6 @@ export async function agentsPage(_params: Record<string, string>, { ctx, table, 
     ],
     actions: [],
   }
-  return { title: 'Agent', subtitle: null, blocks: [connected, offered, mayDo(ownerFace.commands(ctx.library.plugins))], problems }
+  const pairing = await pairingSection(call)
+  return { title: 'Agent', subtitle: null, blocks: [connected, ...(pairing === null ? [] : [pairing]), offered, mayDo(ownerFace.commands(ctx.library.plugins))], problems }
 }

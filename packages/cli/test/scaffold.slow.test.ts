@@ -85,7 +85,7 @@ describe('a plugin project from plugin new', () => {
         view = `${name}.sites`
       }
 
-      const viewer = spawn(process.execPath, [bin, 'view', lib, '--no-open'], { cwd: home, env })
+      const viewer = spawn(process.execPath, [bin, 'view', lib, '--no-open', '--port', '0'], { cwd: home, env })
       try {
         const url = await new Promise<string>((resolve, reject) => {
           let printed = ''
