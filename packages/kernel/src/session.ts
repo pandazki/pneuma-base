@@ -48,3 +48,19 @@ export function agentSessionSign(env: Env, viaGrant: boolean): string | null {
   const name = [...SESSION_VARIABLES, ...AGENT_PRODUCTS.flatMap((p) => p.markers)].find((n) => Boolean(env[n]))
   return name === undefined ? null : `环境里有 ${name}`
 }
+
+/**
+ * What shows the call comes from an agent: a grant or an agent session variable (the second line of
+ * defence, K7), or an actor named an agent with `--as`. Null when nothing does.
+ */
+export function agentSign(env: Env, viaGrant: boolean, actor: Actor): string | null {
+  return agentSessionSign(env, viaGrant) ?? (actor.kind === 'agent' ? `调用者是 agent ${actor.name}` : null)
+}
+
+/** Why an owner-only command, or a page of management, is not an agent's to use. */
+export const OWNER_DECIDES = '是替主人做的决定'
+
+/** The refusal, in an agent's session, of what only the owner does: an owner command, or a page of management, in the same words. */
+export function ownerOnlyRefusal(name: string, why: string, sign: string): string {
+  return `「${name}」${why}，只有主人能做，不能在 agent 的会话里做（${sign}）。需要的话告诉主人；主人在自己的终端里做，或在自己的终端里运行 pneuma-base view 用界面做。`
+}

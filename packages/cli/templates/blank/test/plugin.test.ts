@@ -43,6 +43,8 @@ test('its page shows the marks in a table and in its own panel, whose button lis
   assert.equal(table?.kind === 'table' && table.rows.length, 1)
   const panel = page.blocks.find((b) => b.kind === 'custom')
   assert.ok(panel?.kind === 'custom')
+  // What the panel draws, in words: pneuma-base show prints it, and screen readers read it.
+  assert.match(panel.text, /^1 条标记，最近一条：/)
   assert.equal((await viewer.get(`/plugin-ui/${plugin.name}/${panel.entry}`)).status, 200)
   const pressed = await viewer.act(panel.actions.list as NonNullable<typeof panel.actions.list>)
   assert.equal(pressed.result.outcome, 'done')

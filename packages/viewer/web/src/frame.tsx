@@ -125,6 +125,7 @@ function Frame({ block, plugin, src }: { block: Custom; plugin: string; src: str
         <p className="mt-1 max-w-[36rem] text-[12.5px] break-words text-ink-2">
           <span className="font-mono">{block.entry}</span> 没有加载，或者 {READY_MS / 1000} 秒内没有说它准备好了。页面的其余部分不受影响。
         </p>
+        <p className="mt-2 max-w-[36rem] text-[12.5px] break-words whitespace-pre-line text-ink">{block.text}</p>
       </div>
     )
   }
@@ -134,6 +135,7 @@ function Frame({ block, plugin, src }: { block: Custom; plugin: string; src: str
         ref={frame}
         src={src}
         title={`插件 ${plugin} 的页`}
+        aria-label={block.text}
         sandbox="allow-scripts"
         referrerPolicy="no-referrer"
         className={`-mx-px block w-[calc(100%+2px)] max-w-none border-0 ${phase === 'ready' ? '' : 'opacity-0'}`}

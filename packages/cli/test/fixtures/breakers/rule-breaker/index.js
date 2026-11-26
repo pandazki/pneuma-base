@@ -49,14 +49,23 @@ export default {
   },
 
   // Writes when it is only looked at, and answers a malformed block, a page its ui directory lacks, a
-  // page that never loads the frame script nor asks for its data, and one that does both.
+  // page that never loads the frame script nor asks for its data, one that does both, a page that
+  // does not say in words what it draws, and a button that calls a command nobody has.
   async onView(_req, ctx) {
     await writeFile(join(ctx.dir, `viewed-${Date.now()}.txt`), '')
-    const custom = (entry) => ({ kind: 'custom', entry, height: 80, data: null, actions: {} })
+    const custom = (entry) => ({ kind: 'custom', entry, height: 80, text: `${entry} 画的东西`, data: null, actions: {} })
+    const nowhere = { label: '去哪', tone: 'default', confirm: null, inputs: [], call: { face: 'owner', command: 'rule-breaker nowhere', args: { positional: [], flags: {} } } }
     return {
       title: '破规矩',
       subtitle: null,
-      blocks: [{ kind: 'table', rows: [] }, custom('missing.html'), custom('silent.html'), custom('framed.html')],
+      blocks: [
+        { kind: 'table', rows: [] },
+        custom('missing.html'),
+        custom('silent.html'),
+        custom('framed.html'),
+        { kind: 'custom', entry: 'framed.html', height: 80, data: null, actions: {} },
+        { kind: 'actions', actions: [nowhere] },
+      ],
     }
   },
 

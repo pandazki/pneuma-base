@@ -3,11 +3,13 @@
 import { readdir } from 'node:fs/promises'
 import { join, posix } from 'node:path'
 import { fileFacts } from './agent.js'
-import { checkBlocks, checkRefresh } from './blocks.js'
+import { callableIn, checkBlocks, checkRefresh, type Callable } from './blocks.js'
 import { exists } from './files.js'
 import { bundleFiles, enclosingBundle, kindAt, listThings, thingAt } from './things.js'
 import { codexHint, KERNEL_COMMANDS } from './owner-commands.js'
+import { agentSign, ownerOnlyRefusal, OWNER_DECIDES, type Env } from './session.js'
 import type { KernelCommandName } from './claims.js'
+import { machineDirOf } from './plugin-table.js'
 import { secretNames } from './secrets.js'
 import { ARCHIVE_DIR, DESCRIPTION_FILE, KERNEL_DIR, abs, archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
 import { messageOf, pluginContext } from './pipeline.js'
@@ -23,6 +25,7 @@ import {
   type Library,
   type LibraryPath,
   type Link,
+  type ListedView,
   type Plugin,
   type PluginName,
   type PluginProblem,
@@ -37,8 +40,12 @@ import {
   type ViewResult,
 } from '@pneuma-base/sdk'
 
-/** What showing a view needs besides the request: the operation's context and the plugins this pneuma-base knows. */
-export type ViewerCall = { ctx: Context; table: PluginTable }
+/**
+ * What showing a view needs besides the request: the operation's context, the plugins this
+ * pneuma-base knows, and, as an owner command's gate reads them, the environment and whether the
+ * call came with a grant.
+ */
+export type ViewerCall = { ctx: Context; table: PluginTable; env: Env; viaGrant: boolean }
 
 type Shown = ViewAnswer & { problems: PluginProblem[] }
 type KernelPage = (params: Record<string, string>, call: ViewerCall) => Promise<Shown>
@@ -68,6 +75,30 @@ const archiveAction = (kind: 'archive' | 'unarchive', path: LibraryPath): Action
   confirm: null,
   inputs: [],
   call: { face: 'agent', verb: 'archive', request: { kind, path } },
+})
+
+const field = (name: string, label: string, opts: { placeholder?: string; value?: string } = {}): ActionInput => ({ name, label, placeholder: opts.placeholder ?? null, value: opts.value ?? null, options: null })
+
+/** Moving a thing within the library: put with --to, the whole of a bundle with it. */
+const moveAction = (path: LibraryPath): Action => ({
+  label: '挪到',
+  tone: 'default',
+  confirm: null,
+  inputs: [field('to', '新的库内路径', { value: path })],
+  call: { face: 'agent', verb: 'put', request: { kind: 'move', from: path, to: '{to}' } },
+})
+
+/** Bringing a file of this machine into the library, as put of a file outside does; the page cannot hand over standard input. */
+const placeAction = (dir: string | null): Action => ({
+  label: '从这台机器放进来',
+  tone: 'default',
+  confirm: null,
+  inputs: [
+    field('from', '这台机器上的文件', { placeholder: '绝对路径，比如 /Users/me/Downloads/a.pdf' }),
+    field('to', '库内路径', { placeholder: '比如 sources/a.pdf', value: dir === null ? '' : `${dir}/` }),
+    field('source', '出处', { placeholder: '网址、书名或别的出处；不知道就留空' }),
+  ],
+  call: { face: 'agent', verb: 'put', request: { kind: 'place', from: { kind: 'file', path: '{from}' }, to: '{to}', origin: { kind: 'brought', source: '{source}', by: null } } },
 })
 
 // ---- files ----
@@ -124,7 +155,7 @@ async function filesPage(params: Record<string, string>, { ctx }: ViewerCall): P
     rows.push({ key: path, cells, link: itemLink(path), actions: [] })
   }
   const table: Block = { kind: 'table', columns: FILE_COLUMNS, rows, empty: '这个文件夹是空的。把文件放进这个文件夹，或者让 agent 用 put 放进来。' }
-  return shown('文件', dir ?? '库的根目录', [table])
+  return shown('文件', dir ?? '库的根目录', [{ kind: 'actions', actions: [placeAction(dir)] }, table])
 }
 
 // ---- archive ----
@@ -235,7 +266,7 @@ async function configPage(_params: Record<string, string>, { ctx, table }: Viewe
   // Every plugin this pneuma-base knows, and every one the library has installed: 卸下 for the installed, 装上 for the rest.
   // Its version and what it brings, as plugin list shows them: the summary, else its cognition's title.
   const dash: Cell = { text: '—', muted: true }
-  const pluginRow = (name: string, state: Tag, action: Action): TableRow => {
+  const pluginRow = (name: string, state: Tag, actions: Action[]): TableRow => {
     const p = library.plugins.find((q) => q.name === name) ?? table.get(name)
     const summary = p?.summary ?? p?.cognition?.title
     return {
@@ -247,14 +278,20 @@ async function configPage(_params: Record<string, string>, { ctx, table }: Viewe
         state: { text: '', tag: state },
       },
       link: null,
-      actions: [action],
+      actions,
     }
   }
   const installed = config.plugins.map((name) =>
-    pluginRow(name, library.plugins.some((p) => p.name === name) ? { text: '已装', tone: 'good' } : { text: '这个 pneuma-base 里没有', tone: 'warn' }, kernelAction('plugin remove', '卸下', { fixed: { plugin: name, anyway: false } })),
+    pluginRow(name, library.plugins.some((p) => p.name === name) ? { text: '已装', tone: 'good' } : { text: '这个 pneuma-base 里没有', tone: 'warn' }, [kernelAction('plugin remove', '卸下', { fixed: { plugin: name, anyway: false } })]),
   )
+  // A plugin installed on this machine, not built in, can also leave the machine once no library here uses it.
+  const uninstall = (name: string): Action[] => {
+    const p = table.get(name)
+    if (p === undefined || machineDirOf(p) === null) return []
+    return [kernelAction('plugin uninstall', '从这台机器卸掉', { fixed: { plugin: name }, tone: 'danger', confirm: `从这台机器卸掉插件 ${name}？这台机器上别的库装着它的，会报它不可用。` })]
+  }
   const addable = [...table.keys()].filter((name) => !config.plugins.some((p) => p === name))
-  const offered = addable.map((name) => pluginRow(name, { text: '没装', tone: 'neutral' }, kernelAction('plugin add', '装上', { fixed: { plugin: name } })))
+  const offered = addable.map((name) => pluginRow(name, { text: '没装', tone: 'neutral' }, [kernelAction('plugin add', '装上', { fixed: { plugin: name } }), ...uninstall(name)]))
   const plugins: Block = {
     kind: 'section',
     title: '插件',
@@ -268,7 +305,7 @@ async function configPage(_params: Record<string, string>, { ctx, table }: Viewe
         empty: '这个 pneuma-base 不认识任何插件。库照样能放、找、看、归档。',
       },
     ],
-    actions: [],
+    actions: [kernelAction('plugin install', '从目录装一个插件到这台机器')],
   }
 
   const skillAction = (grant: string, agent: 'claude' | 'codex', dir: string): Action =>
@@ -325,7 +362,7 @@ const answered = (a: unknown): a is { title: string; blocks: Block[] } =>
 const section = (title: string, blocks: Block[], plugin?: PluginName): Block => ({ kind: 'section', title, note: null, count: null, blocks, actions: [], ...(plugin === undefined ? {} : { plugin }) })
 
 /** Each installed plugin's section about `path`, in configuration order. A plugin that fails gets a section that says so (K8). */
-async function pluginSections(ctx: Context, path: LibraryPath): Promise<{ blocks: Block[]; problems: PluginProblem[] }> {
+async function pluginSections(ctx: Context, path: LibraryPath, callable: Callable): Promise<{ blocks: Block[]; problems: PluginProblem[] }> {
   const blocks: Block[] = []
   const problems: PluginProblem[] = []
   for (const plugin of ctx.library.plugins) {
@@ -334,7 +371,7 @@ async function pluginSections(ctx: Context, path: LibraryPath): Promise<{ blocks
       const answer = await plugin.onItemView(path, pluginContext(ctx, plugin.name))
       if (answer === null) continue
       if (!answered(answer)) throw new Error('onItemView answered something that is not a section')
-      const checked = checkBlocks(answer.blocks, plugin)
+      const checked = checkBlocks(answer.blocks, plugin, callable)
       blocks.push(section(answer.title, checked.blocks, plugin.name))
       problems.push(...checked.problems)
     } catch (error) {
@@ -356,14 +393,14 @@ async function itemPage(params: Record<string, string>, { ctx }: ViewerCall): Pr
   const target = params.path ?? ''
   const facts = target === '' ? null : ((await fileFacts(root, target)) ?? (await takenBack(root, target)))
   const path = facts?.path ?? parseLibraryPath(root, target)
-  const known = path === null || regionOf(path) === 'kernel' ? { blocks: [], problems: [] } : await pluginSections(ctx, path)
+  const known = path === null || regionOf(path) === 'kernel' ? { blocks: [], problems: [] } : await pluginSections(ctx, path, callableIn(ctx.library))
   if (!facts) {
     const missing: Block = { kind: 'text', tone: 'warn', text: `${target || '这个路径'} 上没有文件：不在，或已经除掉了。` }
     return shown(posix.basename(target) || '一样东西', target || null, [missing, ...known.blocks], known.problems)
   }
   const original = facts.archived ? (originalPath(facts.path) ?? facts.path) : facts.path
   const bundle = facts.kind === 'file' ? await enclosingBundle(root, facts.path) : null
-  const archive: Block[] = bundle === null ? [{ kind: 'actions', actions: [facts.archived ? archiveAction('unarchive', facts.path) : archiveAction('archive', original)] }] : []
+  const archive: Block[] = bundle === null ? [{ kind: 'actions', actions: facts.archived ? [archiveAction('unarchive', facts.path)] : [archiveAction('archive', original), moveAction(original)] }] : []
   return shown(posix.basename(original), facts.path, [...archive, ...known.blocks, ...(await thingSections(root, facts, bundle))], known.problems)
 }
 
@@ -407,19 +444,13 @@ async function thingSections(root: string, facts: FileFacts, bundle: LibraryPath
 
 // ---- the face ----
 
-const KERNEL_VIEWS: readonly ViewDecl[] = [
-  { id: 'files', title: '文件', icon: 'folder', nav: true, filters: [] },
-  { id: 'archive', title: '归档区', icon: 'archive', nav: true, filters: [] },
-  { id: 'config', title: '配置', icon: 'settings', nav: true, filters: [] },
-  { id: 'item', title: '一样东西', icon: 'file', nav: false, filters: [] },
+/** The kernel's own views, each with the page that answers it. */
+const KERNEL_VIEWS: readonly { decl: ViewDecl; page: KernelPage }[] = [
+  { decl: { id: 'files', title: '文件', icon: 'folder', nav: true, filters: [] }, page: filesPage },
+  { decl: { id: 'archive', title: '归档区', icon: 'archive', nav: true, filters: [] }, page: archivePage },
+  { decl: { id: 'config', title: '配置', icon: 'settings', nav: true, filters: [], ownerOnly: true }, page: configPage },
+  { decl: { id: 'item', title: '一样东西', icon: 'file', nav: false, filters: [] }, page: itemPage },
 ]
-
-const KERNEL_PAGES: ReadonlyMap<string, KernelPage> = new Map([
-  ['files', filesPage],
-  ['archive', archivePage],
-  ['config', configPage],
-  ['item', itemPage],
-])
 
 /** Each installed plugin's views, in configuration order. A view whose id does not start with `<plugin name>.` is left out as a problem. */
 function pluginViews(library: Library): { views: { plugin: Plugin; decl: ViewDecl }[]; problems: PluginProblem[] } {
@@ -440,7 +471,7 @@ async function pluginPage(plugin: Plugin, decl: ViewDecl, req: ViewRequest, ctx:
     if (!plugin.onView) throw new Error(`declares the view ${decl.id} but has no onView`)
     const answer = await plugin.onView(req, pluginContext(ctx, plugin.name))
     if (!answered(answer)) throw new Error(`onView answered something that is not a view for ${decl.id}`)
-    const { blocks, problems } = checkBlocks(answer.blocks, plugin)
+    const { blocks, problems } = checkBlocks(answer.blocks, plugin, callableIn(ctx.library))
     const { refresh, problems: refreshProblems } = checkRefresh((answer as ViewAnswer).refresh, plugin)
     return { ...shown(answer.title, answer.subtitle ?? null, blocks, [...problems, ...refreshProblems]), ...(refresh === undefined ? {} : { refresh }) }
   } catch (error) {
@@ -450,19 +481,26 @@ async function pluginPage(plugin: Plugin, decl: ViewDecl, req: ViewRequest, ctx:
 }
 
 export const viewerFace = {
-  /** Every view of the library: the plugins' first, in configuration order, then the kernel's. */
+  /** Every view of the library, each with who gives it: the plugins' first, in configuration order, then the kernel's. */
   views(library: Library): ViewList {
     const missing: PluginProblem[] = library.unavailable.map((plugin) => ({ plugin, message: 'installed in this library but not known to this pneuma-base' }))
     const own = pluginViews(library)
-    return { views: [...own.views.map((v) => v.decl), ...KERNEL_VIEWS], problems: [...missing, ...library.clashes, ...own.problems] }
+    const views: ListedView[] = [...own.views.map((v) => ({ ...v.decl, by: v.plugin.name })), ...KERNEL_VIEWS.map((v) => ({ ...v.decl, by: 'kernel' as const }))]
+    return { views, problems: [...missing, ...library.clashes, ...own.problems] }
   },
 
-  /** One view. Showing changes nothing and sends no event. */
+  /**
+   * One view, a filter not given taking its default. Showing changes nothing and sends no event. A
+   * page of management (`ownerOnly`) is refused in an agent's session as an owner-only command is.
+   */
   async show(req: ViewRequest, call: ViewerCall): Promise<ViewResult> {
-    const page = KERNEL_PAGES.get(req.view)
-    if (page) return { outcome: 'shown', ...(await page(req.params, call)) }
-    const found = pluginViews(call.ctx.library).views.find((v) => v.decl.id === req.view)
-    if (!found) return { outcome: 'no-such-view', problems: [] }
-    return { outcome: 'shown', ...(await pluginPage(found.plugin, found.decl, req, call.ctx)) }
+    const found = KERNEL_VIEWS.find((v) => v.decl.id === req.view) ?? pluginViews(call.ctx.library).views.find((v) => v.decl.id === req.view)
+    if (found === undefined) return { outcome: 'no-such-view', problems: [] }
+    const { decl } = found
+    const sign = decl.ownerOnly === true ? agentSign(call.env, call.viaGrant, call.ctx.actor) : null
+    if (sign !== null) return { outcome: 'refused', reason: 'agent-session', text: ownerOnlyRefusal(`show ${decl.id}`, OWNER_DECIDES, sign), problems: [] }
+    const params = { ...Object.fromEntries(decl.filters.map((f) => [f.name, f.default])), ...req.params }
+    if ('page' in found) return { outcome: 'shown', ...(await found.page(params, call)) }
+    return { outcome: 'shown', ...(await pluginPage(found.plugin, decl, { view: decl.id, params }, call.ctx)) }
   },
 }

@@ -124,6 +124,7 @@ agent 手里有六个动词：放、找、看、说、查、归档。试插件�
 | 查 | `check [--since <时间>\|last] [--include-archived]` | 每个插件说它知道的：发生了什么，现在要处理什么 |
 | 归档、取回 | `archive <库内路径>`、`unarchive <库内路径>` | 挪进 `_archive/`，或挪回原处 |
 | 开始 | `start "<一句话>"` | 说、查、找的组合：`say doing "<一句话>"`，`check --since last`，再按这句话里的词找，不带调用者这次会话做的 |
+| 看一页 | `show [<视图编号> [--<参数> <值>…]]` | 不是动词，是管理界面的一页，只读：不写编号列出这个库的页；写了打印那一页，每个按钮写成做同一件事的命令（3.6） |
 
 `<来历>` 是 `--brought [--source <出处>] [--by owner]`（从外面带进来的），或 `--made [--from <库内路径>…] [--from-outside "<一句话>"…]`（基于别的东西做出来的）。放入和登记必须写其中一个，只能写一个，不写以用法错误拒绝：库靠它让每样东西都回得到它是怎么来的。`put` 的第一个参数是相对路径时，调用者的工作目录里有这个文件或目录就是放入，不然是库内路径。动词前面写库和身份：带授权写 `pneuma-base @<授权名> <动词> …`，不带写 `pneuma-base --library <库> --as <agent 名> [--session <会话>] <动词> …`。加 `--json` 打印结果对象，测试读它。
 
@@ -351,9 +352,9 @@ export default definePlugin({
 
 ### 3.6 加页面和条目面板里的一节
 
-管理界面是 `pneuma-base view <库>` 打开的网页。看用视图，改用两个面：一个视图答一页带类型的块，界面只渲染块，不知道块来自哪个插件。插件有两处可以放块：
+管理界面是 `pneuma-base view <库>` 打开的网页。看用视图，改用两个面：一个视图答一页带类型的块，界面只渲染块，不知道块来自哪个插件。命令行是全部本事的准绳，界面是它的一面：每一页也是一条只读的命令，`pneuma-base show <视图编号> [--<参数> <值>…]` 把它印成字，`--json` 给出界面拿到的同一个答复；agent 带着授权或 `--as` 也能看，和 `inspect` 一样什么都不改、不发事件。插件有两处可以放块：
 
-- 自己的页：在 `views` 里声明，在 `onView` 里答 `{ title, subtitle, blocks, refresh? }`。`id` 必须以 `<插件名>.` 开头（检查：`names`）。`icon` 是 sdk 的 `IconName`（4.4），别的名字画成拼图。`nav: false` 的页只能经链接到达。界面把每个 `filters` 的 `default` 填进 `params`。
+- 自己的页：在 `views` 里声明，在 `onView` 里答 `{ title, subtitle, blocks, refresh? }`。`id` 必须以 `<插件名>.` 开头（检查：`names`）。`icon` 是 sdk 的 `IconName`（4.4），别的名字画成拼图。`nav: false` 的页只能经链接到达。没给的筛选取它的 `default`，界面和 `show` 一样。管理用的页声明 `ownerOnly: true`：在 agent 的会话里以 `agent-session` 拒绝，话和只给主人的命令被拒时一样；别的页两边一样。
 - 条目面板里的一节：一样东西在右侧面板打开时，内核按配置次序调每个插件的 `onItemView(路径)`，把答的 `{ title, blocks }` 盖上插件名，排在归档按钮之后、文件的事实之前；答 `null` 就没有这一节。路径上没有东西也调；只在归档区的东西，路径是 `_archive/…`；内核自己的文件不调。带标记的目录里的每个文件也有自己的面板：目录的面板列出里面的文件，点一个就打开它的面板。这时 `onItemView` 拿到那个文件的库内路径，比如 `site/index.html`，不是目录的；面板里没有归档按钮，因为目录只能整个归档。
 
 钩子抛错或答得不对时，内核在那里放一块说明出错，把问题列进答复。
@@ -384,7 +385,14 @@ export default definePlugin({
   async onView(req, ctx) {
     const rows = await largest(ctx, Number(req.params.top ?? '10'))
     const blocks: Block[] = [
-      { kind: 'custom', entry: 'bars.html', height: 96, data: rows.map((r) => ({ path: r.path, size: r.size })), actions: {} },
+      {
+        kind: 'custom',
+        entry: 'bars.html',
+        height: 96,
+        text: rows.map((r) => `${r.path}：${r.size} 字节`).join('\n'),
+        data: rows.map((r) => ({ path: r.path, size: r.size })),
+        actions: {},
+      },
       {
         kind: 'table',
         columns: [{ key: 'path', label: '东西' }, { key: 'size', label: '大小' }, { key: 'at', label: '改于', optional: true }],
@@ -415,10 +423,12 @@ export default definePlugin({
 **第一级：带类型的块**，种类和字段在 sdk 的 `Block` 里（4.4）。样子、深浅色、键盘、窄屏都由界面管。
 
 - 插件给的每一块都必须合 sdk 的类型（检查：`blocks`）。不合的那一块，包括不认识的种类，换成一段说明出错的文字，记成插件的问题，页的其余部分照常。
+- 块上的每个动作都必须调一个动词，或这个库里在的一条主人命令，参数合它的参数表；「说」要有插件听这个种类；`call` 里写的 `{输入名}` 都要是这个动作的输入（检查：`blocks`）。不合的同样换成说明出错的文字。按钮和命令是同一个调用，所以 `show` 把每个动作印成做同一件事的命令行：`$ deploy off sites/shop  # 关上（只给主人）`，问话跟在「先问」后面，没填的输入照用法写成 `<提示>`。
 - 能用第一级的块说的，就用第一级。
 
 **第二级：`custom` 块。** 第一级说不出的，比如一条小图，插件在 `ui` 目录里画自己的页。页载入界面给的 `/plugin-kit/frame.js` 和 `frame.css`，用 `pneuma.onData` 收块的数据，用 `pneuma.run` 做块里声明的动作，用 `pneuma.open` 打开视图或地址，样式跟着界面走。接口、类、变量和例子在 4.5，类型在 `@pneuma-base/sdk/frame`。
 
+- `custom` 块必须带 `text`：用字说出这一块画的，和给框架的 `data` 出自同一份数据（检查：`blocks`）。`show` 印它，读屏软件读它，页打不开时界面显示它。agent 看不到画，只看得到这段字。
 - `custom` 块指向的页必须在插件的 `ui` 目录里，取得到（检查：`blocks`）。
 - 页必须载入 `/plugin-kit/frame.js`，脚本里必须调用 `pneuma.onData`（检查：`blocks`）。没有它们，界面等不到页握手，5 秒后把这一块换成一段说明。检查不在浏览器里跑页：它读页的文本，和页在 `ui` 目录里直接载入的脚本，只看这两样在不在。脚本出错、画得不对，它看不出，要在浏览器里自己看。
 
@@ -638,7 +648,7 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `actions` | `actions` | | 一排按钮 |
 | `empty` | `title`、`hint`（文字或 `null`） | | 空的状态 |
 | `embed` | `url`（http 或 https）、`title`、`height` | | 库外的一个页面，放在沙箱框架里，带「在新标签页打开」 |
-| `custom` | `entry`、`height`、`actions` | `data` | 插件自己画的页，见 4.5 |
+| `custom` | `entry`、`height`、`text`、`actions` | `data` | 插件自己画的页，见 4.5；`text` 是这一块用字说的同样的事 |
 
 | 类型 | 字段 |
 | --- | --- |
@@ -650,7 +660,7 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `Call` | `{ face: 'agent', verb, request }`，`request` 是那个动词的请求；或 `{ face: 'owner', command, args: { positional, flags }, stdin? }`。字符串里的 `{输入名}` 换成那个输入的值；正好是 `{输入名}` 的列表元素，`multiple` 的输入一行换成一个元素。带参数的主人命令的表单用 sdk 的 `formOf(命令, { fixed, values, choices })` 生成：每个参数一个输入，`fixed` 里的不问，直接写进 `Call` |
 | `IconName` | `activity`、`archive`、`bookmark`、`box`、`clock`、`cloud`、`cloud-upload`、`code`、`corner-left-up`、`database`、`download`、`eye`、`file`、`file-text`、`flask-conical`、`folder`、`gauge`、`git-branch`、`globe`、`history`、`image`、`key`、`layers`、`layout-grid`、`link`、`list`、`package`、`refresh-cw`、`rocket`、`scroll-text`、`search`、`server`、`settings`、`shield`、`tag`、`terminal`、`triangle-alert`、`upload`、`users`（lucide 的图标名，sdk 的 `ICON_NAMES`）。界面把别的名字画成拼图 |
 
-内核核对每一块：种类不认识、缺了必需的字段、类型不对、`embed` 的地址不是 http 或 https、`custom` 的 `entry` 爬出 `ui` 目录或插件没有 `ui`、输入的 `pattern` 不是正则，都算不合。
+内核核对每一块：种类不认识、缺了必需的字段、类型不对、`embed` 的地址不是 http 或 https、`custom` 的 `entry` 爬出 `ui` 目录或插件没有 `ui`、输入的 `pattern` 不是正则、动作调的不是一个动词或这个库里在的主人命令、参数不合那条命令的参数表、「说」的种类没有插件听、`call` 写了动作没有的输入，都算不合。
 
 ### 4.5 自己画的页
 
@@ -669,7 +679,7 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 
 `frame.js` 和界面之间只有四种消息，都带 `pneuma: 1`：界面到页的 `data`，页到界面的 `run`、`open`、`height`。别的消息、别的来源的消息，界面都不理。页要做的动作走和按钮完全一样的路：同一个对话框问 `confirm`，同样经两个面分派，同样有结果提示和重取。页拿不到 `Call`，所以跑不了块没声明的动作，「破坏性的要当面确认」「每次操作留痕」仍然只在两个面的入口守。
 
-页 5 秒内没和界面握手，比如文件不在、载入失败、没载 `frame.js`，那一块换成一段说明，写出插件名和 `entry`，页的其余部分照常。沙箱为的是隔离样式和崩溃，不是防插件：插件的 `index.js` 本来就在本机以主人的身份跑。3.6 里 `sizes` 的 `ui/bars.html` 可以是：
+页 5 秒内没和界面握手，比如文件不在、载入失败、没载 `frame.js`，那一块换成一段说明，写出插件名和 `entry`，下面是块的 `text`，页的其余部分照常。框架的 `aria-label` 也是 `text`。沙箱为的是隔离样式和崩溃，不是防插件：插件的 `index.js` 本来就在本机以主人的身份跑。3.6 里 `sizes` 的 `ui/bars.html` 可以是：
 
 ```html
 <!doctype html>
@@ -839,7 +849,8 @@ function board(all: readonly Look<Seen>[], plugin: string): Block {
     }),
   )
   const data = shown.map((l) => ({ key: l.thing.id, path: l.thing.path, url: l.url, state: STATUS[l.status], spark: l.detail?.spark ?? null }))
-  return { kind: 'custom', entry: 'board.html', height: 330, data, actions }
+  const text = data.map((d) => `${d.path}：${d.state.text}${d.url === null ? '' : ` · ${d.url}`}`).join('\n') || '还没有声明可以部署的东西。'
+  return { kind: 'custom', entry: 'board.html', height: 330, text, data, actions }
 }
 
 const spaceTarget = defineTarget({
@@ -994,7 +1005,7 @@ ls ../site/src
 | `hooks` | 每个钩子在空库上、在每个动词之后都不抛错，答复里没有这个插件的问题 | 空库（`init --bare`）上：`plugin add`、找、查、看一个不在的路径、每种「说」不带和带路径、`plugin remove` 再 add。`setup` 之后一遍脚本：放一个文件、放一个目录、找、看、每种「说」、查、同一路径放不同的内容、挪、归档、取回、归档一个目录、清空归档区、每条参数都可省的 `readOnly` 主人命令。agent 是 `conformance-agent`，用 `--as`，不带授权；主人命令以主人身份跑 |
 | `writes` | 插件只往库里自己名下的 .pneuma-base/<插件名>/ 写；那里已有的文件不改写、不删（声明为配置的文件、缓存目录和破坏性的主人命令除外）；视图和条目面板里的一节什么都不写 | 空库上和脚本里的每一步前后比库的快照：每个路径，文件的哈希、inode、修改时间，内核的临时目录除外。脚本最后以主人身份跑每条参数都可省的破坏性主人命令，像人在界面里点了确认那样，它只许改自己的目录。脚本跑完之后开每个视图和条目面板，前后再比，这时什么都不能变 |
 | `cache` | 缓存删掉什么都不丢：删掉它在本机的缓存目录和声明为缓存的目录前后，找、看、查的答复一样 | 找、看、查各问两遍，删掉缓存再问一遍。两遍就答得不一样的，没法比，列成提醒 |
-| `blocks` | 视图和条目面板里的一节答复的都是合法的块，钩子不抛错；custom 块指向的页面在插件的 ui 目录里，取得到，载入 /plugin-kit/frame.js，脚本里调用 pneuma.onData | 空库上和脚本跑完之后，开每个视图（筛选取缺省值）和条目面板（空库上是一个不在的路径；脚本之后是挪过的那个文件，和随归档区清掉的那个目录在内容区、归档区的两个路径），看答复里它的问题，再取每个 `custom` 块的 `/plugin-ui/<插件名>/<entry>`，读它的文本和它在 `ui` 目录里直接载入的脚本。页不在浏览器里跑 |
+| `blocks` | 视图和条目面板里的一节答复的都是合法的块，钩子不抛错；每个动作调的是一个动词或这个库里在的一条主人命令，参数合它的参数表；custom 块带 text，用字说出它画的；custom 块指向的页面在插件的 ui 目录里，取得到，载入 /plugin-kit/frame.js，脚本里调用 pneuma.onData | 空库上和脚本跑完之后，开每个视图（筛选取缺省值）和条目面板（空库上是一个不在的路径；脚本之后是挪过的那个文件，和随归档区清掉的那个目录在内容区、归档区的两个路径），看答复里它的问题，再取每个 `custom` 块的 `/plugin-ui/<插件名>/<entry>`，读它的文本和它在 `ui` 目录里直接载入的脚本。页不在浏览器里跑 |
 | `remove` | 卸下插件之后库照常能用：配置和说明里没有它，动词照常答复、没有问题，界面没有它的视图，内容一样不少 | `plugin remove`，被拒绝时加 `--anyway`；看配置、说明、内容的哈希，找、查、看、放的答复，界面的视图清单和问题 |
 
 `loads` 不通过时，后面要装上才能查的几项都记成「没有查：插件没装上」。
@@ -1124,14 +1135,14 @@ pneuma-base plugin uninstall marks
 | --- | --- |
 | `index.js` | 在目录里，载入不抛错，缺省导出一个对象 |
 | `contract` | 写了，是这个 pneuma-base 跑的版本：现在只有 `1` |
-| `name` | 合 `PLUGIN_NAME`：小写字母开头，只用小写字母、数字、连字符，最长 41 个字符；装到本机之后和目录名相同；不是 `RESERVED_PLUGIN_NAMES` 里的词：`tmp`、`start`、`find`、`inspect`、`put`、`say`、`check`、`archive`、`unarchive`、`init`、`view`、`help`、`grant`、`plugin`、`skill`、`secret`（命令行的词、内核命令的头一个词、内核的临时目录名） |
+| `name` | 合 `PLUGIN_NAME`：小写字母开头，只用小写字母、数字、连字符，最长 41 个字符；装到本机之后和目录名相同；不是 `RESERVED_PLUGIN_NAMES` 里的词：`tmp`、`start`、`show`、`find`、`inspect`、`put`、`say`、`check`、`archive`、`unarchive`、`init`、`view`、`help`、`grant`、`plugin`、`skill`、`secret`（命令行的词、内核命令的头一个词、内核的临时目录名） |
 | `version`、`summary` | 没有，或是文字 |
 | `keeps` | 没有，或是 `every`、`some` |
 | `cognition` | `null`，或 `{ title, text }`，两样都是文字 |
 | `storage` | 列表，每项 `{ dir, kind }`，`kind` 是 `body` 或 `cache` |
 | `statements` | 列表，每项是不空的文字，不重复 |
 | `ownerCommands` | 列表，每项有文字的 `summary`、真假的 `destructive` 和 `ownerOnly`、函数 `run`，`readOnly` 和 `setup` 没有或是真假，名字以 `<插件名> ` 开头、不是内核的命令、不重复，参数表合 4.3 |
-| `views` | 没有，或列表，每项 `{ id, title, icon, nav, filters }`，`title` 和 `icon` 是文字，`nav` 是真假，`filters` 是列表，`id` 以 `<插件名>.` 开头、不重复 |
+| `views` | 没有，或列表，每项 `{ id, title, icon, nav, filters }`，可以带 `ownerOnly`（真假），`title` 和 `icon` 是文字，`nav` 是真假，`filters` 是列表，`id` 以 `<插件名>.` 开头、不重复 |
 | `secrets` | 没有，或列表，每项 `{ name, description }`，可以带 `optional`（真假），`name` 合 `SECRET_NAME`，不重复 |
 | 钩子 | 给了的都是函数 |
 

@@ -15,6 +15,7 @@ import {
   parseLibraryPath,
   PNEUMA_BASE_VERSION,
   resolveGrant,
+  viewerFace,
   type Context,
   type Env,
   type Grant,
@@ -32,6 +33,7 @@ import {
 } from '@pneuma-base/kernel'
 import { UsageError, flagList, flagValue, hasFlag, leadingWords, ownFlags, parseCommand, splitLine, type FlagKind, type Line, type Parsed } from './args.js'
 import { archiveText, checkText, findText, inspectText, ownerText, putText, sayText, startText } from './format.js'
+import { pageText, viewListText } from './page.js'
 import { KINDS, scaffold, type Kind } from './scaffold.js'
 import { view } from './view.js'
 
@@ -120,6 +122,7 @@ const USAGE = `用法：
       put <文件|目录|-|库内路径> [--to <库内路径>] (--brought [--source <出处>] [--by owner] | --made [--from <库内路径…>] [--from-outside <一句话…>]) [--note "<一句话>"]
       say <种类> [<关于>] [<内容>] | check [--since <时间>|last] [--include-archived]
       archive <库内路径> | unarchive <库内路径>
+看管理界面的一页：show [<页的编号> [--<参数> <值>…]]（不写编号列出这个库的页；条目面板是 show item --path <库内路径>）
 主人：view [<目录>] [--port <端口>] [--no-open]（在浏览器里打开管理界面；pneuma-base <目录> 也一样）
       init <目录> [--bare]
 插件作者：plugin new <目录> [--kind blank|deploy] [--name <插件名>] [--packages <两个包文件所在的目录>]（生成一个插件项目）
@@ -167,8 +170,8 @@ type Bound = { library: Library; ctx: Context; viaGrant: boolean }
 /** `table`: every plugin this machine has; `builtins`: the command line's own, which the UI's server joins with the machine's on each request. */
 type Invocation = { parsed: Parsed; args: string[]; io: Io; table: PluginTable; builtins: PluginTable; home: string }
 
-/** `flags`: how each of its own flags takes values; `any` for say, whose flags are the plugins'. */
-type Spec = { words: string[]; flags: Readonly<Record<string, FlagKind>> | 'any'; arity: [min: number, max: number] } & (
+/** `flags`: how each of its own flags takes values; `any` for say, whose flags are the plugins'; `params` for show, whose flags are a page's parameters, each with one value. */
+type Spec = { words: string[]; flags: Readonly<Record<string, FlagKind>> | 'any' | 'params'; arity: [min: number, max: number] } & (
   | { library: true; run: (inv: Invocation, bound: Bound) => Promise<Answer> }
   | { library: false; run: (inv: Invocation) => Promise<Answer> }
 )
@@ -307,6 +310,23 @@ const SPECS: Spec[] = [
     run: async ({ parsed }, { ctx }) => {
       const r = await agentFace.check({ since: sinceOf(flagValue(parsed, 'since')), includeArchived: hasFlag(parsed, 'include-archived') }, ctx)
       return { json: r, lines: checkText(r), exit: exitOf(r) }
+    },
+  },
+  {
+    words: ['show'],
+    flags: 'params',
+    arity: [0, 1],
+    library: true,
+    run: async ({ args, parsed, io, table }, { library, ctx, viaGrant }) => {
+      if (args.length === 0) {
+        const list = viewerFace.views(library)
+        return { json: list, lines: viewListText(list), exit: exitOf(list) }
+      }
+      const params = Object.fromEntries(ownFlags(parsed).map(([name, value]) => [name, value === true ? '' : (value[0] as string)]))
+      const r = await viewerFace.show({ view: args[0] as string, params }, { ctx, table, env: io.env, viaGrant })
+      if (r.outcome === 'no-such-view') throw new UsageError(`这个库没有这一页：${args[0]}。pneuma-base show 列出这个库的页。`)
+      if (r.outcome === 'refused') return answer(r, [`拒绝（${r.reason}）：${r.text}`])
+      return { json: r, lines: pageText(r, ownerFace.commands(library.plugins)), exit: exitOf(r) }
     },
   },
   ...(['archive', 'unarchive'] as const).map(
@@ -476,6 +496,14 @@ function verbSpec(typed: readonly string[]): Spec | null {
   return spec && !(command && words(command.name).length > spec.words.length) ? spec : null
 }
 
+/** The arguments after a command line's own command, read by how it says its flags take values. */
+function parseSpec(line: Line, spec: Spec): Parsed {
+  const name = spec.words.join(' ')
+  if (spec.flags === 'any') return parseCommand(line, spec.words.length, {}, 'table', name)
+  if (spec.flags === 'params') return parseCommand(line, spec.words.length, {}, 'value', name)
+  return parseCommand(line, spec.words.length, spec.flags, 'error', name)
+}
+
 /** `pneuma-base <directory>`, with nothing else but flags, is `pneuma-base view <directory>`. */
 function impliedView(line: Line, cwd: string): Line {
   const typed = leadingWords(line)
@@ -495,8 +523,7 @@ export async function main(argv: readonly string[], builtins: PluginTable, io: I
     }
     const line = impliedView(splitLine(argv), io.cwd)
     const spec = verbSpec(leadingWords(line))
-    const name = spec?.words.join(' ') ?? ''
-    const parsed = spec ? parseCommand(line, spec.words.length, spec.flags === 'any' ? {} : spec.flags, spec.flags === 'any' ? 'table' : 'error', name) : { grant: line.grant, positional: [], flags: new Map(line.global) }
+    const parsed = spec ? parseSpec(line, spec) : { grant: line.grant, positional: [], flags: new Map(line.global) }
     const inv: Invocation = { parsed, args: parsed.positional, io, table, builtins, home }
     const result = spec ? await runSpec(spec, inv) : await ownerCommand(inv, line)
     io.out(hasFlag(parsed, 'json') ? JSON.stringify(result.json, null, 2) : result.lines.join('\n'))

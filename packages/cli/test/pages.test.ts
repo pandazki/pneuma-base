@@ -1,0 +1,243 @@
+// The command line is the reference; the management UI is a face of it. On a library with the five
+// built-in plugins and something in each of their pages, every page reached from the navigation and
+// its links is checked both ways:
+// - every page prints with `show`, and its words carry every cell and every button's command;
+// - every button calls a verb, or an owner command the library runs with arguments it takes;
+// - every business verb and command has a button or is the read behind a page, and every management
+//   command has a place on the owner's pages; what has none is listed below with why.
+import { join } from 'node:path'
+import { actionFault, callableIn, openLibrary, ownerFace, type Action, type Block, type Cell, type Link, type ListedView, type ViewResult } from '@pneuma-base/kernel'
+import { beforeAll, describe, expect, it } from 'vitest'
+import { main, type Io } from '../dist/main.js'
+import { commandOf, minute } from '../dist/page.js'
+import { builtinPlugins } from '../dist/plugins.js'
+import { sandbox, tempDir, type Sandbox } from './helpers.js'
+
+type Shown = Extract<ViewResult, { outcome: 'shown' }>
+type Page = { link: Link; json: Shown; text: string }
+
+/** What a business verb or command reads, where a page shows the same: it has no button because the page is the reading. */
+const READS: Record<string, string> = {
+  inspect: 'item',
+  check: 'ledger.standing',
+  'plugin list': 'config',
+  'secret list': 'config',
+  'ledger held list': 'ledger.held',
+  'version list': 'version.things',
+  'sync status': 'sync.status',
+  'deploy list': 'deploy.sites',
+  'search status': 'search.status',
+}
+
+/** What has no button on any page, and why. */
+const NO_PLACE: Record<string, string> = {
+  find: '一个搜索框要一个人自己打字的页面参数，界面的页现在只从筛选的选项和链接拿参数；要等界面能问一个自由的输入。找按名字时，人翻「文件」和「条目」',
+  'say doing': '说的是 agent 这次会话在做什么；人在界面里的操作自成一个主人的场景，场景里记的就是做了哪些操作',
+}
+
+let sb: Sandbox
+let lib: string
+let work: string
+let home: string
+const pages: Page[] = []
+
+const env = () => ({ PATH: process.env.PATH ?? '', HOME: sb.home, PNEUMA_BASE_HOME: home })
+
+/** The command line in this process, as the owner, so a crawl of every page is quick. */
+async function cli(args: string[]): Promise<{ code: number; out: string; err: string }> {
+  const out: string[] = []
+  const err: string[] = []
+  const io: Io = {
+    env: env(),
+    cwd: work,
+    out: (t) => void out.push(t),
+    err: (t) => void err.push(t),
+    readStdin: async () => new Uint8Array(),
+    readSecret: async () => null,
+    confirm: async () => false,
+    untilStopped: async () => undefined,
+    openBrowser: () => undefined,
+  }
+  const code = await main(['--library', lib, ...args], builtinPlugins, io)
+  return { code, out: out.join('\n'), err: err.join('\n') }
+}
+
+const flagsOf = (params: Record<string, string>) => Object.entries(params).flatMap(([k, v]) => [`--${k}`, v])
+
+function allBlocks(blocks: readonly Block[]): Block[] {
+  return blocks.flatMap((b) => [b, ...(b.kind === 'section' ? allBlocks(b.blocks) : [])])
+}
+
+function actionsOf(b: Block): Action[] {
+  switch (b.kind) {
+    case 'section':
+    case 'actions':
+      return b.actions
+    case 'table':
+      return b.rows.flatMap((r) => r.actions)
+    case 'list':
+      return b.items.flatMap((i) => i.actions)
+    case 'timeline':
+      return b.entries.flatMap((e) => e.actions ?? [])
+    case 'custom':
+      return Object.values(b.actions)
+    default:
+      return []
+  }
+}
+
+function cellsOf(b: Block): Cell[] {
+  switch (b.kind) {
+    case 'table':
+      return b.rows.flatMap((r) => Object.values(r.cells))
+    case 'fields':
+      return b.fields.map((f) => f.value)
+    case 'list':
+      return b.items.map((i) => i.cell)
+    case 'timeline':
+      return b.entries.map((e) => e.title)
+    default:
+      return []
+  }
+}
+
+function linksOf(b: Block): Link[] {
+  const cells = cellsOf(b).flatMap((c) => (c.link ? [c.link] : []))
+  return b.kind === 'table' ? [...cells, ...b.rows.flatMap((r) => (r.link ? [r.link] : []))] : cells
+}
+
+/** What a button does, as the coverage counts it: an owner command by name, a verb with the kind of its request. */
+function capability(a: Action): string {
+  const { call } = a
+  if (call.face === 'owner') return call.command
+  if (call.verb === 'put') return `put ${call.request.kind}`
+  if (call.verb === 'say') return `say ${call.request.kind}`
+  if (call.verb === 'archive') return call.request.kind
+  return call.verb
+}
+
+const write = async (path: string, content: string) => {
+  const { mkdirSync, writeFileSync } = await import('node:fs')
+  mkdirSync(join(path, '..'), { recursive: true })
+  writeFileSync(path, content)
+}
+
+beforeAll(async () => {
+  sb = sandbox()
+  home = join(sb.home, '.pneuma-base')
+  lib = join(tempDir(), 'lib')
+  work = tempDir('pb-work-')
+  const owner = (args: string[]) => {
+    const r = sb.run(['--library', lib, ...args], { cwd: work })
+    expect(r.code, `${args.join(' ')}\n${r.stdout}${r.stderr}`).toBe(0)
+  }
+  const agent = (args: string[], input?: string) => {
+    const r = sb.run(['@claude', ...args], { cwd: work, env: { PNEUMA_BASE_SESSION: 'pages' }, ...(input === undefined ? {} : { input }) })
+    expect(r.code, `${args.join(' ')}\n${r.stdout}${r.stderr}`).toBe(0)
+  }
+  expect(sb.run(['init', lib]).code).toBe(0)
+  for (const p of ['version', 'deploy', 'sync', 'search']) owner(['plugin', 'add', p])
+  owner(['grant', 'issue', 'claude', '--agent', 'claude-code'])
+  owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', join(tempDir('pb-www-'), 'www')])
+  owner(['sync', 'target', 'set', '--kind', 'dir', '--to', tempDir('pb-sync-')])
+  owner(['search', 'embedder', 'set', '--kind', 'hash'])
+  await write(join(work, 'shop/index.html'), '<h1>小店</h1>\n')
+  await write(join(work, 'blog/index.html'), '<h1>博客</h1>\n')
+  agent(['say', 'doing', '整理小店的资料'])
+  agent(['put', 'shop', '--to', 'sites/shop', '--made'])
+  agent(['put', 'blog', '--to', 'sites/blog', '--made'])
+  agent(['say', 'deployable', 'sites/shop'])
+  agent(['say', 'deployable', 'sites/blog'])
+  owner(['deploy', 'on', 'sites/shop'])
+  agent(['put', '-', '--to', 'sources/pricing.html', '--brought', '--source', 'https://example.com/pricing'], '<p>价格</p>\n')
+  agent(['put', '-', '--to', 'notes/plan.md', '--made', '--from', 'sources/pricing.html', '--note', '第一版'], '# 计划\n')
+  agent(['say', 'versioned', 'notes/plan.md', '开始记版本'])
+  agent(['put', '-', '--to', 'notes/plan.md', '--made', '--note', '改了'], '# 计划 v2\n')
+  agent(['put', '-', '--to', 'notes/draft.md', '--made'], '草稿\n')
+  agent(['put', 'notes/draft.md', '--to', 'notes/draft-moved.md'])
+  agent(['put', '-', '--to', 'notes/old.md', '--made'], '旧的\n')
+  agent(['archive', 'notes/old.md'])
+  // A plugin on this machine the library has not installed, and a secret set, so their buttons are on the config page.
+  await write(join(work, 'extra/index.js'), "export default { contract: 1, name: 'extra', cognition: null, storage: [], statements: [], ownerCommands: [] }\n")
+  expect(sb.run(['plugin', 'install', join(work, 'extra')], { cwd: work }).code).toBe(0)
+  expect(sb.run(['secret', 'set', 'search', 'key'], { cwd: work, input: 'sk-test\n' }).code).toBe(0)
+  await write(join(lib, 'notes/dropped.md'), '主人直接放进来的\n')
+  await write(join(lib, 'sources/pricing.html'), '<p>价格，手改过</p>\n')
+
+  // Every view in the list with its filters' defaults, then every page a link on one of them opens, a few of each view.
+  const listed = JSON.parse((await cli(['show', '--json'])).out) as { views: ListedView[] }
+  const queue: Link[] = listed.views.filter((v) => v.nav).map((v) => ({ view: v.id, params: {}, target: 'main' }))
+  const seen = new Set<string>()
+  const perView = new Map<string, number>()
+  while (queue.length > 0) {
+    const link = queue.shift() as Link
+    const key = JSON.stringify([link.view, link.params])
+    if (seen.has(key) || (perView.get(link.view) ?? 0) >= 12) continue
+    seen.add(key)
+    perView.set(link.view, (perView.get(link.view) ?? 0) + 1)
+    const args = ['show', link.view, ...flagsOf(link.params)]
+    const json = await cli([...args, '--json'])
+    const text = await cli(args)
+    expect(json.code, `${args.join(' ')}\n${json.out}${json.err}`).toBe(0)
+    expect(text.code, `${args.join(' ')}\n${text.err}`).toBe(0)
+    const page: Page = { link, json: JSON.parse(json.out) as Shown, text: text.out }
+    pages.push(page)
+    queue.push(...allBlocks(page.json.blocks).flatMap(linksOf))
+  }
+}, 120_000)
+
+describe('every page of a library with every built-in plugin', () => {
+  it('is reached: each view in the list, the item panel of a file, a bundle, a file inside one and an archived file, and a scene card', () => {
+    const views = new Set(pages.map((p) => p.link.view))
+    for (const id of ['ledger.items', 'ledger.scenes', 'ledger.standing', 'ledger.activity', 'ledger.held', 'ledger.scene', 'version.things', 'deploy.sites', 'sync.status', 'search.status', 'files', 'archive', 'config', 'item']) expect(views, id).toContain(id)
+    const items = pages.filter((p) => p.link.view === 'item').map((p) => p.link.params.path)
+    expect(items).toEqual(expect.arrayContaining(['notes/plan.md', 'sites/shop', 'sites/shop/index.html', '_archive/notes/old.md']))
+  })
+
+  it('prints with show: the words carry every cell, every custom block’s text and every button as its command', async () => {
+    const library = await openLibrary(lib, builtinPlugins)
+    const commands = ownerFace.commands(library?.plugins ?? [])
+    for (const { link, json, text } of pages) {
+      const where = `show ${link.view} ${flagsOf(link.params).join(' ')}`
+      for (const block of allBlocks(json.blocks)) {
+        for (const cell of cellsOf(block)) {
+          const words = cell.at === undefined ? cell.text : minute(cell.at)
+          expect(text, `${where}: ${words}`).toContain(words)
+          if (cell.tag) expect(text, `${where}: ${cell.tag.text}`).toContain(`[${cell.tag.text}]`)
+          if (cell.href) expect(text, `${where}: ${cell.href}`).toContain(cell.href)
+        }
+        if (block.kind === 'custom') expect(text, where).toContain(block.text)
+        if (block.kind === 'section') expect(text, where).toContain(block.title)
+        if (block.kind === 'text') expect(text, where).toContain(block.text)
+        for (const action of actionsOf(block)) expect(text, `${where}: ${action.label}`).toContain(`$ ${commandOf(action, commands)}  # ${action.label}`)
+      }
+    }
+  })
+
+  it('has buttons that each call a verb, or an owner command the library runs with arguments its params take, and no problem', async () => {
+    const library = await openLibrary(lib, builtinPlugins)
+    if (library === null) throw new Error('no library')
+    const callable = callableIn(library)
+    for (const { link, json } of pages) {
+      expect(json.problems, link.view).toEqual([])
+      for (const action of allBlocks(json.blocks).flatMap(actionsOf)) expect(actionFault(action, callable), `${link.view}: ${action.label}`).toBeNull()
+    }
+  })
+
+  it('reaches every business verb and command from a button or a page that reads the same, and every management command from the owner’s pages', async () => {
+    const library = await openLibrary(lib, builtinPlugins)
+    if (library === null) throw new Error('no library')
+    const buttons = new Set(pages.flatMap((p) => allBlocks(p.json.blocks).flatMap(actionsOf).map(capability)))
+    const shown = new Set(pages.map((p) => p.link.view))
+    const said = library.plugins.flatMap((p) => (p.onSay ? p.statements.map((k) => `say ${k}`) : []))
+    const verbs = ['put register', 'put place', 'put move', 'find', 'inspect', 'check', 'archive', 'unarchive', ...said]
+    const commands = ownerFace.commands(library.plugins)
+    const business = [...verbs, ...commands.filter((c) => !c.ownerOnly && !c.destructive).map((c) => c.name)]
+    const management = commands.filter((c) => c.ownerOnly || c.destructive).map((c) => c.name)
+    const placed = (name: string) => buttons.has(name) || (READS[name] !== undefined && shown.has(READS[name] as string)) || NO_PLACE[name] !== undefined
+    expect({ business: business.filter((name) => !placed(name)), management: management.filter((name) => !placed(name)) }).toEqual({ business: [], management: [] })
+    // What is listed as having no place, or a page that reads it, has none of its own buttons, so the lists stay true.
+    for (const name of Object.keys(NO_PLACE)) expect(buttons.has(name), `${name} has a button now`).toBe(false)
+    for (const name of Object.keys(READS)) expect(buttons.has(name), `${name} has a button now`).toBe(false)
+  })
+})

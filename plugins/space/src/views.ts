@@ -106,6 +106,28 @@ export type BoardData = {
   visible: string | null
 }
 
+/**
+ * The board in words, from the same data the frame draws: each card's thing, state, address, release
+ * and traffic, and why previews are not shown when they are not; then the things switched off.
+ */
+export function boardText(data: BoardData, requests: string): string {
+  const minute = (at: number) => `${instant(at).slice(0, 10)} ${instant(at).slice(11, 16)}Z`
+  const card = (c: BoardData['cards'][number]) =>
+    [
+      `${c.path}：${c.state.text}`,
+      c.url ?? (c.site === null ? null : `站点 ${c.site}`),
+      c.release === null ? null : `第 ${c.release} 版`,
+      c.requests === null ? null : `${requests} ${c.requests}${c.errors ? `，错 ${c.errors}` : ''}`,
+      c.lastAccessAt === null ? null : `最近访问 ${minute(c.lastAccessAt)}`,
+      c.spark === null ? null : `过去 24 小时每小时的请求 ${c.spark.join(' ')}`,
+    ]
+      .filter((part) => part !== null)
+      .join(' · ')
+  const on = data.cards.length === 0 ? ['还没有打开开关的站点。'] : [...data.cards.map(card), ...(data.visible === null ? [] : [data.visible])]
+  const off = data.off.length === 0 ? [] : [`开关关着的：${data.off.map((o) => `${o.path}（${o.state.text}）`).join('、')}`]
+  return [...on, ...off].join('\n')
+}
+
 /** The board, from every declared thing as it stands; each switch is the kit's, as the plugin `plugin`'s page offers it. */
 function boardBlock(plane: Plane, all: readonly Look<Seen>[], plugin: string): Block {
   const shown = all.filter((l) => l.status !== 'archived')
@@ -142,7 +164,7 @@ function boardBlock(plane: Plane, all: readonly Look<Seen>[], plugin: string): B
     title: '站点',
     note: `开关开着的站点各一张卡，${picture}；关着的列在后面。`,
     count: data.cards.length,
-    blocks: [{ kind: 'custom', entry: 'board.html', height: data.cards.length > 0 ? 330 : 60, data, actions }],
+    blocks: [{ kind: 'custom', entry: 'board.html', height: data.cards.length > 0 ? 330 : 60, text: boardText(data, plane.requests), data, actions }],
     actions: [],
   }
 }

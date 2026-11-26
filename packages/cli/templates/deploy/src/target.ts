@@ -47,6 +47,8 @@ export const localTarget = defineTarget({
             kind: 'custom',
             entry: 'panel.html',
             height: 72,
+            // What the panel shows, in words: the command line prints it, and screen readers read it.
+            text: [`${all.filter((l) => l.status === 'online').length} / ${all.length} 在线，发布到 ${to}`, ...all.map((l) => `${l.thing.path}：${STATUS[l.status].text}`)].join('\n'),
             data: { to, online: all.filter((l) => l.status === 'online').length, things: all.map((l) => ({ key: l.thing.id, path: l.thing.path, state: STATUS[l.status] })) },
             actions: Object.fromEntries(
               all.flatMap((l) => {

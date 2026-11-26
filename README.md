@@ -61,7 +61,7 @@ pneuma-base --help
    pneuma-base view ~/base
    ```
 
-   界面里能看条目、场景、状况和动态，开关部署，同步，取回留存，装卸插件，发授权。在界面里做的操作，agent 下次 `check` 时会看到。
+   界面里能看条目、场景、状况和动态，开关部署，同步，取回留存，装卸插件，发授权。在界面里做的操作，agent 下次 `check` 时会看到。界面的每一页也是一条只读的命令：`pneuma-base show --library ~/base` 列出各页，`show <页的编号>` 把一页印成字，每个按钮写成做同一件事的命令。
 
 `pneuma-base --help --library ~/base` 列出这个库能用的全部命令。
 

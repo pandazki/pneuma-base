@@ -12,8 +12,11 @@ const matches = (pattern: string | undefined, v: string) => pattern === undefine
 
 const named = (p: PositionalParam) => `<${p.hint}>`
 
+/** A value a person has yet to give, such as a form's `{input}`: whatever it becomes is checked then. */
+type Open = (value: string) => boolean
+
 /** What is wrong with the call, or null when nothing is; `values` is filled as it goes. */
-function wrongWith(name: string, params: OwnerParams, args: OwnerArgs, values: Record<string, OwnerValues[string]>): string | null {
+function wrongWith(name: string, params: OwnerParams, args: OwnerArgs, values: Record<string, OwnerValues[string]>, open: Open): string | null {
   const flags = params.flags ?? []
   const unknown = Object.keys(args.flags).find((f) => !flags.some((d) => d.name === f))
   if (unknown !== undefined) return `${name} 不认识 --${unknown}。`
@@ -24,23 +27,24 @@ function wrongWith(name: string, params: OwnerParams, args: OwnerArgs, values: R
   for (const [i, p] of positional.entries()) {
     const value = p.many ? rest.map(given).filter((v) => v !== null) : given(args.positional[i])
     if (p.required && (value === null || (Array.isArray(value) && value.length === 0))) return `${name} 少了 ${named(p)}。`
-    const bad = (Array.isArray(value) ? value : value === null ? [] : [value]).find((v) => !matches(p.pattern, v))
+    const bad = (Array.isArray(value) ? value : value === null ? [] : [value]).find((v) => !open(v) && !matches(p.pattern, v))
     if (bad !== undefined) return `${named(p)} 写的「${bad}」不对，要整个匹配 ${p.pattern}。`
     values[p.name] = value
   }
 
   for (const f of flags) {
-    const wrong = flagValue(f, args.flags[f.name], values)
+    const wrong = flagValue(f, args.flags[f.name], values, open)
     if (wrong !== null) return wrong
   }
   return null
 }
 
-function flagValue(f: FlagParam, raw: string[] | true | undefined, values: Record<string, OwnerValues[string]>): string | null {
+function flagValue(f: FlagParam, raw: string[] | true | undefined, values: Record<string, OwnerValues[string]>, open: Open): string | null {
   const flag = `--${f.name}`
   if (f.kind === 'boolean') {
     // A switch on the command line; a form sends it as the value yes or no.
-    const one = raw === true ? 'yes' : raw === undefined ? 'no' : raw.length <= 1 ? (given(raw[0]) ?? 'no') : null
+    const written = raw === true ? 'yes' : raw === undefined ? 'no' : raw.length <= 1 ? (given(raw[0]) ?? 'no') : null
+    const one = written !== null && open(written) ? 'yes' : written
     if (one !== 'yes' && one !== 'no') return `${flag} 不带值。`
     values[f.name] = one === 'yes'
     return null
@@ -48,7 +52,7 @@ function flagValue(f: FlagParam, raw: string[] | true | undefined, values: Recor
   const list = raw === undefined || raw === true ? [] : raw.map(given).filter((v) => v !== null)
   if (f.kind === 'value' && list.length > 1) return `${flag} 只要一个值。`
   if (f.required && list.length === 0) return `要写 ${flag}${f.options ? ` ${f.options.map((o) => o.value).join('|')}` : ` <${f.hint}>`}。`
-  for (const v of list) {
+  for (const v of list.filter((v) => !open(v))) {
     if (f.options && !f.options.some((o) => o.value === v)) return `${flag} 只能是 ${f.options.map((o) => o.value).join('、')}：${v}`
     if (!matches(f.pattern, v)) return `${flag} 写的「${v}」不对，要整个匹配 ${f.pattern}（${f.hint}）。`
   }
@@ -58,10 +62,11 @@ function flagValue(f: FlagParam, raw: string[] | true | undefined, values: Recor
 
 /**
  * The values of a call to the command `name`, by argument name; or, when it does not fit `params`,
- * a sentence saying what is missing or malformed, followed by the usage line.
+ * a sentence saying what is missing or malformed, followed by the usage line. `open` values, such as
+ * the inputs of a button's form, count as given, and their patterns and options are not checked.
  */
-export function checkArgs(name: string, params: OwnerParams, args: OwnerArgs): { values: OwnerValues } | { usage: string } {
+export function checkArgs(name: string, params: OwnerParams, args: OwnerArgs, open: Open = () => false): { values: OwnerValues } | { usage: string } {
   const values: Record<string, OwnerValues[string]> = {}
-  const wrong = wrongWith(name, params, args, values)
+  const wrong = wrongWith(name, params, args, values, open)
   return wrong === null ? { values } : { usage: `${wrong}\n用法：${[name, usageOf(params)].filter((s) => s !== '').join(' ')}` }
 }

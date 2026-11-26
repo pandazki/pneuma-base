@@ -45,6 +45,8 @@ test('its page has the kit’s sections and its own panel, whose switches are th
   assert.deepEqual(page.problems, [])
   const panel = page.blocks.find((b) => b.kind === 'custom')
   assert.ok(panel?.kind === 'custom')
+  // What the panel draws, in words: pneuma-base show prints it, and screen readers read it.
+  assert.match(panel.text, / 在线，发布到 /)
   assert.equal((await viewer.get(`/plugin-ui/${plugin.name}/${panel.entry}`)).status, 200)
   const table = page.blocks.flatMap((b) => (b.kind === 'section' ? b.blocks : [])).find((b) => b.kind === 'table')
   assert.ok(table?.kind === 'table')

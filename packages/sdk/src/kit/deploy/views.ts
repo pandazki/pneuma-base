@@ -4,7 +4,7 @@ import type { IconName } from '../../icons.js'
 import { formOf } from '../../params.js'
 import type { Action, Block, Call, Cell, ItemSection, LibraryPath, TableRow, ViewAnswer, ViewDecl } from '../../types.js'
 import { kindFlag, SWITCH_PARAMS, switchName, targetSetName } from './commands.js'
-import { look, looks, onlyTarget, type Kit, type Run } from './reconcile.js'
+import { look, looks, onlyTarget, thingPath, type Kit, type Run } from './reconcile.js'
 import type { Look, TargetPage } from './target.js'
 import { MEANING, STATUS } from './words.js'
 
@@ -104,10 +104,13 @@ export async function targetPage(run: Run, page: TargetPage): Promise<ViewAnswer
   return { title: page.title, subtitle: subtitleOf(all), blocks: [...warning, ...draw(all)], ...refreshOf(run) }
 }
 
-/** The item panel's section for a declared thing at `path`; null for anything else. */
+/**
+ * The item panel's section for a thing at `path`: a declared one's state, switch and address; a thing
+ * in the content nobody declared, what that means and the declaration as a button; null for anything else.
+ */
 export async function itemSection(run: Run, path: LibraryPath): Promise<ItemSection | null> {
   const id = run.d.byPath.get(path)
-  if (id === undefined) return null
+  if (id === undefined) return undeclaredSection(run, path)
   const l = await look(run, id)
   const view = run.target?.view
   const fields: Extract<Block, { kind: 'fields' }>['fields'] = [
@@ -126,6 +129,20 @@ export async function itemSection(run: Run, path: LibraryPath): Promise<ItemSect
       ...(meaning ? [{ kind: 'text' as const, tone: 'neutral' as const, text: meaning }] : []),
       ...(actions.length > 0 ? [{ kind: 'actions' as const, actions }] : []),
       ...(view?.item?.(l) ?? []),
+    ],
+  }
+}
+
+/** A thing of the content nobody declared deployable, as the panel of the thing itself shows it, not of a file inside a bundle. */
+async function undeclaredSection(run: Run, path: LibraryPath): Promise<ItemSection | null> {
+  const { tools } = run.ctx
+  if ((await thingPath(tools, path)) !== path || tools.regionOf(path) !== 'content' || (await tools.thing(path)) === null) return null
+  const declare = action('声明可以部署', { face: 'agent', verb: 'say', request: { kind: 'deployable', about: path, text: null, args: {} } })
+  return {
+    title: run.kit.title,
+    blocks: [
+      { kind: 'text', tone: 'neutral', text: '没有声明可以部署：它不会上线。声明之后，上不上线由主人的开关决定。' },
+      { kind: 'actions', actions: [declare] },
     ],
   }
 }

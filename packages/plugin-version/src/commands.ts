@@ -126,6 +126,36 @@ export const VERSION_RESTORE = defineCommand({
   },
 })
 
+export const VERSION_PRUNE = defineCommand({
+  name: 'version prune',
+  summary: '只留最近的几版，清掉更早的',
+  params: { positional: [PATH], flags: [{ name: 'keep', hint: '留几版', kind: 'value', required: true, pattern: NUMBER }] },
+  destructive: true,
+  ownerOnly: true,
+  async run({ path: input, keep: kept }, ctx) {
+    const keep = Number(kept)
+    const w = await writing(ctx)
+    const thing = await named(ctx, w.model, input)
+    if ('outcome' in thing) return thing
+    const live = thing.versions.filter((v) => !v.pruned)
+    const dropped = live.slice(0, Math.max(0, live.length - keep))
+    const left = live.slice(dropped.length)
+    if (dropped.length === 0) return done(`${thing.path} 留着的只有 ${live.length} 版，没有要清的。`)
+    apply(w, { kind: 'prune', thing: thing.id, versions: dropped.map((v) => v.id) })
+    await commit(w)
+    // Content another kept version, of this thing or another, still needs stays.
+    const needed = neededContent(w.model)
+    const orphans = new Set(dropped.flatMap((v) => v.manifest.rows.map((r) => r.fingerprint)).filter((f) => !needed.has(f)))
+    const deleted = await drop(ctx.dir, orphans)
+    return done(`已清掉 ${thing.path} 的第 ${numbers(dropped)} 版，删了 ${deleted} 个只属于这些版本的内容文件；留着第 ${numbers(left)} 版。`, {
+      path: thing.path,
+      pruned: dropped.map((v) => v.n),
+      kept: left.map((v) => v.n),
+      deleted,
+    })
+  },
+})
+
 export const versionCommands: OwnerCommand[] = [
   defineCommand({
     name: 'version list',
@@ -143,33 +173,5 @@ export const versionCommands: OwnerCommand[] = [
   }),
   VERSION_EXPORT,
   VERSION_RESTORE,
-  defineCommand({
-    name: 'version prune',
-    summary: '只留最近的几版，清掉更早的',
-    params: { positional: [PATH], flags: [{ name: 'keep', hint: '留几版', kind: 'value', required: true, pattern: NUMBER }] },
-    destructive: true,
-    ownerOnly: true,
-    async run({ path: input, keep: kept }, ctx) {
-      const keep = Number(kept)
-      const w = await writing(ctx)
-      const thing = await named(ctx, w.model, input)
-      if ('outcome' in thing) return thing
-      const live = thing.versions.filter((v) => !v.pruned)
-      const dropped = live.slice(0, Math.max(0, live.length - keep))
-      const left = live.slice(dropped.length)
-      if (dropped.length === 0) return done(`${thing.path} 留着的只有 ${live.length} 版，没有要清的。`)
-      apply(w, { kind: 'prune', thing: thing.id, versions: dropped.map((v) => v.id) })
-      await commit(w)
-      // Content another kept version, of this thing or another, still needs stays.
-      const needed = neededContent(w.model)
-      const orphans = new Set(dropped.flatMap((v) => v.manifest.rows.map((r) => r.fingerprint)).filter((f) => !needed.has(f)))
-      const deleted = await drop(ctx.dir, orphans)
-      return done(`已清掉 ${thing.path} 的第 ${numbers(dropped)} 版，删了 ${deleted} 个只属于这些版本的内容文件；留着第 ${numbers(left)} 版。`, {
-        path: thing.path,
-        pruned: dropped.map((v) => v.n),
-        kept: left.map((v) => v.n),
-        deleted,
-      })
-    },
-  }),
+  VERSION_PRUNE,
 ]

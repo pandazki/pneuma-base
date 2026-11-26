@@ -6,7 +6,7 @@ import { CONFIG_FILE, newConfig, saveConfig } from './library.js'
 import { KERNEL_COMMANDS, type Outcome } from './owner-commands.js'
 import { checkArgs } from './params.js'
 import { makeContext, performOwner, pluginContext } from './pipeline.js'
-import { agentSessionSign, type Env } from './session.js'
+import { agentSign, ownerOnlyRefusal, OWNER_DECIDES, type Env } from './session.js'
 import { usageOf, type Actor, type Context, type OwnerArgs, type OwnerParams, type OwnerResult, type OwnerValues, type Plugin, type PluginName, type PluginTable, type Session } from '@pneuma-base/sdk'
 
 /** Who acts, in which session, on this machine, with no library at hand: the context of a command that needs none. */
@@ -45,16 +45,6 @@ export type OwnerCommandInfo = {
 type Gate = { destructive: boolean; ownerOnly: boolean; readOnly?: boolean; setup?: boolean }
 
 /**
- * What shows the call comes from an agent: a grant or an agent session variable (the second line of
- * defence, K7), or an actor named an agent with `--as`. Null when nothing does.
- */
-function agentSign(call: OwnerCall): string | null {
-  const sign = agentSessionSign(call.env, call.viaGrant)
-  if (sign !== null) return sign
-  return call.ctx.actor.kind === 'agent' ? `调用者是 agent ${call.ctx.actor.name}` : null
-}
-
-/**
  * The one place owner commands pass through. In an agent session a destructive or owner-only
  * command is refused, naming what showed the session; a call that does not fit the command's
  * `params` is refused as `usage`; a destructive one then needs a confirmation the person gives in
@@ -63,10 +53,9 @@ function agentSign(call: OwnerCall): string | null {
  */
 async function gated(call: OwnerCall, name: string, gate: Gate, args: OwnerArgs, params: OwnerParams, body: (values: OwnerValues) => Promise<Outcome>): Promise<OwnerResult> {
   const decide = async (): Promise<Outcome> => {
-    const sign = gate.destructive || gate.ownerOnly ? agentSign(call) : null
+    const sign = gate.destructive || gate.ownerOnly ? agentSign(call.env, call.viaGrant, call.ctx.actor) : null
     if (sign !== null) {
-      const why = gate.destructive ? '会丢数据' : '是替主人做的决定'
-      const text = `「${name}」${why}，只有主人能做，不能在 agent 的会话里做（${sign}）。需要的话告诉主人；主人在自己的终端里做，或在自己的终端里运行 pneuma-base view 用界面做。`
+      const text = ownerOnlyRefusal(name, gate.destructive ? '会丢数据' : OWNER_DECIDES, sign)
       return { answer: { outcome: 'refused', reason: 'agent-session', text } }
     }
     const checked = checkArgs(name, params, args)
