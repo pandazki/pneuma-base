@@ -9,7 +9,7 @@ use std::os::fd::AsRawFd;
 
 use pneuma_base_storage::{
     Area, Changed, ContentAnswer, ContentRequest, Description, Expect, Facets, Failure,
-    GlanceAnswer, GlanceRequest, Kind, LookAnswer, LookRequest, MoveRequest, OverviewAnswer,
+    GlanceAnswer, GlanceRequest, Kind, LookAnswer, LookItem, Manifest, MoveRequest, OverviewAnswer,
     OverviewRequest, Place, PlaceArg, PlaceFailure, Present, ReadRequest, Reason, RecordPlace,
     RemoveRequest, Seen, Time, Token, WriteRequest,
 };
@@ -167,9 +167,9 @@ pub mod absent {
         })
     }
 
-    pub fn look(req: &LookRequest) -> LookAnswer {
+    pub fn look(items: &[LookItem]) -> LookAnswer {
         let mut answer = LookAnswer::default();
-        for item in &req.places {
+        for item in items {
             let failed = |failure| PlaceFailure {
                 place: item.place.text().to_owned(),
                 failure,
@@ -178,17 +178,24 @@ pub mod absent {
                 answer.failed.push(failed(Failure::bad_request()));
                 continue;
             };
-            match at(place) {
-                Err(failure) => answer.failed.push(failed(failure)),
-                Ok(None) => answer.gone.push(place.clone()),
-                Ok(Some(root)) => match root.token.changed_since(&item.token) {
-                    None => answer.failed.push(failed(Failure::bad_request())),
-                    Some(false) => answer.same += 1,
-                    Some(true) => answer.changed.push(Changed {
-                        place: root.place.clone(),
-                        entry: root,
-                    }),
-                },
+            let changed = |answer: &mut LookAnswer, root: Description| {
+                answer.changed.push(Changed {
+                    place: root.place.clone(),
+                    entry: root,
+                })
+            };
+            match (at(place), &item.expect) {
+                (Err(failure), _) => answer.failed.push(failed(failure)),
+                (Ok(None), Some(Expect::Empty)) => answer.same += 1,
+                (Ok(None), _) => answer.gone.push(place.clone()),
+                (Ok(Some(root)), Some(Expect::Token(token))) => {
+                    match root.token.changed_since(token) {
+                        None => answer.failed.push(failed(Failure::bad_request())),
+                        Some(false) => answer.same += 1,
+                        Some(true) => changed(&mut answer, root),
+                    }
+                }
+                (Ok(Some(root)), _) => changed(&mut answer, root),
             }
         }
         answer
@@ -201,6 +208,10 @@ pub mod absent {
             files: 0,
             bytes: 0,
             token: root.token,
+            manifest: req.manifest.as_ref().map(|_| Manifest {
+                entries: Vec::new(),
+                more: None,
+            }),
         })
     }
 

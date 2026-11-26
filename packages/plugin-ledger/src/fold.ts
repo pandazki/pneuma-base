@@ -19,6 +19,7 @@ import {
   putSeen,
   sameVersion,
   staleAsRecorded,
+  unlisted,
   type ActorRow,
   type HeldRow,
   type HistoryRow,
@@ -450,7 +451,11 @@ class Folding {
       const was = (await tx.get<number>('dirs', dir)) ?? 0
       const now = was + by
       putDir(tx, dir, now)
-      if (was <= 0 && now > 0) this.out.restray.add(parentOf(dir))
+      if (was <= 0 && now > 0) {
+        this.out.restray.add(parentOf(dir))
+        // Open now and never listed: the look that compares every open directory lists it.
+        if ((await tx.get<SeenRow>('seen', dir)) === undefined) putSeen(tx, dir, unlisted())
+      }
       if (was > 0 && now <= 0) {
         // No longer open: its listing and its strays go; in the level above it is a directory nobody looked into.
         const seen = await tx.get<SeenRow>('seen', dir)

@@ -129,6 +129,30 @@ pub const CHECKS: &[Check] = &[
         ["4.look.input", "4.look.answer", "3.11"]
     ),
     check!(
+        places::look_takes_expectations_from_a_table,
+        [
+            "4.look.input",
+            "4.look.answer",
+            "4.look.rows.3",
+            "4.look.rows.4",
+            "4.look.rows.5",
+            "5.s7.look"
+        ]
+    ),
+    check!(
+        places::look_from_a_table_pages_by_key,
+        ["4.look.rows.1", "4.look.answer"]
+    ),
+    check!(places::look_from_a_table_changes_no_row, ["4.look.rows.2"]),
+    check!(
+        places::an_empty_expectation_holds_while_nothing_is_there,
+        ["4.look.empty", "4.look.input"]
+    ),
+    check!(
+        places::a_directory_token_stands_for_its_own_level,
+        ["4.look.dir"]
+    ),
+    check!(
         places::overview_sorts_by_name_bytes_mixing_dirs_and_files,
         ["4.s1", "4.s2"]
     ),
@@ -199,6 +223,14 @@ pub const CHECKS: &[Check] = &[
     check!(
         reads::dir_content_is_manifest_fingerprint_files_token,
         ["4.content.dir", "4.content.input"]
+    ),
+    check!(
+        reads::content_hands_back_its_manifest_in_pages,
+        ["4.content.manifest", "4.content.input"]
+    ),
+    check!(
+        reads::manifest_pages_follow_the_content_as_it_is,
+        ["4.manifest.pages"]
     ),
     check!(
         reads::content_stops_at_its_file_limit,

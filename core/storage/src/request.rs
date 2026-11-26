@@ -11,6 +11,10 @@ pub const OVERVIEW_LIMIT: (u64, u64, u64) = (200, 1, 1_000);
 pub const PROBE_BUDGET: (u64, u64, u64) = (500, 1, 100_000);
 pub const SINCE_LIMIT: (u64, u64, u64) = (1_000, 0, 10_000);
 pub const ROWS_LIMIT: (u64, u64, u64) = (100, 1, 10_000);
+/// How many rows of a table one `look` compares, when the table holds what it expects.
+pub const LOOK_LIMIT: (u64, u64, u64) = (10_000, 1, 100_000);
+/// How many files of a directory's manifest one `content` answer lists.
+pub const MANIFEST_LIMIT: (u64, u64, u64) = (1_000, 1, 10_000);
 pub const CHANGED_LIMIT: (u64, u64, u64) = (1_000, 1, 10_000);
 /// How long, in milliseconds, a `changed` caller waits for an answer before `cannot_say`.
 pub const CHANGED_BUDGET_MS: (u64, u64, u64) = (5_000, 0, 600_000);
@@ -63,6 +67,14 @@ pub struct ContentRequest {
     pub rule: ContentRule,
     pub limit: u64,
     pub fetch: bool,
+    /// A directory's answer also lists this page of the manifest it computed.
+    pub manifest: Option<ManifestPage>,
+}
+
+/// One page of a directory's manifest: the files after `after` in the byte order of their paths.
+pub struct ManifestPage {
+    pub limit: usize,
+    pub after: Option<String>,
 }
 
 pub struct ReadRequest {
@@ -131,12 +143,42 @@ pub struct ProbeRequest {
 
 pub struct LookItem {
     pub place: PlaceArg,
-    pub token: Token,
+    /// What the caller remembers there: a state, or nothing (`empty`). `None` when it has no
+    /// expectation, and whatever is there differs.
+    pub expect: Option<Expect>,
+}
+
+/// Where a look's expectations come from.
+pub enum LookFrom {
+    Places(Vec<LookItem>),
+    /// A record place's table: each row's key is a place, its field `field` what is expected there.
+    Rows(LookRows),
+}
+
+pub struct LookRows {
+    pub place: RecordPlace,
+    pub table: String,
+    pub field: String,
+    pub limit: usize,
+    pub after: Option<String>,
 }
 
 pub struct LookRequest {
     pub area: Area,
-    pub places: Vec<LookItem>,
+    pub from: LookFrom,
+}
+
+impl LookItem {
+    /// An expectation as a request or a row writes it: `empty`, or a token.
+    pub fn new(place: &str, expect: Option<&str>) -> LookItem {
+        LookItem {
+            place: PlaceArg::parse(place),
+            expect: expect.map(|text| match text {
+                "empty" => Expect::Empty,
+                token => Expect::Token(Token::new(token.to_owned())),
+            }),
+        }
+    }
 }
 
 /// The library's root declaration, written whole when `expect` holds.
@@ -404,12 +446,28 @@ pub fn subscribe(req: &Req) -> Parsed<SubscribeRequest> {
 }
 
 pub fn content(req: &Req) -> Parsed<ContentRequest> {
+    let manifest = match req.get("manifest") {
+        None | Some(Value::Bool(false)) => None,
+        Some(Value::Bool(true)) => Some(ManifestPage {
+            limit: usize_of(MANIFEST_LIMIT.0),
+            after: None,
+        }),
+        Some(Value::Object(page)) => {
+            let page = Req(page);
+            Some(ManifestPage {
+                limit: usize_of(page.count("limit", MANIFEST_LIMIT)?),
+                after: page.opt_string("after")?,
+            })
+        }
+        Some(_) => return Err(Failure::bad_request()),
+    };
     Ok(ContentRequest {
         area: req.area()?,
         place: req.place()?,
         rule: req.rule()?,
         limit: req.count("limit", FILES_LIMIT)?,
         fetch: req.flag("fetch")?,
+        manifest,
     })
 }
 
@@ -538,25 +596,37 @@ pub fn probe(req: &Req) -> Parsed<ProbeRequest> {
     })
 }
 
+/// `places`, each with what is expected there; or `rows`, the table that holds the expectations.
 pub fn look(req: &Req) -> Parsed<LookRequest> {
-    let places = req
-        .array("places")?
-        .iter()
-        .map(|item| {
-            let place = item.get("place").and_then(Value::as_str);
-            let token = item.get("token").and_then(Value::as_str);
-            match (place, token) {
-                (Some(place), Some(token)) => Ok(LookItem {
-                    place: PlaceArg::parse(place),
-                    token: Token::new(token.to_owned()),
-                }),
-                _ => Err(Failure::bad_request()),
-            }
-        })
-        .collect::<Parsed<_>>()?;
+    let from = match (req.get("places"), req.get("rows")) {
+        (Some(_), None) => LookFrom::Places(
+            req.array("places")?
+                .iter()
+                .map(|item| {
+                    let place = item.get("place").and_then(Value::as_str);
+                    let token = item.get("token").and_then(Value::as_str);
+                    match (place, token) {
+                        (Some(place), Some(token)) => Ok(LookItem::new(place, Some(token))),
+                        _ => Err(Failure::bad_request()),
+                    }
+                })
+                .collect::<Parsed<_>>()?,
+        ),
+        (None, Some(Value::Object(rows))) => {
+            let rows = Req(rows);
+            LookFrom::Rows(LookRows {
+                place: rows.record_place()?,
+                table: rows.table()?,
+                field: non_empty(rows.string("field")?)?,
+                limit: usize_of(req.count("limit", LOOK_LIMIT)?),
+                after: req.opt_string("after")?,
+            })
+        }
+        _ => return Err(Failure::bad_request()),
+    };
     Ok(LookRequest {
         area: req.area()?,
-        places,
+        from,
     })
 }
 

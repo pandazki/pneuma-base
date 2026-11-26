@@ -279,6 +279,16 @@ pub struct LookAnswer {
     pub failed: Vec<PlaceFailure>,
     /// The asked places someone declared are being written, whatever else is said of them.
     pub held: Vec<Place>,
+    /// When a table held the expectations: how many rows this page compared, and where the next
+    /// page starts.
+    #[serde(flatten)]
+    pub page: Option<LookPage>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LookPage {
+    pub compared: u64,
+    pub more: Option<After>,
 }
 
 #[derive(Debug, Serialize)]
@@ -302,7 +312,24 @@ pub enum ContentAnswer {
         files: u64,
         bytes: u64,
         token: Token,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        manifest: Option<Manifest>,
     },
+}
+
+/// A page of a directory's manifest: each file its content rule counts, by the bytes of its path.
+#[derive(Debug, Serialize)]
+pub struct Manifest {
+    pub entries: Vec<ManifestEntry>,
+    pub more: Option<After>,
+}
+
+/// A file of a directory's content: its path relative to the directory, its fingerprint, its size.
+#[derive(Debug, Serialize)]
+pub struct ManifestEntry {
+    pub path: String,
+    pub fingerprint: String,
+    pub size: u64,
 }
 
 #[derive(Debug, Serialize)]

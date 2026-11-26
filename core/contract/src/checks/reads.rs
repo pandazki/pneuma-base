@@ -2,7 +2,7 @@
 
 use std::fs;
 
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::Outcome;
 use crate::harness::*;
@@ -204,5 +204,110 @@ pub fn changed_without_a_cursor_gives_the_current_one(env: &Env) -> Outcome {
     assert_done(&answer);
     assert_eq!(answer["places"], json!([]), "{answer}");
     assert!(answer["cursor"].as_str().is_some_and(|c| !c.is_empty()));
+    Ok(())
+}
+
+/// `content` of a directory hands back the manifest it computed, a page at a time: each file the
+/// content rule counts, by the bytes of its path relative to the directory, with its fingerprint
+/// and size; the pages together are the manifest whose fingerprint the answer gives.
+pub fn content_hands_back_its_manifest_in_pages(env: &Env) -> Outcome {
+    let lib = env.lib();
+    let files = [
+        ("b.txt", "bee"),
+        ("a.txt", "alpha"),
+        ("sub/c.txt", "sea"),
+        ("é.md", "e"),
+        ("kept.log", ""),
+    ];
+    for (path, text) in files {
+        lib.write(&format!("m/{path}"), text);
+    }
+    lib.write("m/.gitignore", "*.tmp\n");
+    lib.write("m/left-out.tmp", "ignored");
+    lib.write("m/sub/also.tmp", "ignored");
+    let rule = json!({ "ignore_file": ".gitignore" });
+    let mut entries = Vec::new();
+    let mut after = Value::Null;
+    let mut whole = Value::Null;
+    for page in 0.. {
+        let mut manifest = json!({ "limit": 2 });
+        if !after.is_null() {
+            manifest["after"] = after.clone();
+        }
+        let answer = lib.run(
+            "content",
+            json!({ "place": "m", "rule": rule, "manifest": manifest }),
+        );
+        assert_eq!(answer["kind"], "dir", "{answer}");
+        if page == 0 {
+            whole = answer.clone();
+        }
+        assert_eq!(answer["fingerprint"], whole["fingerprint"], "{answer}");
+        let listed = answer["manifest"]["entries"].as_array().unwrap();
+        assert!(listed.len() <= 2, "{answer}");
+        entries.extend(listed.iter().cloned());
+        after = answer["manifest"]["more"]["after"].clone();
+        if answer["manifest"]["more"].is_null() {
+            break;
+        }
+        assert!(page < 10, "the pages never end: {answer}");
+    }
+    let mut expected: Vec<(String, String)> = files
+        .iter()
+        .map(|(p, t)| (p.to_string(), t.to_string()))
+        .chain([(".gitignore".to_owned(), "*.tmp\n".to_owned())])
+        .collect();
+    expected.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+    let paths: Vec<&str> = entries
+        .iter()
+        .map(|e| e["path"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        paths,
+        expected.iter().map(|(p, _)| p.as_str()).collect::<Vec<_>>(),
+        "the content rule's files, by path bytes"
+    );
+    let mut manifest = String::new();
+    for (entry, (_, text)) in entries.iter().zip(&expected) {
+        assert_eq!(entry["fingerprint"], sha256_hex(text.as_bytes()), "{entry}");
+        assert_eq!(entry["size"], text.len(), "{entry}");
+        manifest.push_str(&format!(
+            "{}\0{}\n",
+            entry["path"].as_str().unwrap(),
+            entry["fingerprint"].as_str().unwrap()
+        ));
+    }
+    assert_eq!(
+        whole["fingerprint"],
+        sha256_hex(manifest.as_bytes()),
+        "the pages are the manifest"
+    );
+    assert_eq!(whole["files"], expected.len(), "{whole}");
+    let plain = lib.run("content", json!({ "place": "m", "rule": rule }));
+    assert!(plain.get("manifest").is_none(), "only when asked: {plain}");
+    Ok(())
+}
+
+/// Each page of a manifest is computed from the content as it is then: a change between two
+/// pages shows in the fingerprint the second answers.
+pub fn manifest_pages_follow_the_content_as_it_is(env: &Env) -> Outcome {
+    let lib = env.lib();
+    for name in ["a", "b", "c"] {
+        lib.write(&format!("v/{name}"), name);
+    }
+    let first = lib.run(
+        "content",
+        json!({ "place": "v", "manifest": { "limit": 1 } }),
+    );
+    lib.write("v/c", "c, changed");
+    let second = lib.run(
+        "content",
+        json!({ "place": "v", "manifest": { "limit": 1, "after": first["manifest"]["more"]["after"] } }),
+    );
+    assert_ne!(
+        first["fingerprint"], second["fingerprint"],
+        "{first} {second}"
+    );
+    assert_eq!(second["manifest"]["entries"][0]["path"], "b", "{second}");
     Ok(())
 }
