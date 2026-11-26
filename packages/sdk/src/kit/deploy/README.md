@@ -28,7 +28,7 @@ export default deployPlugin('space', spaceTarget, { title: 'PneumaSpace' })
 - `params`：`target set` 在 `--kind` 之后的开关，一份 `FlagParam[]`（`@pneuma-base/sdk` 的参数表）。命令的参数表由各种目标的拼成，所以命令行、帮助、页面上设这种目标的表单和 `configure` 之前的核对都从这里来；没配目标时的提示只列必填的那些。有几种目标时，几种都有的开关意思要一样；选定的那种必填的开关、不收别的种类的开关，由库核对。
 - `secrets`：它读的密钥，`{ name, description, optional? }`。库把它们声明成插件的 `secrets`，所以 `pneuma-base secret set <名字> <密钥名>` 和配置页认得。目标从不在开关里要密钥。`optional: true` 的是可以不设的，比如只有部分服务要的令牌：配置页标成「没设（可选）」，`target set` 只提一句要用时怎么设。
 - `views`，可选：它自己的页，`{ name, title, icon }`，各是导航里的一项，视图编号 `<插件名>.<name>`，排在部署库的页后面；画它的是打开的目标的 `view.pages[name]`。
-- `configure(值, 上下文)`：把核过的值变成要存的配置（一个 JSON 对象），或者说哪里不对；理由是 `usage` 的算用法错误。用 `defineTarget` 写，值按 `params` 定好类型。
+- `configure(值, 上下文)`：把核过的值变成要存的配置（一个 JSON 对象），或者说哪里不对；理由是 `usage` 的算用法错误。用 `defineTarget` 写，值按 `params` 定好类型。可以带 `note`，一句给主人的话，`target set` 的答复用它代替对没设的密钥的提醒：凭据能从几处来的目标说这次用哪一处，都没有时运行什么。
 - `open(配置, { ctx, scratch, plugin, secret })`：在边界上解析存下的配置，交回这次钩子或命令用的 `Target`；读不懂就抛错。`plugin` 是插件名。`secret(名字)` 读主人在这台机器上设的密钥；必需的没设时它拒绝，说用哪条命令设，这次发布或下线就以这句话失败；可选的没设时读出 null。用 `defineTarget` 写时，`secret` 只收 `secrets` 里的名字，可选的类型带 null；`open` 的返回写成 `Target<细节的类型>`，`view` 里的函数拿到的细节就有这个类型。
 
 `Target` 是配好的一个目标：
@@ -40,6 +40,7 @@ export default deployPlugin('space', spaceTarget, { title: 'PneumaSpace' })
 - `identify(文件)`，可选：内容的编号。没有就用内核的指纹。编号进记录、和目标报的比。
 - `serving(站点名, { detail })`，可选：它对这些站点知道什么，按站点给：在那里给这个库服务的内容（没在服务是 null）、地址，和 `detail`，它自己知道的别的（它的数字、名字归谁），交给它自己的视图。没答的站点算它既没服务也不知道。`detail` 为真时答复要画出来（部署库的页、目标自己的页、条目面板），为假时是钩子和命令，只看内容和地址，所以只给页面看的贵的数据只在为真时取。
 - `view`，可选：页面表格后面加的列（`columns`、`cells`），条目面板里加的字段（`fields`），页面上部署库的节前面和后面加的块（`before`、`page`），目标自己每一页的块（`pages`），面板末尾加的块（`item`）；块可以是 `custom` 块，插件的页面目录由 `deployPlugin` 的 `ui` 给出。`refresh` 是页面隔几秒重取，null 是不重取；没写时目标有 `serving` 就是 30 秒，否则不重取。每个函数拿到的 `Look` 带 `detail`：`serving` 对它的站点说的，先取它在服务的那个站点（优先它的站点名），再取它的路径（归档了就是原来的路径）的站点名；没有就是 null，页面和面板之外也是 null。
+- `close()`，可选：这个 `Target` 为之打开的钩子、命令或视图结束时调一次，失败了也调。登录服务的目标在这里退出登录，所以一次登录只用在一次运行里；它抛的错不影响答复。
 - 什么时候问：一页（部署库的或目标自己的）先为全部声明过的东西问一次 `serving`，再调视图的函数；条目面板先为它那样东西问，再调 `fields` 和 `item`。所以视图的函数总在它画的那次答复之后，拿到的是那次的细节。
 - 目标自己的块要和部署库的一样时，用 `@pneuma-base/sdk/kit` 导出的 `STATUS`（每种状态的标签）和 `switchAction(插件名, look)`（那样东西的开关按钮，归档了又关着的是 null）。
 

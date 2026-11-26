@@ -48,7 +48,7 @@ step "build, install into a temp PNEUMA_BASE_HOME with the packaged command line
 pb plugin install "$here/dist" | tail -1
 pb init "$lib" >/dev/null
 owner plugin add space | head -1
-owner space target set --admin "$ADMIN" --prefix "$PREFIX"
+owner space target set --kind machine --admin "$ADMIN" --prefix "$PREFIX"
 app="$PREFIX-sites-demo"
 
 step "agent: put a site and declare it deployable"

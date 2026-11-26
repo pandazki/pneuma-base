@@ -4,7 +4,7 @@
 // from the kinds of target.
 import { defineCommand } from '../../params.js'
 import type { FlagParam, OwnerAnswer, OwnerCommand, OwnerValues, SecretDecl } from '../../types.js'
-import { declaredAt, looks, onlyTarget, openTarget, record, setSecret, settle, sweep, targetFile, withRun, type Done, type Kit, type Settled } from './reconcile.js'
+import { closeTarget, declaredAt, looks, onlyTarget, openTarget, record, setSecret, settle, sweep, targetFile, withRun, type Done, type Kit, type Settled } from './reconcile.js'
 import type { TargetKey } from './facts.js'
 import type { TargetAdapter } from './target.js'
 import { kindUsage, lookText, noTarget, STATUS } from './words.js'
@@ -170,10 +170,11 @@ function targetSetCommand(kit: Kit): OwnerCommand {
       const stored = { kind: adapter.kind, ...configured.config }
       const unset: SecretDecl[] = []
       for (const s of adapter.secrets ?? []) if ((await ctx.secrets.get(s.name)) === null) unset.push(s)
+      const secrets = configured.note === undefined ? secretNotes(kit, unset) : [configured.note]
       return withRun(kit, ctx, async (run) => {
         await targetFile(ctx).write({ format: 1, target: stored })
         const next = openTarget(kit, stored, ctx)
-        const secrets = secretNotes(kit, unset)
+        await closeTarget(next)
         const head = `部署目标已设为 ${next.label}。`
         if (run.target?.key === next.key) return done([head, ...secrets].join(''), { target: stored })
         const on = [...run.d.things.values()].filter((t) => t.on && ctx.tools.regionOf(t.path) === 'content').length

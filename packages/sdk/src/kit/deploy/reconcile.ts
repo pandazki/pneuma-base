@@ -66,16 +66,29 @@ async function configured(kit: Kit, ctx: PluginContext): Promise<Target | null> 
   }
 }
 
-/** Loads the records and the target, runs `body`, and writes the facts it added, also when it throws. `view`: it draws a page or the item panel. */
+/** Ends an opened target's run. What its `close` throws is ignored: a failed sign-out does not change an answer. */
+export async function closeTarget(target: Target | null): Promise<void> {
+  try {
+    await target?.close?.()
+  } catch {
+    return
+  }
+}
+
+/** Loads the records and the target, runs `body`, writes the facts it added and closes the target, also when it throws. `view`: it draws a page or the item panel. */
 export async function withRun<T>(kit: Kit, ctx: PluginContext, body: (run: Run) => Promise<T>, view = false): Promise<T> {
   const target = await configured(kit, ctx)
-  const store = recordStore(join(ctx.dir, 'facts'), parseFact)
-  const { records, skipped } = await store.read()
-  const run: Run = { kit, ctx, store, d: fold(records), skipped, target, facts: [], view }
   try {
-    return await body(run)
+    const store = recordStore(join(ctx.dir, 'facts'), parseFact)
+    const { records, skipped } = await store.read()
+    const run: Run = { kit, ctx, store, d: fold(records), skipped, target, facts: [], view }
+    try {
+      return await body(run)
+    } finally {
+      await store.append(run.facts)
+    }
   } finally {
-    await store.append(run.facts)
+    await closeTarget(target)
   }
 }
 

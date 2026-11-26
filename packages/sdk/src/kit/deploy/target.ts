@@ -32,8 +32,13 @@ export type ServingAsk = { readonly detail: boolean }
 /** A target's configuration as stored: a JSON object. The kit stores it with the adapter's `kind`. */
 export type TargetConfig = { readonly [key: string]: unknown }
 
-/** The configuration to store, or why the flags cannot give one: reason `usage` for a malformed call. */
-export type Configured = { ok: true; config: TargetConfig } | { ok: false; reason: string; text: string }
+/**
+ * The configuration to store, or why the flags cannot give one: reason `usage` for a malformed call.
+ * `note`, a sentence for the owner, takes the place of the kit's reminder of the target's unset
+ * secrets in what `target set` answers: a target whose credentials can come from more than one place
+ * says which it will use, or what to run when there is none.
+ */
+export type Configured = { ok: true; config: TargetConfig; note?: string } | { ok: false; reason: string; text: string }
 
 /** The value `secret` gives for the secret `N` of `S`: a string, or null for an optional one the owner has not set. */
 type SecretValue<S extends SecretDecl, N extends string> = Extract<S, { name: N }> extends { optional: true } ? string | null : string
@@ -128,6 +133,11 @@ export interface Target<D = unknown> {
    */
   readonly serving?: (sites: readonly SiteName[], ask: ServingAsk) => Promise<ReadonlyMap<SiteName, Served<D>>>
   readonly view?: TargetView<D>
+  /**
+   * Called once when the hook, command or view it was opened for ends, also when that failed: a target
+   * that signs in to its service signs out here. What it throws is ignored, so the answer stands.
+   */
+  readonly close?: () => Promise<void>
 }
 
 /** What a target adds to the plugin's page, to its own pages and to its section of the item panel. Each function gets looks with their `detail`. */

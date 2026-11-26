@@ -70,7 +70,7 @@ test('the lifecycle against PneumaSpace', { skip: down ?? false }, async (t) => 
     assert.equal((await agent('put', await site(sb, 'v1', 'one'), '--to', 'sites/demo', '--made')).code, 0)
     assert.equal((await agent('say', 'deployable', 'sites/demo')).json.outcome, 'heard')
     assert.equal((await agent('space', 'on', 'sites/demo')).json.outcome, 'refused')
-    assert.equal((await owner('space', 'target', 'set', '--admin', front.url, '--prefix', prefix)).json.outcome, 'done')
+    assert.equal((await owner('space', 'target', 'set', '--kind', 'machine', '--admin', front.url, '--prefix', prefix)).json.outcome, 'done')
   })
 
   await t.test('on: release 1, managed by pneuma-base, owned by this library, with the token as a bearer', async () => {
@@ -140,7 +140,7 @@ test('the lifecycle against PneumaSpace', { skip: down ?? false }, async (t) => 
     for (const [box, text] of [[other, 'theirs'], [sb, 'mine']] as const) {
       assert.equal((await box.agent('claude-code', 's1', ['put', await site(box, 'shared', text), '--to', 'sites/shared', '--made'])).code, 0)
       await box.agent('claude-code', 's1', ['say', 'deployable', 'sites/shared'])
-      await box.owner(['space', 'target', 'set', '--admin', ADMIN, '--prefix', prefix])
+      await box.owner(['space', 'target', 'set', '--kind', 'machine', '--admin', ADMIN, '--prefix', prefix])
     }
     assert.equal((await other.owner(['space', 'on', 'sites/shared', '--json'])).json.outcome, 'done')
     const theirs = (await api('GET', `/api/apps/${taken}`)).body.app

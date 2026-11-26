@@ -79,7 +79,7 @@ mkdirSync(out, { recursive: true })
 const sb = await sandbox({ plugins: [dist] })
 let browser = null
 try {
-  await sb.owner(['space', 'target', 'set', '--admin', ADMIN, '--prefix', PREFIX])
+  await sb.owner(['space', 'target', 'set', '--kind', 'machine', '--admin', ADMIN, '--prefix', PREFIX])
   for (const [name, s] of Object.entries(SITES)) {
     mkdirSync(join(sb.work, name))
     writeFileSync(join(sb.work, name, 'index.html'), page(s))

@@ -754,7 +754,7 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `params` | `target set` 在 `--kind` 之后的开关，一份 `FlagParam[]`。命令的参数表、帮助、页面上的表单和核对都从这里来；有几种目标时，选定的那种必填的开关才必填 |
 | `secrets` | 它读的密钥，可以标 `optional: true`。部署库把它们声明成插件的密钥，`secret set` 和配置页就认得 |
 | `views` | 可选，目标自己的页，每项 `{ name, title, icon }`。每页是导航里的一项，排在部署库的页之后，视图编号 `<插件名>.<name>`；`name` 用小写字母、数字、连字符，不得是 `sites` |
-| `configure(值, ctx)` | 把核过的值变成要存的配置（一个 JSON 对象），或答 `{ ok: false, reason, text }` |
+| `configure(值, ctx)` | 把核过的值变成要存的配置（一个 JSON 对象），或答 `{ ok: false, reason, text }`。可以带 `note`：一句给主人的话，`target set` 的答复用它代替部署库对没设的密钥的提醒，用在凭据能从几处来的目标上，说这次用哪一处、都没有时运行什么 |
 | `open(配置, env)` | 在边界上解析存下的配置，交回这一次钩子或命令用的 `Target`；读不懂就抛错 |
 
 `env` 是 `{ ctx, scratch, plugin, secret }`：`ctx` 是这次的上下文，`scratch` 是库外给它用的临时目录，`plugin` 是插件名（它的命令以此开头），`secret(名字)` 读主人在这台机器上设的密钥。必需的密钥没设时 `secret` 以一句说明用哪条命令设的错误拒绝，开关的答复里是 `publish-failed` 带这句话；可选的没设时读出 `null`，类型是 `string | null`。要密钥的目标从不在开关里要它。
@@ -769,6 +769,7 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `identify(文件)` | 可选，内容的编号；没有就用内核的指纹 |
 | `serving(站点名, ask)` | 可选，问的这些站点它现在真在服务什么：按站点答 `{ content, url, detail? }`，没在服务的 `content` 为 `null`，答复里没有的站点它既不服务也不知道。`detail` 是目标自己类型的其余信息，交给它的视图。有 `serving`，部署库按目标报的对账，`<名字> sync` 修得好断在一半的发布和在目标那边被删掉的站点；它抛错时状态是「不知道」，什么都不做。没有它，按插件自己的记录对账 |
 | `view` | 可选，往部署库的页、目标自己的页和条目面板里加东西，见下表 |
+| `close()` | 可选，这个 `Target` 为之打开的钩子、命令或视图结束时调一次，失败了也调。登录服务的目标在这里退出登录；它抛的错不影响答复 |
 
 `serving` 什么时候被问：
 
@@ -798,7 +799,7 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 
 `switchAction(插件名, look)` 是表格里的那个开关：`{ label: '打开' 或 '关上', tone: 'default', confirm: null, inputs: [], call: { face: 'owner', command: '<插件名> on' 或 '<插件名> off', args: { positional: [路径], flags: {} } } }`；归档了又关着的东西没有开关，答 `null`。
 
-PneumaSpace 插件（`space`）就是一个部署插件：它的目标用 PneumaSpace 的管理接口发布，`identify` 用上传的包的 sha256 作内容编号，`serving` 问 PneumaSpace 真在服务什么，令牌是可选的密钥，表格和面板里加了版本这些格，另有一页「看板」。下面是它的代码，省掉了两处：它打的是字节只由文件决定的 tar 包，这里把文件依次连起来；站点的地址它从 PneumaSpace 的入口算，这里从管理地址算。
+PneumaSpace 插件（`space`）就是一个部署插件，带两种目标：一台机器上的 PneumaSpace（`--kind machine`）和 Cloudflare 上的 PneumaSpace（`--kind cloudflare`）。前一种用 PneumaSpace 的管理接口发布，`identify` 用上传的包的 sha256 作内容编号，`serving` 问 PneumaSpace 真在服务什么，令牌是可选的密钥，表格和面板里加了版本这些格，另有一页「看板」。下面是这一种的代码，省掉了两处：它打的是字节只由文件决定的 tar 包，这里把文件依次连起来；站点的地址它从 PneumaSpace 的入口算，这里从管理地址算。后一种以主人的账户登录控制台接口，用 `configure` 的 `note` 说账户密钥从哪里来，用 `close` 在一次运行结束时退出登录。
 
 ```ts
 import { createHash } from 'node:crypto'
@@ -842,8 +843,8 @@ function board(all: readonly Look<Seen>[], plugin: string): Block {
 }
 
 const spaceTarget = defineTarget({
-  kind: 'space',
-  label: 'PneumaSpace',
+  kind: 'machine',
+  label: '一台机器上的 PneumaSpace',
   params: [
     { name: 'admin', hint: '管理地址', kind: 'value', required: true, pattern: 'https?://\\S+' },
     { name: 'prefix', hint: '应用名前缀', kind: 'value', required: true, pattern: '[a-z](?:[a-z0-9-]{0,14}[a-z0-9])?' },
