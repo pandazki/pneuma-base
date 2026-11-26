@@ -122,7 +122,8 @@ async function registerInside(ctx: PluginContext, dir: Place, input: string): Pr
     while (pending.length >= BATCH || (all && pending.length > 0)) {
       n += await enter(ctx, pending.slice(0, BATCH))
       pending = pending.slice(BATCH)
-      say(`已登记 ${n} / ${total}`)
+      // Past what the probe counted there is no total to give: the probe stopped at its budget.
+      say(scope.exceeded && n >= scope.files ? `已登记 ${n}` : `已登记 ${n} / ${total}`)
       if (stop) return
     }
   }
@@ -141,7 +142,7 @@ async function registerInside(ctx: PluginContext, dir: Place, input: string): Pr
   } finally {
     process.off('SIGINT', interrupt)
   }
-  if (stop) return done(`停下了：已把 ${dirName(dir)}里的 ${n} 个文件记为主人带进来的，共 ${total} 个。登记过的都留着，再运行同一条命令接着登记剩下的。`, { registered: n, of: scope.files, stopped: true })
+  if (stop) return done(`停下了：已把 ${dirName(dir)}里的 ${n} 个文件记为主人带进来的${scope.exceeded && n >= scope.files ? '' : `，共 ${total} 个`}。登记过的都留着，再运行同一条命令接着登记剩下的。`, { registered: n, of: scope.files, stopped: true })
   return done(n === 0 ? `${dirName(dir)}里没有还没登记的文件。` : `已把 ${dirName(dir)}里的 ${n} 个文件记为主人带进来的。`, { registered: n })
 }
 
