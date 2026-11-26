@@ -20,8 +20,10 @@ test('a bare library: three pages, folders, text and image preview, archive and 
   const { url } = await pb.view(lib)
   await page.goto(url)
 
+  await expect(page.getByRole('heading', { level: 1, name: '首页' })).toBeVisible()
+  expect(await navTitles(page)).toEqual(['首页', '文件', '归档区', '配置'])
+  await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '文件' }).click()
   await expect(page.getByRole('heading', { level: 1, name: '文件' })).toBeVisible()
-  expect(await navTitles(page)).toEqual(['文件', '归档区', '配置'])
 
   // Into a folder, and a text preview in the panel.
   await page.getByRole('button', { name: 'notes/' }).click()

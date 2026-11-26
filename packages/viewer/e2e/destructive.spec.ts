@@ -49,8 +49,8 @@ test('purging the archive asks first; cancelled, nothing changes; confirmed, it 
   await expect(page.getByRole('status')).toContainText('已清空归档区，删掉了 1 样东西')
   await expect(main.getByText('归档区是空的')).toBeVisible()
   expect(existsSync(join(lib, '_archive'))).toBe(false)
-  await nav.getByRole('button', { name: '动态' }).click()
-  await expect(main.getByRole('row').filter({ hasText: '主人面的操作 archive purge' })).toContainText('主人')
+  await nav.getByRole('button', { name: '活动' }).click()
+  await expect(main.getByRole('listitem').filter({ hasText: '主人面的操作 archive purge' })).toContainText('主人做的')
 })
 
 test('a server started in an agent session refuses the purge, and the page says why', async ({ page, pb }) => {

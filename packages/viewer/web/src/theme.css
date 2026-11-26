@@ -5,6 +5,7 @@
 @import './shell.css' layer(components);
 @import './blocks.css' layer(components);
 @import './overlays.css' layer(components);
+@import './aui/aui.css' layer(components);
 
 /*
  * The visual tokens, once (ARCHITECTURE section 6). Ink and washes are black or white at an opacity,

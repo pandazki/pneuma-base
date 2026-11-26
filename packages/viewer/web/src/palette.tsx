@@ -7,6 +7,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type Keyb
 import { api } from './api'
 import { Layer, ViewIcon } from './chrome'
 import { Kbd } from './controls'
+import { localMoments } from './time'
 
 /** A found thing: its path or title, the kernel's marks (目录, 已归档), what plugins said of it. */
 export type Found = { key: string; path: LibraryPath | null; marks: string[]; details: string[]; group: string | null }
@@ -117,12 +118,13 @@ export function Palette({ leaving, views, groupOf, actions, onClose, onPage, onO
     const hits = groupFound(found.result.hits).map(
       (g, k): Group => ({
         label: g.heading ?? '条目',
-        about: g.about,
+        about: g.about.map((line) => localMoments(line)),
         entries: g.items.map((f, i) => ({
           id: `hit-${k}-${i}`,
           icon: <File />,
           name: `${f.key}${f.marks.map((m) => `（${m}）`).join('')}`,
-          hint: f.details.join(' · ') || undefined,
+          // A plugin's words carry moments as the command line writes them; here they read in local time.
+          hint: localMoments(f.details.join(' · ')) || undefined,
           choose: close(() => onOpen({ view: 'item', params: { path: f.path as string }, target: 'panel' })),
         })),
       }),

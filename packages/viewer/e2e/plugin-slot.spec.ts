@@ -14,14 +14,14 @@ test('a plugin’s page appears when installed, renders each kind of block, and 
   const { url } = await pb.view(lib, { testPlugins: true })
   await page.clock.setFixedTime(new Date('2026-11-25T12:00:00.000Z'))
   await page.goto(url)
-  await expect(page.getByRole('heading', { level: 1, name: '文件' })).toBeVisible()
-  expect(await navTitles(page)).toEqual(['文件', '归档区', '配置'])
+  await expect(page.getByRole('heading', { level: 1, name: '首页' })).toBeVisible()
+  expect(await navTitles(page)).toEqual(['首页', '文件', '归档区', '配置'])
 
-  // Installed from outside the UI: the page shows up by itself, before the kernel's pages.
+  // Installed from outside the UI: the page shows up by itself, after the home page and before the kernel's other pages.
   pb.run(['plugin', 'add', 'pager', '--library', lib], { testPlugins: true })
   const nav = page.getByRole('navigation', { name: '导航' })
   await expect(nav.getByRole('button', { name: '块的样例' })).toBeVisible({ timeout: 5_000 })
-  expect(await navTitles(page)).toEqual(['块的样例', '新的块', '文件', '归档区', '配置'])
+  expect(await navTitles(page)).toEqual(['首页', '块的样例', '新的块', '文件', '归档区', '配置'])
 
   await nav.getByRole('button', { name: '块的样例' }).click()
   const main = page.getByRole('main')
@@ -30,7 +30,7 @@ test('a plugin’s page appears when installed, renders each kind of block, and 
   const section = main.getByRole('region', { name: '一节' }) // section
   await expect(section).toContainText('节下的说明')
   await expect(section.getByRole('row', { name: /表的第一行/ })).toContainText('好') // table with a tag
-  await expect(section.getByRole('row', { name: /表的第一行/ })).toContainText('11:11') // a moment, never cut short
+  await expect(section.getByRole('row', { name: /表的第一行/ })).toContainText('49 分钟前') // a moment, near ones in words, never cut short
   expect(await cutTexts(section.getByRole('table'))).toEqual([])
   await expect(section.getByText('字段的值')).toBeVisible() // fields
   await expect(main.getByText('列表的一项')).toBeVisible() // list
@@ -54,7 +54,7 @@ test('a plugin’s page appears when installed, renders each kind of block, and 
   await page.getByRole('region', { name: '插件' }).getByRole('row', { name: /pager/ }).getByRole('button', { name: '卸下' }).click()
   await expect(page.getByRole('status')).toContainText('已卸下插件 pager')
   await expect(nav.getByRole('button', { name: '块的样例' })).toHaveCount(0)
-  expect(await navTitles(page)).toEqual(['文件', '归档区', '配置'])
+  expect(await navTitles(page)).toEqual(['首页', '文件', '归档区', '配置'])
 })
 
 test('a plugin that throws in its view does not blank the UI', async ({ page, pb }) => {
@@ -66,7 +66,7 @@ test('a plugin that throws in its view does not blank the UI', async ({ page, pb
   await page.goto(url)
 
   const nav = page.getByRole('navigation', { name: '导航' })
-  await expect(nav.getByRole('button', { name: '总出错的页' })).toBeVisible()
+  await nav.getByRole('button', { name: '总出错的页' }).click()
   const main = page.getByRole('main')
   await expect(main.getByText('插件 thrower 出错了，没能给出这一页')).toBeVisible()
   await expect(main.getByText('thrower failed in onView').first()).toBeVisible()

@@ -10,7 +10,7 @@ const hashOf = (page: Page) => new URLSearchParams(new URL(page.url()).hash.slic
 
 test('several things open at once as tabs, kept in the address; Escape closes the front one', async ({ page, pb }) => {
   const { url } = await pb.view(relay(pb))
-  await page.goto(url)
+  await page.goto(`${url}#view=ledger.items`)
   const panel = page.getByRole('complementary', { name: '详情' })
   const tabs = panel.getByRole('tablist', { name: '打开的详情' }).getByRole('tab')
   const title = panel.getByTestId('panel-title')
@@ -59,21 +59,20 @@ test('several things open at once as tabs, kept in the address; Escape closes th
 test('the palette finds a thing by its text and opens it, and with nothing typed lists the pages', async ({ page, pb }) => {
   const { url } = await pb.view(relay(pb))
   await page.goto(url)
-  await expect(page.getByRole('heading', { level: 1, name: '条目' })).toBeVisible()
+  await expect(page.getByRole('heading', { level: 1, name: '首页' })).toBeVisible()
   const palette = page.getByRole('dialog', { name: '命令面板' })
 
   // ⌘K: the pages to go to.
   await page.keyboard.press('ControlOrMeta+k')
   await expect(palette).toBeVisible()
   const pages = palette.getByRole('group', { name: '前往' })
-  await expect(pages.getByRole('option')).toHaveText(['条目', '场景', '状况', '动态', '留存', '文件', '归档区', '配置'].map((t) => new RegExp(`^${t}`)))
+  await expect(pages.getByRole('option')).toHaveText(['首页', '库', '活动', '场景', '状况', '留存', '文件', '归档区', '配置'].map((t) => new RegExp(`^${t}`)))
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('ArrowDown')
-  await page.keyboard.press('ArrowDown')
-  await expect(pages.getByRole('option', { name: /^动态/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(pages.getByRole('option', { name: /^活动/ })).toHaveAttribute('aria-selected', 'true')
   await page.keyboard.press('Enter')
   await expect(palette).toHaveCount(0)
-  await expect(page.getByRole('heading', { level: 1, name: '动态' })).toBeVisible()
+  await expect(page.getByRole('heading', { level: 1, name: '活动' })).toBeVisible()
 
   // From the sidebar's search field: text finds in the library, grouped by the scene it came from.
   await page.getByRole('button', { name: '搜索或前往' }).click()
@@ -97,7 +96,7 @@ test('the palette finds a thing by its text and opens it, and with nothing typed
 
 test('in a table the arrow keys move between rows, one row in the Tab order, and Enter opens it', async ({ page, pb }) => {
   const { url } = await pb.view(relay(pb))
-  await page.goto(url)
+  await page.goto(`${url}#view=ledger.items`)
   const rows = page.getByRole('main').getByRole('table').getByRole('row')
   await expect(rows).toHaveCount(8)
   const body = rows.filter({ has: page.locator('td') })
@@ -130,7 +129,7 @@ async function pagerLibrary(pb: Cli): Promise<string> {
 }
 
 test('an action’s notice appears at once and turns into its answer in place', async ({ page, pb }) => {
-  await page.goto(await pagerLibrary(pb))
+  await page.goto(`${await pagerLibrary(pb)}#view=pager.blocks`)
   await expect(page.getByRole('heading', { level: 1, name: '块的样例' })).toBeVisible()
   let release = () => {}
   const held = new Promise<void>((resolve) => (release = resolve))
@@ -177,7 +176,7 @@ test('the sidebar’s width is kept across a reload, and the sidebar folds to a 
 
 test('both colour schemes apply without a reload', async ({ page, pb }) => {
   const { url } = await pb.view(relay(pb))
-  await page.goto(url)
+  await page.goto(`${url}#view=ledger.items`)
   await row(page, 'payments/comparison.md').click()
   await expect(page.getByRole('complementary', { name: '详情' }).getByTestId('panel-title')).toHaveText('comparison.md')
   await page.evaluate(() => ((window as unknown as { kept: number }).kept = 1))

@@ -1,0 +1,504 @@
+/* affectUI Pro – licensed under https://www.affectui.com/license, not under this project's open-source license. Don't copy it out of this project. */
+/*
+ * The looks of the pieces in this folder, adapted from affectUI's Avatar, Agent Activity, Decision
+ * Inbox, Stat Card and Tree View (all "clean"), restyled to the viewer's tokens (theme.css). Only the
+ * app imports this file; the frame kit never sees it.
+ */
+
+/* ---- a grey sentence where a part has nothing ---- */
+.aui-quiet {
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* ---- who: an initial on a soft colour of its own ---- */
+.aui-actor {
+  --aui-actor-s: 18px;
+  --aui-actor-bg-s: 70%;
+  --aui-actor-bg-l: 92%;
+  --aui-actor-fg-s: 48%;
+  --aui-actor-fg-l: 34%;
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--aui-actor-s);
+  height: var(--aui-actor-s);
+  border-radius: calc(var(--aui-actor-s) / 4);
+  background: var(--select);
+  color: var(--ink-2);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+}
+.aui-actor[data-size='24'] {
+  --aui-actor-s: 24px;
+  font-size: 11.5px;
+}
+.aui-actor[data-kind='owner'] {
+  border-radius: 50%;
+  background: var(--ink-2);
+  color: var(--panel);
+  font-weight: 500;
+}
+.aui-actor[data-hue] {
+  background: hsl(var(--h) var(--aui-actor-bg-s) var(--aui-actor-bg-l));
+  color: hsl(var(--h) var(--aui-actor-fg-s) var(--aui-actor-fg-l));
+}
+.aui-actor[data-hue='0'] { --h: 214; }
+.aui-actor[data-hue='1'] { --h: 152; }
+.aui-actor[data-hue='2'] { --h: 40; }
+.aui-actor[data-hue='3'] { --h: 22; }
+.aui-actor[data-hue='4'] { --h: 330; }
+.aui-actor[data-hue='5'] { --h: 268; }
+.aui-actor[data-hue='6'] { --h: 174; }
+.aui-actor[data-hue='7'] { --h: 196; }
+@media (prefers-color-scheme: dark) {
+  .aui-actor {
+    --aui-actor-bg-s: 28%;
+    --aui-actor-bg-l: 24%;
+    --aui-actor-fg-s: 60%;
+    --aui-actor-fg-l: 80%;
+  }
+}
+
+/* ---- feed: days as grey strips, rows of one height ---- */
+.aui-feed {
+  display: grid;
+  gap: 16px;
+}
+.aui-feed-day {
+  display: grid;
+  gap: 2px;
+}
+.aui-feed-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  margin: 0 0 2px;
+  padding: 0 12px;
+  border-radius: var(--radius-card);
+  background: var(--chip);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+}
+button.aui-feed-head {
+  transition: background-color 140ms ease;
+}
+button.aui-feed-head:hover {
+  background: var(--select);
+}
+.aui-feed-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.aui-feed-count {
+  flex: none;
+  min-width: 20px;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: 0 0 0 0.5px var(--line);
+  color: var(--ink-3);
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.aui-feed-chev {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-left: auto;
+  color: var(--ink-4);
+}
+.aui-feed-rows {
+  display: grid;
+  gap: 2px;
+}
+.aui-feed-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding-right: 10px;
+  border-radius: var(--radius-item);
+  transition: background-color 140ms ease;
+}
+.aui-feed-row:has(> [role='link']:hover) {
+  background: var(--wash);
+}
+.aui-feed-row[data-selected] {
+  background: var(--select);
+}
+.aui-feed-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 7px 0 7px 12px;
+  border-radius: var(--radius-item);
+  text-align: left;
+}
+.aui-feed-main[role='link'] {
+  cursor: pointer;
+}
+.aui-feed-main:focus-visible {
+  outline-offset: -2px;
+}
+.aui-feed-time {
+  flex: none;
+  width: 52px;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.aui-feed-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.aui-feed-line {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.aui-feed-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.aui-feed-who {
+  flex: none;
+  color: var(--ink-2);
+}
+.aui-feed-whose {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+}
+.aui-feed-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--info);
+}
+.aui-feed-whose[data-whose='owner'] .aui-feed-dot {
+  background: var(--ink-3);
+}
+.aui-feed-whose[data-whose='observed'] .aui-feed-dot {
+  background: var(--ink-4);
+}
+.aui-feed-meta-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.aui-feed-meta-cell:last-child {
+  overflow: hidden;
+}
+.aui-feed-meta .cell {
+  font-size: 12px;
+  line-height: 18px;
+}
+.aui-feed-meta .cell .text-ink-2 {
+  color: var(--ink-3);
+}
+.aui-feed-end {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  min-width: 56px;
+}
+.aui-feed-settled {
+  color: var(--ink-4);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* ---- asks: one card, a row each under a hairline; a decided row folds into one line ---- */
+.aui-asks {
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+.aui-asks-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'title' 'detail' 'actions';
+  gap: 2px;
+  padding: 14px 16px 16px;
+}
+.aui-asks-row + .aui-asks-row {
+  box-shadow: inset 0 0.5px 0 var(--line);
+}
+.aui-asks-row[aria-busy] {
+  opacity: 0.6;
+}
+.aui-asks-title {
+  grid-area: title;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.aui-asks-detail {
+  grid-area: detail;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 18px;
+}
+.aui-asks-detail .cell {
+  min-width: 0;
+  font-size: 12px;
+}
+.aui-asks-actions {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.aui-asks-receipt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  animation: aui-asks-fold 260ms var(--ease) both;
+}
+.aui-asks-glyph {
+  flex: none;
+  color: var(--good);
+}
+.aui-asks-cut {
+  stroke: var(--surface);
+}
+.aui-asks-receipt-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.aui-asks-receipt-label {
+  color: var(--ink);
+  font-weight: 500;
+}
+.aui-asks-receipt-when {
+  flex: none;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+@keyframes aui-asks-fold {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+
+/* ---- stats: a card each, as many to a line as fit ---- */
+.aui-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+.aui-stat {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+.aui-stat-label {
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 18px;
+}
+.aui-stat-value {
+  color: var(--ink-strong);
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 30px;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.aui-stat-note {
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- tree: rows of one height, 16px a level, a guide under each open branch ---- */
+.aui-tree {
+  --aui-tree-h: 28px;
+  --aui-tree-pad: 6px;
+  --aui-tree-indent: 16px;
+  --aui-tree-chev: 16px;
+  display: block;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 20px;
+}
+.aui-tree-group {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+.aui-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--aui-tree-h);
+  padding-inline: calc(var(--aui-tree-pad) + min(var(--aui-tree-d, 0) * var(--aui-tree-indent), 45%)) var(--aui-tree-pad);
+  overflow: hidden;
+  border-radius: var(--radius-control);
+  color: var(--ink-2);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 90ms ease;
+}
+.aui-tree-item[aria-selected='true'] > .aui-tree-row {
+  background: var(--select);
+  color: var(--ink);
+}
+@media (hover: hover) {
+  .aui-tree-item:not([aria-selected='true']) > .aui-tree-row:hover {
+    background: var(--wash);
+  }
+}
+.aui-tree-item:focus {
+  outline: none;
+}
+.aui-tree-item:focus-visible > .aui-tree-row {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.aui-tree-chev {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--aui-tree-chev);
+  height: var(--aui-tree-chev);
+  color: var(--ink-4);
+  transition: transform 200ms var(--ease-glide);
+}
+.aui-tree-item[aria-expanded='true'] > .aui-tree-row > .aui-tree-chev {
+  transform: rotate(90deg);
+}
+.aui-tree-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-inline-end: 2px;
+  color: var(--ink-3);
+}
+.aui-tree-icon svg {
+  width: 15px;
+  height: 15px;
+}
+.aui-tree-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.aui-tree-count {
+  flex: none;
+  margin-inline-start: 8px;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.aui-tree-fold {
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition:
+    grid-template-rows 220ms var(--ease-glide),
+    visibility 0s linear 220ms;
+}
+.aui-tree-fold[data-open] {
+  grid-template-rows: 1fr;
+  visibility: visible;
+  transition:
+    grid-template-rows 220ms var(--ease-glide),
+    visibility 0s;
+}
+.aui-tree-group::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  inset-inline-start: calc(var(--aui-tree-pad) + min((var(--aui-tree-d) - 1) * var(--aui-tree-indent), 45%) + var(--aui-tree-chev) / 2 - 0.5px);
+  width: 1px;
+  background: var(--line);
+  pointer-events: none;
+}
+.aui-tree-group:has(> .aui-tree-item[aria-selected='true'])::before {
+  background: var(--line-strong);
+}
+
+@media (pointer: coarse) {
+  .aui-tree {
+    --aui-tree-h: 36px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aui-tree-row,
+  .aui-tree-chev,
+  .aui-tree-fold,
+  .aui-tree-fold[data-open],
+  .aui-asks-receipt {
+    transition: none;
+    animation: none;
+  }
+}
+@container (max-width: 560px) {
+  .aui-feed-time {
+    display: none;
+  }
+  .aui-feed-line {
+    display: -webkit-box;
+    white-space: normal;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+}

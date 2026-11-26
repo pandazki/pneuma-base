@@ -2,7 +2,7 @@
 // one with a tab for each thing open. It keeps no state of its own beyond what is open, which the
 // address holds, and its widths; every view comes from the server, fetched again when the library
 // changed, after an action, and every `refresh` seconds when its answer asks for that.
-import type { Action, Link, PluginProblem, ViewDecl, ViewRequest, ViewResult } from '@pneuma-base/kernel'
+import type { Action, FilterOption, Link, PluginProblem, ViewDecl, ViewRequest, ViewResult } from '@pneuma-base/kernel'
 import { LoaderCircle, Unplug } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { api, ApiError, type State } from './api'
@@ -10,12 +10,13 @@ import { Blocks, sameLink } from './blocks'
 import { ActionDialog, fill } from './chrome'
 import { Choice, Resizer, TipLayer, usePresence } from './controls'
 import { DetailPanel } from './detail'
-import { BlockEnvContext, type BlockEnv } from './env'
+import { BlockEnvContext, type BlockEnv, type Done } from './env'
 import { pageActions, Palette } from './palette'
 import { PANEL, SIDE, usePrefs } from './prefs'
-import { activate, back, closeAll, closeTab, follow, shownOf, useRoute } from './route'
+import { activate, back, closeAll, closeTab, follow, retop, shownOf, useRoute } from './route'
 import { IN_SHELL } from './shell'
-import { POLL_MS, Sidebar } from './sidebar'
+import { firstPage, navOrder, POLL_MS, Sidebar } from './sidebar'
+import { localMoments } from './time'
 import { Toaster, useToasts } from './toasts'
 
 type Load<T> = { data: T | null; failed: boolean }
@@ -110,11 +111,16 @@ function Loading() {
   )
 }
 
-function Filters({ decl, params, onChange }: { decl: ViewDecl | undefined; params: Record<string, string>; onChange(name: string, value: string): void }) {
-  if (!decl || decl.filters.length === 0) return null
+/**
+ * The view's filters, each with the options the answer saw, with their counts, when it gave them; a
+ * filter with one option or none has nothing to choose and is left out.
+ */
+function Filters({ decl, answered, params, onChange }: { decl: ViewDecl | undefined; answered: { name: string; options: FilterOption[] }[] | undefined; params: Record<string, string>; onChange(name: string, value: string): void }) {
+  const filters = (decl?.filters ?? []).map((f) => ({ ...f, options: answered?.find((a) => a.name === f.name)?.options ?? f.options })).filter((f) => f.options.length > 1)
+  if (filters.length === 0) return null
   return (
     <div className="filters" role="toolbar" aria-label="过滤">
-      {decl.filters.map((f) => (
+      {filters.map((f) => (
         <div key={f.name} className="filter">
           <span aria-hidden>{f.label}</span>
           <Choice label={f.label} options={f.options} value={params[f.name] ?? f.default} onChange={(value) => onChange(f.name, value)} />
@@ -227,7 +233,7 @@ export function App() {
   const [down, setDown] = useState(false)
   const [denied, setDenied] = useState(false)
   const [route, go] = useRoute()
-  const [pending, setPending] = useState<{ id: number; action: Action; values: Record<string, string> } | null>(null)
+  const [pending, setPending] = useState<{ id: number; action: Action; values: Record<string, string>; resolve(done: Done | null): void } | null>(null)
   const [palette, setPalette] = useState(false)
   const [changedAt, setChangedAt] = useState<Date | null>(null)
   const toasts = useToasts()
@@ -240,7 +246,14 @@ export function App() {
   const titles = useRef(new Map<string, string>())
   const asked = useRef(0)
   const refresh = useCallback(() => setTick((t) => t + 1), [])
-  const cancel = useCallback(() => setPending(null), [])
+  const cancel = useCallback(
+    () =>
+      setPending((p) => {
+        p?.resolve(null)
+        return null
+      }),
+    [],
+  )
   const closePalette = useCallback(() => setPalette(false), [])
 
   // Ask every two seconds whether the library changed; refetch when it did or when the server is back.
@@ -268,7 +281,7 @@ export function App() {
 
   const state = useLoad('state', tick, api.state)
   const views = useMemo(() => state.data?.views ?? [], [state.data])
-  const firstNav = views.find((v) => v.nav)?.id ?? null
+  const firstNav = firstPage(views)
   const current = route.main !== null && views.some((v) => v.id === route.main?.view) ? route.main : firstNav === null ? null : { view: firstNav, params: {} }
   const decl = views.find((v) => v.id === current?.view)
   const request = current === null ? null : withDefaults(current, decl)
@@ -313,15 +326,20 @@ export function App() {
   }, [go, pending, toggleSide])
 
   const run = useCallback(
-    async (action: Action, values: Record<string, string>, confirmed: boolean) => {
+    async (action: Action, values: Record<string, string>, confirmed: boolean): Promise<Done> => {
       const id = busy(action.label)
+      let done: Done
       try {
         const reply = await api.call(fill(action.call, values, action.inputs), confirmed)
         settle(id, reply.tone, reply.text, offerOf(reply.result))
+        done = { tone: reply.tone, text: reply.text }
       } catch (error) {
-        settle(id, 'bad', error instanceof Error ? error.message : String(error))
+        const text = error instanceof Error ? error.message : String(error)
+        settle(id, 'bad', text)
+        done = { tone: 'bad', text }
       }
       refresh()
+      return done
     },
     [refresh, busy, settle],
   )
@@ -335,14 +353,19 @@ export function App() {
     [go],
   )
   const onAction = useCallback(
-    (action: Action, values: Record<string, string> = {}) =>
-      action.inputs.length > 0 || action.confirm !== null ? setPending({ id: ++asked.current, action, values }) : void run(action, values, false),
+    (action: Action, values: Record<string, string> = {}): Promise<Done | null> =>
+      action.inputs.length > 0 || action.confirm !== null ? new Promise((resolve) => setPending({ id: ++asked.current, action, values, resolve })) : run(action, values, false),
     [run],
   )
-  const env: BlockEnv = useMemo(
-    () => ({ tick, onLink, onAction, selected: (link: Link | null) => link !== null && link.target === 'panel' && sameLink(link, top) }),
-    [tick, onLink, onAction, top],
+  const selected = useCallback((link: Link | null) => link !== null && link.target === 'panel' && sameLink(link, top), [top])
+  // A parameter set from a block, such as a folder chosen in a tree, changes the view the block is in.
+  const onMainParam = useCallback(
+    (name: string, value: string) => current && go((r) => ({ ...r, main: { view: current.view, params: { ...current.params, [name]: value } } })),
+    [current, go],
   )
+  const onPanelParam = useCallback((name: string, value: string) => top && go((r) => retop(r, { view: top.view, params: { ...top.params, [name]: value } })), [top, go])
+  const env: BlockEnv = useMemo(() => ({ tick, onLink, onAction, onParam: onMainParam, selected }), [tick, onLink, onAction, onMainParam, selected])
+  const panelEnv: BlockEnv = useMemo(() => ({ ...env, onParam: onPanelParam }), [env, onPanelParam])
   const dialog = usePresence(pending, 200)
   const paletteShown = usePresence(palette ? true : null, 150)
 
@@ -370,7 +393,7 @@ export function App() {
 
   const data = state.data
   const result = shown.data?.outcome === 'shown' ? shown.data : null
-  const groupOf = (v: (typeof views)[number]) => (v.by === 'kernel' ? '库' : (data.available.find((p) => p.name === v.by)?.title ?? v.by))
+  const groupOf = (v: (typeof views)[number]) => (v.by === 'kernel' ? (v.id === 'home' ? null : '库') : (data.available.find((p) => p.name === v.by)?.title ?? v.by))
   const style = { '--side-w': `${prefs.side}px`, '--panel-w': `${panelWidth}px`, '--rail': `${RAIL}px` } as CSSProperties
   return (
     <BlockEnvContext.Provider value={env}>
@@ -398,8 +421,8 @@ export function App() {
             ) : null}
             <header className="page-head" data-drag>
               <h1>{result?.title ?? decl?.title ?? ''}</h1>
-              {result?.subtitle ? <p>{result.subtitle}</p> : null}
-              <Filters decl={decl} params={request?.params ?? {}} onChange={(name, value) => current && go((r) => ({ ...r, main: { view: current.view, params: { ...current.params, [name]: value } } }))} />
+              {result?.subtitle ? <p>{localMoments(result.subtitle)}</p> : null}
+              <Filters decl={decl} answered={result?.filters} params={request?.params ?? {}} onChange={onMainParam} />
             </header>
             <div className="page-body">
               <Problems problems={data.problems} />
@@ -420,9 +443,11 @@ export function App() {
                 onCloseAll={() => go(closeAll)}
                 onBack={() => go(back)}
               >
-                <div className="blocks">
-                  <Shown result={detail.data} failed={detail.failed} />
-                </div>
+                <BlockEnvContext.Provider value={panelEnv}>
+                  <div className="blocks">
+                    <Shown result={detail.data} failed={detail.failed} />
+                  </div>
+                </BlockEnvContext.Provider>
               </DetailPanel>
             </div>
           ) : null}
@@ -437,16 +462,16 @@ export function App() {
           onCancel={cancel}
           onSubmit={(values) => {
             if (!pending) return
-            const { action } = pending
+            const { action, resolve } = pending
             setPending(null)
-            void run(action, values, action.confirm !== null)
+            void run(action, values, action.confirm !== null).then(resolve)
           }}
         />
       ) : null}
       {paletteShown.shown ? (
         <Palette
           leaving={paletteShown.leaving}
-          views={views}
+          views={navOrder(views)}
           groupOf={groupOf}
           actions={result ? pageActions(result.blocks) : []}
           onClose={closePalette}
