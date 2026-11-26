@@ -360,7 +360,7 @@ export default definePlugin({
 - 自己的页：在 `views` 里声明，在 `onView` 里答 `{ title, subtitle, blocks, refresh? }`。`id` 必须以 `<插件名>.` 开头（检查：`names`）。`icon` 是 sdk 的 `IconName`（4.4），别的名字画成拼图。`nav: false` 的页只能经链接到达。没给的筛选取它的 `default`，界面和 `show` 一样。管理用的页声明 `ownerOnly: true`：在 agent 的会话里以 `agent-session` 拒绝，话和只给主人的命令被拒时一样；别的页两边一样。
 - 条目面板里的一节：一样东西在右侧面板打开时，内核按配置次序调每个插件的 `onItemView(路径)`，把答的 `{ title, blocks, actions? }` 盖上插件名，排在「它是什么」那一行之后、文件的事实之前；`actions` 是对这样东西的动作，不放在节里，并进面板底下那一行，排在归档和挪之后。答 `null` 就没有这一节。路径上没有东西也调；只在归档区的东西，路径是 `_archive/…`；内核自己的文件不调。带标记的目录里的每个文件也有自己的面板：目录的面板列出里面的文件，点一个就打开它的面板。这时 `onItemView` 拿到那个文件的库内路径，比如 `site/index.html`，不是目录的；面板里没有归档按钮，因为目录只能整个归档。
 
-- 首页：视图声明 `home: true`，它的块就放在首页上，在「等你决定」之后，按配置次序，用每个筛选的默认值。它可以同时 `nav: false`，只在首页出现。首页是界面打开时的那一页，所以只放主人一来就该看到的：发生了什么、哪里要留意，用 `feed`、`list`、`stats` 这些块。
+- 首页：视图声明 `home: true`，它的块就放在首页上，在「等你决定」之后，按配置次序，用每个筛选的默认值。它可以同时 `nav: false`，只在首页出现。首页是界面打开时的那一页，所以只放主人一来就该看到的：发生了什么、哪里要留意，用 `feed`、`list`、`stats` 这些块。首页视图答复里的 `steps` 块例外：它不在原处画，它的步骤接在内核的「接上你的 agent」「放进第一样东西」后面，并进首页最上面的「开始」；有一步没做，「开始」就在，都做完了就没了。一步做没做完由插件每次按库的状态算，不要记标记。记账插件这样给出「对你的 agent 说一句」。
 - 问主人：`onAsks(ctx)` 答此刻只有主人能定的事，`PluginAsk[]`，每件 `{ key, text, about, actions, suggested? }`：`key` 在这个插件里不重复，`text` 是一句问话，`about` 是关于的库内路径或 `null`，`actions` 是几个回答（只给主人的命令也行），`suggested` 是推荐的那个回答在 `actions` 里的位置。它们出现在首页最上面的「等你决定」里（署插件的认知段标题），也在 agent 的 `check` 里。`onAsks` 只读，首页每次显示、`check` 每次答都会问：插件按自己的记录答，主人回答之后记录变了，就不再问这一件。界面里回答之后，那一件在原处折成一行回执。不合的一件（不是一件、回答调不到、推荐的不在回答里）去掉，列进问题。
 
 钩子抛错或答得不对时，内核在那里放一块说明出错，把问题列进答复。
@@ -660,6 +660,8 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `stats` | `stats`（每个 `{ label, value, note }`，`value` 是字，`note` 可以是 `null`） | | 几个数，每个一张小卡 |
 | `tree` | `param`、`selected`、`nodes`（每个 `{ value, label, count, children }`，`count` 可以是 `null`） | | 一棵树，比如文件夹。选一个节点，就是把这一页的参数 `param` 设成它的 `value` 再取一次；排在一页最前面时画在左边一栏。`show` 把每个节点印成打开它的命令 |
 | `asks` | `asks`（每件 `{ key, by, text, about, actions }`，`by` 是名字或 `ActorMark`，`about` 可以是 `null`）、`empty` | 每件的 `suggested`：推荐的回答在 `actions` 里的位置 | 等主人定的事；回答后在原处折成一行回执。首页用它放 `onAsks` 的问题，插件自己的页也能用 |
+| `steps` | `steps`（每步 `{ key, title, done, summary, blocks }`，`summary` 可以是 `null`） | | 几步要做的事。没做的一步展开，显示它的块；做完的折成一行，标题下面是 `summary`（做成了什么），点开再看。第一个没做的是当前的一步。步里的块逐个核对。放在首页上的会并进「开始」（3.6） |
+| `drop` | `to`（库里的文件夹）、`command` | | 把文件放进 `to`，记成主人带进来的。在 Mac 应用里是一块拖放和「选择…」的区域，经命令行放入；浏览器里显示 `command`，可复制 |
 
 | 类型 | 字段 |
 | --- | --- |
