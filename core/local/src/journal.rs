@@ -11,8 +11,9 @@
 //!   replaced, moved, or the library now lives elsewhere);
 //! - the cursor's event id is ahead of the system's (ids went back);
 //! - the replay carries a flag that says events were lost or must be rescanned: MustScanSubDirs,
-//!   UserDropped, KernelDropped, EventIdsWrapped, RootChanged, or a mount or unmount under the
-//!   library;
+//!   KernelDropped, EventIdsWrapped, RootChanged, or a mount or unmount under the library.
+//!   UserDropped alone (lost between the system and this process, the history itself whole) is
+//!   replayed again after a pause, as long as the time limit allows;
 //! - the replay does not finish within `REPLAY_LIMIT` (a cursor far in the past makes FSEvents
 //!   read that much of the volume's history: about 5 s a day on a busy volume).
 //!
@@ -31,12 +32,21 @@ pub const RELIABLE: bool = false;
 
 #[cfg(not(target_os = "macos"))]
 impl LocalFolder {
+    /// Asked for the current cursor, it gives one; any period since a cursor it cannot vouch for.
     pub fn changes_since(
         &self,
-        _req: &ChangedRequest,
+        req: &ChangedRequest,
         _ctx: &Ctx,
     ) -> Result<ChangedAnswer, Failure> {
-        Err(Failure::cannot_say("none".to_owned()))
+        const CURSOR: &str = "none";
+        match req.cursor {
+            None => Ok(ChangedAnswer {
+                places: Vec::new(),
+                cursor: CURSOR.to_owned(),
+                more: false,
+            }),
+            Some(_) => Err(Failure::cannot_say(CURSOR.to_owned())),
+        }
     }
 }
 
@@ -54,6 +64,8 @@ mod fsevents {
     use crate::{LocalFolder, RECORD_AREA, sys};
 
     pub const REPLAY_LIMIT: Duration = Duration::from_secs(15);
+    /// How long to wait before replaying again after events were dropped on their way here.
+    const RETRY_PAUSE: Duration = Duration::from_millis(500);
 
     type CFRef = *const c_void;
 
@@ -248,9 +260,9 @@ mod fsevents {
         }
     }
 
-    /// Replays the events under `root` since `event`; `None` when the replay does not finish in
-    /// time.
-    fn replay(root: &[u8], event: u64) -> Option<Replay> {
+    /// Replays the events under `root` since `event`; `None` when the replay does not finish by
+    /// `deadline`.
+    fn replay(root: &[u8], event: u64, deadline: Instant) -> Option<Replay> {
         let shared: Shared = Arc::default();
         let context = StreamContext {
             version: 0,
@@ -287,7 +299,6 @@ mod fsevents {
             let queue = dispatch_queue_create(c"pneuma-base.changed".as_ptr(), std::ptr::null());
             FSEventStreamSetDispatchQueue(stream, queue);
             let started = FSEventStreamStart(stream) != 0;
-            let deadline = Instant::now() + REPLAY_LIMIT;
             let mut finished = false;
             if started {
                 let mut replay = shared.0.lock().ok()?;
@@ -352,7 +363,24 @@ mod fsevents {
             }
             ctx.check()?;
             let root_path = self.root.as_os_str().as_bytes();
-            let replay = replay(root_path, cursor.event).ok_or_else(cannot_say)?;
+            let deadline = Instant::now() + REPLAY_LIMIT;
+            let replay = loop {
+                let replay = replay(root_path, cursor.event, deadline).ok_or_else(cannot_say)?;
+                // Dropped on the way to this process only: the volume's history is whole, so
+                // replaying it again, after a moment, can still give all of it.
+                let dropped_here = replay.events.iter().any(|(_, flag, _)| {
+                    flag & USER_DROPPED != 0
+                        && flag & (UNTRUSTED & !USER_DROPPED & !MUST_SCAN_SUB_DIRS) == 0
+                });
+                if !dropped_here {
+                    break replay;
+                }
+                if Instant::now() + RETRY_PAUSE > deadline {
+                    return Err(cannot_say());
+                }
+                ctx.check()?;
+                std::thread::sleep(RETRY_PAUSE);
+            };
             let noise = self.noise();
             let mut places = BTreeSet::new();
             let mut first_left_out: Option<u64> = None;

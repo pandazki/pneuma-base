@@ -624,20 +624,6 @@ impl LocalFolder {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::orphaned;
-
-    #[test]
-    fn only_this_programs_leftovers_are_cleared() {
-        assert!(!orphaned("putting"));
-        assert!(!orphaned("w-notapid-1"));
-        assert!(!orphaned(&format!("w-{}-0-ff", std::process::id())));
-        // No process has pid 2^31 - 1.
-        assert!(orphaned("w-2147483647-0-ff"));
-        assert!(orphaned("t-2147483647-3-ab"));
-    }
-}
 
 /// The note of a move onto a directory, removed once the move is done.
 struct Intent {
@@ -701,5 +687,20 @@ fn swap_in(staged: &Staged, dir: RawFd, name: &CStr) -> Result<(), Failure> {
             placed
         }
         other => other,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::orphaned;
+
+    #[test]
+    fn only_this_programs_leftovers_are_cleared() {
+        assert!(!orphaned("putting"));
+        assert!(!orphaned("w-notapid-1"));
+        assert!(!orphaned(&format!("w-{}-0-ff", std::process::id())));
+        // No process has pid 2^31 - 1.
+        assert!(orphaned("w-2147483647-0-ff"));
+        assert!(orphaned("t-2147483647-3-ab"));
     }
 }

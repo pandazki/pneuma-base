@@ -222,6 +222,8 @@ impl LocalFolder {
         let mut arrived = Vec::new();
         let mut named = 0;
         let mut blind = false;
+        // Listed now, though a floor raised to this read would let it be skipped.
+        let mut stale = false;
         for dir in subdirs(&facts_dir)? {
             ctx.check()?;
             if cursor
@@ -230,6 +232,7 @@ impl LocalFolder {
             {
                 continue;
             }
+            stale |= dir.changed < hi - WINDOW_NS - SLACK_NS;
             let Some(files) = files_of(&dir)? else {
                 blind = true;
                 continue;
@@ -249,8 +252,11 @@ impl LocalFolder {
             return Err(refused());
         }
         arrived.sort_by(|a, b| a.key.cmp(&b.key));
+        // Nothing new: the same cursor, unless it makes every read list directories long settled
+        // (after many arrived at once, as when a whole library is synced in); then it moves up.
         if arrived.is_empty()
             && cursor.pass.is_none()
+            && !stale
             && let Some(text) = &req.cursor
         {
             return Ok(FactsSinceAnswer {
