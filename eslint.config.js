@@ -135,6 +135,8 @@ const OFF_STORAGE = {
     'products.ts': "where each agent product keeps its configuration and its conversations",
     'agent-commands.ts': "agents' configuration files and skill folders",
     'owner-commands.ts': 'the skill file an owner command writes where the owner says, and installed plugins',
+    'providers.ts': "the storage providers on this machine: the registry under $PNEUMA_BASE_HOME, the programs of this installation, and a provider's describe, run on an empty folder of its own",
+    'provider-install.ts': "a provider taken from a repository's releases into $PNEUMA_BASE_HOME, and the contract suite run on it before it is used",
   },
   ledger: {
     'conversation.ts': "agents' conversation transcripts, outside the library",

@@ -86,7 +86,7 @@ describe('the views of a library with no plugin', () => {
     expect(r.blocks[0]).toMatchObject({ kind: 'section', actions: [{ tone: 'danger', confirm: expect.stringContaining('不能撤回'), call: { face: 'owner', command: 'archive purge' } }] })
   })
 
-  it('config shows the library, every plugin it knows with 装上 or 卸下, and the grants with skill generation', async () => {
+  it('config shows the library, every plugin it knows with 装上 or 卸下, the grants with skill generation, and the storage providers', async () => {
     const f = await fixture()
     const table = new Map([
       ['ledger', plugin('ledger', { cognition: { title: '记账与对账', text: '' } })],
@@ -95,7 +95,7 @@ describe('the views of a library with no plugin', () => {
     ])
     const r = shown(await viewerFace.show({ view: 'config', params: {} }, { ctx: f.ctx, table, env: {}, viaGrant: false }))
     const sections = r.blocks.filter((b) => b.kind === 'section')
-    expect(sections.map((s) => s.kind === 'section' && s.title)).toEqual(['插件', '授权与技能', '噪音'])
+    expect(sections.map((s) => s.kind === 'section' && s.title)).toEqual(['插件', '授权与技能', '噪音', '存储'])
     const plugins = tableOf({ outcome: 'shown', title: '', subtitle: null, blocks: [sections[0] as Block], problems: [] })
     // Its version and what it brings, as plugin list shows them: the summary, else the cognition's title.
     expect(plugins.columns.map((c) => c.label)).toEqual(['名字', '版本', '做什么', '状态'])
@@ -110,6 +110,11 @@ describe('the views of a library with no plugin', () => {
     ])
     expect(sections[1]).toMatchObject({ actions: [{ label: '发授权', call: { command: 'grant issue' } }] })
     expect(JSON.stringify(sections[1])).toContain('codex --add-dir')
+    // The built-in local folder, the one this library uses, and a form to install another from a repository.
+    expect(sections[3]).toMatchObject({ actions: [{ label: '安装别的存储…', call: { command: 'storage install' } }] })
+    expect(tableOf({ outcome: 'shown', title: '', subtitle: null, blocks: [sections[3] as Block], problems: [] }).rows).toMatchObject([
+      { key: 'local-folder', cells: { origin: { text: '自带' }, state: { tag: { text: '这个库用的' } } }, actions: [] },
+    ])
   })
 
   it('config lists an installed plugin first with 卸下, and one this pneuma-base lacks as such', async () => {

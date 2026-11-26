@@ -1,10 +1,10 @@
 // The only door to storage. Nothing else in the kernel, and nothing above it, reads or writes the
-// library's folder or its record area: they ask storage, the `pneuma-base-core` program, which this
-// module starts once per library and process (`serve`) and speaks to one JSON line at a time.
-// STORAGE.md is the contract; core/README.md is the wire form.
+// library's folder or its record area: they ask storage, the program of the provider that answers the
+// library's address on this machine (providers.ts), which this module starts once per library and
+// process (`serve`) and speaks to one JSON line at a time. STORAGE.md is the contract; core/README.md
+// is the wire form, and PROVIDERS.md how a provider is run.
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { providerOf, type Runnable } from './providers.js'
 import {
   isFailure,
   type ContentAnswer,
@@ -25,20 +25,6 @@ import {
   type Written,
 } from '@pneuma-base/sdk'
 
-/**
- * Where the program is: `PNEUMA_BASE_CORE`; else the one a package file carries beside the kernel
- * (scripts/pack-dist.mjs); else the one built in this repository, release before debug. These are files
- * of this installation, not of any library.
- */
-export function corePath(env: NodeJS.ProcessEnv = process.env): string {
-  if (env.PNEUMA_BASE_CORE) return env.PNEUMA_BASE_CORE
-  for (const at of ['../bin/pneuma-base-core', '../../../core/target/release/pneuma-base-core', '../../../core/target/debug/pneuma-base-core']) {
-    const path = fileURLToPath(new URL(at, import.meta.url))
-    if (existsSync(path)) return path
-  }
-  throw new Error('存储的程序 pneuma-base-core 不在：在 pneuma-base 的仓库里运行 pnpm build，或用 PNEUMA_BASE_CORE 指明它在哪')
-}
-
 type Answer = { outcome: 'done' | 'failed' | 'refused'; [field: string]: unknown }
 type Waiting = { resolve(answer: Answer): void; reject(error: Error): void }
 
@@ -56,7 +42,17 @@ class Served {
   private listening = false
   private subscription: number | null = null
 
-  constructor(private readonly root: string) {}
+  /** The provider's program, chosen once: on the first start, unless bound before. */
+  constructor(
+    private readonly root: string,
+    private provider: Runnable | null = null,
+  ) {}
+
+  /** Makes `provider` the one this library is spoken to through, when nothing chose one yet; whether it is. */
+  boundTo(provider: Runnable): boolean {
+    this.provider ??= provider
+    return this.provider.executable === provider.executable
+  }
 
   request(op: string, body: Record<string, unknown>): Promise<Answer> {
     const child = this.child ?? this.start()
@@ -88,7 +84,8 @@ class Served {
   }
 
   private start(): ChildProcessWithoutNullStreams {
-    const child = spawn(corePath(), ['serve', '--root', this.root], { stdio: ['pipe', 'pipe', 'pipe'] })
+    this.provider ??= providerOf(this.root)
+    const child = spawn(this.provider.executable, ['serve', '--root', this.root], { stdio: ['pipe', 'pipe', 'pipe'] })
     this.child = child
     child.stdout.on('data', (chunk: Buffer) => this.read(chunk))
     child.stderr.on('data', (chunk: Buffer) => {
@@ -158,6 +155,11 @@ const servedFor = (root: string): Served => {
   const fresh = new Served(root)
   served.set(root, fresh)
   return fresh
+}
+
+/** Makes this process speak to the library at `root` through `provider`: init, which chooses it before machine state records it. */
+export function bindProvider(root: string, provider: Runnable): void {
+  if (!served.get(root)?.boundTo(provider)) served.set(root, new Served(root, provider))
 }
 
 /** A storage answer that is not `done` where only `done` makes sense: a fault of the caller or of storage, not of the library. */

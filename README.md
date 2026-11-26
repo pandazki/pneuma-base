@@ -15,6 +15,8 @@ npm install --global ./dist-packages/pneuma-base-0.9.0.tgz
 pneuma-base --help
 ```
 
+这一版的包和应用只给 Apple 芯片的 Mac：它们带着这个平台的本机文件夹存储提供者和契约测试的程序，在别的机器上运行，命令行只说它是给哪个平台构建的。
+
 两种拿法用的是同一个家目录 `~/.pneuma-base`，同一个本机的命令 `~/.pneuma-base/bin/pneuma-base`：接上 agent 时写进去的都按完整路径用它，所以 agent 的 PATH 上什么都不用有。应用每次启动都让它指向应用自带的 Node 和命令行；从包装的，`pneuma-base launcher install` 让它指向你装的这个，`agent connect` 发现它不在时也会写。
 
 ## 主人怎么开始
@@ -26,6 +28,8 @@ pneuma-base --help
    ```sh
    pneuma-base init ~/base
    ```
+
+   库的地址是一个文件夹时，存储是自带的本机文件夹。要放在别的存储上，`pneuma-base storage list` 列出这台机器的存储提供者和官方的、没装的，`pneuma-base storage install <owner>/<repo>` 从一个 GitHub 仓库的发布装一个（对过校验和、过了契约测试才装），`pneuma-base init <地址>` 按地址的写法选它。见 [`PROVIDERS.md`](PROVIDERS.md)。
 
 2. **装插件。** 按需要装版本、部署、同步、查找：
 
