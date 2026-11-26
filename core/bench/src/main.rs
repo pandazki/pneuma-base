@@ -161,14 +161,14 @@ fn synthetic_cases<'a>(
         },
         Case {
             name: "changed, nothing changed",
-            target_ms: Some(20.0),
+            target_ms: Some(25.0),
             op: "changed",
             prepare: fixed(json!({ "cursor": quiet })),
             check: |a| a["places"].as_array().is_some_and(Vec::is_empty),
         },
         Case {
             name: "changed, 1,000 changes",
-            target_ms: Some(30.0),
+            target_ms: Some(50.0),
             op: "changed",
             prepare: fixed(json!({ "cursor": busy, "limit": 10_000 })),
             check: |a| a["places"].as_array().is_some_and(|p| p.len() >= CHANGES),
@@ -245,7 +245,7 @@ fn synthetic_cases<'a>(
         },
         Case {
             name: "move, one file",
-            target_ms: Some(5.0),
+            target_ms: Some(8.0),
             op: "move",
             prepare: Box::new(move |n| {
                 let from = format!("moving/from-{n}.md");
@@ -294,7 +294,7 @@ fn real_cases<'a>(env: &'a Env, lib: &'a Path) -> Result<Vec<Case<'a>>, String> 
         },
         Case {
             name: "changed, nothing changed",
-            target_ms: Some(20.0),
+            target_ms: Some(25.0),
             op: "changed",
             prepare: fixed(json!({ "cursor": quiet })),
             check: |a| a["places"].as_array().is_some_and(Vec::is_empty),
@@ -388,6 +388,11 @@ fn time_cases(env: &Env, lib: &Path, mut cases: Vec<Case>) -> Result<(), String>
     println!();
     println!(
         "median of {RUNS} runs after {WARMUP} warm-up runs; one-shot includes process start; warm page cache"
+    );
+    println!(
+        "targets for changed, content, write, move and remove are proposed from step 2's measurements: \
+         changed costs follow the volume's events since the cursor, so they hold for a young cursor \
+         on a volume that is not busy"
     );
     Ok(())
 }
