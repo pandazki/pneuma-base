@@ -190,3 +190,48 @@ describe('the page of versioned things', () => {
     expect(await rows('show')).toContainEqual(['_archive/c.md', '1 版', '已归档'])
   })
 })
+
+/** The plugin's context, with every call that reads a thing's content counted: a copy from a place, a fingerprint, a read. */
+function counting(ctx: PluginContext): { ctx: PluginContext; reads: string[] } {
+  const reads: string[] = []
+  const READS = new Set(['write', 'content', 'read'])
+  const wrap = <T extends object>(store: T, area: string): T =>
+    new Proxy(store, {
+      get(target, key) {
+        const value = Reflect.get(target, key) as unknown
+        if (key === 'own') return wrap(value as object, 'own')
+        if (typeof value !== 'function' || !READS.has(String(key))) return value
+        return (...args: unknown[]) => {
+          reads.push(`${area}.${String(key)} ${String(args[0])}`)
+          return (value as (...a: unknown[]) => unknown).apply(target, args)
+        }
+      },
+    })
+  return { ctx: { ...ctx, tools: { ...ctx.tools, storage: wrap(ctx.tools.storage, 'content') } }, reads }
+}
+
+describe('check over many declared things', () => {
+  it('reads content only for the things whose token changed: none when nothing did, one new version for the one changed', async () => {
+    const { root, put, declare, plugin, owned } = await library()
+    const names = Array.from({ length: 40 }, (_, i) => `notes/n${String(i).padStart(2, '0')}.md`)
+    for (const name of names) {
+      await put(name, name)
+      await declare(name)
+    }
+    const check = async () => {
+      const counted = counting(plugin())
+      const sections = (await version.onCheck?.({ since: null, includeArchived: false }, counted.ctx)) ?? []
+      return { sections, reads: counted.reads }
+    }
+    expect(await check()).toEqual({ sections: [], reads: [] })
+
+    writeFileSync(join(root, 'notes/n07.md'), 'by hand')
+    const changed = await check()
+    expect(changed.sections.map((s) => s.data)).toEqual([{ recorded: [{ path: 'notes/n07.md', version: 2 }], missing: [] }])
+    expect(changed.reads).toHaveLength(1)
+    expect(await check()).toEqual({ sections: [], reads: [] })
+    const counts = await Promise.all(names.map(async (name) => ((await owned('version list', [name])) as any).data.versions.length))
+    expect(counts.filter((n) => n !== 1)).toEqual([2])
+  })
+})
+

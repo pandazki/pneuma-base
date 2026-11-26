@@ -1,22 +1,28 @@
-// The version plugin's records: immutable facts, one JSON object per line, one new file per write,
-// under facts/<scene>/. Each plugin keeps its own copy of this pattern; plugins share no code.
+// The version plugin's records: immutable facts, appended through storage to its record place, one
+// write per hook. Facts the plugin wrote before storage, under facts/<scene>/, are read with the rest.
 import { randomBytes } from 'node:crypto'
-import { link, mkdir, open, readdir, readFile, unlink } from 'node:fs/promises'
-import { join } from 'node:path'
-import type { Actor, Context, Fingerprint, Instant, LibraryPath, ManifestEntry, ThingKind } from '@pneuma-base/kernel'
+import type { Actor, Context, Fingerprint, Instant, LibraryPath, ManifestEntry, PluginContext, ThingKind } from '@pneuma-base/kernel'
 
 export type ThingId = string & { readonly __brand: 'ThingId' }
 export type FactId = string & { readonly __brand: 'FactId' }
 
-/** One version's content: each file's path in the thing and its sha256. A single file has one row, whose path is ''. */
+/**
+ * A version's content as a file, or as a directory version recorded before storage: each file's path
+ * in the thing and its sha256, each file kept as its own object. A single file has one row, whose path is ''.
+ */
 export type Manifest = { kind: ThingKind; rows: ManifestEntry[] }
+
+/** A directory version kept whole, as one tree: how many files and bytes it has. */
+export type Tree = { files: number; bytes: number }
 
 /** How a version came to be recorded: when it was declared, after a put, or seen changed outside the tool. */
 export type Via = 'declare' | 'put' | 'outside'
 
+export type VersionFact = { kind: 'version'; thing: ThingId; path: LibraryPath; fingerprint: Fingerprint; via: Via } & ({ manifest: Manifest } | { tree: Tree })
+
 export type FactBody =
   | { kind: 'declare'; thing: ThingId; path: LibraryPath }
-  | { kind: 'version'; thing: ThingId; path: LibraryPath; fingerprint: Fingerprint; manifest: Manifest; via: Via }
+  | VersionFact
   | { kind: 'note'; thing: ThingId; version: FactId; text: string }
   | { kind: 'move'; thing: ThingId; from: LibraryPath; to: LibraryPath }
   | { kind: 'gone'; thing: ThingId } // the owner deleted it from the library (archive purge); its versions stay
@@ -26,7 +32,6 @@ export type Who = { kind: Actor['kind']; name: string }
 export type Fact = { id: FactId; at: Instant; scene: string; by: Who } & FactBody
 
 const KINDS: ReadonlySet<string> = new Set(['declare', 'version', 'note', 'move', 'gone', 'prune'] satisfies FactBody['kind'][])
-const FACTS_DIR = 'facts'
 
 const safe = (text: string) => text.replace(/[^A-Za-z0-9_-]/g, '')
 const compact = (at: Instant) => at.replace(/[^0-9]/g, '')
@@ -53,60 +58,15 @@ export function fact(ctx: Context, body: FactBody): Fact {
   return { id, at: ctx.now, scene: sceneOf(ctx), by: who(ctx.actor), ...body }
 }
 
-/**
- * Writes the facts as one new file in their scene's folder: a temporary name first, then linked to
- * its final name, which fails rather than replace a file that is there. Nothing is ever rewritten.
- */
-export async function writeFacts(dir: string, facts: Fact[]): Promise<void> {
-  const first = facts[0]
-  if (!first) return
-  const folder = join(dir, FACTS_DIR, first.scene)
-  await mkdir(folder, { recursive: true })
-  const bytes = facts.map((f) => `${JSON.stringify(f)}\n`).join('')
-  for (;;) {
-    const name = `${compact(first.at)}-${randomBytes(4).toString('hex')}.jsonl`
-    const tmp = join(folder, `.tmp-${name}`)
-    const handle = await open(tmp, 'wx')
-    try {
-      await handle.writeFile(bytes)
-      await handle.sync()
-    } finally {
-      await handle.close()
-    }
-    try {
-      await link(tmp, join(folder, name))
-      return
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-    } finally {
-      await unlink(tmp)
-    }
-  }
+/** Appends the facts as one write; they are never rewritten. */
+export async function appendFacts(ctx: PluginContext, facts: readonly Fact[]): Promise<void> {
+  if (facts.length > 0) await ctx.tools.storage.records.append(facts)
 }
 
-/** Every fact on disk, skipping temporary files and lines that are not facts. A fact seen twice is kept once. */
-export async function readFacts(dir: string): Promise<Fact[]> {
-  const root = join(dir, FACTS_DIR)
-  const byId = new Map<string, Fact>()
-  for (const scene of await readdir(root).catch(() => [] as string[])) {
-    for (const name of await readdir(join(root, scene)).catch(() => [] as string[])) {
-      if (name.startsWith('.') || !name.endsWith('.jsonl')) continue
-      for (const line of (await readFile(join(root, scene, name), 'utf8')).split('\n')) {
-        const parsed = parseFact(line)
-        if (parsed && !byId.has(parsed.id)) byId.set(parsed.id, parsed)
-      }
-    }
-  }
-  return [...byId.values()]
-}
-
-function parseFact(line: string): Fact | null {
-  if (line.trim() === '') return null
-  try {
-    const raw = JSON.parse(line) as Partial<Record<keyof Fact, unknown>>
-    const strings = [raw.id, raw.at, raw.scene, raw.kind, raw.thing].every((v) => typeof v === 'string')
-    return strings && KINDS.has(raw.kind as string) ? (raw as Fact) : null
-  } catch {
-    return null
-  }
+/** A stored object as a fact, or null when it is not one. */
+export function parseFact(raw: unknown): Fact | null {
+  const f = raw as Partial<Record<keyof Fact, unknown>> | null
+  if (typeof f !== 'object' || f === null) return null
+  const strings = [f.id, f.at, f.scene, f.kind, f.thing].every((v) => typeof v === 'string')
+  return strings && KINDS.has(f.kind as string) ? (f as Fact) : null
 }
