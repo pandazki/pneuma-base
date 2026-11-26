@@ -3,7 +3,6 @@
 // typed blocks and as a panel it draws itself (ui/panel.html). Replace the marks with what your
 // plugin does: the shape stays the same.
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CONTRACT, defineCommand, definePlugin, pluginName, type Action, type Block, type PluginContext, type SayAnswer } from '@pneuma-base/sdk'
 import { recordStore, type Envelope } from '@pneuma-base/sdk/kit'
@@ -19,8 +18,8 @@ export function parseMark(raw: Record<string, unknown>): Mark | string {
   return typeof raw.path === 'string' && typeof raw.text === 'string' ? { path: raw.path, text: raw.text } : '不是一条标记'
 }
 
-/** The marks, under the plugin's own directory: one new file per write, no file ever changed. */
-const marks = (ctx: PluginContext) => recordStore(join(ctx.dir, 'marks'), parseMark)
+/** The marks, a store of the plugin's record place: each write appended, nothing ever changed. */
+const marks = (ctx: PluginContext) => recordStore(ctx, 'marks', parseMark)
 
 /** src/cognition.md, without the notes to the plugin's author. */
 const cognition = readFileSync(new URL('./cognition.md', import.meta.url), 'utf8')
@@ -83,7 +82,7 @@ export default definePlugin({
   version: '0.1.0',
   summary: 'agent 给库里的东西留一句标记，主人在一页里看全部。',
   cognition: { title: '标记', text: cognition },
-  storage: [{ dir: 'marks', kind: 'body' }],
+  storage: [{ dir: 'facts', kind: 'body' }],
   statements: [NAME],
   ownerCommands: [list],
   views: [{ id: PAGE, title: '标记', icon: 'bookmark', nav: true, filters: [] }],
@@ -93,7 +92,8 @@ export default definePlugin({
   async onSay(req, ctx) {
     if (req.about === null || req.text === null) return refused(`要写是哪样东西和一句话：say ${NAME} <库内路径> "<一句话>"`)
     const at = await ctx.tools.resolve(req.about)
-    if (at === null || at.region !== 'content' || !(await ctx.tools.thing(at.path))) return refused(`库里没有这样东西：${req.about}`)
+    const [thing] = at === null || at.region !== 'content' ? [] : await ctx.tools.what([at.path])
+    if (at === null || (thing?.kind !== 'file' && thing?.kind !== 'bundle')) return refused(`库里没有这样东西：${req.about}`)
     const store = marks(ctx)
     await store.append([store.stamp(ctx, { path: at.path, text: req.text })])
     return { outcome: 'heard', note: `已给 ${at.path} 留下标记。` }

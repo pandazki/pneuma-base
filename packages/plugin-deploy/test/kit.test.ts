@@ -3,7 +3,7 @@
 // plugin's back, a publish that crashed halfway, a target that cannot be read), a target's own
 // content id and site names, its additions to the page, and removing the plugin while sites are online.
 import { createHash } from 'node:crypto'
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
@@ -34,14 +34,14 @@ type Options = { reports?: boolean; identify?: boolean; names?: boolean; view?: 
 
 /** A target in memory. `fail`: every step throws; `crash`: a publish lands, then throws; `down`: asking what it serves throws. */
 function fakeTarget(opts: Options = {}) {
-  const fake = { served: new Map<string, { content: string; files: string[] }>(), calls: [] as string[], fail: false, crash: false, down: false, asked: 0 }
+  const fake = { served: new Map<string, { content: string; files: string[]; others: string[] }>(), calls: [] as string[], fail: false, crash: false, down: false, asked: 0 }
   const open = (where: string): Target => ({
     key: `fake:${where}`,
     label: `假的 ${where}`,
     async publish(site, _dir, meta) {
       fake.calls.push(`publish ${site}`)
       if (fake.fail) throw new Error('目标坏了')
-      fake.served.set(site, { content: meta.content, files: meta.files.map((f) => f.path) })
+      fake.served.set(site, { content: meta.content, files: meta.files.map((f) => f.path), others: [...meta.others] })
       if (fake.crash) throw new Error('传到一半断了')
       return { url: url(site) }
     },
@@ -139,7 +139,11 @@ async function library(plugin: Plugin, noTarget = false) {
     check: () => agentFace.check({ since: null, includeArchived: false }, as(claude)),
     /** What `<name> list` says of each declared thing. */
     list: async () => ((await cmd(`${plugin.name} list`)) as { data: { path: string; status: string; site: string | null; url: string | null }[] }).data,
-    fingerprint: async (path: string) => pluginContext(as(owner), plugin.name).tools.fingerprint(path as LibraryPath),
+    /** The fingerprint storage gives of the content at a path. */
+    fingerprint: async (path: string) => {
+      const answer = await pluginContext(as(owner), plugin.name).tools.storage.content(path)
+      return 'fingerprint' in answer ? answer.fingerprint : null
+    },
     pctx: () => pluginContext(as(owner), plugin.name),
   }
   if (!noTarget) expect(await cmd(`${plugin.name} target set`, [], { where: ['w'] })).toMatchObject({ outcome: 'done' })
@@ -333,6 +337,63 @@ describe('a target that reports what it serves', () => {
   })
 })
 
+// ---- what it copies and what it follows ----
+
+describe('what the kit reads of the library', () => {
+  it.each([false, true])('publishes a bundle as its content rule counts it, without the marker or what its .gitignore files leave out, and names what is no file (identify: %s)', async (identify) => {
+    const { fake, adapter } = fakeTarget({ identify })
+    const l = await library(deployPlugin('fake', adapter))
+    await l.site('sites/shop', { 'index.html': '<h1>shop</h1>', '.gitignore': '*.env\nbuild/\n', 'keep/.gitignore': '!local.env\n' })
+    // Written in place after it was copied in, as an agent's build would: not its content by the rule.
+    l.write('sites/shop/secret.env', 'TOKEN=1')
+    l.write('sites/shop/build/out.js', 'built')
+    l.write('sites/shop/keep/local.env', 'kept')
+    symlinkSync('index.html', join(l.root, 'sites/shop/home.html'))
+    await l.say('sites/shop')
+    expect(await l.cmd('fake on', ['sites/shop'])).toMatchObject({ outcome: 'done' })
+    const held = fake.served.get(siteName('sites/shop' as LibraryPath))
+    expect(held?.files).toEqual(['.gitignore', 'index.html', 'keep/.gitignore', 'keep/local.env'])
+    expect(held?.others).toEqual(['home.html'])
+    if (!identify) expect(held?.content).toBe(await l.fingerprint('sites/shop'))
+    expect(await l.list()).toEqual([expect.objectContaining({ status: 'online' })])
+  })
+
+  // A publish to a target without its own id is refused unless the files copied make the fingerprint storage gives by its content rule.
+  it.each([
+    ['*.log\n!keep.log\n', ['a.log', 'keep.log', 'sub/b.log', 'sub/c.txt']],
+    ['/top.txt\nsub/\n', ['top.txt', 'x/top.txt', 'sub/a.txt', 'subway.txt']],
+    ['**/cache\ndist/**\n', ['cache/a', 'x/cache/b', 'dist/a.js', 'dist/x/b.js', 'distant.txt']],
+    ['a/**/b\n[ab].md\nv?.txt\n', ['a/b', 'a/x/y/b', 'a.md', 'c.md', 'v1.txt', 'v12.txt']],
+    ['# a comment\n\\#hash\nspace.txt   \n', ['#hash', 'space.txt', '# a comment']],
+  ])('copies what storage counts under the ignore file %j', async (ignore, files) => {
+    const { fake, adapter } = fakeTarget()
+    const l = await library(deployPlugin('fake', adapter))
+    await l.site('sites/x', { 'index.html': 'x', '.gitignore': ignore })
+    for (const f of files) l.write(`sites/x/${f}`, f)
+    l.write('sites/x/nested/.gitignore', '*\n!.gitignore\n')
+    l.write('sites/x/nested/gone.txt', 'gone')
+    await l.say('sites/x')
+    expect(await l.cmd('fake on', ['sites/x'])).toMatchObject({ outcome: 'done' })
+    expect(fake.served.get(siteName('sites/x' as LibraryPath))?.content).toBe(await l.fingerprint('sites/x'))
+  })
+
+  it('follows each declared file among the loose files of an open directory registered as one act', async () => {
+    const { fake, adapter } = fakeTarget()
+    // The plugin's records make `c` open, as a ledger's would: registering it registers the loose files of its level.
+    const l = await library({ ...deployPlugin('fake', adapter), openDirs: async () => ['c' as LibraryPath] })
+    for (const path of [P, Q]) {
+      await l.put(path, 'v1')
+      await l.say(path)
+      await l.cmd('fake on', [path])
+      l.write(path, 'v2')
+    }
+    l.write('c/loose.md', 'new')
+    const put = await agentFace.put({ kind: 'register', path: 'c', origin: { kind: 'made', from: [], outside: [] } }, l.as(claude))
+    expect(put).toMatchObject({ outcome: 'accepted', notes: [{ plugin: 'fake', text: `${P} 在线，已重新发布：${url(siteName(P))}；${Q} 在线，已重新发布：${url(siteName(Q))}` }] })
+    for (const path of [P, Q]) expect(fake.served.get(siteName(path))?.content).toBe(await l.fingerprint(path))
+  })
+})
+
 // ---- the plugin it makes ----
 
 describe('the plugin the kit makes', () => {
@@ -444,15 +505,17 @@ describe('the plugin the kit makes', () => {
     expect(await l.cmd('plugin remove', ['fake'])).toMatchObject({ outcome: 'done' })
   })
 
-  it('lists a records line it cannot read in check, and reads the rest', async () => {
+  it('lists the facts it cannot read in check, one an earlier version wrote and one in its record place, and reads the rest', async () => {
     const { adapter } = fakeTarget()
     const l = await library(deployPlugin('fake', adapter))
     await l.put(P, 'v1')
     await l.say(P)
-    appendFileSync(join(l.root, '.pneuma-base/fake/facts/broken.jsonl'), '{"id":"f_9"\n')
+    // A line that is not JSON is no fact: storage leaves it out.
+    appendFileSync(join(l.root, '.pneuma-base/fake/facts/broken.jsonl'), '{"half\n{"id":"f_9","kind":"switch"}\n')
+    const [order] = await l.pctx().tools.storage.records.append([{ store: 'facts', id: 'f_10', kind: 'switch' }])
     expect(await l.list()).toEqual([expect.objectContaining({ path: P, status: 'offline' })])
     const section = (await l.check()).sections.find((s) => s.title === '部署记录里读不懂的行')
-    expect(section?.body).toContain('.pneuma-base/fake/facts/broken.jsonl 第 1 行')
+    expect(section?.body.split('\n')).toEqual([expect.stringMatching(/^fake 的记录 \S*broken\.jsonl#2：缺 id、at、actor 或 session$/), `fake 的记录 ${order}：缺 id、at、actor 或 session`])
   })
 
   it('shows a target’s own columns, fields and blocks, and the address as a link that can be copied', async () => {

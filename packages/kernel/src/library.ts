@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { resolveAddress } from './address.js'
 import { settle } from './claims.js'
 import { assembleDescription } from './cognition.js'
+import { makeV1Dirs } from './contract-v1.js'
 import { DESCRIPTION_FILE } from './paths.js'
 import { storageOf, type Storage } from './storage.js'
 import { isDescribed, isFailure, PLUGIN_NAME, type Grant, type GrantId, type LibraryConfig, type Library, type LibraryPath, type Plugin, type PluginName, type PluginTable } from '@pneuma-base/sdk'
@@ -25,7 +26,9 @@ export async function openLibrary(dir: string, table: PluginTable): Promise<Libr
   if (root === null) return null
   const { declaration } = await storageOf(root).declaration.read().catch(() => ({ declaration: null }))
   if (declaration === null) return null
-  return libraryOf(root, parseConfig(declaration), table)
+  const library = libraryOf(root, parseConfig(declaration), table)
+  await makeV1Dirs(storageOf(root), root, library.plugins)
+  return library
 }
 
 function libraryOf(root: string, config: LibraryConfig, table: PluginTable): Library {
@@ -55,6 +58,7 @@ export async function saveConfig(root: string, config: LibraryConfig, table: Plu
   }
   const library = libraryOf(root, config, table)
   await writeDescription(store, assembleDescription(library))
+  await makeV1Dirs(store, root, library.plugins)
   return library
 }
 

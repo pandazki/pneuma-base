@@ -1,6 +1,8 @@
 // pulse against a real library: a temporary home with the built plugin installed, calls through the
 // real command line, and the viewer's server. Pure helpers are imported from the sources.
 import assert from 'node:assert/strict'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import type { Action, Block, ViewResult } from '@pneuma-base/sdk'
@@ -136,4 +138,23 @@ test('clearing is destructive: refused for an agent and without confirmation, do
   const put = await sb.agent('codex', 's3', ['put', '-', '--to', 'notes/d.md', '--made'], { input: '# d\n' })
   assert.equal(put.code, 0, put.stderr)
   assert.equal((await page()).subtitle, `最近 ${DAYS} 天 1 次`)
+})
+
+test('records an earlier version wrote in activity/ still count, beside the ones in the record place', async () => {
+  const own = await sandbox({ plugins: [dist] })
+  try {
+    const dir = join(own.library, '.pneuma-base', plugin.name, 'activity')
+    mkdirSync(dir, { recursive: true })
+    const at = new Date(Date.now() - 60_000).toISOString()
+    writeFileSync(join(dir, '20261101000000000-abcdef01.jsonl'), `${JSON.stringify({ id: 'f_old', at, actor: { kind: 'agent', name: 'codex' }, session: 'old', what: 'put', path: 'notes/old.md' })}\n`)
+    const put = await own.agent('claude-code', 's1', ['put', '-', '--to', 'notes/new.md', '--made'], { input: '# new\n' })
+    assert.equal(put.code, 0, put.stderr)
+    const viewer = await own.viewer()
+    const shown = (await viewer.view(PAGE)) as Shown
+    await viewer.stop()
+    assert.equal(shown.subtitle, `最近 ${DAYS} 天 2 次`)
+    assert.deepEqual(find(shown.blocks, 'table')?.rows.map((r) => r.cells.who!.text).sort(), ['claude-code', 'codex'])
+  } finally {
+    await own.cleanup()
+  }
 })

@@ -4,8 +4,8 @@
 // an equal id before anything is uploaded. The bytes depend only on the files (the kit hands them sorted
 // by path). What the contract refuses is told here, before anything is sent.
 import { createHash } from 'node:crypto'
-import { readdir, readFile } from 'node:fs/promises'
-import { extname, join, relative } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { extname } from 'node:path'
 import type { SiteFile } from '@pneuma-base/sdk/kit'
 
 export const MAX_FILES = 256
@@ -88,10 +88,4 @@ export function refusal(files: readonly SiteFile[], pkg: Package): string | null
     if (why !== null) return `文件路径 ${JSON.stringify(f.path)} ${why}，Cloudflare 上的 PneumaSpace 不收`
   }
   return null
-}
-
-/** The symbolic links under a site's directory, relative to it. The library does not count them as content, so they are not in the files; a site that has one would go up without it. */
-export async function linksIn(dir: string): Promise<string[]> {
-  const entries = await readdir(dir, { recursive: true, withFileTypes: true }).catch(() => [])
-  return entries.filter((e) => e.isSymbolicLink()).map((e) => relative(dir, join(e.parentPath, e.name)).split(/[\\/]/).join('/'))
 }

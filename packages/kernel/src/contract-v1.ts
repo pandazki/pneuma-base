@@ -172,3 +172,23 @@ export function v1Tools(store: Storage, root: string, own: string): Pick<PluginT
     putting: async () => [],
   }
 }
+
+const made = new Set<string>()
+
+/**
+ * Contract 1 promised that a plugin's own directory is there whenever a hook runs: made here, once a
+ * process, for each installed plugin of contract 1, through storage (a write of an empty file, then its
+ * removal, leave the directory and nothing in it).
+ */
+export async function makeV1Dirs(store: Storage, root: string, plugins: readonly Plugin[]): Promise<void> {
+  for (const plugin of plugins) {
+    const key = `${root}\0${plugin.name}`
+    if (!isV1(plugin) || made.has(key)) continue
+    made.add(key)
+    const own = store.own(plugin.name)
+    const place = '.contract-1'
+    const written = await own.write(place, { data: '' }, 'empty')
+    const [there] = isFailure(written) ? await own.glance([place]) : [written.entry]
+    if (there !== undefined && isDescribed(there) && there.token !== undefined) await own.remove(place, there.token)
+  }
+}

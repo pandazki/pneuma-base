@@ -42,14 +42,11 @@ describe('a library with no plugin', () => {
     expect(readFileSync(join(lib, 'notes/idea.md'), 'utf8')).toBe('# idea\n')
   })
 
-  it('find lists the library files whose names match, and skips .pneuma-base', () => {
+  it('find finds nothing with no plugin: the kernel walks no folder to match names', () => {
     agent(['put', '-', '--to', 'payments/comparison.md', '--made'], { input: 'a' })
-    agent(['put', '-', '--to', 'notes/other.md', '--made'], { input: 'b' })
     const r = agent(['find', 'comparison'])
     expect(r.code, r.stderr).toBe(0)
-    expect(r.json()).toEqual({ hits: [{ path: 'payments/comparison.md', title: 'comparison.md', by: 'kernel', group: null, detail: null }], problems: [] })
-    const config = agent(['find', 'config'])
-    expect(config.json().hits).toEqual([])
+    expect(r.json()).toEqual({ hits: [], problems: [] })
   })
 
   it('inspect gives the facts of the file itself and no sections', () => {
@@ -91,9 +88,9 @@ describe('a library with no plugin', () => {
     const out = r.json()
     expect(out.say).toMatchObject({ outcome: 'not-heard', reason: 'no-plugin-for-kind' })
     expect(out.check).toEqual({ sections: [], asks: [], requests: { ended: [], pending: 0 }, problems: [] })
-    // start's find asks the records (tmp/run-7), and a library with no plugin keeps none; find walks names still.
+    // Finding asks the plugins' records (tmp/run-7), and a library with no plugin keeps none.
     expect(out.find.hits).toEqual([])
-    expect(agent(['find', 'payments']).json().hits.map((h: { path: string }) => h.path)).toEqual(['payments/comparison.md'])
+    expect(agent(['find', 'payments']).json().hits).toEqual([])
   })
 
   it('prints short Chinese text without --json', () => {

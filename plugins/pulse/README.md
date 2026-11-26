@@ -8,14 +8,16 @@ Pneuma Base 插件。每次有东西被放进库（登记、放入、换新内�
 
 ## 存储
 
-`<库>/.pneuma-base/pulse/` 下两个本体目录，都用 sdk 的 `recordStore`，只新增文件：
+记录在库的记录处（`ctx.tools.storage.records`），用 sdk 的 `recordStore`，只追加：两个记录库，每条带着库名（`store`）。
 
-| 目录 | 一行是 |
+| 记录库 | 一条是 |
 | --- | --- |
-| `activity/` | `{ what: 'put' \| 'archive', path }`，加上 `id`、`at`、`actor`、`session` |
-| `clears/` | `{ cleared: true }`，加上同样的信封 |
+| `activity` | `{ what: 'put' \| 'archive', path }`，加上 `id`、`at`、`actor`、`session` |
+| `clears` | `{ cleared: true }`，加上同样的信封 |
 
-清空不删文件（规范 3.7 不许改写、删除自己目录里已有的文件）：它写一条清空记录，`at` 不晚于最近一次清空的活动都不再算。同步过来的旧记录也一样不算。
+存储把它们写在 `<库>/.pneuma-base/pulse/facts/` 下。以前的版本写在 `activity/`、`clears/` 两个目录里的记录，`recordStore` 读的时候一起读进来，照算。
+
+清空不删记录（规范 3.7 不许改写、删除自己目录里已有的文件）：它写一条清空记录，`at` 不晚于最近一次清空的活动都不再算。同步过来的旧记录也一样不算。登记一个目录这一层的散文件时，每个文件算一次。
 
 按天分组用的是跑视图的进程（`pneuma-base view`）所在机器的本地时区。
 

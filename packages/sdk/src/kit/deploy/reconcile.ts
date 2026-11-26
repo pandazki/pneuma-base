@@ -1,15 +1,14 @@
 // The reconciler: for a declared thing, read what the library has and what the target holds, decide
 // (model.ts), and do the difference. Every hook and command runs it for the things it touched. What
-// the library has comes through the context's tools, so the kit runs the running kernel's own code.
-import { randomUUID } from 'node:crypto'
-import { readdir, rm } from 'node:fs/promises'
-import { join, posix } from 'node:path'
+// the library has comes through the context's tools, in storage's words (content.ts).
+import { join } from 'node:path'
 import type { LibraryPath, PluginContext, PluginName, PluginTools } from '../../types.js'
 import { configFile } from '../config-file.js'
 import { recordStore, type RecordStore, type Skipped } from '../records.js'
+import { fingerprintOf, withStaged, type ThingKind } from './content.js'
 import { apply, fold, parseFact, type Declared, type Deployments, type Fact, type FactBody, type OnTarget, type TargetKey, type ThingId } from './facts.js'
 import { plan, siteName, statusOf, want, type ContentId, type SiteName } from './model.js'
-import type { Look, Served, SiteFile, Target, TargetAdapter, TargetConfig, TargetEnv } from './target.js'
+import type { Look, Served, Target, TargetAdapter, TargetConfig, TargetEnv } from './target.js'
 
 /** What the kit was made with: the plugin's name, its title for people, and the kinds of target it can publish to. */
 export type Kit = { readonly name: PluginName; readonly title: string; readonly targets: readonly TargetAdapter[] }
@@ -33,7 +32,7 @@ function parseStored(raw: unknown): StoredTarget {
   return { format: 1, target: raw.target as StoredTarget['target'] }
 }
 
-export const targetFile = (ctx: PluginContext) => configFile(join(ctx.dir, 'config.json'), parseStored)
+export const targetFile = (ctx: PluginContext) => configFile(ctx, 'config.json', parseStored)
 const stageRoot = (ctx: PluginContext) => join(ctx.cacheDir, 'stage')
 
 /** The target a stored configuration opens: by its kind, through that adapter's own parser. */
@@ -75,11 +74,14 @@ export async function closeTarget(target: Target | null): Promise<void> {
   }
 }
 
+/** The plugin's records: the store `facts` of its record place, where the kit always kept them. */
+export const factsOf = (ctx: PluginContext): RecordStore<FactBody> => recordStore(ctx, 'facts', parseFact)
+
 /** Loads the records and the target, runs `body`, writes the facts it added and closes the target, also when it throws. `view`: it draws a page or the item panel. */
 export async function withRun<T>(kit: Kit, ctx: PluginContext, body: (run: Run) => Promise<T>, view = false): Promise<T> {
   const target = await configured(kit, ctx)
   try {
-    const store = recordStore(join(ctx.dir, 'facts'), parseFact)
+    const store = factsOf(ctx)
     const { records, skipped } = await store.read()
     const run: Run = { kit, ctx, store, d: fold(records), skipped, target, facts: [], view }
     try {
@@ -104,19 +106,23 @@ const messageOf = (error: unknown) => (error instanceof Error ? error.message : 
 /** The site name a library path has on the configured target; the default rule without one. */
 const nameOf = (run: Run, path: LibraryPath): SiteName => run.target?.siteName?.(path) ?? siteName(path)
 
-/** The thing's files as its site serves them, sorted by the UTF-8 bytes of their paths; null when nothing is at the path. */
-async function siteFiles(tools: PluginTools, path: LibraryPath): Promise<SiteFile[] | null> {
-  const files = await tools.files(path)
-  if (files !== null) return files.map((f) => ({ path: f.path, abs: join(tools.abs(path), f.path) }))
-  return (await tools.thing(path)) ? [{ path: posix.basename(path), abs: tools.abs(path) }] : null
+/** What each path holds as a thing, from one glance: a file or a bundle, or null. */
+export async function thingsAt(tools: PluginTools, paths: readonly LibraryPath[]): Promise<(ThingKind | null)[]> {
+  if (paths.length === 0) return []
+  return (await tools.what(paths)).map((at) => (at.kind === 'file' || at.kind === 'bundle' ? at.kind : null))
 }
 
-/** The content id of what is at a path: the target's own when it has one, else the kernel fingerprint. */
-async function contentAt(run: Run, path: LibraryPath): Promise<ContentId | null> {
-  const { target } = run
-  if (!target?.identify) return (await run.ctx.tools.fingerprint(path)) as ContentId | null
-  const files = await siteFiles(run.ctx.tools, path)
-  return files && target.identify(files)
+/**
+ * The content id of the thing at a path: the target's own when it has one, from a copy of the files
+ * (every byte read and copied, each time); else the fingerprint storage gives (read now, unless storage
+ * knows it already).
+ */
+async function contentAt(run: Run, path: LibraryPath, kind: ThingKind | null): Promise<ContentId | null> {
+  const { target, ctx } = run
+  if (kind === null) return null
+  const { identify } = target ?? {}
+  if (!identify) return (await fingerprintOf(ctx.tools.storage, path)) as ContentId | null
+  return withStaged(ctx.tools.storage, path, kind, stageRoot(ctx), (staged) => identify(staged.files))
 }
 
 /** What the records say the current target holds for a thing. */
@@ -151,11 +157,15 @@ async function lookAll(run: Run, ids: readonly ThingId[]): Promise<Seen[]> {
   const { tools } = run.ctx
   const { target } = run
   const holders = target ? run.d.sites.get(target.key as TargetKey) : undefined
+  const things = ids.map((id) => run.d.things.get(id) as Declared)
+  // The content matters only for what is switched on and not archived; one glance says what those paths hold.
+  const counted = things.filter((t) => t.on && tools.regionOf(t.path) !== 'archive')
+  const kinds = new Map((await thingsAt(tools, counted.map((t) => t.path))).map((kind, i) => [(counted[i] as Declared).id, kind]))
   const parts = []
-  for (const id of ids) {
-    const thing = run.d.things.get(id) as Declared
+  for (const thing of things) {
+    const id = thing.id
     const archived = tools.regionOf(thing.path) === 'archive'
-    const standing = { on: thing.on, archived, content: thing.on && !archived ? await contentAt(run, thing.path) : null }
+    const standing = { on: thing.on, archived, content: kinds.has(id) ? await contentAt(run, thing.path, kinds.get(id) ?? null) : null }
     const original = archived ? tools.originalPath(thing.path) : thing.path
     const named = original === null ? null : nameOf(run, original)
     const mine = recorded(run, id)
@@ -292,32 +302,22 @@ export async function sweep(run: Run): Promise<{ done: Done[]; failed: { site: S
   return out
 }
 
-/** The files under a directory, relative and '/'-separated, sorted by the UTF-8 bytes of their paths. */
-async function filesUnder(dir: string): Promise<SiteFile[]> {
-  const entries = await readdir(dir, { recursive: true, withFileTypes: true })
-  return entries
-    .filter((e) => e.isFile())
-    .map((e) => {
-      const abs = join(e.parentPath, e.name)
-      return { path: abs.slice(dir.length + 1).split(/[\\/]/).join('/'), abs }
-    })
-    .sort((a, b) => Buffer.compare(Buffer.from(a.path), Buffer.from(b.path)))
-}
-
 /**
  * Copies the files the thing's content counts to a fresh directory in the cache (a single file keeps
- * its name; a bundle leaves its marker out), checks they are the content decided on, and hands that
- * directory to the target.
+ * its name; a bundle leaves out its marker and what its `.gitignore` files leave out), checks they are
+ * the content decided on, and hands that directory to the target. With a target's own id and an ignore
+ * file in the bundle, the copy is also checked against the fingerprint storage gives by the same rule.
  */
 async function publish(run: Run, target: Target, path: LibraryPath, site: SiteName, content: ContentId): Promise<{ url: string | null }> {
-  const stage = join(stageRoot(run.ctx), randomUUID())
-  try {
-    const copied = await run.ctx.tools.copyOut(path, stage)
-    const files = copied === null ? [] : await filesUnder(stage)
-    const staged = copied === null ? null : target.identify ? await target.identify(files) : copied
-    if (staged !== content) throw new Error(`${path} 正在被改动，没有发布；之后运行 ${run.kit.name} sync`)
-    return await target.publish(site, stage, { content, path, at: run.ctx.now, files })
-  } finally {
-    await rm(stage, { recursive: true, force: true })
-  }
+  const { storage } = run.ctx.tools
+  const [kind] = await thingsAt(run.ctx.tools, [path])
+  const changing = () => new Error(`${path} 正在被改动，没有发布；之后运行 ${run.kit.name} sync`)
+  if (kind === null || kind === undefined) throw changing()
+  return withStaged(storage, path, kind, stageRoot(run.ctx), async (staged) => {
+    if ((target.identify ? await target.identify(staged.files) : staged.fingerprint) !== content) throw changing()
+    if (target.identify && staged.ignoring && (await fingerprintOf(storage, path)) !== staged.fingerprint) {
+      throw new Error(`${path} 复制出来的文件和它在库里按 .gitignore 算的内容不一样，没有发布`)
+    }
+    return target.publish(site, staged.dir, { content, path, at: run.ctx.now, files: staged.files, others: staged.others })
+  })
 }

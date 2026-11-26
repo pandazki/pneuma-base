@@ -4,12 +4,10 @@
 import { CONTRACT, pluginName } from '../../index.js'
 import type { IconName } from '../../icons.js'
 import { formOf } from '../../params.js'
-import type { Action, Plugin, PluginAsk, SayAnswer, SecretDecl } from '../../types.js'
-import { join } from 'node:path'
-import { recordStore } from '../records.js'
+import type { Action, Plugin, PluginAsk, PluginNoteAnswer, SayAnswer, SecretDecl } from '../../types.js'
 import { commands, switchName, SWITCH_PARAMS } from './commands.js'
-import { fold, newThingId, parseFact } from './facts.js'
-import { declaredAt, look, looks, record, settle, thingPath, withRun, type Kit } from './reconcile.js'
+import { fold, newThingId } from './facts.js'
+import { declaredAt, factsOf, look, looks, record, settle, thingPath, thingsAt, withRun, type Kit } from './reconcile.js'
 import type { TargetAdapter } from './target.js'
 import { cognitionText, followed, lookText, skippedText, staysOnline, unsettledText } from './words.js'
 import { itemSection, sitesPage, sitesView, targetPage, targetPages, viewDecls } from './views.js'
@@ -39,6 +37,15 @@ function secretsOf(kit: Kit): { secrets?: SecretDecl[] } {
 function switchAction(kit: Kit, path: string, on: boolean): Action {
   const { inputs, call } = formOf({ name: switchName(kit.name, on), params: SWITCH_PARAMS }, { fixed: { path } })
   return { label: on ? '上线' : '不上线', tone: 'default', confirm: null, inputs, call }
+}
+
+/** Several answers as one: their notes in one, every problem. Null for none. */
+function joined(answers: readonly PluginNoteAnswer[]): PluginNoteAnswer | null {
+  if (answers.length <= 1) return answers[0] ?? null
+  const notes = answers.flatMap((a) => ('problems' in a ? (a.note === null ? [] : [a.note]) : [a]))
+  const problems = answers.flatMap((a) => ('problems' in a ? a.problems : []))
+  const note = notes.length === 0 ? null : { text: notes.map((n) => n.text).join('；') }
+  return problems.length === 0 ? note : { note, problems }
 }
 
 const heard = (note: string): SayAnswer => ({ outcome: 'heard', note })
@@ -73,10 +80,10 @@ export function deployPlugin(name: string, targets: TargetAdapter | readonly Tar
       const { tools } = ctx
       const path = await thingPath(tools, input)
       if (path === null) return refused(`${input} 不在库的内容里`)
-      if (tools.regionOf(path) === 'archive' || (!(await tools.thing(path)) && (await tools.thing(tools.archivedPath(path))))) {
-        return refused(`${path} 已归档；取回之后再声明`)
-      }
-      if (!(await tools.thing(path))) return refused(`库里没有这样东西：${input}`)
+      if (tools.regionOf(path) === 'archive') return refused(`${path} 已归档；取回之后再声明`)
+      const [here, archived] = await thingsAt(tools, [path, tools.archivedPath(path)])
+      if (!here && archived) return refused(`${path} 已归档；取回之后再声明`)
+      if (!here) return refused(`库里没有这样东西：${input}`)
       return withRun(kit, ctx, async (run) => {
         const known = run.d.byPath.get(path)
         if (known !== undefined) return heard(`${path} 早已声明可以部署：${lookText(await look(run, known))}`)
@@ -85,15 +92,21 @@ export function deployPlugin(name: string, targets: TargetAdapter | readonly Tar
       })
     },
 
-    /** New content, a registration or a move: the thing at the path follows. */
+    /** New content, a registration or a move: the thing at the path follows; of the files of a directory registered, each one declared. */
     async onPut(req, ctx) {
       return withRun(kit, ctx, async (run) => {
         if (req.kind === 'move') {
           const moved = run.d.byPath.get(req.from)
           if (moved !== undefined) record(run, { kind: 'move', thing: moved, from: req.from, to: req.path })
         }
-        const id = run.d.byPath.get(req.path)
-        return id === undefined ? null : followed(kit, await settle(run, id), ctx, req.kind === 'move' ? '挪动' : '放入')
+        const paths = req.kind === 'register-files' ? req.files.map((f) => f.path) : [req.path]
+        const answers: PluginNoteAnswer[] = []
+        for (const path of paths) {
+          const id = run.d.byPath.get(path)
+          const answer = id === undefined ? null : followed(kit, await settle(run, id), ctx, req.kind === 'move' ? '挪动' : '放入')
+          if (answer !== null) answers.push(answer)
+        }
+        return joined(answers)
       })
     },
 
@@ -128,10 +141,12 @@ export function deployPlugin(name: string, targets: TargetAdapter | readonly Tar
 
     /** Each thing declared deployable whose switch the owner never set, while it is in the library: put it online, or keep it off. */
     async onAsks(ctx) {
-      const { records } = await recordStore(join(ctx.dir, 'facts'), parseFact).read()
+      const { records } = await factsOf(ctx).read()
+      const waiting = [...fold(records).things.values()].filter((t) => !t.decided && ctx.tools.regionOf(t.path) === 'content')
+      const present = await thingsAt(ctx.tools, waiting.map((t) => t.path))
       const asks: PluginAsk[] = []
-      for (const thing of fold(records).things.values()) {
-        if (thing.decided || ctx.tools.regionOf(thing.path) !== 'content' || !(await ctx.tools.thing(thing.path))) continue
+      for (const [i, thing] of waiting.entries()) {
+        if (present[i] === null) continue
         const by = thing.declaredBy === 'owner' ? '' : `${thing.declaredBy} 说 `
         asks.push({
           key: `${kit.name}:${thing.id}`,
