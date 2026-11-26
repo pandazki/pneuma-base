@@ -104,7 +104,7 @@ async function bench(name, lib) {
   const source = join(scratch, `source-${name}.md`)
   writeFileSync(source, '# 一页笔记\n\n用来量放入。\n')
   const quiet = (args) => spawnSync(process.execPath, [bin, '--library', lib, ...args], { env: { ...env, CLAUDE_CODE_SESSION_ID: 'bench-setup' }, stdio: 'ignore' })
-  quiet(['put', source, '--to', 'bench/known.md', '--brought'])
+  quiet(['put', source, '--to', 'bench/known.md', '--brought', '--note', '一页笔记'])
   for (let i = 0; i <= runs; i++) quiet(['put', source, '--to', `bench/old-${i}.md`, '--brought'])
   const rows = {
     start: measure((i) => agent(i, 'start')),
