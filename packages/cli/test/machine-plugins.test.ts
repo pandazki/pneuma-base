@@ -98,7 +98,7 @@ describe('plugin list', () => {
     install(source(pager('第一版', '0.1.0')))
     const machine = sb.run(['plugin', 'list'])
     expect(machine.code, machine.stderr).toBe(0)
-    expect(machine.stdout).toContain('pager 0.1.0  契约 1 · 装上来的\n    一页字')
+    expect(machine.stdout).toContain('pager 0.1.0  契约 2 · 装上来的\n    一页字')
     expect(machine.stdout).toMatch(/ledger 0\.9\.0 {2}契约 2 · 自带\n {4}记下每样东西/)
     expect(machine.stdout).not.toContain('这个库装了')
     sb.run(['plugin', 'add', 'pager', '--library', lib])
