@@ -22,7 +22,8 @@ test('purging the archive asks first; cancelled, nothing changes; confirmed, it 
   const dialog = page.getByRole('dialog')
   const purge = main.getByRole('button', { name: '清空归档区' })
   await nav.getByRole('button', { name: '归档区' }).click()
-  await expect(main.getByRole('row', { name: /drafts\/old\.md/ })).toBeVisible()
+  // One level at a time: the archived file lies in its folder.
+  await expect(main.getByRole('row', { name: /^drafts\// })).toBeVisible()
 
   // The dialog asks, starts on the safe choice, and Tab never leaves it.
   await purge.click()

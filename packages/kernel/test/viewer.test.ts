@@ -185,7 +185,7 @@ describe('bundles in the views', () => {
     expect(rows[2]?.cells.name).toMatchObject({ icon: 'file' })
   })
 
-  it('the item panel of a bundle gives its kind and moment, and lists its first level, each entry opening its own panel', async () => {
+  it('the item panel of a bundle gives its kind and moment, and lists its first level: a file opens its own panel, a folder the files page', async () => {
     const f = await fixture()
     site(f)
     const r = shown(await show(f, 'item', { path: 'site' }))
@@ -193,10 +193,10 @@ describe('bundles in the views', () => {
     const facts = r.blocks[1]?.kind === 'section' ? r.blocks[1].blocks[0] : undefined
     expect(facts?.kind === 'fields' && facts.fields.map((x) => `${x.label}:${x.value.text}`)).toEqual(['路径:site', '种类:一样东西（带标记的目录）', expect.stringMatching(/^改于:/)])
     const inner = tableOf({ outcome: 'shown', title: '', subtitle: null, blocks: [r.blocks[2] as Block], problems: [] })
-    expect(inner.rows.map((row) => [row.cells.path?.text, row.link?.params.path])).toEqual([
-      ['css/', 'site/css'],
-      ['index.html', 'site/index.html'],
-      ['logo.svg', 'site/logo.svg'],
+    expect(inner.rows.map((row) => [row.cells.path?.text, row.link?.view, row.link?.params.path ?? row.link?.params.dir])).toEqual([
+      ['css/', 'files', 'site/css'],
+      ['index.html', 'item', 'site/index.html'],
+      ['logo.svg', 'item', 'site/logo.svg'],
     ])
   })
 

@@ -191,8 +191,13 @@ async function archivePage(params: Record<string, string>, { ctx }: ViewerCall):
   const { root } = ctx.library
   const input = params.dir ?? ''
   const inner = input === '' ? null : parseLibraryPath(root, input)
-  const dir = inner === null ? ARCHIVE_DIR : regionOf(inner) === 'archive' ? inner : `${ARCHIVE_DIR}/${inner}`
-  const page = await pageOf(root, dir, params.after, new Set())
+  let dir = inner === null ? ARCHIVE_DIR : regionOf(inner) === 'archive' ? inner : `${ARCHIVE_DIR}/${inner}`
+  let page = await pageOf(root, dir, params.after, new Set())
+  if (page === null && dir !== ARCHIVE_DIR) {
+    // A folder of the archive is gone once its last thing is taken back: the archive's root is shown instead.
+    dir = ARCHIVE_DIR
+    page = await pageOf(root, dir, undefined, new Set())
+  }
   const listed = page?.listed ?? []
   const rows: TableRow[] = []
   if (dir !== ARCHIVE_DIR) {
@@ -481,7 +486,8 @@ function thingSections(facts: FileFacts, bundle: LibraryPath | null): Block[] {
   const rows: TableRow[] = level.entries.slice(0, PAGE).map((e) => ({
     key: e.name,
     cells: { path: { text: e.kind === 'dir' ? `${e.name}/` : e.name, mono: true, icon: e.kind === 'dir' ? 'folder' : IMAGE.test(e.name) ? 'image' : 'file' }, size: { text: e.kind === 'file' && e.size !== null ? sizeText(e.size) : '', muted: true } },
-    link: itemLink(`${facts.path}/${e.name}`),
+    // A folder inside opens on the files page, one level at a time; a file opens its own panel.
+    link: e.kind === 'dir' ? folderLink(`${facts.path}/${e.name}`) : itemLink(`${facts.path}/${e.name}`),
     actions: [],
   }))
   if (total > PAGE) {

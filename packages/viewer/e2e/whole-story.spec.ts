@@ -115,9 +115,10 @@ test('the whole story in the UI: every plugin’s page, the deploy switch, a sit
   // Bundles on the files and archive pages: each site is one row.
   await nav.getByRole('button', { name: '文件' }).click()
   await main.getByRole('row', { name: /^sites/ }).click()
-  await expect(main.getByRole('row', { name: /coffee/ })).toContainText('1 个文件')
+  await expect(main.getByRole('row', { name: /coffee/ })).toContainText('1 项')
   await shoot(page, 'files-page', STORY_SHOTS)
   await nav.getByRole('button', { name: '归档区' }).click()
-  await expect(main.getByRole('row')).toHaveCount(4)
+  await main.getByRole('row', { name: /^sites\// }).click()
+  await expect(main.getByRole('row')).toHaveCount(5) // the header, .. and the three archived sites
   await shoot(page, 'archive-page', STORY_SHOTS)
 })

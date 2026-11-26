@@ -1,5 +1,6 @@
+import { posix } from 'node:path'
 import { mayWrite } from './access.js'
-import { archivedPath, originalPath, parseLibraryPath, regionOf, withSuffix } from './paths.js'
+import { ARCHIVE_DIR, archivedPath, originalPath, parseLibraryPath, regionOf, withSuffix } from './paths.js'
 import { eachPlugin, notesOf } from './pipeline.js'
 import { storageOf, type Storage } from './storage.js'
 import { enclosingBundle, fingerprintOf, whatIs, type At } from './things.js'
@@ -60,12 +61,30 @@ export async function archive(req: ArchiveRequest, ctx: Context): Promise<Archiv
       hold = held.hold
       const moved = await store.move(from, to, { from: source.entry?.token ?? '', to: slot.expect }, { hold })
       if (isFailure(moved)) return refused(moved.reason === 'noise' ? 'noise' : moved.reason === 'refused' && action === 'move-out' ? 'original-path-taken' : 'busy')
+      await store.release(hold)
+      hold = null
+      if (action === 'move-out') await dropEmptyParents(store, from)
     }
     const moved = action !== 'stay'
     const heard = notesOf(await eachPlugin(ctx, (plugin, pctx) => plugin.onArchive?.({ kind: req.kind, from, to, moved }, pctx)))
     return { outcome: 'accepted', from, to, moved, notes: heard.notes, problems: heard.problems }
   } finally {
     if (hold !== null) await store.release(hold).catch(() => undefined)
+  }
+}
+
+/**
+ * Taking back leaves no empty folder in `_archive/`: each parent the move emptied goes, up to
+ * `_archive/` itself, once the move's hold is released. Glanced before it is listed, so the removal
+ * expects the state seen empty.
+ */
+async function dropEmptyParents(store: Storage, path: LibraryPath): Promise<void> {
+  for (let dir = posix.dirname(path); dir !== ARCHIVE_DIR && dir !== '.'; dir = posix.dirname(dir)) {
+    const [seen] = await store.glance([dir])
+    if (seen === undefined || 'outcome' in seen || seen.kind !== 'dir' || seen.token === undefined) return
+    const level = await store.overview(dir, { limit: 1 })
+    if (isFailure(level) || level.entries.length > 0 || level.noise.length > 0) return
+    if (isFailure(await store.remove(dir, seen.token))) return
   }
 }
 

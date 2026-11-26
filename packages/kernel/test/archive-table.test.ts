@@ -90,6 +90,18 @@ describe('unarchive', () => {
     expect(existsSync(join(f.root, '_archive/d/a.md'))).toBe(false)
   })
 
+  it('taking back drops the folders it emptied in _archive/, and only those', async () => {
+    const f = await fixture()
+    f.write('_archive/x/y/a.md', 'a')
+    f.write('_archive/x/b.md', 'b')
+    expect(outcome(await agentFace.archive({ kind: 'unarchive', path: 'x/y/a.md' }, f.ctx))).toMatchObject({ moved: true })
+    expect(existsSync(join(f.root, '_archive/x/y'))).toBe(false)
+    expect(f.read('_archive/x/b.md')).toBe('b')
+    expect(outcome(await agentFace.archive({ kind: 'unarchive', path: 'x/b.md' }, f.ctx))).toMatchObject({ moved: true })
+    expect(existsSync(join(f.root, '_archive/x'))).toBe(false)
+    expect(existsSync(join(f.root, '_archive'))).toBe(true)
+  })
+
   it('accepts the archived path itself', async () => {
     const f = await fixture()
     f.write('_archive/a.md', 'a')
