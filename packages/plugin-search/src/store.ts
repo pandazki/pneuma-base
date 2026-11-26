@@ -1,16 +1,16 @@
 // The index: one sqlite file in the plugin's cache directory outside the library. Rebuildable from
-// the library's files and the embedder; deleting it loses nothing.
+// the registered things and the embedder; deleting it loses nothing.
 //
-//   docs     every file the index has seen, text or not, with the stamp it was read at
+//   docs     every file of a thing the index has read, text or not; a directory thing's files with the
+//            fingerprint its manifest gave, so an unchanged one is not read again
 //   chunks   the pieces of each text file, with the sha256 of the piece
 //   fts      FTS5 over each piece's terms, rowid = chunks.id
 //   vectors  one vector per piece content and embedder, so a moved or copied piece is not embedded again
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { regionOf, type Instant, type LibraryPath } from '@pneuma-base/kernel'
-import type { FileKey, Stamp } from './fresh.js'
 
 /**
  * `node:sqlite`, loaded when an index is first opened. Node versions that still mark it experimental
@@ -30,12 +30,12 @@ function sqlite(): typeof import('node:sqlite') {
   }
 }
 
-const SCHEMA = '1'
+const SCHEMA = '2'
 const FILE = 'index.sqlite'
 
 const TABLES = `
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-CREATE TABLE docs (path TEXT NOT NULL, inner TEXT NOT NULL, size INTEGER NOT NULL, modified TEXT NOT NULL,
+CREATE TABLE docs (path TEXT NOT NULL, inner TEXT NOT NULL, fingerprint TEXT,
   text INTEGER NOT NULL, truncated INTEGER NOT NULL, PRIMARY KEY (path, inner));
 CREATE TABLE chunks (id INTEGER PRIMARY KEY, path TEXT NOT NULL, inner TEXT NOT NULL, seq INTEGER NOT NULL,
   body TEXT NOT NULL, hash TEXT NOT NULL);
@@ -45,12 +45,18 @@ CREATE VIRTUAL TABLE fts USING fts5 (terms);
 CREATE TABLE vectors (embedder TEXT NOT NULL, hash TEXT NOT NULL, v BLOB NOT NULL, PRIMARY KEY (embedder, hash));
 `
 
-/** A file as read: whether it is text, whether only its first part was, and its pieces with their terms. */
-export type Doc = { stamp: Stamp; text: boolean; truncated: boolean; chunks: { body: string; terms: string }[] }
+/**
+ * A file of a thing as read: `inner` its path inside a directory thing, '' for a file thing; the
+ * fingerprint the manifest gave a directory thing's file, null for a file thing; whether it is text,
+ * whether only its first part was, and its pieces with their terms.
+ */
+export type Doc = { inner: string; fingerprint: string | null; text: boolean; truncated: boolean; chunks: { body: string; terms: string }[] }
+/** What the registry tells the index when a thing moved or was forgotten, in the order it happened. */
+export type IndexOp = { op: 'move'; from: LibraryPath; to: LibraryPath } | { op: 'forget'; path: LibraryPath }
 /** A thing's best piece for a query, best first. */
 export type Ranked = { path: LibraryPath; chunk: number }
 export type ChunkRow = { id: number; path: LibraryPath; inner: string; body: string; truncated: boolean }
-export type DocState = { inner: string; size: number; modifiedAt: string; text: boolean; truncated: boolean; chunks: number; vectors: number }
+export type DocState = { inner: string; text: boolean; truncated: boolean; chunks: number; vectors: number }
 export type IndexStats = { files: number; textFiles: number; chunks: number; vectors: number; builtAt: Instant }
 
 const pieceHash = (body: string) => createHash('sha256').update(body).digest('hex').slice(0, 32)
@@ -120,7 +126,7 @@ export class SearchIndex {
           if (index.schema() === SCHEMA) return // another process made it meanwhile
           if ((index.db.prepare('SELECT count(*) AS n FROM sqlite_master').get() as { n: number }).n > 0) throw new ForeignIndex()
           index.db.exec(TABLES)
-          index.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?), (?, ?)').run('schema', SCHEMA, 'builtAt', now)
+          index.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?), (?, ?), (?, ?)').run('schema', SCHEMA, 'builtAt', now, 'id', randomBytes(8).toString('hex'))
         })
       }
       return index
@@ -163,35 +169,57 @@ export class SearchIndex {
     this.db.close()
   }
 
-  stamps(): Stamp[] {
-    return (this.db.prepare('SELECT path, inner, size, modified FROM docs').all() as { path: LibraryPath; inner: string; size: number; modified: string }[]).map((r) => ({
-      path: r.path,
-      inner: r.inner,
-      size: r.size,
-      modifiedAt: r.modified,
-    }))
+  /** This index, made once with its file: rows that say what it holds are of this index only. */
+  get id(): string {
+    return (this.db.prepare(`SELECT value FROM meta WHERE key = 'id'`).get() as { value: string }).value
   }
 
-  /** Forgets the dropped files and replaces what it had of the read ones. Running it twice leaves the same index. */
-  apply(drop: readonly FileKey[], docs: readonly Doc[]): void {
-    const forgetTerms = this.db.prepare('DELETE FROM fts WHERE rowid IN (SELECT id FROM chunks WHERE path = ? AND inner = ?)')
-    const forgetChunks = this.db.prepare('DELETE FROM chunks WHERE path = ? AND inner = ?')
-    const forgetDoc = this.db.prepare('DELETE FROM docs WHERE path = ? AND inner = ?')
-    const addDoc = this.db.prepare('INSERT INTO docs (path, inner, size, modified, text, truncated) VALUES (?, ?, ?, ?, ?, ?)')
+  private forgetDocs(path: LibraryPath, inner: string | null): void {
+    const where = inner === null ? 'path = ?' : 'path = ? AND inner = ?'
+    const args = inner === null ? [path] : [path, inner]
+    this.db.prepare(`DELETE FROM fts WHERE rowid IN (SELECT id FROM chunks WHERE ${where})`).run(...args)
+    this.db.prepare(`DELETE FROM chunks WHERE ${where}`).run(...args)
+    this.db.prepare(`DELETE FROM docs WHERE ${where}`).run(...args)
+  }
+
+  /** Moves what it has of a thing to its new path, and forgets what it had there; forgets a thing. Running it twice leaves the same index. */
+  apply(ops: readonly IndexOp[]): void {
+    if (ops.length === 0) return
+    this.transaction(() => {
+      for (const o of ops) {
+        if (o.op === 'forget') {
+          this.forgetDocs(o.path, null)
+          continue
+        }
+        if (o.from === o.to) continue
+        this.forgetDocs(o.to, null)
+        for (const table of ['docs', 'chunks']) this.db.prepare(`UPDATE ${table} SET path = ? WHERE path = ?`).run(o.to, o.from)
+      }
+    })
+  }
+
+  /** The fingerprint it has of each file of the thing at `path`, by its inner path. */
+  fingerprints(path: LibraryPath): Map<string, string | null> {
+    const rows = this.db.prepare('SELECT inner, fingerprint FROM docs WHERE path = ?').all(path) as { inner: string; fingerprint: string | null }[]
+    return new Map(rows.map((r) => [r.inner, r.fingerprint]))
+  }
+
+  /**
+   * What it has of the thing at `path` after a read: the files in `docs` replaced, and of the others
+   * only those in `keep` kept. Running it twice leaves the same index.
+   */
+  put(path: LibraryPath, docs: readonly Doc[], keep: ReadonlySet<string> = new Set()): void {
+    const addDoc = this.db.prepare('INSERT INTO docs (path, inner, fingerprint, text, truncated) VALUES (?, ?, ?, ?, ?)')
     const addChunk = this.db.prepare('INSERT INTO chunks (path, inner, seq, body, hash) VALUES (?, ?, ?, ?, ?)')
     const addTerms = this.db.prepare('INSERT INTO fts (rowid, terms) VALUES (?, ?)')
-    const forget = ({ path, inner }: FileKey) => {
-      forgetTerms.run(path, inner)
-      forgetChunks.run(path, inner)
-      forgetDoc.run(path, inner)
-    }
+    const read = new Set(docs.map((d) => d.inner))
     this.transaction(() => {
-      for (const key of drop) forget(key)
-      for (const { stamp, text, truncated, chunks } of docs) {
-        forget(stamp)
-        addDoc.run(stamp.path, stamp.inner, stamp.size, stamp.modifiedAt, text ? 1 : 0, truncated ? 1 : 0)
+      for (const inner of this.fingerprints(path).keys()) if (!keep.has(inner) && !read.has(inner)) this.forgetDocs(path, inner)
+      for (const { inner, fingerprint, text, truncated, chunks } of docs) {
+        this.forgetDocs(path, inner)
+        addDoc.run(path, inner, fingerprint, text ? 1 : 0, truncated ? 1 : 0)
         for (const [seq, chunk] of chunks.entries()) {
-          const { lastInsertRowid } = addChunk.run(stamp.path, stamp.inner, seq, chunk.body, pieceHash(chunk.body))
+          const { lastInsertRowid } = addChunk.run(path, inner, seq, chunk.body, pieceHash(chunk.body))
           addTerms.run(lastInsertRowid, chunk.terms)
         }
       }
@@ -270,14 +298,14 @@ export class SearchIndex {
   docsAt(path: LibraryPath, embedder: string | null): DocState[] {
     const rows = this.db
       .prepare(
-        `SELECT d.inner AS inner, d.size AS size, d.modified AS modified, d.text AS text, d.truncated AS truncated,
+        `SELECT d.inner AS inner, d.text AS text, d.truncated AS truncated,
            (SELECT count(*) FROM chunks c WHERE c.path = d.path AND c.inner = d.inner) AS chunks,
            (SELECT count(*) FROM chunks c WHERE c.path = d.path AND c.inner = d.inner
               AND EXISTS (SELECT 1 FROM vectors v WHERE v.embedder = ? AND v.hash = c.hash)) AS vectors
          FROM docs d WHERE d.path = ? ORDER BY d.inner`,
       )
-      .all(embedder, path) as { inner: string; size: number; modified: string; text: number; truncated: number; chunks: number; vectors: number }[]
-    return rows.map((r) => ({ inner: r.inner, size: r.size, modifiedAt: r.modified, text: r.text === 1, truncated: r.truncated === 1, chunks: r.chunks, vectors: r.vectors }))
+      .all(embedder, path) as { inner: string; text: number; truncated: number; chunks: number; vectors: number }[]
+    return rows.map((r) => ({ inner: r.inner, text: r.text === 1, truncated: r.truncated === 1, chunks: r.chunks, vectors: r.vectors }))
   }
 
   stats(embedder: string | null): IndexStats {
