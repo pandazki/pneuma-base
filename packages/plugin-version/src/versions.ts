@@ -88,9 +88,10 @@ export type Recorded = { version: Version; added: boolean }
 /**
  * Keeps the content at the thing's path as a version when it is not the latest one. Null when nothing
  * is there; `moved` when it changed while it was copied, or could not be copied now. `held`: the kernel
- * holds the place for a put, so it does not change while it is copied.
+ * holds the place for a put, so it does not change while it is copied. `deep`: the content is compared
+ * whatever the token on record says.
  */
-export async function record(w: Writing, thing: Thing, via: Via, held: Held | null = null): Promise<Recorded | null | 'moved'> {
+export async function record(w: Writing, thing: Thing, via: Via, held: Held | null = null, deep = false): Promise<Recorded | null | 'moved'> {
   const { ctx } = w
   const last = latest(thing)
   const seen = (token: string | undefined) => {
@@ -102,7 +103,7 @@ export async function record(w: Writing, thing: Thing, via: Via, held: Held | nu
   }
   let before = held?.token
   // A directory thing's token speaks for its own level only: before a put replaces one, its content is compared.
-  if (last && (held === null || (held.fingerprint === null && last.kept.kind === 'file'))) {
+  if (last && !deep && (held === null || (held.fingerprint === null && last.kept.kind === 'file'))) {
     const at = await lookAt(ctx, thing)
     if (at.look === 'same') return { version: last, added: false }
     if (at.look === 'gone') return null

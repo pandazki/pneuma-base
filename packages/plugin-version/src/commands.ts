@@ -5,7 +5,7 @@ import { defineCommand, parseLibraryPath, type OwnerAnswer, type OwnerCommand, t
 import { latest, placesOf, type Thing, type Version } from './model.js'
 import { exportTarget, inScratch, writeOut } from './outside.js'
 import { thingPages, thingWhere } from './rows.js'
-import { drop, present } from './store.js'
+import { drop, present, sweepPending } from './store.js'
 import { archived, timelineData, timelineText } from './text.js'
 import { apply, commit, declaredAt, diskState, fingerprintNow, load, thingPath, writing } from './versions.js'
 
@@ -132,7 +132,9 @@ export const VERSION_PRUNE = defineCommand({
     const live = found.versions.filter((v) => !v.pruned)
     const dropped = live.slice(0, Math.max(0, live.length - keep))
     const left = live.slice(dropped.length)
-    if (dropped.length === 0) return done(`${found.path} 留着的只有 ${live.length} 版，没有要清的。`)
+    const leftovers = await sweepPending(ctx, ctx.now)
+    const swept = leftovers === 0 ? '' : `另删了 ${leftovers} 份中断时留下的复制。`
+    if (dropped.length === 0) return done(`${found.path} 留着的只有 ${live.length} 版，没有要清的。${swept}`)
     w.things.set(found.id, found)
     apply(w, { kind: 'prune', thing: found.id, versions: dropped.map((v) => v.id) })
     await commit(w)
@@ -140,11 +142,12 @@ export const VERSION_PRUNE = defineCommand({
     const needed = await neededContent(ctx)
     const orphans = [...new Set(dropped.flatMap(placesOf))].filter((p) => !needed.has(p))
     const deleted = await drop(ctx, orphans)
-    return done(`已清掉 ${found.path} 的第 ${numbers(dropped)} 版，删了 ${deleted} 份只属于这些版本的内容；留着第 ${numbers(left)} 版。`, {
+    return done(`已清掉 ${found.path} 的第 ${numbers(dropped)} 版，删了 ${deleted} 份只属于这些版本的内容；留着第 ${numbers(left)} 版。${swept}`, {
       path: found.path,
       pruned: dropped.map((v) => v.n),
       kept: left.map((v) => v.n),
       deleted,
+      leftovers,
     })
   },
 })

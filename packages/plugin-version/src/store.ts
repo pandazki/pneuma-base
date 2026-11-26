@@ -3,7 +3,7 @@
 // written once, so the same content is stored once across versions and across things. A copy is one
 // write from the thing's place into pending/, fingerprinted in the same pass, then moved to its address.
 import { randomBytes } from 'node:crypto'
-import { isDescribed, isFailure, type Fingerprint, type LibraryPath, type Place, type PluginContext } from '@pneuma-base/kernel'
+import { isDescribed, isFailure, type Fingerprint, type Instant, type LibraryPath, type Place, type PluginContext } from '@pneuma-base/kernel'
 import { objectPlace, treePlace } from './model.js'
 
 /** A copy of a thing's content in pending/, and what it is. */
@@ -52,3 +52,21 @@ export async function drop(ctx: PluginContext, places: readonly Place[]): Promis
   for (const [place, token] of await present(ctx, places)) if (!isFailure(await ctx.tools.storage.own.remove(place, token))) deleted++
   return deleted
 }
+
+/** A copy in pending/ older than this was left by a write that never finished. */
+const ABANDONED_MS = 60 * 60 * 1000
+
+/** Removes the copies in pending/ older than an hour at `now`, one page of it; how many it removed. */
+export async function sweepPending(ctx: PluginContext, now: Instant): Promise<number> {
+  const own = ctx.tools.storage.own
+  const page = await own.overview('pending')
+  if (isFailure(page)) return 0
+  const before = Date.parse(now) - ABANDONED_MS
+  let removed = 0
+  for (const e of page.entries) {
+    if (e.modified === undefined || Date.parse(e.modified) >= before) continue
+    if (!isFailure(await own.remove(e.place, e.token ?? ''))) removed++
+  }
+  return removed
+}
+

@@ -101,6 +101,14 @@ async function putOver(w: Writing, path: LibraryPath, held: Held, note: string |
   return note === null ? null : { text: `已给 ${thing.path} 的第 ${r.version.n} 版写上说明：${note}`, data }
 }
 
+/** What `check --deep` reads: each declared thing in the library, not archived, at or under `dir` (all of them when null), from the rows a page at a time. */
+async function inScope(ctx: PluginContext, dir: LibraryPath | null): Promise<Thing[]> {
+  const out: Thing[] = []
+  const under = (path: string) => dir === null || path === dir || path.startsWith(`${dir}/`)
+  for await (const page of thingPages(ctx.tools.storage.records)) out.push(...page.filter((t) => !t.gone && ctx.tools.regionOf(t.path) === 'content' && under(t.path)))
+  return out
+}
+
 /** The library paths an archive purge deleted, from its answer. */
 function purged(event: Event): LibraryPath[] {
   if (event.face !== 'owner' || event.command !== 'archive purge' || event.result.outcome !== 'done') return []
@@ -160,17 +168,22 @@ export const version: Plugin = {
 
   /**
    * Changed outside the tool: recorded as a version and reported once. Gone from its path: reported
-   * every time. Storage compares every thing's token with the one on record; only what differs is read.
+   * every time. Storage compares every thing's token with the one on record; only what differs is read,
+   * and with `--deep` every thing in its scope.
    */
   async onCheck(req, ctx) {
     const w = await writing(ctx)
     const diffs = await differing(ctx)
     const at = await thingsAt(ctx.tools.storage.records, [...diffs.keys()])
     const looked = at.map((t) => adopt(w, t)).filter((t) => req.includeArchived || ctx.tools.regionOf(t.path) !== 'archive')
+    const deep = req.deep ? await inScope(ctx, req.deep.dir) : []
+    const already = new Set(looked.map((t) => t.id))
+    for (const thing of deep) if (!already.has(thing.id)) looked.push(adopt(w, thing))
+    const read = new Set(deep.map((t) => t.id))
     const recorded: { path: LibraryPath; version: number }[] = []
     const missing: LibraryPath[] = []
     await eachAtMost(looked, async (thing) => {
-      const r = diffs.get(thing.path) === 'gone' ? null : await record(w, thing, 'outside')
+      const r = diffs.get(thing.path) === 'gone' ? null : await record(w, thing, 'outside', null, read.has(thing.id))
       if (r === null) missing.push(thing.path)
       else if (r !== 'moved' && r.added) recorded.push({ path: thing.path, version: r.version.n })
     })

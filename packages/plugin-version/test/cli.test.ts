@@ -210,6 +210,26 @@ describe('versions of a declared thing (C4)', () => {
     expect(readTree(join(outside, 'v2'))).toEqual({ 'index.html': '<h1>1</h1>', 'css/a.css': 'a{color:red}' })
   })
 
+  it('a hand edit deep inside a bundle, its top level unchanged, is missed by check and kept as a version by check --deep', () => {
+    const site = join(outside, 'site')
+    writeTree(site, { 'index.html': '<h1>1</h1>', 'css/a.css': 'a{}' })
+    ok(agent(['put', site, '--to', 'sites/a', '--made']))
+    declare('sites/a')
+    writeFileSync(join(lib, 'sites/a/css/a.css'), 'a{color:red}')
+    const plain = ok(agent(['check', '--json'])).json()
+    expect(plain.sections.filter((s: any) => s.plugin === 'version')).toEqual([])
+    expect(versions('sites/a')).toHaveLength(1)
+    const elsewhere = ok(agent(['check', '--deep', 'notes', '--json'])).json()
+    expect(elsewhere.sections.filter((s: any) => s.plugin === 'version')).toEqual([])
+    const deep = ok(agent(['check', '--deep', 'sites', '--json'])).json()
+    expect(deep.sections.find((s: any) => s.plugin === 'version').data.recorded).toEqual([{ path: 'sites/a', version: 2 }])
+    expect(versions('sites/a').map((v) => [v.n, v.via])).toEqual([
+      [1, 'declare'],
+      [2, 'outside'],
+    ])
+    expect(ok(agent(['check', '--deep', '--json'])).json().sections.filter((s: any) => s.plugin === 'version')).toEqual([])
+  })
+
   it('a bundle version is exported as the tree it had', () => {
     const site = join(outside, 'site')
     writeTree(site, { 'index.html': '<h1>1</h1>', 'css/a.css': 'a{}' })
