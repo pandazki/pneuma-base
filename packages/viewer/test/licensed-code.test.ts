@@ -18,7 +18,8 @@ function files(dir = ROOT): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     if (SKIPPED.has(e.name)) return []
     const path = join(dir, e.name)
-    return e.isDirectory() ? files(path) : [relative(ROOT, path)]
+    // A symbolic link is neither: a build leaves some that point at folders.
+    return e.isDirectory() ? files(path) : e.isFile() ? [relative(ROOT, path)] : []
   })
 }
 
