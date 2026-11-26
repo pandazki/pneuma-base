@@ -232,6 +232,7 @@ export const asker: Plugin = {
       { kind: 'feed', groups: [], empty: '空的一串。' },
       { kind: 'asks', asks: [{ key: 'k', by: { kind: 'agent', name: 'claude-code' }, text: '要上线吗？', about: 'site' as LibraryPath, actions: [yes, no], suggested: 0 }], empty: '没有要决定的。' },
       { kind: 'asks', asks: [], empty: '没有要你决定的事。' },
+      { kind: 'chart', form: 'stacked', text: '这 3 天放进 9 样东西：带进来 5 样，做出来 4 样。', unit: '样', x: ['11月24日', '11月25日', '11月26日'], series: [{ label: '带进来的', values: [2, 0, 3] }, { label: '做出来的', values: [1, 2, 1] }] },
     ]
     return { title: '新的块', subtitle: null, blocks, filters: [{ name: 'who', options: [{ value: '', label: '全部', count: 12 }, { value: 'agent', label: 'agent 做的', count: 8 }] }] }
   },

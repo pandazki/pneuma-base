@@ -142,7 +142,7 @@ describe('the words of each kind of block', () => {
     expect(fresh.stdout).toContain('计数：{"count":0,"note":"插件自己画的一页"}\n$ pager bump  # 加一；先问：把计数加一？')
   })
 
-  it('a feed by its groups and rows, each row with who, what, whose, its meta and what it opens or does; stats; a tree with its parameter; asks with their commands, the suggested marked; counted filter options', () => {
+  it('a feed by its groups and rows, each row with who, what, whose, its meta and what it opens or does; stats; a tree with its parameter; asks with their commands, the suggested marked; a chart as its sentence and its numbers; counted filter options', () => {
     const home = tempDir('pb-show-')
     const lib2 = join(home, 'lib')
     const run = (args: string[]) => sb.runWithTestPlugins(args, { cwd: home })
@@ -172,6 +172,11 @@ describe('the words of each kind of block', () => {
       '    $ asker yes  # 上线（只给主人）（推荐）',
       '    $ asker no  # 不上线（只给主人）',
       '没有要你决定的事。',
+      '这 3 天放进 9 样东西：带进来 5 样，做出来 4 样。',
+      '            带进来的（样）  做出来的（样）',
+      '  11月24日  2               1',
+      '  11月25日  0               2',
+      '  11月26日  3               1',
     ])
   })
 

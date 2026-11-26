@@ -22,15 +22,18 @@ import {
   type SayAnswer,
   type SayRequest,
 } from '@pneuma-base/kernel'
+import { LEDGER_EXPORT, LEDGER_STATS } from './audit.js'
 import { conversationOf } from './conversation.js'
 import { itemNamed, load, onDisk, snapshot, standingNow, statesOf, textOf, type Disk } from './disk.js'
-import { fact, factActor, LEDGER_ACTOR, newItemId, sceneOf, writeFacts, type Basis, type Fact, type FactBody, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
+import { fact, factActor, LEDGER_ACTOR, newItemId, readFacts, sceneOf, writeFacts, type Basis, type Fact, type FactActor, type FactBody, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
 import type { ItemRecord, Ledger, SceneRecord } from './fold.js'
 import { heldCommands, heldCopies, heldPath, keep } from './held.js'
 import { reconcile } from './reconcile.js'
 import { LEAVE, REGISTER, unownedAsks } from './unowned.js'
 import { activityAnswer, homeAnswer, noSuchScene, sceneAnswer, scenesAnswer } from './feeds.js'
-import { ACTIVITY_VIEW, heldAnswer, HELD_VIEW, HOME_VIEW, itemSection, itemsAnswer, ITEMS_VIEW, LEDGER_VIEWS, partOfSection, SCENE_VIEW, SCENES_VIEW, STANDING_VIEW, standingAnswer, unownedSection } from './ui.js'
+import { DEFAULT_PERIOD, isPeriod, statsOf } from './stats.js'
+import { statsAnswer } from './stats-page.js'
+import { ACTIVITY_VIEW, heldAnswer, HELD_VIEW, HOME_VIEW, itemSection, itemsAnswer, ITEMS_VIEW, LEDGER_VIEWS, partOfSection, SCENE_VIEW, SCENES_VIEW, STANDING_VIEW, standingAnswer, STATS_VIEW, unownedSection } from './ui.js'
 import {
   ambiguousText,
   findableItems,
@@ -223,6 +226,7 @@ function purged(event: Extract<Event, { face: 'owner' }>): LibraryPath[] {
 /**
  * The fact an event makes, if any. Approving a request is no row of its own: the run it approved is
  * the row, carrying who asked, whether the command did it or refused, since the owner decided either way.
+ * `ledger stats` is the page 统计 read as text and leaves no row, as looking at the page leaves none.
  */
 function recordOf(event: Event): FactBody | null {
   if (event.face === 'agent') {
@@ -233,7 +237,7 @@ function recordOf(event: Event): FactBody | null {
     return null
   }
   const r = event.result
-  if (event.command === 'request approve' || r.outcome === 'failed' || (r.outcome === 'refused' && !event.request)) return null
+  if (event.command === 'request approve' || event.command === LEDGER_STATS.name || r.outcome === 'failed' || (r.outcome === 'refused' && !event.request)) return null
   return {
     kind: 'owner.op',
     command: event.command,
@@ -244,6 +248,16 @@ function recordOf(event: Event): FactBody | null {
     ...(event.request ? { request: { id: event.request.id, by: { kind: 'agent' as const, name: event.request.by.name, grant: event.request.by.grant } } } : {}),
     ...(r.outcome === 'refused' ? { refused: r.reason } : {}),
   }
+}
+
+/** A decline's record names the request it turned down, and the agent that had asked, as the request's own fact says. */
+function withDeclined(body: FactBody, event: Event, ledger: Ledger): FactBody {
+  if (body.kind !== 'owner.op' || event.face !== 'owner' || event.command !== 'request decline' || event.result.outcome !== 'done') return body
+  const id = (event.result.data as { request?: unknown } | undefined)?.request
+  if (typeof id !== 'string') return body
+  const asked = ledger.facts.find((f) => f.kind === 'request' && f.act === 'asked' && f.request === id)
+  const by: FactActor | null = asked?.actor ?? null
+  return { ...body, declined: { id, by } }
 }
 
 /**
@@ -320,7 +334,7 @@ export const ledger: Plugin = {
     { dir: 'held', kind: 'body' },
   ],
   statements: ['doing', 'decided', 'note', 'from', 'revised'],
-  ownerCommands: [...heldCommands, REGISTER, LEAVE],
+  ownerCommands: [...heldCommands, REGISTER, LEAVE, LEDGER_STATS, LEDGER_EXPORT],
   views: LEDGER_VIEWS,
 
   async onPut(req, ctx) {
@@ -456,6 +470,11 @@ export const ledger: Plugin = {
       }
       case ACTIVITY_VIEW:
         return activityAnswer(await load(ctx), req.params, grants, ctx.now)
+      case STATS_VIEW: {
+        // From the facts alone: no file is read, so the page costs the same however large the library's files are.
+        const period = req.params.period
+        return statsAnswer(statsOf(await readFacts(ctx.dir), isPeriod(period) ? period : DEFAULT_PERIOD, ctx.now))
+      }
       case HELD_VIEW:
         return heldAnswer(await load(ctx), await heldCopies(ctx))
       default:
@@ -484,7 +503,7 @@ export const ledger: Plugin = {
     const body = recordOf(event)
     if (body === null) return
     const w = await writing(ctx)
-    w.facts.push(fact(ctx, 'tool', body))
+    w.facts.push(fact(ctx, 'tool', withDeclined(body, event, w.ledger)))
     if (event.face === 'owner') {
       for (const path of purged(event)) {
         const id = w.ledger.pathIndex.get(path)

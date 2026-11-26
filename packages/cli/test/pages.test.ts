@@ -22,6 +22,7 @@ const READS: Record<string, string> = {
   'plugin list': 'config',
   'secret list': 'config',
   'ledger held list': 'ledger.held',
+  'ledger stats': 'ledger.stats',
   'version list': 'version.things',
   'sync status': 'sync.status',
   'deploy list': 'deploy.sites',
@@ -38,6 +39,7 @@ const NO_PLACE: Record<string, string> = {
   'say doing': '说的是 agent 这次会话在做什么；人在界面里的操作自成一个主人的场景，场景里记的就是做了哪些操作',
   ask: '请是 agent 请主人做一条主人命令；主人在界面里直接按那条命令的按钮，用不着请谁',
   'launcher install': '没有要主人决定的：应用每次启动时写它，接上 agent 时缺了也写；从包装的，主人在终端里跑',
+  'ledger export': '它写一个库外的文件，页交不出文件，也不替主人选位置；活动页的「导出」给出这条命令，复制到终端里跑',
 }
 
 let sb: Sandbox
@@ -222,7 +224,7 @@ beforeAll(async () => {
 describe('every page of a library with every built-in plugin', () => {
   it('is reached: each view in the list, the item panel of a file, a bundle, a file inside one and an archived file, and a scene card', () => {
     const views = new Set(pages.map((p) => p.link.view))
-    for (const id of ['home', 'ledger.items', 'ledger.scenes', 'ledger.standing', 'ledger.activity', 'ledger.held', 'ledger.scene', 'version.things', 'deploy.sites', 'sync.status', 'search.status', 'files', 'archive', 'agents', 'config', 'item']) expect(views, id).toContain(id)
+    for (const id of ['home', 'ledger.items', 'ledger.stats', 'ledger.scenes', 'ledger.standing', 'ledger.activity', 'ledger.held', 'ledger.scene', 'version.things', 'deploy.sites', 'sync.status', 'search.status', 'files', 'archive', 'agents', 'config', 'item']) expect(views, id).toContain(id)
     const items = pages.filter((p) => p.link.view === 'item').map((p) => p.link.params.path)
     expect(items).toEqual(expect.arrayContaining(['notes/plan.md', 'sites/shop', 'sites/shop/index.html', '_archive/notes/old.md']))
   })
@@ -248,6 +250,7 @@ describe('every page of a library with every built-in plugin', () => {
         if (block.kind === 'tree') for (const node of block.nodes) expect(text, `${where}: ${node.label}`).toContain(node.label)
         if (block.kind === 'steps') for (const step of block.steps) expect(text, `${where}: ${step.title}`).toContain(`] ${step.title}`)
         if (block.kind === 'drop') expect(text, where).toContain(`$ ${block.command}`)
+        if (block.kind === 'chart') for (const words of [block.text, ...block.series.map((x) => x.label), ...block.x]) expect(text, `${where}: ${words}`).toContain(words)
         for (const action of actionsOf(block)) expect(text, `${where}: ${action.label}`).toContain(`$ ${commandOf(action, commands)}  # ${action.label}`)
       }
     }

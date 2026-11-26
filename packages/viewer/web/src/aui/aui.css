@@ -1,7 +1,7 @@
 /* affectUI Pro – licensed under https://www.affectui.com/license, not under this project's open-source license. Don't copy it out of this project. */
 /*
  * The looks of the pieces in this folder, adapted from affectUI's Avatar, Agent Activity, Decision
- * Inbox, Stat Card and Tree View (all "clean"), restyled to the viewer's tokens (theme.css). Only the
+ * Inbox, Stat Card, Trend Chart and Tree View (all "clean"), restyled to the viewer's tokens (theme.css). Only the
  * app imports this file; the frame kit never sees it.
  */
 
@@ -538,5 +538,294 @@ button.aui-feed-head:hover {
   }
   .aui-feed-end:empty {
     min-width: 0;
+  }
+}
+
+/* ---- chart: the sentence over a plot with three values up the side and three labels along the bottom ---- */
+.aui-chart {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 14px 16px 16px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  container-type: inline-size;
+}
+.aui-chart-caption {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+}
+.aui-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin: -4px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 18px;
+}
+.aui-chart-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.aui-chart-swatch {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.aui-chart-frame {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: var(--aui-chart-h) 16px;
+  column-gap: 10px;
+  row-gap: 8px;
+  margin-top: 4px;
+}
+.aui-chart-frame[data-ends] {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+.aui-chart-yaxis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  margin: -8px 0;
+  color: var(--ink-3);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.aui-chart-plot {
+  position: relative;
+  min-width: 0;
+  border-radius: 4px;
+  outline: none;
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+.aui-chart-plot:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.aui-chart-grid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 0.5px solid var(--line);
+}
+.aui-chart-grid[data-zero] {
+  border-top-color: var(--line-strong);
+}
+.aui-chart-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin: 0;
+  padding: 0 10px;
+  background: var(--surface);
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 16px;
+  transform: translate(-50%, -50%);
+}
+.aui-chart-bars {
+  position: absolute;
+  inset: 0;
+}
+.aui-chart-bar {
+  position: absolute;
+  box-sizing: border-box;
+  min-height: 1px;
+  border-radius: 1px;
+  transition: opacity 160ms ease;
+}
+.aui-chart-bar[data-top] {
+  border-radius: 3px 3px 1px 1px;
+}
+.aui-chart-bar[data-neg] {
+  border-radius: 1px 1px 3px 3px;
+}
+/* A piece stacked on another is parted from it by a line of the card's own colour. */
+.aui-chart-bar[data-stacked] {
+  border-bottom: 2px solid var(--surface);
+}
+.aui-chart-bar[data-dim] {
+  opacity: 0.38;
+}
+.aui-chart-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.aui-chart-lines path {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.aui-chart-point,
+.aui-chart-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--surface);
+  pointer-events: none;
+}
+.aui-chart-marker {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.aui-chart-marker[data-open] {
+  opacity: 1;
+}
+.aui-chart-guide,
+.aui-chart-dot {
+  transition:
+    left 90ms ease-out,
+    top 90ms ease-out;
+}
+.aui-chart-guide {
+  position: absolute;
+  top: -4px;
+  bottom: 0;
+  width: 0;
+  margin-left: -0.5px;
+  border-left: 1px solid var(--line-strong);
+}
+.aui-chart-tip {
+  position: absolute;
+  top: -8px;
+  z-index: 2;
+  width: max-content;
+  min-width: 140px;
+  max-width: min(320px, calc(100cqw - 16px));
+  padding: 6px 10px 8px;
+  border-radius: var(--radius-card);
+  background: var(--overlay);
+  box-shadow: var(--shadow-popover);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(calc(var(--aui-chart-shift) + var(--aui-chart-nudge, 0px))) scale(0.98);
+  transition:
+    left 90ms ease-out,
+    opacity 140ms ease,
+    transform 180ms var(--ease);
+}
+.aui-chart-tip[data-side='right'] {
+  --aui-chart-shift: 12px;
+  transform-origin: left top;
+}
+.aui-chart-tip[data-side='left'] {
+  --aui-chart-shift: calc(-100% - 12px);
+  transform-origin: right top;
+}
+.aui-chart-tip[data-open] {
+  opacity: 1;
+  transform: translateX(calc(var(--aui-chart-shift) + var(--aui-chart-nudge, 0px)));
+}
+.aui-chart-tip-head {
+  margin: 0;
+  color: var(--ink-strong);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.aui-chart-tip ul {
+  display: grid;
+  margin: 4px 0 0;
+  padding: 4px 0 0;
+  border-top: 0.5px solid var(--line);
+  list-style: none;
+}
+.aui-chart-tip li {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 8px;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 20px;
+}
+.aui-chart-tip li[data-total] {
+  margin-top: 2px;
+  padding-top: 2px;
+  border-top: 0.5px solid var(--line);
+}
+.aui-chart-tip-num {
+  padding-left: 16px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.aui-chart-ends {
+  position: relative;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.aui-chart-ends-measure {
+  display: grid;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+.aui-chart-ends > span {
+  position: absolute;
+  left: 0;
+  transform: translateY(-50%);
+}
+.aui-chart-xaxis {
+  position: relative;
+  grid-column: 2;
+  color: var(--ink-3);
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.aui-chart-xaxis span {
+  position: absolute;
+  top: 0;
+  max-width: 34%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+.aui-chart-xaxis span[data-edge='start'] {
+  transform: none;
+}
+.aui-chart-xaxis span[data-edge='end'] {
+  transform: translateX(-100%);
+}
+@container (max-width: 320px) {
+  .aui-chart-tip {
+    min-width: 120px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aui-chart-bar,
+  .aui-chart-marker,
+  .aui-chart-guide,
+  .aui-chart-dot,
+  .aui-chart-tip {
+    transition: none;
   }
 }

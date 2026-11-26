@@ -229,7 +229,16 @@ function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: 
       ])
     case 'drop':
       return [`${indent}放进 ${block.to}/，记成主人带进来的：在应用里把文件或文件夹拖到窗口上，或选出来；在终端里：`, `${indent}$ ${block.command}`]
+    case 'chart':
+      return [...block.text.split('\n').map((l) => `${indent}${l}`), ...chartTable(block, more)]
   }
+}
+
+/** A chart's numbers as the page draws them: a row for each x label, a column for each series, the unit in the header. */
+function chartTable(block: Extract<Block, { kind: 'chart' }>, indent: string): string[] {
+  const unit = block.unit === '' ? '' : `（${block.unit}）`
+  const header = ['', ...block.series.map((s) => `${s.label}${unit}`)]
+  return aligned([header, ...block.x.map((x, i) => [x, ...block.series.map((s) => String(s.values[i]))])], indent)
 }
 
 const problemLines = (r: { problems: readonly { plugin: string; message: string }[] }) => r.problems.map((p) => `  插件 ${p.plugin} 出错：${p.message}`)

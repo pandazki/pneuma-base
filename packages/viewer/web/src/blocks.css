@@ -99,6 +99,12 @@
   flex-direction: column;
   gap: 24px;
 }
+/* Charts next to each other stand side by side, each at least wide enough to read. */
+.charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+}
 .section {
   display: flex;
   flex-direction: column;
