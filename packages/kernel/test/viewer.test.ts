@@ -483,9 +483,11 @@ describe('the new blocks are checked too (D7)', () => {
     { kind: 'tree', param: 'dir', selected: 'a', nodes: [{ value: '', label: '全部', count: 3, children: [{ value: 'a', label: 'a', count: null, children: [] }] }] },
     { kind: 'asks', asks: [{ key: 'k', by: { kind: 'owner', name: '主人' }, text: '要上线吗？', about: 'a.md', actions: [archive, archive], suggested: 1 }], empty: '没有' },
     { kind: 'fields', fields: [{ label: '谁', value: { text: 'claude-code', actor: { kind: 'agent', name: 'claude-code' } } }] },
+    { kind: 'chart', form: 'line', text: '要收拾的从 3 样降到 1 样。', unit: '样', x: ['周一', '周二'], series: [{ label: '可能过期', values: [3, 1] }, { label: '来历不明', values: [0, -0.5] }] },
+    { kind: 'chart', form: 'stacked', text: '放进 4 样。', unit: '', x: ['今天'], series: [{ label: 'a', values: [1] }, { label: 'b', values: [0] }, { label: 'c', values: [2] }, { label: 'd', values: [1] }] },
   ]
 
-  it('lets a feed, stats, a tree, asks and an actor on a cell through as they are, with the filter options the view answered', async () => {
+  it('lets a feed, stats, a tree, asks, charts and an actor on a cell through as they are, with the filter options the view answered', async () => {
     const options = [{ value: '', label: '全部', count: 3 }, { value: 'x', label: '某个', count: 1 }]
     const f = await fixture([answering('fine', page(good, { filters: [{ name: 'who', options }] }))])
     const r = shown(await show(f, 'fine.page'))
@@ -502,6 +504,13 @@ describe('the new blocks are checked too (D7)', () => {
       { kind: 'tree', param: 'dir', selected: '', nodes: [{ value: '', label: '全部', count: 3 }] },
       { kind: 'asks', asks: [{ key: 'k', by: '某人', text: '要吗？', about: null, actions: [archive], suggested: 1 }], empty: '没有' },
       { kind: 'fields', fields: [{ label: '谁', value: { text: 'x', actor: { kind: 'robot', name: 'x' } } }] },
+      { kind: 'chart', form: 'pie', text: '一句', unit: '样', x: ['a'], series: [{ label: 's', values: [1] }] },
+      { kind: 'chart', form: 'bars', text: '一句', unit: '样', x: ['a', 'b'], series: [{ label: 's', values: [1] }] },
+      { kind: 'chart', form: 'bars', text: '一句', unit: '样', x: ['a'], series: [] },
+      { kind: 'chart', form: 'bars', text: '一句', unit: '样', x: ['a'], series: ['1', '2', '3', '4', '5'].map((label) => ({ label, values: [1] })) },
+      { kind: 'chart', form: 'stacked', text: '一句', unit: '样', x: ['a'], series: [{ label: 's', values: [-1] }] },
+      { kind: 'chart', form: 'line', text: '一句', unit: '样', x: ['a'], series: [{ label: 's', values: ['1'] }] },
+      { kind: 'chart', form: 'line', unit: '样', x: ['a'], series: [{ label: 's', values: [1] }] },
     ]
     const f = await fixture([answering('odd', page(bad, { filters: [{ name: 'nope', options: [] }] }))])
     const r = shown(await show(f, 'odd.page'))

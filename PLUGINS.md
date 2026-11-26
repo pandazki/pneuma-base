@@ -666,6 +666,7 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `asks` | `asks`（每件 `{ key, by, text, about, actions }`，`by` 是名字或 `ActorMark`，`about` 可以是 `null`）、`empty` | 每件的 `suggested`：推荐的回答在 `actions` 里的位置 | 等主人定的事；回答后在原处折成一行回执。首页用它放 `onAsks` 的问题，插件自己的页也能用 |
 | `steps` | `steps`（每步 `{ key, title, done, summary, blocks }`，`summary` 可以是 `null`） | | 几步要做的事。没做的一步展开，显示它的块；做完的折成一行，标题下面是 `summary`（做成了什么），点开再看。第一个没做的是当前的一步。步里的块逐个核对。放在首页上的会并进「开始」（3.6） |
 | `drop` | `to`（库里的文件夹）、`command` | | 把文件放进 `to`，记成主人带进来的。在 Mac 应用里是一块拖放和「选择…」的区域，经命令行放入；浏览器里显示 `command`，可复制 |
+| `chart` | `form`（`bars` 并排的柱、`stacked` 叠起来的柱、`line` 线）、`text`（说这张图在说什么的一句话）、`unit`（数的单位，比如「样」「次」，可以是空字）、`x`（横轴的标签）、`series`（1 到 4 个，每个 `{ label, values }`，`values` 和 `x` 一样多，都是数） | | 几个数随时间怎么变。`text` 是图的标题，数要在这句话里说出来，图只画形状。每个系列按次序取一个固定的颜色，浅色深色各一套，所以同一页的几张图颜色一致；系列名直接标在线的末端，放不下时画成图例；悬停或键盘移到一处，给出那一处每个系列的数。叠起来的柱不能有负数。`show` 印那句话和一张数表：一行一个横轴标签，一列一个系列，表头带单位 |
 
 | 类型 | 字段 |
 | --- | --- |
@@ -677,9 +678,9 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `Action` | `{ label, tone, confirm, inputs, call }`：`tone` 是 `default` 或 `danger`。`confirm` 是点了之后先问的一句话，人点了确认就是破坏性命令要的当面确认。`confirm` 为 `null` 的动作不问：没有输入时点了就做，算没有当面确认，所以破坏性的命令以 `not-confirmed` 拒绝；有输入时先出表单 |
 | `ActionInput` | `{ name, label, placeholder, value, options }`；可选 `multiple`（一行一个值）、`pattern` 和 `hint`（不匹配时表单不提交，`hint` 变红）、`secret: true`（输入时不显示） |
 | `Call` | `{ face: 'agent', verb, request }`，`request` 是那个动词的请求；或 `{ face: 'owner', command, args: { positional, flags }, stdin? }`。字符串里的 `{输入名}` 换成那个输入的值；正好是 `{输入名}` 的列表元素，`multiple` 的输入一行换成一个元素。带参数的主人命令的表单用 sdk 的 `formOf(命令, { fixed, values, choices })` 生成：每个参数一个输入，`fixed` 里的不问，直接写进 `Call` |
-| `IconName` | `activity`、`archive`、`bookmark`、`box`、`clock`、`cloud`、`cloud-upload`、`code`、`corner-left-up`、`database`、`download`、`eye`、`file`、`file-text`、`flask-conical`、`folder`、`gauge`、`git-branch`、`globe`、`history`、`house`、`image`、`key`、`layers`、`layout-grid`、`link`、`list`、`package`、`refresh-cw`、`rocket`、`scroll-text`、`search`、`server`、`settings`、`shield`、`tag`、`terminal`、`triangle-alert`、`upload`、`users`（lucide 的图标名，sdk 的 `ICON_NAMES`）。界面把别的名字画成拼图 |
+| `IconName` | `activity`、`archive`、`bookmark`、`box`、`chart-column`、`clock`、`cloud`、`cloud-upload`、`code`、`corner-left-up`、`database`、`download`、`eye`、`file`、`file-text`、`flask-conical`、`folder`、`gauge`、`git-branch`、`globe`、`history`、`house`、`image`、`key`、`layers`、`layout-grid`、`link`、`list`、`package`、`refresh-cw`、`rocket`、`scroll-text`、`search`、`server`、`settings`、`shield`、`tag`、`terminal`、`triangle-alert`、`upload`、`users`（lucide 的图标名，sdk 的 `ICON_NAMES`）。界面把别的名字画成拼图 |
 
-内核核对每一块：种类不认识、缺了必需的字段、类型不对、`feed` 的一行同时有 `action` 和 `settled`、`asks` 的 `suggested` 不在回答里、`ActorMark` 的 `kind` 不是 `agent` 或 `owner`、`embed` 的地址不是 http 或 https、`custom` 的 `entry` 爬出 `ui` 目录或插件没有 `ui`、输入的 `pattern` 不是正则、动作调的不是一个动词或这个库里在的主人命令、参数不合那条命令的参数表、「说」的种类没有插件听、`call` 写了动作没有的输入，都算不合。
+内核核对每一块：种类不认识、缺了必需的字段、类型不对、`feed` 的一行同时有 `action` 和 `settled`、`asks` 的 `suggested` 不在回答里、`ActorMark` 的 `kind` 不是 `agent` 或 `owner`、`embed` 的地址不是 http 或 https、`custom` 的 `entry` 爬出 `ui` 目录或插件没有 `ui`、`chart` 的系列不是 1 到 4 个、某个系列的数和 `x` 不一样多、叠起来的柱有负数、输入的 `pattern` 不是正则、动作调的不是一个动词或这个库里在的主人命令、参数不合那条命令的参数表、「说」的种类没有插件听、`call` 写了动作没有的输入，都算不合。
 
 ### 4.5 自己画的页
 

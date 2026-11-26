@@ -7,7 +7,7 @@ import { isAbsolute } from 'node:path'
 import { parseCall } from './call.js'
 import { ownerFace } from './owner.js'
 import { checkArgs } from './params.js'
-import type { Action, Block, Library, Link, OwnerParams, Plugin, PluginProblem, ViewAnswer, ViewDecl } from '@pneuma-base/sdk'
+import { CHART_SERIES_MAX, type Action, type Block, type Library, type Link, type OwnerParams, type Plugin, type PluginProblem, type ViewAnswer, type ViewDecl } from '@pneuma-base/sdk'
 
 /** What is wrong with `value` at `at`, or null when it fits. */
 type Check = (value: unknown, at: string) => string | null
@@ -137,6 +137,19 @@ const ask = both(
   },
 )
 
+/** A chart: one to `CHART_SERIES_MAX` series, each with a value for every x label; a stacked one has no negative value. */
+const chart = both(
+  shape({ form: oneOf('bars', 'stacked', 'line'), text: string, unit: string, x: listOf(string), series: listOf(shape({ label: string, values: listOf(number) })) }),
+  (v, at) => {
+    const { form, x, series } = v as { form: string; x: string[]; series: { values: number[] }[] }
+    if (series.length === 0 || series.length > CHART_SERIES_MAX) return `${at}.series 应有 1 到 ${CHART_SERIES_MAX} 个`
+    const uneven = series.findIndex((s) => s.values.length !== x.length)
+    if (uneven >= 0) return `${at}.series[${uneven}].values 应和 x 一样多，${x.length} 个`
+    const negative = form === 'stacked' ? series.findIndex((s) => s.values.some((n) => n < 0)) : -1
+    return negative >= 0 ? `${at}.series[${negative}].values 叠起来的柱不能是负数` : null
+  },
+)
+
 /** The fields each kind of block requires; a section's own blocks are checked one by one. */
 const KINDS: Record<Block['kind'], Check> = {
   section: shape({ title: string, note: nullable(string), count: nullable(number), blocks: listOf(anything), actions, 'collapse?': oneOf('open', 'closed') }),
@@ -160,6 +173,7 @@ const KINDS: Record<Block['kind'], Check> = {
   asks: shape({ asks: listOf(ask), empty: string }),
   steps: shape({ steps: listOf(shape({ key: string, title: string, done: boolean, summary: nullable(string), blocks: listOf(anything) })) }),
   drop: shape({ to: string, command: string }),
+  chart,
 }
 
 /** An ask a plugin's `onAsks` answered, its `by` not yet stamped: what is wrong with it, or null. */

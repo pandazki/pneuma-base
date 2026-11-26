@@ -589,6 +589,10 @@ export type FeedRow = {
 export type FeedGroup = { title: string; count: number | null; link?: Link; rows: FeedRow[] }
 /** One figure: a label, a number or a short text, and a grey sentence about it. */
 export type Stat = { label: string; value: string; note: string | null }
+/** The most series a chart draws: each takes the next colour of one small palette, the same in every chart. */
+export const CHART_SERIES_MAX = 4
+/** One series of a chart: its name, and one value for each of the chart's `x` labels. */
+export type ChartSeries = { label: string; values: number[] }
 /** A folder of a tree: the value its selection gives the view's parameter, and how many things it holds. */
 export type TreeNode = { value: string; label: string; count: number | null; children: TreeNode[] }
 /**
@@ -619,6 +623,10 @@ export type Step = { key: string; title: string; done: boolean; summary: string 
  * `drop`: where the owner brings files in. In the Mac app it is an area files and folders are dropped
  * on, or chosen from, and they are put into the library folder `to` as brought by the owner;
  * elsewhere the page cannot hand over a file, and it shows `command`, which does the same in a terminal.
+ * `chart`: a few numbers over time, as `form` bars side by side, bars stacked, or lines, with one
+ * axis in `unit` (such as 样 or 次); `text` is the one sentence that says what it shows, the chart's
+ * caption on the page; `show` prints the sentence and a table of the numbers. At most
+ * `CHART_SERIES_MAX` series, each with a value for every `x` label; stacked values are not negative.
  */
 export type Block =
   | { kind: 'section'; title: string; note: string | null; count: number | null; blocks: Block[]; actions: Action[]; collapse?: 'open' | 'closed'; plugin?: PluginName }
@@ -638,6 +646,7 @@ export type Block =
   | { kind: 'asks'; asks: Ask[]; empty: string }
   | { kind: 'steps'; steps: Step[] }
   | { kind: 'drop'; to: string; command: string }
+  | { kind: 'chart'; form: 'bars' | 'stacked' | 'line'; text: string; unit: string; x: string[]; series: ChartSeries[] }
 
 /** `count`: how many things the view shows with this option, given by its answer. */
 export type FilterOption = { value: string; label: string; count?: number }

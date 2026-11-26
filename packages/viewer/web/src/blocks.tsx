@@ -5,6 +5,7 @@ import { ChevronRight, CircleAlert, CircleCheck, CircleHelp, ExternalLink, Inbox
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { api, outsideUrl } from './api'
 import { AsksView } from './aui/asks'
+import { ChartView } from './aui/chart'
 import { FeedView } from './aui/feed'
 import { StatsView } from './aui/stats'
 import { TreeView } from './aui/tree'
@@ -396,6 +397,8 @@ export function BlockView({ block }: { block: Block }) {
       return <StepsView block={block} />
     case 'drop':
       return <DropView block={block} />
+    case 'chart':
+      return <ChartView block={block} />
     case 'empty':
       return <EmptyView block={block} />
     case 'embed':
@@ -427,9 +430,28 @@ export function Blocks({ blocks }: { blocks: Block[] }) {
   }
   return (
     <div className="blocks">
-      {blocks.map((b, i) => (
-        <BlockView key={i} block={b} />
-      ))}
+      {runs(blocks).map((run, i) =>
+        run.length > 1 ? (
+          <div key={i} className="charts">
+            {run.map((b, j) => (
+              <BlockView key={j} block={b} />
+            ))}
+          </div>
+        ) : (
+          <BlockView key={i} block={run[0] as Block} />
+        ),
+      )}
     </div>
   )
+}
+
+/** The blocks one by one, except that charts next to each other go together, to stand side by side where there is room. */
+function runs(blocks: Block[]): Block[][] {
+  const out: Block[][] = []
+  for (const b of blocks) {
+    const last = out.at(-1)
+    if (b.kind === 'chart' && last?.[0]?.kind === 'chart') last.push(b)
+    else out.push([b])
+  }
+  return out
 }

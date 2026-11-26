@@ -7,6 +7,7 @@ export const ICON_NAMES = [
   'archive',
   'bookmark',
   'box',
+  'chart-column',
   'clock',
   'cloud',
   'cloud-upload',
