@@ -90,6 +90,18 @@ describe('check, by position', () => {
     expect(reads.filter((p) => p === 'b.md')).toEqual([])
   })
 
+  it('a registered file gone and then back as it was is missing no longer', async () => {
+    const { root, put, check } = await library()
+    await put('a.md', 'kept content')
+    await check()
+    unlinkSync(join(root, 'a.md'))
+    const gone = await checkUntil(check, (x) => section(x, '不在了的').includes('a.md'))
+    expect(section(gone, '不在了的')).toBe('  a.md')
+    writeFileSync(join(root, 'a.md'), 'kept content')
+    const back = await checkUntil(check, (x) => !told(x).includes('a.md'))
+    expect(told(back)).not.toContain('a.md')
+  })
+
   it('a registered directory-thing: a change in it is said of the thing, never of its files', async () => {
     const { write, agent, check } = await library()
     write('site/index.html', '<h1>hi</h1>')
