@@ -4,7 +4,7 @@
 
 ## 两种拿法
 
-**Mac 应用。** 下载 zip，解开，把「Pneuma Base」拖进「应用程序」再打开（没签名，第一次打开要去「系统设置 › 隐私与安全性」点「仍要打开」，见 [`app/README.md`](app/README.md)「发给别人」）。它自带 Node 和命令行，什么都不用另装：选一个文件夹，首页「开始」里点你的 agent 的「接上」，在那个 agent 里说一句「看看我的 Pneuma Base 库里有什么。」就能用。要在自己的终端里也用 `pneuma-base`，在应用的设置里打开「在终端里用 pneuma-base」。zip 从这个仓库打：`app/build.sh --node <nodejs.org 的 node> --dist`。
+**Mac 应用。** 下载 zip，解开，把「Pneuma Base」拖进「应用程序」再打开（没签名，第一次打开要去「系统设置 › 隐私与安全性」点「仍要打开」，见 [`app/README.md`](app/README.md)「发给别人」）。它自带 Node 和命令行，什么都不用另装：选一个文件夹，首页「开始」里点你的 agent 的「接上」，在那个 agent 里说一句「看看我的 Pneuma Base 库里有什么。」就能用。也可以把「开始」里那句话说给任何一个 agent：「读一下 http://127.0.0.1:7638/guide，接上我的 Pneuma Base 库。」它自己读说明、请你允许，你在首页核对配对码、点「允许」。要在自己的终端里也用 `pneuma-base`，在应用的设置里打开「在终端里用 pneuma-base」。zip 从这个仓库打：`app/build.sh --node <nodejs.org 的 node> --dist`。
 
 **命令行的包。** 要 Node 22.18 以上。还没发布到 npm，所以先在这个仓库里打出包文件（这一步要 pnpm），再像装任何命令行工具那样装上：
 
@@ -61,6 +61,8 @@ pneuma-base --help
 
    Codex 在沙箱里运行，启动时要把库加进可写目录：`codex --add-dir ~/base`。
 
+   不一个一个接也行：管理界面开着时（应用，或下面的 `pneuma-base view`），对任何 agent 说一句「读一下 http://127.0.0.1:7638/guide，接上我的 Pneuma Base 库。」它读这台机器为它的产品写的说明（`pneuma-base guide claude-code --library ~/base` 印的是同一段），请你允许（配对），你在首页「等你决定」里核对它给你看的配对码、点「允许」，它就以自己的名字接上了：允许跑的就是 `agent connect`。端口缺省 7638，被占时往后找，`pneuma-base guide --url` 印出这台机器上的地址。`pneuma-base pair list --library ~/base` 列出配对，`pair allow <号>`、`pair decline <号>` 在终端里做同样的事。
+
 4. **看和管。** 在浏览器里打开管理界面：
 
    ```sh
@@ -87,6 +89,8 @@ pneuma-base --help
    ```
 
    这个文件还不在时，先跑一次 `pneuma-base launcher install`（或打开一次应用）。它自己带着家目录，你的 `PNEUMA_BASE_HOME` 不是缺省的时，`command` 写那个目录下的 `bin/pneuma-base`，不用另加 `env`。连上之后，每个动词和 agent 能用的命令都是一个工具，库的说明随连接给出，管理界面导航里的页是资源。管理的命令不在里面，仍在你自己的终端或界面里做。
+
+   收 URL 而不是命令的应用，用 MCP over HTTP：管理界面开着时，地址是 `http://127.0.0.1:7638/mcp/<授权名>`（streamable HTTP，可以加 `?session=<名字>` 给这次的场景起名）。`pneuma-base agent connect <产品> --via mcp-http --library ~/base` 替 Claude Code、Codex、Cursor 把它写进配置；表里没有的应用自己经 `/guide` 配对，允许之后答复里就是它的地址。地址里有端口，界面的服务不在跑时连不上，stdio 的条目没有这个限制。
 
 `pneuma-base --help --library ~/base` 列出这个库能用的全部命令。
 
