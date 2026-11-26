@@ -14,6 +14,7 @@ import {
   type AcceptedPut,
   type Event,
   type Fingerprint,
+  type Grant,
   type LibraryPath,
   type Plugin,
   type PluginContext,
@@ -43,6 +44,7 @@ import {
   sinceText,
   sinceView,
   standingSections,
+  when,
   type ItemView,
 } from './views.js'
 
@@ -276,6 +278,21 @@ async function panelView(ctx: PluginContext, ledger: Ledger, path: LibraryPath):
   return { ...(known ?? (await viewOfItem(ctx, ledger, moved))), state }
 }
 
+/**
+ * An agent by the grant it acts with, as `inspect @<grant>` names it: when it was last here, in how
+ * many sessions, how many things it put in. Nothing for a name no grant of this library has.
+ */
+function agentSections(ledger: Ledger, name: string, grants: readonly Grant[]) {
+  const grant = grants.find((g) => g.name === name)
+  if (grant === undefined) return []
+  const facts = ledger.facts.filter((f) => f.actor.kind === 'agent' && f.actor.grant === grant.id)
+  const last = facts.at(-1)?.at ?? null
+  const scenes = new Set(facts.map((f) => f.scene)).size
+  const put = facts.filter((f) => f.kind === 'item.enter').length
+  const body = last === null ? '还没在这里做过事' : `最近来过：${when(last)}；${scenes} 次会话，放进 ${put} 样东西`
+  return [{ title: '来过', body, data: { kind: 'agent', grant: name, last, scenes, put } }]
+}
+
 /** 记账与对账. ledger-design.md. */
 export const ledger: Plugin = {
   contract: CONTRACT,
@@ -336,10 +353,11 @@ export const ledger: Plugin = {
     return findableItems(ledger, scope).flatMap((item) => (asked.has(item.path) ? [itemHit(ledger, item)] : []))
   },
 
-  /** The target is a scene id, an item id or path, a file nobody registered, else a scene id prefix: exact names first. */
+  /** The target is an agent's grant as `@<grant>`, a scene id, an item id or path, a file nobody registered, else a scene id prefix: exact names first. */
   async onInspect(req, ctx) {
     const ledger = await load(ctx)
     const { root } = ctx.library
+    if (req.target.startsWith('@')) return agentSections(ledger, req.target.slice(1), ctx.library.config.grants)
     const card = (scene: SceneRecord) => {
       const view = sceneView(ledger, scene, conversationOf(scene, ctx.session.machine))
       return [{ title: '场景', body: sceneText(view), data: view }]
