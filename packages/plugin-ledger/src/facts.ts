@@ -28,12 +28,21 @@ export type FactBody =
   | { kind: 'item.move'; item: ItemId; from: LibraryPath; to: LibraryPath; archive: 'in' | 'out' | null }
   | { kind: 'item.basis'; item: ItemId; fingerprint: Fingerprint; basis: Basis }
   | { kind: 'item.remove'; item: ItemId }
-  | { kind: 'owner.op'; command: string; summary: string; destructive: boolean; readOnly?: true; setup?: true; request?: { id: string; by: FactActor }; refused?: string } // request: the owner approved it at an agent's request; refused: the command's reason when it then refused
+  | { kind: 'owner.op'; command: string; summary: string; destructive: boolean; readOnly?: true; setup?: true; request?: { id: string; by: FactActor }; refused?: string; declined?: { id: string; by: FactActor | null } } // request: the owner approved it at an agent's request; refused: the command's reason when it then refused; declined: the request a `request decline` turned down, and who had asked
   | { kind: 'request'; act: 'asked' | 'withdrawn'; request: string; line: string; why?: string } // an agent asked the owner to run a command, or took the request back
   | { kind: 'checked' } // the actor looked at what changed: its check, or the owner's 都看过了 on the home page
   | { kind: 'unowned.left'; paths: LibraryPath[] } // the owner left these things unregistered, not to be asked about them again
 
 export type FactActor = { kind: 'agent' | 'owner' | 'plugin'; name: string; grant: string | null }
+
+/** The request a fact asked, took back or answered: approved, or turned down by a decline, which before it named the request said so only in its summary. */
+export function requestOf(f: Fact): string | null {
+  if (f.kind === 'request') return f.request
+  if (f.kind !== 'owner.op') return null
+  if (f.request) return f.request.id
+  if (f.command !== 'request decline') return null
+  return f.declined?.id ?? /的请求 (r-[0-9a-f]+)/.exec(f.summary)?.[1] ?? null
+}
 export type How = 'tool' | 'reported' | 'observed' // the tool did it; the actor said so; seen mechanically
 
 export type Envelope = {

@@ -26,6 +26,7 @@ import type { FactActor, How, LedgerOrigin, SceneId } from './facts.js'
 import { HELD_DROP, HELD_RESTORE, type HeldCopy } from './held.js'
 import { isArchived, type ItemRecord, type Ledger, type SceneRecord } from './fold.js'
 import type { ItemState, Mark, Standing } from './reconcile.js'
+import { DEFAULT_PERIOD, PERIODS } from './stats.js'
 import { earlierText, MARK_LABEL, originLabel, SAID_LABEL, shortScene, standingData, STATE_LABEL, when, who, type ItemView, type StandingData } from './views.js'
 
 export const HOME_VIEW = 'ledger.home'
@@ -35,6 +36,7 @@ export const SCENE_VIEW = 'ledger.scene'
 export const STANDING_VIEW = 'ledger.standing'
 export const ACTIVITY_VIEW = 'ledger.activity'
 export const HELD_VIEW = 'ledger.held'
+export const STATS_VIEW = 'ledger.stats'
 
 /** What the library page shows: the things not archived, those brought in or made of them, or the archived ones. */
 const SHOWS: { value: string; label: string }[] = [
@@ -64,6 +66,7 @@ export const LEDGER_VIEWS: readonly ViewDecl[] = [
       { name: 'agent', label: '哪个 agent', options: [{ value: '', label: '全部 agent' }], default: '' },
     ],
   },
+  { id: STATS_VIEW, title: '统计', icon: 'chart-column', nav: true, filters: [{ name: 'period', label: '时间', options: [...PERIODS], default: DEFAULT_PERIOD }] },
   { id: SCENES_VIEW, title: '场景', icon: 'history', nav: true, filters: [] },
   { id: STANDING_VIEW, title: '状况', icon: 'gauge', nav: true, filters: [] },
   { id: HELD_VIEW, title: '留存', icon: 'box', nav: true, filters: [] },

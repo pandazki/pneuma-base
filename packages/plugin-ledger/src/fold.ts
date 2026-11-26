@@ -72,12 +72,19 @@ function entersOf(f: Extract<Fact, { kind: 'items.enter' }>): Enter[] {
   return items.map((e) => ({ ...envelope, kind: 'item.enter', ...e, origin }))
 }
 
-export function fold(input: readonly Fact[]): Ledger {
+/** The facts in the order the fold takes them: by time, then by id. */
+export const inOrder = (input: readonly Fact[]): Fact[] => [...input].sort(byTime)
+
+/**
+ * The fold one fact at a time, for a reader that wants the ledger as it stood between facts: `take`
+ * each fact in `inOrder`, and it answers the fact as the ledger keeps it, items named through aliases.
+ */
+export function folding(): { ledger: Ledger; take(raw: Fact): Fact } {
   const ledger: Ledger = { facts: [], items: new Map(), pathIndex: new Map(), scenes: new Map(), ownerOps: [], left: new Set() }
   const alias = new Map<ItemId, ItemId>()
   const resolve = (id: ItemId) => alias.get(id) ?? id
   const sceneItems = new Map<SceneId, Set<ItemId>>()
-  const take = (f: Fact) => {
+  const step = (f: Fact) => {
     if (f.kind === 'item.enter') {
       const holder = ledger.pathIndex.get(f.path)
       // Two enters claimed the same path: the later item is an alias of the earlier one.
@@ -87,12 +94,20 @@ export function fold(input: readonly Fact[]): Ledger {
     apply(ledger, g, sceneItems)
     return g
   }
-  for (const raw of [...input].sort(byTime)) {
+  const take = (raw: Fact) => {
     // Many things entered in one act: each is entered as by its own enter, and the act stays one fact.
-    if (raw.kind === 'items.enter') entersOf(raw).forEach(take)
-    ledger.facts.push(raw.kind === 'items.enter' ? raw : take(raw))
+    if (raw.kind === 'items.enter') entersOf(raw).forEach(step)
+    const kept = raw.kind === 'items.enter' ? raw : step(raw)
+    ledger.facts.push(kept)
+    return kept
   }
-  return ledger
+  return { ledger, take }
+}
+
+export function fold(input: readonly Fact[]): Ledger {
+  const folder = folding()
+  for (const raw of inOrder(input)) folder.take(raw)
+  return folder.ledger
 }
 
 /** The fact with every item it names, itself or in a basis, taken through the aliases. */

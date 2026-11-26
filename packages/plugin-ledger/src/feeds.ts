@@ -34,7 +34,7 @@ function grouped<T>(list: readonly T[], titleOf: (t: T) => string): { title: str
 // ---- one fact as a row ----
 
 /** Whose act a fact was: one the owner approved at an agent's request, the owner's, one the ledger or the app only saw, or an agent's on its own. */
-const whoseOf = (f: Fact): FeedRow['whose'] =>
+export const whoseOf = (f: Fact): FeedRow['whose'] =>
   f.kind === 'owner.op' && f.request ? 'approved' : f.actor.kind === 'owner' ? 'owner' : f.how === 'observed' || f.actor.kind === 'plugin' ? 'observed' : 'agent'
 
 /** Where a fact opens: the thing it is about, while it is there; else its scene. */
@@ -81,7 +81,7 @@ function factRow(ledger: Ledger, f: Fact, grants: readonly Grant[], withScene: b
 }
 
 /** The facts a feed tells: every one but the looks, which are no news, and what the row of an owner command tells. */
-const told = (facts: readonly Fact[]) => facts.filter((f) => f.kind !== 'checked' && !toldByItsCommand(f))
+export const told = (facts: readonly Fact[]) => facts.filter((f) => f.kind !== 'checked' && !toldByItsCommand(f))
 
 // ---- home ----
 
@@ -176,7 +176,19 @@ export function activityAnswer(ledger: Ledger, params: Record<string, string>, g
   const facts = all.filter((f) => byWho(f, who) && byAgent(f, agent))
   const groups = grouped(facts.slice(0, ACTIVITY_LIMIT), (f) => dayTitle(f.at, now)).map(({ title, members }) => ({ title, count: members.length, rows: members.map((f) => factRow(ledger, f, grants, true)) }))
   const subtitle = facts.length > ACTIVITY_LIMIT ? `最近 ${ACTIVITY_LIMIT} 条，共 ${facts.length} 条` : `${facts.length} 条`
-  return { title: '活动', subtitle, blocks: [{ kind: 'feed', groups, empty: '没有符合条件的记录。' }], filters }
+  return { title: '活动', subtitle, blocks: [exportBlock(now), { kind: 'feed', groups, empty: '没有符合条件的记录。' }], filters }
+}
+
+/**
+ * 导出, folded: the command that writes every record to a file outside the library, to copy into a
+ * terminal. The page has no way to hand the person a file, so it gives the command that does.
+ */
+function exportBlock(now: Instant): Block {
+  const d = new Date(now)
+  const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const command = `pneuma-base ledger export --to ~/Desktop/pneuma-base-活动-${day}.csv`
+  const note = '在终端里运行，把全部记录导出成 CSV，表格能打开；加 --format jsonl 导出成一行一条的 JSON，加 --since、--until 只导出一段时间（写一天，比如 2026-11-01，或一个时刻）。'
+  return { kind: 'section', title: '导出', note: null, count: null, collapse: 'closed', blocks: [{ kind: 'list', items: [{ cell: { text: command, mono: true, copy: true }, note, actions: [] }] }], actions: [] }
 }
 
 // ---- scenes ----
