@@ -189,7 +189,7 @@ export async function unownedAsks(ctx: PluginContext): Promise<PluginAsk[]> {
     })
   }
   for (const path of standing.closed ?? []) {
-    asks.push({ key: `ledger:closed:${path}`, text: `${path}/ 还没看过，里面的东西都没登记。登记成一样东西、登记里面的文件，还是不用管？`, about: path, actions: closedActions(path) })
+    asks.push({ key: `ledger:closed:${path}`, text: `${path}/ 没登记。`, about: path, actions: closedActions(path) })
   }
   if (asks.length <= ASKS) return asks
   const rest = asks.length - (ASKS - 1)

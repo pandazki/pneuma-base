@@ -36,11 +36,11 @@ describe('things nobody registered, settled by the owner at once', () => {
     lib = folder(3)
     ok(sb.run(['init', lib]))
     const home = ok(owner(['show', 'home'])).stdout
-    expect(home).toContain('d0/ 还没看过，里面的东西都没登记。登记成一样东西、登记里面的文件，还是不用管？')
+    expect(home).toContain('d0/ 没登记。')
     expect(home).toContain('$ put d0 --brought --by owner  # 登记成一样东西')
     expect(home).toContain('$ ledger register d0 --inside  # 登记里面的文件')
     expect(home).toContain('$ noise add d0  # 不用管')
-    expect(home).not.toContain('没看过的目录')
+    expect(home).not.toContain('没登记的目录')
     const registered = ok(owner(['ledger', 'register', 'd0', '--inside']))
     expect(registered.stdout).toContain('已把 d0/里的 3 个文件记为主人带进来的。')
     expect(registered.stderr).toContain('要登记 d0/里的全部文件：3 个')

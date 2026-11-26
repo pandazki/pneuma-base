@@ -308,8 +308,8 @@ describe('the standing view', () => {
     mkdirSync(join(root, 'moved'))
     renameSync(join(root, 'moving.md'), join(root, 'moved/here.md'))
     const r = shown(await show('ledger.standing'))
-    expect(r.blocks.filter((b) => b.kind === 'section').map((s) => s.kind === 'section' && `${s.title}:${s.count}`)).toEqual(['没看过的目录:1', '不在了的:1'])
-    expect(listIn(sectionNamed(r.blocks, '没看过的目录')).map((i) => [i.cell.text, i.actions?.map((a) => a.label)])).toEqual([['moved/', ['登记成一样东西', '登记里面的文件', '不用管']]])
+    expect(r.blocks.filter((b) => b.kind === 'section').map((s) => s.kind === 'section' && `${s.title}:${s.count}`)).toEqual(['没登记的目录:1', '不在了的:1'])
+    expect(listIn(sectionNamed(r.blocks, '没登记的目录')).map((i) => [i.cell.text, i.actions?.map((a) => a.label)])).toEqual([['moved/', ['登记成一样东西', '登记里面的文件', '不用管']]])
   })
 
   it('says there is nothing to look at when all is in order', async () => {
@@ -428,7 +428,7 @@ describe('things nobody registered', () => {
       ['都记为我带进来的', { face: 'owner', command: 'ledger register', args: { positional: ['.'], flags: {} } }],
       ['不登记，不再问', { face: 'owner', command: 'ledger leave', args: { positional: ['.'], flags: {} } }],
     ])
-    expect(closed).toMatchObject({ text: 'notes/ 还没看过，里面的东西都没登记。登记成一样东西、登记里面的文件，还是不用管？', about: 'notes' })
+    expect(closed).toMatchObject({ text: 'notes/ 没登记。', about: 'notes' })
     expect(closed?.actions.map((a) => [a.label, a.call])).toEqual([
       ['登记成一样东西', { face: 'agent', verb: 'put', request: { kind: 'register', path: 'notes', origin: { kind: 'brought', source: null, by: 'owner' }, note: null } }],
       ['登记里面的文件', { face: 'owner', command: 'ledger register', args: { positional: ['notes'], flags: { inside: true } } }],
@@ -462,7 +462,7 @@ describe('things nobody registered', () => {
     const leave = (await asks())[0]?.actions[1]?.call
     if (leave?.face !== 'owner') throw new Error('no owner call')
     expect(await run(leave)).toMatchObject({ outcome: 'done', data: { left: 2 } })
-    const closedOnly = ['notes/ 还没看过，里面的东西都没登记。登记成一样东西、登记里面的文件，还是不用管？']
+    const closedOnly = ['notes/ 没登记。']
     expect((await asks()).map((a) => a.text)).toEqual(closedOnly)
     expect(sectionNamed(shown(await show('ledger.standing')).blocks, '没人登记过的').count).toBe(2)
     writeFileSync(join(root, 'later.md'), 'dropped in later')
