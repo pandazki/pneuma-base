@@ -1,6 +1,7 @@
 {
   "name": "pneuma-base-plugin-links",
   "version": "0.1.0",
+  "license": "MIT",
   "description": "检查 Pneuma Base 库里的 Markdown 和 HTML 相对链接",
   "private": true,
   "type": "module",

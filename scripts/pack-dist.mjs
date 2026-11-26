@@ -33,6 +33,7 @@ function stage(from, to, manifest) {
   for (const entry of json.files ?? []) {
     if (existsSync(join(from, entry))) cpSync(join(from, entry), join(to, entry), { recursive: true, filter: (src) => !src.endsWith('.map') })
   }
+  cpSync(join(repo, 'LICENSE'), join(to, 'LICENSE'))
   const published = { ...json, version }
   for (const key of ['private', 'devDependencies', 'scripts']) delete published[key]
   if (json.dependencies) published.dependencies = Object.fromEntries(Object.keys(json.dependencies).map((dep) => [dep, version]))
