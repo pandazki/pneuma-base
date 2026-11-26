@@ -201,12 +201,12 @@ const basisAction = (path: string): Action => ({
 
 // ---- states, quiet when normal ----
 
-// Where a thing came from is a kind, not a state: grey, except that nobody knowing is worth a look.
-const ORIGIN_TONE: Record<LedgerOrigin['kind'], Tag['tone']> = { made: 'neutral', brought: 'neutral', adopted: 'warn' }
 const STATE_TONE: Record<ItemState['kind'], Tag['tone']> = { consistent: 'neutral', changed: 'warn', moved: 'info', missing: 'bad', removed: 'neutral', absorbed: 'neutral' }
 const MARK_TONE: Record<Mark['kind'], Tag['tone']> = { stale: 'warn', 'source-gone': 'bad' }
 
-const originTag = (origin: LedgerOrigin, how: How): Tag => ({ text: originLabel(origin, how), tone: ORIGIN_TONE[origin.kind] })
+// Where a thing came from is a kind, not a state: grey words, except that nobody knowing is worth a look.
+const originCell = (origin: LedgerOrigin, how: How): Cell =>
+  origin.kind === 'adopted' ? { text: '', tag: { text: originLabel(origin, how), tone: 'warn' } } : { text: originLabel(origin, how), muted: true }
 const stateText = (state: ItemState) => (state.kind === 'moved' ? `已搬到 ${state.to}` : STATE_LABEL[state.kind])
 const stateTag = (state: ItemState): Tag => ({ text: stateText(state), tone: STATE_TONE[state.kind] })
 
@@ -282,7 +282,7 @@ export function itemsAnswer(ledger: Ledger, standing: Standing, params: Record<s
     key: item.id,
     cells: {
       path: pathCell(item),
-      origin: { text: '', tag: originTag(item.origin, item.entered.how) },
+      origin: originCell(item.origin, item.entered.how),
       who: actorCell(item.entered.actor, grants),
       state: stateCell(standing.states.get(item.id) ?? { kind: 'missing' }, standing.marks.get(item.id) ?? []),
       at: moment(lastAt(item)),
@@ -333,7 +333,7 @@ export function itemSection(v: ItemView, ledger: Ledger, grants: readonly Grant[
     {
       kind: 'fields',
       fields: [
-        { label: '来历', value: { text: '', tag: originTag(v.origin, v.entered.how) } },
+        { label: '来历', value: originCell(v.origin, v.entered.how) },
         ...(v.origin.kind === 'brought' && v.origin.source ? [{ label: '出处', value: { text: v.origin.source } }] : []),
         ...v.earlier.map((e) => ({ label: '先前', value: { text: earlierText(e), muted: true } })),
       ],

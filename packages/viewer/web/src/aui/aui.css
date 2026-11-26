@@ -225,6 +225,13 @@ button.aui-feed-head:hover {
 .aui-feed-meta .cell .text-ink-2 {
   color: var(--ink-3);
 }
+/* A scene named in the grey line stays grey; its underline says it opens. */
+.aui-feed-meta .link {
+  color: var(--ink-2);
+}
+.aui-feed-meta .link:hover {
+  color: var(--ink);
+}
 .aui-feed-end {
   display: flex;
   flex: none;

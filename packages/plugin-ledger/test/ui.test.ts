@@ -78,7 +78,7 @@ const listIn = (section: Block) => {
 const actionsIn = (blocks: Block[]) => flat(blocks).flatMap((b) => (b.kind === 'actions' ? b.actions : []))
 
 describe('the library page', () => {
-  it('lists each item with its path, origin, who, its state and time, a normal state in grey words; a row opens the panel', async () => {
+  it('lists each item with its path, origin, who, its state and time, an origin and a normal state in grey words; a row opens the panel', async () => {
     const { show } = await relayed()
     const rows = rowsOf(await show('ledger.items'))
     expect(rows.map((r) => line(r.cells))).toEqual([
@@ -88,7 +88,7 @@ describe('the library page', () => {
     ])
     expect(rows[0]?.cells.who).toMatchObject({ actor: { kind: 'agent', name: 'claude-code' } })
     expect(rows[0]?.cells.state).toEqual({ text: '一致', muted: true })
-    expect(rows[0]?.cells.origin?.tag?.tone).toBe('neutral')
+    expect(rows[0]?.cells.origin).toEqual({ text: '做出来的', muted: true })
     expect(rows[0]?.link).toEqual({ view: 'item', params: { path: 'recommendation.md' }, target: 'panel' })
   })
 
@@ -149,7 +149,7 @@ describe('the ledger’s part of the item panel', () => {
     expect(came).toMatchObject({
       count: 2,
       blocks: [
-        { kind: 'fields', fields: [{ label: '来历', value: { tag: { text: '做出来的' } } }] },
+        { kind: 'fields', fields: [{ label: '来历', value: { text: '做出来的', muted: true } }] },
         { kind: 'list', items: [{ cell: { text: 'src/stripe.html', link: { view: 'item', params: { path: 'src/stripe.html' }, target: 'panel' } }, note: '一致' }, { cell: { text: '主人说客户在欧洲' }, note: '库外' }] },
       ],
     })
@@ -447,6 +447,9 @@ describe('the owner’s operations on the ledger’s blocks', () => {
     ])
     expect(items('被直接改过的')[0]?.actions).toMatchObject([{ label: '认下这次改动', call: { verb: 'say', request: { kind: 'revised', about: 'src/stripe.html' } } }])
     expect(items('可能过期')[0]?.actions).toEqual([])
+    // Nobody knowing where it came from is the one origin worth a tag.
+    const adopted = rowsOf(await show('ledger.items')).find((row) => row.cells.path?.text === 'adopted.md')
+    expect(adopted?.cells.origin).toMatchObject({ text: '', tag: { tone: 'warn' } })
   })
 })
 
