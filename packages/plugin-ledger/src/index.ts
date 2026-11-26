@@ -6,7 +6,9 @@ import {
   CONTRACT,
   PNEUMA_BASE_VERSION,
   isFailure,
+  pageAt,
   pluginName,
+  rowsOf,
   type AcceptedPut,
   type Event,
   type Grant,
@@ -26,14 +28,14 @@ import { fact, factActor, LEDGER_ACTOR, newItemId, sceneOf, writeFacts, type Bas
 import { activityAnswer, homeAnswer, noSuchScene, sceneAnswer, scenesAnswer } from './feeds.js'
 import { findHits, foundHits } from './find.js'
 import { heldCommands, heldCopies, heldPath, keep, keyOf } from './held.js'
-import { deepPass, foldAll, movedThings, rebase, refresh, stateOf, type Deep, type Listed } from './look.js'
+import { deepPass, foldAll, movedThings, rebase, refresh, scopeOf, stateOf, type Deep, type Listed } from './look.js'
 import { archived, type ActorRow, type HistoryRow, type ItemRow, type SceneRow } from './model.js'
 import { agentsOf, counters, getAll, itemAtPath, itemNamed, itemViewOf, lookupOf, newsSince, scenesNamed, standingList, standingLists, partialDirs } from './queries.js'
 import { pagesOf } from './rows.js'
 import { DEFAULT_PERIOD, isPeriod, statsFrom } from './stats.js'
 import { statsAnswer } from './stats-page.js'
 import { ACTIVITY_VIEW, heldAnswer, HELD_VIEW, HOME_VIEW, isStandingKind, itemSection, itemsAnswer, ITEMS_VIEW, LEDGER_VIEWS, partOfSection, SCENE_VIEW, SCENES_VIEW, STANDING_VIEW, standingAnswer, STATS_VIEW, unownedSection, type ItemsPage } from './ui.js'
-import { LEAVE, REGISTER, unownedAsks } from './unowned.js'
+import { closedLooks, LEAVE, REGISTER, unownedAsks } from './unowned.js'
 import { ambiguousText, itemText, originLabel, sceneText, sceneView, sinceText, sinceViewOf, standingSections, when, type ItemView } from './views.js'
 
 /** A hook's writes: the facts it will append as one write, and the things it adopted on the way. */
@@ -351,15 +353,13 @@ async function thingAt(ctx: PluginContext, path: LibraryPath): Promise<boolean> 
 }
 
 /** The library page's rows: by latest change for the whole library, by path within a folder, a page at a time. */
-/** A page of the library and of one kind of the standing: architecture section 6. */
-const ITEMS_PAGE = 50
 const TREE_MAX = 2000
 
-async function itemsPage(ctx: PluginContext, params: Record<string, string>): Promise<ItemsPage> {
+async function itemsPage(ctx: PluginContext, params: Record<string, string>, size: number): Promise<ItemsPage> {
   const recs = records(ctx)
   const show = params.show ?? ''
   const dir = params.dir ?? ''
-  const after = params.after
+  const { after } = pageAt(params)
   const c = await counters(recs)
   const n = (k: string) => c[`class:${k}`] ?? 0
   const counts = { '': n('brought') + n('made') + n('adopted'), brought: n('brought'), made: n('made'), archived: n('archived') }
@@ -367,7 +367,7 @@ async function itemsPage(ctx: PluginContext, params: Record<string, string>): Pr
   let items: ItemRow[] = []
   let next: string | null = null
   if (dir === '') {
-    const opts = { limit: ITEMS_PAGE, ...(after === undefined ? {} : { after }) }
+    const opts = { limit: size, ...(after === undefined ? {} : { after }) }
     const page = show === '' ? await recs.where<{ id: ItemId }>('bytime', 'live', 'y', opts) : await recs.where<{ id: ItemId }>('bytime', 'show', show, opts)
     const rows = await getAll<ItemRow>(recs, 'items', page.rows.map((r) => r.value.id))
     items = page.rows.flatMap((r) => rows.get(r.value.id) ?? [])
@@ -375,8 +375,8 @@ async function itemsPage(ctx: PluginContext, params: Record<string, string>): Pr
   } else {
     const prefix = `${show === 'archived' ? ctx.tools.archivedPath(dir as LibraryPath) : dir}/`
     let at = after
-    for (let pages = 0; items.length < ITEMS_PAGE && pages < 5; pages++) {
-      const page = await recs.under<{ id: ItemId }>('paths', prefix, { limit: ITEMS_PAGE, ...(at === undefined ? {} : { after: at }) })
+    for (let pages = 0; items.length < size && pages < 5; pages++) {
+      const page = await recs.under<{ id: ItemId }>('paths', prefix, { limit: size - items.length, ...(at === undefined ? {} : { after: at }) })
       const rows = await getAll<ItemRow>(recs, 'items', page.rows.map((r) => r.value.id))
       items.push(...page.rows.flatMap((r) => rows.get(r.value.id) ?? []).filter((i) => !i.removed && i.absorbedInto === null && inShow(i)))
       next = page.more?.after ?? null
@@ -389,14 +389,26 @@ async function itemsPage(ctx: PluginContext, params: Record<string, string>): Pr
     tree.push(...page.filter((r) => (show === 'archived' ? true : r.key !== '_archive' && !r.key.startsWith('_archive/'))).map((r) => ({ path: r.key, count: r.value })))
     if (tree.length >= TREE_MAX) break
   }
-  return { show, dir, items, after: next, counts, tree, params: { ...(show ? { show } : {}), ...(dir ? { dir } : {}) } }
+  const closed = show === 'archived' ? { rows: [], count: 0 } : await closedIn(ctx, dir)
+  return { show, dir, items, after: next, counts, tree, params, size, closed }
+}
+
+/** How many closed directories the library page lists in a folder before the way to all of them. */
+const CLOSED_SHOWN = 20
+
+/** The closed directories right inside `dir`, as the last looks marked them, the first of them with what a look into each found. */
+async function closedIn(ctx: PluginContext, dir: string): Promise<ItemsPage['closed']> {
+  const all = (await standingList(records(ctx), 'closed', false, 1000)).rows.filter((m) => (m.path.includes('/') ? m.path.slice(0, m.path.lastIndexOf('/')) : '') === dir)
+  const first = all.slice(0, CLOSED_SHOWN).map((m) => m.path)
+  const looks = await closedLooks(ctx, first)
+  return { rows: first.map((path) => ({ path, look: looks.get(path) ?? null })), count: all.length }
 }
 
 /** The text of the named whole pass, its lists at most 20 long. */
 function deepSection(d: Deep): PluginSection {
-  const where = d.dir === null ? '整个库' : `${d.dir}`
+  const where = d.dir === null ? '整个库' : ` ${d.dir}`
   const list = (title: string, l: Listed, after: string) => (l.count === 0 ? [] : [`${title}（${l.count} 样）：`, ...l.first.map((p) => `  ${p}`), ...(l.count > l.first.length ? [`  ……共 ${l.count} 样`] : []), ...(after ? [after] : [])])
-  const head = d.stopped ? `按内容查了 ${where}：停在 ${d.done} / ${d.scope} 样，查过的都记下了；再运行一次从头查。` : `按内容查了 ${where} 的 ${d.done} 样登记过的东西。`
+  const head = d.stopped ? `停下了：按内容查了${where}的 ${d.done} / ${d.scope} 样。` : `按内容查了${where}：${d.done} 样登记过的东西。`
   const body = [
     head,
     ...list('内容变了', d.changed, '是你改的，就用 say revised <库内路径> 认下。'),
@@ -407,24 +419,11 @@ function deepSection(d: Deep): PluginSection {
   return { title: '按内容查', body: body.join('\n'), data: d }
 }
 
-/** The named whole pass of `check --deep`: says how much first, its progress on stderr, and stops after the page under way on Ctrl-C. */
+/** The named whole pass of `check --deep`: how much it reads first, then how far, on the operation's pass; it stops after the page under way when asked. */
 async function deepCheck(ctx: PluginContext, dir: LibraryPath | null): Promise<Deep> {
-  let stop = false
-  const interrupt = () => {
-    stop = true
-  }
-  const say = (text: string) => void process.stderr.write(`${text}\n`)
-  process.on('SIGINT', interrupt)
-  try {
-    return await deepPass(
-      ctx,
-      dir,
-      (done, scope) => say(done === 0 ? `要按内容查 ${dir ?? '整个库'} 的 ${scope} 样登记过的东西。可以随时打断（Ctrl-C），查过的会记下。` : `已查 ${done} / ${scope}`),
-      () => stop,
-    )
-  } finally {
-    process.off('SIGINT', interrupt)
-  }
+  const where = dir === null ? '整个库' : ` ${dir}`
+  const progress = (done: number, scope: number) => ctx.pass?.report({ done, total: scope, text: done === 0 ? `要按内容读${where}：${scope} 样登记过的东西。` : `已查 ${done} / ${scope} 样` })
+  return deepPass(ctx, dir, progress, () => ctx.pass?.stopped() ?? false)
 }
 
 /** 记账与对账. ledger-design.md. */
@@ -589,26 +588,28 @@ export const ledger: Plugin = {
       }
       case ITEMS_VIEW:
         await refresh(ctx)
-        return itemsAnswer(await itemsPage(ctx, req.params), grants)
+        return itemsAnswer(await itemsPage(ctx, req.params, rowsOf(req)), grants)
       case STANDING_VIEW: {
         await refresh(ctx)
         const only = isStandingKind(req.params.kind) ? req.params.kind : null
-        const lists = only === null ? await standingLists(recs, false) : [await standingList(recs, only, false, ITEMS_PAGE, req.params.after)]
-        return standingAnswer(lists, only)
+        const lists = only === null ? await standingLists(recs, false) : [await standingList(recs, only, false, rowsOf(req), pageAt(req.params).after)]
+        const looks = await closedLooks(ctx, lists.flatMap((l) => (l.kind === 'closed' ? l.rows.map((m) => m.path) : [])))
+        const deep = only === null || only === 'changed' ? await scopeOf(ctx, null) : null
+        return standingAnswer(lists, only, req.params, rowsOf(req), looks, deep)
       }
       case SCENES_VIEW:
         await stateOf(ctx)
-        return scenesAnswer(recs, req.params, grants, ctx.now)
+        return scenesAnswer(recs, req.params, grants, ctx.now, rowsOf(req))
       case SCENE_VIEW: {
         await stateOf(ctx)
         const input = req.params.scene ?? ''
         const { scenes, more } = await scenesNamed(recs, input)
         const scene = scenes.length === 1 && !more ? scenes[0] : undefined
-        return scene ? sceneAnswer(recs, scene, conversationOf(scene, ctx.session.machine), grants, req.params.after) : noSuchScene(input, scenes.length, more)
+        return scene ? sceneAnswer(recs, scene, conversationOf(scene, ctx.session.machine), grants, req.params, rowsOf(req)) : noSuchScene(input, scenes.length, more)
       }
       case ACTIVITY_VIEW:
         await stateOf(ctx)
-        return activityAnswer(recs, req.params, grants, ctx.now)
+        return activityAnswer(recs, req.params, grants, ctx.now, rowsOf(req))
       case STATS_VIEW: {
         // From the hours' rows alone: no file is read, so the page costs the same however large the library is.
         await stateOf(ctx)
@@ -617,10 +618,10 @@ export const ledger: Plugin = {
       }
       case HELD_VIEW: {
         await stateOf(ctx)
-        const held = await heldCopies(ctx)
+        const held = await heldCopies(ctx, rowsOf(req), pageAt(req.params).after)
         const glanced = await ctx.tools.storage.own.glance(held.copies.map((c) => c.place))
         const sizes = new Map(glanced.map((g) => [g.place, 'kind' in g ? { size: g.kind === 'file' ? (g.size ?? null) : null, bundle: g.kind === 'dir' } : { size: null, bundle: false }]))
-        return heldAnswer(held, sizes)
+        return heldAnswer(held, sizes, req.params, rowsOf(req))
       }
       default:
         throw new Error(`the ledger has no view ${req.view}`)
@@ -628,7 +629,7 @@ export const ledger: Plugin = {
   },
 
   /** The item panel's provenance section, from the same view inspect gives; a file nobody registered says so. */
-  async onItemView(path, ctx) {
+  async onItemView(path, ctx, panel) {
     await refresh(ctx)
     const recs = records(ctx)
     const item = await panelItem(ctx, path)
@@ -639,7 +640,7 @@ export const ledger: Plugin = {
       return (await thingAt(ctx, path)) ? unownedSection(path) : null
     }
     const view: ItemView = await itemViewOf(recs, item)
-    return itemSection(view, await lookupOf(recs, [], { scenes: [item.entered.scene] }), ctx.library.config.grants)
+    return itemSection(view, await lookupOf(recs, [], { scenes: [item.entered.scene] }), ctx.library.config.grants, panel)
   },
 
   /**

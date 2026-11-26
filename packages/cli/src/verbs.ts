@@ -7,6 +7,7 @@ import {
   agentFace,
   ownerFace,
   parseLibraryPath,
+  TEXT_ROWS,
   viewerFace,
   type Context,
   type Env,
@@ -308,7 +309,8 @@ export const VERBS: readonly Verb[] = [
         const list = viewerFace.views(library)
         return { json: list, lines: viewListText(list), exit: exitOf(list) }
       }
-      const r = await viewerFace.show({ view, params: { ...params } }, { ctx, table, env, viaGrant })
+      // The text form shows the first rows of a long list and the command for more, as --json does.
+      const r = await viewerFace.show({ view, params: { ...params }, size: TEXT_ROWS }, { ctx, table, env, viaGrant })
       if (r.outcome === 'no-such-view') throw new UsageError(`这个库没有这一页：${view}。pneuma-base show 列出这个库的页。`)
       if (r.outcome === 'refused') return answer(r, [`拒绝（${r.reason}）：${r.text}`])
       const decl = viewerFace.views(library).views.find((v) => v.id === view)

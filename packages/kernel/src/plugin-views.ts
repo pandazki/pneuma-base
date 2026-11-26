@@ -2,10 +2,11 @@
 import { checkBlocks, checkFilters, checkOpen, checkRefresh, callableIn } from './blocks.js'
 import { messageOf, pluginContext } from './pipeline.js'
 import type { ViewerCall } from './viewer.js'
-import type { Block, Context, Library, Plugin, PluginProblem, ViewAnswer, ViewDecl, ViewRequest } from '@pneuma-base/sdk'
+import type { Block, Context, IconName, Library, Plugin, PluginProblem, ViewAnswer, ViewDecl, ViewRequest } from '@pneuma-base/sdk'
 
-export type Shown = ViewAnswer & { problems: PluginProblem[] }
-export type KernelPage = (params: Record<string, string>, call: ViewerCall) => Promise<Shown>
+export type Shown = ViewAnswer & { problems: PluginProblem[]; icon?: IconName }
+/** A page of the kernel's own; `rows`, how many rows a page of a long list holds. */
+export type KernelPage = (params: Record<string, string>, call: ViewerCall, rows: number) => Promise<Shown>
 
 export const shown = (title: string, subtitle: string | null, blocks: Block[], problems: PluginProblem[] = []): Shown => ({ title, subtitle, blocks, problems })
 

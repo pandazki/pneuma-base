@@ -63,7 +63,7 @@ describe('storage list', () => {
     const m = machine()
     const lib = join(m.home, 'lib')
     expect((await m.run(['init', lib, '--bare'])).code).toBe(0)
-    expect((await m.run(['storage', 'list', '--library', lib])).stdout).toMatch(/^local-folder .* · 这个库用的$/m)
+    expect((await m.run(['storage', 'list', '--library', lib])).stdout).toMatch(/^local-folder .* · 这个库在用$/m)
     expect((await m.run(['storage', 'list', '--library', lib, '--json'])).json().data.library).toEqual({ address: lib, provider: 'local-folder' })
   })
 
@@ -200,7 +200,7 @@ describe('the configuration page', () => {
     await m.run(['init', lib, '--bare'])
     const page = (await m.run(['show', 'config', '--library', lib])).stdout
     expect(page).toContain('## 存储')
-    expect(page).toMatch(/local-folder .*这个库用的/)
+    expect(page).toMatch(/local-folder .*随 pneuma-base 带着 \[这个库在用\]/)
     expect(page).toContain('$ storage install <owner/repo[@版本]>  # 安装别的存储…')
   })
 })

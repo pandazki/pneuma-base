@@ -1,15 +1,16 @@
 // The command line is the reference; the management UI is a face of it. On a library with the five
 // built-in plugins and something in each of their pages, every page reached from the navigation and
 // its links is checked both ways:
-// - every page prints with `show`, and its words carry every cell and every button's command;
+// - every page prints with `show`, and its words carry every cell, every button's command and, for a
+//   long list, which rows of how many it shows with the commands for the pages on either side;
 // - every button calls a verb, or an owner command the library runs with arguments it takes;
 // - every business verb and command has a button or is the read behind a page, and every management
 //   command has a place on the owner's pages; what has none is listed below with why.
 import { join } from 'node:path'
-import { actionFault, callableIn, openLibrary, ownerFace, type Action, type Block, type Cell, type Link, type ListedView, type TreeNode, type ViewResult } from '@pneuma-base/kernel'
+import { actionFault, callableIn, openLibrary, ownerFace, type Action, type Block, type Cell, type Link, type ListedView, type Paging, type TreeNode, type ViewResult } from '@pneuma-base/kernel'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { main, type Io } from '../dist/main.js'
-import { commandOf, minute } from '../dist/page.js'
+import { commandOf, linkCommand, minute } from '../dist/page.js'
 import { builtinPlugins } from '../dist/plugins.js'
 import { sandbox, tempDir, type Sandbox } from './helpers.js'
 
@@ -117,9 +118,15 @@ function cellsOf(b: Block): Cell[] {
   }
 }
 
-/** The links of a block on the page of `view`: a tree's folders are that view with its parameter set. */
+/** The paging of a block that holds one page of a long list. */
+function pagingOf(b: Block): Paging | undefined {
+  return b.kind === 'table' || b.kind === 'list' || b.kind === 'feed' || b.kind === 'timeline' ? b.page : undefined
+}
+
+/** The links of a block on the page of `view`: a tree's folders are that view with its parameter set; a long list's pages on either side. */
 function linksOf(b: Block, view: string): Link[] {
-  const cells = cellsOf(b).flatMap((c) => (c.link ? [c.link] : []))
+  const page = pagingOf(b)
+  const cells = [...cellsOf(b).flatMap((c) => (c.link ? [c.link] : [])), ...(page ? [page.prev, page.next].filter((l): l is Link => l !== null) : [])]
   const nodes = (list: readonly TreeNode[]): TreeNode[] => list.flatMap((n) => [n, ...nodes(n.children)])
   switch (b.kind) {
     case 'table':
@@ -207,8 +214,14 @@ beforeAll(async () => {
   )
   await write(join(lib, 'notes/dropped.md'), '主人直接放进来的\n')
   await write(join(lib, 'sources/pricing.html'), '<p>价格，手改过</p>\n')
+  // More things in one folder than a page of show holds, so the library's table comes in pages; and a
+  // directory nobody registered anything in, so the files page and home have its three answers.
+  for (let i = 1; i <= 25; i++) await write(join(lib, `inbox/scan-${String(i).padStart(2, '0')}.pdf`), `scan ${i}\n`)
+  owner(['ledger', 'register', 'inbox', '--inside'])
+  await write(join(lib, 'scans/receipt.pdf'), '收据\n')
 
-  // Every view in the list with its filters' defaults, then every page a link on one of them opens, a few of each view.
+  // Every view in the list with its filters' defaults, then every page a link on one of them opens, a few
+  // of each view in each folder, so a long folder does not use up a view's share.
   const listed = JSON.parse((await cli(['show', '--json'])).out) as { views: ListedView[] }
   const queue: Link[] = listed.views.filter((v) => v.nav).map((v) => ({ view: v.id, params: {}, target: 'main' }))
   const seen = new Set<string>()
@@ -216,9 +229,10 @@ beforeAll(async () => {
   while (queue.length > 0) {
     const link = queue.shift() as Link
     const key = JSON.stringify([link.view, link.params])
-    if (seen.has(key) || (perView.get(link.view) ?? 0) >= 12) continue
+    const share = `${link.view} ${(link.params.path ?? '').split('/')[0]}`
+    if (seen.has(key) || (perView.get(share) ?? 0) >= 12) continue
     seen.add(key)
-    perView.set(link.view, (perView.get(link.view) ?? 0) + 1)
+    perView.set(share, (perView.get(share) ?? 0) + 1)
     const args = ['show', link.view, ...flagsOf(link.params)]
     const json = await cli([...args, '--json'])
     const text = await cli(args)
@@ -261,8 +275,40 @@ describe('every page of a library with every built-in plugin', () => {
         if (block.kind === 'drop') expect(text, where).toContain(`$ ${block.command}`)
         if (block.kind === 'chart') for (const words of [block.text, ...block.series.map((x) => x.label), ...block.x]) expect(text, `${where}: ${words}`).toContain(words)
         for (const action of actionsOf(block)) expect(text, `${where}: ${action.label}`).toContain(`$ ${commandOf(action, commands)}  # ${action.label}`)
+        const page = pagingOf(block)
+        if (page && (page.prev !== null || page.next !== null)) {
+          expect(text, where).toContain(`第 ${page.first}–${page.first + page.shown - 1} 项，${page.atLeast ? '至少' : '共'} ${page.total} 项`)
+          if (page.next) expect(text, where).toContain(`下一页 → ${linkCommand(page.next)}`)
+          if (page.prev) expect(text, where).toContain(`上一页 → ${linkCommand(page.prev)}`)
+        }
       }
     }
+  })
+
+  it('pages a long list in show as it does on the page: the next page starts where this one stops, and leads back', () => {
+    const items = (p: Page) => allBlocks(p.json.blocks).find((b) => b.kind === 'table' && b.page !== undefined)
+    const first = pages.find((p) => p.link.view === 'ledger.items' && p.link.params.dir === 'inbox' && p.link.params.after === undefined)
+    const firstTable = first && items(first)
+    if (firstTable?.kind !== 'table' || firstTable.page?.next == null) throw new Error('no first page of inbox with a next page')
+    expect(firstTable.page).toMatchObject({ first: 1, shown: 20, total: 25 })
+    const next = firstTable.page.next
+    const second = pages.find((p) => linkCommand(p.link) === linkCommand(next))
+    const secondTable = second && items(second)
+    if (secondTable?.kind !== 'table') throw new Error('the next page of inbox was not reached')
+    expect(secondTable.page).toMatchObject({ first: 21, shown: 5, total: 25, next: null })
+    // Its previous page is the first: the same folder, from the start.
+    expect(secondTable.page?.prev?.params).toMatchObject({ dir: 'inbox' })
+    expect(secondTable.page?.prev?.params.after).toBeUndefined()
+    expect(new Set([...firstTable.rows, ...secondTable.rows].map((r) => r.key)).size).toBe(25)
+  })
+
+  it('gives a directory nobody registered anything in as one row with what a look found and its three answers, as commands too', () => {
+    const files = pages.find((p) => p.link.view === 'files' && Object.keys(p.link.params).length === 0)
+    if (!files) throw new Error('no files page')
+    const scans = allBlocks(files.json.blocks).flatMap((b) => (b.kind === 'table' ? b.rows : [])).find((r) => r.key === 'scans')
+    expect(scans).toMatchObject({ cells: { name: { tag: { text: '没登记' } }, size: { text: '1 个文件' } } })
+    expect(scans?.actions.map((a) => a.label)).toEqual(['登记成一样东西', '登记里面的文件', '不用管'])
+    expect(files.text).toContain('$ ledger register scans --inside  # 登记里面的文件（只给主人）；先问：要登记 scans/ 里任意深处的全部文件：1 个，不含噪音。')
   })
 
   it('has buttons that each call a verb, or an owner command the library runs with arguments its params take, and no problem', async () => {

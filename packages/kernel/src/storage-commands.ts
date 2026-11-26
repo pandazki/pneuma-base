@@ -6,6 +6,7 @@ import { command, done, refused, type KernelCommand, type Outcome } from './kern
 import type { OwnerCall } from './owner.js'
 import { candidateOf, fetchManifest, installCandidate, parseRelease, RELEASE, type Candidate, type Refusal } from './provider-install.js'
 import { installedProvider, librariesUsing, machineProviders, officialProviders, platformKey, providerOf, removeInstalled, type OfficialProvider, type Provider } from './providers.js'
+import { storageOf } from './storage.js'
 
 const NAME = { name: 'name', hint: '提供者的名字', required: true } as const
 const CHECKSUM = { name: 'checksum', hint: '看过、认下的程序的 sha256', kind: 'value', pattern: '(sha256:)?[0-9a-f]{64}' } as const
@@ -18,7 +19,7 @@ const originText = (p: Provider) => (p.origin.kind === 'built-in' ? '自带' : `
 
 /** One provider in words: its name and version, where it came from, the addresses it answers; its program and checksum below. */
 const providerLines = (p: Provider, usedHere: boolean) => [
-  `${p.name} ${p.version} · ${[originText(p), ...(p.official ? ['官方'] : []), `地址：${p.addresses.join('、')}`, `契约 ${p.contract}`, ...(usedHere ? ['这个库用的'] : [])].join(' · ')}`,
+  `${p.name} ${p.version} · ${[originText(p), ...(p.official ? ['官方'] : []), `地址：${p.addresses.join('、')}`, `契约 ${p.contract}`, ...(usedHere ? ['这个库在用'] : [])].join(' · ')}`,
   `    程序：${p.executable}`,
   `    校验和：sha256:${p.sha256}`,
 ]
@@ -189,18 +190,44 @@ const storageList = command({
 
 export const STORAGE_COMMANDS: readonly KernelCommand[] = [storageList, storageInstall, storageRemove, storageUpdate]
 
-/** The configuration page's section: this machine's providers, the one this library uses, the official ones not installed, each with the command that changes it as a form. */
-export async function storageSection(ctx: Context): Promise<Block> {
+/** The address forms in the words a person reads; a form not named here is written as it is. */
+const FORMS: Record<string, string> = { path: '本机路径' }
+const formsText = (forms: readonly string[]) => (forms.length === 0 ? '—' : forms.map((f) => FORMS[f] ?? f).join('、'))
+
+/** Where a provider on this machine came from, in the state column's grey words. */
+const cameText = (p: Provider) => (p.origin.kind === 'built-in' ? '随 pneuma-base 带着' : `${p.official ? '官方，' : ''}来自 ${p.origin.repository}`)
+
+/**
+ * The configuration page's section: this machine's providers, the one this library uses marked, with
+ * the facets it gives as it describes itself; the official ones not installed; each with the command
+ * that changes it as a form. Installing a third-party provider is refused until the owner accepts the
+ * trust statement, which the refusal carries as an offer with the checksum. `inside` goes under the
+ * table, such as the library's noise.
+ */
+export async function storageSection(ctx: Context, inside: Block[] = []): Promise<Block> {
+  const dash = { text: '—', muted: true }
   const providers = await machineProviders(ctx.home)
-  const used = providerOf(ctx.library.root, ctx.home).name
+  let used: string | null = null
+  try {
+    used = providerOf(ctx.library.root, ctx.home).name
+  } catch {
+    used = null
+  }
+  let facets: string[] | null = null
+  try {
+    const described = await storageOf(ctx.library.root).describe()
+    facets = Array.isArray(described.facets) ? described.facets.map(String) : null
+  } catch {
+    facets = null
+  }
   const rows: TableRow[] = providers.map((p) => ({
     key: p.name,
     cells: {
       name: { text: p.name, mono: true },
       version: { text: p.version, mono: true },
-      origin: { text: originText(p) },
-      addresses: { text: p.addresses.join('、'), mono: true },
-      state: { text: '', tag: p.name === used ? { text: '这个库用的', tone: 'good' } : { text: '装着', tone: 'neutral' } },
+      addresses: { text: formsText(p.addresses) },
+      facets: p.name === used && facets !== null ? { text: facets.join('、') || '—', mono: true, muted: true } : dash,
+      state: { text: cameText(p), muted: true, ...(p.name === used ? { tag: { text: '这个库在用', tone: 'good' as const } } : {}) },
     },
     link: null,
     actions:
@@ -208,17 +235,17 @@ export async function storageSection(ctx: Context): Promise<Block> {
         ? []
         : [
             { label: '换新版本', tone: 'default', confirm: null, inputs: [], call: ownerForm('storage update', UPDATE_PARAMS, { name: p.name }) },
-            { label: '卸掉', tone: 'danger', confirm: `从这台机器卸掉存储提供者 ${p.name}？用它的库要再装上它才能打开。`, inputs: [], call: ownerForm('storage remove', { positional: [NAME] }, { name: p.name }) },
+            { label: '卸掉', tone: 'danger', confirm: `卸掉存储提供者 ${p.name}？用它的库在这台机器上打不开，直到再装上。`, inputs: [], call: ownerForm('storage remove', { positional: [NAME] }, { name: p.name }) },
           ],
   }))
   const official: TableRow[] = notInstalled(providers).map((o) => ({
     key: `official:${o.name}`,
     cells: {
       name: { text: o.name, mono: true },
-      version: o.version === null ? { text: '—', muted: true } : { text: o.version, mono: true },
-      origin: { text: `官方，${o.repository}` },
-      addresses: { text: o.addresses.join('、'), mono: true },
-      state: { text: '', tag: { text: '没装', tone: 'neutral' } },
+      version: o.version === null ? dash : { text: o.version, mono: true },
+      addresses: { text: formsText(o.addresses) },
+      facets: dash,
+      state: { text: `官方，没装：${o.repository}`, muted: true },
     },
     link: null,
     actions: [{ label: '装上', tone: 'default', confirm: null, inputs: [], call: ownerForm('storage install', INSTALL_PARAMS, { repository: o.repository }) }],
@@ -228,15 +255,22 @@ export async function storageSection(ctx: Context): Promise<Block> {
   return {
     kind: 'section',
     title: '存储',
-    note: '存储提供者是一个以你的身份运行的程序，看得到库里的全部内容。库用哪一个，记在这台机器上。',
+    note: '存储提供者以主人的身份运行，看得到库里的全部内容。库用哪一个，记在这台机器上。',
     count: providers.length,
     blocks: [
       {
         kind: 'table',
-        columns: [{ key: 'name', label: '名字' }, { key: 'version', label: '版本', optional: true }, { key: 'origin', label: '来历' }, { key: 'addresses', label: '地址', optional: true }, { key: 'state', label: '状态' }],
+        columns: [
+          { key: 'name', label: '提供者' },
+          { key: 'version', label: '版本', optional: true },
+          { key: 'addresses', label: '地址的写法' },
+          { key: 'facets', label: '给得出的面', optional: true },
+          { key: 'state', label: '状态' },
+        ],
         rows: [...rows, ...official],
         empty: '',
       },
+      ...inside,
     ],
     actions: [other],
   }

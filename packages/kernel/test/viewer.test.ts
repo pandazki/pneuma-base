@@ -95,7 +95,7 @@ describe('the views of a library with no plugin', () => {
     ])
     const r = shown(await viewerFace.show({ view: 'config', params: {} }, { ctx: f.ctx, table, env: {}, viaGrant: false }))
     const sections = r.blocks.filter((b) => b.kind === 'section')
-    expect(sections.map((s) => s.kind === 'section' && s.title)).toEqual(['插件', '授权与技能', '噪音', '存储'])
+    expect(sections.map((s) => s.kind === 'section' && s.title)).toEqual(['插件', '授权与技能', '存储'])
     const plugins = tableOf({ outcome: 'shown', title: '', subtitle: null, blocks: [sections[0] as Block], problems: [] })
     // Its version and what it brings, as plugin list shows them: the summary, else the cognition's title.
     expect(plugins.columns.map((c) => c.label)).toEqual(['名字', '版本', '做什么', '状态'])
@@ -110,11 +110,16 @@ describe('the views of a library with no plugin', () => {
     ])
     expect(sections[1]).toMatchObject({ actions: [{ label: '发授权', call: { command: 'grant issue' } }] })
     expect(JSON.stringify(sections[1])).toContain('codex --add-dir')
-    // The built-in local folder, the one this library uses, and a form to install another from a repository.
-    expect(sections[3]).toMatchObject({ actions: [{ label: '安装别的存储…', call: { command: 'storage install' } }] })
-    expect(tableOf({ outcome: 'shown', title: '', subtitle: null, blocks: [sections[3] as Block], problems: [] }).rows).toMatchObject([
-      { key: 'local-folder', cells: { origin: { text: '自带' }, state: { tag: { text: '这个库用的' } } }, actions: [] },
-    ])
+    // Storage: the built-in local folder, the one this library uses with the facets it gives, a form to
+    // install another from a repository, and the library's noise inside it.
+    const storage = sections[2]
+    if (storage?.kind !== 'section') throw new Error('no storage section')
+    expect(storage).toMatchObject({ actions: [{ label: '安装别的存储…', call: { command: 'storage install' } }] })
+    expect(storage.blocks[0]).toMatchObject({
+      kind: 'table',
+      rows: [{ key: 'local-folder', cells: { name: { text: 'local-folder' }, addresses: { text: '本机路径' }, facets: { text: expect.stringContaining('fs') }, state: { text: '随 pneuma-base 带着', tag: { text: '这个库在用' } } }, actions: [] }],
+    })
+    expect(storage.blocks[1]).toMatchObject({ kind: 'section', title: '噪音' })
   })
 
   it('config lists an installed plugin first with 卸下, and one this pneuma-base lacks as such', async () => {
@@ -134,6 +139,7 @@ describe('the views of a library with no plugin', () => {
     f.write('a.md', 'hello')
     const r = shown(await show(f, 'item', { path: 'a.md' }))
     expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['text', 'section:文件', 'section:预览', 'actions'])
+    expect(r.icon).toBe('file')
     expect(r.blocks[0]).toMatchObject({ kind: 'text', tone: 'neutral', text: '文件 · 5 B' })
     expect(r.blocks[3]).toMatchObject({
       actions: [
@@ -185,15 +191,40 @@ describe('bundles in the views', () => {
     f.write('top.txt', 't')
     const rows = tableOf(await show(f, 'files')).rows
     expect(rows.map((r) => r.key)).toEqual(['notes', 'site', 'top.txt'])
-    expect(rows[0]?.cells.name).toMatchObject({ icon: 'folder' })
+    // With no plugin keeping records of what is registered, a folder is only a folder.
+    expect(rows[0]).toMatchObject({ cells: { name: { icon: 'folder' } }, link: { view: 'files', params: { dir: 'notes' } }, actions: [] })
     expect(rows[1]).toMatchObject({ cells: { name: { text: 'site', icon: 'package', tag: { text: '3 项' } } }, link: { view: 'item', params: { path: 'site' }, target: 'panel' } })
     expect(rows[2]?.cells.name).toMatchObject({ icon: 'file' })
+  })
+
+  it('with a plugin keeping records, a folder with nothing registered in it is one row: what a look found, the kernel’s two answers, and it still opens', async () => {
+    const f = await fixture([plugin('keeper', { openDirs: async () => ['kept' as never] })])
+    f.write('kept/a.md', 'a')
+    f.write('proj/package.json', '{}')
+    f.write('proj/src/main.ts', 'x')
+    const rows = tableOf(await show(f, 'files')).rows
+    expect(rows.map((r) => [r.key, r.cells.name?.icon, r.cells.name?.tag?.text ?? null])).toEqual([
+      ['kept', 'folder', null],
+      ['proj', 'folder-dot', '没登记'],
+    ])
+    expect(rows[1]).toMatchObject({ cells: { size: { text: '2 个文件，像一个项目（package.json）' } }, link: { view: 'files', params: { dir: 'proj' } } })
+    expect(rows[1]?.actions.map((a) => [a.label, a.call.face === 'owner' ? a.call.command : a.call.verb])).toEqual([
+      ['登记成一样东西', 'put'],
+      ['不用管', 'noise add'],
+    ])
+    // Its panel says the same, with the icon of a folder nobody looked into, and lists its first level.
+    const panel = shown(await show(f, 'item', { path: 'proj' }))
+    expect(panel).toMatchObject({ title: 'proj/', icon: 'folder-dot' })
+    expect(panel.blocks.slice(0, 3)).toMatchObject([{ kind: 'text', tone: 'warn', text: '没登记。2 个文件，像一个项目（package.json）。' }, { kind: 'actions' }, { kind: 'section', title: '第一层' }])
+    const kept = shown(await show(f, 'item', { path: 'kept' }))
+    expect([kept.icon, kept.blocks[0]]).toMatchObject(['folder', { kind: 'text', text: '文件夹，里面有登记过的东西。' }])
   })
 
   it('the item panel of a bundle gives its kind and moment, and lists its first level: a file opens its own panel, a folder the files page', async () => {
     const f = await fixture()
     site(f)
     const r = shown(await show(f, 'item', { path: 'site' }))
+    expect(r.icon).toBe('package')
     expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['text', 'section:文件', 'section:第一层', 'actions'])
     const facts = r.blocks[1]?.kind === 'section' ? r.blocks[1].blocks[0] : undefined
     expect(facts?.kind === 'fields' && facts.fields.map((x) => `${x.label}:${x.value.text}`)).toEqual(['路径:site', '种类:一样东西（带标记的目录）', expect.stringMatching(/^改于:/)])

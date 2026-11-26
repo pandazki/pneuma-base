@@ -123,6 +123,7 @@ export function Tray() {
       onLink: (link: Link) => tellShell({ type: 'open', link }),
       onAction: (action: Action) => (action.inputs.length > 0 || action.confirm !== null ? new Promise((resolve) => setPending({ id: ++asked.current, action, resolve })) : run(action, {}, false)),
       onParam: () => undefined,
+      onPage: (link: Link) => tellShell({ type: 'open', link }),
       selected: () => false,
     }),
     [tick, run],

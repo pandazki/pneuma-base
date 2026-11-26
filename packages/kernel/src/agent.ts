@@ -185,7 +185,7 @@ async function namedBy(ctx: Context, store: Storage, target: string, fingerprint
 }
 
 /** Which of the library's noise names or paths covers `path`. */
-async function noiseRule(store: Storage, path: LibraryPath): Promise<{ name: string } | { path: string }> {
+export async function noiseRule(store: Storage, path: LibraryPath): Promise<{ name: string } | { path: string }> {
   const { names, paths } = await store.noise.list()
   const segments = path.split('/')
   const name = segments.find((s) => names.includes(s))

@@ -139,13 +139,16 @@ describe('the ledger’s part of the item panel', () => {
     const r = shown(await show('item', { path: 'comparison.md' }))
     const provenance = sectionNamed(r.blocks, '来历')
     const fields = provenance.blocks[0]
+    // Its state in words first, and whether its content was read: a put reads it.
     expect(fields?.kind === 'fields' && fields.fields.map((f) => `${f.label}:${[f.value.text, f.value.tag?.text].filter(Boolean).join(' ')}`)).toEqual([
+      '现状:和记录的一样',
+      expect.stringMatching(/^内容:读过 · [0-9a-f]{12}$/),
       '何时:2026-11-25 02:00Z',
       '谁:claude-code',
       '场景:给小店选支付服务',
       '在哪:/work/shop',
     ])
-    expect(fields?.kind === 'fields' && fields.fields[2]?.value.link).toEqual({ view: 'ledger.scene', params: { scene: 'sess-a' }, target: 'panel' })
+    expect(fields?.kind === 'fields' && fields.fields[4]?.value.link).toEqual({ view: 'ledger.scene', params: { scene: 'sess-a' }, target: 'panel' })
     expect(provenance.blocks.filter((b) => b.kind === 'section').map((b) => b.kind === 'section' && b.title)).toEqual(['怎么来的', '发生过什么', '凭什么', '被什么依据'])
     const came = sectionNamed(provenance.blocks, '怎么来的')
     expect(came).toMatchObject({
@@ -297,7 +300,7 @@ describe('the standing view', () => {
 
     // The panel at the new path knows the thing that moved there.
     const panel = sectionNamed(shown(await show('item', { path: 'src/here.md' })).blocks, '来历').blocks[0]
-    expect(panel?.kind === 'fields' && panel.fields.find((f) => f.label === '现状')?.value.tag?.text).toBe('已搬到 src/here.md')
+    expect(panel?.kind === 'fields' && panel.fields.find((f) => f.label === '现状')?.value).toMatchObject({ text: 'src/here.md', tag: { text: '挪到了' } })
   })
 
   // tmp/run-7: nothing below a directory no record points into is opened, so a thing moved there is
@@ -315,7 +318,7 @@ describe('the standing view', () => {
   it('says there is nothing to look at when all is in order', async () => {
     const { show } = await relayed()
     const r = shown(await show('ledger.standing'))
-    expect(r.blocks).toMatchObject([{ kind: 'empty', title: '没有要处理的事' }])
+    expect(r.blocks).toMatchObject([{ kind: 'actions', actions: [{ label: '按内容查', call: { verb: 'check', request: { deep: { dir: null } } } }] }, { kind: 'empty', title: '没有要处理的事' }])
   })
 })
 
@@ -380,7 +383,8 @@ describe('the ledger’s part of the home page', () => {
       ['1 样被直接改过的', { view: 'ledger.standing', params: { kind: 'changed' }, target: 'main' }],
     ])
     expect(sectionNamed(shown(await show('ledger.standing', { kind: 'changed' })).blocks, '被直接改过的').count).toBe(1)
-    expect(shown(await show('ledger.standing', { kind: 'changed' })).blocks).toHaveLength(1)
+    // One kind alone: the deep pass that tells a real change from a touch, then that kind's section.
+    expect(shown(await show('ledger.standing', { kind: 'changed' })).blocks.map((b) => b.kind)).toEqual(['actions', 'section'])
   })
 })
 
@@ -428,7 +432,8 @@ describe('things nobody registered', () => {
       ['都记为我带进来的', { face: 'owner', command: 'ledger register', args: { positional: ['.'], flags: {} } }],
       ['不登记，不再问', { face: 'owner', command: 'ledger leave', args: { positional: ['.'], flags: {} } }],
     ])
-    expect(closed).toMatchObject({ text: 'notes/ 没登记。', about: 'notes' })
+    expect(closed).toMatchObject({ text: 'notes/ 没登记：1 个文件。', about: 'notes' })
+    expect(closed?.actions[1]?.confirm).toBe('要登记 notes/ 里任意深处的全部文件：1 个，不含噪音。')
     expect(closed?.actions.map((a) => [a.label, a.call])).toEqual([
       ['登记成一样东西', { face: 'agent', verb: 'put', request: { kind: 'register', path: 'notes', origin: { kind: 'brought', source: null, by: 'owner' }, note: null } }],
       ['登记里面的文件', { face: 'owner', command: 'ledger register', args: { positional: ['notes'], flags: { inside: true } } }],
@@ -454,7 +459,7 @@ describe('things nobody registered', () => {
       '主人面的操作 ledger register：已把 notes/里的 1 个文件记为主人带进来的。',
       '主人面的操作 ledger register：已把 2 样东西记为主人带进来的。',
     ])
-    expect(shown(await show('ledger.standing')).blocks).toMatchObject([{ kind: 'empty' }])
+    expect(shown(await show('ledger.standing')).blocks).toMatchObject([{ kind: 'actions' }, { kind: 'empty' }])
   })
 
   it('left as they are: not asked about again, still on the standing page; a later pile is asked about anew', async () => {
@@ -462,7 +467,7 @@ describe('things nobody registered', () => {
     const leave = (await asks())[0]?.actions[1]?.call
     if (leave?.face !== 'owner') throw new Error('no owner call')
     expect(await run(leave)).toMatchObject({ outcome: 'done', data: { left: 2 } })
-    const closedOnly = ['notes/ 没登记。']
+    const closedOnly = ['notes/ 没登记：2 个文件。']
     expect((await asks()).map((a) => a.text)).toEqual(closedOnly)
     expect(sectionNamed(shown(await show('ledger.standing')).blocks, '没人登记过的').count).toBe(2)
     writeFileSync(join(root, 'later.md'), 'dropped in later')
@@ -588,7 +593,7 @@ describe('bundles in the ledger’s blocks', () => {
     await agentFace.put({ kind: 'register', path: 'site', origin: { kind: 'brought', source: null, by: null } }, codex())
     writeFileSync(join(root, 'site/later.css'), 'h1{}')
     const absorbed = sectionNamed(shown(await show('item', { path: 'site/index.html' })).blocks, '来历').blocks[0]
-    expect(absorbed?.kind === 'fields' && absorbed.fields.find((f) => f.label === '并入')?.value).toMatchObject({ text: 'site', link: { view: 'item', params: { path: 'site' }, target: 'panel' } })
+    expect(absorbed?.kind === 'fields' && absorbed.fields.find((f) => f.label === '现状')?.value).toMatchObject({ text: 'site', tag: { text: '并入了' }, link: { view: 'item', params: { path: 'site' }, target: 'panel' } })
     const part = sectionNamed(shown(await show('item', { path: 'site/later.css' })).blocks, '来历').blocks
     expect(part).toMatchObject([{ kind: 'fields', fields: [{ label: '是谁的一部分', value: { text: 'site', link: { params: { path: 'site' } } } }] }, { kind: 'text' }])
   })

@@ -49,3 +49,8 @@ export function askSummary(r: AskResult): Summary {
 export function readSummary(problems: PluginProblem[]): Summary {
   return withProblems({ tone: 'good', text: '好了。' }, problems)
 }
+
+/** For a named whole pass: what it found, as its plugin wrote it. */
+export function passSummary(body: string | null, problems: PluginProblem[]): Summary {
+  return withProblems({ tone: 'good', text: body ?? '好了。' }, problems)
+}

@@ -1,12 +1,13 @@
 // One renderer per kind of block. A block draws itself from its data alone; links, actions and
 // parameters go to the shell through the environment.
-import type { Action, Block, Link, TableRow, Tone } from '@pneuma-base/kernel'
+import type { Action, Block, Link, Paging, TableRow, Tone } from '@pneuma-base/kernel'
 import { ChevronRight, CircleAlert, CircleCheck, CircleHelp, ExternalLink, Inbox, Info, TriangleAlert, type LucideIcon } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { api, outsideUrl } from './api'
 import { AsksView } from './pieces/asks'
 import { ChartView } from './pieces/chart'
 import { FeedView } from './pieces/feed'
+import { Pager, turns } from './pieces/pager'
 import { StatsView } from './pieces/stats'
 import { TreeView } from './pieces/tree'
 import { ActionButton, CellView, Moment, TagView, wantsTab } from './cells'
@@ -115,9 +116,10 @@ function TableView({ block }: { block: Extract<Block, { kind: 'table' }> }) {
     row?.focus()
   }
   // An empty table is its message alone: headers over nothing say less than the message does.
-  if (block.rows.length === 0) return <EmptyMessage text={block.empty} />
+  if (block.rows.length === 0) return <EmptyMessage text={block.empty} page={block.page} />
   return (
-    <div ref={measure} className="card table-card">
+    <div className="card table-card">
+      <div ref={measure} className="table-scroll">
       <table style={widths ? { tableLayout: 'fixed', width: widths.reduce((a, b) => a + b, 0) } : { width: '100%' }}>
         {widths ? (
           <colgroup>
@@ -149,7 +151,7 @@ function TableView({ block }: { block: Extract<Block, { kind: 'table' }> }) {
                 row.link
                   ? (e) => {
                       // A press focuses the row; the card stays where it was rather than scrolling sideways to it.
-                      const card = e.currentTarget.closest('.table-card')
+                      const card = e.currentTarget.closest('.table-scroll')
                       const left = card?.scrollLeft ?? 0
                       requestAnimationFrame(() => card && (card.scrollLeft = left))
                     }
@@ -185,6 +187,8 @@ function TableView({ block }: { block: Extract<Block, { kind: 'table' }> }) {
           ))}
         </tbody>
       </table>
+      </div>
+      {turns(block.page) ? <Pager page={block.page} /> : null}
     </div>
   )
 }
@@ -205,8 +209,8 @@ function FieldsView({ block }: { block: Extract<Block, { kind: 'fields' }> }) {
 }
 
 function ListView({ block }: { block: Extract<Block, { kind: 'list' }> }) {
-  return (
-    <ul className="card list">
+  const items = (
+    <ul className={turns(block.page) ? 'list' : 'card list'}>
       {block.items.map((item, i) => (
         <li key={`${item.cell.text}-${i}`}>
           <div className="min-w-0 flex-1">
@@ -218,9 +222,28 @@ function ListView({ block }: { block: Extract<Block, { kind: 'list' }> }) {
       ))}
     </ul>
   )
+  if (!turns(block.page)) return items
+  return (
+    <div className="card list-card">
+      {items}
+      <Pager page={block.page} />
+    </div>
+  )
 }
 
 function TimelineView({ block }: { block: Extract<Block, { kind: 'timeline' }> }) {
+  if (!turns(block.page)) return <TimelineEntries block={block} />
+  return (
+    <div className="blocks">
+      <TimelineEntries block={block} />
+      <div className="card">
+        <Pager page={block.page} />
+      </div>
+    </div>
+  )
+}
+
+function TimelineEntries({ block }: { block: Extract<Block, { kind: 'timeline' }> }) {
   return (
     <ol className="timeline">
       {block.entries.map((e, i) => (
@@ -347,11 +370,23 @@ function EmbedView({ block }: { block: Extract<Block, { kind: 'embed' }> }) {
   )
 }
 
-/** A table's message when it has no rows, as an empty state: its first sentence the title, the rest the hint. */
-function EmptyMessage({ text }: { text: string }) {
+/**
+ * A table's message when it has no rows, as an empty state: its first sentence the title, the rest the
+ * hint; on a page past the first, the way back under it.
+ */
+function EmptyMessage({ text, page }: { text: string; page?: Paging | undefined }) {
   const end = text.indexOf('。')
   const [title, hint] = end > 0 && end < text.length - 1 ? [text.slice(0, end + 1), text.slice(end + 1)] : [text, null]
-  return <EmptyView block={{ kind: 'empty', title, hint }} />
+  const empty = <EmptyView block={{ kind: 'empty', title, hint }} />
+  if (!turns(page) || page.prev === null) return empty
+  return (
+    <div className="blocks">
+      {empty}
+      <div className="card">
+        <Pager page={page} />
+      </div>
+    </div>
+  )
 }
 
 function EmptyView({ block }: { block: Extract<Block, { kind: 'empty' }> }) {
