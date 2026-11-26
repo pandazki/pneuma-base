@@ -28,3 +28,6 @@ export {
 } from './things.js'
 export { loadPlugins, whyNotLoaded } from './plugin-table.js'
 export { FIRST_WORDS } from './products.js'
+export { dropEndpoint, endpointOf, guideUrl, liveEndpoints, mcpUrl, PREFERRED_PORT, recordEndpoint, sentenceFor, type EndpointRecord } from './endpoint.js'
+export { guideText, type GuideFacts } from './guide.js'
+export { pairingAnswer, requestPairing, type Connected, type Pairing, type PairingAnswer, type PairingId, type PairingState, type PairRequest, type PairRequested } from './pairing.js'
