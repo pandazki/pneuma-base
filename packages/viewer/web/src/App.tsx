@@ -12,6 +12,7 @@ import { ActionDialog, fill, Toasts, useToasts, ViewIcon } from './chrome'
 import { Choice } from './controls'
 import { FONT, fitStart } from './measure'
 import { useRoute } from './route'
+import { IN_SHELL } from './shell'
 import { clockTime } from './time'
 
 /** How often the page asks whether the library changed. */
@@ -90,7 +91,7 @@ function Nav({ state, current, down, changedAt, onSelect }: { state: State; curr
   const shown = state.library?.shown ?? root
   return (
     <nav aria-label="导航" className="flex w-[208px] shrink-0 flex-col border-r border-line bg-canvas">
-      <div className="flex items-center gap-2 px-4 pt-4 pb-3">
+      <div data-drag className={`flex items-center gap-2 px-4 pb-3 ${IN_SHELL ? 'pt-[52px]' : 'pt-4'}`}>
         <span className="flex size-7 shrink-0 items-center justify-center rounded-control bg-surface shadow-(--shadow-btn)">
           <Database className="size-4 text-accent" strokeWidth={2} aria-hidden />
         </span>
@@ -156,7 +157,7 @@ function Panel({ result, failed, canGoBack, onBack, onClose }: { result: ViewRes
   const subtitle = result?.outcome === 'shown' ? result.subtitle : null
   return (
     <aside aria-label="详情" className="flex w-[420px] shrink-0 flex-col border-l border-line bg-surface">
-      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-line px-2">
+      <div data-drag className="flex h-12 shrink-0 items-center gap-1 border-b border-line px-2">
         {canGoBack ? (
           <button type="button" className="flex size-8 items-center justify-center rounded-control text-ink-2 hover:bg-hover" aria-label="返回" onClick={onBack}>
             <ArrowLeft className="size-4" strokeWidth={2} />
@@ -188,7 +189,7 @@ function Unreachable() {
       <p className="text-[15px] font-semibold">连不上服务</p>
       <p className="flex items-center gap-1.5 text-[13px] text-ink-2">
         <LoaderCircle className="size-3.5 animate-spin" strokeWidth={2} aria-hidden />
-        正在重试。服务是用 pneuma-base view 启动的，关掉了就再启动一次。
+        {IN_SHELL ? '正在重新连接。' : '正在重试。服务是用 pneuma-base view 启动的，关掉了就再启动一次。'}
       </p>
     </div>
   )
@@ -198,7 +199,7 @@ function Denied() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 text-center" role="alert">
       <p className="text-[15px] font-semibold">这个地址不对</p>
-      <p className="max-w-[28rem] text-[13px] text-ink-2">地址里缺少令牌，或者服务已经换了一个令牌。用 pneuma-base view 打印出来的地址打开。</p>
+      <p className="max-w-[28rem] text-[13px] text-ink-2">{IN_SHELL ? '服务换了一个令牌。按 ⌘R 重新载入。' : '地址里缺少令牌，或者服务已经换了一个令牌。用 pneuma-base view 打印出来的地址打开。'}</p>
     </div>
   )
 }
@@ -379,7 +380,7 @@ export function App() {
             onSelect={(view) => go((r) => ({ ...r, main: { view, params: {} } }))}
           />
           <main className="min-w-0 flex-1 overflow-auto bg-page">
-            <header className="flex flex-col gap-3 px-6 pt-5 pb-4">
+            <header data-drag className="flex flex-col gap-3 px-6 pt-5 pb-4">
               <div className="min-w-0">
                 <h1 className="text-[19px] font-semibold tracking-[-0.015em]">{result?.title ?? decl?.title ?? ''}</h1>
                 {result?.subtitle ? <p className="truncate text-[12.5px] text-ink-2">{result.subtitle}</p> : null}

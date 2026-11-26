@@ -196,3 +196,27 @@
     animation-duration: 0.01ms !important;
   }
 }
+
+/*
+ * Inside the Mac app (`html[data-shell]`, see shell.ts) the page is the window's content, not a web
+ * page: the chrome is not text to select or drag out, the arrow stays the arrow, and the page as a
+ * whole does not bounce. Content stays selectable, so Find can show its matches. Unlayered, so it
+ * wins over the components' and utilities' cursors.
+ */
+html[data-shell],
+html[data-shell] body {
+  overscroll-behavior: none;
+}
+html[data-shell] body {
+  cursor: default;
+}
+html[data-shell] :is(nav, header, [data-drag], button, th, label, [role='radio'], [role='toolbar']) {
+  -webkit-user-select: none;
+  user-select: none;
+}
+html[data-shell] :is(button, [role='radio'], tr) {
+  cursor: default;
+}
+html[data-shell] :is(a, img) {
+  -webkit-user-drag: none;
+}

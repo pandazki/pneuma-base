@@ -108,6 +108,15 @@ export default tseslint.config(
     languageOptions: { globals: { window: 'readonly', document: 'readonly', ResizeObserver: 'readonly' } },
   },
   {
+    // The Mac app injects this script into the page it shows.
+    files: ['app/Resources/shell.js'],
+    languageOptions: { globals: { window: 'readonly', document: 'readonly', requestAnimationFrame: 'readonly', MutationObserver: 'readonly', Element: 'readonly' } },
+  },
+  {
+    files: ['app/experiments/*.mjs'],
+    languageOptions: { globals: { Buffer: 'readonly', performance: 'readonly', setTimeout: 'readonly' } },
+  },
+  {
     // Tests read JSON printed by the command line; typing every shape there adds nothing.
     files: ['packages/*/test/**/*.ts'],
     rules: { '@typescript-eslint/no-explicit-any': 'off' },
