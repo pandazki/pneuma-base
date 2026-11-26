@@ -34,14 +34,14 @@ type Options = { reports?: boolean; identify?: boolean; names?: boolean; view?: 
 
 /** A target in memory. `fail`: every step throws; `crash`: a publish lands, then throws; `down`: asking what it serves throws. */
 function fakeTarget(opts: Options = {}) {
-  const fake = { served: new Map<string, { content: string; files: string[]; others: string[] }>(), calls: [] as string[], fail: false, crash: false, down: false, asked: 0 }
+  const fake = { served: new Map<string, { content: string; files: string[] }>(), calls: [] as string[], fail: false, crash: false, down: false, asked: 0 }
   const open = (where: string): Target => ({
     key: `fake:${where}`,
     label: `假的 ${where}`,
     async publish(site, _dir, meta) {
       fake.calls.push(`publish ${site}`)
       if (fake.fail) throw new Error('目标坏了')
-      fake.served.set(site, { content: meta.content, files: meta.files.map((f) => f.path), others: [...meta.others] })
+      fake.served.set(site, { content: meta.content, files: meta.files.map((f) => f.path) })
       if (fake.crash) throw new Error('传到一半断了')
       return { url: url(site) }
     },
@@ -340,7 +340,7 @@ describe('a target that reports what it serves', () => {
 // ---- what it copies and what it follows ----
 
 describe('what the kit reads of the library', () => {
-  it.each([false, true])('publishes a bundle as its content rule counts it, without the marker or what its .gitignore files leave out, and names what is no file (identify: %s)', async (identify) => {
+  it.each([false, true])('publishes a bundle as its content rule counts it, without the marker, what its .gitignore files leave out, or a link (identify: %s)', async (identify) => {
     const { fake, adapter } = fakeTarget({ identify })
     const l = await library(deployPlugin('fake', adapter))
     await l.site('sites/shop', { 'index.html': '<h1>shop</h1>', '.gitignore': '*.env\nbuild/\n', 'keep/.gitignore': '!local.env\n' })
@@ -353,28 +353,23 @@ describe('what the kit reads of the library', () => {
     expect(await l.cmd('fake on', ['sites/shop'])).toMatchObject({ outcome: 'done' })
     const held = fake.served.get(siteName('sites/shop' as LibraryPath))
     expect(held?.files).toEqual(['.gitignore', 'index.html', 'keep/.gitignore', 'keep/local.env'])
-    expect(held?.others).toEqual(['home.html'])
     if (!identify) expect(held?.content).toBe(await l.fingerprint('sites/shop'))
     expect(await l.list()).toEqual([expect.objectContaining({ status: 'online' })])
   })
 
-  // A publish to a target without its own id is refused unless the files copied make the fingerprint storage gives by its content rule.
-  it.each([
-    ['*.log\n!keep.log\n', ['a.log', 'keep.log', 'sub/b.log', 'sub/c.txt']],
-    ['/top.txt\nsub/\n', ['top.txt', 'x/top.txt', 'sub/a.txt', 'subway.txt']],
-    ['**/cache\ndist/**\n', ['cache/a', 'x/cache/b', 'dist/a.js', 'dist/x/b.js', 'distant.txt']],
-    ['a/**/b\n[ab].md\nv?.txt\n', ['a/b', 'a/x/y/b', 'a.md', 'c.md', 'v1.txt', 'v12.txt']],
-    ['# a comment\n\\#hash\nspace.txt   \n', ['#hash', 'space.txt', '# a comment']],
-  ])('copies what storage counts under the ignore file %j', async (ignore, files) => {
-    const { fake, adapter } = fakeTarget()
+  it.each([false, true])('refuses to publish a bundle with more files than one thing takes, saying so, and takes nothing down (identify: %s)', async (identify) => {
+    const { fake, adapter } = fakeTarget({ identify })
     const l = await library(deployPlugin('fake', adapter))
-    await l.site('sites/x', { 'index.html': 'x', '.gitignore': ignore })
-    for (const f of files) l.write(`sites/x/${f}`, f)
-    l.write('sites/x/nested/.gitignore', '*\n!.gitignore\n')
-    l.write('sites/x/nested/gone.txt', 'gone')
-    await l.say('sites/x')
-    expect(await l.cmd('fake on', ['sites/x'])).toMatchObject({ outcome: 'done' })
-    expect(fake.served.get(siteName('sites/x' as LibraryPath))?.content).toBe(await l.fingerprint('sites/x'))
+    await l.site('sites/big', { 'index.html': 'v1' })
+    await l.say('sites/big')
+    expect(await l.cmd('fake on', ['sites/big'])).toMatchObject({ outcome: 'done' })
+    for (let i = 0; i < 5000; i++) l.write(`sites/big/pages/${i}.html`, String(i))
+    fake.calls.length = 0
+    const synced = await l.cmd('fake sync')
+    expect(synced).toMatchObject({ outcome: 'refused', reason: 'publish-failed' })
+    expect(synced.text).toContain('sites/big 至少有 5001 个文件，超过一样东西能有的 5000 个，没有发布')
+    expect(fake.calls).toEqual([])
+    expect(await l.list()).toEqual([expect.objectContaining({ path: 'sites/big', status: 'pending' })])
   })
 
   it('follows each declared file among the loose files of an open directory registered as one act', async () => {

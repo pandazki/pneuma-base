@@ -1,5 +1,7 @@
 // The built-in deploy plugin's two kinds of target: a local directory, and the owner's own pair of
-// commands. Everything else a deploy plugin does is the kit's.
+// commands. Everything else a deploy plugin does is the kit's. Neither reads the library: the dir
+// target writes only its directory outside it, and the commands run in the copy of the content the
+// kit staged (or in an empty directory to take a site down).
 import { execFile } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { cp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
@@ -99,7 +101,10 @@ function argv(values: readonly string[]): string[] {
 
 const strings = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.every((w) => typeof w === 'string')
 
-/** Runs the owner's commands without a shell, `{dir}` and `{name}` replaced in each word. Taking down gets an empty directory as `{dir}`. */
+/**
+ * Runs the owner's commands without a shell, `{dir}` and `{name}` replaced in each word, in `{dir}`:
+ * the copy of the content to publish, or an empty directory to take a site down.
+ */
 export const commandTarget: TargetAdapter = defineTarget({
   kind: 'command',
   label: '一对发布和下线的命令',
@@ -125,7 +130,7 @@ export const commandTarget: TargetAdapter = defineTarget({
 })
 
 function commandsAt(config: CommandConfig, env: TargetEnv): Target {
-  const run = (argv: string[], dir: string, site: SiteName) => runCommand(argv.map((w) => w.replaceAll('{dir}', dir).replaceAll('{name}', site)), env.ctx.library.root, config.timeout)
+  const run = (argv: string[], dir: string, site: SiteName) => runCommand(argv.map((w) => w.replaceAll('{dir}', dir).replaceAll('{name}', site)), dir, config.timeout)
   return {
     key: `command:${JSON.stringify(config.publish)}`,
     label: `命令 ${config.publish.join(' ')}`,
