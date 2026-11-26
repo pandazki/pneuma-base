@@ -1,43 +1,46 @@
-// Where sites go: apps on a PneumaSpace, through its admin HTTP API. The content id is the sha256 of
-// the bundle tar PneumaSpace is given, and `serving` answers from what PneumaSpace really has, so
-// `space sync` repairs a publish that died halfway or an app removed from PneumaSpace's console.
-import { createHash } from 'node:crypto'
-import type { LibraryPath } from '@pneuma-base/sdk'
-import { siteName, defineTarget, type ContentId, type Served, type SiteName, type Target, type TargetConfig } from '@pneuma-base/sdk/kit'
-import { boardBlock, itemBlocks, liveCells, liveFields, LIVE_COLUMNS, type Seen } from './views.ts'
-import { bundleOf, ownerOf, Space, SpaceError } from './space.ts'
-
-/** PneumaSpace's app names: `^[a-z][a-z0-9-]{0,39}$`. */
-const MAX_NAME = 40
-const PREFIX = '[a-z](?:[a-z0-9-]{0,14}[a-z0-9])?'
-const ORIGIN = 'https?://[^\\s/]+'
+// PneumaSpace on a machine (its Docker plane): apps through its admin HTTP API. The content id is the
+// sha256 of the bundle tar PneumaSpace is given, and `serving` answers from what PneumaSpace really has,
+// so `space sync` repairs a publish that died halfway or an app removed from PneumaSpace's console.
+import { defineTarget, type ContentId, type Served, type SiteName, type Target, type TargetConfig } from '@pneuma-base/sdk/kit'
+import { appName, ORIGIN, PREFIX_PARAM } from './name.ts'
+import { bundleOf, ownerOf, Space, SpaceError, type AppDetail, type AppSummary } from './space.ts'
+import { viewOf, type Plane, type Seen } from './views.ts'
 
 type Config = { admin: string; prefix: string; public: string | null }
 
 function parseConfig(raw: TargetConfig): Config {
   const { admin, prefix } = raw
   const origin = raw.public ?? null
-  if (typeof admin !== 'string' || typeof prefix !== 'string' || (origin !== null && typeof origin !== 'string')) throw new Error('PneumaSpace 的配置要写 admin、prefix，可以有 public')
+  if (typeof admin !== 'string' || typeof prefix !== 'string' || (origin !== null && typeof origin !== 'string')) throw new Error('一台机器上的 PneumaSpace 的配置要写 admin、prefix，可以有 public')
   return { admin, prefix, public: origin }
 }
 
-/** `<prefix>-<the kit's site name>`, cut to PneumaSpace's 40 characters with six characters of the path's sha256 when too long. */
-export function appName(prefix: string, path: LibraryPath): SiteName {
-  const whole = `${prefix}-${siteName(path)}`
-  if (whole.length <= MAX_NAME) return whole as SiteName
-  const hash = createHash('sha256').update(path).digest('hex').slice(0, 6)
-  return `${whole.slice(0, MAX_NAME - 7).replace(/-+$/, '')}-${hash}` as SiteName
+const PLANE: Plane = { requests: '24 小时请求', framed: true, visible: null }
+
+/** What the views get of an app on a machine. `spark` only for a drawn answer. */
+function seen(summary: AppSummary, detail: AppDetail | null, mine: boolean, spark: number[] | null): Seen {
+  const registered = mine && detail?.status === 'registered'
+  return {
+    takenBy: detail !== null && !mine ? `属于 ${detail.owner}` : null,
+    status: detail?.status ?? summary.status,
+    live: registered && summary.release !== null ? { release: summary.release, requests: summary.requests, errors: summary.errors, lastAccessAt: summary.lastAccessAt } : null,
+    releases: (detail?.releases ?? []).map((r) => ({ number: r.number, publishedAt: r.publishedAt, content: r.bundle })),
+    spark,
+    uploads: null,
+    observedAt: null,
+  }
 }
 
-export const spaceTarget = defineTarget({
-  kind: 'space',
-  label: 'PneumaSpace',
+export const machineTarget = defineTarget({
+  kind: 'machine',
+  label: '跑在一台机器上的 PneumaSpace',
   params: [
     { name: 'admin', hint: '管理地址', kind: 'value', required: true, pattern: `${ORIGIN}(?:/\\S*)?` },
-    { name: 'prefix', hint: '应用名前缀', kind: 'value', required: true, pattern: PREFIX },
+    PREFIX_PARAM,
     { name: 'public', hint: '站点的公开地址', kind: 'value', pattern: ORIGIN },
   ],
-  secrets: [{ name: 'token', description: 'PneumaSpace 不在本地模式时的访问令牌，作为 Bearer 发出', optional: true }],
+  secrets: [{ name: 'token', description: '一台机器上的 PneumaSpace 不在本地模式时的访问令牌，作为 Bearer 发出', optional: true }],
+  // The board is the plugin's page for both kinds; a page is declared once, here, and each kind draws it.
   views: [{ name: 'board', title: '看板', icon: 'layout-grid' }],
 
   async configure({ admin, prefix, public: origin }) {
@@ -53,7 +56,7 @@ export const spaceTarget = defineTarget({
 
     return {
       key: `pneuma-space:${c.admin}#${c.prefix}`,
-      label: `PneumaSpace ${c.admin}，前缀 ${c.prefix}`,
+      label: `一台机器上的 PneumaSpace ${c.admin}，应用名前缀 ${c.prefix}`,
       siteName: (path) => appName(c.prefix, path),
       identify: async (files) => (await bundleOf(files)).bundle as string as ContentId,
 
@@ -87,19 +90,13 @@ export const spaceTarget = defineTarget({
             const live = detail !== null && mine && detail.status === 'registered' ? detail.releases.find((r) => r.number === detail.current) : undefined
             const spark = live && ask.detail ? await space.requestsByHour(site, 24) : null
             const content = live ? (live.bundle as string as ContentId) : null
-            return [[site, { content, url: live ? await urlOf(summary.address) : null, detail: { summary, detail, mine, spark } }]]
+            return [[site, { content, url: live ? await urlOf(summary.address) : null, detail: seen(summary, detail, mine, spark) }]]
           }),
         )
         return new Map(told.flat())
       },
 
-      view: {
-        columns: LIVE_COLUMNS,
-        cells: (l) => liveCells(l.detail),
-        fields: (l) => liveFields(l.detail),
-        item: (l) => itemBlocks(l, l.detail),
-        pages: { board: (all) => [boardBlock(all, env.plugin)] },
-      },
+      view: viewOf(PLANE, env.plugin),
     }
   },
 })

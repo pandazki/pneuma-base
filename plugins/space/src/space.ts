@@ -1,12 +1,11 @@
-// PneumaSpace through its admin HTTP API, and the bundle tar it takes. The tar layout is
+// PneumaSpace on a machine through its admin HTTP API, and the bundle tar it takes. The tar layout is
 // pneuma-space cli/appctl.ts's (ustar, sorted paths, mode 0644, uid, gid and mtime 0), so equal
 // content gives equal bytes and so an equal bundle id, computed here before any upload.
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import type { SiteFile } from '@pneuma-base/sdk/kit'
+import { MANAGER } from './name.ts'
 
-/** Every write names the manager; PneumaSpace answers 409 to a write without it on an app it manages. */
-export const MANAGER = 'pneuma-base'
 const MANAGER_HEADER = 'x-pneuma-space-manager'
 const MANIFEST = { contract: 1, capabilities: { static: { dir: 'site' } } }
 const TIMEOUT_MS = 15_000

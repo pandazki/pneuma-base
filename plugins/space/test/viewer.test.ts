@@ -33,7 +33,7 @@ test('the page, the item section and the board page', { skip: down ?? false }, a
     assert.equal((await sb.agent('claude-code', 's1', ['put', name, '--to', `sites/${name}`, '--made'])).code, 0)
     await sb.agent('claude-code', 's1', ['say', 'deployable', `sites/${name}`])
   }
-  await sb.owner(['space', 'target', 'set', '--admin', ADMIN, '--prefix', prefix])
+  await sb.owner(['space', 'target', 'set', '--kind', 'machine', '--admin', ADMIN, '--prefix', prefix])
   const url = (await sb.owner(['space', 'on', 'sites/live', '--json'])).json.data.url
   await fetch(url)
   const viewer = await sb.viewer()

@@ -4,8 +4,10 @@
     <meta charset="utf-8" />
     <!--
       The board: a card per switched-on site with a small live preview, then the switched-off ones.
-      Data comes from views.ts (BoardData); each switch runs the block's action of the same key, so
-      the management UI confirms and reports it as it does for any button. Colours are the UI's tokens.
+      Where a site cannot be framed (BoardData.visible, PneumaSpace on Cloudflare), the card says who
+      can see it in place of the preview. Data comes from views.ts (BoardData); each switch runs the
+      block's action of the same key, so the management UI confirms and reports it as it does for any
+      button. Colours are the UI's tokens.
       pneuma.onData, run and open, the classes and the tokens are typed in @pneuma-base/sdk/frame.
     -->
     <link rel="stylesheet" href="/plugin-kit/frame.css" />
@@ -38,6 +40,18 @@
         transform-origin: 0 0;
         pointer-events: none;
         background: white;
+      }
+      .shot .private {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 8px;
+        padding: 12px 14px;
+        color: var(--ink-2);
+        font-size: 12px;
+        line-height: 1.5;
       }
       .shot .blank {
         position: absolute;
@@ -185,6 +199,15 @@
         return svg
       }
 
+      /** Where a site cannot be framed: who can see it, and a way to open it in a new tab. */
+      function privateShot(card, visible) {
+        const shot = el('div', { class: 'shot' })
+        const open = card.url ? el('button', { class: 'btn', type: 'button' }, '在新标签页打开') : tag(card.state)
+        if (card.url) open.addEventListener('click', () => pneuma.open(card.url))
+        shot.append(el('div', { class: 'private' }, el('span', {}, visible), el('span', {}, open)))
+        return shot
+      }
+
       /** The preview keeps its frame across refreshes and reloads only when the address or the release changed. */
       const previews = new Map()
       function preview(card) {
@@ -211,7 +234,7 @@
         return shot
       }
 
-      function siteCard(card) {
+      function siteCard(card, visible) {
         const online = card.state.tone === 'good'
         const address = card.url ? el('button', { class: 'link mono address', type: 'button', title: card.url }, card.url) : el('span', { class: 'mono address faint' }, card.site ?? '—')
         if (card.url) address.addEventListener('click', () => pneuma.open(card.url))
@@ -227,7 +250,7 @@
         return el(
           'article',
           { class: 'card site' },
-          preview(card),
+          visible ? privateShot(card, visible) : preview(card),
           el(
             'div',
             { class: 'body' },
@@ -240,7 +263,7 @@
       }
 
       pneuma.onData((data) => {
-        document.getElementById('cards').replaceChildren(...data.cards.map(siteCard))
+        document.getElementById('cards').replaceChildren(...data.cards.map((card) => siteCard(card, data.visible)))
         document.getElementById('none').hidden = data.cards.length > 0
         document.getElementById('offs').hidden = data.off.length === 0
         document.getElementById('off').replaceChildren(

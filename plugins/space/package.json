@@ -1,9 +1,9 @@
 {
   "name": "pneuma-base-plugin-space",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "A Pneuma Base plugin that deploys a library’s websites to PneumaSpace.",
+  "description": "A Pneuma Base plugin that deploys a library’s websites to PneumaSpace, on a machine or on Cloudflare.",
   "engines": {
     "node": ">=22.18"
   },
