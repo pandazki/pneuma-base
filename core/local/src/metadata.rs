@@ -6,11 +6,12 @@ use std::collections::VecDeque;
 use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 
 use pneuma_base_storage::{
-    Cancel, Changed, Description, Facets, Failure, GlanceAnswer, Kind, LookAnswer, LookItem, More,
-    OverviewAnswer, OverviewRequest, Place, PlaceArg, PlaceFailure, ProbeAnswer, ProbeRequest,
-    Reason, Seen,
+    Changed, Ctx, Description, Failure, GlanceAnswer, GlanceRequest, Kind, LookAnswer, LookItem,
+    More, OverviewAnswer, OverviewRequest, Place, PlaceArg, PlaceFailure, ProbeAnswer,
+    ProbeRequest, Reason, Seen, Token, Trust,
 };
 
+use crate::facets::{self, At};
 use crate::noise::Noise;
 use crate::sys::{self, DirStream, EntryType, Errno, Stat};
 use crate::{LocalFolder, RECORD_AREA};
@@ -38,7 +39,7 @@ const MAX_THREADS: usize = 4;
 
 /// Why a directory on the way to a place could not be opened.
 #[derive(Clone, Copy, Debug)]
-enum Broken {
+pub enum Broken {
     Gone,
     NotDir,
     Link,
@@ -51,13 +52,13 @@ fn unreadable(errno: Errno) -> Failure {
 
 /// The chain of directories open from the root to the last one asked for. Asking for places in
 /// depth-first order opens each directory once, and checks each for a symbolic link once.
-struct Walker<'a> {
+pub struct Walker<'a> {
     root: &'a OwnedFd,
     stack: Vec<(String, Result<OwnedFd, Broken>)>,
 }
 
 impl<'a> Walker<'a> {
-    fn new(root: &'a OwnedFd) -> Walker<'a> {
+    pub fn new(root: &'a OwnedFd) -> Walker<'a> {
         Walker {
             root,
             stack: Vec::new(),
@@ -71,8 +72,13 @@ impl<'a> Walker<'a> {
         }
     }
 
+    /// Drops what it knows, after the directories changed under it.
+    pub fn forget(&mut self) {
+        self.stack.clear();
+    }
+
     /// The directory at `segments`, or the index of the segment that failed and why.
-    fn enter(&mut self, segments: &[&str]) -> Result<RawFd, (usize, Broken)> {
+    pub fn enter(&mut self, segments: &[&str]) -> Result<RawFd, (usize, Broken)> {
         let common = self
             .stack
             .iter()
@@ -113,35 +119,17 @@ fn open_child(parent: RawFd, name: &str) -> Result<OwnedFd, Broken> {
 
 // `mode_t` is 16 bits on macOS and 32 on Linux, so the casts are needed on one and not the other.
 #[allow(clippy::unnecessary_cast)]
-fn is_link(stat: &Stat) -> bool {
+pub fn is_link(stat: &Stat) -> bool {
     stat.mode & libc::S_IFMT as u32 == libc::S_IFLNK as u32
 }
 
 /// What is at a place: its metadata and, for a directory, its entry count when cheap.
-struct Located {
-    stat: Stat,
-    count: Option<u64>,
+pub struct Located {
+    pub stat: Stat,
+    pub count: Option<u64>,
 }
 
-fn describe(place: Place, found: &Located) -> Description {
-    let size = match found.stat.kind {
-        Kind::File => Some(found.stat.size),
-        Kind::Dir => found.count,
-        Kind::Other => None,
-    };
-    Description {
-        place,
-        kind: found.stat.kind,
-        token: found.stat.token(),
-        size,
-        modified: found.stat.modified(),
-        facets: Facets {
-            fs: Some(found.stat.fs_facet()),
-        },
-    }
-}
-
-fn locate_at(dir: RawFd, name: &str) -> Result<Option<Located>, Errno> {
+pub fn locate_at(dir: RawFd, name: &str) -> Result<Option<Located>, Errno> {
     let c_name = sys::c_name(name.as_bytes());
     match sys::stat_at(dir, &c_name) {
         Ok(stat) => {
@@ -177,8 +165,33 @@ fn depth_first(places: &[Option<&Place>]) -> Vec<usize> {
 }
 
 impl LocalFolder {
+    pub fn describe(&self, place: &Place, found: &Located, wanted: &[String]) -> Description {
+        let at = At {
+            folder: self,
+            place,
+            stat: &found.stat,
+        };
+        facets::describe(&at, found.count, wanted, None)
+    }
+
+    /// What `again` finds once the change `found` shows is past the file system's racy window,
+    /// so the token described vouches for itself. The wait is at most 25 ms, and in a batch the
+    /// first wait mostly covers the rest; on a file system whose clock is coarser than that, the
+    /// token says it is racy instead.
+    pub fn once_settled(
+        &self,
+        found: Located,
+        again: impl FnOnce() -> Result<Option<Located>, Failure>,
+    ) -> Result<Option<Located>, Failure> {
+        if self.settle(&found.stat) {
+            again()
+        } else {
+            Ok(Some(found))
+        }
+    }
+
     /// The record area is not content, and noise is neither reported nor entered.
-    fn admit(&self, place: &Place, noise: &Noise) -> Result<(), Failure> {
+    pub fn admit(&self, place: &Place, noise: &Noise) -> Result<(), Failure> {
         if place.segments().first() == Some(&RECORD_AREA) {
             return Err(Failure::new(Reason::Outside));
         }
@@ -188,7 +201,7 @@ impl LocalFolder {
         Ok(())
     }
 
-    fn locate(&self, walker: &mut Walker, place: &Place) -> Result<Option<Located>, Failure> {
+    pub fn locate(&self, walker: &mut Walker, place: &Place) -> Result<Option<Located>, Failure> {
         let segments = place.segments();
         let Some((name, parents)) = segments.split_last() else {
             let root = self.root_fd.as_raw_fd();
@@ -205,7 +218,7 @@ impl LocalFolder {
     }
 
     /// Opens a place to list or probe it.
-    fn open_level(&self, walker: &mut Walker, place: &Place) -> Result<RawFd, Failure> {
+    pub fn open_level(&self, walker: &mut Walker, place: &Place) -> Result<RawFd, Failure> {
         let segments = place.segments();
         walker.enter(&segments).map_err(|(index, broken)| {
             let is_place = index + 1 == segments.len();
@@ -219,18 +232,15 @@ impl LocalFolder {
         })
     }
 
-    pub fn glance_places(
-        &self,
-        places: &[PlaceArg],
-        cancel: &Cancel,
-    ) -> Result<GlanceAnswer, Failure> {
+    pub fn glance_places(&self, req: &GlanceRequest, ctx: &Ctx) -> Result<GlanceAnswer, Failure> {
+        let places = &req.places;
         let noise = self.noise();
         let valid: Vec<Option<&Place>> = places.iter().map(valid_place).collect();
         let mut seen: Vec<Option<Seen>> = (0..places.len()).map(|_| None).collect();
         let mut walker = Walker::new(&self.root_fd);
         for (step, index) in depth_first(&valid).into_iter().enumerate() {
             if step % 1024 == 0 {
-                cancel.check()?;
+                ctx.check()?;
             }
             seen[index] = Some(match &places[index] {
                 PlaceArg::Malformed(text) => Seen::Failed(text.clone(), Failure::bad_request()),
@@ -238,8 +248,12 @@ impl LocalFolder {
                     let found = self
                         .admit(place, &noise)
                         .and_then(|()| self.locate(&mut walker, place));
+                    let found = found.and_then(|found| match found {
+                        Some(found) => self.once_settled(found, || self.locate(&mut walker, place)),
+                        None => Ok(None),
+                    });
                     match found {
-                        Ok(Some(found)) => Seen::Present(describe(place.clone(), &found)),
+                        Ok(Some(found)) => Seen::Present(self.describe(place, &found, &req.facets)),
                         Ok(None) => Seen::Absent(place.as_str().to_owned()),
                         Err(failure) => Seen::Failed(place.as_str().to_owned(), failure),
                     }
@@ -251,8 +265,9 @@ impl LocalFolder {
         })
     }
 
-    pub fn look_places(&self, items: &[LookItem], cancel: &Cancel) -> Result<LookAnswer, Failure> {
+    pub fn look_places(&self, items: &[LookItem], ctx: &Ctx) -> Result<LookAnswer, Failure> {
         let noise = self.noise();
+        let holds = self.live_holds();
         let valid: Vec<Option<&Place>> =
             items.iter().map(|item| valid_place(&item.place)).collect();
         let order = depth_first(&valid);
@@ -265,7 +280,7 @@ impl LocalFolder {
         let verdicts: Vec<Vec<(usize, Verdict)>> = std::thread::scope(|scope| {
             let workers: Vec<_> = order
                 .chunks(chunk)
-                .map(|indices| scope.spawn(|| self.look_chunk(items, indices, &noise, cancel)))
+                .map(|indices| scope.spawn(|| self.look_chunk(items, indices, &noise, ctx)))
                 .collect();
             workers
                 .into_iter()
@@ -281,6 +296,13 @@ impl LocalFolder {
             by_index[index] = Some(verdict);
         }
         let mut answer = LookAnswer::default();
+        for item in items {
+            if let PlaceArg::Valid(place) = &item.place
+                && holds.covers(place)
+            {
+                answer.held.push(place.clone());
+            }
+        }
         for (item, verdict) in items.iter().zip(by_index) {
             match verdict {
                 Some(Verdict::Same) | None => answer.same += 1,
@@ -303,13 +325,13 @@ impl LocalFolder {
         items: &[LookItem],
         indices: &[usize],
         noise: &Noise,
-        cancel: &Cancel,
+        ctx: &Ctx,
     ) -> Result<Vec<(usize, Verdict)>, Failure> {
         let mut walker = Walker::new(&self.root_fd);
         let mut verdicts = Vec::with_capacity(indices.len());
         for (step, &index) in indices.iter().enumerate() {
             if step % 1024 == 0 {
-                cancel.check()?;
+                ctx.check()?;
             }
             verdicts.push((index, self.look_one(&mut walker, noise, &items[index])));
         }
@@ -329,10 +351,46 @@ impl LocalFolder {
         match found {
             Err(failure) => Verdict::Failed(failure),
             Ok(None) => Verdict::Gone(place.clone()),
-            Ok(Some(found)) => match found.stat.token().changed_since(&item.token) {
-                Some(false) => Verdict::Same,
-                Some(true) => Verdict::Changed(describe(place.clone(), &found)),
-                None => Verdict::Failed(Failure::bad_request()),
+            Ok(Some(found)) => match self.still(walker, place, &found, &item.token) {
+                Ok(true) => Verdict::Same,
+                Ok(false) => match self.once_settled(found, || self.locate(walker, place)) {
+                    Ok(Some(found)) => Verdict::Changed(self.describe(place, &found, &[])),
+                    Ok(None) => Verdict::Gone(place.clone()),
+                    Err(failure) => Verdict::Failed(failure),
+                },
+                Err(failure) => Verdict::Failed(failure),
+            },
+        }
+    }
+
+    /// Whether what is at `place` is still the state `remembered` stands for: the components
+    /// say so, unless the token was racy; then only the content can, and only when the token
+    /// carries its fingerprint.
+    pub fn still(
+        &self,
+        walker: &mut Walker,
+        place: &Place,
+        found: &Located,
+        remembered: &Token,
+    ) -> Result<bool, Failure> {
+        let at = At {
+            folder: self,
+            place,
+            stat: &found.stat,
+        };
+        match facets::token(&at, None).changed_since(remembered) {
+            None => Err(Failure::bad_request()),
+            Some(true) => Ok(false),
+            Some(false) => match remembered.trust() {
+                Trust::Settled => Ok(true),
+                Trust::Racy => Ok(false),
+                Trust::RacyWith(_) if found.stat.kind != Kind::File || found.stat.dataless() => {
+                    Ok(false)
+                }
+                Trust::RacyWith(fingerprint) => {
+                    let now = self.file_fingerprint(walker, place)?;
+                    Ok(now == fingerprint)
+                }
             },
         }
     }
@@ -340,15 +398,20 @@ impl LocalFolder {
     pub fn overview_dir(
         &self,
         req: &OverviewRequest,
-        cancel: &Cancel,
+        ctx: &Ctx,
     ) -> Result<OverviewAnswer, Failure> {
         let noise = self.noise();
         self.admit(&req.place, &noise)?;
         let mut walker = Walker::new(&self.root_fd);
         let dir = self.open_level(&mut walker, &req.place)?;
         let stat = sys::stat_fd(dir).map_err(unreadable)?;
+        // Listing a placeholder directory would make its provider fetch it.
+        if stat.dataless() {
+            return Err(Failure::elsewhere(stat.size));
+        }
         let listing = self.listing(&req.place, dir, &stat, &noise)?;
-        cancel.check()?;
+        ctx.check()?;
+        let holds = self.live_holds();
         let names = &listing.names;
         let start = req
             .after
@@ -359,8 +422,17 @@ impl LocalFolder {
         for index in start..end {
             let name = names.get(index);
             // An entry removed since the listing is simply not there any more.
-            if let Some(found) = locate_at(dir, name).map_err(unreadable)? {
-                entries.push(describe(req.place.child(name), &found));
+            let found = match locate_at(dir, name).map_err(unreadable)? {
+                Some(found) => {
+                    self.once_settled(found, || locate_at(dir, name).map_err(unreadable))?
+                }
+                None => None,
+            };
+            if let Some(found) = found {
+                let place = req.place.child(name);
+                let mut entry = self.describe(&place, &found, &req.facets);
+                entry.held = holds.covers(&place);
+                entries.push(entry);
             }
         }
         let more = (end < names.len()).then(|| More {
@@ -375,7 +447,7 @@ impl LocalFolder {
         })
     }
 
-    pub fn probe_dir(&self, req: &ProbeRequest, cancel: &Cancel) -> Result<ProbeAnswer, Failure> {
+    pub fn probe_dir(&self, req: &ProbeRequest, ctx: &Ctx) -> Result<ProbeAnswer, Failure> {
         let noise = self.noise();
         self.admit(&req.place, &noise)?;
         let mut walker = Walker::new(&self.root_fd);
@@ -396,7 +468,7 @@ impl LocalFolder {
         let mut queue: VecDeque<Vec<u8>> = VecDeque::from([Vec::new()]);
         let mut counted = 0;
         'walk: while let Some(relative) = queue.pop_front() {
-            cancel.check()?;
+            ctx.check()?;
             let opened: OwnedFd;
             let dir = if relative.is_empty() {
                 top

@@ -1,29 +1,45 @@
-//! Facts: append only, one new file per append, in day directories, so that reading what is
-//! new costs what is new.
+//! Facts: append only, one new file per append, in day directories (the old layout, one
+//! directory per scene, is still read).
+//!
+//! A reader's cursor follows arrival, not names. A file can arrive late anywhere: synced in
+//! from another machine into an older day, or into the old layout. What a file is "after" is when
+//! it arrived in its directory on this machine (macOS keeps the time each entry was added; else
+//! the change time). A directory's change time moves whenever an entry arrives, so a read lists
+//! only the directories that changed since the cursor, and then only the files that arrived since:
+//! its cost follows what is new, not what is there.
+//!
+//! The cursor holds a floor (every file that arrived before it has been given), the names of the
+//! files given that arrived at or after it (a few: those of the last `WINDOW`, at most
+//! `WIN_MAX`), and, part way through a long read, the position reached. One read gives the files
+//! that arrived since the floor, oldest name first, so a library copied whole is read in the
+//! order its writers wrote it.
 
 use std::cmp::Ordering;
-use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Seek, SeekFrom, Write};
+use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 use pneuma_base_storage::{
-    Cancel, Fact, FactsAppendAnswer, FactsAppendRequest, FactsSinceAnswer, FactsSinceRequest,
-    Failure, RecordPlace, Time,
+    Ctx, Fact, FactsAppendAnswer, FactsAppendRequest, FactsSinceAnswer, FactsSinceRequest, Failure,
+    RecordPlace, Time,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::sys::{self, Stat};
-use crate::{LocalFolder, io_failure};
+use crate::sys::{self, DirStream, Stat};
+use crate::{LocalFolder, fnv64, io_failure};
 
-/// A file linked late is still given when its time is this close to the newest file covered.
-const WINDOW_MS: i64 = 10_000;
-/// A directory changed this close to when its token was taken may change again within the
-/// same clock tick without its token moving; such a token does not vouch for "nothing new".
-const SETTLED_MS: i64 = 2_000;
+/// A file that arrived this close before a read began may not yet have been visible to it, and
+/// clocks step back a little: such files are named in the cursor rather than put under its floor.
+const WINDOW_NS: i64 = 10_000_000_000;
+/// The most files the cursor names; past it the floor rises over the oldest.
+const WIN_MAX: usize = 32;
+/// A directory's change time and the arrival time of an entry added to it are taken a moment
+/// apart in the same call.
+const SLACK_NS: i64 = 1_000_000_000;
 
 /// This process's name in the files it writes; random, so writers on synced machines differ.
 fn writer() -> &'static str {
@@ -39,31 +55,45 @@ fn writer() -> &'static str {
 
 static SEQ: AtomicU64 = AtomicU64::new(0);
 
-/// How far into one file a cursor has read: its directory (day or old scene), its name, the
-/// lines and bytes consumed, and whether that is all of it.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-struct Mark {
+/// Where a facts file sits: the old layout (a scene directory) sorts before the dated one.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+struct Key {
+    /// 0: old layout; 1: a day.
+    l: u8,
     d: String,
     f: String,
-    l: u64,
-    b: u64,
-    w: bool,
 }
 
-impl Mark {
-    fn before_all() -> Mark {
-        Mark {
-            d: String::new(),
-            f: String::new(),
-            l: 0,
-            b: 0,
-            w: true,
+impl Key {
+    fn order(&self, line: u64) -> String {
+        match self.l {
+            0 => format!("old/{}/{}#{line}", self.d, self.f),
+            _ => format!("{}/{}#{line}", self.d, self.f),
         }
     }
 
-    fn time(&self) -> Option<i64> {
-        Time::parse_stamp(&self.f).map(Time::millis)
+    fn id(&self) -> String {
+        format!(
+            "{:016x}",
+            fnv64(format!("{}/{}", self.d, self.f).as_bytes())
+        )
     }
+}
+
+/// How far into the current pass a read got.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Mark {
+    k: Key,
+    line: u64,
+    byte: u64,
+    whole: bool,
+}
+
+/// A pass over the files that arrived in `[floor, hi)`, part way through.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Pass {
+    hi: i64,
+    at: Mark,
 }
 
 /// The cursor, serialized as the opaque string the kernel keeps.
@@ -74,28 +104,21 @@ struct Cursor {
     /// fits.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     fi: Option<u64>,
-    /// Where the old layout is being read; absent once it has been read.
+    /// Every file that arrived before this moment (ns) has been given; absent: none has.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    old: Option<Mark>,
-    /// The furthest dated file read; absent before the first.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pos: Option<Mark>,
-    /// Files before `pos` read within the late-link window.
+    floor: Option<i64>,
+    /// The files given that arrived at or after the floor: their key's id and arrival.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    win: Vec<Mark>,
-    /// Present when the cursor reached the end: the tokens that vouch for "nothing new".
+    win: Vec<(String, i64)>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    tok: Option<Tokens>,
+    pass: Option<Pass>,
 }
 
-/// No moment is kept, so the cursor at the end of facts that did not change is the same text
-/// each time it is asked for: a reader can tell "nothing new" by comparing two of them.
-#[derive(Serialize, Deserialize, Debug)]
-struct Tokens {
-    /// Whether every directory below had not changed for `SETTLED_MS` when its token was taken.
-    settled: bool,
-    facts: String,
-    days: Vec<(String, String)>,
+/// A facts file found by a read.
+struct Arrived {
+    key: Key,
+    at: i64,
+    path: PathBuf,
 }
 
 struct Collected {
@@ -139,7 +162,7 @@ impl LocalFolder {
             let temp = dir.join(format!(".{name}.tmp"));
             let written = File::create_new(&temp).and_then(|mut file| {
                 file.write_all(&text)?;
-                file.sync_data()
+                crate::sys::fsync(&file)
             });
             if let Err(error) = written {
                 let _ = fs::remove_file(&temp);
@@ -163,22 +186,23 @@ impl LocalFolder {
     pub fn facts_after(
         &self,
         req: &FactsSinceRequest,
-        cancel: &Cancel,
+        ctx: &Ctx,
     ) -> Result<FactsSinceAnswer, Failure> {
         let facts_dir = self.facts_dir(&req.place);
-        let mut cursor = match &req.cursor {
+        let cursor = match &req.cursor {
             None => Cursor {
-                v: 1,
+                v: 2,
                 fi: None,
-                old: Some(Mark::before_all()),
-                pos: None,
+                floor: None,
                 win: Vec::new(),
-                tok: None,
+                pass: None,
             },
-            Some(text) => serde_json::from_str::<Cursor>(text)
-                .ok()
-                .filter(|cursor| cursor.v == 1)
-                .ok_or_else(Failure::bad_request)?,
+            Some(text) => match serde_json::from_str::<Cursor>(text) {
+                Ok(cursor) if cursor.v == 2 => cursor,
+                // A cursor of the earlier layout no longer fits: the reader starts again.
+                Ok(_) => return Err(refused()),
+                Err(_) => return Err(Failure::bad_request()),
+            },
         };
         let facts_stat = stat_dir(&facts_dir)?;
         if let Some(inode) = cursor.fi
@@ -186,13 +210,54 @@ impl LocalFolder {
         {
             return Err(refused());
         }
-        // Taken before any listing: a change after it leaves its directory unsettled.
-        let started = Time::now().millis();
+        let fi = facts_stat.map(|stat| stat.inode);
         if req.limit == 0 {
-            return end_of_facts(&facts_dir, facts_stat, started);
+            return end_of_facts(&facts_dir, fi);
         }
-        if let (Some(text), None, Some(tokens)) = (&req.cursor, &cursor.old, &cursor.tok)
-            && tokens_hold(&facts_dir, facts_stat, tokens)
+        // Taken before any listing: a file that arrives after it belongs to the next pass.
+        let hi = cursor
+            .pass
+            .as_ref()
+            .map_or_else(|| Time::now().nanos() as i64, |pass| pass.hi);
+        let mut arrived = Vec::new();
+        let mut named = 0;
+        let mut blind = false;
+        // Listed now, though a floor raised to this read would let it be skipped.
+        let mut stale = false;
+        for dir in subdirs(&facts_dir)? {
+            ctx.check()?;
+            if cursor
+                .floor
+                .is_some_and(|floor| dir.changed < floor - SLACK_NS)
+            {
+                continue;
+            }
+            stale |= dir.changed < hi - WINDOW_NS - SLACK_NS;
+            let Some(files) = files_of(&dir)? else {
+                blind = true;
+                continue;
+            };
+            for file in files {
+                let id = file.key.id();
+                if cursor.win.iter().any(|(known, _)| *known == id) {
+                    named += 1;
+                } else if cursor.floor.is_none_or(|floor| file.at >= floor) && file.at < hi {
+                    arrived.push(file);
+                }
+            }
+        }
+        // A file the cursor names is gone: the facts were rewritten under it. (A directory that
+        // cannot be read hides its files without removing them.)
+        if named < cursor.win.len() && !blind {
+            return Err(refused());
+        }
+        arrived.sort_by(|a, b| a.key.cmp(&b.key));
+        // Nothing new: the same cursor, unless it makes every read list directories long settled
+        // (after many arrived at once, as when a whole library is synced in); then it moves up.
+        if arrived.is_empty()
+            && cursor.pass.is_none()
+            && !stale
+            && let Some(text) = &req.cursor
         {
             return Ok(FactsSinceAnswer {
                 facts: Vec::new(),
@@ -204,294 +269,192 @@ impl LocalFolder {
             facts: Vec::new(),
             limit: req.limit,
         };
-        let mut stopped = false;
-        if let Some(old) = cursor.old.take()
-            && let Some(mark) = scan_old(&facts_dir, old, &mut collected, cancel)?
-        {
-            cursor.old = Some(mark);
-            stopped = true;
+        let resume = cursor.pass.as_ref().map(|pass| &pass.at);
+        for file in &arrived {
+            let (line, byte) = match resume.map(|at| file.key.cmp(&at.k)) {
+                Some(Ordering::Less) => continue,
+                Some(Ordering::Equal) => match resume {
+                    Some(at) if !at.whole => (at.line, at.byte),
+                    _ => continue,
+                },
+                _ => (0, 0),
+            };
+            let read = read_facts(&file.path, line, byte, &mut collected, |n| {
+                file.key.order(n)
+            })?;
+            if !read.whole {
+                let pass = Pass {
+                    hi,
+                    at: Mark {
+                        k: file.key.clone(),
+                        line: read.line,
+                        byte: read.byte,
+                        whole: false,
+                    },
+                };
+                let cursor = Cursor {
+                    pass: Some(pass),
+                    fi,
+                    ..cursor
+                };
+                return Ok(FactsSinceAnswer {
+                    facts: collected.facts,
+                    cursor: encode(&cursor),
+                    more: true,
+                });
+            }
         }
-        let days = list_days(&facts_dir)?;
-        if !stopped {
-            stopped = scan_dated(&facts_dir, &days, &mut cursor, &mut collected, cancel)?;
-        }
-        cursor.fi = facts_stat.map(|stat| stat.inode);
-        cursor.tok = if stopped {
-            None
-        } else {
-            take_tokens(&facts_dir, facts_stat, &days, cursor.pos.as_ref(), started)?
-        };
+        // The pass is complete: everything that arrived before `hi` has been given.
+        let floor = cursor
+            .floor
+            .map_or(hi - WINDOW_NS, |f| f.max(hi - WINDOW_NS));
+        let given = cursor
+            .win
+            .iter()
+            .cloned()
+            .chain(arrived.iter().map(|f| (f.key.id(), f.at)));
+        let (floor, win) = window(floor, given);
         Ok(FactsSinceAnswer {
             facts: collected.facts,
-            cursor: encode(&cursor),
-            more: stopped,
+            cursor: encode(&Cursor {
+                v: 2,
+                fi,
+                floor: Some(floor),
+                win,
+                pass: None,
+            }),
+            more: false,
         })
     }
+}
+
+/// The files to name above `floor`, newest first kept; past `WIN_MAX` the floor rises.
+fn window(floor: i64, given: impl Iterator<Item = (String, i64)>) -> (i64, Vec<(String, i64)>) {
+    let mut win: Vec<(String, i64)> = given.filter(|(_, at)| *at >= floor).collect();
+    win.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    win.dedup_by(|a, b| a.0 == b.0);
+    let mut floor = floor;
+    if win.len() > WIN_MAX {
+        floor = win[WIN_MAX - 1].1;
+        win.retain(|(_, at)| *at >= floor);
+    }
+    win.sort();
+    (floor, win)
 }
 
 fn encode(cursor: &Cursor) -> String {
     serde_json::to_string(cursor).unwrap_or_default()
 }
 
-/// `limit` 0: a cursor after the newest fact, reading no facts and listing only the newest days.
-fn end_of_facts(
-    facts_dir: &Path,
-    facts_stat: Option<Stat>,
-    started: i64,
-) -> Result<FactsSinceAnswer, Failure> {
-    let days = list_days(facts_dir)?;
-    let mut newest: Option<(Mark, Vec<String>)> = None;
-    for day in days.iter().rev() {
-        let files = list_files(&facts_dir.join(day))?;
-        if let Some(last) = files.last() {
-            let mark = Mark {
-                d: day.clone(),
-                f: last.clone(),
-                l: 0,
-                b: 0,
-                w: true,
-            };
-            newest = Some((mark, files));
+/// `limit` 0: a cursor after the newest fact, reading no facts. The floor sits one window below
+/// the newest arrival, so the cursor depends only on what is there: the same text while nothing
+/// arrives.
+fn end_of_facts(facts_dir: &Path, fi: Option<u64>) -> Result<FactsSinceAnswer, Failure> {
+    let mut dirs = subdirs(facts_dir)?;
+    dirs.sort_by_key(|d| std::cmp::Reverse(d.changed));
+    let mut newest: Option<i64> = None;
+    let mut seen = Vec::new();
+    for dir in &dirs {
+        if newest.is_some_and(|n| dir.changed < n - WINDOW_NS - SLACK_NS) {
             break;
         }
-    }
-    let mut win = Vec::new();
-    if let Some((pos, newest_files)) = &newest {
-        let first = window_first_day(Some(pos));
-        let window_start = pos.time().map(|t| t - WINDOW_MS);
-        for day in days
-            .iter()
-            .filter(|d| first.as_ref().is_some_and(|f| *d >= f) && **d <= pos.d)
-        {
-            let files = if *day == pos.d {
-                newest_files.clone()
-            } else {
-                list_files(&facts_dir.join(day))?
-            };
-            for file in files {
-                let before = (day.as_str(), file.as_str()) < (pos.d.as_str(), pos.f.as_str());
-                let recent = Time::parse_stamp(&file)
-                    .zip(window_start)
-                    .is_some_and(|(t, start)| t.millis() >= start);
-                if before && recent {
-                    win.push(Mark {
-                        d: day.clone(),
-                        f: file,
-                        l: 0,
-                        b: 0,
-                        w: true,
-                    });
-                }
-            }
+        for file in files_of(dir)?.unwrap_or_default() {
+            newest = Some(newest.map_or(file.at, |n| n.max(file.at)));
+            seen.push((file.key.id(), file.at));
         }
     }
-    let pos = newest.map(|(mark, _)| mark);
-    let tok = take_tokens(facts_dir, facts_stat, &days, pos.as_ref(), started)?;
-    let cursor = Cursor {
-        v: 1,
-        fi: facts_stat.map(|stat| stat.inode),
-        old: None,
-        pos,
-        win,
-        tok,
+    let (floor, win) = match newest {
+        Some(newest) => {
+            let (floor, win) = window(newest + 1 - WINDOW_NS, seen.into_iter());
+            (Some(floor), win)
+        }
+        None => (None, Vec::new()),
     };
     Ok(FactsSinceAnswer {
         facts: Vec::new(),
-        cursor: encode(&cursor),
+        cursor: encode(&Cursor {
+            v: 2,
+            fi,
+            floor,
+            win,
+            pass: None,
+        }),
         more: false,
     })
 }
 
-/// The first day a late-linked file could still be given in, or `None` for every day.
-fn window_first_day(pos: Option<&Mark>) -> Option<String> {
-    let pos = pos?;
-    Some(match pos.time() {
-        Some(time) => pos.d.clone().min(Time::from_millis(time - WINDOW_MS).day()),
-        None => pos.d.clone(),
-    })
+/// A directory of `facts/`: a day, or a scene of the old layout.
+struct Subdir {
+    path: PathBuf,
+    name: String,
+    layout: u8,
+    changed: i64,
 }
 
-fn take_tokens(
-    facts_dir: &Path,
-    facts_stat: Option<Stat>,
-    days: &[String],
-    pos: Option<&Mark>,
-    at: i64,
-) -> Result<Option<Tokens>, Failure> {
-    let Some(stat) = facts_stat else {
-        return Ok(None);
+fn subdirs(facts_dir: &Path) -> Result<Vec<Subdir>, Failure> {
+    let mut dirs = Vec::new();
+    for name in list_dirs(facts_dir)? {
+        let path = facts_dir.join(&name);
+        let Some(stat) = stat_dir(&path)? else {
+            continue;
+        };
+        dirs.push(Subdir {
+            layout: u8::from(is_day(&name)),
+            changed: stat.ctime_ns as i64,
+            path,
+            name,
+        });
+    }
+    Ok(dirs)
+}
+
+/// When a file arrived in its directory: macOS keeps the moment each entry was added, which no
+/// later change to the file moves; a sync service that dates it back still leaves its birth time.
+fn arrival(dir: std::os::fd::RawFd, name: &std::ffi::CStr, stat: &Stat) -> i64 {
+    match sys::added_at(dir, name) {
+        Some(added) => added.max(stat.btime_ns.unwrap_or(added)) as i64,
+        None => stat.ctime_ns as i64,
+    }
+}
+
+/// The facts files of a directory, with when each arrived; `None` when it cannot be read, so
+/// holds nothing that can be given.
+fn files_of(dir: &Subdir) -> Result<Option<Vec<Arrived>>, Failure> {
+    let fd = match sys::open_root(&dir.path) {
+        Ok(fd) => fd,
+        Err(libc::ENOENT | libc::ENOTDIR) => return Ok(Some(Vec::new())),
+        Err(libc::EACCES | libc::EPERM) => return Ok(None),
+        Err(errno) => return Err(Failure::unreadable(sys::errno_name(errno))),
     };
-    let quiet = |s: &Stat| s.mtime_ns <= i128::from(at - SETTLED_MS) * 1_000_000;
-    let first = window_first_day(pos);
-    let mut tokens = Vec::new();
-    let mut settled = quiet(&stat);
-    for day in days
-        .iter()
-        .filter(|d| first.as_ref().is_none_or(|f| *d >= f))
-    {
-        if let Some(day_stat) = stat_dir(&facts_dir.join(day))? {
-            settled &= quiet(&day_stat);
-            tokens.push((day.clone(), day_stat.token().as_str().to_owned()));
+    let mut names = Vec::new();
+    let mut stream = DirStream::open(&fd).map_err(|e| Failure::unreadable(sys::errno_name(e)))?;
+    while let Some(entry) = stream.next_entry() {
+        let (name, _) = entry.map_err(|e| Failure::unreadable(sys::errno_name(e)))?;
+        if let Ok(name) = std::str::from_utf8(name)
+            && !name.starts_with('.')
+            && name.ends_with(".jsonl")
+        {
+            names.push(name.to_owned());
         }
     }
-    Ok(Some(Tokens {
-        settled,
-        facts: stat.token().as_str().to_owned(),
-        days: tokens,
-    }))
-}
-
-/// Nothing new when `facts/` and every day the cursor could still read from have the tokens
-/// the cursor carries, and none of them changed close to when those were taken.
-fn tokens_hold(facts_dir: &Path, facts_stat: Option<Stat>, tokens: &Tokens) -> bool {
-    let Some(stat) = facts_stat else {
-        return false;
-    };
-    tokens.settled
-        && stat.token().as_str() == tokens.facts
-        && tokens.days.iter().all(|(day, token)| {
-            matches!(stat_dir(&facts_dir.join(day)), Ok(Some(s)) if s.token().as_str() == token)
-        })
-}
-
-fn scan_old(
-    facts_dir: &Path,
-    mark: Mark,
-    collected: &mut Collected,
-    cancel: &Cancel,
-) -> Result<Option<Mark>, Failure> {
-    if !mark.d.is_empty() && sys::stat_path(&facts_dir.join(&mark.d).join(&mark.f)).is_err() {
-        return Err(refused());
+    let mut files = Vec::with_capacity(names.len());
+    for name in names {
+        let c_name = sys::c_name(name.as_bytes());
+        let stat = match sys::stat_at(fd.as_raw_fd(), &c_name) {
+            Ok(stat) if stat.kind == pneuma_base_storage::Kind::File => stat,
+            _ => continue,
+        };
+        files.push(Arrived {
+            at: arrival(fd.as_raw_fd(), &c_name, &stat),
+            path: dir.path.join(&name),
+            key: Key {
+                l: dir.layout,
+                d: dir.name.clone(),
+                f: name,
+            },
+        });
     }
-    for scene in list_dirs(facts_dir)?
-        .into_iter()
-        .filter(|name| !is_day(name) && *name >= mark.d)
-    {
-        cancel.check()?;
-        for file in list_files(&facts_dir.join(&scene))? {
-            let resume = if scene == mark.d {
-                match file.cmp(&mark.f) {
-                    Ordering::Less => None,
-                    Ordering::Equal => (!mark.w).then_some((mark.l, mark.b)),
-                    Ordering::Greater => Some((0, 0)),
-                }
-            } else {
-                Some((0, 0))
-            };
-            let Some((line, byte)) = resume else {
-                continue;
-            };
-            let path = facts_dir.join(&scene).join(&file);
-            let read = read_facts(&path, line, byte, collected, |n| {
-                format!("old/{scene}/{file}#{n}")
-            })?;
-            if !read.whole {
-                return Ok(Some(Mark {
-                    d: scene,
-                    f: file,
-                    l: read.line,
-                    b: read.byte,
-                    w: false,
-                }));
-            }
-        }
-    }
-    Ok(None)
-}
-
-/// Reads the dated files after the cursor, and the late-linked ones before it. True when it
-/// stopped at the limit with more facts to come.
-fn scan_dated(
-    facts_dir: &Path,
-    days: &[String],
-    cursor: &mut Cursor,
-    collected: &mut Collected,
-    cancel: &Cancel,
-) -> Result<bool, Failure> {
-    let start = cursor.pos.clone();
-    if let Some(pos) = &start
-        && sys::stat_path(&facts_dir.join(&pos.d).join(&pos.f)).is_err()
-    {
-        return Err(refused());
-    }
-    let window_start = start.as_ref().and_then(Mark::time).map(|t| t - WINDOW_MS);
-    let first_day = window_first_day(start.as_ref());
-    let mut window: HashMap<(String, String), Mark> = cursor
-        .win
-        .drain(..)
-        .map(|mark| ((mark.d.clone(), mark.f.clone()), mark))
-        .collect();
-    let mut stopped = false;
-    'days: for day in days
-        .iter()
-        .filter(|d| first_day.as_ref().is_none_or(|f| *d >= f))
-    {
-        cancel.check()?;
-        for file in list_files(&facts_dir.join(day))? {
-            let side = start.as_ref().map_or(Ordering::Greater, |pos| {
-                (day.as_str(), file.as_str()).cmp(&(pos.d.as_str(), pos.f.as_str()))
-            });
-            let resume = match side {
-                Ordering::Greater => Some((0, 0)),
-                Ordering::Equal => start
-                    .as_ref()
-                    .filter(|pos| !pos.w)
-                    .map(|pos| (pos.l, pos.b)),
-                Ordering::Less => {
-                    let late = Time::parse_stamp(&file)
-                        .zip(window_start)
-                        .is_some_and(|(t, start)| t.millis() >= start);
-                    match window.get(&(day.clone(), file.clone())) {
-                        _ if !late => None,
-                        Some(mark) if mark.w => None,
-                        Some(mark) => Some((mark.l, mark.b)),
-                        None => Some((0, 0)),
-                    }
-                }
-            };
-            let Some((line, byte)) = resume else {
-                continue;
-            };
-            let path = facts_dir.join(day).join(&file);
-            let read = read_facts(&path, line, byte, collected, |n| {
-                format!("{day}/{file}#{n}")
-            })?;
-            let mark = Mark {
-                d: day.clone(),
-                f: file.clone(),
-                l: read.line,
-                b: read.byte,
-                w: read.whole,
-            };
-            if side == Ordering::Less {
-                window.insert((day.clone(), file.clone()), mark);
-            } else if let Some(previous) = cursor.pos.replace(mark)
-                && (previous.d != *day || previous.f != file)
-            {
-                window.insert((previous.d.clone(), previous.f.clone()), previous);
-            }
-            if !read.whole {
-                stopped = true;
-                break 'days;
-            }
-        }
-    }
-    let window_start = cursor
-        .pos
-        .as_ref()
-        .and_then(Mark::time)
-        .map(|t| t - WINDOW_MS);
-    let mut win: Vec<Mark> = window
-        .into_values()
-        .filter(|mark| {
-            mark.time()
-                .zip(window_start)
-                .is_some_and(|(t, start)| t >= start)
-        })
-        .collect();
-    win.sort_by(|a, b| (&a.d, &a.f).cmp(&(&b.d, &b.f)));
-    cursor.win = win;
-    Ok(stopped)
+    Ok(Some(files))
 }
 
 /// Gives the facts of one file from a position on, until the limit; stops before the first
@@ -591,18 +554,4 @@ fn names_in(dir: &Path, dirs: bool) -> Result<Vec<String>, Failure> {
 
 fn list_dirs(dir: &Path) -> Result<Vec<String>, Failure> {
     names_in(dir, true)
-}
-
-fn list_days(facts_dir: &Path) -> Result<Vec<String>, Failure> {
-    Ok(list_dirs(facts_dir)?
-        .into_iter()
-        .filter(|name| is_day(name))
-        .collect())
-}
-
-fn list_files(dir: &Path) -> Result<Vec<String>, Failure> {
-    Ok(names_in(dir, false)?
-        .into_iter()
-        .filter(|name| name.ends_with(".jsonl"))
-        .collect())
 }
