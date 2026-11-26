@@ -1,9 +1,11 @@
 # pneuma-base-core
 
 The storage layer of Pneuma Base: the local-folder implementation of the storage contract
-(`STORAGE.md`, contract version 1), as one command-line program. The kernel is its only caller.
+([`STORAGE.md`](../STORAGE.md), contract version 1), as one command-line program, and the suite that
+vets any program claiming to implement that contract. The kernel is the program's only caller.
 Everything here is the wire form of that contract; where this file and the contract disagree, the
-contract wins.
+contract wins. The product target is Apple-silicon macOS; on Linux the program builds and passes the
+contract suite, without a change journal (`changed` always answers `cannot_say`) or the `macos` facet.
 
 ## Layout
 
@@ -11,8 +13,9 @@ contract wins.
 | --- | --- | --- |
 | `pneuma-base-storage` | `storage/` | The abstraction: the `Storage` trait, places, descriptions, tokens' comparison rule, requests and answers. Knows no file system. |
 | `pneuma-base-local` | `local/` | The local folder: `LocalFolder`, the one implementation of `Storage` today. |
-| `pneuma-base-core` | `cli/` | The binary: parses the command line, runs one operation or `serve`, prints JSON. Its tests (`cli/tests/`) drive only the binary: the contract suite. |
-| `pneuma-base-bench` | `bench/` | The benchmark against the storage targets of the architecture's acceptance. `cargo run --release -p pneuma-base-bench`. |
+| `pneuma-base-core` | `cli/` | The binary: parses the command line, runs one operation or `serve`, prints JSON. Its test (`cli/tests/contract.rs`) runs the contract suite against it. |
+| `pneuma-base-contract` | `contract/` | The contract suite: one check per sentence of `STORAGE.md`, run against any provider's executable. `pneuma-base-contract --provider <path> [--report] [--filter <text>]`; `--report` lists every sentence as met, unmet, not exercised or not checkable from outside. |
+| `pneuma-base-bench` | `bench/` | The benchmark against the storage targets. `cargo run --release -p pneuma-base-bench` builds its own library; `-- --library <folder>` also times the operations that only read on a real library, changing nothing there. |
 
 ## Command line
 
@@ -27,7 +30,7 @@ pneuma-base-core serve --root <library folder>
 
 ### serve
 
-One request per line on standard input: the request object plus `"id"` (a string or a number) and `"op"`. One answer per line on standard output: the answer object plus the same `"id"`. Requests may run concurrently; answers may come out of order. A long operation may first send lines `{"id": …, "progress": {…}}`. `{"id": "c1", "op": "cancel", "target": "<id>"}` cancels a request not yet answered (its answer is `failed`/`cancelled`) and is answered `done` itself. A line that is not a JSON object is answered `{"id": null, "outcome": "failed", "reason": "bad_request"}`. End of input: finish what is running, then exit 0.
+One request per line on standard input: the request object plus `"id"` (a string or a number) and `"op"`. One answer per line on standard output: the answer object plus the same `"id"`. Requests may run concurrently; answers may come out of order. A long operation (`content`, `write`, `remove` of a directory) first sends lines `{"id": …, "progress": { "files", "bytes", "total_files", "total_bytes" }}` (totals `null` while unknown), at most one per 100 ms. `{"id": "c1", "op": "cancel", "target": "<id>"}` cancels a request not yet answered (its answer is `failed`/`cancelled`) and is answered `done` itself. A line that is not a JSON object is answered `{"id": null, "outcome": "failed", "reason": "bad_request"}`. End of input: finish what is running, then exit 0.
 
 ## Answers
 
@@ -50,12 +53,26 @@ A place is a relative path with `/` separators: no leading `/`, no empty, `.` or
 - `kind`: `file`, `dir`, `other` (links, devices, sockets), `none`.
 - `size`: a file's bytes; a dir's number of entries in its level when the platform gives it without listing (macOS `ATTR_DIR_ENTRYCOUNT`), else `null`.
 - `modified`: ISO 8601 UTC with milliseconds.
-- `facets.fs` is always there for `file`, `dir` and `other`. `created` is `null` when the platform gives no birth time.
+- `held: true` in `overview` entries under a live hold (see `hold`).
 - A `none` description is `{ "place": …, "kind": "none" }`.
+
+### Facets
+
+Each facet comes from one source; the sources are composed in one list (`local/src/facets.rs`), and adding a source touches nothing else. A source can also add components to the token.
+
+| Facet | Fields | When |
+| --- | --- | --- |
+| `fs` | `inode`, `device`, `created` (`null` without a birth time), `mode` | always, for `file`, `dir` and `other` |
+| `macos` | `where_from` (download address list), `quarantine` (`{ "agent" }`: the program that brought it in), `tags` (Finder tag names) | macOS, only when asked for by name (`"facets": ["macos"]` in `glance` or `overview`), and only the attributes present |
+| `placeholder` | `provider` (iCloud Drive, Dropbox, Google Drive, OneDrive, Box when recognised by folder), `size_elsewhere` | macOS, a file a sync service keeps only as a placeholder (`SF_DATALESS`) |
+
+No operation fetches a placeholder unless it is asked to with `fetch: true`: the process runs with materialisation of dataless files turned off, and `overview` of a placeholder directory answers `elsewhere`.
 
 ### Token
 
-An opaque string to the kernel. This implementation writes `v1;s=<size>;m=<mtime ns>;c=<ctime ns>;i=<inode>` (`s` is the raw `st_size`, also for directories). Comparison (done only by the implementation, in `look`): parse both into components; the place changed when any component present in both differs; a component present in only one is not compared. This implementation has no component that identifies content.
+An opaque string to the kernel. This implementation writes `v1;s=<size>;m=<mtime ns>;c=<ctime ns>;i=<inode>` (`s` is the raw `st_size`, also for directories). Comparison (done only by the implementation, in `look` and in every write's expectation): parse both into components; the place changed when any component present in both differs; a component present in only one is not compared; components whose key starts with `*` identify content. This implementation has no component that identifies content.
+
+Racy states: a state taken within the file system's clock window of its last change (APFS: 1 ms; ext4, xfs, btrfs, tmpfs, overlayfs: 20 ms; anything else: 2 s; counted from the change time, which every change sets and no caller can) cannot vouch that a second change in the same tick would have moved it. `glance`, `overview`, `look` and every write wait out that window once per answer when it is at most 25 ms, and describe the settled state, so their tokens vouch for themselves and an unchanged place keeps the same token text. Where the window is longer, and in `content` and `read` answers taken within it, the token carries an annotation, never compared: `;!h=<sha256>` when the answer read the content, else `;!r`. `look` answers `same` for an annotated token only when the components match and, for `!h`, the file's bytes still hash to it; for `!r`, never.
 
 ## Operations on content
 
@@ -64,11 +81,22 @@ An opaque string to the kernel. This implementation writes `v1;s=<size>;m=<mtime
 | `glance` | `{ "places": [place…] }` | `{ "entries": [description or { "place", "kind": "none" } or { "place", "outcome": "failed", "reason" }…] }` in request order |
 | `overview` | `{ "place": p, "limit"?: 200, "after"?: name }` (`limit` 1 to 1000) | `{ "entries": [description…], "more": { "at_least": n, "after": name } \| null, "total": n \| null, "noise": [name…] }` |
 | `probe` | `{ "place": p, "budget"?: 500 }` | `{ "files": n, "dirs": n, "bytes": n, "exceeded": bool, "markers": [name…] }` |
-| `look` | `{ "places": [{ "place", "token" }…] }` | `{ "same": n, "changed": [{ "place", "entry": description }…], "gone": [place…], "failed": [{ "place", "reason" }…] }` |
+| `look` | `{ "places": [{ "place", "token" }…] }` | `{ "same": n, "changed": [{ "place", "entry": description }…], "gone": [place…], "failed": [{ "place", "reason" }…], "held": [place…] }` |
+| `changed` | `{ "cursor"?: string, "limit"?: 1000 }` (`limit` 1 to 10000) | `{ "places": [place…], "cursor": string, "more": bool }`; without a cursor, no places and the current cursor; `failed`/`cannot_say` with a fresh `"cursor"` |
+| `content` | `{ "place": p, "rule"?: { "noise"?: [name…], "ignore_file"?: name }, "limit"?: 5000, "fetch"?: bool }` | file: `{ "kind": "file", "fingerprint", "token", "size" }`; dir: `{ "kind": "dir", "fingerprint", "files": n, "bytes": n, "token" }`; `too_many` with `at_least`; `elsewhere` with `size` |
+| `read` | `{ "place": p, "offset"?: 0, "length"?: n, "fetch"?: bool, "to"?: absolute path outside the library }` | `{ "token", "size", "offset", "length", "data"?: base64 }` (at most 16 MiB in `data`; with `to`, the bytes go to that file and `to` is echoed) |
+| `write` | `{ "place": p, "from": absolute path outside the library \| "-", "expect": "empty" \| token, "rule"?, "limit"?, "hold"?: id }` | `{ "entry": description, "fingerprint", "files"?: n, "bytes": n }` |
+| `move` | `{ "from": p, "to": q, "expect": { "from": token, "to": "empty" \| token }, "hold"?: id }` | `{ "entry": description at q }` |
+| `remove` | `{ "place": p, "expect": token, "hold"?: id }` | `{ "removed": true }` |
 
-- `overview`: entries of one level, sorted by the UTF-8 bytes of their names, directories and files mixed; `after` is the last name of the previous page. Noise entries are left out and their names listed in `noise`. `more.at_least` is how many entries at least follow this page. Failures: `no_such_place`, `not_a_dir`, `unreadable`, `noise`, `outside`. Its cost is bounded by `limit`, not by the size of the directory: a large directory's sorted names are kept in the cache area keyed by the directory's token, so only the first look at a changed directory reads all its names.
+- `overview`: entries of one level, sorted by the UTF-8 bytes of their names, directories and files mixed; `after` is the previous answer's `more.after` (here, the last name of that page). Noise entries are left out and their names listed in `noise`. `more.at_least` is how many entries at least follow this page. Failures: `no_such_place`, `not_a_dir`, `unreadable`, `noise`, `outside`. Its cost is bounded by `limit`, not by the size of the directory: a large directory's sorted names are kept in the cache area keyed by the directory's token, so only the first look at a changed directory reads all its names.
 - `probe`: counts what lies under the place, breadth first, up to `budget` entries (files and directories, not entering noise or unreadable directories), and stops there with `exceeded: true`. `markers` are the well-known names present at the top of the place (`package.json`, `.git`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `pnpm-workspace.yaml`, `requirements.txt`, `Gemfile`, `pom.xml`, `build.gradle`, `Package.swift`, `CMakeLists.txt`, `Makefile`), checked by name, not by listing, noise or not.
-- `look`: places not listed in `changed`, `gone` or `failed` are the same. `gone` covers a place that now has kind `none`; a place whose kind changed is `changed`.
+- `look`: places not listed in `changed`, `gone` or `failed` are the same. `gone` covers a place that now has kind `none`; a place whose kind changed is `changed`. `held` lists the asked places under a live hold.
+- `changed` (macOS): the places under the library that FSEvents recorded since the cursor, file by file, leaving out noise and the record area; `more` when `limit` cut it short (the next call resumes). The cursor `fse1;<volume event-database UUID>;<device>;<inode of the library folder>;<event id>` survives restarts and reboots: FSEvents keeps each volume's history on disk. A replay from a cursor may give a place again, never fewer: event ids are assigned when the system delivers a change, a moment after it happens. The answer is `cannot_say` with a fresh cursor when the history cannot be trusted for the period: the volume's event database is not the one the cursor names (its UUID changed, or the volume keeps none); the library folder is not the one the cursor names (other device or inode); the cursor's id is ahead of the system's; the replay carries MustScanSubDirs, KernelDropped, EventIdsWrapped, RootChanged, Mount or Unmount; events dropped only on their way to this process (UserDropped alone) are replayed again after 500 ms; or the replay does not finish in 5 s. The cost follows the volume's events since the cursor, not the library or its changes: about 0.17 µs an event, measured at 0.1 s for a cursor minutes old and 2.4 s for one three hours old on a busy development machine; a caller keeps its cursor young (asks often) or gets `cannot_say`. On Linux every `changed` with a cursor answers `cannot_say`.
+- The content rule (`content` and a directory `write`): a directory's content is every regular file under it except noise, the names in `rule.noise`, and what the ignore file named in `rule.ignore_file` excludes, read in every directory that has one, the nearest one deciding (gitignore syntax). Links and devices are not content. The storage applies the rule; it does not choose it.
+- Fingerprints: a file's is the SHA-256 of its bytes; a directory's is the SHA-256 of its manifest, `<path>\0<file fingerprint>\n` for each file in the byte order of the paths. Each answer's token is the state of the version read: taken before and after, and a read that saw a change is tried again (three times, then `busy`).
+- Writes: every write states what it expects at each place it changes, and is refused with what is there (`actual`: a description or `{ "place", "kind": "none" }`; for `move`, `{ "from", "to" }`) when that does not hold. Expectations are checked under an exclusive lock on the parent directory, with the comparison `look` uses, so of two writers expecting the same state one is `refused`. A write copies its source into `.pneuma-base/tmp/`, fingerprinting it in the same pass, and places it with one rename: where nothing is (`empty`), over a file (a token on a file), or by an atomic exchange when a directory is involved. A removal is one rename into `.pneuma-base/trash/`, then deletion there. A move onto a directory notes its intent in `tmp/` before the exchange. So a write interrupted at any point leaves the content as it was or as it will be: the next write, move or removal clears what an interrupted one left and finishes a noted move. A write is cancellable until it places its result. Places a write is refused at are not changed, and the parent directories it made are taken back.
+- `hold` and `release`: `{ "place": p, "ttl"?: 30000 }` (ms, 1 to 600000) answers `{ "hold": id, "until": time }`; `{ "hold": id }` releases it. A hold says a place is being written and its records follow: `look` lists held places, `overview` marks them, and a write at, above or below a held place answers `held` (with `until`) unless it carries that hold's id. A hold that has run out counts for nothing.
 
 ## Operations on records
 
@@ -84,9 +112,9 @@ A record place is a name the kernel gives (`[a-z0-9][a-z0-9-]*`); its facts are 
 | `rows.where` | `{ "place": name, "table": t, "field": f, "value": s, "limit"?: 100, "after"?: key, "count"?: bool }` | `{ "rows": [row…], "more": … }`, or with `count` `{ "count": n }` |
 | `rows.reset` | `{ "place": name }` | `{}` |
 
-- Facts: one `facts.append` writes one new file `.pneuma-base/<name>/facts/<YYYY-MM-DD>/<UTC yyyymmddHHMMSSmmm>-<writer>-<seq>.jsonl` (temporary name, then a hard link to the final name that never replaces a file, then the temporary name removed), one fact per line, as given. An order is `<day>/<file>#<line>`. The old layout, `facts/<scene>/*.jsonl` (any subdirectory whose name is not a date), is read when the cursor is `null`, before the dated files, with orders `old/<scene>/<file>#<line>`; it is not looked at again after that. A line that is not a JSON object is skipped.
+- Facts: one `facts.append` writes one new file `.pneuma-base/<name>/facts/<YYYY-MM-DD>/<UTC yyyymmddHHMMSSmmm>-<writer>-<seq>.jsonl` (temporary name, then a hard link to the final name that never replaces a file, then the temporary name removed), one fact per line, as given. An order is `<day>/<file>#<line>`. The old layout, `facts/<scene>/*.jsonl` (any subdirectory whose name is not a date), is still read, with orders `old/<scene>/<file>#<line>`. A line that is not a JSON object is skipped.
 - A cursor that no longer fits the facts (the `facts/` directory it was made on is gone or replaced, or the file it stands on is gone) is answered `refused` (reason `refused`): the caller drops what it derived and starts again from `null`.
-- `facts.since` costs what is new, not what is there: with nothing new it only compares the tokens of `facts/` and of the newest day's directory with those the cursor carries. A file whose name sorts before the cursor but was linked after it was made is still given, when its time is within 10 seconds of the newest file the cursor covers (writers' clocks and the moment of linking differ). While nothing changes, the cursor after the newest fact is the same text each time it is asked for, so a reader can compare two to tell whether there is anything new.
+- `facts.since` follows arrival, not names: a file synced in late, into an older day or into the old layout, comes after the cursor all the same. When a file arrived is the moment it was added to its directory on this machine (macOS keeps it per entry; elsewhere the change time). A directory's change time moves whenever a file arrives in it, so a read lists only the directories that changed since the cursor's floor, then gives the files that arrived since, in the order of their orders (old layout first, then by day and name). Its cost follows what is new, plus one `stat` per day directory. The cursor carries a floor (every file that arrived before it has been given, kept 10 s behind the read to allow for clocks and the moment of linking) and the names of the files given above the floor (at most 32). With nothing new the cursor stays the same text, unless it would keep making reads list directories long settled (after a whole library was synced in at once); then it moves up. A cursor of the step-1 layout answers `refused`, and the reader starts again. `limit` 0: while nothing changes, the cursor after the newest fact is the same text each time it is asked for, so a reader can compare two to tell whether there is anything new.
 - A row is `{ "key": string, "fields"?: { name: string } (at most 4), "value": any JSON }`; a `value` of `null` in `rows.put` deletes the row. Keys sort by their UTF-8 bytes. `rows.put` writes all its rows and the cursor in one transaction. The saved cursor is the place's fact cursor, answered by every `rows.get`.
 - Rows are a cache: `rows.reset` drops the place's rows and cursor; so does deleting the cache area.
 
@@ -95,10 +123,14 @@ A record place is a name the kernel gives (`[a-z0-9][a-z0-9-]*`); its facts are 
 | Op | Request | Answer (`done`) |
 | --- | --- | --- |
 | `init` | `{}` | `{ "created": bool }`: makes `.pneuma-base/`, `.pneuma-base/cache/` and `.pneuma-base/noise.json` with the default list; changes nothing in a folder that already has `.pneuma-base/` |
-| `describe` | `{}` | `{ "implementation": "local-folder", "contract": 1, "version": s, "cursor": false, "facets": ["fs"], "ops": [op…] }` |
+| `describe` | `{}` | `{ "name": "local-folder", "version": s, "contract": 1, "addresses": ["path"], "cursor": bool, "facets": [name…], "ops": [op…] }`: `cursor` is whether `changed` can give a reliable cursor for this library (macOS: `true` when the library's volume keeps an FSEvents history; Linux: `false`), `facets` the facets this platform gives (macOS: `fs`, `macos`, `placeholder`; Linux: `fs`) |
+| `hold` | `{ "place": p, "ttl"?: ms }` | `{ "hold": id, "until": time }` |
+| `release` | `{ "hold": id }` | `{}` |
 | `noise.list` | `{}` | `{ "names": [s…], "paths": [place…], "declared": bool }`; without `noise.json` the default list, `declared: false` |
 | `noise.add`, `noise.remove` | `{ "names"?: [s…], "paths"?: [place…] }` | as `noise.list`, after writing `noise.json` |
 
 The default noise names: `.git`, `.svn`, `.hg`, `node_modules`, `.pnpm-store`, `.yarn`, `bower_components`, `__pycache__`, `.venv`, `.tox`, `.mypy_cache`, `.pytest_cache`, `.ruff_cache`, `.next`, `.nuxt`, `.turbo`, `.parcel-cache`, `.gradle`, `.cache`, `.DS_Store`, `Thumbs.db`, `desktop.ini`, `.Trash`, `.Spotlight-V100`, `.fseventsd`, `.TemporaryItems`.
 
-Not built yet (step 2): `changed`, `content`, `read`, `write`, `move`, `remove`, `hold`, `release`, and the `macos` and `placeholder` facets.
+## Dependencies
+
+`serde`, `serde_json`, `rusqlite` (bundled SQLite) and `libc`, as in step 1; `sha2` (with its `asm` feature, for the ARMv8 SHA-256 instructions: a 10 MB file hashes in about 4 ms instead of 15) and `ignore` (gitignore matching for the content rule). macOS frameworks used directly: CoreServices (FSEvents) and CoreFoundation.
