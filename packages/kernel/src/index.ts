@@ -6,6 +6,7 @@ export { ownerFace, initLibrary, type LibraryCall, type MachineContext, type Own
 export { viewerFace, type ViewerCall } from './viewer.js'
 export { actionFault, callableIn, type Callable } from './blocks.js'
 export { parseCall } from './call.js'
+export { commandLine, endText, quote } from './requests.js'
 export { openLibrary } from './library.js'
 export { assembleDescription } from './cognition.js'
 export { makeContext, pluginContext } from './pipeline.js'
@@ -26,3 +27,8 @@ export {
   thingAt,
 } from './things.js'
 export { loadPlugins, whyNotLoaded } from './plugin-table.js'
+export { FIRST_WORDS } from './products.js'
+export { ensureLauncher } from './launcher.js'
+export { dropEndpoint, endpointOf, guideUrl, liveEndpoints, mcpUrl, PREFERRED_PORT, recordEndpoint, sentenceFor, type EndpointRecord } from './endpoint.js'
+export { guideText, type GuideFacts } from './guide.js'
+export { pairingAnswer, requestPairing, type Connected, type Pairing, type PairingAnswer, type PairingId, type PairingState, type PairRequest, type PairRequested } from './pairing.js'

@@ -55,6 +55,7 @@ export type Ledger = {
   pathIndex: Map<LibraryPath, ItemId> // current paths of the items not removed
   scenes: Map<SceneId, SceneRecord>
   ownerOps: OwnerOp[]
+  left: Set<LibraryPath> // things nobody registered that the owner chose to leave so, not to be asked about again
 }
 
 export const NO_BASIS: Basis = { items: [], outside: [] }
@@ -65,22 +66,48 @@ export const isArchived = (item: ItemRecord) => regionOf(item.path) === 'archive
 
 const byTime = (a: Fact, b: Fact) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 
-export function fold(input: readonly Fact[]): Ledger {
-  const ledger: Ledger = { facts: [], items: new Map(), pathIndex: new Map(), scenes: new Map(), ownerOps: [] }
+/** The enters an `items.enter` stands for, one per thing, each carrying the act's envelope. */
+function entersOf(f: Extract<Fact, { kind: 'items.enter' }>): Enter[] {
+  const { items, origin, ...envelope } = f
+  return items.map((e) => ({ ...envelope, kind: 'item.enter', ...e, origin }))
+}
+
+/** The facts in the order the fold takes them: by time, then by id. */
+export const inOrder = (input: readonly Fact[]): Fact[] => [...input].sort(byTime)
+
+/**
+ * The fold one fact at a time, for a reader that wants the ledger as it stood between facts: `take`
+ * each fact in `inOrder`, and it answers the fact as the ledger keeps it, items named through aliases.
+ */
+export function folding(): { ledger: Ledger; take(raw: Fact): Fact } {
+  const ledger: Ledger = { facts: [], items: new Map(), pathIndex: new Map(), scenes: new Map(), ownerOps: [], left: new Set() }
   const alias = new Map<ItemId, ItemId>()
   const resolve = (id: ItemId) => alias.get(id) ?? id
-  for (const raw of [...input].sort(byTime)) {
-    let f = raw
+  const sceneItems = new Map<SceneId, Set<ItemId>>()
+  const step = (f: Fact) => {
     if (f.kind === 'item.enter') {
       const holder = ledger.pathIndex.get(f.path)
       // Two enters claimed the same path: the later item is an alias of the earlier one.
       if (holder !== undefined && holder !== f.item) alias.set(f.item, holder)
     }
-    f = resolved(f, resolve)
-    apply(ledger, f)
-    ledger.facts.push(f)
+    const g = resolved(f, resolve)
+    apply(ledger, g, sceneItems)
+    return g
   }
-  return ledger
+  const take = (raw: Fact) => {
+    // Many things entered in one act: each is entered as by its own enter, and the act stays one fact.
+    if (raw.kind === 'items.enter') entersOf(raw).forEach(step)
+    const kept = raw.kind === 'items.enter' ? raw : step(raw)
+    ledger.facts.push(kept)
+    return kept
+  }
+  return { ledger, take }
+}
+
+export function fold(input: readonly Fact[]): Ledger {
+  const folder = folding()
+  for (const raw of inOrder(input)) folder.take(raw)
+  return folder.ledger
 }
 
 /** The fact with every item it names, itself or in a basis, taken through the aliases. */
@@ -90,6 +117,10 @@ function resolved(f: Fact, resolve: (id: ItemId) => ItemId): Fact {
     case 'said':
       return f.about === null ? f : { ...f, about: resolve(f.about) }
     case 'owner.op':
+    case 'request':
+    case 'checked':
+    case 'items.enter':
+    case 'unowned.left':
       return f
     case 'item.enter':
       return { ...f, item: resolve(f.item), origin: f.origin.kind === 'made' ? { ...f.origin, basis: basis(f.origin.basis) } : f.origin }
@@ -102,8 +133,10 @@ function resolved(f: Fact, resolve: (id: ItemId) => ItemId): Fact {
   }
 }
 
-function apply(ledger: Ledger, f: Fact): void {
-  touchScene(ledger, f)
+function apply(ledger: Ledger, f: Fact, sceneItems: Map<SceneId, Set<ItemId>>): void {
+  // A look is no work in a scene: it only marks when its actor was last here.
+  if (f.kind === 'checked') return
+  touchScene(ledger, f, sceneItems)
   const item = 'item' in f ? ledger.items.get(f.item) : undefined
   switch (f.kind) {
     case 'item.enter':
@@ -168,6 +201,9 @@ function apply(ledger: Ledger, f: Fact): void {
     case 'owner.op':
       ledger.ownerOps.push(f)
       return
+    case 'unowned.left':
+      for (const path of f.paths) ledger.left.add(path)
+      return
   }
 }
 
@@ -178,6 +214,7 @@ function absorb(ledger: Ledger, id: ItemId, path: LibraryPath): void {
   }
 }
 
+/** Only a bundle absorbs; asking only for bundles keeps a ledger of many moves linear. */
 const absorbedBy = (ledger: Ledger, bundle: ItemRecord) => [...ledger.items.values()].filter((other) => other.absorbedInto === bundle.id)
 
 /** Moves an item to `to`, and the items a bundle absorbed along with it. */
@@ -186,27 +223,32 @@ function relocate(ledger: Ledger, item: ItemRecord, to: LibraryPath): void {
   if (ledger.pathIndex.get(from) === item.id) ledger.pathIndex.delete(from)
   item.path = to
   ledger.pathIndex.set(to, item.id)
-  for (const other of absorbedBy(ledger, item)) relocate(ledger, other, `${to}${other.path.slice(from.length)}` as LibraryPath)
+  if (item.bundle) for (const other of absorbedBy(ledger, item)) relocate(ledger, other, `${to}${other.path.slice(from.length)}` as LibraryPath)
 }
 
 /** Marks an item removed, and the items a bundle absorbed with it. */
 function remove(ledger: Ledger, item: ItemRecord): void {
   item.removed = true
   if (ledger.pathIndex.get(item.path) === item.id) ledger.pathIndex.delete(item.path)
-  for (const other of absorbedBy(ledger, item)) remove(ledger, other)
+  if (item.bundle) for (const other of absorbedBy(ledger, item)) remove(ledger, other)
 }
 
-function touchScene(ledger: Ledger, f: Fact): void {
+function touchScene(ledger: Ledger, f: Fact, sceneItems: Map<SceneId, Set<ItemId>>): void {
   let scene = ledger.scenes.get(f.scene)
   if (!scene) {
     scene = { id: f.scene, first: f.at, last: f.at, actors: [], cwds: [], transcript: null, said: [], items: [] }
     ledger.scenes.set(f.scene, scene)
+    sceneItems.set(f.scene, new Set())
   }
   scene.last = f.at
   if (!scene.actors.some((a) => actorKey(a) === actorKey(f.actor))) scene.actors.push(f.actor)
   if (f.where?.cwd && !scene.cwds.includes(f.where.cwd)) scene.cwds.push(f.where.cwd)
   if (f.where?.transcript) scene.transcript = { ...f.where.transcript, machine: f.where.machine }
-  if ('item' in f && f.kind !== 'item.remove' && !scene.items.includes(f.item)) scene.items.push(f.item)
+  const items = sceneItems.get(f.scene) as Set<ItemId>
+  if ('item' in f && f.kind !== 'item.remove' && !items.has(f.item)) {
+    items.add(f.item)
+    scene.items.push(f.item)
+  }
 }
 
 function version(f: Extract<Fact, { kind: 'item.enter' | 'item.revise' }>): Version {

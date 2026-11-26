@@ -2,7 +2,7 @@
 // ledger-design.md sections 1 and 2.
 import { randomBytes } from 'node:crypto'
 import { link, mkdir, open, readdir, readFile, unlink } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { join, sep } from 'node:path'
 import type { Actor, Context, Fingerprint, Instant, LibraryPath, Transcript } from '@pneuma-base/kernel'
 
 export type ItemId = string & { readonly __brand: 'ItemId' }
@@ -17,16 +17,32 @@ export type LedgerOrigin =
 
 type SaidFlavor = 'doing' | 'decided' | 'note'
 
+/** One thing of an `items.enter`: what an `item.enter` says of it, but for the origin they share. */
+export type Entered = { item: ItemId; path: LibraryPath; fingerprint: Fingerprint; size: number; bundle?: true }
+
 export type FactBody =
   | { kind: 'said'; flavor: SaidFlavor; text: string; about: ItemId | null }
   | { kind: 'item.enter'; item: ItemId; path: LibraryPath; fingerprint: Fingerprint; size: number; origin: LedgerOrigin; bundle?: true; note?: string } // bundle: a marked directory; note: what this put changed
+  | { kind: 'items.enter'; items: Entered[]; origin: LedgerOrigin } // many things entered in one act, all with one origin: the owner registering what nobody had
   | { kind: 'item.revise'; item: ItemId; base: Fingerprint | null; fingerprint: Fingerprint; size: number; basis?: Basis; held: string | null; claimed: boolean; by?: 'owner'; note?: string } // by: the owner made the edit the actor recorded
   | { kind: 'item.move'; item: ItemId; from: LibraryPath; to: LibraryPath; archive: 'in' | 'out' | null }
   | { kind: 'item.basis'; item: ItemId; fingerprint: Fingerprint; basis: Basis }
   | { kind: 'item.remove'; item: ItemId }
-  | { kind: 'owner.op'; command: string; summary: string; destructive: boolean; readOnly?: true; setup?: true }
+  | { kind: 'owner.op'; command: string; summary: string; destructive: boolean; readOnly?: true; setup?: true; request?: { id: string; by: FactActor }; refused?: string; declined?: { id: string; by: FactActor | null } } // request: the owner approved it at an agent's request; refused: the command's reason when it then refused; declined: the request a `request decline` turned down, and who had asked
+  | { kind: 'request'; act: 'asked' | 'withdrawn'; request: string; line: string; why?: string } // an agent asked the owner to run a command, or took the request back
+  | { kind: 'checked' } // the actor looked at what changed: its check, or the owner's 都看过了 on the home page
+  | { kind: 'unowned.left'; paths: LibraryPath[] } // the owner left these things unregistered, not to be asked about them again
 
 export type FactActor = { kind: 'agent' | 'owner' | 'plugin'; name: string; grant: string | null }
+
+/** The request a fact asked, took back or answered: approved, or turned down by a decline, which before it named the request said so only in its summary. */
+export function requestOf(f: Fact): string | null {
+  if (f.kind === 'request') return f.request
+  if (f.kind !== 'owner.op') return null
+  if (f.request) return f.request.id
+  if (f.command !== 'request decline') return null
+  return f.declined?.id ?? /的请求 (r-[0-9a-f]+)/.exec(f.summary)?.[1] ?? null
+}
 export type How = 'tool' | 'reported' | 'observed' // the tool did it; the actor said so; seen mechanically
 
 export type Envelope = {
@@ -114,19 +130,23 @@ const parsedFiles = new Map<string, Fact[]>()
 export async function readFacts(dir: string): Promise<Fact[]> {
   const root = join(dir, FACTS_DIR)
   const scenes = await readdir(root).catch(() => [] as string[])
-  const listed = await Promise.all(scenes.map(async (scene) => (await readdir(join(root, scene)).catch(() => [] as string[])).map((name) => join(root, scene, name))))
-  const files = listed.flat().filter((file) => !basename(file).startsWith('.') && file.endsWith('.jsonl'))
-  const read = await Promise.all(
-    files.map(async (file) => {
-      const known = parsedFiles.get(file)
-      if (known !== undefined) return known
-      const facts = (await readFile(file, 'utf8')).split('\n').flatMap((line) => parseFact(line) ?? [])
-      parsedFiles.set(file, facts)
-      return facts
+  const listed = await Promise.all(
+    scenes.map(async (scene) => {
+      const folder = join(root, scene)
+      const names = await readdir(folder).catch(() => [] as string[])
+      return names.filter((name) => !name.startsWith('.') && name.endsWith('.jsonl')).map((name) => `${folder}${sep}${name}`)
     }),
   )
+  const files = listed.flat()
+  await Promise.all(
+    files
+      .filter((file) => !parsedFiles.has(file))
+      .map(async (file) => {
+        parsedFiles.set(file, (await readFile(file, 'utf8')).split('\n').flatMap((line) => parseFact(line) ?? []))
+      }),
+  )
   const byId = new Map<string, Fact>()
-  for (const parsed of read.flat()) if (!byId.has(parsed.id)) byId.set(parsed.id, parsed)
+  for (const file of files) for (const parsed of parsedFiles.get(file) ?? []) if (!byId.has(parsed.id)) byId.set(parsed.id, parsed)
   return [...byId.values()]
 }
 

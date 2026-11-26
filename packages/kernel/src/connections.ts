@@ -6,21 +6,21 @@ import { chmod, copyFile, mkdir, readdir, readFile, realpath, rename, rm, rmdir,
 import { basename, dirname, join } from 'node:path'
 import { canonical, jsonEntry, removeJsonEntry, removeToml, tomlState, type JsonAdded } from './config-edit.js'
 import { exists, writeAtomic } from './files.js'
+import type { CommandLine } from './launcher.js'
 import type { Way } from './products.js'
 import type { Instant } from '@pneuma-base/sdk'
 
 /**
  * One thing written. `dirs`: the folders written into being, outermost first, each taken away again
  * once empty. A skill is its SKILL.md; a JSON entry is located by key and name; a TOML table is the
- * exact text appended. A fingerprint is of what was written: the file, or the entry's value in canonical form.
+ * exact text appended. A fingerprint is of what was written: the file, or the entry's value in canonical
+ * form. `none`: nothing was written, for a product reached only by the local endpoint's address.
  */
 export type Written =
   | { kind: 'skill'; file: string; fingerprint: string; dirs: string[] }
   | ({ kind: 'json'; file: string; key: string; name: string; fingerprint: string; dirs: string[] } & JsonAdded)
   | { kind: 'toml'; file: string; key: string; name: string; appended: string; createdFile: boolean; dirs: string[] }
-
-/** The command line an MCP entry runs, as it was when the entry was written. */
-export type CommandLine = { node: string; entry: string }
+  | { kind: 'none' }
 
 export type Connection = {
   format: 1
@@ -32,7 +32,11 @@ export type Connection = {
   way: Way
   at: Instant
   wrote: Written
-  command: CommandLine | null
+  /**
+   * What the skill or the MCP entry runs: the launcher, by path. A record written before the launcher
+   * has the node program and entry file its MCP entry ran, or null for a skill.
+   */
+  command: { launcher: string } | CommandLine | null
 }
 
 /** Whether what was written is still there as written, changed since, gone, or in a file that no longer reads. */
@@ -133,6 +137,7 @@ async function removeEmpty(dirs: readonly string[]): Promise<void> {
 }
 
 export async function stateOf(w: Written): Promise<WrittenState> {
+  if (w.kind === 'none') return 'in-place'
   const text = await readText(w.file)
   if (text === null) return 'gone'
   switch (w.kind) {
@@ -156,7 +161,7 @@ export async function stateOf(w: Written): Promise<WrittenState> {
  */
 export async function undo(w: Written): Promise<WrittenState> {
   const state = await stateOf(w)
-  if (state !== 'in-place') return state
+  if (state !== 'in-place' || w.kind === 'none') return state
   const text = (await readText(w.file)) as string
   if (w.kind === 'skill') await unlink(w.file)
   else {

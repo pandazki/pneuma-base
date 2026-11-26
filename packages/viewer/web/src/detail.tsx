@@ -5,6 +5,23 @@ import { ArrowLeft, PanelRightClose, X } from 'lucide-react'
 import { useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { ViewIcon } from './chrome'
 import { topOf, type Tab } from './route'
+import { localMoments } from './time'
+
+/**
+ * A tab's name, cut in the middle when it does not fit: a file keeps its extension and the last
+ * letters before it, the start gives way at an ellipsis; any other name is cut at its end.
+ */
+function TabName({ label }: { label: string }) {
+  const ext = /\.[\p{L}\p{N}]{1,8}$/u.exec(label)?.[0] ?? ''
+  const stem = [...label.slice(0, label.length - ext.length)]
+  const kept = ext === '' ? 0 : stem.length > 6 ? 3 : 0
+  return (
+    <span className="tab-name">
+      <span className="tab-name-start">{stem.slice(0, stem.length - kept).join('')}</span>
+      {ext === '' ? null : <span className="tab-name-end">{stem.slice(stem.length - kept).join('') + ext}</span>}
+    </span>
+  )
+}
 
 type Props = {
   tabs: Tab[]
@@ -60,7 +77,7 @@ export function DetailPanel({ tabs, active, labelOf, iconOf, result, children, o
                   onAuxClick={(e) => e.button === 1 && onClose(i)}
                 >
                   <ViewIcon name={iconOf(topOf(tab))} />
-                  <span>{label}</span>
+                  <TabName label={label} />
                 </button>
                 <button type="button" className="tab-close" aria-label={`关闭 ${label}`} tabIndex={-1} onClick={() => onClose(i)}>
                   <X strokeWidth={2} aria-hidden />
@@ -87,7 +104,7 @@ export function DetailPanel({ tabs, active, labelOf, iconOf, result, children, o
           ) : null}
           <div className="min-w-0">
             <h2 data-testid="panel-title">{shown?.title ?? ''}</h2>
-            {shown?.subtitle ? <p>{shown.subtitle}</p> : null}
+            {shown?.subtitle ? <p>{localMoments(shown.subtitle)}</p> : null}
           </div>
         </div>
         {children}

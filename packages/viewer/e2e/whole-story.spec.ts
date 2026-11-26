@@ -60,8 +60,8 @@ test('the whole story in the UI: every plugin’s page, the deploy switch, a sit
   const main = page.getByRole('main')
   const panel = page.getByRole('complementary', { name: '详情' })
 
-  // Every plugin's page is in the navigation, the plugins' in configuration order, then the kernel's.
-  expect(await navTitles(page)).toEqual(['条目', '场景', '状况', '动态', '留存', '有版本的东西', '部署', '同步', '查找', '文件', '归档区', 'Agent', '配置'])
+  // Every plugin's page is in the navigation: the home page, the plugins' in configuration order, then the kernel's.
+  expect(await navTitles(page)).toEqual(['首页', '库', '活动', '统计', '场景', '状况', '留存', '有版本的东西', '部署', '同步', '查找', '文件', '归档区', 'Agent', '配置'])
 
   // The deploy page: the ten sites and their states.
   await nav.getByRole('button', { name: '部署' }).click()

@@ -1,18 +1,26 @@
 import AppKit
 import UserNotifications
 
-/// The menu bar item, the app's menus, and the current library with its server and watcher.
+/// The menu bar item with its panel, the app's menus, the first-launch window, and the current
+/// library with its server and watcher. The app keeps no state of a library: everything it does to
+/// one goes through the command line, and it only remembers which libraries this machine knows and
+/// its own settings.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate, UNUserNotificationCenterDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation, NSWindowDelegate, UNUserNotificationCenterDelegate {
   private let config = Config.load()
   private var prefs = Prefs()
   private var statusItem: NSStatusItem?
   private let window = MainWindow()
+  private let tray = TrayPanel()
+  private let welcome = WelcomeWindow()
+  private var settings: SettingsWindow?
   private var server: Server?
   private var watcher: Watcher?
-  private var recent: [String] = []
-  /// The last thing the app itself did, shown at the top of the menu: the system may refuse notifications.
-  private var news: String?
+  /// How many things wait for the owner in the current library: the dot on the icon.
+  private var waiting = 0
+  private var counting = false
+  private var countAgain = false
+  private var countTimer: Timer?
 
   private var current: URL? { prefs.current.map { URL(fileURLWithPath: $0, isDirectory: true) } }
 
@@ -20,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     Log.config = config
     Log.line("app: launched, home \(config.home.path), process age \(String(format: "%.0f", processAge() * 1000)) ms")
     prefs = Prefs.load(config)
+    makeSettings()
     if let dir = Config.argument("--library") { remember(URL(fileURLWithPath: (dir as NSString).expandingTildeInPath, isDirectory: true)) }
     NSApp.mainMenu = mainMenu()
     makeStatusItem()
@@ -29,11 +38,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
       let why = error.map { " (\($0.localizedDescription))" } ?? ""
       DispatchQueue.main.async { MainActor.assumeIsolated { Log.line("app: notifications \(granted ? "allowed" : "not allowed")\(why)") } }
     }
-    window.onFiles = { [weak self] urls in self?.bring(urls, from: "窗口") }
+    window.onFiles = { [weak self] urls in self?.bring(urls, into: self?.window.currentFolder, from: "窗口") }
+    window.onPageMessage = { [weak self] body in self?.pageSaid(body) }
+    tray.onMessage = { [weak self] body in self?.pageSaid(body) }
+    welcome.onChoose = { [weak self] in self?.chooseLibrary() }
+    welcome.onClose = { [weak self] in if self?.window.isOpen == false { NSApp.setActivationPolicy(.accessory) } }
+    countTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.countWaiting() } }
+    if Config.hooksName != nil { listenForTestCommands() }
+    guard config.complete else { return alert("这份 Pneuma Base 不完整", detail: "应用里缺少它自带的 Node 或命令行，什么都做不了。重新下载一份，或用 app/build.sh 重新构建。") }
+    if Config.translocated { warnTranslocated() }
+    Task { await installLauncher() }
     switchTo(current)
-    listenForTestCommands()
-    if CommandLine.arguments.contains("--open") { openWindow() }
+    if !hasLibrary { welcome.show() } else if CommandLine.arguments.contains("--open") { openWindow() }
   }
+
+  /// Points the launcher at this app's own Node and command line, at every launch: what connected
+  /// agents run names the launcher, so moving or updating the app keeps them working.
+  private func installLauncher() async {
+    let r = await runCli(["launcher", "install", "--json"], in: FileManager.default.homeDirectoryForCurrentUser, config: config)
+    let changed = (r.json?["data"] as? [String: Any])?["changed"] as? Bool
+    Log.line(changed.map { "launcher: \($0 ? "written" : "unchanged") \(config.launcher.path)" } ?? "launcher: not written: \(r.err.prefix(300))")
+  }
+
+  /// Opened where it was unpacked, a downloaded app runs from a temporary place that goes away when it
+  /// quits, and the launcher would point there.
+  private func warnTranslocated() {
+    Log.line("app: translocated, at \(Bundle.main.bundlePath)")
+    NSApp.activate()
+    let alert = NSAlert()
+    alert.messageText = "先把 Pneuma Base 拖进「应用程序」文件夹，再从那里打开"
+    alert.informativeText = "它现在是在解压出来的地方直接打开的，macOS 让它在一个临时的位置运行。接上的 agent 按一个固定的路径找它，应用退出后那个临时位置就没了，agent 会找不到它。"
+    alert.addButton(withTitle: "退出")
+    alert.addButton(withTitle: "先这样用")
+    if alert.runModal() == .alertFirstButtonReturn { NSApp.terminate(nil) }
+  }
+
+  private func makeSettings() {
+    let model = MachineSettings(launcher: config.launcher, ownerFiles: prefs.watchesOwnerFiles, link: prefs.pathLink)
+    model.onOwnerFiles = { [weak self] on in
+      guard let self else { return }
+      self.prefs.ownerFiles = on
+      self.prefs.save(self.config)
+      self.watcher?.recordsOwnerFiles = on
+      Log.line("app: owner files \(on ? "on" : "off")")
+    }
+    model.onLink = { [weak self] link in
+      guard let self else { return }
+      self.prefs.pathLink = link
+      self.prefs.save(self.config)
+    }
+    let window = SettingsWindow(model: model)
+    window.onClose = { [weak self] in
+      guard let self, !self.window.isOpen, !self.welcome.isOpen else { return }
+      NSApp.setActivationPolicy(.accessory)
+    }
+    settings = window
+  }
+
+  @objc func openSettings() { settings?.show() }
 
   func applicationWillTerminate(_ notification: Notification) {
     watcher?.stop()
@@ -47,6 +109,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
   }
 
   // MARK: Current library
+
+  private var hasLibrary: Bool { current.map(isLibrary) ?? false }
 
   private func remember(_ dir: URL) {
     let path = dir.standardizedFileURL.path
@@ -62,21 +126,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     server?.stop()
     watcher = nil
     server = nil
-    recent = []
-    guard let library, isLibrary(library) else { return }
+    setWaiting(0)
+    guard let library, isLibrary(library) else { return tray.forget() }
     let server = Server(library: library, config: config)
-    server.onAddress = { [weak self] url in self?.window.serverReady(url) }
+    server.onAddress = { [weak self] url in
+      self?.window.serverReady(url)
+      self?.tray.serverReady(url)
+    }
     server.start()
     self.server = server
-    let watcher = Watcher(library: library, config: config)
-    watcher.onRecorded = { [weak self] registered, claimed in self?.recorded(registered, claimed) }
+    let watcher = Watcher(library: library, config: config, recordsOwnerFiles: prefs.watchesOwnerFiles)
+    watcher.onRecorded = { [weak self] registered, seen in self?.recorded(registered, seen) }
+    watcher.onActivity = { [weak self] in self?.countWaiting() }
     watcher.start()
     self.watcher = watcher
-    refreshRecent()
+    countWaiting()
   }
 
   @objc func openWindow() {
-    guard let library = current, server != nil else { return chooseLibrary() }
+    guard let library = current, server != nil else { return hasLibrary ? chooseLibrary() : welcome.show() }
     window.open(title: library.lastPathComponent, address: server?.address)
   }
 
@@ -86,20 +154,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     panel.canChooseDirectories = true
     panel.canChooseFiles = false
     panel.canCreateDirectories = true
-    panel.prompt = "打开"
+    panel.prompt = "就用这个文件夹"
     panel.message = "选一个库，或一个要建成库的文件夹。"
     guard panel.runModal() == .OK, let dir = panel.url else { return }
     Task { await open(dir) }
   }
 
+  /// A folder the owner chose: made a library if it is not one, then the main window on its home page.
   private func open(_ dir: URL) async {
     if !isLibrary(dir) {
-      let r = await runCli(["init", dir.path, "--json"], in: dir, config: config)
+      let r = await runCli(["init", dir.path, "--json"], in: dir.deletingLastPathComponent(), config: config)
       guard r.json?["outcome"] as? String == "done" else { return alert("没能把这个文件夹建成库", detail: r.err) }
+      Log.line("app: made \(dir.lastPathComponent) a library")
     }
     if window.isOpen, current != dir { window.close() }
+    if current != dir { window.forgetRoute() }
     remember(dir)
     switchTo(dir)
+    welcome.close()
     openWindow()
   }
 
@@ -110,63 +182,99 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
   // MARK: Bringing files in
 
-  /// Files dropped on the window or the menu bar item: placed in `inbox/` as brought by the owner,
-  /// with the download address macOS kept, else the name of the folder they came from.
-  private func bring(_ urls: [URL], from place: String) {
-    guard let library = current, let watcher else { return }
-    watcher.hold()
+  /// Files dropped on the window or the menu bar item, or chosen in the page: put through the command
+  /// line as brought by the owner, into `folder` (the folder the page shows, else inbox/), with the
+  /// download address macOS kept, else the name of the folder they came from. The put marks its
+  /// paths while it works, so the watcher leaves them alone.
+  private func bring(_ urls: [URL], into folder: String?, from place: String) {
+    guard let library = current, hasLibrary else { return }
+    let folder = folder ?? "inbox"
     Task {
       var placed: [String] = []
       for url in urls {
-        let r = await runCli(bringArgs(url, into: library), in: library, config: config)
+        let r = await runCli(bringArgs(url, to: freePath(for: url.lastPathComponent, in: folder, of: library), in: library), in: library, config: config)
         if r.json?["outcome"] as? String == "accepted", let path = r.json?["path"] as? String { placed.append(path) } else { Log.line("drop: \(url.lastPathComponent) not placed: \(r.err.prefix(200)) \(String(decoding: r.out.prefix(300), as: UTF8.self))") }
       }
-      watcher.release()
       Log.line("drop (\(place)): placed \(placed)")
-      if place == "窗口" { window.showInbox() } else if !placed.isEmpty { notify("已放进 inbox/：\(placed.count) 样东西") }
-      refreshRecent()
+      guard !placed.isEmpty else { return }
+      let text = placed.count == 1 ? "已放进 \(placed[0])，记成你带进来的" : "已放进 \(folder)/：\(placed.count) 样东西，记成你带进来的"
+      if window.isOpen { window.notice(tone: "good", text: text) } else { notify(text) }
+      countWaiting()
     }
   }
 
-  private func bringArgs(_ url: URL, into library: URL) -> [String] {
+  private func bringArgs(_ url: URL, to path: String, in library: URL) -> [String] {
     let source = downloadAddress(of: url) ?? url.deletingLastPathComponent().lastPathComponent
-    return ["--library", library.path, "--session", config.session, "put", url.path, "--to", inboxPath(for: url.lastPathComponent, in: library),
+    return ["--library", library.path, "--session", config.session, "put", url.path, "--to", path,
             "--brought", "--by", "owner", "--source", source, "--note", "拖进来的", "--json"]
   }
 
-  /// `inbox/<name>`, or `inbox/<name> 2.<ext>` and so on when that is taken, as Finder names copies.
-  private func inboxPath(for name: String, in library: URL) -> String {
-    let inbox = library.appendingPathComponent("inbox")
+  /// `<folder>/<name>`, or `<folder>/<name> 2.<ext>` and so on when that is taken, as Finder names copies.
+  private func freePath(for name: String, in folder: String, of library: URL) -> String {
+    let dir = library.appendingPathComponent(folder)
     let base = (name as NSString).deletingPathExtension, ext = (name as NSString).pathExtension
     var candidate = name, n = 2
-    while FileManager.default.fileExists(atPath: inbox.appendingPathComponent(candidate).path) {
+    while FileManager.default.fileExists(atPath: dir.appendingPathComponent(candidate).path) {
       candidate = ext.isEmpty ? "\(base) \(n)" : "\(base) \(n).\(ext)"
       n += 1
     }
-    return "inbox/\(candidate)"
+    return "\(folder)/\(candidate)"
+  }
+
+  /// Files or folders the owner picks after the page's 选择….
+  private func chooseFiles(into folder: String) {
+    guard hasLibrary else { return }
+    NSApp.activate()
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = true
+    panel.canChooseDirectories = true
+    panel.allowsMultipleSelection = true
+    panel.prompt = "放进库里"
+    panel.message = "选的文件和文件夹会放进 \(folder)/，记成你带进来的。"
+    guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+    bring(panel.urls, into: folder, from: "选择")
+  }
+
+  // MARK: The page's messages
+
+  /// What the page asks of the app, from the window or the menu bar panel.
+  private func pageSaid(_ body: [String: Any]) {
+    switch body["type"] as? String {
+    case "choose": chooseFiles(into: (body["to"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "inbox")
+    case "open":
+      openWindow()
+      if let link = body["link"] as? [String: Any] { window.follow(link: link) }
+    case "libraries": showMenu()
+    case "quit": NSApp.terminate(nil)
+    case "waiting": if let count = body["count"] as? Int { setWaiting(count) }
+    default: break
+    }
   }
 
   // MARK: Menu bar item
 
   private func makeStatusItem() {
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-    item.button?.image = NSImage(systemSymbolName: "archivebox", accessibilityDescription: "Pneuma Base")
-    let menu = NSMenu()
-    menu.delegate = self
-    item.menu = menu
+    item.button?.image = Self.icon(dot: false)
+    item.button?.target = self
+    item.button?.action = #selector(statusClicked)
+    item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
     item.button?.window?.registerForDraggedTypes([.fileURL])
     item.button?.window?.delegate = self
     statusItem = item
   }
 
-  func menuNeedsUpdate(_ menu: NSMenu) {
-    guard menu === statusItem?.menu else { return }
-    fillStatusMenu(menu)
-    refreshRecent()
+  /// A click opens the panel; a right click or a Control-click, the menu of libraries.
+  @objc private func statusClicked() {
+    let event = NSApp.currentEvent
+    if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true { return showMenu() }
+    guard hasLibrary, let button = statusItem?.button else { return welcome.show() }
+    tray.toggle(at: button)
   }
 
-  private func fillStatusMenu(_ menu: NSMenu) {
-    menu.removeAllItems()
+  private func showMenu() {
+    guard let button = statusItem?.button else { return }
+    let menu = NSMenu()
     for path in prefs.libraries {
       let item = NSMenuItem(title: (path as NSString).lastPathComponent, action: #selector(selectLibrary(_:)), keyEquivalent: "")
       item.target = self
@@ -176,65 +284,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
       menu.addItem(item)
     }
     if !prefs.libraries.isEmpty { menu.addItem(.separator()) }
-    menu.addItem(withTitle: "打开窗口", action: #selector(openWindow), keyEquivalent: "").target = self
     menu.addItem(withTitle: "新建或打开一个库…", action: #selector(chooseLibrary), keyEquivalent: "").target = self
-    if current != nil {
-      menu.addItem(.separator())
-      menu.addItem(NSMenuItem.sectionHeader(title: "最近"))
-      if let news {
-        let item = NSMenuItem(title: news, action: #selector(openWindow), keyEquivalent: "")
-        item.target = self
-        menu.addItem(item)
-      }
-      if recent.isEmpty {
-        let none = NSMenuItem(title: "这个库里还没有别人做过的事", action: nil, keyEquivalent: "")
-        none.isEnabled = false
-        menu.addItem(none)
-      }
-      for line in recent {
-        let item = NSMenuItem(title: line, action: #selector(openWindow), keyEquivalent: "")
-        item.target = self
-        menu.addItem(item)
-      }
-    }
+    menu.addItem(withTitle: "打开窗口", action: #selector(openWindow), keyEquivalent: "").target = self
+    menu.addItem(.separator())
+    menu.addItem(ownerFilesItem())
+    menu.addItem(withTitle: "设置…", action: #selector(openSettings), keyEquivalent: "").target = self
     menu.addItem(.separator())
     menu.addItem(withTitle: "退出 Pneuma Base", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+    // Shown the way a status item shows its own menu, so the system places it.
+    statusItem?.menu = menu
+    button.performClick(nil)
+    statusItem?.menu = nil
   }
 
-  /// The last few things that happened in the library: `check --since` for the last 30 days, which
-  /// lists what everyone but the caller, the owner, did.
-  private func refreshRecent() {
-    guard let library = current else { return }
-    let since = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-30 * 86400))
+  /// The icon, with a dot when something waits for the owner. A template, so it follows the menu bar.
+  private static func icon(dot: Bool) -> NSImage? {
+    guard let symbol = NSImage(systemSymbolName: "archivebox", accessibilityDescription: dot ? "Pneuma Base：有事等你" : "Pneuma Base") else { return nil }
+    guard dot else { return symbol }
+    let size = NSSize(width: 20, height: 18)
+    let image = NSImage(size: size, flipped: false) { rect in
+      let s = symbol.size
+      symbol.draw(in: NSRect(x: (rect.width - s.width) / 2 - 1, y: (rect.height - s.height) / 2, width: s.width, height: s.height))
+      let spot = NSRect(x: rect.width - 7, y: rect.height - 7, width: 6, height: 6)
+      NSGraphicsContext.current?.compositingOperation = .destinationOut
+      NSBezierPath(ovalIn: spot.insetBy(dx: -1.5, dy: -1.5)).fill()
+      NSGraphicsContext.current?.compositingOperation = .sourceOver
+      NSColor.black.setFill()
+      NSBezierPath(ovalIn: spot).fill()
+      return true
+    }
+    image.isTemplate = true
+    image.accessibilityDescription = symbol.accessibilityDescription
+    return image
+  }
+
+  private func setWaiting(_ count: Int) {
+    guard count != waiting else { return }
+    waiting = count
+    statusItem?.button?.image = Self.icon(dot: count > 0)
+    statusItem?.button?.toolTip = count > 0 ? "\(count) 件事等你决定" : nil
+    Log.line("dot: \(count) waiting")
+  }
+
+  /// Counts what waits for the owner: the asks on the home page, as `show home` gives them. Run when
+  /// the library changed, after a drop, and every minute; one run at a time.
+  private func countWaiting() {
+    guard let library = current, hasLibrary else { return }
+    if counting { countAgain = true; return }
+    counting = true
     Task {
-      let r = await runCli(["--library", library.path, "check", "--since", since, "--json"], in: library, config: config)
-      guard current == library else { return }
-      let sections = r.json?["sections"] as? [[String: Any]] ?? []
-      let facts = sections.filter { $0["title"] as? String == "自上次以来" }
-        .flatMap { (($0["data"] as? [String: Any])?["scenes"] as? [[String: Any]]) ?? [] }
-        .flatMap { ($0["facts"] as? [[String: Any]]) ?? [] }
-        .sorted { ($0["at"] as? String ?? "") > ($1["at"] as? String ?? "") }
-      recent = facts.prefix(5).map { f in
-        let when = (f["at"] as? String).flatMap { ISO8601DateFormatter.withFraction.date(from: $0) }
-        let ago = when.map { RelativeDateTimeFormatter.chinese.localizedString(for: $0, relativeTo: Date()) } ?? ""
-        let text = f["text"] as? String ?? ""
-        return "\(f["actor"] as? String ?? "")：\(text.count > 48 ? text.prefix(47) + "…" : text)  ·  \(ago)"
+      let r = await runCli(["--library", library.path, "show", "home", "--json"], in: library, config: config)
+      counting = false
+      if current == library, r.json?["outcome"] as? String == "shown" { setWaiting(Self.asks(in: r.json?["blocks"] as? [[String: Any]] ?? [])) }
+      if countAgain {
+        countAgain = false
+        countWaiting()
       }
-      if statusMenuOpen, let menu = statusItem?.menu { fillStatusMenu(menu) }
     }
   }
 
-  private var statusMenuOpen = false
-  func menuWillOpen(_ menu: NSMenu) {
-    guard menu === statusItem?.menu else { return }
-    statusMenuOpen = true
-    statusItem?.button?.image = NSImage(systemSymbolName: "archivebox", accessibilityDescription: "Pneuma Base")
+  private static func asks(in blocks: [[String: Any]]) -> Int {
+    blocks.reduce(0) { n, block in
+      let inner = (block["blocks"] as? [[String: Any]] ?? []) + (block["steps"] as? [[String: Any]] ?? []).flatMap { $0["blocks"] as? [[String: Any]] ?? [] }
+      return n + (block["kind"] as? String == "asks" ? (block["asks"] as? [Any])?.count ?? 0 : 0) + asks(in: inner)
+    }
   }
-  func menuDidClose(_ menu: NSMenu) { if menu === statusItem?.menu { statusMenuOpen = false } }
 
   // Files dragged onto the menu bar item reach its window, whose delegate this is.
   func draggingEntered(_ info: NSDraggingInfo) -> NSDragOperation {
-    guard current != nil, !droppedFiles(info).isEmpty else { return [] }
+    guard hasLibrary, !droppedFiles(info).isEmpty else { return [] }
     statusItem?.button?.highlight(true)
     return .copy
   }
@@ -245,7 +363,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     statusItem?.button?.highlight(false)
     let urls = droppedFiles(info)
     guard !urls.isEmpty else { return false }
-    bring(urls, from: "菜单栏")
+    bring(urls, into: window.currentFolder, from: "菜单栏")
     return true
   }
 
@@ -253,22 +371,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     info.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
   }
 
+  // MARK: Machine settings
+
+  private func ownerFilesItem() -> NSMenuItem {
+    let item = NSMenuItem(title: "直接放进来的文件算主人的", action: #selector(toggleOwnerFiles), keyEquivalent: "")
+    item.target = self
+    item.toolTip = "开着时，在访达里拷进库、或直接改了的文件，会记成你带进来的、你改的（看到的，不是谁说的）。"
+    return item
+  }
+
+  @objc private func toggleOwnerFiles() { settings?.model.ownerFiles.toggle() }
+
+  func validateMenuItem(_ item: NSMenuItem) -> Bool {
+    if item.action == #selector(toggleOwnerFiles) { item.state = prefs.watchesOwnerFiles ? .on : .off }
+    return true
+  }
+
   // MARK: Notifications
 
-  private func recorded(_ registered: [String], _ claimed: [String]) {
+  /// What the watcher recorded of the owner's own doing: said in the window if it is open, else as a notification.
+  private func recorded(_ registered: [String], _ seen: [String]) {
     var parts: [String] = []
-    if !registered.isEmpty { parts.append("已登记 \(registered.count) 个文件") }
-    if !claimed.isEmpty { parts.append("记下 \(claimed.count) 处你直接做的改动") }
-    if !parts.isEmpty { notify(parts.joined(separator: "，")) }
-    refreshRecent()
+    if !registered.isEmpty { parts.append("已登记 \(registered.count) 个直接放进来的文件，记成你带进来的") }
+    if !seen.isEmpty { parts.append("记下 \(seen.count) 处你直接做的改动") }
+    guard !parts.isEmpty else { return }
+    if window.isOpen { window.notice(tone: "good", text: parts.joined(separator: "；")) } else { notify(parts.joined(separator: "；")) }
   }
 
   private func notify(_ body: String) {
     let content = UNMutableNotificationContent()
     content.title = current?.lastPathComponent ?? "Pneuma Base"
     content.body = body
-    news = "刚才：\(body)  ·  \(Date().formatted(date: .omitted, time: .shortened))"
-    statusItem?.button?.image = NSImage(systemSymbolName: "archivebox.fill", accessibilityDescription: "Pneuma Base：有新消息")
     UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)) { error in
       if let error { DispatchQueue.main.async { MainActor.assumeIsolated { Log.line("notify: \(error.localizedDescription)") } } }
     }
@@ -310,6 +443,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
     submenu("Pneuma Base", [
       item("关于 Pneuma Base", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+      .separator(),
+      item("设置…", #selector(openSettings), ",", target: self),
+      ownerFilesItem(),
       .separator(),
       item("隐藏 Pneuma Base", #selector(NSApplication.hide(_:)), "h"),
       item("隐藏其他", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
@@ -363,28 +499,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
   // MARK: Test hooks
 
-  /// Lets the measurements and checks drive the app without a person: a distributed notification
-  /// named `dev.pneumabase.spike` with object `open`, `close`, `pids`, `park` (moves the window almost
-  /// off the screen, still visible to WebKit), `dark`, `light` or `system` (the app's appearance, as a
-  /// change of the system's would set it), `hit:<x>,<y>`, `find:<text>`, or `drop:<path>`, which goes
-  /// through the same code as a file dropped on the menu bar item.
+  /// Lets the measurements and checks drive the app without a person, only when it was started with
+  /// `--hooks <name>`: a distributed notification named `Config.hooksName` with object `open`, `close`, `quit`, `pids`, `park` (moves the window
+  /// almost off the screen, still visible to WebKit), `dark`, `light` or `system` (the app's
+  /// appearance, as a change of the system's would set it), `hit:<x>,<y>`, `find:<text>`,
+  /// `library:<folder>` (as if chosen in the first-launch window or 新建或打开一个库…), `drop:<path>`
+  /// and `drop-window:<path>` (through the same code as a file dropped on the menu bar item or the
+  /// window), `route:<fragment>` (the page's address fragment), `tray` (a click on the icon), `text:<file>` and `text-tray:<file>` (the page's text),
+  /// `snap:<file>`, `snap-tray:<file>`, `snap-welcome:<file>` and `snap-settings:<file>` (a picture of it),
+  /// `settings` (the settings window), `path-link:<folder>` and `path-unlink` (as the 在终端里用
+  /// pneuma-base switch does), `text-settings:<file>` (the settings in words).
   private func listenForTestCommands() {
-    DistributedNotificationCenter.default().addObserver(forName: Notification.Name("dev.pneumabase.spike"), object: nil, queue: .main) { [weak self] note in
+    guard let name = Config.hooksName else { return }
+    DistributedNotificationCenter.default().addObserver(forName: Notification.Name(name), object: nil, queue: .main) { [weak self] note in
       let command = note.object as? String
       MainActor.assumeIsolated {
-        guard let self else { return }
-        switch command {
+        guard let self, let command else { return }
+        let (verb, rest) = command.firstIndex(of: ":").map { (String(command[..<$0]), String(command[command.index(after: $0)...])) } ?? (command, "")
+        let file = URL(fileURLWithPath: rest)
+        switch verb {
         case "open": self.openWindow()
         case "close": self.window.close()
-        case let c? where c.hasPrefix("drop:"): self.bring([URL(fileURLWithPath: String(c.dropFirst(5)))], from: "菜单栏")
+        case "quit": NSApp.terminate(nil)
+        case "library": Task { await self.open(URL(fileURLWithPath: rest, isDirectory: true)) }
+        case "drop": self.bring([file], into: self.window.currentFolder, from: "菜单栏")
+        case "drop-window": self.window.onFiles?([file])
+        case "route": self.window.routeForTest(rest)
+        case "tray": self.statusClicked()
+        case "text": self.window.textForTest(to: file)
+        case "text-tray": pageText(self.tray.webView, to: file)
+        case "snap": self.window.snapshotForTest(to: file)
+        case "snap-tray": snapshot(self.tray.webView, to: file, ground: .windowBackgroundColor)
+        case "snap-welcome": self.welcome.snapshotForTest(to: file)
+        case "settings": self.openSettings()
+        case "path-link": self.settings?.model.link(in: rest)
+        case "path-unlink": self.settings?.model.unlink()
+        case "text-settings": try? self.settings?.model.text.write(to: file, atomically: true, encoding: .utf8)
+        case "snap-settings": self.settings?.snapshotForTest(to: file)
         case "park": self.window.park()
-        case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
-        case "light": NSApp.appearance = NSAppearance(named: .aqua)
-        case "system": NSApp.appearance = nil
-        case let c? where c.hasPrefix("hit:"):
-          let xy = c.dropFirst(4).split(separator: ",").compactMap { Double($0) }
+        case "dark", "light", "system":
+          NSApp.appearance = verb == "system" ? nil : NSAppearance(named: verb == "dark" ? .darkAqua : .aqua)
+          self.tray.followAppearance()
+        case "hit":
+          let xy = rest.split(separator: ",").compactMap { Double($0) }
           if xy.count == 2 { self.window.hitForTest(x: xy[0], y: xy[1]) }
-        case let c? where c.hasPrefix("find:"): self.window.findForTest(String(c.dropFirst(5)))
+        case "find": self.window.findForTest(rest)
         case "pids": Log.line("pids: app \(getpid()) server \(self.server?.pid ?? 0) web \(self.window.webContentPid ?? 0)")
         default: break
         }
@@ -401,21 +560,4 @@ func processAge() -> TimeInterval {
   guard sysctl(&mib, 4, &info, &size, nil, 0) == 0 else { return 0 }
   let start = info.kp_proc.p_starttime
   return Date().timeIntervalSince1970 - (Double(start.tv_sec) + Double(start.tv_usec) / 1_000_000)
-}
-
-extension ISO8601DateFormatter {
-  @MainActor static let withFraction: ISO8601DateFormatter = {
-    let f = ISO8601DateFormatter()
-    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return f
-  }()
-}
-
-extension RelativeDateTimeFormatter {
-  @MainActor static let chinese: RelativeDateTimeFormatter = {
-    let f = RelativeDateTimeFormatter()
-    f.locale = Locale(identifier: "zh_CN")
-    f.unitsStyle = .short
-    return f
-  }()
 }

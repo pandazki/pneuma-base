@@ -20,6 +20,7 @@ import type {
   PluginName,
   PluginNoteAnswer,
   PluginProblem,
+  Requested,
   Session,
   Verb,
 } from '@pneuma-base/sdk'
@@ -82,16 +83,18 @@ export async function performVerb<V extends Verb>(verb: V, request: RequestOf<V>
 /**
  * Runs one owner-face operation and ends it at the single exit. A command that changes the
  * configuration hands back the reopened library, so the event reaches the plugins installed after it;
- * a kernel command that called plugins' hooks hands back their problems.
+ * a kernel command that called plugins' hooks hands back their problems. An operation that runs an
+ * approved request carries it on its event.
  */
 export async function performOwner(
   ctx: Context,
   command: string,
   args: OwnerArgs,
-  how: { destructive: boolean; readOnly: boolean; setup?: boolean },
+  how: { destructive: boolean; readOnly: boolean; setup?: boolean; request?: Requested },
   body: () => Promise<{ answer: OwnerAnswer; library?: Library; problems?: PluginProblem[] }>,
 ): Promise<OwnerResult> {
-  return finish(ctx, (result) => ({ face: 'owner', command, args, destructive: how.destructive, readOnly: how.readOnly, setup: how.setup ?? false, result }), async () => {
+  const marks = { destructive: how.destructive, readOnly: how.readOnly, setup: how.setup ?? false, ...(how.request ? { request: how.request } : {}) }
+  return finish(ctx, (result) => ({ face: 'owner', command, args, ...marks, result }), async () => {
     const { answer, library, problems } = await body()
     return { result: { ...answer, problems: problems ?? [] }, ...(library ? { library } : {}) }
   })
@@ -120,7 +123,9 @@ async function finish<R extends { problems: PluginProblem[] }>(
   for (const plugin of ctx.library.unavailable) {
     missing.push({ plugin, message: (await whyNotLoaded(ctx.home, plugin)) ?? 'installed in this library but not known to this pneuma-base' })
   }
-  const answered = { ...done.result, problems: [...missing, ...ctx.library.clashes, ...done.result.problems] }
+  // A command that ran another, as approving a request does, already carries that one's problems.
+  const problems = [...missing, ...ctx.library.clashes, ...done.result.problems]
+  const answered = { ...done.result, problems: problems.filter((p, i) => problems.findIndex((q) => q.plugin === p.plugin && q.message === p.message) === i) }
   const observed = await eachPlugin(ctx, (plugin, pctx) => plugin.observe?.(toEvent(answered), pctx))
   return { ...answered, problems: [...answered.problems, ...observed.problems] }
 }

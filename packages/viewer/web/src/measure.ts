@@ -56,6 +56,7 @@ export function fitMiddle(text: string, font: string, width: number): string {
 }
 
 const ICON = 16
+const ACTOR = 18 // who did it, as a mark before the text
 const GAP = 8
 const TAG_PADDING = 12 // a tag's 6px each side
 const COPY = 20 // the copy button
@@ -64,9 +65,10 @@ const FIRST_PADDING = 28 // the first cell's 16px on the left
 const BUTTON_PADDING = 16 // a small button's 8px each side
 const SLACK = 4 // rounding and font fallback
 
-/** What a cell draws besides its text: its icon, its tag and its copy button, with their gaps. */
+/** What a cell draws besides its text: who did it, its icon, its tag and its copy button, with their gaps. */
 function extras(cell: Cell, text: boolean): number {
-  let w = cell.icon ? ICON + (text ? GAP : 0) : 0
+  let w = cell.actor ? ACTOR + (text || cell.icon ? GAP : 0) : 0
+  if (cell.icon) w += ICON + (text ? GAP : 0)
   if (cell.copy) w += (text || w > 0 ? GAP : 0) + COPY
   if (cell.tag) w += (text || w > 0 ? GAP : 0) + textWidth(cell.tag.text, pageFonts().small) + TAG_PADDING
   return w
@@ -102,7 +104,7 @@ function momentWidth(text: string, font: string, seen: Map<string, number>): num
 }
 
 function cellWidth(cell: Cell, first: boolean, moments: Map<string, number>): number {
-  const text = cell.at ? shortTime(cell.at) : cell.text
+  const text = cell.at ? shortTime(cell.at) : cell.text === '' && cell.actor ? cell.actor.name : cell.text
   const font = cellFont(cell, first)
   const w = text === '' ? 0 : cell.at ? momentWidth(text, font, moments) : textWidth(text, font)
   return w + extras(cell, text !== '')
@@ -114,6 +116,8 @@ export type Column = { natural: number; give: Give; optional: boolean }
 
 /** The narrowest a shrinking column gets: a path keeps more, as it loses its meaning faster when cut. */
 const MIN: Record<Exclude<Give, 'fixed'>, number> = { text: 120, mono: 180 }
+/** Narrower still, only so the table never scrolls sideways: a few characters and the … stay. */
+const FLOOR: Record<Exclude<Give, 'fixed'>, number> = { text: 56, mono: 72 }
 
 /** Each column's natural width and how it may give, the actions column last when there is one. */
 export function naturalColumns(block: Table, withActions: boolean): Column[] {
@@ -150,15 +154,17 @@ export function fitColumns(columns: Column[], available: number): (number | null
 
 /**
  * The widths of columns all shown. Too wide: prose shrinks toward its minimum, then paths, each in
- * proportion to what it can give. Room to spare goes to the widest column of prose or paths, as a
- * name column takes it in a file manager, so the table fills its card.
+ * proportion to what it can give; still too wide, both shrink on to their floors in the same order.
+ * Room to spare goes to the widest column of prose or paths, as a name column takes it in a file
+ * manager, so the table fills its card.
  */
 function fit(columns: Column[], available: number): number[] {
   const widths = columns.map((c) => c.natural)
   let excess = widths.reduce((a, b) => a + b, 0) - available
-  for (const give of ['text', 'mono'] as const) {
+  const steps = [MIN, FLOOR].flatMap((least) => (['text', 'mono'] as const).map((give) => [give, least[give]] as const))
+  for (const [give, least] of steps) {
     if (excess <= 0) break
-    const room = columns.map((c, i) => (c.give === give ? Math.max(0, (widths[i] ?? 0) - MIN[give]) : 0))
+    const room = columns.map((c, i) => (c.give === give ? Math.max(0, (widths[i] ?? 0) - least) : 0))
     const total = room.reduce((a, b) => a + b, 0)
     if (total === 0) continue
     const take = Math.min(excess, total)

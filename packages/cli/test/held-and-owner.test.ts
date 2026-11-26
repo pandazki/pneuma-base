@@ -141,7 +141,8 @@ describe('owner operations (C7)', () => {
     const ops = since.scenes.flatMap((s: any) => s.facts).filter((f: any) => f.kind === 'owner.op').map((f: any) => f.text)
     expect(ops).toHaveLength(2)
     for (const [i, command] of ['plugin add', 'plugin remove'].entries()) expect(ops[i]).toContain(command)
-    const text = ok(agent(['check'], undefined, 's3')).stdout
+    // That check was a look; the text asks from the same moment the look did.
+    const text = ok(agent(['check', '--since', since.since], undefined, 's3')).stdout
     expect(text).toMatch(/^场景 adhoc-owner-\d{4}-\d\d-\d\d · 主人/m)
     expect(text).toContain('主人面的操作 plugin remove')
     expect(text).not.toContain('grant')

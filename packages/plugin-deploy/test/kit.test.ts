@@ -358,6 +358,38 @@ describe('the plugin the kit makes', () => {
     expect(await l.cmd('fake target set', [], {})).toMatchObject({ outcome: 'refused', reason: 'usage', text: '要写 --where <名字>。\n用法：fake target set [--kind fake] --where <名字>' })
   })
 
+  it('asks the owner about each declared thing whose switch was never set, 上线 suggested; either answer settles it, and an archived thing is not asked about', async () => {
+    const { adapter } = fakeTarget()
+    const l = await library(deployPlugin('fake', adapter))
+    await l.put(P, 'v1')
+    await l.put(Q, 'v1')
+    await l.say(P)
+    await l.say(Q)
+    const asks = async () => (await l.check()).asks
+    expect(await asks()).toEqual([
+      {
+        key: expect.stringMatching(/^fake:/),
+        by: 'fake',
+        text: `claude-code 说 ${P} 可以部署，还没上线。要上线吗？`,
+        about: P,
+        actions: [
+          expect.objectContaining({ label: '上线', call: { face: 'owner', command: 'fake on', args: { positional: [P], flags: {} } } }),
+          expect.objectContaining({ label: '不上线', call: { face: 'owner', command: 'fake off', args: { positional: [P], flags: {} } } }),
+        ],
+        suggested: 0,
+      },
+      expect.objectContaining({ about: Q }),
+    ])
+    // Keeping it off is an answer too, though the switch was off already.
+    await l.cmd('fake off', [P])
+    expect((await asks()).map((a) => a.about)).toEqual([Q])
+    await l.archive(Q)
+    expect(await asks()).toEqual([])
+    await l.archive(`_archive/${Q}`, 'unarchive')
+    await l.cmd('fake on', [Q])
+    expect(await asks()).toEqual([])
+  })
+
   it('tells an agent whose put the target refused that the put is in and going online waits for the owner, as a problem beside the answer', async () => {
     const { fake, adapter } = fakeTarget()
     const l = await library(deployPlugin('fake', adapter))

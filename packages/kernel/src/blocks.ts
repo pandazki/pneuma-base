@@ -7,7 +7,7 @@ import { isAbsolute } from 'node:path'
 import { parseCall } from './call.js'
 import { ownerFace } from './owner.js'
 import { checkArgs } from './params.js'
-import type { Action, Block, Library, OwnerParams, Plugin, PluginProblem } from '@pneuma-base/sdk'
+import { CHART_SERIES_MAX, type Action, type Block, type Library, type Link, type OwnerParams, type Plugin, type PluginProblem, type ViewAnswer, type ViewDecl } from '@pneuma-base/sdk'
 
 /** What is wrong with `value` at `at`, or null when it fits. */
 type Check = (value: unknown, at: string) => string | null
@@ -94,7 +94,10 @@ const entry: Check = (v, at) => {
 const tone = oneOf('neutral', 'good', 'warn', 'bad', 'info')
 const tag = shape({ text: string, tone })
 const link = shape({ view: string, params: recordOf(string), target: oneOf('main', 'panel') })
-const cell = shape({ text: string, 'mono?': boolean, 'muted?': boolean, 'tag?': tag, 'link?': link, 'at?': string, 'icon?': string, 'href?': string, 'copy?': boolean })
+const actorMark = shape({ kind: oneOf('agent', 'owner'), name: string, 'grant?': string })
+/** Who, as a block says it: a name, or an actor whose mark the page draws. */
+const who: Check = (v, at) => (typeof v === 'string' ? null : actorMark(v, at))
+const cell = shape({ text: string, 'mono?': boolean, 'muted?': boolean, 'tag?': tag, 'link?': link, 'at?': string, 'icon?': string, 'href?': string, 'copy?': boolean, 'actor?': actorMark })
 
 const call: Check = (v, at) => {
   const parsed = parseCall(v)
@@ -114,6 +117,39 @@ const input = shape({
 const action = shape({ label: string, tone: oneOf('default', 'danger'), confirm: nullable(string), inputs: listOf(input), call })
 const actions = listOf(action)
 
+/** Both checks, the first fault first. */
+const both =
+  (a: Check, b: Check): Check =>
+  (v, at) =>
+    a(v, at) ?? b(v, at)
+
+const feedRow = both(
+  shape({ key: string, at: string, actor: who, text: string, meta: listOf(cell), 'whose?': oneOf('agent', 'owner', 'approved', 'observed'), 'action?': action, 'settled?': string, link: nullable(link) }),
+  (v, at) => ((v as Raw).action !== undefined && (v as Raw).settled !== undefined ? `${at} 不能同时有 action 和 settled` : null),
+)
+const feedGroup = shape({ title: string, count: nullable(number), 'link?': link, rows: listOf(feedRow) })
+const treeNode: Check = (v, at) => shape({ value: string, label: string, count: nullable(number), children: listOf(treeNode) })(v, at)
+const ask = both(
+  shape({ key: string, by: who, text: string, 'command?': string, about: nullable(string), actions, 'suggested?': number }),
+  (v, at) => {
+    const { suggested, actions: list } = v as { suggested?: number; actions: unknown[] }
+    return suggested === undefined || (Number.isInteger(suggested) && suggested >= 0 && suggested < list.length) ? null : `${at}.suggested 应是 actions 里的一个位置`
+  },
+)
+
+/** A chart: one to `CHART_SERIES_MAX` series, each with a value for every x label; a stacked one has no negative value. */
+const chart = both(
+  shape({ form: oneOf('bars', 'stacked', 'line'), text: string, unit: string, x: listOf(string), series: listOf(shape({ label: string, values: listOf(number) })) }),
+  (v, at) => {
+    const { form, x, series } = v as { form: string; x: string[]; series: { values: number[] }[] }
+    if (series.length === 0 || series.length > CHART_SERIES_MAX) return `${at}.series 应有 1 到 ${CHART_SERIES_MAX} 个`
+    const uneven = series.findIndex((s) => s.values.length !== x.length)
+    if (uneven >= 0) return `${at}.series[${uneven}].values 应和 x 一样多，${x.length} 个`
+    const negative = form === 'stacked' ? series.findIndex((s) => s.values.some((n) => n < 0)) : -1
+    return negative >= 0 ? `${at}.series[${negative}].values 叠起来的柱不能是负数` : null
+  },
+)
+
 /** The fields each kind of block requires; a section's own blocks are checked one by one. */
 const KINDS: Record<Block['kind'], Check> = {
   section: shape({ title: string, note: nullable(string), count: nullable(number), blocks: listOf(anything), actions, 'collapse?': oneOf('open', 'closed') }),
@@ -131,7 +167,17 @@ const KINDS: Record<Block['kind'], Check> = {
   empty: shape({ title: string, hint: nullable(string) }),
   embed: shape({ url: httpUrl, title: string, height: number }),
   custom: shape({ entry, height: number, text: string, 'data?': anything, actions: recordOf(action) }),
+  feed: shape({ groups: listOf(feedGroup), empty: string }),
+  stats: shape({ stats: listOf(shape({ label: string, value: string, note: nullable(string) })) }),
+  tree: shape({ param: string, selected: string, nodes: listOf(treeNode) }),
+  asks: shape({ asks: listOf(ask), empty: string }),
+  steps: shape({ steps: listOf(shape({ key: string, title: string, done: boolean, summary: nullable(string), blocks: listOf(anything) })) }),
+  drop: shape({ to: string, command: string }),
+  chart,
 }
+
+/** An ask a plugin's `onAsks` answered, its `by` not yet stamped: what is wrong with it, or null. */
+export const askFault = (value: unknown, at: string): string | null => ask(isObject(value) ? { ...value, by: '' } : value, at)
 
 /** What a page's buttons may call: the owner commands the library runs, with their `params`, and the kinds of 「说」 its plugins hear. */
 export type Callable = { commands: ReadonlyMap<string, OwnerParams>; heard: ReadonlySet<string> }
@@ -185,6 +231,10 @@ function ownActions(block: Block): Action[] {
       return block.entries.flatMap((e) => e.actions ?? [])
     case 'custom':
       return Object.values(block.actions)
+    case 'feed':
+      return block.groups.flatMap((g) => g.rows.flatMap((r) => (r.action ? [r.action] : [])))
+    case 'asks':
+      return block.asks.flatMap((a) => a.actions)
     default:
       return []
   }
@@ -221,6 +271,14 @@ export function checkBlocks(blocks: unknown[], plugin: Plugin, callable: Callabl
     }
     const block = value as Block
     if (block.kind === 'custom') return { ...block, plugin: plugin.name }
+    if (block.kind === 'steps') {
+      const steps = block.steps.map((step, j) => {
+        const inner = checkBlocks(step.blocks, plugin, callable, `${where}.steps[${j}].blocks`)
+        problems.push(...inner.problems)
+        return { ...step, blocks: inner.blocks }
+      })
+      return { ...block, steps }
+    }
     if (block.kind !== 'section') return block
     const inner = checkBlocks(block.blocks, plugin, callable, `${where}.blocks`)
     problems.push(...inner.problems)
@@ -229,8 +287,31 @@ export function checkBlocks(blocks: unknown[], plugin: Plugin, callable: Callabl
   return { blocks: checked, problems }
 }
 
+const answeredFilter = shape({ name: string, options: listOf(shape({ value: string, label: string, 'count?': number })) })
+
+/** A view's `filters`: the options of filters it declares; one that names no declared filter, or is of the wrong shape, is dropped as a problem. */
+export function checkFilters(filters: unknown, decl: ViewDecl, plugin: Plugin): { filters?: NonNullable<ViewAnswer['filters']>; problems: PluginProblem[] } {
+  if (filters === undefined) return { problems: [] }
+  if (!Array.isArray(filters)) return { problems: [{ plugin: plugin.name, message: 'filters 应是列表' }] }
+  const kept: NonNullable<ViewAnswer['filters']> = []
+  const problems: PluginProblem[] = []
+  for (const [i, f] of filters.entries()) {
+    const wrong = answeredFilter(f, `filters[${i}]`) ?? (decl.filters.some((d) => d.name === (f as { name: string }).name) ? null : `filters[${i}] 说的筛选 ${(f as { name: string }).name} 视图 ${decl.id} 没有声明`)
+    if (wrong === null) kept.push(f as NonNullable<ViewAnswer['filters']>[number])
+    else problems.push({ plugin: plugin.name, message: wrong })
+  }
+  return { filters: kept, problems }
+}
+
 /** The shortest time, in seconds, after which a view is asked again on its own. */
 const MIN_REFRESH = 5
+
+/** A view's `open`: a link to a panel, or left out as the plugin's problem. */
+export function checkOpen(open: unknown, plugin: Plugin): { open?: Link; problems: PluginProblem[] } {
+  if (open === undefined) return { problems: [] }
+  const wrong = link(open, 'open') ?? ((open as Link).target === 'panel' ? null : 'open 应是开在详情里的链接（target: panel）')
+  return wrong === null ? { open: open as Link, problems: [] } : { problems: [{ plugin: plugin.name, message: wrong }] }
+}
 
 /** A view's `refresh`: at least five seconds; one that is not a number is dropped as a problem. */
 export function checkRefresh(refresh: unknown, plugin: Plugin): { refresh?: number; problems: PluginProblem[] } {

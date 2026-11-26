@@ -38,7 +38,7 @@ const agent = (args: string[], input?: string) => {
 }
 
 async function serve(env: Record<string, string> = {}): Promise<RunningServer> {
-  const server = await startServer({ dir: lib, builtins: table, home: join(sb.home, '.pneuma-base'), env })
+  const server = await startServer({ dir: lib, builtins: table, home: join(sb.home, '.pneuma-base'), env, port: 0 })
   running.push(server)
   return server
 }

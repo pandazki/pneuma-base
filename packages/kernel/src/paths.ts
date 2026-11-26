@@ -28,7 +28,8 @@ export function parseLibraryPath(root: string, input: string): LibraryPath | nul
 }
 
 export function regionOf(path: LibraryPath): Region {
-  const first = path.split('/')[0]
+  const slash = path.indexOf('/')
+  const first = slash === -1 ? path : path.slice(0, slash)
   if (first === KERNEL_DIR || path === DESCRIPTION_FILE) return 'kernel'
   if (first === ARCHIVE_DIR) return 'archive'
   return 'content'

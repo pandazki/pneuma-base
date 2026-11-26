@@ -17,21 +17,33 @@ export const POLL_MS = 2000
 export type NavGroup = { label: string | null; views: ListedView[] }
 
 /**
- * The pages in the navigation: the first plugin's on top, the other plugins' under 插件, the
- * kernel's under 库, and the configuration at the bottom, each in the order the server lists them.
+ * The pages in the navigation: the home page and the first plugin's on top, the other plugins' under
+ * 插件, the rest of the kernel's under 库, and the configuration at the bottom, each in the order the
+ * server lists them.
  */
 export function navGroups(views: ListedView[]): { groups: NavGroup[]; foot: ListedView[] } {
   const shown = views.filter((v) => v.nav)
-  const foot = shown.filter((v) => v.by === 'kernel' && v.id === 'config')
-  const rest = shown.filter((v) => !foot.includes(v))
-  const first = rest[0]?.by
+  const kernel = (id: string) => (v: ListedView) => v.by === 'kernel' && v.id === id
+  const foot = shown.filter(kernel('config'))
+  const home = shown.filter(kernel('home'))
+  const rest = shown.filter((v) => !foot.includes(v) && !home.includes(v))
+  const first = rest.find((v) => v.by !== 'kernel')?.by
   const parts: [string | null, ListedView[]][] = [
-    [null, rest.filter((v) => v.by === first)],
+    [null, [...home, ...rest.filter((v) => v.by === first)]],
     ['插件', rest.filter((v) => v.by !== first && v.by !== 'kernel')],
-    ['库', rest.filter((v) => v.by !== first && v.by === 'kernel')],
+    ['库', rest.filter((v) => v.by === 'kernel')],
   ]
   return { groups: parts.filter(([, vs]) => vs.length > 0).map(([label, vs], i) => ({ label: i === 0 ? null : label, views: vs })), foot }
 }
+
+/** The pages in the navigation, top to bottom, as one list: the palette goes to them in this order. */
+export const navOrder = (views: ListedView[]): ListedView[] => {
+  const { groups, foot } = navGroups(views)
+  return [...groups.flatMap((g) => g.views), ...foot]
+}
+
+/** The page the app opens on: the first in the navigation. */
+export const firstPage = (views: ListedView[]): string | null => navGroups(views).groups[0]?.views[0]?.id ?? null
 
 type Props = {
   state: State

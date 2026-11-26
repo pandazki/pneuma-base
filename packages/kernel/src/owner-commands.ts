@@ -7,6 +7,7 @@ import { agentCommands } from './agent-commands.js'
 import { said, takenBy } from './claims.js'
 import { skillText } from './cognition.js'
 import { exists, writeAtomic } from './files.js'
+import { ensureLauncher, launcherInstall } from './launcher.js'
 import { installDir, loadDir, machineDirOf, machinePlugins, machinePluginsDir, uninstallDir, whyNotLoaded } from './plugin-table.js'
 import { listThings } from './things.js'
 import { GRANT_NAME, readGrantFile, removeGrantFile, writeGrantFile } from './grants.js'
@@ -16,6 +17,8 @@ import type { OwnerCall } from './owner.js'
 import { ARCHIVE_DIR, parseLibraryPath, regionOf } from './paths.js'
 import { eachPlugin, messageOf, pluginContext } from './pipeline.js'
 import { codexHint } from './products.js'
+import { PAIR_COMMANDS } from './pair-commands.js'
+import { REQUEST_COMMANDS } from './request-commands.js'
 import { readSecret, removeSecret, SECRET_LIMIT, secretNames, secretsDir, writeSecret } from './secrets.js'
 import {
   formOf,
@@ -117,7 +120,8 @@ const skillInstall = command({
     const agent = agentInput ?? grant.agent
     const folder = join(typedDir(dir, call.ctx.session.cwd), `pneuma-base-${grant.name}`)
     const file = join(folder, 'SKILL.md')
-    await writeAtomic(file, skillText(grant.name, library.root), folder)
+    const { launcher } = await ensureLauncher(call.ctx.home, call.env)
+    await writeAtomic(file, skillText(grant.name, library.root, launcher.path), folder)
     const text = `已为 ${agent} 写好技能：${file}`
     if (agent !== 'codex' && !agent.startsWith('codex-')) return done(text, { file })
     const hint = codexHint(library.root)
@@ -270,6 +274,8 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
     destructive: false,
     ownerOnly: true,
     setup: true,
+    // The value is the owner's own to give, in person.
+    askable: false,
     scope: 'machine',
     async run({ plugin, name }, call) {
       const declared = await declaredSecrets(call, plugin)
@@ -320,6 +326,9 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
     },
   }),
   ...agentCommands({ grantIssue, grantRevoke, skillInstall }),
+  launcherInstall,
+  ...REQUEST_COMMANDS,
+  ...PAIR_COMMANDS,
 ]
 
 /** A plugin by name and version, as `pager 0.2.0`. */

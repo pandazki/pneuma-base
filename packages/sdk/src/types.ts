@@ -247,8 +247,8 @@ export type Content =
   | { kind: 'other'; path: LibraryPath; size: number; type: string | null; why: 'not-utf8' | 'too-large' }
   | { kind: 'files'; path: LibraryPath; files: BundleFile[] }
   | { kind: 'unavailable'; path: LibraryPath | null; reason: 'outside-grant' | 'no-such-file' | 'not-a-bundle' }
-/** `content` is there only when the request asked for it. */
-export type InspectResult = { file: FileFacts | null; sections: Section[]; problems: PluginProblem[]; content?: Content }
+/** `content` is there only when the request asked for it; `request`, when the target is a request's id. */
+export type InspectResult = { file: FileFacts | null; sections: Section[]; problems: PluginProblem[]; content?: Content; request?: OwnerRequest }
 
 export type SayRequest = { kind: string; about: string | null; text: string | null; args: Record<string, string[]> }
 export type SayResult =
@@ -261,7 +261,71 @@ export type SayAnswer =
   | { outcome: 'not-heard'; reason: 'refused'; note: string }
 
 export type CheckRequest = { since: Instant | 'last' | null; includeArchived: boolean }
-export type CheckResult = { sections: Section[]; problems: PluginProblem[] }
+/**
+ * `asks`: what only the owner can settle now, from every plugin's `onAsks`; an agent tells the owner.
+ * `requests`: the caller's own requests (`ask`) the owner decided since it last saw them, and how many
+ * still wait.
+ */
+export type CheckResult = { sections: Section[]; asks: Ask[]; requests: { ended: OwnerRequest[]; pending: number }; problems: PluginProblem[] }
+
+// ---- ask ----
+
+export type RequestId = string & { readonly __brand: 'RequestId' }
+
+/**
+ * `ask`: an agent asks the owner to run one of the owner's commands, saying why; `command` and `args`
+ * are what the owner face's dispatch takes. `withdraw`: the agent that asked takes back one still pending.
+ */
+export type AskRequest = { kind: 'ask'; why: string; command: string; args: OwnerArgs } | { kind: 'withdraw'; id: string }
+
+/** What the command answered when the owner approved: done, refused, or failed with a throw. */
+export type RequestOutcome = { outcome: 'done'; text: string } | { outcome: 'refused'; reason: string; text: string } | Failure
+
+export type RequestStatus =
+  | { kind: 'pending' }
+  | { kind: 'withdrawn'; at: Instant }
+  | { kind: 'declined'; at: Instant; reason: string | null }
+  | { kind: 'approved'; at: Instant; outcome: RequestOutcome }
+
+/**
+ * A request as the kernel reads it from its file: the agent that asked (its grant's id, null without
+ * one), when and why, the command and its arguments, `line` the command as the owner would type it,
+ * where it stands, and whether the asker has seen how it ended.
+ */
+export type OwnerRequest = {
+  id: RequestId
+  by: { name: string; grant: GrantId | null }
+  at: Instant
+  why: string
+  command: string
+  args: OwnerArgs
+  line: string
+  status: RequestStatus
+  seen: boolean
+}
+
+/**
+ * Why an ask is refused. `red-line`: a destructive command, which needs the owner in person.
+ * `not-askable`: one that needs the owner's own input, or a request command. `run-it-yourself`: one
+ * an agent may run. `too-many`: the agent already has the most requests pending.
+ */
+export type AskRefusal =
+  | 'not-an-agent'
+  | 'unknown-command'
+  | 'usage'
+  | 'red-line'
+  | 'not-askable'
+  | 'run-it-yourself'
+  | 'too-many'
+  | 'no-such-request'
+  | 'not-yours'
+  | 'not-pending'
+
+/** `again`: the same request from the same agent was already pending; it is the one answered. */
+export type AskResult =
+  | { outcome: 'asked'; request: OwnerRequest; again: boolean; problems: PluginProblem[] }
+  | { outcome: 'withdrawn'; request: OwnerRequest; problems: PluginProblem[] }
+  | { outcome: 'refused'; reason: AskRefusal; text: string; problems: PluginProblem[] }
 
 // ---- archive ----
 
@@ -283,6 +347,8 @@ export interface AgentFace {
   say(req: SayRequest, ctx: Context): Promise<SayResult>
   check(req: CheckRequest, ctx: Context): Promise<CheckResult>
   archive(req: ArchiveRequest, ctx: Context): Promise<ArchiveResult>
+  /** The kernel's own: no plugin hook stands behind it, so it answers the same in a library with no plugin. */
+  ask(req: AskRequest, ctx: Context): Promise<AskResult>
 }
 
 export type Verb = keyof AgentFace
@@ -361,6 +427,11 @@ export interface OwnerCommand {
   readonly readOnly?: boolean
   /** It configures plugins, targets or embedders without changing items; its event is news only after an agent's first visit. */
   readonly setup?: boolean
+  /**
+   * An owner-only command that loses no data can be asked for: an agent asks with `ask`, and the
+   * owner approves with one act. `false`: it cannot, as one the owner has to do in person.
+   */
+  readonly askable?: false
   readonly run: (args: CommandArgs, ctx: PluginContext) => Promise<OwnerAnswer>
 }
 
@@ -368,10 +439,16 @@ export interface OwnerCommand {
 
 export type Failure = { outcome: 'failed'; message: string }
 
-/** One per operation of either face, sent to every plugin's `observe` after the operation. */
+/** An owner command run because the owner approved an agent's request: which request, and who asked. */
+export type Requested = { id: RequestId; by: OwnerRequest['by'] }
+
+/**
+ * One per operation of either face, sent to every plugin's `observe` after the operation. An owner
+ * operation that runs an approved request carries `request`.
+ */
 export type Event =
   | { [V in Verb]: { face: 'agent'; verb: V; request: Parameters<AgentFace[V]>[0]; result: Awaited<ReturnType<AgentFace[V]>> | Failure } }[Verb]
-  | { face: 'owner'; command: string; args: OwnerArgs; destructive: boolean; readOnly: boolean; setup: boolean; result: OwnerResult | Failure }
+  | { face: 'owner'; command: string; args: OwnerArgs; destructive: boolean; readOnly: boolean; setup: boolean; request?: Requested; result: OwnerResult | Failure }
 
 // ---- the extension point ----
 
@@ -408,6 +485,11 @@ export interface Plugin {
   readonly onInspect?: (req: InspectRequest, ctx: PluginContext) => Promise<PluginSection[]>
   readonly onSay?: (req: SayRequest, ctx: PluginContext) => Promise<SayAnswer>
   readonly onCheck?: (req: CheckRequest, ctx: PluginContext) => Promise<PluginSection[]>
+  /**
+   * What only the owner can settle now, such as a thing declared deployable that is not online yet.
+   * Read-only: the home page asks on every look, and `check` gives the same to agents.
+   */
+  readonly onAsks?: (ctx: PluginContext) => Promise<PluginAsk[]>
   readonly onArchive?: (req: AcceptedArchive, ctx: PluginContext) => Promise<PluginNoteAnswer | null>
   readonly observe?: (event: Event, ctx: PluginContext) => Promise<void>
   /** After `archive purge` deleted things, with their library paths as they were in the archive. */
@@ -440,12 +522,18 @@ export type Tag = { text: string; tone: Tone }
 /** Where a click goes: another view, opened in the main area or the side panel. */
 export type Link = { view: string; params: Record<string, string>; target: 'main' | 'panel' }
 /**
+ * Who did something, where a block says who: an agent, with the name of the grant it used, or the
+ * owner. The page draws an agent as its mark, its initial on a colour that comes from its name.
+ */
+export type ActorMark = { kind: 'agent' | 'owner'; name: string; grant?: string }
+/**
  * `at`: the cell is a moment. The page shows it in the viewer's local time, short, with the whole
  * time on hover; `text` is what a reader without a clock shows. `icon`: one of `ICON_NAMES`, shown
  * before the text, such as `folder`, `file` or `package` for a bundle. `href`: an outside address the
- * cell opens in a new tab; only http and https are links. `copy`: a button that copies `href`, else `text`.
+ * cell opens in a new tab; only http and https are links. `copy`: a button that copies `href`, else
+ * `text`. `actor`: the cell says who; the page draws the mark before `text`, which is the name.
  */
-export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; link?: Link; at?: Instant; icon?: IconName; href?: string; copy?: true }
+export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; link?: Link; at?: Instant; icon?: IconName; href?: string; copy?: true; actor?: ActorMark }
 
 /**
  * What a button does: one verb of the agent face, or one owner command. Strings may hold `{input}`,
@@ -480,12 +568,65 @@ export type TableRow = { key: string; cells: Record<string, Cell>; link: Link | 
 export type TableColumn = { key: string; label: string; optional?: boolean }
 
 /**
+ * One thing that happened, as a feed tells it: when, who, one sentence, a grey line of `meta`, and
+ * `whose` act it was, where that says something: an agent's on its own, the owner's, one the owner
+ * approved at an agent's request, or one the app only observed. It carries one quiet `action`, such
+ * as the one that undoes it, or `settled`, a grey word saying how it ended, such as that it was taken
+ * back; not both. A row with a `link` opens it.
+ */
+export type FeedRow = {
+  key: string
+  at: Instant
+  actor: ActorMark | string
+  text: string
+  meta: Cell[]
+  whose?: 'agent' | 'owner' | 'approved' | 'observed'
+  action?: Action
+  settled?: string
+  link: Link | null
+}
+/** Rows under a heading, such as a day or a scene; `link` opens what the heading names. */
+export type FeedGroup = { title: string; count: number | null; link?: Link; rows: FeedRow[] }
+/** One figure: a label, a number or a short text, and a grey sentence about it. */
+export type Stat = { label: string; value: string; note: string | null }
+/** The most series a chart draws: each takes the next colour of one small palette, the same in every chart. */
+export const CHART_SERIES_MAX = 4
+/** One series of a chart: its name, and one value for each of the chart's `x` labels. */
+export type ChartSeries = { label: string; values: number[] }
+/** A folder of a tree: the value its selection gives the view's parameter, and how many things it holds. */
+export type TreeNode = { value: string; label: string; count: number | null; children: TreeNode[] }
+/**
+ * Something only the owner can settle: who raises it, a plugin's name or an actor; one sentence, a
+ * question or a statement; `command`, a command line it is about, shown under the sentence exactly as
+ * it would run; the library path it is `about`, which opens its panel; the answers, each an action,
+ * and which of them is the `suggested` one, by its place in `actions`.
+ */
+export type Ask = { key: string; by: string | ActorMark; text: string; command?: string; about: LibraryPath | null; actions: Action[]; suggested?: number }
+/** What `onAsks` answers: an ask without naming its plugin, which the kernel stamps as `by`. */
+export type PluginAsk = Omit<Ask, 'by'>
+/**
+ * One step of getting started with the library. One not `done` shows its `blocks`, what to do right
+ * there; a done one folds into its title and `summary`, one line, and opens again when clicked.
+ */
+export type Step = { key: string; title: string; done: boolean; summary: string | null; blocks: Block[] }
+
+/**
  * A section with `collapse` can be folded by the viewer; the value is how it starts. A section of the
  * item panel carries `plugin`, the plugin whose part it is, stamped by the kernel. `embed`: an
  * outside http or https page in a sandboxed frame. `custom`: a page of the plugin's own, `entry`
  * relative to its `ui` directory, sent `data` and the names of `actions`, which it may ask to run;
  * `text` says in words what the frame shows, for the command line, screen readers and the page
- * that failed to load; `plugin` is stamped by the kernel.
+ * that failed to load; `plugin` is stamped by the kernel. `feed`, `asks`: `empty` is the one grey
+ * sentence shown when there is nothing. `tree`: choosing a folder sets the view's parameter `param`
+ * to its value and shows the view again, as a filter does; `selected` is the value it has now.
+ * `steps`: the steps of getting started, each with its own blocks, checked as a section's are.
+ * `drop`: where the owner brings files in. In the Mac app it is an area files and folders are dropped
+ * on, or chosen from, and they are put into the library folder `to` as brought by the owner;
+ * elsewhere the page cannot hand over a file, and it shows `command`, which does the same in a terminal.
+ * `chart`: a few numbers over time, as `form` bars side by side, bars stacked, or lines, with one
+ * axis in `unit` (such as 样 or 次); `text` is the one sentence that says what it shows, the chart's
+ * caption on the page; `show` prints the sentence and a table of the numbers. At most
+ * `CHART_SERIES_MAX` series, each with a value for every `x` label; stacked values are not negative.
  */
 export type Block =
   | { kind: 'section'; title: string; note: string | null; count: number | null; blocks: Block[]; actions: Action[]; collapse?: 'open' | 'closed'; plugin?: PluginName }
@@ -499,27 +640,41 @@ export type Block =
   | { kind: 'empty'; title: string; hint: string | null }
   | { kind: 'embed'; url: string; title: string; height: number }
   | { kind: 'custom'; entry: string; height: number; text: string; data: unknown; actions: Record<string, Action>; plugin?: PluginName }
+  | { kind: 'feed'; groups: FeedGroup[]; empty: string }
+  | { kind: 'stats'; stats: Stat[] }
+  | { kind: 'tree'; param: string; selected: string; nodes: TreeNode[] }
+  | { kind: 'asks'; asks: Ask[]; empty: string }
+  | { kind: 'steps'; steps: Step[] }
+  | { kind: 'drop'; to: string; command: string }
+  | { kind: 'chart'; form: 'bars' | 'stacked' | 'line'; text: string; unit: string; x: string[]; series: ChartSeries[] }
 
-export type ViewFilter = { name: string; label: string; options: { value: string; label: string }[]; default: string }
+/** `count`: how many things the view shows with this option, given by its answer. */
+export type FilterOption = { value: string; label: string; count?: number }
+export type ViewFilter = { name: string; label: string; options: FilterOption[]; default: string }
 /**
  * `icon` is one of `ICON_NAMES`. A view with `nav` false is reached only through links, as a detail.
  * `ownerOnly`: a page of management, refused in an agent's session as an owner-only command is.
+ * `home`: the view is also a part of the home page: its blocks stand there, after what waits on the
+ * owner, in configuration order.
  */
-export type ViewDecl = { id: string; title: string; icon: IconName; nav: boolean; filters: ViewFilter[]; ownerOnly?: boolean }
+export type ViewDecl = { id: string; title: string; icon: IconName; nav: boolean; filters: ViewFilter[]; ownerOnly?: boolean; home?: boolean }
 /** A view as the library lists it, with who gives it. */
 export type ListedView = ViewDecl & { by: PluginName | 'kernel' }
 export type ViewRequest = { view: string; params: Record<string, string> }
 /**
  * `refresh`: seconds after which the page asks again, at least 5: for a view showing state from
  * outside the library, or one whose content changes with the clock. A view runs on the machine of
- * the viewer's server, in its time zone; a cell's `at` is shown in the browser's.
+ * the viewer's server, in its time zone; a cell's `at` is shown in the browser's. `filters`: the
+ * options of declared filters as this answer sees them, such as the agents there are, with counts.
+ * `open`: what the page shows in the detail panel when it opens with the panel closed and the window
+ * has room for both, such as a list's first row; a panel link. The text form leaves it out.
  */
-export type ViewAnswer = { title: string; subtitle: string | null; blocks: Block[]; refresh?: number }
+export type ViewAnswer = { title: string; subtitle: string | null; blocks: Block[]; refresh?: number; filters?: { name: string; options: FilterOption[] }[]; open?: Link }
 export type ViewResult =
   | ({ outcome: 'shown' } & ViewAnswer & { problems: PluginProblem[] })
   | { outcome: 'no-such-view'; problems: PluginProblem[] }
   | { outcome: 'refused'; reason: 'agent-session'; text: string; problems: PluginProblem[] }
 /** Every view of a library: the plugins' first, in configuration order, then the kernel's. */
 export type ViewList = { views: ListedView[]; problems: PluginProblem[] }
-/** A plugin's part of the item panel: its own section title and blocks. */
-export type ItemSection = { title: string; blocks: Block[] }
+/** A plugin's part of the item panel: its own section title and blocks, and `actions` for the thing, which stand in the panel's bottom row. */
+export type ItemSection = { title: string; blocks: Block[]; actions?: Action[] }

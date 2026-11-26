@@ -29,6 +29,7 @@ test('every owner operation from the page leaves a trace an agent sees in check'
   const status = page.getByRole('status')
 
   // Take back the held first version of doc.md, from its panel, to a path the owner types.
+  await nav.getByRole('button', { name: '库' }).click()
   await main.getByRole('row', { name: /^doc\.md/ }).click()
   await panel.getByRole('region', { name: '留存' }).getByRole('button', { name: '取回到新路径' }).click()
   await dialog.getByLabel('新的库内路径').fill('doc.first.md')
@@ -54,9 +55,9 @@ test('every owner operation from the page leaves a trace an agent sees in check'
   await dialog.getByRole('button', { name: '记为做出来的' }).click()
   await expect(status).toContainText('已放好 summary.md')
   await expect(unowned).toHaveCount(0)
-  await nav.getByRole('button', { name: '条目' }).click()
+  await nav.getByRole('button', { name: '库' }).click()
   await main.getByRole('row', { name: /^summary\.md/ }).click()
-  const basis = panel.getByRole('region', { name: '依据', exact: true })
+  const basis = panel.getByRole('region', { name: '怎么来的', exact: true })
   await expect(basis.getByRole('listitem')).toHaveCount(3)
   await expect(basis).toContainText('doc.first.md')
   await expect(basis).toContainText('主人在对话里口述的提纲')
@@ -99,11 +100,11 @@ test('every owner operation from the page leaves a trace an agent sees in check'
   expect(existsSync(join(skills, 'pneuma-base-claude', 'SKILL.md'))).toBe(true)
 
   // The activity page lists every one of them.
-  await nav.getByRole('button', { name: '动态' }).click()
+  await nav.getByRole('button', { name: '活动' }).click()
   for (const command of ['ledger held restore', 'plugin add', 'plugin remove', 'grant issue', 'grant revoke', 'skill install']) {
-    await expect(main.getByRole('row').filter({ hasText: `主人面的操作 ${command}` }).first()).toContainText('主人')
+    await expect(main.getByRole('listitem').filter({ hasText: `主人面的操作 ${command}` }).first()).toContainText('主人做的')
   }
-  await expect(main.getByRole('row').filter({ hasText: '认了 notes.md 的直接改动' })).toContainText('主人')
+  await expect(main.getByRole('listitem').filter({ hasText: '认了 notes.md 的直接改动' })).toContainText('主人做的')
 
   // An agent's check reports what changed content or capabilities, not the grant or the skill.
   const news = agent(['check']).stdout

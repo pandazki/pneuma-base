@@ -55,8 +55,9 @@ it('check never reports a path being put as nobody’s or as changed directly', 
   expect(samples).toBeGreaterThan(puts)
   expect(reported).toEqual([])
   // No sample took a move for one it saw: the only moves on record are the agent's own.
-  const moves = JSON.parse(sb.run(['--library', lib, 'show', 'ledger.activity', '--json']).stdout).blocks[0].rows.filter((row: any) => row.cells.kind.tag.text === '挪动')
-  expect(moves.map((row: any) => row.cells.who.text)).toEqual(Array(puts / 4).fill('race-agent'))
+  const rows = JSON.parse(sb.run(['--library', lib, 'show', 'ledger.activity', '--json']).stdout).blocks.find((b: any) => b.kind === 'feed').groups.flatMap((g: any) => g.rows)
+  const moves = rows.filter((row: any) => row.text.startsWith('挪 '))
+  expect(moves.map((row: any) => row.actor.name)).toEqual(Array(puts / 4).fill('race-agent'))
 }, 180_000)
 
 const STRAYS = ['没人登记过的', '被直接改过的', '不在了的', '挪过的']

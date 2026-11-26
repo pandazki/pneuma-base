@@ -64,7 +64,7 @@ export function cli(): Cli {
       return { code: r.status ?? -1, stdout: r.stdout, stderr: r.stderr }
     },
     view(dir, opts = {}) {
-      const child = spawn(process.execPath, [opts.testPlugins ? BIN_WITH_TEST_PLUGINS : BIN, 'view', dir, '--no-open'], { cwd: home, env: env(opts.env) })
+      const child = spawn(process.execPath, [opts.testPlugins ? BIN_WITH_TEST_PLUGINS : BIN, 'view', dir, '--no-open', '--port', '0'], { cwd: home, env: env(opts.env) })
       children.push(child)
       return new Promise((resolve, reject) => {
         let out = ''

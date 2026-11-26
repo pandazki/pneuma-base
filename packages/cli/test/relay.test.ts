@@ -59,10 +59,11 @@ beforeAll(() => {
 
 describe('session B, told nothing', () => {
   it('start tells it what session A did, where, why, and what it decided, and finds the related things', () => {
-    const text = ok(B(['start', '把支付服务接进电子书小店'])).stdout
+    const json = B(['start', '把支付服务接进电子书小店', '--json']).json()
+    // That start was a look; the text asks from the same moment the look did, as a start would.
+    const text = ok(B(['check', '--since', '2000-01-01T00:00:00Z'])).stdout + ok(B(['find', '把支付服务接进电子书小店'])).stdout
     for (const readable of ['sess-a', 'claude-code', shown(dirA), DOING, DECIDED, 'payments/comparison.md', 'payments/sources/stripe-pricing.html']) expect(text).toContain(readable)
 
-    const json = B(['start', '把支付服务接进电子书小店', '--json']).json()
     const since = json.check.sections.find((s: any) => s.title === '自上次以来')
     const sceneA = since.data.scenes.find((s: any) => s.scene === 'sess-a')
     expect(sceneA).toMatchObject({ actors: ['claude-code'], cwds: [dirA] })

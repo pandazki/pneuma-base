@@ -43,7 +43,7 @@ describe('a scene’s conversation', () => {
 
     const fields = (ok(sb.run(['--library', lib, 'show', 'ledger.scene', '--scene', id, '--json'])).json().blocks as any[]).find((b) => b.kind === 'fields').fields as any[]
     expect(fields).toEqual(expect.arrayContaining([
-      { label: '对话', value: { text: path, mono: true, copy: true, tag: { text: '在这台机器上', tone: 'good' } } },
+      { label: '对话', value: { text: path, mono: true, copy: true, tag: { text: '在这台机器上', tone: 'neutral' } } },
       { label: '接着聊', value: { text: resume, mono: true, copy: true } },
     ]))
 

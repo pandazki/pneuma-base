@@ -34,8 +34,8 @@ describe('put --observed', () => {
     const inspect = ok(codex(['inspect', 'photo.txt'])).stdout
     expect(inspect).toMatch(new RegExp(`^${SEEN} · 主人 · `, 'm'))
     expect(ok(codex(['inspect', 'photo.txt', '--json'])).json().sections[0].data.entered).toMatchObject({ how: 'observed', actor: { kind: 'owner' } })
-    expect(ok(codex(['show', 'item', '--path', 'photo.txt'])).stdout).toContain(`怎么来的：[${SEEN}]`)
-    expect(ok(codex(['show', 'ledger.items'])).stdout).toContain(`[${SEEN}]`)
+    expect(ok(codex(['show', 'item', '--path', 'photo.txt'])).stdout).toContain(`来历：${SEEN}`)
+    expect(ok(codex(['show', 'ledger.items'])).stdout).toMatch(new RegExp(`photo\\.txt .*${SEEN}`))
     expect(ok(codex(['find', 'photo'])).stdout).toContain(`photo.txt  ${SEEN}`)
     const since = ok(codex(['check', '--json'])).json().sections.find((s: any) => s.title === '自上次以来').data
     expect(since.scenes.flatMap((s: any) => s.facts.map((f: any) => f.text))).toContain(`放入 photo.txt（${SEEN}）`)

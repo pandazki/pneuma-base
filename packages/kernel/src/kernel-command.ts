@@ -13,6 +13,7 @@ type KernelBase = {
   readonly ownerOnly: boolean
   readonly readOnly?: boolean
   readonly setup?: boolean
+  readonly askable?: false
 }
 
 /**

@@ -1,7 +1,7 @@
 // A page of the management UI as the command line prints it: the same typed blocks in words, so an
 // agent reading it knows what the person sees, and every button written as the command line that
 // does the same thing. ARCHITECTURE.md section 6.
-import { usageOf, type Action, type Block, type Call, type Cell, type FlagParam, type Link, type OwnerCommandInfo, type PositionalParam, type ViewList, type ViewResult } from '@pneuma-base/kernel'
+import { commandLine, quote, usageOf, type Action, type ActorMark, type Block, type Call, type Cell, type FeedRow, type FlagParam, type Link, type OwnerCommandInfo, type PositionalParam, type TreeNode, type ViewDecl, type ViewList, type ViewRequest, type ViewResult } from '@pneuma-base/kernel'
 
 type Shown = Extract<ViewResult, { outcome: 'shown' }>
 type OwnerCall = Extract<Call, { face: 'owner' }>
@@ -27,10 +27,6 @@ function aligned(rows: string[][], indent: string): string[] {
 }
 
 // ---- the command an action or a link is ----
-
-const SAFE = /^[\p{L}\p{N}_@%+=:,./~-]+$/u
-/** A literal value as a shell takes it. */
-const quote = (v: string) => (SAFE.test(v) ? v : `'${v.replaceAll("'", `'\\''`)}'`)
 
 const PLACEHOLDER = /\{([^{}]+)\}/g
 const exactly = (v: string) => /^\{([^{}]+)\}$/.exec(v)?.[1] ?? null
@@ -103,6 +99,8 @@ function agentWords({ verb, request }: AgentCall, action: Action): string[] {
       return ['check', ...(request.since === null ? [] : ['--since', v(request.since)]), ...(request.includeArchived ? ['--include-archived'] : [])]
     case 'archive':
       return [request.kind, v(request.path)]
+    case 'ask':
+      return request.kind === 'withdraw' ? ['ask', '--withdraw', v(request.id)] : ['ask', v(request.why), commandLine(request.command, request.args)]
   }
 }
 
@@ -134,9 +132,9 @@ function linkCommand(link: Link): string {
 
 const sameLink = (a: Link | null | undefined, b: Link | null | undefined) => a != null && b != null && linkCommand(a) === linkCommand(b)
 
-/** A cell in words: a moment in UTC, else its text; its tag, its outside address, and where it leads unless the row leads there. */
+/** A cell in words: a moment in UTC, else its text, or the actor's name when it has none; its tag, its outside address, and where it leads unless the row leads there. */
 function cellText(cell: Cell, rowLink: Link | null = null): string {
-  const parts = [cell.at === undefined ? cell.text : minute(cell.at)]
+  const parts = [cell.at !== undefined ? minute(cell.at) : cell.text === '' && cell.actor ? cell.actor.name : cell.text]
   if (cell.tag) parts.push(`[${cell.tag.text}]`)
   if (cell.href !== undefined && cell.href !== cell.text) parts.push(cell.href)
   if (cell.link && !sameLink(cell.link, rowLink)) parts.push(`→ ${linkCommand(cell.link)}`)
@@ -147,13 +145,35 @@ function cellText(cell: Cell, rowLink: Link | null = null): string {
 
 const TONE_WORD: Partial<Record<string, string>> = { warn: '警告：', bad: '错误：' }
 
-function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: number, indent: string): string[] {
+/** Whose act a feed row is, in the words the page shows beside it. */
+export const WHOSE: Record<NonNullable<FeedRow['whose']>, string> = { agent: '自己做的', owner: '主人做的', approved: '主人批准的', observed: '看到的' }
+
+const whoText = (who: ActorMark | string) => (typeof who === 'string' ? who : who.name)
+
+/** One feed row on one line: when, who, what, whose act, its meta, and where it opens; its action below, as its command. */
+function feedRowLines(row: FeedRow, commands: readonly OwnerCommandInfo[], indent: string): string[] {
+  const meta = row.meta.map((c) => cellText(c, row.link)).filter((t) => t !== '')
+  const line = [minute(row.at), whoText(row.actor), row.text, ...(row.whose === undefined ? [] : [`[${WHOSE[row.whose]}]`]), ...(meta.length > 0 ? [meta.join(' · ')] : []), ...(row.settled === undefined ? [] : [`[${row.settled}]`]), ...(row.link ? [`→ ${linkCommand(row.link)}`] : [])]
+  return [`${indent}- ${line.join('  ')}`, ...(row.action ? [actionLine(row.action, commands, `${indent}    `)] : [])]
+}
+
+/** The page a tree's folder opens: the same view with its parameter set to the folder. */
+const treeCommand = (req: ViewRequest, param: string, value: string) => linkCommand({ view: req.view, params: { ...req.params, [param]: value }, target: 'main' })
+
+function treeLines(nodes: readonly TreeNode[], block: Extract<Block, { kind: 'tree' }>, req: ViewRequest, indent: string): string[] {
+  return nodes.flatMap((n) => [
+    `${indent}${n.value === block.selected ? '* ' : '  '}${n.label}${n.count === null ? '' : `（${n.count}）`}  → ${treeCommand(req, block.param, n.value)}`,
+    ...treeLines(n.children, block, req, `${indent}  `),
+  ])
+}
+
+function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: number, indent: string, req: ViewRequest): string[] {
   const actions = (list: readonly Action[], at = indent) => list.map((a) => actionLine(a, commands, at))
   const more = `${indent}  `
   switch (block.kind) {
     case 'section': {
       const heading = `${'#'.repeat(depth)} ${block.title}${block.count === null ? '' : `（${block.count}）`}`
-      return ['', heading, ...(block.note === null ? [] : [block.note]), ...actions(block.actions), ...block.blocks.flatMap((b) => blockLines(b, commands, depth + 1, indent)), '']
+      return ['', heading, ...(block.note === null ? [] : [block.note]), ...actions(block.actions), ...block.blocks.flatMap((b) => blockLines(b, commands, depth + 1, indent, req)), '']
     }
     case 'table': {
       if (block.rows.length === 0) return [`${indent}${block.empty}`]
@@ -185,15 +205,59 @@ function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: 
       return [`${indent}嵌入的页面「${block.title}」：${block.url}`]
     case 'custom':
       return [...block.text.split('\n').map((l) => `${indent}${l}`), ...actions(Object.values(block.actions))]
+    case 'feed':
+      if (block.groups.every((g) => g.rows.length === 0)) return [`${indent}${block.empty}`]
+      return block.groups.flatMap((g) => [
+        `${indent}${g.title}${g.count === null ? '' : `（${g.count}）`}${g.link ? `  → ${linkCommand(g.link)}` : ''}`,
+        ...g.rows.flatMap((r) => feedRowLines(r, commands, more)),
+      ])
+    case 'stats':
+      return block.stats.map((s) => `${indent}${s.label}：${s.value}${s.note === null ? '' : `（${s.note}）`}`)
+    case 'tree':
+      return [`${indent}文件夹（--${block.param}）：`, ...treeLines(block.nodes, block, req, more)]
+    case 'asks':
+      if (block.asks.length === 0) return [`${indent}${block.empty}`]
+      return block.asks.flatMap((a) => [
+        `${indent}- ${a.text}（${whoText(a.by)}）${a.about === null ? '' : `  关于 ${a.about} → ${linkCommand({ view: 'item', params: { path: a.about }, target: 'panel' })}`}`,
+        ...(a.command === undefined ? [] : [`${indent}    ${a.command}`]),
+        ...a.actions.map((x, i) => `${actionLine(x, commands, `${indent}    `)}${i === a.suggested ? '（推荐）' : ''}`),
+      ])
+    case 'steps':
+      return block.steps.flatMap((s) => [
+        `${indent}[${s.done ? '✓' : ' '}] ${s.title}${s.summary === null ? '' : `：${s.summary}`}`,
+        ...s.blocks.flatMap((b) => blockLines(b, commands, depth + 1, `${indent}    `, req)).filter((l) => l !== ''),
+      ])
+    case 'drop':
+      return [`${indent}放进 ${block.to}/，记成主人带进来的：在应用里把文件或文件夹拖到窗口上，或选出来；在终端里：`, `${indent}$ ${block.command}`]
+    case 'chart':
+      return [...block.text.split('\n').map((l) => `${indent}${l}`), ...chartTable(block, more)]
   }
+}
+
+/** A chart's numbers as the page draws them: a row for each x label, a column for each series, the unit in the header. */
+function chartTable(block: Extract<Block, { kind: 'chart' }>, indent: string): string[] {
+  const unit = block.unit === '' ? '' : `（${block.unit}）`
+  const header = ['', ...block.series.map((s) => `${s.label}${unit}`)]
+  return aligned([header, ...block.x.map((x, i) => [x, ...block.series.map((s) => String(s.values[i]))])], indent)
 }
 
 const problemLines = (r: { problems: readonly { plugin: string; message: string }[] }) => r.problems.map((p) => `  插件 ${p.plugin} 出错：${p.message}`)
 
-/** A shown page in words: its title, then each block as the page shows it, then what went wrong. */
-export function pageText(r: Shown, commands: readonly OwnerCommandInfo[]): string[] {
-  const head = [`# ${r.title}`, ...(r.subtitle === null ? [] : [r.subtitle])]
-  const body = [...head, ...r.blocks.flatMap((b) => blockLines(b, commands, 2, ''))]
+/** Each filter the answer gave options for, as the page's segments: its label and flag, each option with its count, the one in effect marked. */
+function filterLines(r: Shown, req: ViewRequest, decl: ViewDecl | undefined): string[] {
+  return (r.filters ?? []).flatMap((f) => {
+    const declared = decl?.filters.find((d) => d.name === f.name)
+    if (declared === undefined) return []
+    const current = req.params[f.name] ?? declared.default
+    const options = f.options.map((o) => `${o.value === current ? '*' : ''}${o.label}${o.count === undefined ? '' : ` ${o.count}`}`)
+    return [`${declared.label}（--${f.name}）：${options.join(' · ')}`]
+  })
+}
+
+/** A shown page in words: its title, its filters with their counts, then each block as the page shows it, then what went wrong. */
+export function pageText(r: Shown, commands: readonly OwnerCommandInfo[], req: ViewRequest, decl?: ViewDecl): string[] {
+  const head = [`# ${r.title}`, ...(r.subtitle === null ? [] : [r.subtitle]), ...filterLines(r, req, decl)]
+  const body = [...head, ...r.blocks.flatMap((b) => blockLines(b, commands, 2, '', req))]
   // A section opens and closes with a blank line, so where it ends shows; one blank line is enough.
   const lines = body.filter((l, i) => l !== '' || (body[i - 1] !== '' && i < body.length - 1))
   return [...lines, ...problemLines(r)]

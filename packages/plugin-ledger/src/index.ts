@@ -14,6 +14,7 @@ import {
   type AcceptedPut,
   type Event,
   type Fingerprint,
+  type Grant,
   type LibraryPath,
   type Plugin,
   type PluginContext,
@@ -21,30 +22,18 @@ import {
   type SayAnswer,
   type SayRequest,
 } from '@pneuma-base/kernel'
+import { LEDGER_EXPORT, LEDGER_STATS } from './audit.js'
 import { conversationOf } from './conversation.js'
-import { itemNamed, load, onDisk, snapshot, statesOf, textOf, type Disk } from './disk.js'
-import { fact, factActor, LEDGER_ACTOR, newItemId, sceneOf, writeFacts, type Basis, type Fact, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
+import { itemNamed, load, onDisk, snapshot, standingNow, statesOf, textOf, type Disk } from './disk.js'
+import { fact, factActor, LEDGER_ACTOR, newItemId, readFacts, sceneOf, writeFacts, type Basis, type Fact, type FactActor, type FactBody, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
 import type { ItemRecord, Ledger, SceneRecord } from './fold.js'
 import { heldCommands, heldCopies, heldPath, keep } from './held.js'
-import { confirm, findsAnything, reconcile, type Standing } from './reconcile.js'
-import {
-  ACTIVITY_VIEW,
-  activityAnswer,
-  heldAnswer,
-  HELD_VIEW,
-  itemSection,
-  itemsAnswer,
-  ITEMS_VIEW,
-  LEDGER_VIEWS,
-  SCENE_VIEW,
-  sceneAnswer,
-  SCENES_VIEW,
-  scenesAnswer,
-  STANDING_VIEW,
-  standingAnswer,
-  partOfSection,
-  unownedSection,
-} from './ui.js'
+import { reconcile } from './reconcile.js'
+import { LEAVE, REGISTER, unownedAsks } from './unowned.js'
+import { activityAnswer, homeAnswer, noSuchScene, sceneAnswer, scenesAnswer } from './feeds.js'
+import { DEFAULT_PERIOD, isPeriod, statsOf } from './stats.js'
+import { statsAnswer } from './stats-page.js'
+import { ACTIVITY_VIEW, heldAnswer, HELD_VIEW, HOME_VIEW, itemSection, itemsAnswer, ITEMS_VIEW, LEDGER_VIEWS, partOfSection, SCENE_VIEW, SCENES_VIEW, STANDING_VIEW, standingAnswer, STATS_VIEW, unownedSection } from './ui.js'
 import {
   ambiguousText,
   findableItems,
@@ -59,6 +48,7 @@ import {
   sinceText,
   sinceView,
   standingSections,
+  when,
   type ItemView,
 } from './views.js'
 
@@ -234,6 +224,43 @@ function purged(event: Extract<Event, { face: 'owner' }>): LibraryPath[] {
 }
 
 /**
+ * The fact an event makes, if any. Approving a request is no row of its own: the run it approved is
+ * the row, carrying who asked, whether the command did it or refused, since the owner decided either way.
+ * `ledger stats` is the page 统计 read as text and leaves no row, as looking at the page leaves none.
+ */
+function recordOf(event: Event): FactBody | null {
+  if (event.face === 'agent') {
+    if (event.verb !== 'ask') return null
+    const r = event.result
+    if (r.outcome === 'asked' && !r.again) return { kind: 'request', act: 'asked', request: r.request.id, line: r.request.line, why: r.request.why }
+    if (r.outcome === 'withdrawn') return { kind: 'request', act: 'withdrawn', request: r.request.id, line: r.request.line }
+    return null
+  }
+  const r = event.result
+  if (event.command === 'request approve' || event.command === LEDGER_STATS.name || r.outcome === 'failed' || (r.outcome === 'refused' && !event.request)) return null
+  return {
+    kind: 'owner.op',
+    command: event.command,
+    summary: ownerSummary(r.text),
+    destructive: event.destructive,
+    ...(event.readOnly ? { readOnly: true as const } : {}),
+    ...(event.setup ? { setup: true as const } : {}),
+    ...(event.request ? { request: { id: event.request.id, by: { kind: 'agent' as const, name: event.request.by.name, grant: event.request.by.grant } } } : {}),
+    ...(r.outcome === 'refused' ? { refused: r.reason } : {}),
+  }
+}
+
+/** A decline's record names the request it turned down, and the agent that had asked, as the request's own fact says. */
+function withDeclined(body: FactBody, event: Event, ledger: Ledger): FactBody {
+  if (body.kind !== 'owner.op' || event.face !== 'owner' || event.command !== 'request decline' || event.result.outcome !== 'done') return body
+  const id = (event.result.data as { request?: unknown } | undefined)?.request
+  if (typeof id !== 'string') return body
+  const asked = ledger.facts.find((f) => f.kind === 'request' && f.act === 'asked' && f.request === id)
+  const by: FactActor | null = asked?.actor ?? null
+  return { ...body, declined: { id, by } }
+}
+
+/**
  * An owner command's answer as one line of the record, its lines joined, each absolute path or
  * file URL shortened to its last name: it is read in check, on the scene card and in the activity
  * list, where a name will do and the whole path only crowds the line.
@@ -251,19 +278,6 @@ async function viewOfItem(ctx: PluginContext, ledger: Ledger, item: ItemRecord):
   const states = await statesOf(ctx.library.root, ledger, [item.id, ...item.basis.items.map((row) => row.item)])
   const held = (await heldCopies(ctx, item.id)).map((c) => c.path)
   return itemView(ledger, item, states, held)
-}
-
-/**
- * check's reconciliation. A put lands its file before its record, so whatever the first look finds is
- * confirmed: against the paths being put, read after the files were looked at, and the facts read
- * once more after that.
- */
-async function standingNow(ctx: PluginContext): Promise<{ ledger: Ledger; standing: Standing }> {
-  const ledger = await load(ctx)
-  const standing = await reconcile(ledger, await snapshot(ctx.library.root))
-  if (!findsAnything(standing)) return { ledger, standing }
-  const putting = new Set(await ctx.tools.putting())
-  return { ledger, standing: confirm(ledger, standing, await load(ctx), putting) }
 }
 
 /** Whether a file is at a content or archive path, or at its archived copy. */
@@ -292,6 +306,21 @@ async function panelView(ctx: PluginContext, ledger: Ledger, path: LibraryPath):
   return { ...(known ?? (await viewOfItem(ctx, ledger, moved))), state }
 }
 
+/**
+ * An agent by the grant it acts with, as `inspect @<grant>` names it: when it was last here, in how
+ * many sessions, how many things it put in. Nothing for a name no grant of this library has.
+ */
+function agentSections(ledger: Ledger, name: string, grants: readonly Grant[]) {
+  const grant = grants.find((g) => g.name === name)
+  if (grant === undefined) return []
+  const facts = ledger.facts.filter((f) => f.actor.kind === 'agent' && f.actor.grant === grant.id)
+  const last = facts.at(-1)?.at ?? null
+  const scenes = new Set(facts.map((f) => f.scene)).size
+  const put = facts.filter((f) => f.kind === 'item.enter').length
+  const body = last === null ? '还没在这里做过事' : `最近来过：${when(last)}；${scenes} 次会话，放进 ${put} 样东西`
+  return [{ title: '来过', body, data: { kind: 'agent', grant: name, last, scenes, put } }]
+}
+
 /** 记账与对账. ledger-design.md. */
 export const ledger: Plugin = {
   contract: CONTRACT,
@@ -305,7 +334,7 @@ export const ledger: Plugin = {
     { dir: 'held', kind: 'body' },
   ],
   statements: ['doing', 'decided', 'note', 'from', 'revised'],
-  ownerCommands: heldCommands,
+  ownerCommands: [...heldCommands, REGISTER, LEAVE, LEDGER_STATS, LEDGER_EXPORT],
   views: LEDGER_VIEWS,
 
   async onPut(req, ctx) {
@@ -352,10 +381,11 @@ export const ledger: Plugin = {
     return findableItems(ledger, scope).flatMap((item) => (asked.has(item.path) ? [itemHit(ledger, item)] : []))
   },
 
-  /** The target is a scene id, an item id or path, a file nobody registered, else a scene id prefix: exact names first. */
+  /** The target is an agent's grant as `@<grant>`, a scene id, an item id or path, a file nobody registered, else a scene id prefix: exact names first. */
   async onInspect(req, ctx) {
     const ledger = await load(ctx)
     const { root } = ctx.library
+    if (req.target.startsWith('@')) return agentSections(ledger, req.target.slice(1), ctx.library.config.grants)
     const card = (scene: SceneRecord) => {
       const view = sceneView(ledger, scene, conversationOf(scene, ctx.session.machine))
       return [{ title: '场景', body: sceneText(view), data: view }]
@@ -391,10 +421,14 @@ export const ledger: Plugin = {
       const from = ledger.items.get(item)?.path
       return state.kind === 'moved' && from ? [fact(ctx, 'observed', { kind: 'item.move', item, from, to: state.to, archive: archiveSide(from, state.to) }, LEDGER_ACTOR)] : []
     })
-    await writeFacts(ctx.dir, moves)
+    // This look is what the next check counts since, for agents and for the owner's 都看过了 alike.
+    await writeFacts(ctx.dir, [...moves, fact(ctx, 'tool', { kind: 'checked' })])
     const since = sinceView(ledger, factActor(ctx.actor), sceneOf(ctx), req.since)
     return [...(since.scenes.length > 0 ? [{ title: '自上次以来', body: sinceText(since), data: since }] : []), ...standingSections(ledger, standing, req.includeArchived)]
   },
+
+  /** Things nobody registered, one ask for all of them, until they are registered or the owner leaves them so. */
+  onAsks: unownedAsks,
 
   async onArchive(req, ctx) {
     if (!req.moved) return null
@@ -411,21 +445,36 @@ export const ledger: Plugin = {
 
   /** The ledger's pages, from the same fold and reconciliation check uses. Writes nothing: a move it sees stays for check to record. */
   async onView(req, ctx) {
+    const { grants } = ctx.library.config
     switch (req.view) {
+      case HOME_VIEW: {
+        const { ledger, standing } = await standingNow(ctx)
+        return homeAnswer(ledger, standing, factActor(ctx.actor), sceneOf(ctx), grants)
+      }
       case ITEMS_VIEW: {
         const { ledger, standing } = await standingNow(ctx)
-        return itemsAnswer(ledger, standing, req.params)
+        return itemsAnswer(ledger, standing, req.params, grants)
       }
       case STANDING_VIEW: {
         const { ledger, standing } = await standingNow(ctx)
-        return standingAnswer(ledger, standing)
+        return standingAnswer(ledger, standing, req.params)
       }
       case SCENES_VIEW:
-        return scenesAnswer(await load(ctx))
-      case SCENE_VIEW:
-        return sceneAnswer(await load(ctx), req.params, (scene) => conversationOf(scene, ctx.session.machine))
+        return scenesAnswer(await load(ctx), grants, ctx.now)
+      case SCENE_VIEW: {
+        const ledger = await load(ctx)
+        const input = req.params.scene ?? ''
+        const named = scenesNamed(ledger, input)
+        const scene = named.length === 1 ? named[0] : undefined
+        return scene ? sceneAnswer(ledger, scene, conversationOf(scene, ctx.session.machine), grants) : noSuchScene(input, named.length)
+      }
       case ACTIVITY_VIEW:
-        return activityAnswer(await load(ctx), req.params)
+        return activityAnswer(await load(ctx), req.params, grants, ctx.now)
+      case STATS_VIEW: {
+        // From the facts alone: no file is read, so the page costs the same however large the library's files are.
+        const period = req.params.period
+        return statsAnswer(statsOf(await readFacts(ctx.dir), isPeriod(period) ? period : DEFAULT_PERIOD, ctx.now))
+      }
       case HELD_VIEW:
         return heldAnswer(await load(ctx), await heldCopies(ctx))
       default:
@@ -441,18 +490,25 @@ export const ledger: Plugin = {
     const bundle = itemNamed(ledger, root, path) ? null : await enclosingBundle(root, path)
     if (bundle !== null) return partOfSection(bundle)
     const view = await panelView(ctx, ledger, path)
-    if (view) return itemSection(view)
+    if (view) return itemSection(view, ledger, ctx.library.config.grants)
     return (await fileAt(root, path)) ? unownedSection(path) : null
   },
 
-  /** Records each owner operation that was done, so agents see it in check; an archive purge removes the items it deleted. */
+  /**
+   * Records each owner operation that was done, and an approved request's run however it ended, so
+   * agents see them in check; an archive purge removes the items it deleted. An agent's ask and its
+   * withdrawal are facts too.
+   */
   async observe(event, ctx) {
-    if (event.face !== 'owner' || event.result.outcome !== 'done') return
+    const body = recordOf(event)
+    if (body === null) return
     const w = await writing(ctx)
-    w.facts.push(fact(ctx, 'tool', { kind: 'owner.op', command: event.command, summary: ownerSummary(event.result.text), destructive: event.destructive, ...(event.readOnly ? { readOnly: true as const } : {}), ...(event.setup ? { setup: true as const } : {}) }))
-    for (const path of purged(event)) {
-      const id = w.ledger.pathIndex.get(path)
-      if (id !== undefined) w.facts.push(fact(ctx, 'tool', { kind: 'item.remove', item: id }))
+    w.facts.push(fact(ctx, 'tool', withDeclined(body, event, w.ledger)))
+    if (event.face === 'owner') {
+      for (const path of purged(event)) {
+        const id = w.ledger.pathIndex.get(path)
+        if (id !== undefined) w.facts.push(fact(ctx, 'tool', { kind: 'item.remove', item: id }))
+      }
     }
     await writeFacts(ctx.dir, w.facts)
   },

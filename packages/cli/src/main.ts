@@ -5,27 +5,35 @@ import { homedir, hostname } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import {
+  endpointOf,
+  ensureLauncher,
+  GRANT_NAME,
+  guideText,
+  guideUrl,
   identifyActor,
   identifySession,
   initLibrary,
+  instant,
   loadPlugins,
   makeContext,
   openLibrary,
   ownerFace,
+  pairingAnswer,
   PNEUMA_BASE_VERSION,
+  requestPairing,
   resolveGrant,
+  sentenceFor,
   type Env,
   type Grant,
   type Instant,
   type Library,
   type MachineContext,
-  type OwnerArgs,
   type OwnerCall,
   type OwnerCommandInfo,
   type OwnerResult,
   type PluginTable,
 } from '@pneuma-base/kernel'
-import { UsageError, flagList, flagValue, hasFlag, leadingWords, ownFlags, parseCommand, splitLine, type FlagKind, type Line, type Parsed } from './args.js'
+import { UsageError, argsOf, flagList, flagValue, hasFlag, leadingWords, matchCommand, ownFlags, parseCommand, splitLine, type FlagKind, type Line, type Parsed } from './args.js'
 import { ownerText } from './format.js'
 import { serve } from './mcp/server.js'
 import { libraryFace } from './mcp/tools.js'
@@ -127,6 +135,8 @@ const USAGE = `用法：
       archive <库内路径> | unarchive <库内路径>
 看管理界面的一页：show [<页的编号> [--<参数> <值>…]]（不写编号列出这个库的页；条目面板是 show item --path <库内路径>）
 给只能接 MCP 的 agent 应用：pneuma-base @<授权名> mcp（在标准输入输出上跑 MCP 服务，动词和能用的命令都是工具）
+让 agent 自己接上：guide [<产品>] [--library <库的目录>] [--url]（给 agent 读的说明，和本机地址 /guide 给的一样；--url 印出那个地址）
+      pair request <产品> "<为什么>" [--library <库的目录>]（请主人允许接入，答复里有配对码）| pair status <配对号>
 主人：view [<目录>] [--port <端口>] [--no-open]（在浏览器里打开管理界面；pneuma-base <目录> 也一样）
       init <目录> [--bare]
 插件作者：plugin new <目录> [--kind blank|deploy] [--name <插件名>] [--packages <两个包文件所在的目录>]（生成一个插件项目）
@@ -170,8 +180,11 @@ async function help(argv: readonly string[], io: Io, table: PluginTable, home: s
 /** `table`: every plugin this machine has; `builtins`: the command line's own, which the UI's server joins with the machine's on each request. */
 type Invocation = { parsed: Parsed; args: string[]; io: Io; table: PluginTable; builtins: PluginTable; home: string }
 
-/** `flags`: how each of its own flags takes values; `any` for say, whose flags are the plugins'; `params` for show, whose flags are a page's parameters, each with one value. */
-type Spec = { words: string[]; flags: Readonly<Record<string, FlagKind>> | 'any' | 'params'; arity: [min: number, max: number] } & (
+/**
+ * `flags`: how each of its own flags takes values; `any` for say, whose flags are the plugins'; `params` for show, whose flags are a page's parameters, each with one value.
+ * `rawAfter`: after this many positionals, the rest of the line is taken as written, as ask takes the command it asks for.
+ */
+type Spec = { words: string[]; flags: Readonly<Record<string, FlagKind>> | 'any' | 'params'; arity: [min: number, max: number]; rawAfter?: number } & (
   | { library: true; run: (inv: Invocation, bound: Bound) => Promise<Answer> }
   | { library: false; run: (inv: Invocation) => Promise<Answer> }
 )
@@ -214,19 +227,86 @@ function verbValues({ params }: Verb, parsed: Parsed): VerbInput {
 
 /** A verb of the table as the command line's own command: its flags and how many words it takes, read from its `params`. */
 function specOf(verb: Verb): Spec {
-  const { positional = [], flags = [], more } = verb.params
+  const { positional = [], flags = [], more, raw } = verb.params
   const takesRest = positional.some((p) => p.words || p.many)
   return {
     words: [verb.name],
     flags: more ? (more.each === 'list' ? 'any' : 'params') : Object.fromEntries(flags.map((f) => [f.name, f.kind])),
     arity: [positional.filter((p) => p.required).length, takesRest ? Infinity : positional.length],
+    ...(raw === undefined ? {} : { rawAfter: positional.findIndex((p) => p.name === raw) }),
     library: true,
     run: (inv, bound) => verb.run(verbValues(verb, inv.parsed), { bound, table: inv.table, env: inv.io.env, cwd: inv.io.cwd, stdin: () => inv.io.readStdin() }),
   }
 }
 
+const NO_ENDPOINT = '现在没有开着的 Pneuma Base 地址：它在 Pneuma Base 应用开着时有，或者运行 pneuma-base view <库的目录>。'
+
+/** The library of a command for an agent not connected yet: `--library`, else the one the running endpoint serves. */
+async function servedLibrary({ parsed, io, table, home }: Invocation): Promise<Library | Answer> {
+  const dir = flagValue(parsed, 'library')
+  const root = dir === null ? ((await endpointOf(home, null))?.library ?? null) : resolve(io.cwd, dir)
+  if (root === null) throw new UsageError('没有开着的 Pneuma Base 地址，用 --library <库的目录> 指明是哪个库。')
+  return (await openLibrary(root, table)) ?? refusal('not-a-library', `${dir ?? root} 不是一个库。`)
+}
+
+const productArg = (name: string): string => {
+  if (!GRANT_NAME.test(name)) throw new UsageError(`不是一个产品名：${name}（小写字母或数字开头，只用小写字母、数字和连字符）`)
+  return name
+}
+
 const SPECS: Spec[] = [
   ...VERBS.map(specOf),
+  {
+    words: ['guide'],
+    flags: { url: 'boolean' },
+    arity: [0, 1],
+    library: false,
+    run: async (inv) => {
+      const { args, parsed, io, table, home } = inv
+      const product = args[0] === undefined ? null : productArg(args[0])
+      if (hasFlag(parsed, 'url')) {
+        const dir = flagValue(parsed, 'library')
+        const library = dir === null ? null : await openLibrary(resolve(io.cwd, dir), table)
+        if (dir !== null && library === null) return refusal('not-a-library', `${dir} 不是一个库。`)
+        const endpoint = await endpointOf(home, library?.root ?? null)
+        if (endpoint === null) return refusal('no-endpoint', NO_ENDPOINT)
+        const json = { url: guideUrl(endpoint.url), port: endpoint.port, library: endpoint.library, sentence: sentenceFor(endpoint.url) }
+        return { json, lines: [json.url], exit: 0 }
+      }
+      const library = await servedLibrary(inv)
+      if ('exit' in library) return library
+      // The guide names this machine's command; it runs only once it is there.
+      await ensureLauncher(home, io.env)
+      const url = (await endpointOf(home, library.root))?.url ?? null
+      const text = guideText({ root: library.root, home, env: io.env, url }, product)
+      return { json: { library: library.root, product, url, text }, lines: [text.trimEnd()], exit: 0 }
+    },
+  },
+  {
+    words: ['pair', 'request'],
+    flags: {},
+    arity: [2, Infinity],
+    library: false,
+    run: async (inv) => {
+      const [product, ...why] = inv.args as [string, ...string[]]
+      const library = await servedLibrary(inv)
+      if ('exit' in library) return library
+      const r = await requestPairing({ home: inv.home, library: library.root, product, why: why.join(' '), via: 'command-line', now: instant(Date.now()) })
+      if (r.outcome === 'refused' && r.reason === 'usage') throw new UsageError(r.text)
+      return { json: r, lines: [r.outcome === 'refused' ? `拒绝（${r.reason}）：${r.text}` : r.text], exit: r.outcome === 'refused' ? 2 : 0 }
+    },
+  },
+  {
+    words: ['pair', 'status'],
+    flags: {},
+    arity: [1, 1],
+    library: false,
+    run: async ({ args, home }) => {
+      const id = args[0] as string
+      const a = await pairingAnswer(home, id, instant(Date.now()))
+      return a === null ? refusal('no-such-pairing', `没有配对 ${id}。`) : { json: a, lines: [a.text], exit: 0 }
+    },
+  },
   {
     words: ['mcp'],
     flags: {},
@@ -294,7 +374,7 @@ const SPECS: Spec[] = [
       const port = flagValue(parsed, 'port')
       if (port !== null && !/^\d{1,5}$/.test(port)) throw new UsageError(`--port 要写一个端口号：${port}`)
       const dir = resolve(io.cwd, args[0] ?? '.')
-      const stopped = await view({ dir, builtins, home, io, port: port === null ? 0 : Number(port), open: !hasFlag(parsed, 'no-open') })
+      const stopped = await view({ dir, builtins, home, io, port: port === null ? undefined : Number(port), open: !hasFlag(parsed, 'no-open') })
       return { json: stopped, lines: ['界面已关闭。'], exit: 0 }
     },
   },
@@ -332,21 +412,6 @@ function contextFor({ parsed, io, home }: Invocation, library: Library, grant: G
 const GRANT_BOUND: ReadonlySet<string> = new Set(['skill install'])
 
 const words = (name: string) => name.split(' ')
-
-/** The owner command with the most words that start the typed words. */
-function matchCommand(commands: OwnerCommandInfo[], typed: readonly string[]): OwnerCommandInfo | undefined {
-  return commands.filter((c) => words(c.name).every((w, i) => typed[i] === w)).sort((a, b) => words(b.name).length - words(a.name).length)[0]
-}
-
-/**
- * The arguments after the command's name, read by its `params`: a flag it does not declare is a
- * switch, which the owner face then refuses with the usage line.
- */
-function argsOf(command: OwnerCommandInfo, line: Line): OwnerArgs {
-  const kinds = Object.fromEntries((command.params.flags ?? []).map((f) => [f.name, f.kind]))
-  const parsed = parseCommand(line, words(command.name).length, kinds, 'switch', command.name)
-  return { positional: parsed.positional, flags: Object.fromEntries(ownFlags(parsed)) }
-}
 
 /** The library of a grant-bound command: the one its grant points at, used by the owner. */
 async function bindByGrant(inv: Invocation, grantName: string | undefined, command: string): Promise<Bound | Answer> {
@@ -407,7 +472,7 @@ function parseSpec(line: Line, spec: Spec): Parsed {
   const name = spec.words.join(' ')
   if (spec.flags === 'any') return parseCommand(line, spec.words.length, {}, 'table', name)
   if (spec.flags === 'params') return parseCommand(line, spec.words.length, {}, 'value', name)
-  return parseCommand(line, spec.words.length, spec.flags, 'error', name)
+  return parseCommand(line, spec.words.length, spec.flags, 'error', name, spec.rawAfter)
 }
 
 /** `pneuma-base <directory>`, with nothing else but flags, is `pneuma-base view <directory>`. */

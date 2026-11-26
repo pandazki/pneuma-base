@@ -1,5 +1,24 @@
-import { CONTENT_LIMIT, type ArchiveResult, type CheckResult, type Content, type FindResult, type InspectResult, type OwnerResult, type PluginProblem, type PutRequest, type PutResult, type SayResult, type Section } from '@pneuma-base/kernel'
-import { minute } from './page.js'
+import {
+  CONTENT_LIMIT,
+  endText,
+  quote,
+  type ArchiveResult,
+  type Ask,
+  type AskResult,
+  type CheckResult,
+  type Content,
+  type FindResult,
+  type InspectResult,
+  type OwnerCommandInfo,
+  type OwnerRequest,
+  type OwnerResult,
+  type PluginProblem,
+  type PutRequest,
+  type PutResult,
+  type SayResult,
+  type Section,
+} from '@pneuma-base/kernel'
+import { commandOf, minute } from './page.js'
 
 const REFUSAL: Record<string, (subject: string) => string> = {
   'outside-library': (s) => `${s} 不在库的内容里。库内路径相对库的根目录写，不能是 .pneuma-base/ 或 PNEUMA-BASE.md；_archive/ 只经 archive 和 unarchive 进出。`,
@@ -70,8 +89,30 @@ export function inspectText(target: string, r: InspectResult, inner: string | nu
   const kind = r.file?.kind === 'bundle' ? `目录，${r.file.files} 个文件，` : ''
   const file = r.file
     ? [`${r.file.path}${r.file.archived ? '（已归档）' : ''} · ${kind}${r.file.size} 字节，改于 ${minute(r.file.modifiedAt)} · 指纹 ${r.file.fingerprint.slice(0, 12)}…`]
-    : r.sections.length > 0 ? [] : [`库里没有这个文件：${target}`]
-  return [...sectionsText(r.sections), ...file, ...(r.content && r.file ? contentText(target, r.content, inner) : []), ...tail([], r.problems)]
+    : r.sections.length > 0 || r.request ? [] : [`库里没有这个文件：${target}`]
+  const request = r.request ? requestText(r.request) : []
+  return [...request, ...sectionsText(r.sections), ...file, ...(r.content && r.file ? contentText(target, r.content, inner) : []), ...tail([], r.problems)]
+}
+
+/** One request in full: who asked and when, why, the command, and where it stands. */
+function requestText(q: OwnerRequest): string[] {
+  return [`请求 ${q.id}`, `  谁提的：${q.by.name} · ${minute(q.at)}`, `  为什么：${q.why}`, `  命令：${q.line}`, `  现在：${endText(q)}`]
+}
+
+export function askText(r: AskResult): string[] {
+  if (r.outcome === 'refused') return [`拒绝（${r.reason}）：${r.text}`, ...tail([], r.problems)]
+  const q = r.request
+  if (r.outcome === 'withdrawn') return [`已撤回请求 ${q.id}：${q.line}`, ...tail([], r.problems)]
+  const head = r.again ? `这个请求已经在等主人决定：${q.line}（请求 ${q.id}，${minute(q.at)} 提的），不用再提。` : `已请主人做：${q.line}（请求 ${q.id}）`
+  const next = `主人会在管理界面的首页和 request list 里看到它，批准就以主人的身份照原样运行。结果在你下次 check 的「你提的请求」里；不需要了，用 ask --withdraw ${q.id} 撤回。`
+  return [head, ...(r.again ? [] : [next]), ...tail([], r.problems)]
+}
+
+/** The caller's own requests in check: those the owner decided since it last looked, each with how it ended, and how many still wait. */
+function requestsText({ ended, pending }: CheckResult['requests']): string[] {
+  if (ended.length === 0 && pending === 0) return []
+  const waiting = pending === 0 ? [] : [`${ended.length > 0 ? '还有' : '有'} ${pending} 个在等主人决定。`]
+  return ['## 你提的请求', ...ended.map((q) => `- ${q.id} ${q.line}：${endText(q)}`), ...waiting]
 }
 
 function contentText(target: string, c: Content, inner: string | null): string[] {
@@ -94,16 +135,34 @@ export function sayText(r: SayResult): string[] {
   return [head, ...tail([], r.problems)]
 }
 
-export function checkText(r: CheckResult): string[] {
-  return [...(r.sections.length === 0 ? ['没有可报告的。'] : sectionsText(r.sections)), ...tail([], r.problems)]
+/**
+ * What only the owner can settle, for an agent to pass on: each sentence and who raises it, then for
+ * each answer the command the owner runs, the suggested one marked.
+ */
+function asksText(asks: readonly Ask[], commands: readonly OwnerCommandInfo[], root: string): string[] {
+  if (asks.length === 0) return []
+  const library = `--library ${quote(root)}`
+  return [
+    '## 要主人来做的',
+    ...asks.flatMap((a) => [
+      `- ${a.text}（${typeof a.by === 'string' ? a.by : a.by.name}）`,
+      ...a.actions.map((x, i) => `  pneuma-base ${commandOf(x, commands)} ${library}  # ${x.label}${i === a.suggested ? '（推荐）' : ''}`),
+    ]),
+    '这些只有主人能定：告诉主人，主人在自己的终端里运行上面的命令，或在管理界面的首页上点。',
+  ]
+}
+
+export function checkText(r: CheckResult, commands: readonly OwnerCommandInfo[], root: string): string[] {
+  const own = [...requestsText(r.requests), ...asksText(r.asks, commands, root)]
+  return [...(r.sections.length === 0 && own.length === 0 ? ['没有可报告的。'] : [...sectionsText(r.sections), ...own]), ...tail([], r.problems)]
 }
 
 /** start's three parts under their headings. A part with nothing prints nothing; the related part says when nothing is related. */
-export function startText(say: SayResult, check: CheckResult, find: FindResult): string[] {
+export function startText(say: SayResult, check: CheckResult, find: FindResult, commands: readonly OwnerCommandInfo[], root: string): string[] {
   const part = (heading: string, lines: string[]) => (lines.length > 0 ? [heading, ...lines] : [])
   return [
     ...part('【记下】', sayText(say)),
-    ...part('【库的变化与状况】', [...sectionsText(check.sections), ...tail([], check.problems)]),
+    ...part('【库的变化与状况】', [...sectionsText(check.sections), ...requestsText(check.requests), ...asksText(check.asks, commands, root), ...tail([], check.problems)]),
     ...part('【库里可能相关的】', findText(find, '库里没有和这件事相关的东西。')),
   ]
 }

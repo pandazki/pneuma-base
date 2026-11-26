@@ -205,11 +205,15 @@ export function canonical(value: unknown): string {
 /** The command an MCP server entry runs. */
 export type ServerCommand = { command: string; args: readonly string[]; env: Readonly<Record<string, string>> }
 
+/** What an MCP server entry names: a command to run, or the address of a server already running. */
+export type ServerEntry = ServerCommand | { url: string }
+
 /** A TOML basic string: JSON's escapes for a string are TOML's. */
 const tomlString = (s: string) => JSON.stringify(s)
 
-/** The tables for one MCP server, written as Codex writes them itself: the command, then its environment. */
-export function tomlBlock(table: string, name: string, c: ServerCommand): string {
+/** The tables for one MCP server, written as Codex writes them itself: the command, then its environment; or the one line of its address. */
+export function tomlBlock(table: string, name: string, c: ServerEntry): string {
+  if ('url' in c) return `[${table}.${name}]\nurl = ${tomlString(c.url)}\n`
   const env = Object.entries(c.env).map(([k, v]) => `${k} = ${tomlString(v)}\n`).join('')
   return `[${table}.${name}]\ncommand = ${tomlString(c.command)}\nargs = [${c.args.map(tomlString).join(', ')}]\n${env === '' ? '' : `\n[${table}.${name}.env]\n${env}`}`
 }

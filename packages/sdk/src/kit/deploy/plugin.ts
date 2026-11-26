@@ -3,9 +3,12 @@
 // current content. README.md in this folder.
 import { CONTRACT, pluginName } from '../../index.js'
 import type { IconName } from '../../icons.js'
-import type { Plugin, SayAnswer, SecretDecl } from '../../types.js'
-import { commands } from './commands.js'
-import { newThingId } from './facts.js'
+import { formOf } from '../../params.js'
+import type { Action, Plugin, PluginAsk, SayAnswer, SecretDecl } from '../../types.js'
+import { join } from 'node:path'
+import { recordStore } from '../records.js'
+import { commands, switchName, SWITCH_PARAMS } from './commands.js'
+import { fold, newThingId, parseFact } from './facts.js'
 import { declaredAt, look, looks, record, settle, thingPath, withRun, type Kit } from './reconcile.js'
 import type { TargetAdapter } from './target.js'
 import { cognitionText, followed, lookText, skippedText, staysOnline, unsettledText } from './words.js'
@@ -30,6 +33,12 @@ export type DeployOptions = {
 function secretsOf(kit: Kit): { secrets?: SecretDecl[] } {
   const all = new Map(kit.targets.flatMap((t) => t.secrets ?? []).map((s) => [s.name, s]))
   return all.size === 0 ? {} : { secrets: [...all.values()] }
+}
+
+/** The owner's switch for one thing, as a button: 上线 or 不上线. */
+function switchAction(kit: Kit, path: string, on: boolean): Action {
+  const { inputs, call } = formOf({ name: switchName(kit.name, on), params: SWITCH_PARAMS }, { fixed: { path } })
+  return { label: on ? '上线' : '不上线', tone: 'default', confirm: null, inputs, call }
 }
 
 const heard = (note: string): SayAnswer => ({ outcome: 'heard', note })
@@ -115,6 +124,24 @@ export function deployPlugin(name: string, targets: TargetAdapter | readonly Tar
         const skipped = skippedText(kit, run.skipped)
         return [...(unsettled ? [{ title: '线上和库里不一致', ...unsettled }] : []), ...(skipped ? [{ title: `${kit.title}记录里读不懂的行`, ...skipped }] : [])]
       })
+    },
+
+    /** Each thing declared deployable whose switch the owner never set, while it is in the library: put it online, or keep it off. */
+    async onAsks(ctx) {
+      const { records } = await recordStore(join(ctx.dir, 'facts'), parseFact).read()
+      const asks: PluginAsk[] = []
+      for (const thing of fold(records).things.values()) {
+        if (thing.decided || ctx.tools.regionOf(thing.path) !== 'content' || !(await ctx.tools.thing(thing.path))) continue
+        const by = thing.declaredBy === 'owner' ? '' : `${thing.declaredBy} 说 `
+        asks.push({
+          key: `${kit.name}:${thing.id}`,
+          text: `${by}${thing.path} 可以部署，还没上线。要上线吗？`,
+          about: thing.path,
+          actions: [switchAction(kit, thing.path, true), switchAction(kit, thing.path, false)],
+          suggested: 0,
+        })
+      }
+      return asks
     },
 
     /** A declaration purged with the archive is removed, after what is left of it on the target is taken down. */

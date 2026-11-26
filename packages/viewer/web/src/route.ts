@@ -81,6 +81,13 @@ export function follow(route: Route, req: ViewRequest, newTab: boolean): Route {
   return { ...route, tabs: route.tabs.map((tab, i) => (i === route.active ? [...tab, req] : tab)) }
 }
 
+/** The front tab showing `req` in place of what it shows, as a filter changed there; no step to go back to. */
+export function retop(route: Route, req: ViewRequest): Route {
+  const front = route.tabs[route.active]
+  if (!front) return route
+  return { ...route, tabs: route.tabs.map((tab, i) => (i === route.active ? [...tab.slice(0, -1), req] : tab)) }
+}
+
 /** The front tab one view back. */
 export function back(route: Route): Route {
   const front = route.tabs[route.active]
@@ -101,8 +108,11 @@ export const activate = (route: Route, i: number): Route => (i >= 0 && i < route
 
 const sameRoute = (a: Route, b: Route) => encodeRoute(a) === encodeRoute(b) && JSON.stringify(a.tabs) === JSON.stringify(b.tabs)
 
-/** The route, and a way to go to another, which adds a history entry when anything changed. */
-export function useRoute(): [Route, (next: (route: Route) => Route) => void] {
+/**
+ * The route, and a way to go to another, which adds a history entry when anything changed, or with
+ * `replace` changes the current one, for what the page opened by itself.
+ */
+export function useRoute(): [Route, (next: (route: Route) => Route, opts?: { replace?: boolean }) => void] {
   const [route, setRoute] = useState(current)
   const latest = useRef(route)
   latest.current = route
@@ -111,12 +121,14 @@ export function useRoute(): [Route, (next: (route: Route) => Route) => void] {
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
-  const go = useCallback((next: (route: Route) => Route) => {
+  const go = useCallback((next: (route: Route) => Route, opts: { replace?: boolean } = {}) => {
     const before = latest.current
     const after = next(before)
     if (sameRoute(after, before)) return
     const fragment = encodeRoute(after)
-    window.history.pushState({ tabs: after.tabs }, '', `${window.location.pathname}${window.location.search}${fragment === '' ? '' : `#${fragment}`}`)
+    const address = `${window.location.pathname}${window.location.search}${fragment === '' ? '' : `#${fragment}`}`
+    if (opts.replace) window.history.replaceState({ tabs: after.tabs }, '', address)
+    else window.history.pushState({ tabs: after.tabs }, '', address)
     latest.current = after
     setRoute(after)
   }, [])

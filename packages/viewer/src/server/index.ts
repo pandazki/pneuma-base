@@ -1,14 +1,19 @@
-// The management UI's server: Node's http, on 127.0.0.1 only. ARCHITECTURE.md section 6.
+// The management UI's server and the local endpoint agents talk to: Node's http, on the loopback
+// addresses only. ARCHITECTURE.md section 6.
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { readFile, stat } from 'node:fs/promises'
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import type { AddressInfo } from 'node:net'
+import { readFile, realpath, stat } from 'node:fs/promises'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import { extname, isAbsolute, join, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { openLibrary, type Env, type PluginTable } from '@pneuma-base/kernel'
-import { call, init, state, tableOf, view, type Reply, type Served } from './api.js'
+import { dropEndpoint, openLibrary, PREFERRED_PORT, recordEndpoint, type Env, type Instant, type PluginTable } from '@pneuma-base/kernel'
+import { agentRoutes, type McpEndpoint } from './agent.js'
+import { call, init, state, tableOf, view, type Served } from './api.js'
 import { libraryFile, pluginUiFile, revision } from './files.js'
+import { readBody, sendJson, TooLarge } from './http.js'
+import { listenLoopback } from './listen.js'
+
+export type { McpEndpoint, McpRequest } from './agent.js'
 
 export type ServerOptions = {
   dir: string
@@ -20,13 +25,21 @@ export type ServerOptions = {
   /** This machine's `$PNEUMA_BASE_HOME`: grant copies, plugins, caches and secrets, as for the command line. */
   home: string
   env: Env
-  /** 0 or absent: a free port. */
+  /**
+   * Absent: the preferred port, else the next free one of the 19 after it, else any free port, so the
+   * sentence the owner says to an agent stays the same. 0: any free port. A number: exactly that port.
+   */
   port?: number
+  /** The port tried first when `port` is absent: PREFERRED_PORT, unless the caller names another. */
+  preferredPort?: number
   /** The built page; by default the one next to this file. */
   webRoot?: string
+  /** MCP over HTTP at `/mcp/<grant>`; absent, `/mcp/*` is 404. */
+  mcp?: McpEndpoint
 }
 
-export type RunningServer = { url: string; port: number; token: string; close(): Promise<void> }
+/** `url`: the page's address with the token. `endpoint`: the origin agents are told, `http://127.0.0.1:<port>`, without it. */
+export type RunningServer = { url: string; endpoint: string; port: number; token: string; close(): Promise<void> }
 
 const WEB_ROOT = fileURLToPath(new URL('../web/', import.meta.url))
 const BODY_LIMIT = 1024 * 1024
@@ -63,25 +76,36 @@ const FRAME_CSP = "sandbox allow-scripts; frame-ancestors 'self'"
 /** The request itself is malformed: answered with 400. */
 class BadRequest extends Error {}
 
-function sendJson(res: ServerResponse, { status, json }: Reply): void {
-  const body = JSON.stringify(json)
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'content-length': Buffer.byteLength(body) })
-  res.end(body)
-}
-
 async function readJson(req: IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = []
-  let size = 0
-  for await (const chunk of req) {
-    size += (chunk as Buffer).length
-    if (size > BODY_LIMIT) throw new BadRequest('body is too large')
-    chunks.push(chunk as Buffer)
-  }
+  const text = await readBody(req, BODY_LIMIT)
   try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8') || 'null')
+    return JSON.parse(text || 'null')
   } catch {
     throw new BadRequest('body is not JSON')
   }
+}
+
+/** The names and origins this server answers to: the loopback addresses with its port. */
+type Own = { hosts: ReadonlySet<string>; origins: ReadonlySet<string> }
+
+function ownOf(port: number): Own {
+  const hosts = [`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`]
+  return { hosts: new Set(hosts), origins: new Set(hosts.map((h) => `http://${h}`)) }
+}
+
+/**
+ * Why a request is refused before any route sees it, or null. A Host that is not one of this server's
+ * names is DNS rebinding. Another origin, `Origin: null` included, or a fetch the browser marks
+ * cross-site or same-site is a web page reaching in; only the frames' files take that, on purpose.
+ */
+function refusal(req: IncomingMessage, pathname: string, own: Own): string | null {
+  if (!own.hosts.has((req.headers.host ?? '').toLowerCase())) return 'wrong host'
+  if (pathname.startsWith(PLUGIN_UI) || pathname.startsWith(PLUGIN_KIT)) return null
+  const origin = req.headers.origin
+  if (origin !== undefined && !own.origins.has(origin)) return 'cross-origin request'
+  const site = req.headers['sec-fetch-site']
+  if (site === 'cross-site' || site === 'same-site') return 'cross-origin request'
+  return null
 }
 
 
@@ -115,7 +139,8 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, served: 
     case 'GET /api/file':
       return sendLibraryFile(res, served, url.searchParams)
     case 'GET /api/rev':
-      return sendJson(res, { status: 200, json: { rev: await revision(served.dir) } })
+      // Pairings are machine state, not the library's: the home page hears of one through the same stamp.
+      return sendJson(res, { status: 200, json: { rev: `${await revision(served.dir)}-${await revision(join(served.home, 'pairings'))}` } })
     case 'POST /api/init':
       return sendJson(res, await init(served, await readJson(req)))
     default:
@@ -163,47 +188,69 @@ async function pluginUi(res: ServerResponse, served: Served, pathname: string): 
 }
 
 /**
- * Serves the UI for `dir` on 127.0.0.1. Every /api request must carry the token, as the `token`
- * query parameter or the `x-pneuma-token` header, and a Host of this address; the page is open.
+ * Serves the UI for `dir`, and the agent routes, on 127.0.0.1 and ::1. Every request must carry a
+ * Host of this server and come from no other origin. Every /api request must also carry the token,
+ * as the `token` query parameter or the `x-pneuma-token` header; the page and the agent routes are open.
  */
 export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const token = randomBytes(16).toString('hex')
   const served: Served = { dir: opts.dir, builtins: opts.builtins, home: opts.home, env: opts.env }
   const webRoot = opts.webRoot ?? WEB_ROOT
-  let hosts: ReadonlySet<string> = new Set()
+  let own: Own = { hosts: new Set(), origins: new Set() }
+  let agent: ReturnType<typeof agentRoutes> = () => null
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1')
-    const plugin = url.pathname.startsWith(PLUGIN_UI)
-    if (!url.pathname.startsWith('/api/') && !plugin) return staticFile(res, webRoot, url.pathname)
-    if (!hosts.has(req.headers.host ?? '')) return sendJson(res, { status: 403, json: { error: 'wrong host' } })
-    if (plugin) return pluginUi(res, served, url.pathname)
-    const given = (req.headers['x-pneuma-token'] as string | undefined) ?? url.searchParams.get('token')
-    if (!sameToken(given, token)) return sendJson(res, { status: 401, json: { error: 'missing or wrong token' } })
-    return api(req, res, url, served)
+    const refused = refusal(req, url.pathname, own)
+    if (refused !== null) return sendJson(res, { status: 403, json: { error: refused } })
+    if (url.pathname.startsWith(PLUGIN_UI)) return pluginUi(res, served, url.pathname)
+    if (url.pathname.startsWith('/api/')) {
+      const given = (req.headers['x-pneuma-token'] as string | undefined) ?? url.searchParams.get('token')
+      if (!sameToken(given, token)) return sendJson(res, { status: 401, json: { error: 'missing or wrong token' } })
+      return api(req, res, url, served)
+    }
+    return agent(req, res, url) ?? staticFile(res, webRoot, url.pathname)
   }
 
-  const server = createServer((req, res) => {
-    handle(req, res).catch((error: unknown) => {
-      const bad = error instanceof BadRequest
-      if (res.headersSent) return void res.end()
-      sendJson(res, { status: bad ? 400 : 500, json: { error: error instanceof Error ? error.message : String(error) } })
-    })
-  })
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(opts.port ?? 0, '127.0.0.1', () => resolve())
-  })
-  const { port } = server.address() as AddressInfo
-  hosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`])
+  const { port, servers } = await listenLoopback(
+    (req, res) => {
+      handle(req, res).catch((error: unknown) => {
+        if (res.headersSent) return void res.end()
+        const status = error instanceof TooLarge ? 413 : error instanceof BadRequest ? 400 : 500
+        sendJson(res, { status, json: { error: error instanceof Error ? error.message : String(error) } })
+      })
+    },
+    opts.port,
+    opts.preferredPort ?? PREFERRED_PORT,
+  )
+  const endpoint = `http://127.0.0.1:${port}`
+  own = ownOf(port)
+  agent = agentRoutes({ dir: opts.dir, home: opts.home, env: opts.env, origin: endpoint, mcp: opts.mcp ?? null })
+  const stop = () =>
+    Promise.all(
+      servers.map(
+        (server) =>
+          new Promise<void>((resolve) => {
+            server.close(() => resolve())
+            server.closeAllConnections()
+          }),
+      ),
+    )
+  try {
+    await recordEndpoint(opts.home, { url: endpoint, port, pid: process.pid, library: await realpath(opts.dir).catch(() => opts.dir), at: new Date().toISOString() as Instant })
+  } catch (error) {
+    await stop()
+    throw error
+  }
   return {
-    url: `http://127.0.0.1:${port}/?token=${token}`,
+    url: `${endpoint}/?token=${token}`,
+    endpoint,
     port,
     token,
-    close: () =>
-      new Promise((resolve) => {
-        server.close(() => resolve())
-        server.closeAllConnections()
-      }),
+    close: async () => {
+      await dropEndpoint(opts.home, port, process.pid)
+      await opts.mcp?.close()
+      await stop()
+    },
   }
 }
