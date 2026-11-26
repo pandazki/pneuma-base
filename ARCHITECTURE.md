@@ -39,6 +39,7 @@
 | 认知段 | 一个插件拼进说明的那一段话 |
 | 本体、缓存 | 插件对自己名下每个目录的声明。本体跟着文件夹走；缓存不同步，删了能重建 |
 | 存储 | 库最底下的一层，程序 `pneuma-base-core`（`core/`）：看和写库的文件夹，存每个记录处的事实和行，读写库根的声明。内核是它唯一的调用方，插件经 `tools.storage` 用它 |
+| 存储提供者 | 讲 `STORAGE.md`、答得出 `describe` 的一个程序。库的地址有写法（文件夹，或 `<scheme>://…`），每种由这台机器上装的一个提供者来答。安装包自带本机文件夹的那一个，别的从 GitHub 仓库的发布装，先验再用（`PROVIDERS.md`） |
 | 令牌 | 存储对一个位置此刻状态的不透明标记。一样东西靠它认：令牌没变就是没变。内核和插件只存着、交回去，比较由存储做 |
 | 指纹 | 内容的 sha256，目录条目按内容规则算（第 4 节「一个目录算一样东西」）。只在内容经过内核、要判一处差别或有人要时才读，所以一样东西可以没有指纹 |
 | 噪音 | 库根的 `.pneuma-base/noise.json` 声明的名字和路径。存储从不报告、不进入它们 |
@@ -62,7 +63,7 @@ packages/cli ──▶ packages/viewer ──▶ packages/kernel ◀── packa
 | 包 | 职责 | 不许 |
 | --- | --- | --- |
 | `packages/sdk` | 插件契约（`@pneuma-base/sdk`）：全部类型、契约版本 `CONTRACT`、`definePlugin`、`defineCommand`，从命令的参数表生成用法和表单的 `usageOf`、`formOf`，和插件自己造带品牌的值用的 `pluginName`、`instant`、`PLUGIN_NAME`、`SECRET_NAME`，插件不能用的名字 `KERNEL_COMMAND_NAMES`、`RESERVED_PLUGIN_NAMES`，这一版的版本号 `PNEUMA_BASE_VERSION`。另一个入口 `@pneuma-base/sdk/kit` 是插件打进自己包里的库：只新增文件的记录库 `recordStore`、配置文件助手 `configFile`、部署库 `deployPlugin` 和写目标用的 `defineTarget`（第 13 节）。第三个入口 `@pneuma-base/sdk/testkit` 是测试工具和符合性检查（第 5 节「写一个库外的插件」）。库外的插件只依赖它 | 导入内核、命令行、界面或任何插件；含内核的逻辑（内核的工具经上下文的 `tools` 给，库也只用 `tools`） |
-| `packages/kernel` | 打开库、解析配置、识别行动者和会话、七个动词的管线、请求、授权的门、事件、认知的拼装、技能的生成、接上和断开 agent 产品（产品表）、给 agent 的说明和配对、装载和安装库外的插件、本机的密钥、存储的门（`storage.ts`）、目录的三种（`places.ts`）、变化由谁来学（`changes.ts`：常驻的进程订阅，一次性的命令带预算问）、噪音的命令。依赖 sdk，并把它原样再导出 | 依赖 sdk 以外的任何包；认识任何插件的事实或目录；不经存储读写库的文件夹或记录区 |
+| `packages/kernel` | 打开库、解析配置、识别行动者和会话、七个动词的管线、请求、授权的门、事件、认知的拼装、技能的生成、接上和断开 agent 产品（产品表）、给 agent 的说明和配对、装载和安装库外的插件、本机的密钥、存储的门（`storage.ts`：启动答这个库的地址的提供者）、存储提供者的登记和 `storage` 的几条命令（`providers.ts`、`provider-install.ts`、`storage-commands.ts`）、目录的三种（`places.ts`）、变化由谁来学（`changes.ts`：常驻的进程订阅，一次性的命令带预算问）、噪音的命令。依赖 sdk，并把它原样再导出 | 依赖 sdk 以外的任何包；认识任何插件的事实或目录；不经存储读写库的文件夹或记录区 |
 | `core/` | 存储：Rust 的 cargo 工作区。`storage` 是抽象（`Storage` trait，不认识文件系统），`local` 是本地文件夹的实现，`cli` 是程序 `pneuma-base-core`（单次操作，或 `serve`：每行一个请求、一个答复），它的测试 `core/cli/tests/` 只经程序走，是契约的测试；`bench` 量存储的目标。线上的形式在 `core/README.md`：看内容的 `glance`、`overview`、`probe`、`look`、`changed`，读写内容的 `content`、`read`、`write`（带预期；来源可以是库里的一个位置，那就是复制）、`move`、`remove`，占位的 `hold`、`release`，`serve` 里的订阅 `subscribe`（常驻的进程听变化，存储把听到的记进缓存区里的一份小日志，任何进程的 `changed` 都从它答），记录处的事实（`facts.append`、`facts.since`）、行（`rows.*`）和它自己的地方，库根的声明（`declaration.read`、`declaration.write`），噪音和 `init` | 被内核以外的东西调用（内核唯一的门是 `packages/kernel/src/storage.ts`，插件经 `tools.storage`）；懂事实和行的意思；答复里写给人看的句子；跟着库里的链接走；报告或进入噪音 |
 | `packages/plugin-ledger` | 记账与对账：事实、场景、条目、对账、来历、过期、变化，留存（第 10 节） | 读写别的插件的目录；绕过内核的公开接口；导入别的插件 |
 | `packages/plugin-version` | 版本：声明了有版本的东西，每一版都留着（第 11 节） | 同上 |
@@ -74,7 +75,7 @@ packages/cli ──▶ packages/viewer ──▶ packages/kernel ◀── packa
 
 插件只经契约的类型和上下文对象接触内核：自带的插件从 `packages/kernel` 导入（它再导出 sdk），部署插件和库外的插件只依赖 `packages/sdk`，运行时不导入内核，要用内核的工具就用上下文的 `tools`。插件之间不直接调用，也不互相导入。内核不导入界面，界面不导入任何插件，sdk 不导入内核、命令行、界面和任何插件；lint 的导入规则守这几条，`packages/kernel/test/dependency-direction.test.ts` 在故意违反的例子上看它们变红。
 
-内核和记账插件只经存储的门读写库的文件夹和记录区（K10）。lint 守着：`packages/kernel/src` 和 `packages/plugin-ledger/src` 下的文件不导入 `node:fs`、`node:child_process`；内核的文件不导入 `machine-files.ts`，不用 `paths.ts` 的 `abs`、`canonical`；记账插件不从内核取直接碰文件夹的助手（`abs`、`thingAt`、`fingerprintOf` 这些）；两边都不用 `tools` 的第 1 版工具（第 5 节「上下文里的工具」）。`eslint.config.js` 的 `OFF_STORAGE` 列出可以用文件系统的几个文件，各写着为什么，它们碰的都不是库的文件夹和记录区：门本身（`storage.ts`：起存储的程序，找它在哪）；存储能答之前的库的地址（`address.ts`：调用方写的文件夹的真实路径，`init` 建的文件夹）；调用方写的绝对路径经链接解析成库内路径（`paths.ts`）；放的来源在库外（`outside.ts`：它的种类、大小、sha256）；第 1 版的兼容层（`contract-v1.ts`：库外文件的 sha256，`copyOut` 写到的库外目录）；包自己的文字（`cognition.ts`）；本机 `$PNEUMA_BASE_HOME` 下的状态（授权、endpoint、配对、密钥、插件、启动器、连接的记录）；agent 产品的配置、技能目录和对话；主人命令写到主人指定处的技能文件；记账插件读 agent 的对话记录（`conversation.ts`）。`packages/kernel/test/storage-door.test.ts` 在故意违反的例子上看这条变红，也看这几个文件不被拦。
+内核和记账插件只经存储的门读写库的文件夹和记录区（K10）。lint 守着：`packages/kernel/src` 和 `packages/plugin-ledger/src` 下的文件不导入 `node:fs`、`node:child_process`；内核的文件不导入 `machine-files.ts`，不用 `paths.ts` 的 `abs`、`canonical`；记账插件不从内核取直接碰文件夹的助手（`abs`、`thingAt`、`fingerprintOf` 这些）；两边都不用 `tools` 的第 1 版工具（第 5 节「上下文里的工具」）。`eslint.config.js` 的 `OFF_STORAGE` 列出可以用文件系统的几个文件，各写着为什么，它们碰的都不是库的文件夹和记录区：门本身（`storage.ts`：起存储的程序）；这台机器上的存储提供者（`providers.ts`：登记处、本安装的两个程序、在一个空的临时文件夹上问提供者的 `describe`；`provider-install.ts`：从仓库的发布取程序、对它跑契约测试）；存储能答之前的库的地址（`address.ts`：调用方写的文件夹的真实路径，`init` 建的文件夹）；调用方写的绝对路径经链接解析成库内路径（`paths.ts`）；放的来源在库外（`outside.ts`：它的种类、大小、sha256）；第 1 版的兼容层（`contract-v1.ts`：库外文件的 sha256，`copyOut` 写到的库外目录）；包自己的文字（`cognition.ts`）；本机 `$PNEUMA_BASE_HOME` 下的状态（授权、endpoint、配对、密钥、插件、启动器、连接的记录）；agent 产品的配置、技能目录和对话；主人命令写到主人指定处的技能文件；记账插件读 agent 的对话记录（`conversation.ts`）。`packages/kernel/test/storage-door.test.ts` 在故意违反的例子上看这条变红，也看这几个文件不被拦。
 
 运行时是 Node，语言是 TypeScript，包管理用 pnpm 的工作区，测试用 vitest。存储 `core/` 是 Rust：`pnpm build` 先构建它（`build:core`，`cargo build --release`）；CI 的 `ci.yml` 为此装 Rust 工具链，`core.yml` 在 `core/` 变了时跑它的格式检查、clippy 和测试。
 
@@ -438,7 +439,7 @@ type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems: string
 
 ### 主人面的一个入口
 
-主人面的命令都是数据：名字、一句说明、参数表、是否破坏性、是否只给主人、是否只读（可选）、是否配置（可选）、能不能被请（`askable: false`，可选）、`run`。内核自己的二十六条在 `owner-commands.ts`、`agent-commands.ts`、`launcher.ts`、`request-commands.ts`、`pair-commands.ts` 和 `noise-commands.ts`，都带参数表，和插件的 `OwnerCommand` 同形，只是 `run` 收到整个主人调用（上下文、插件表、环境、是否带授权、怎么问当面确认、怎么读主人另给的值；本机的家目录就是上下文的 `home`），并可交回重开的库。其中十六条要一个库（`grant issue`、`grant revoke`、`plugin add`、`plugin remove`、`skill install`、`archive purge`、`agent connect`、`request list`、`request approve`、`request decline`、`pair list`、`pair allow`、`pair decline`、`noise list`、`noise add`、`noise remove`）；十条只动这台机器，有没有库都能跑（`plugin install`、`plugin uninstall`、`plugin list`、`secret set`、`secret list`、`secret remove`、`agent detect`、`agent list`、`agent disconnect`、`launcher install`）：没有库时上下文的 `library` 是 null，没有插件可告诉，不发事件；带着库（比如从界面）时照常在单一出口发事件。
+主人面的命令都是数据：名字、一句说明、参数表、是否破坏性、是否只给主人、是否只读（可选）、是否配置（可选）、能不能被请（`askable: false`，可选）、`run`。内核自己的三十条在 `owner-commands.ts`、`agent-commands.ts`、`launcher.ts`、`request-commands.ts`、`pair-commands.ts`、`noise-commands.ts` 和 `storage-commands.ts`，都带参数表，和插件的 `OwnerCommand` 同形，只是 `run` 收到整个主人调用（上下文、插件表、环境、是否带授权、怎么问当面确认、怎么读主人另给的值；本机的家目录就是上下文的 `home`），并可交回重开的库。其中十六条要一个库（`grant issue`、`grant revoke`、`plugin add`、`plugin remove`、`skill install`、`archive purge`、`agent connect`、`request list`、`request approve`、`request decline`、`pair list`、`pair allow`、`pair decline`、`noise list`、`noise add`、`noise remove`）；十四条只动这台机器，有没有库都能跑（`plugin install`、`plugin uninstall`、`plugin list`、`secret set`、`secret list`、`secret remove`、`agent detect`、`agent list`、`agent disconnect`、`launcher install`、`storage list`、`storage install`、`storage remove`、`storage update`）：没有库时上下文的 `library` 是 null，没有插件可告诉，不发事件；带着库（比如从界面）时照常在单一出口发事件。
 
 - `ownerFace.commands(插件表)` 列出可用的命令：先内核的，后各插件的，按配置次序；名字已被占的不再列，插件盖不住内核的命令。命令行的 `--help` 用它列出主人命令：带 `--library` 或 `@<授权名>` 时是那个库的，否则是内核的。
 - 门：破坏性的和只给主人的，在 agent 的会话里都以 `agent-session` 拒绝；然后按参数表核对；破坏性的再要当面确认。终端里只有输入 `yes` 才算确认；别的回答、输入结束（Ctrl+D）、不在终端里，都以 `not-confirmed` 拒绝。内核自己的命令里，`archive purge` 是破坏性的，`skill install`、`plugin list` 和 `noise list` 谁都能跑，其余只给主人。能被请的命令在 agent 的会话里被拒时，话的最后一行是请主人做它的那条 `ask`（`ownerOnlyRefusal`）；破坏性的和 `askable: false` 的没有这一行。
@@ -556,7 +557,7 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
 - `GET /plugin-kit/frame.js`、`/plugin-kit/frame.css`：开发包，同样带 CORS。
 - 网页的地址带 `shell=mac` 时，它在 Mac 外壳（`app/`）里：`<html>` 标上 `data-shell`，改用系统字体，左边栏顶部给窗口的三个按钮留出位置，外框部分不能选中文字，只对浏览器有意义的提示换掉。外壳在窗口成为或不再是前台窗口时发 `pneuma-shell` 事件，网页标上 `data-window`，窗口在后面时把外框调淡。`data-drag` 标出能拖动窗口的区域，外壳据此拖窗口；浏览器里这个标记什么都不做。
 - 再带 `panel=tray` 时，网页是菜单栏面板的那一种排法（`tray.tsx`），外壳在图标下的小窗口里载入它。它取的是首页的同一份答复，不认识任何插件的视图：顶上是库名（点了是外壳的库的菜单）和「N 件等你」；还有没做完的「开始」时一行「开始：还有 N 步没做」；「等你决定」是首页所有 `asks` 块里的前三件，在这里就能回答，多的写一行「还有 N 件，在窗口里看」；「自上次以来」是首页所有 `feed` 块里最新的五行，没有时用那块自己的 `empty`；底下是「打开窗口」和「退出」。只在面板显示着时每两秒问一次摘要。
-- 网页对外壳说的话经 `window.webkit.messageHandlers.shell.postMessage` 发出。除了 `shell.js` 发的 `ready`、`painted`、`regions`，还有：`{ type: 'choose', to }`（`drop` 块的「选择…」）、`{ type: 'open', link? }`（打开窗口，给了链接就在窗口里打开它）、`{ type: 'libraries' }`、`{ type: 'quit' }`；面板另发 `{ type: 'height', height }`（外壳照它定面板的高）和 `{ type: 'waiting', count }`（图标上的点）。外壳对网页说的都是 `pneuma-shell` 事件：`{ window }`（见上）、`{ link }`（网页照点了这个链接那样打开它）、`{ notice: { tone, text } }`（网页显示成一条提示，并重取，说的是拖放和监看做了什么）、`{ panel: 'shown' }`（面板又显示出来，重取）。外壳自带一个 Node 和命令行的包，只跑这两样，缺省的家目录是 `~/.pneuma-base`，每次启动用 `launcher install` 让本机的命令指向它们（第 6 节「接上一个 agent」）。外壳做什么、怎么监看，见 `app/README.md`。
+- 网页对外壳说的话经 `window.webkit.messageHandlers.shell.postMessage` 发出。除了 `shell.js` 发的 `ready`、`painted`、`regions`，还有：`{ type: 'choose', to }`（`drop` 块的「选择…」）、`{ type: 'open', link? }`（打开窗口，给了链接就在窗口里打开它）、`{ type: 'libraries' }`、`{ type: 'quit' }`；面板另发 `{ type: 'height', height }`（外壳照它定面板的高）和 `{ type: 'waiting', count }`（图标上的点）。外壳对网页说的都是 `pneuma-shell` 事件：`{ window }`（见上）、`{ link }`（网页照点了这个链接那样打开它）、`{ notice: { tone, text } }`（网页显示成一条提示，并重取，说的是拖放和监看做了什么）、`{ panel: 'shown' }`（面板又显示出来，重取）。外壳自带一个 Node 和命令行的包（包里有本机文件夹的存储提供者和契约测试的程序），只跑这几样，缺省的家目录是 `~/.pneuma-base`，每次启动用 `launcher install` 让本机的命令指向它们（第 6 节「接上一个 agent」）。它的监看就是存储的订阅：起当前库的提供者的常驻模式，`subscribe`，按听到的做，自己不另开事件流；第一次打开、还没有库时问库放在哪：装着的提供者、官方的没装的、「安装别的存储…」，只有一个提供者时就是选一个文件夹。外壳做什么、怎么监看，见 `app/README.md`。
 - 服务不持有状态，每次请求重新建插件表（自带的加本机的，本机的插件文件变了就载入新的）、重新打开库。行动者是主人；会话按环境识别，同命令行。服务若跑在 agent 的会话里，破坏性命令照常被拒（K7），拒绝的话说出是哪个环境变量或授权让它这样判的。
 
 ### MCP 服务
@@ -666,7 +667,7 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
 
 有进程在听时，缓存区里还有存储的变化日志（`changes/`）。`.pneuma-base/cache/` 删了，存储的答复不变，只变慢：行从事实重新推出，名字重新列，听的进程一秒内发觉，重新记一份日志，这之前的问都说不出。同步插件不同步它（第 12 节），符合性检查也不比较它（第 5 节）。
 
-**声明和说明。** 库的配置是库根的声明，经存储的 `declaration.read`、`declaration.write` 读写（`library.ts`）：写带预期，就是读到时的令牌，还没有声明时是空；别的写者插进来，就重读再写。内核不认识的字段原样留着。每次改配置都重拼说明 `PNEUMA-BASE.md`，经存储的 `write` 写，同样带预期（第 7 节）。`init` 先让存储建库（记录区、缓存区、缺省的噪音名单），再写声明和说明；文件夹里已有声明时，读得懂读不懂都一样，以 `already-a-library` 拒绝。
+**声明和说明。** 库的配置是库根的声明，经存储的 `declaration.read`、`declaration.write` 读写（`library.ts`）：写带预期，就是读到时的令牌，还没有声明时是空；别的写者插进来，就重读再写。内核不认识的字段原样留着。每次改配置都重拼说明 `PNEUMA-BASE.md`，经存储的 `write` 写，同样带预期（第 7 节）。`init <地址>` 只给主人：按地址的写法选提供者（`--provider` 写了就用它，否则自带的答就用自带的），把库用的是哪个记在本机（`$PNEUMA_BASE_HOME/storage/libraries/`），再让存储建库（记录区、缓存区、缺省的噪音名单），再写声明和说明；那里已有声明时，读得懂读不懂都一样，以 `already-a-library` 拒绝。门启动的是记给这个库的提供者，没有记录的库用答它的地址写法的那一个，自带的优先（`PROVIDERS.md`）。
 
 **噪音。** `noise.json` 声明名字（任何一层叫这个名字的都算）和库内路径（它和它下面的一切）。存储从不报告、不进入噪音：列一层时不列，数的时候不进去，对噪音位置的操作答 `noise`。`init` 经存储写下缺省的名单（`core/README.md`：`.git`、`node_modules`、`.DS_Store` 这类）；没有这个文件的库按缺省的名单算。内核的三条命令在 `noise-commands.ts`：`noise list` 列出，agent 也能跑；`noise add <库内路径>`（或 `--name <名字>`）和 `noise remove`，只给主人。配置页有「噪音」一节；主人对一个关着的目录答「不用管」，就是 `noise add` 它（第 10 节）。插件名就是它记录处的名字，所以内核的记录处 `kernel`、`requests` 和存储自己占的 `tmp`、`trash`、`holds`、`cache` 都不能做插件名；`noise` 是这三条命令的头一个词，也不能（sdk 的 `RESERVED_PLUGIN_NAMES`）。
 
@@ -683,6 +684,8 @@ $PNEUMA_BASE_HOME/
   plugins/<名字>/              装到这台机器上的插件：index.js、它导入的文件、可选的 ui/
   secrets/<插件名>/<密钥名>     插件的凭证，只有用户能读，不进任何库
   cache/<库的 id>/<插件名>/    插件的缓存，删了能重建
+  storage/providers/<名字>/    装上来的存储提供者：provider.json（登记的那一条）和各版本的程序；自带的不写在这里（PROVIDERS.md）
+  storage/libraries/<键>.json  一个库用的是哪个存储提供者，建库时写
 ```
 
 ## 9. 内核的不变式

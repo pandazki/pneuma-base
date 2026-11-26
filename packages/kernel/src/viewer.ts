@@ -6,6 +6,7 @@ import { agentsPage } from './agents-page.js'
 import { callableIn, checkBlocks, type Callable } from './blocks.js'
 import { storageOf } from './storage.js'
 import { BUNDLE_MARKER, enclosingBundle } from './things.js'
+import { storageSection } from './storage-commands.js'
 import { KERNEL_COMMANDS } from './owner-commands.js'
 import { noiseSection } from './noise-commands.js'
 import { codexHint } from './products.js'
@@ -387,7 +388,7 @@ async function configPage(_params: Record<string, string>, { ctx, table }: Viewe
     actions: [kernelAction('grant issue', '发授权')],
   }
   const secrets = await secretsSection(ctx)
-  return shown('配置', null, [about, plugins, grants, ...(secrets ? [secrets] : []), await noiseSection(root)])
+  return shown('配置', null, [about, plugins, grants, ...(secrets ? [secrets] : []), await noiseSection(root), await storageSection(ctx)])
 }
 
 // ---- item ----
