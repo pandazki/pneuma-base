@@ -57,7 +57,7 @@ export const AGENT_PRODUCTS: readonly AgentProduct[] = [
     skills: '.claude/skills',
     mcp: { file: '.claude.json', format: 'json', key: 'mcpServers', stdio: true },
     next: {
-      skill: `Claude Code 在当前会话里就看得到新技能（看不到就输入 /reload-skills）。对它说一句：「${FIRST_WORDS}」`,
+      skill: `Claude Code 在当前会话里就看得到新技能（看不到就新开一个会话）。对它说一句：「${FIRST_WORDS}」`,
       mcp: `开一个新的 Claude Code 会话：它在会话开始时读 MCP 服务。然后对它说一句：「${FIRST_WORDS}」`,
     },
   },
