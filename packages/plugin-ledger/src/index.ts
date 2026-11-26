@@ -351,7 +351,8 @@ async function thingAt(ctx: PluginContext, path: LibraryPath): Promise<boolean> 
 }
 
 /** The library page's rows: by latest change for the whole library, by path within a folder, a page at a time. */
-const ITEMS_PAGE = 200
+/** A page of the library and of one kind of the standing: architecture section 6. */
+const ITEMS_PAGE = 50
 const TREE_MAX = 2000
 
 async function itemsPage(ctx: PluginContext, params: Record<string, string>): Promise<ItemsPage> {

@@ -92,7 +92,7 @@ export function inspectText(target: string, r: InspectResult, inner: string | nu
   const what = f === null ? '' : f.kind === 'bundle' ? '一样东西（带标记的目录）' : `${f.size ?? 0} 字节`
   const print = f?.fingerprint ? ` · 指纹 ${f.fingerprint.slice(0, 12)}…` : ''
   const file = f
-    ? [`${f.path}${f.archived ? '（已归档）' : ''} · ${what}，改于 ${minute(f.modifiedAt)}${print}`, ...(f.level ? levelText(f.path, f.level) : [])]
+    ? [`${f.path}${f.archived ? '（已归档）' : ''} · ${what}，改于 ${minute(f.modifiedAt)}${print}`, ...(f.level && r.content?.kind !== 'level' ? levelText(f.path, f.level) : [])]
     : r.place
       ? placeText(r.place)
       : r.sections.length > 0 || r.request

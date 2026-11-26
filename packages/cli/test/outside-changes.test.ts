@@ -136,11 +136,9 @@ describe('staleness (C5)', () => {
     expect(section(sections, '来源不在')).toMatchObject([{ path: 'made/a.md', sources: [{ path: 'sources/s.md' }] }])
     expect(ok(agent(['inspect', 'made/a.md'])).stdout).toMatch(/sources\/s\.md\s+不在 ← 来源不在/)
 
-    // tmp/run-7: a change is told by storage's token and content is read only when asked, so a file
-    // written back as it was reads as changed until someone says what happened to it.
+    // tmp/run-7: a file whose row has a fingerprint, written back as it was, is taken as the new
+    // baseline silently: not changed directly, and no mark comes from it.
     byHand('sources/s.md', ORIGINAL)
-    expect(paths(section(check(), '被直接改过的'))).toEqual(['sources/s.md'])
-    expect(ok(agent(['say', 'revised', 'sources/s.md'])).stdout).toContain('一致')
     sections = check()
     for (const title of ['可能过期', '来源不在', '上游有标记', '被直接改过的']) expect(section(sections, title), title).toBeUndefined()
   })

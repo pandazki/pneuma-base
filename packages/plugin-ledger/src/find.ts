@@ -70,6 +70,9 @@ export async function findHits(req: FindRequest, ctx: PluginContext): Promise<Pl
     }
     if (candidates.length >= KEPT) break
   }
+  // Equal matches come in the order of their paths (a scene by its id): the rows' own order is by item id, which says nothing.
+  const name = (c: { hit: Found }) => ('item' in c.hit ? c.hit.item.path : c.hit.scene)
+  candidates.sort((a, b) => (name(a) < name(b) ? -1 : name(a) > name(b) ? 1 : 0))
   const ranked = ctx.tools.rankHits(candidates, terms, req.match)
   // A scene that matches brings the things entered in it: the things of what was being done then.
   const theirs: ItemFind[] = []

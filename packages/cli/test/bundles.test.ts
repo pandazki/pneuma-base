@@ -1,6 +1,6 @@
 // C1, K1, K2: a directory with the marker is one thing, in a library with no plugin. Each cell the
-// put table gained for directories (ARCHITECTURE "放"); find, inspect, move, archive and unarchive
-// act on the whole directory; a path inside one is not a target of the agent face.
+// put table gained for directories (ARCHITECTURE "放"); inspect, move, archive and unarchive act on
+// the whole directory; a path inside one is not a target of the agent face.
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -54,11 +54,14 @@ describe('placing an outside directory', () => {
     expect(existsSync(join(lib, 'sites/b/index.html'))).toBe(true)
   })
 
-  it('onto a bundle with the same content: accepted, nothing copied', () => {
+  // tmp/run-7: a directory placed onto a bundle is not compared by content; with no plugin to keep the
+  // old tree it is refused even when the content is the same.
+  it('onto a bundle with the same content and no plugin to keep the old: refused, the tree untouched', () => {
     agent(['put', site(), '--to', 'sites/a', '--made'])
     const r = agent(['put', site(), '--to', 'sites/a', '--made'])
-    expect(r.code, r.stderr).toBe(0)
-    expect(r.json()).toMatchObject({ outcome: 'accepted', copied: false })
+    expect(r.code).toBe(2)
+    expect(refusal(r)).toBe('would-overwrite')
+    expect(readdirSync(join(lib, 'sites/a')).sort()).toEqual(['.pneuma-item', 'css', 'img', 'index.html'])
   })
 
   it('onto a bundle with different content and no plugin to keep the old: refused, the tree untouched', () => {
@@ -125,19 +128,29 @@ describe('a bundle under the other verbs', () => {
     expect(agent(['put', site(), '--to', 'sites/a', '--made']).code).toBe(0)
   })
 
-  it('find gives it as one hit and none of the files inside', () => {
-    const hits = agent(['find', 'a']).json().hits
-    expect(hits).toEqual([{ path: 'sites/a', title: 'a', by: 'kernel', group: null, detail: '目录' }])
+  // tmp/run-7: what find gives comes from the plugins' indexes; the kernel lists nothing by name.
+  it('find gives nothing with no plugin, the bundle and the files inside alike', () => {
+    expect(agent(['find', 'a']).json().hits).toEqual([])
     expect(agent(['find', 'logo']).json().hits).toEqual([])
   })
 
-  it('inspect gives kind, file count and fingerprint; the fingerprint changes when one inner file changes', () => {
-    const before = agent(['inspect', 'sites/a']).json().file
-    expect(before).toMatchObject({ path: 'sites/a', kind: 'bundle', files: 3, size: 22, archived: false })
+  it('inspect gives kind and first level, the fingerprint only with the content; the fingerprint changes when one inner file changes', () => {
+    const facts = agent(['inspect', 'sites/a']).json().file
+    expect(facts).toMatchObject({
+      path: 'sites/a',
+      kind: 'bundle',
+      size: null,
+      fingerprint: null,
+      archived: false,
+      level: { entries: [{ name: 'css', kind: 'dir' }, { name: 'img', kind: 'dir' }, { name: 'index.html', kind: 'file', size: 10 }], more: 0 },
+    })
+    expect(facts).not.toHaveProperty('files')
+    const before = agent(['inspect', 'sites/a', '--content']).json().file.fingerprint
+    expect(before).toMatch(/^[0-9a-f]{64}$/)
     writeFileSync(join(lib, 'sites/a/css/site.css'), 'body{color:red}')
-    const after = agent(['inspect', 'sites/a']).json().file
-    expect(after.fingerprint).not.toBe(before.fingerprint)
-    expect(sb.run(['--library', lib, 'inspect', 'sites/a'], { cwd: outside }).stdout).toContain('目录，3 个文件')
+    expect(agent(['inspect', 'sites/a', '--content']).json().file.fingerprint).not.toBe(before)
+    const text = sb.run(['--library', lib, 'inspect', 'sites/a'], { cwd: outside }).stdout
+    expect(text).toMatch(/^sites\/a · 一样东西（带标记的目录），改于 \d{4}-\d\d-\d\d \d\d:\d\dZ\n第一层，3 项：\n {2}css\/\n {2}img\/\n {2}index\.html {2}10 字节\n$/)
   })
 
   it('move onto anything already there is refused', () => {
@@ -155,8 +168,6 @@ describe('a bundle under the other verbs', () => {
     expect(agent(['archive', 'old/a']).json()).toMatchObject({ outcome: 'accepted', from: 'old/a', to: '_archive/old/a', moved: true })
     expect(existsSync(join(lib, 'old/a'))).toBe(false)
     expect(existsSync(join(lib, '_archive/old/a/.pneuma-item'))).toBe(true)
-    expect(agent(['find', 'a']).json().hits).toEqual([])
-    expect(agent(['find', 'a', '--include-archived']).json().hits.map((h: any) => [h.path, h.detail])).toEqual([['_archive/old/a', '目录，已归档']])
     expect(agent(['inspect', 'old/a']).json().file).toMatchObject({ path: '_archive/old/a', kind: 'bundle', archived: true })
 
     expect(agent(['unarchive', 'old/a']).json()).toMatchObject({ outcome: 'accepted', from: '_archive/old/a', to: 'old/a', moved: true })

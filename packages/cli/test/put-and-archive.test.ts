@@ -102,10 +102,11 @@ describe('archive through the command line, no plugin (C15)', () => {
     expect(existsSync(join(lib, 'drafts/old-plan.md'))).toBe(false)
   })
 
-  it('default find leaves it out; the switch brings it in', () => {
+  // tmp/run-7: hits come only from plugins' indexes; the switch is for the plugins that answer.
+  it('find gives nothing with no plugin, with the switch or without', () => {
     const paths = (args: string[]) => agent(['find', ...args, '--json']).json().hits.map((h: { path: string }) => h.path)
-    expect(paths(['plan'])).toEqual(['drafts/new-plan.md'])
-    expect(paths(['plan', '--include-archived'])).toEqual(['_archive/drafts/old-plan.md', 'drafts/new-plan.md'])
+    expect(paths(['plan'])).toEqual([])
+    expect(paths(['plan', '--include-archived'])).toEqual([])
   })
 
   it('check answers with and without the switch', () => {

@@ -148,11 +148,14 @@ export const HELD_DROP = defineCommand({
 /** How many held copies `ledger held list` and the held page name at most. */
 export const HELD_SHOWN = 200
 
+/** How many held copies `ledger held list` names before it gives the total and the command for the rest. */
+const LISTED = 20
+
 /** The held copies, at most `limit`, with the items they are of, and how many there are. */
 export async function heldCopies(ctx: PluginContext, limit = HELD_SHOWN): Promise<{ copies: (HeldRow & { current: ItemRow | undefined })[]; total: number }> {
   const records = ctx.tools.storage.records
   const rows: HeldRow[] = []
-  for await (const page of pagesOf<HeldRow>(records, 'held', '', limit)) {
+  for await (const page of pagesOf<HeldRow>(records, 'held', '', Math.min(limit, 1000))) {
     rows.push(...page.map((r) => r.value))
     if (rows.length >= limit) break
   }
@@ -165,17 +168,17 @@ export const heldCommands: OwnerCommand[] = [
   defineCommand({
     name: 'ledger held list',
     summary: '列出留存：被新内容换下来的旧内容',
-    params: {},
+    params: { flags: [{ name: 'all', hint: '全部列出，不只前 20 份', kind: 'boolean' }] },
     destructive: false,
     ownerOnly: false,
     readOnly: true,
-    async run(_values, ctx) {
+    async run({ all }, ctx) {
       await stateOf(ctx)
-      const { copies, total } = await heldCopies(ctx)
+      const { copies, total } = await heldCopies(ctx, all ? Number.MAX_SAFE_INTEGER : LISTED)
       const data = copies.map((c) => ({ item: c.item, key: c.key, fingerprint: c.fingerprint, path: c.path, current: c.current?.path ?? null }))
       if (copies.length === 0) return done('没有留存。', { copies: data })
       const lines = copies.map((c) => `${c.current?.path ?? c.item}  留存 ${c.key.slice(0, 8)}  ${c.path}`)
-      const more = total > copies.length ? [`……共 ${total} 份，这里列了前 ${copies.length} 份`] : []
+      const more = total > copies.length ? [`……共 ${total} 份，看全部：ledger held list --all`] : []
       return done([...lines, ...more].join('\n'), { copies: data, total })
     },
   }),

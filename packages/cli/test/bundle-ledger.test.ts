@@ -59,7 +59,7 @@ describe('a bundle with the ledger', () => {
 
   it('has provenance and a basis, and its enter fact says it is a bundle', () => {
     const r = ok(agent(['inspect', 'sites/a', '--json']))
-    expect(r.json().file).toMatchObject({ kind: 'bundle', files: 3 })
+    expect(r.json().file).toMatchObject({ kind: 'bundle', size: null, level: { entries: [{ name: 'css' }, { name: 'img' }, { name: 'index.html' }], more: 0 } })
     expect(ledgerData(r)).toMatchObject({ path: 'sites/a', origin: { kind: 'made' }, basis: [{ path: 'sources/brief.md', state: 'consistent' }] })
     const facts = factsOf(lib).filter((f) => f.scene === 's1')
     expect(facts.filter((f) => f.kind === 'item.enter').map((f) => [f.path, f.bundle ?? false])).toEqual([['sources/brief.md', false], ['sites/a', true]])
@@ -87,7 +87,7 @@ describe('a bundle with the ledger', () => {
     ok(owner(['ledger', 'held', 'restore', 'sites/a', '--to', 'restored/a']))
     expect(filesOf(join(lib, 'restored/a'))).toEqual(old)
     const restored = ok(agent(['inspect', 'restored/a', '--json']))
-    expect(restored.json().file).toMatchObject({ kind: 'bundle', files: 3 })
+    expect(restored.json().file).toMatchObject({ kind: 'bundle', level: { entries: [{ name: 'css' }, { name: 'img' }, { name: 'index.html' }], more: 0 } })
     expect(ledgerData(restored)).toMatchObject({ origin: { kind: 'brought', by: 'owner' } })
   })
 
@@ -106,34 +106,40 @@ describe('a bundle with the ledger', () => {
     expect(ledgerData(ok(agent(['inspect', 'review.md', '--json']))).basis).toMatchObject([{ path: 'sites/a' }])
   })
 
-  it('find matches text inside a bundle, and with the search plugin keeps the bundle under its scene with its origin', () => {
+  // tmp/run-7 section 5: the ledger finds by its records (the path, what was said); text inside a
+  // bundle is the search plugin's index. The kernel marks a bundle's hit 目录.
+  it('find matches a bundle by its record with the ledger and by the text inside with the search plugin, under its scene with its origin', () => {
     ok(agent(['start', '做早鸟预订页'], 's1'))
     write(outside, { 'landing/index.html': '<h1>桌上只留一块铝</h1>', 'landing/style.css': 'body { color: #222; }' })
     ok(agent(['put', 'landing', '--to', 'sites/landing', '--made']))
-    const ledgerOnly = ok(agent(['find', '一块铝'], 's2')).stdout
+    expect(ok(agent(['find', '一块铝'], 's2')).stdout).toBe('没有找到。\n')
+    const ledgerOnly = ok(agent(['find', 'landing'], 's2')).stdout
     expect(ledgerOnly).toContain('在做：做早鸟预订页')
-    expect(ledgerOnly).toMatch(/sites\/landing\s+做出来的/)
+    expect(ledgerOnly).toMatch(/sites\/landing\s+目录，做出来的/)
 
     ok(owner(['plugin', 'add', 'search']))
     const withSearch = ok(agent(['find', '一块铝'], 's2')).stdout
     expect(withSearch).toContain('在做：做早鸟预订页')
-    expect(withSearch).toMatch(/sites\/landing\s+做出来的\s+index\.html：.*一块铝/)
+    expect(withSearch).toMatch(/sites\/landing\s+目录，做出来的\s+index\.html：.*一块铝/)
   })
 
-  it('find reaches a bundle’s text past images that sort before it and outweigh the reading limit', () => {
+  it('with the search plugin, find reaches a bundle’s text past images that sort before it', () => {
     const image = Buffer.alloc(400 * 1024, 0xff)
     write(outside, { 'shop/assets/a.png': image, 'shop/assets/b.png': image, 'shop/assets/c.png': image, 'shop/index.html': '<h1>黄铜镇纸</h1>' })
     ok(agent(['put', 'shop', '--to', 'sites/shop', '--made']))
-    expect(ok(agent(['find', '黄铜镇纸'], 's2')).stdout).toMatch(/sites\/shop\s+做出来的/)
-    expect(ok(agent(['find', 'b.png'], 's2')).stdout).toMatch(/sites\/shop\s+做出来的/)
+    ok(owner(['plugin', 'add', 'search']))
+    expect(ok(agent(['find', '黄铜镇纸'], 's2')).stdout).toMatch(/sites\/shop\s+目录，做出来的\s+index\.html：.*黄铜镇纸/)
   })
 })
 
-describe('registering a folder whose files are on record', () => {
+// tmp/run-7 section 5: registering a directory that holds registered things registers its loose
+// files and leaves it open; the marker is what makes such a directory one thing.
+describe('registering a folder whose files are on record, with the marker written', () => {
   beforeEach(() => {
     ok(agent(['put', '-', '--to', 'notes/a.md', '--made'], 's1', 'a'))
     ok(agent(['put', '-', '--to', 'notes/deep/b.md', '--brought'], 's1', 'b'))
     ok(agent(['put', '-', '--to', 'summary.md', '--made', '--from', 'notes/a.md'], 's1', 'summary of a'))
+    write(lib, { 'notes/.pneuma-item': '{"format":1}\n' })
     ok(agent(['put', 'notes', '--brought']))
   })
 
@@ -158,6 +164,9 @@ describe('registering a folder whose files are on record', () => {
     const titles = sectionTitles(ok(agent(['check', '--include-archived', '--json'])))
     expect(titles).not.toContain('不在了的')
     expect(ok(agent(['inspect', 'notes/a.md'])).stdout).toContain('并入了 _archive/notes')
+    const found = (args: string[]) => ok(agent(['find', 'notes', ...args, '--json'])).json().hits.filter((h: any) => h.path === '_archive/notes')
+    expect(found([])).toEqual([])
+    expect(found(['--include-archived'])[0].detail).toMatch(/^目录，已归档，/)
   })
 })
 

@@ -125,7 +125,7 @@ describe('the whole story, with every plugin installed', () => {
   it('there, a sentence that is not the file name finds the 手冲咖啡 site first, under the scene it was made in', () => {
     const found = lines(ok(sb.run(['--library', lib2, '--as', 'codex', 'find', '在家怎么冲一杯好喝的咖啡'], { cwd: root })))
     expect(found[0]).toMatch(/^场景 claude-1 · claude-code · .* · 在做：做十个小网站$/)
-    expect(found[1]).toMatch(/^ {2}sites\/coffee {2}做出来的 {2}/)
+    expect(found[1]).toMatch(/^ {2}sites\/coffee {2}目录，做出来的 {2}/)
   })
 
   it('check, as an agent at the end, is quiet about what is in order and mentions nothing stale', () => {

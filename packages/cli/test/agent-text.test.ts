@@ -98,16 +98,20 @@ describe('find', () => {
 })
 
 describe('inspect', () => {
-  it('leads with provenance and ends with the file facts', () => {
+  it('leads with provenance and ends with the file facts; the fingerprint comes with the content', () => {
     const out = lines(B(['inspect', 'print/comparison.md']).stdout)
     expect(out[0]).toBe('## 来历（ledger）')
     expect(out[1]).toContain('在 ~/work/print-job · 场景 3f9a2c7e')
     expect(out.join('\n')).not.toContain(SA)
-    expect(out.at(-1)).toMatch(/^print\/comparison\.md · \d+ 字节，改于 \d{4}-\d\d-\d\d \d\d:\d\dZ · 指纹 [0-9a-f]{12}…$/)
+    expect(out.at(-1)).toMatch(/^print\/comparison\.md · \d+ 字节，改于 \d{4}-\d\d-\d\d \d\d:\d\dZ$/)
 
     const json = B(['inspect', 'print/comparison.md', '--json']).json()
-    expect(json.file.fingerprint).toMatch(/^[0-9a-f]{64}$/)
+    expect(json.file.fingerprint).toBeNull()
     expect(json.sections[0].data.entered).toMatchObject({ scene: SA, where: { cwd: dirA } })
+
+    const read = B(['inspect', 'print/comparison.md', '--content']).stdout
+    expect(read).toMatch(/^print\/comparison\.md · \d+ 字节，改于 \d{4}-\d\d-\d\d \d\d:\d\dZ · 指纹 [0-9a-f]{12}…$/m)
+    expect(B(['inspect', 'print/comparison.md', '--content', '--json']).json().file.fingerprint).toMatch(/^[0-9a-f]{64}$/)
   })
 
   it('cuts a long working directory to its last part in text, and keeps it whole in --json', () => {
