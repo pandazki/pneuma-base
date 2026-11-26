@@ -437,6 +437,7 @@ impl LocalFolder {
                         progress.bytes += n;
                         progress.tick();
                     })?;
+                    to.sync_data().map_err(|e| io_failure(&e))?;
                     progress.files += 1;
                     bytes += n;
                     fingerprints.push(fingerprint);
@@ -479,6 +480,8 @@ impl LocalFolder {
             progress.bytes += n;
             progress.tick();
         })?;
+        // As facts are: handed to the drive before the rename (plain fsync; F_FULLFSYNC, which
+        // waits for the drive's own cache, costs 5 ms a file).
         to.sync_data().map_err(|e| io_failure(&e))?;
         Ok(Built {
             fingerprint,
