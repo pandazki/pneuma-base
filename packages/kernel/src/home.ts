@@ -17,7 +17,7 @@ import type { ActorMark, Block } from '@pneuma-base/sdk'
  * they give, which join 「开始」. With no such view the page says so and shows the library's top
  * folder, the files page `bare`, so a library without plugins has a home too.
  */
-export async function homePage(_params: Record<string, string>, call: ViewerCall, bare: KernelPage): Promise<Shown> {
+export async function homePage(_params: Record<string, string>, call: ViewerCall, rows: number, bare: KernelPage): Promise<Shown> {
   const { ctx } = call
   const asked = await asksOf(ctx, callableIn(ctx.library))
   const titleOf = (by: string | ActorMark) => (typeof by === 'string' ? (ctx.library.plugins.find((p) => p.name === by)?.cognition?.title ?? by) : by)
@@ -41,7 +41,7 @@ export async function homePage(_params: Record<string, string>, call: ViewerCall
   const { start, rest } = startPart(await kernelSteps(call), given)
   const blocks: Block[] = [...(start === null ? [] : [start]), decide, ...rest]
   if (parts.length === 0) {
-    const files = await bare({}, call)
+    const files = await bare({}, call, rows)
     const why = ctx.library.plugins.length === 0 ? '这个库没装插件：首页只有要你决定的事和库里的文件。装上插件，这里会有 agent 做了什么、哪些东西要留意。' : '装着的插件没有给首页添内容，下面是库里的文件。'
     blocks.push({ kind: 'text', tone: 'neutral', text: why }, { kind: 'section', title: '库里的文件', note: null, count: null, blocks: files.blocks, actions: [] })
   }

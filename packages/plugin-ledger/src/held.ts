@@ -151,16 +151,23 @@ export const HELD_SHOWN = 200
 /** How many held copies `ledger held list` names before it gives the total and the command for the rest. */
 const LISTED = 20
 
-/** The held copies, at most `limit`, with the items they are of, and how many there are. */
-export async function heldCopies(ctx: PluginContext, limit = HELD_SHOWN): Promise<{ copies: (HeldRow & { current: ItemRow | undefined })[]; total: number }> {
+/** The held copies, at most `limit` after `after`, with the items they are of, how many there are, and the cursor of the ones that follow. */
+export async function heldCopies(ctx: PluginContext, limit = HELD_SHOWN, after?: string): Promise<{ copies: (HeldRow & { current: ItemRow | undefined })[]; total: number; next: string | null }> {
   const records = ctx.tools.storage.records
   const rows: HeldRow[] = []
-  for await (const page of pagesOf<HeldRow>(records, 'held', '', Math.min(limit, 1000))) {
-    rows.push(...page.map((r) => r.value))
-    if (rows.length >= limit) break
+  let next: string | null = null
+  if (limit <= 1000) {
+    const page = await records.under<HeldRow>('held', '', { limit, ...(after === undefined ? {} : { after }) })
+    rows.push(...page.rows.map((r) => r.value))
+    next = page.more?.after ?? null
+  } else {
+    for await (const page of pagesOf<HeldRow>(records, 'held', '', 1000, after)) {
+      rows.push(...page.map((r) => r.value))
+      if (rows.length >= limit) break
+    }
   }
   const items = await getAll<ItemRow>(records, 'items', rows.map((r) => r.item))
-  return { copies: rows.slice(0, limit).map((r) => ({ ...r, current: items.get(r.item) })), total: (await counters(records)).held ?? rows.length }
+  return { copies: rows.slice(0, limit).map((r) => ({ ...r, current: items.get(r.item) })), total: (await counters(records)).held ?? rows.length, next }
 }
 
 /** `ledger held list`, `ledger held restore`, `ledger held drop`: the owner's commands over held copies. */

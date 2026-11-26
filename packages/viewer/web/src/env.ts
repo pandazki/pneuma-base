@@ -16,6 +16,8 @@ export type BlockEnv = {
   onLink(link: Link, newTab?: boolean): void
   onAction(action: Action, values?: Record<string, string>): Promise<Done | null>
   onParam(name: string, value: string): void
+  /** Turns a long list to the page `link` names, in place of the one shown: in the main panel, or in the panel's front tab. */
+  onPage(link: Link): void
   selected(link: Link | null): boolean
   /** Changes whenever the library changed, so blocks that load on their own load again. */
   tick: number

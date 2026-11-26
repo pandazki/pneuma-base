@@ -18,15 +18,19 @@ import {
   type Context,
   type Env,
   type Library,
+  type Pass,
+  type PassProgress,
   type PluginTable,
 } from '@pneuma-base/kernel'
-import { archiveSummary, askSummary, ownerSummary, putSummary, readSummary, saySummary, type Summary } from './summary.js'
+import { archiveSummary, askSummary, ownerSummary, passSummary, putSummary, readSummary, saySummary, type Summary } from './summary.js'
 
 /**
  * What the server was started with. `builtins` are the caller's plugins; this machine's own join them
  * on each request, as their files are then. `listened`: the libraries this server listens to.
+ * `passes`: the named whole passes running for the page, by the id the page gave each, and whether
+ * the person asked it to stop; the only thing the server keeps between requests, and only while one runs.
  */
-export type Served = { dir: string; builtins: PluginTable; home: string; env: Env; listened: Set<string> }
+export type Served = { dir: string; builtins: PluginTable; home: string; env: Env; listened: Set<string>; passes: Map<string, { stop: boolean }> }
 
 /** Every plugin this machine has, as their files are now: a plugin changed since the last request is loaded afresh. */
 export const tableOf = (served: Served): Promise<PluginTable> => loadPlugins(served.home, served.builtins)
@@ -40,8 +44,9 @@ const failure = (status: number, error: string): Reply => ({ status, json: { err
 const NOT_A_LIBRARY = failure(409, 'not-a-library')
 
 /** Everything in the UI is done by the owner, in the session the server's environment shows, else one minted per request. */
-function ownerContext(library: Library, served: Served): Context {
-  return makeContext(library, OWNER, identifySession({ flag: null, env: served.env, cwd: process.cwd(), machine: hostname() }), served.home)
+function ownerContext(library: Library, served: Served, pass?: Pass): Context {
+  const ctx = makeContext(library, OWNER, identifySession({ flag: null, env: served.env, cwd: process.cwd(), machine: hostname() }), served.home)
+  return pass === undefined ? ctx : { ...ctx, pass }
 }
 
 const available = (table: PluginTable) => [...table.values()].map((p) => ({ name: p.name, title: p.cognition?.title ?? null }))
@@ -86,8 +91,8 @@ export async function view(served: Served, query: URLSearchParams): Promise<Repl
  * The call's result, and a line saying how it went. The page's confirmation is the in-person
  * confirmation; an owner call's `stdin` is what the command reads as the person's answer.
  */
-async function perform(call: Call, confirmed: boolean, library: Library, table: PluginTable, served: Served): Promise<{ result: unknown; summary: Summary }> {
-  const ctx = ownerContext(library, served)
+async function perform(call: Call, confirmed: boolean, library: Library, table: PluginTable, served: Served, pass?: Pass): Promise<{ result: unknown; summary: Summary }> {
+  const ctx = ownerContext(library, served, pass)
   if (call.face === 'owner') {
     const stdin = call.stdin ?? null
     const ownerCall = { ctx, table, env: served.env, viaGrant: false, confirm: async () => confirmed, readSecret: async () => stdin }
@@ -117,7 +122,8 @@ async function perform(call: Call, confirmed: boolean, library: Library, table: 
     }
     case 'check': {
       const r = await agentFace.check(call.request, ctx)
-      return { result: r, summary: readSummary(r.problems) }
+      // The plugin that does the named whole pass gives what it found as its first section.
+      return { result: r, summary: call.request.deep ? passSummary(r.sections[0]?.body ?? null, r.problems) : readSummary(r.problems) }
     }
     case 'ask': {
       const r = await agentFace.ask(call.request, ctx)
@@ -126,15 +132,38 @@ async function perform(call: Call, confirmed: boolean, library: Library, table: 
   }
 }
 
-export async function call(served: Served, body: unknown): Promise<Reply> {
+/** The id of the pass a call's body names, when it names one: the page then hears its progress. */
+export const passOf = (body: unknown): string | null => {
+  const id = typeof body === 'object' && body !== null ? (body as Record<string, unknown>).pass : undefined
+  return typeof id === 'string' && /^[\w-]{1,64}$/.test(id) ? id : null
+}
+
+/** Runs a call; with `progress`, the named whole pass it may run reports there and stops when the page asks under the body's `pass`. */
+export async function call(served: Served, body: unknown, progress?: (p: PassProgress) => void): Promise<Reply> {
   const table = await tableOf(served)
   const library = await openLibrary(served.dir, table)
   if (!library) return NOT_A_LIBRARY
   const raw = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
   const parsed = parseCall(raw.call)
   if (typeof parsed === 'string') return failure(400, parsed)
-  const { result, summary } = await perform(parsed, raw.confirmed === true, library, table, served)
-  return reply({ ...summary, result })
+  const id = progress === undefined ? null : passOf(body)
+  const asked = { stop: false }
+  if (id !== null) served.passes.set(id, asked)
+  const pass: Pass | undefined = progress === undefined ? undefined : { report: progress, stopped: () => asked.stop }
+  try {
+    const { result, summary } = await perform(parsed, raw.confirmed === true, library, table, served, pass)
+    return reply({ ...summary, result })
+  } finally {
+    if (id !== null && served.passes.get(id) === asked) served.passes.delete(id)
+  }
+}
+
+/** Asks the pass the body names to stop after the step under way; `running` says whether one by that id runs. */
+export function stop(served: Served, body: unknown): Reply {
+  const id = passOf(body)
+  const running = id === null ? undefined : served.passes.get(id)
+  if (running) running.stop = true
+  return reply({ running: running !== undefined })
 }
 
 /** Makes the served directory a library with the plugins chosen from the available ones. */

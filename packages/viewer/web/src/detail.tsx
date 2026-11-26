@@ -76,7 +76,7 @@ export function DetailPanel({ tabs, active, labelOf, iconOf, result, children, o
                   onClick={() => onActivate(i)}
                   onAuxClick={(e) => e.button === 1 && onClose(i)}
                 >
-                  <ViewIcon name={iconOf(topOf(tab))} />
+                  <ViewIcon name={(i === active ? shown?.icon : undefined) ?? iconOf(topOf(tab))} />
                   <TabName label={label} />
                 </button>
                 <button type="button" className="tab-close" aria-label={`关闭 ${label}`} tabIndex={-1} onClick={() => onClose(i)}>
@@ -99,7 +99,7 @@ export function DetailPanel({ tabs, active, labelOf, iconOf, result, children, o
           ) : null}
           {front ? (
             <span className="detail-tile" aria-hidden>
-              <ViewIcon name={iconOf(topOf(front))} />
+              <ViewIcon name={shown?.icon ?? iconOf(topOf(front))} />
             </span>
           ) : null}
           <div className="min-w-0">

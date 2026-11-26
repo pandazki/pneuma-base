@@ -1,13 +1,25 @@
 // Notices at the bottom right. One that answers an action appears at once, saying the action is
 // under way, and turns into its answer in place. They stack, the newest in front with the others
 // peeking above it; the pointer or the keyboard (F8) fans them out and holds their timers.
-import type { Action } from '@pneuma-base/kernel'
+import type { Action, PassProgress } from '@pneuma-base/kernel'
 import { CircleAlert, CircleCheck, LoaderCircle, TriangleAlert, X, type LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Tone } from './api'
 
-/** `busy`: the action is under way. `offer`: what a refusal offers to do instead, a button in the notice. */
-export type Toast = { id: number; tone: Tone | 'busy'; text: string; offer: Action | null; settled: boolean; leaving: boolean }
+/**
+ * `busy`: the action is under way. `offer`: what a refusal offers to do instead, a button in the notice.
+ * `pass`: the action runs a named whole pass: how far it is and how to stop it; once it settles the
+ * notice stays until closed. `stopping`: the person asked it to stop.
+ */
+export type Toast = {
+  id: number
+  tone: Tone | 'busy'
+  text: string
+  offer: Action | null
+  settled: boolean
+  leaving: boolean
+  pass?: { progress: PassProgress | null; stop(): void; stopping: boolean }
+}
 
 export type Toasts = {
   list: Toast[]
@@ -16,6 +28,8 @@ export type Toasts = {
   /** A notice that `label` is under way, to settle when it is done. */
   busy(label: string): number
   settle(id: number, tone: Tone, text: string, offer?: Action | null): void
+  /** How far the named whole pass of the busy notice `id` is, and how to stop it. */
+  report(id: number, progress: PassProgress, stop: () => void): void
   close(id: number): void
   /** While the person looks at the notices, none goes away by itself. */
   hold(held: boolean): void
@@ -34,6 +48,8 @@ export function useToasts(): Toasts {
   // The time each finished notice has left, and its running timer while nothing holds them.
   const timers = useRef(new Map<number, { left: number; since: number; handle: number | undefined }>())
   const held = useRef(false)
+  // The notices whose action runs a named whole pass.
+  const passes = useRef(new Set<number>())
 
   const close = useCallback((id: number) => {
     const timer = timers.current.get(id)
@@ -53,8 +69,8 @@ export function useToasts(): Toasts {
     [close],
   )
   const time = useCallback(
-    (id: number, tone: Toast['tone']) => {
-      if (tone === 'bad' || tone === 'busy') return
+    (id: number, tone: Toast['tone'], stays = false) => {
+      if (tone === 'bad' || tone === 'busy' || stays) return
       timers.current.set(id, { left: TOAST_MS, since: 0, handle: undefined })
       start(id)
     },
@@ -80,8 +96,23 @@ export function useToasts(): Toasts {
       push: (tone, text, offer = null) => add({ tone, text, offer, settled: false }),
       busy: (label) => add({ tone: 'busy', text: `${label}\n正在进行…`, offer: null, settled: false }),
       settle: (id, tone, text, offer = null) => {
-        setList((all) => all.map((t) => (t.id === id ? { ...t, tone, text, offer, settled: true } : t)))
-        time(id, tone)
+        setList((all) => all.map((t) => (t.id === id ? { id: t.id, leaving: t.leaving, tone, text, offer, settled: true } : t)))
+        // A pass ran long enough to be watched: what it did stays until closed.
+        time(id, tone, passes.current.delete(id))
+      },
+      report: (id, progress, stop) => {
+        passes.current.add(id)
+        setList((all) =>
+          all.map((t) => {
+            if (t.id !== id) return t
+            const stopping = t.pass?.stopping ?? false
+            const ask = () => {
+              setList((now) => now.map((x) => (x.id === id && x.pass ? { ...x, pass: { ...x.pass, stopping: true } } : x)))
+              stop()
+            }
+            return { ...t, pass: { progress, stop: ask, stopping } }
+          }),
+        )
       },
       close,
       hold: (on) => {
@@ -224,7 +255,8 @@ function ToastItem({ toast, y, scale, behind, hidden, height, z, onMeasure, onCl
 
   const [title = '', ...rest] = toast.text.split('\n')
   const Icon = toast.tone === 'busy' ? LoaderCircle : ICON[toast.tone]
-  const { offer } = toast
+  const { offer, pass } = toast
+  const progress = pass?.progress ?? null
   return (
     <li
       className="toast"
@@ -243,10 +275,13 @@ function ToastItem({ toast, y, scale, behind, hidden, height, z, onMeasure, onCl
           <span className="toast-icon" data-tone={toast.tone} data-settled={toast.settled || undefined} key={toast.tone}>
             <Icon className={toast.tone === 'busy' ? 'spinner' : undefined} strokeWidth={2} aria-hidden />
           </span>
-          <p className="toast-text" key={toast.text}>
-            <strong>{title}</strong>
-            {rest.length > 0 ? <span>{rest.join('\n')}</span> : null}
-          </p>
+          <div className="toast-body">
+            <p className="toast-text" key={progress === null ? toast.text : undefined}>
+              <strong>{title}</strong>
+              {progress !== null ? <span>{progress.text}</span> : rest.length > 0 ? <span>{rest.join('\n')}</span> : null}
+            </p>
+            {pass && progress !== null ? <PassMeter progress={progress} stopping={pass.stopping} onStop={pass.stop} tabbable={!behind} /> : null}
+          </div>
           {offer && onOffer ? (
             <button type="button" className={`btn btn-sm ${offer.tone === 'danger' ? 'btn-danger' : ''}`} onClick={() => onOffer(offer)}>
               {offer.label}
@@ -258,5 +293,35 @@ function ToastItem({ toast, y, scale, behind, hidden, height, z, onMeasure, onCl
         </button>
       </div>
     </li>
+  )
+}
+
+/**
+ * How far a named whole pass is: a bar (sliding while the total is unknown), its count said to a
+ * screen reader since the notice's line says it in words, and the button that asks it to stop after
+ * the step under way.
+ */
+function PassMeter({ progress, stopping, onStop, tabbable }: { progress: PassProgress; stopping: boolean; onStop(): void; tabbable: boolean }) {
+  const { done, total, atLeast } = progress
+  const known = total !== null && total > 0
+  const share = known ? Math.min(1, done / total) : null
+  const count = total === null ? `${done.toLocaleString()}` : `${done.toLocaleString()} / ${atLeast ? '至少 ' : ''}${total.toLocaleString()}`
+  return (
+    <div className="pass-meter">
+      <div
+        className="pass-bar"
+        role="progressbar"
+        aria-label="进度"
+        aria-valuemin={0}
+        {...(known ? { 'aria-valuemax': total, 'aria-valuenow': Math.min(done, total) } : {})}
+        aria-valuetext={count}
+        data-unknown={share === null || undefined}
+      >
+        <span style={share === null ? undefined : { width: `${(share * 100).toFixed(1)}%` }} />
+      </div>
+      <button type="button" className="btn btn-sm" disabled={stopping} tabIndex={tabbable ? 0 : -1} onClick={onStop}>
+        {stopping ? '正在停下…' : '停下'}
+      </button>
+    </div>
   )
 }

@@ -31,6 +31,7 @@ import {
   type OwnerCall,
   type OwnerCommandInfo,
   type OwnerResult,
+  type Pass,
   type PluginTable,
 } from '@pneuma-base/kernel'
 import { UsageError, argsOf, flagList, flagValue, hasFlag, leadingWords, matchCommand, ownFlags, parseCommand, splitLine, type FlagKind, type Line, type Parsed } from './args.js'
@@ -55,6 +56,27 @@ export type Io = {
   /** Resolves when the person stops a long-running command, such as view, with Ctrl+C. */
   untilStopped(): Promise<void>
   openBrowser(url: string): void
+  /** The channel of a named whole pass the command may run: its reports on standard error; the first Ctrl+C stops it after the step under way. */
+  pass?(): Pass
+}
+
+/** Each report on its own line of standard error, the first with how to stop; Ctrl+C is heard only once a pass has reported. */
+function terminalPass(): Pass {
+  let stop = false
+  let heard = false
+  return {
+    report(p) {
+      const first = !heard
+      if (first) {
+        heard = true
+        process.once('SIGINT', () => {
+          stop = true
+        })
+      }
+      process.stderr.write(`${p.text}${first ? '（Ctrl-C 停下）' : ''}\n`)
+    },
+    stopped: () => stop,
+  }
 }
 
 async function readStdin(): Promise<Uint8Array> {
@@ -123,6 +145,7 @@ export function processIo(): Io {
       const [command, args] = process.platform === 'darwin' ? ['open', [url]] : process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]] : ['xdg-open', [url]]
       spawn(command as string, args as string[], { detached: true, stdio: 'ignore' }).on('error', () => undefined).unref()
     },
+    pass: terminalPass,
   }
 }
 
@@ -405,7 +428,8 @@ async function bind(inv: Invocation): Promise<Bound | Answer> {
 function contextFor({ parsed, io, home }: Invocation, library: Library, grant: Grant | null): Bound {
   const actor = identifyActor({ grant, as: flagValue(parsed, 'as'), env: io.env })
   const session = identifySession({ flag: flagValue(parsed, 'session'), env: io.env, cwd: io.cwd, machine: hostname() })
-  return { library, ctx: makeContext(library, actor, session, home), viaGrant: grant !== null }
+  const ctx = makeContext(library, actor, session, home)
+  return { library, ctx: io.pass === undefined ? ctx : { ...ctx, pass: io.pass() }, viaGrant: grant !== null }
 }
 
 /** Owner commands whose library comes from the local grant their first argument names, not from --library. */

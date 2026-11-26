@@ -39,7 +39,9 @@ export function corePath(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 type Answer = { outcome: 'done' | 'failed' | 'refused'; [field: string]: unknown }
-type Waiting = { resolve(answer: Answer): void; reject(error: Error): void }
+/** How far a long operation is: files and bytes done, of how many (core/README.md, progress lines). */
+export type StorageProgress = { files: number; bytes: number; total_files: number | null; total_bytes: number | null }
+type Waiting = { resolve(answer: Answer): void; reject(error: Error): void; progress?: (p: StorageProgress) => void }
 
 /**
  * One `serve` process for one library. It holds this process open only while a request is waiting;
@@ -57,12 +59,13 @@ class Served {
 
   constructor(private readonly root: string) {}
 
-  request(op: string, body: Record<string, unknown>): Promise<Answer> {
+  /** `progress` hears the progress lines storage sends for this request before its answer. */
+  request(op: string, body: Record<string, unknown>, progress?: (p: StorageProgress) => void): Promise<Answer> {
     const child = this.child ?? this.start()
     const id = this.next++
     const line = `${JSON.stringify({ ...body, id, op })}\n`
     return new Promise<Answer>((resolve, reject) => {
-      this.waiting.set(id, { resolve, reject })
+      this.waiting.set(id, { resolve, reject, ...(progress === undefined ? {} : { progress }) })
       this.hold(true)
       child.stdin.write(line)
     })
@@ -123,8 +126,12 @@ class Served {
   }
 
   private answer(line: string): void {
-    const answer = JSON.parse(line) as Answer & { id: number | null; progress?: unknown }
-    if (answer.progress !== undefined || answer.id === null) return
+    const answer = JSON.parse(line) as Answer & { id: number | null; progress?: StorageProgress }
+    if (answer.id === null) return
+    if (answer.progress !== undefined) {
+      this.waiting.get(answer.id)?.progress?.(answer.progress)
+      return
+    }
     // The subscription ended: storage has nothing to listen to here, or it was cancelled.
     if (answer.id === this.subscription) {
       this.subscription = null
@@ -207,14 +214,15 @@ function areaOf(s: Served, records: string | undefined) {
       const a = await done<Looked>('look', s.request('look', { ...where, places }))
       return { ...a, held: a.held ?? [] }
     },
-    content: (place: Place, opts: { rule?: ContentRule; limit?: number; fetch?: boolean } = {}) => doneOrFailure<ContentAnswer>(s.request('content', { ...where, place, ...opts })),
+    content: (place: Place, { progress, ...opts }: { rule?: ContentRule; limit?: number; fetch?: boolean; progress?: (p: StorageProgress) => void } = {}) =>
+      doneOrFailure<ContentAnswer>(s.request('content', { ...where, place, ...opts }, progress)),
     async read(place: Place, opts: { offset?: number; length?: number; to?: string; fetch?: boolean } = {}): Promise<ReadAnswer | StorageFailure> {
       const a = await doneOrFailure<Omit<ReadAnswer, 'data'> & { data?: string }>(s.request('read', { ...where, place, ...opts }))
       if (isFailure(a)) return a
       return { token: a.token, size: a.size, offset: a.offset, length: a.length, data: a.data === undefined ? null : new Uint8Array(Buffer.from(a.data, 'base64')) }
     },
-    write: (place: Place, from: Source, expect: Expect, opts: { hold?: string; rule?: ContentRule; limit?: number } = {}) =>
-      doneOrFailure<Written>(s.request('write', { ...where, place, from: wireSource(from), expect, ...opts })),
+    write: (place: Place, from: Source, expect: Expect, { progress, ...opts }: { hold?: string; rule?: ContentRule; limit?: number; progress?: (p: StorageProgress) => void } = {}) =>
+      doneOrFailure<Written>(s.request('write', { ...where, place, from: wireSource(from), expect, ...opts }, progress)),
     move: (from: Place, to: Place, expect: { from: string; to: Expect }, opts: { hold?: string } = {}) => doneOrFailure<{ entry: Description }>(s.request('move', { ...where, from, to, expect, ...opts })),
     remove: (place: Place, expect: string, opts: { hold?: string } = {}) => doneOrFailure<{ removed: true }>(s.request('remove', { ...where, place, expect, ...opts })),
   }

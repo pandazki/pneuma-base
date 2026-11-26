@@ -98,6 +98,7 @@ const actorMark = shape({ kind: oneOf('agent', 'owner'), name: string, 'grant?':
 /** Who, as a block says it: a name, or an actor whose mark the page draws. */
 const who: Check = (v, at) => (typeof v === 'string' ? null : actorMark(v, at))
 const cell = shape({ text: string, 'mono?': boolean, 'muted?': boolean, 'tag?': tag, 'link?': link, 'at?': string, 'icon?': string, 'href?': string, 'copy?': boolean, 'actor?': actorMark })
+const paging = shape({ first: number, shown: number, total: number, 'atLeast?': boolean, prev: nullable(link), next: nullable(link) })
 
 const call: Check = (v, at) => {
   const parsed = parseCall(v)
@@ -157,17 +158,18 @@ const KINDS: Record<Block['kind'], Check> = {
     columns: listOf(shape({ key: string, label: string, 'optional?': boolean })),
     rows: listOf(shape({ key: string, cells: recordOf(cell), link: nullable(link), actions })),
     empty: string,
+    'page?': paging,
   }),
   fields: shape({ fields: listOf(shape({ label: string, value: cell })) }),
-  list: shape({ items: listOf(shape({ cell, note: nullable(string), actions })) }),
-  timeline: shape({ entries: listOf(shape({ at: string, title: cell, lines: listOf(string), tag: nullable(tag), 'actions?': actions })) }),
+  list: shape({ items: listOf(shape({ cell, note: nullable(string), actions })), 'page?': paging }),
+  timeline: shape({ entries: listOf(shape({ at: string, title: cell, lines: listOf(string), tag: nullable(tag), 'actions?': actions })), 'page?': paging }),
   text: shape({ text: string, tone }),
   preview: shape({ path: string }),
   actions: shape({ actions }),
   empty: shape({ title: string, hint: nullable(string) }),
   embed: shape({ url: httpUrl, title: string, height: number }),
   custom: shape({ entry, height: number, text: string, 'data?': anything, actions: recordOf(action) }),
-  feed: shape({ groups: listOf(feedGroup), empty: string }),
+  feed: shape({ groups: listOf(feedGroup), empty: string, 'page?': paging }),
   stats: shape({ stats: listOf(shape({ label: string, value: string, note: nullable(string) })) }),
   tree: shape({ param: string, selected: string, nodes: listOf(treeNode) }),
   asks: shape({ asks: listOf(ask), empty: string }),

@@ -4,7 +4,7 @@
 import { command, done, refused, type KernelCommand } from './kernel-command.js'
 import { parseLibraryPath, regionOf } from './paths.js'
 import { storageOf } from './storage.js'
-import { formOf, type Action, type Block, type LibraryPath, type TableRow } from '@pneuma-base/sdk'
+import { formOf, type Action, type Block, type FixedValue, type LibraryPath, type TableRow } from '@pneuma-base/sdk'
 
 const PATH = { name: 'path', hint: '库内路径：这个目录或文件，和它里面的一切' } as const
 const NAME = { name: 'name', hint: '名字：任何一层叫这个名字的都算，比如 node_modules', kind: 'value' } as const
@@ -64,7 +64,7 @@ export const NOISE_COMMANDS: readonly KernelCommand[] = [
 ]
 
 /** A button of the noise command `name`, with these of its values fixed. */
-const formFor = (name: string, label: string, fixed: Record<string, string>, tone: Action['tone'] = 'default'): Action => {
+const formFor = (name: string, label: string, fixed: Record<string, FixedValue>, tone: Action['tone'] = 'default'): Action => {
   const c = NOISE_COMMANDS.find((x) => x.name === name) as KernelCommand
   return { label, tone, confirm: null, ...formOf(c, { fixed }) }
 }
@@ -76,7 +76,7 @@ export async function noiseSection(root: string): Promise<Block> {
     key: `${kind}:${value}`,
     cells: { value: { text: value, mono: true }, kind: { text: kind === 'name' ? '名字，任何一层' : '库内路径' } },
     link: null,
-    actions: [formFor('noise remove', '去掉', kind === 'name' ? { name: value } : { path: value }, 'danger')],
+    actions: [formFor('noise remove', '去掉', kind === 'name' ? { name: value, path: false } : { path: value, name: false }, 'danger')],
   })
   const rows = [...n.names.map((v) => row('name', v)), ...n.paths.map((v) => row('path', v))]
   return {

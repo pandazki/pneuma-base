@@ -1,7 +1,7 @@
 // A page of the management UI as the command line prints it: the same typed blocks in words, so an
 // agent reading it knows what the person sees, and every button written as the command line that
 // does the same thing. ARCHITECTURE.md section 6.
-import { commandLine, quote, usageOf, type Action, type ActorMark, type Block, type Call, type Cell, type FeedRow, type FlagParam, type Link, type OwnerCommandInfo, type PositionalParam, type TreeNode, type ViewDecl, type ViewList, type ViewRequest, type ViewResult } from '@pneuma-base/kernel'
+import { commandLine, quote, usageOf, type Action, type ActorMark, type Block, type Call, type Cell, type FeedRow, type FlagParam, type Link, type OwnerCommandInfo, type Paging, type PositionalParam, type TreeNode, type ViewDecl, type ViewList, type ViewRequest, type ViewResult } from '@pneuma-base/kernel'
 
 type Shown = Extract<ViewResult, { outcome: 'shown' }>
 type OwnerCall = Extract<Call, { face: 'owner' }>
@@ -126,7 +126,7 @@ function actionLine(action: Action, commands: readonly OwnerCommandInfo[], inden
 }
 
 /** The command that opens what a link opens. */
-function linkCommand(link: Link): string {
+export function linkCommand(link: Link): string {
   return ['show', link.view, ...Object.entries(link.params).flatMap(([k, v]) => [`--${k}`, quote(v)])].join(' ')
 }
 
@@ -167,6 +167,17 @@ function treeLines(nodes: readonly TreeNode[], block: Extract<Block, { kind: 'tr
   ])
 }
 
+/** Where one page of a long list stands, and the commands that show the pages after and before it. */
+function pageLines(page: Paging | undefined, indent: string): string[] {
+  if (page === undefined || (page.prev === null && page.next === null)) return []
+  const last = page.first + page.shown - 1
+  return [
+    `${indent}第 ${page.first}–${last} 项，${page.atLeast ? '至少' : '共'} ${page.total} 项`,
+    ...(page.next === null ? [] : [`${indent}下一页 → ${linkCommand(page.next)}`]),
+    ...(page.prev === null ? [] : [`${indent}上一页 → ${linkCommand(page.prev)}`]),
+  ]
+}
+
 function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: number, indent: string, req: ViewRequest): string[] {
   const actions = (list: readonly Action[], at = indent) => list.map((a) => actionLine(a, commands, at))
   const more = `${indent}  `
@@ -176,23 +187,26 @@ function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: 
       return ['', heading, ...(block.note === null ? [] : [block.note]), ...actions(block.actions), ...block.blocks.flatMap((b) => blockLines(b, commands, depth + 1, indent, req)), '']
     }
     case 'table': {
-      if (block.rows.length === 0) return [`${indent}${block.empty}`]
+      if (block.rows.length === 0) return [`${indent}${block.empty}`, ...pageLines(block.page, indent)]
       const linked = block.rows.some((r) => r.link !== null)
       const header = [...block.columns.map((c) => c.label), ...(linked ? ['打开'] : [])]
       const cells = block.rows.map((r) => [...block.columns.map((c) => (r.cells[c.key] ? cellText(r.cells[c.key] as Cell, r.link) : '')), ...(linked ? [r.link === null ? '' : `→ ${linkCommand(r.link)}`] : [])])
       const lines = aligned([header, ...cells], indent)
-      return [lines[0] as string, ...block.rows.flatMap((r, i) => [lines[i + 1] as string, ...actions(r.actions, more)])]
+      return [lines[0] as string, ...block.rows.flatMap((r, i) => [lines[i + 1] as string, ...actions(r.actions, more)]), ...pageLines(block.page, indent)]
     }
     case 'fields':
       return block.fields.map((f) => `${indent}${f.label}：${cellText(f.value)}`)
     case 'list':
-      return block.items.flatMap((item) => [`${indent}- ${cellText(item.cell)}`, ...(item.note === null ? [] : [`${more}${item.note}`]), ...actions(item.actions, more)])
+      return [...block.items.flatMap((item) => [`${indent}- ${cellText(item.cell)}`, ...(item.note === null ? [] : [`${more}${item.note}`]), ...actions(item.actions, more)]), ...pageLines(block.page, indent)]
     case 'timeline':
-      return block.entries.flatMap((e) => [
-        `${indent}- ${[minute(e.at), cellText(e.title), ...(e.tag === null ? [] : [`[${e.tag.text}]`])].filter((p) => p !== '').join('  ')}`,
-        ...e.lines.map((l) => `${more}${l}`),
-        ...actions(e.actions ?? [], more),
-      ])
+      return [
+        ...block.entries.flatMap((e) => [
+          `${indent}- ${[minute(e.at), cellText(e.title), ...(e.tag === null ? [] : [`[${e.tag.text}]`])].filter((p) => p !== '').join('  ')}`,
+          ...e.lines.map((l) => `${more}${l}`),
+          ...actions(e.actions ?? [], more),
+        ]),
+        ...pageLines(block.page, indent),
+      ]
     case 'text':
       return block.text.split('\n').map((l, i) => `${indent}${i === 0 ? (TONE_WORD[block.tone] ?? '') : ''}${l}`)
     case 'preview':
@@ -207,10 +221,10 @@ function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: 
       return [...block.text.split('\n').map((l) => `${indent}${l}`), ...actions(Object.values(block.actions))]
     case 'feed':
       if (block.groups.every((g) => g.rows.length === 0)) return [`${indent}${block.empty}`]
-      return block.groups.flatMap((g) => [
-        `${indent}${g.title}${g.count === null ? '' : `（${g.count}）`}${g.link ? `  → ${linkCommand(g.link)}` : ''}`,
-        ...g.rows.flatMap((r) => feedRowLines(r, commands, more)),
-      ])
+      return [
+        ...block.groups.flatMap((g) => [`${indent}${g.title}${g.count === null ? '' : `（${g.count}）`}${g.link ? `  → ${linkCommand(g.link)}` : ''}`, ...g.rows.flatMap((r) => feedRowLines(r, commands, more))]),
+        ...pageLines(block.page, indent),
+      ]
     case 'stats':
       return block.stats.map((s) => `${indent}${s.label}：${s.value}${s.note === null ? '' : `（${s.note}）`}`)
     case 'tree':

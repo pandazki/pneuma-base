@@ -1,6 +1,6 @@
 // What the ledger answers: data for --json and short Chinese text for agents. Pure, except that
 // text reads the home directory to show it as ~ (the kernel's shortDir). ledger-design.md section 7.
-import { regionOf, shortDir, type Instant, type LibraryPath, type PluginSection } from '@pneuma-base/kernel'
+import { regionOf, shortDir, type Fingerprint, type Instant, type LibraryPath, type PluginSection } from '@pneuma-base/kernel'
 import { ADHOC_SCENE, type Fact, type FactActor, type How, type ItemId, type SceneId } from './facts.js'
 import type { Conversation } from './conversation.js'
 import { archived, heldKey, type HistoryRow, type ItemRow, type ItemState, type MarkKind, type MarkRow, type OriginLike, type OriginLine, type Ref, type SaidRow, type SceneRow } from './model.js'
@@ -86,6 +86,7 @@ export type ItemView = {
   dependents: { item: ItemId; path: LibraryPath }[]
   said: SaidView[]
   state: ItemState
+  fingerprint: Fingerprint | null // the content's on record; null while it was never read
   versions: Version[]
   held: string[] // where each held copy lies, relative to the library root
   archived: boolean
