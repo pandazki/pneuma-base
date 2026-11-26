@@ -69,6 +69,10 @@ pub const CHECKS: &[Check] = &[
     ),
     check!(concurrency::two_holders_of_one_place, ["2.9.1", "6.hold.1"]),
     check!(
+        concurrency::a_serve_session_keeps_no_lock_after_a_write,
+        ["2.9.1", "6.serve.1"]
+    ),
+    check!(
         concurrency::concurrent_appends_and_puts_lose_nothing,
         ["2.9.1", "5.s1"]
     ),
@@ -211,6 +215,33 @@ pub const CHECKS: &[Check] = &[
         writes::remove_sends_progress,
         ["4.remove.progress", "6.serve.2"]
     ),
+    // A record place's own area, and the sources of a write
+    check!(
+        areas::a_record_place_keeps_content_of_its_own,
+        ["4.s12", "5.s10"]
+    ),
+    check!(areas::a_record_area_has_no_noise_and_no_holds, ["4.s13"]),
+    check!(
+        serial changes::a_record_area_is_never_reported_by_changed,
+        ["4.s13"]
+    ),
+    check!(
+        areas::the_facts_of_a_record_place_are_not_in_its_area,
+        ["4.s14", "8.outside"]
+    ),
+    check!(areas::a_record_area_not_yet_written_reads_empty, ["4.s15"]),
+    check!(areas::a_move_in_a_record_area_stays_in_it, ["4.s16"]),
+    check!(
+        areas::write_copies_between_the_content_and_a_record_place,
+        ["4.s17", "4.s18", "4.write.input", "4.write.answer"]
+    ),
+    check!(areas::a_copy_onto_itself_is_a_bad_request, ["4.s19"]),
+    check!(areas::a_bad_copy_source_names_its_side, ["4.s20"]),
+    check!(
+        areas::bytes_in_the_request_are_written,
+        ["4.s21", "4.s22", "4.write.input"]
+    ),
+    check!(areas::names_storage_keeps_are_no_record_places, ["5.s12"]),
     // The record half
     check!(
         records::append_gives_one_order_per_fact,
@@ -288,6 +319,23 @@ pub const CHECKS: &[Check] = &[
     ),
     check!(others::holds_block_other_writers, ["6.hold.1", "8.held"]),
     check!(others::held_places_are_marked, ["6.hold.2"]),
+    check!(
+        others::one_hold_covers_several_places,
+        ["6.hold.4", "8.held"]
+    ),
+    check!(
+        others::the_declaration_is_kept_whole,
+        ["6.declaration.1", "1.storage"]
+    ),
+    check!(others::no_declaration_reads_null, ["6.declaration.2"]),
+    check!(
+        others::a_declaration_write_holds_to_its_expectation,
+        ["6.declaration.3", "2.5", "2.9.1", "8.refused"]
+    ),
+    check!(
+        others::the_noise_list_is_apart_from_the_declaration,
+        ["6.declaration.4"]
+    ),
     check!(serial others::a_hold_expires, ["6.hold.1", "6.hold.2"]),
     check!(others::serve_echoes_ids, ["6.serve.1"]),
     check!(others::serve_cancels_by_id, ["6.serve.3", "8.cancelled"]),

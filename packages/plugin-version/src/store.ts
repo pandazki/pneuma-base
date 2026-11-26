@@ -1,25 +1,35 @@
 // Content-addressed storage: objects/<first two hex>/<sha256>, each written once under its hash, so
 // the same content is stored once across versions and across things.
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
+import { createReadStream } from 'node:fs'
 import { copyFile, link, mkdir, rename, rm, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { bundleManifest, fingerprintOf, fingerprintOfFile, fingerprintOfManifest, thingAt, type Fingerprint } from '@pneuma-base/kernel'
+import type { Fingerprint, LibraryPath, PluginContext } from '@pneuma-base/kernel'
 import type { Manifest } from './facts.js'
 
 const objectPath = (dir: string, fingerprint: Fingerprint) => join(dir, 'objects', fingerprint.slice(0, 2), fingerprint)
 const scratch = (beside: string) => join(dirname(beside), `.tmp-${randomBytes(6).toString('hex')}`)
+/** The sha256 of a file this plugin wrote outside the library, as a version's row records it. */
+async function hashFile(path: string): Promise<Fingerprint> {
+  const hash = createHash('sha256')
+  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer)
+  return hash.digest('hex') as Fingerprint
+}
+
 const present = async (path: string) => (await stat(path).catch(() => null))?.isFile() === true
 
-/** The thing at `file`, a file or a bundle, as a version records it; null when neither is there. */
-export async function snapshot(file: string): Promise<{ fingerprint: Fingerprint; manifest: Manifest } | null> {
-  const thing = await thingAt(file)
+/** The thing at `path`, a file or a bundle, as a version records it; null when neither is there. */
+export async function snapshot(ctx: PluginContext, path: LibraryPath): Promise<{ fingerprint: Fingerprint; manifest: Manifest } | null> {
+  const thing = await ctx.tools.thing(path)
   if (thing === null) return null
   if (thing.kind === 'file') {
-    const fingerprint = await fingerprintOf(file)
+    const fingerprint = await ctx.tools.fingerprint(path)
+    if (fingerprint === null) return null
     return { fingerprint, manifest: { kind: 'file', rows: [{ path: '', fingerprint, size: thing.size }] } }
   }
-  const rows = await bundleManifest(file)
-  return { fingerprint: fingerprintOfManifest(rows), manifest: { kind: 'bundle', rows } }
+  const rows = await ctx.tools.manifest(path)
+  if (rows === null) return null
+  return { fingerprint: ctx.tools.fingerprintOfManifest(rows), manifest: { kind: 'bundle', rows } }
 }
 
 /**
@@ -27,7 +37,8 @@ export async function snapshot(file: string): Promise<{ fingerprint: Fingerprint
  * copy is checked against its row's sha256 before it takes its name; a mismatch means the thing
  * changed meanwhile, and throws.
  */
-export async function store(dir: string, file: string, manifest: Manifest): Promise<void> {
+export async function store(ctx: PluginContext, file: string, manifest: Manifest): Promise<void> {
+  const dir = ctx.dir
   for (const row of manifest.rows) {
     const target = objectPath(dir, row.fingerprint)
     if (await present(target)) continue
@@ -35,7 +46,7 @@ export async function store(dir: string, file: string, manifest: Manifest): Prom
     const tmp = scratch(target)
     try {
       await copyFile(join(file, row.path), tmp)
-      if ((await fingerprintOfFile(tmp)) !== row.fingerprint) throw new Error(`${row.path || '它'} 在记录时被改动了`)
+      if ((await ctx.tools.fingerprintOfFile(tmp)) !== row.fingerprint) throw new Error(`${row.path || '它'} 在记录时被改动了`)
       await link(tmp, target).catch((error: NodeJS.ErrnoException) => {
         if (error.code !== 'EEXIST') throw error
       })
@@ -64,7 +75,7 @@ export async function writeOut(dir: string, manifest: Manifest, target: string):
       const to = join(tmp, row.path)
       await mkdir(dirname(to), { recursive: true })
       await copyFile(objectPath(dir, row.fingerprint), to)
-      if ((await fingerprintOfFile(to)) !== row.fingerprint) throw new Error(`存放里的内容 ${row.fingerprint.slice(0, 8)} 坏了`)
+      if ((await hashFile(to)) !== row.fingerprint) throw new Error(`存放里的内容 ${row.fingerprint.slice(0, 8)} 坏了`)
     }
     await rename(tmp, target)
   } finally {

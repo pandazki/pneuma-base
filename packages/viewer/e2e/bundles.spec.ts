@@ -1,7 +1,7 @@
 // Bundles in the UI: a directory with the marker is one thing. On the files page it is one row that
 // opens the item panel, not a folder to walk into; the panel gives its facts and its files, and an
 // inner text or image file previews. Archived, it is one row in the archive. In the ledger's items
-// table it is one row, and the files it absorbed are not listed.
+// table it is one row, and the files it absorbed are not listed. Its first level counts in entries (`3 项`).
 import { join } from 'node:path'
 import { expect, png, shoot, tempDir, test, write } from './support.ts'
 
@@ -25,15 +25,15 @@ test('a bundle is one row on the files page; its panel lists its files and previ
   const title = panel.getByTestId('panel-title')
 
   const row = main.getByRole('row', { name: /shop-site/ })
-  await expect(row).toContainText('3 个文件')
+  await expect(row).toContainText('3 项')
   await row.click()
   await expect(title).toHaveText('shop-site')
   await expect(main.getByText('库的根目录')).toBeVisible() // still at the root: not walked into
   const facts = panel.getByRole('region', { name: '文件', exact: true })
   await expect(facts).toContainText('一样东西（带标记的目录）')
-  await expect(facts).toContainText('文件数3')
-  const files = panel.getByRole('region', { name: '里面的文件' })
-  await expect(files.getByRole('row')).toHaveCount(4) // the header and three files
+  // The panel lists the bundle's first level, as storage's overview gives it; nothing inside is walked.
+  const files = panel.getByRole('region', { name: '第一层' })
+  await expect(files.getByRole('row')).toHaveCount(4) // the header, css/, img/ and index.html
 
   await files.getByRole('row', { name: /index\.html/ }).click()
   await expect(title).toHaveText('index.html')
@@ -42,7 +42,9 @@ test('a bundle is one row on the files page; its panel lists its files and previ
   await shoot(page, 'c5-bundle-files')
   await panel.getByRole('button', { name: 'shop-site' }).click()
   await expect(title).toHaveText('shop-site')
-  await files.getByRole('row', { name: /img\/cover\.png/ }).click()
+  await files.getByRole('row', { name: /^img\// }).click() // a folder inside opens on the files page
+  await expect(main.getByText('shop-site/img')).toBeVisible()
+  await main.getByRole('row', { name: /cover\.png/ }).click()
   const image = panel.getByRole('img', { name: 'shop-site/img/cover.png' })
   await expect(image).toBeVisible()
   expect(await image.evaluate((img: HTMLImageElement) => [img.naturalWidth, img.naturalHeight])).toEqual([64, 40])
@@ -53,7 +55,7 @@ test('a bundle is one row on the files page; its panel lists its files and previ
   await expect(page.getByRole('status')).toContainText('已归档：shop-site → _archive/shop-site')
   await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '归档区' }).click()
   await expect(main.getByRole('row')).toHaveCount(2)
-  await expect(main.getByRole('row', { name: /shop-site/ })).toContainText('3 个文件')
+  await expect(main.getByRole('row', { name: /shop-site/ })).toContainText('3 项')
 })
 
 test('the items table shows a bundle as one row and leaves out what it absorbed', async ({ page, pb }) => {
@@ -62,6 +64,8 @@ test('the items table shows a bundle as one row and leaves out what it absorbed'
   pb.run(['init', lib])
   write(lib, 'shop-site/index.html', '<h1>旧的首页</h1>\n')
   pb.run(['--library', lib, '--as', 'claude-code', 'put', 'shop-site/index.html', '--brought'], { cwd: outside })
+  // A folder that holds a registered file is open: registering it would register its loose files. Its marker makes it one thing.
+  write(lib, 'shop-site/.pneuma-item', '{"format":1}\n')
   pb.run(['--library', lib, '--as', 'claude-code', 'put', 'shop-site', '--made'], { cwd: outside })
   const { url } = await pb.view(lib)
   await page.goto(`${url}#view=ledger.items`)

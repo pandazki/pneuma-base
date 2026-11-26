@@ -10,7 +10,7 @@ import { resolve } from 'node:path'
 import { defineTarget, type ContentId, type Served, type SiteName, type Target, type TargetConfig } from '@pneuma-base/sdk/kit'
 import { Control, ControlError, type AppSummary, type Manager } from './control.ts'
 import { appName, MANAGER, ORIGIN, PLUGIN, PREFIX_PARAM } from './name.ts'
-import { linksIn, packageOf, refusal } from './package.ts'
+import { packageOf, refusal } from './package.ts'
 import { viewOf, type Plane, type Seen } from './views.ts'
 
 type Config = { origin: string; account: string; prefix: string; credentials: string | null; tenant: string | null }
@@ -143,8 +143,7 @@ export const cloudflareTarget = defineTarget({
        * content of an earlier release is put back with `rollback`, and only new content is uploaded.
        */
       async publish(site, _dir, meta) {
-        const links = await linksIn(env.ctx.tools.abs(meta.path))
-        if (links.length > 0) throw new ControlError(`站点里有符号链接 ${links.join('、')}：库不把链接算进内容，PneumaSpace 的包也放不进链接；换成真的文件再放回库里`)
+        if (meta.others.length > 0) throw new ControlError(`站点里的 ${meta.others.join('、')} 不是普通文件（符号链接之类）：库不把它们算进内容，PneumaSpace 的包也放不进；换成真的文件再放回库里`)
         const pkg = await packageOf(meta.files)
         const refused = refusal(meta.files, pkg)
         if (refused !== null) throw new ControlError(refused)

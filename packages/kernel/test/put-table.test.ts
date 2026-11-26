@@ -73,11 +73,11 @@ describe('register', () => {
     expect(refused(await agentFace.put({ kind: 'register', path: 'a.md', origin: brought }, f.ctx))).toBe('no-such-file')
   })
 
-  it('target present: accepted with its current content', async () => {
+  it('target present: accepted as it is, its content not read', async () => {
     const f = await fixture()
     f.write('a.md', 'a')
     const r = await agentFace.put({ kind: 'register', path: 'a.md', origin: brought }, f.ctx)
-    expect(r).toEqual({ outcome: 'accepted', path: 'a.md', fingerprint: sha.a, copied: false, notes: [], problems: [] })
+    expect(r).toEqual({ outcome: 'accepted', path: 'a.md', fingerprint: null, copied: false, notes: [], problems: [] })
   })
 
   it('an absolute path inside the library is a library path', async () => {
@@ -257,7 +257,7 @@ describe('move', () => {
     const f = await fixture()
     f.write('a.md', 'a')
     const r = await agentFace.put({ kind: 'move', from: 'a.md', to: 'x/b.md' }, f.ctx)
-    expect(r).toEqual({ outcome: 'accepted', path: 'x/b.md', fingerprint: sha.a, copied: false, notes: [], problems: [] })
+    expect(r).toEqual({ outcome: 'accepted', path: 'x/b.md', fingerprint: null, copied: false, notes: [], problems: [] })
     expect(f.read('x/b.md')).toBe('a')
     expect(() => f.read('a.md')).toThrow()
   })

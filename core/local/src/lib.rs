@@ -1,6 +1,10 @@
 //! The local folder: the one implementation of the storage contract today. Content is the
-//! folder itself; records live in `<root>/.pneuma-base/`, caches in `<root>/.pneuma-base/cache/`.
+//! folder itself; records live in `<root>/.pneuma-base/`, caches in `<root>/.pneuma-base/cache/`,
+//! a record place's own content in `<root>/.pneuma-base/<name>/`, the root declaration in
+//! `<root>/.pneuma-base/config.json`.
 
+mod area;
+mod declaration;
 mod facets;
 mod facts;
 mod fingerprint;
@@ -20,26 +24,34 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use pneuma_base_storage::{
-    ChangedAnswer, ChangedRequest, ContentAnswer, ContentRequest, Ctx, FactsAppendAnswer,
-    FactsAppendRequest, FactsSinceAnswer, FactsSinceRequest, Failure, GlanceAnswer, GlanceRequest,
-    HoldAnswer, HoldRequest, InitAnswer, LookAnswer, LookItem, MoveAnswer, MoveRequest,
-    NoiseAnswer, NoiseChange, NoiseEdit, OverviewAnswer, OverviewRequest, Place, ProbeAnswer,
-    ProbeRequest, ReadAnswer, ReadRequest, Reason, RecordPlace, RemoveAnswer, RemoveRequest,
-    RowsGetAnswer, RowsGetRequest, RowsPage, RowsPutRequest, RowsUnderRequest, RowsWhereAnswer,
-    RowsWhereRequest, Storage, StorageInfo, Time, WriteAnswer, WriteRequest,
+    ChangedAnswer, ChangedRequest, ContentAnswer, ContentRequest, Ctx, DeclarationAnswer,
+    DeclarationWriteRequest, DeclarationWritten, FactsAppendAnswer, FactsAppendRequest,
+    FactsSinceAnswer, FactsSinceRequest, Failure, GlanceAnswer, GlanceRequest, HoldAnswer,
+    HoldRequest, InitAnswer, LookAnswer, LookRequest, MoveAnswer, MoveRequest, NoiseAnswer,
+    NoiseChange, NoiseEdit, OverviewAnswer, OverviewRequest, Place, ProbeAnswer, ProbeRequest,
+    ReadAnswer, ReadRequest, Reason, RecordPlace, RemoveAnswer, RemoveRequest, RowsGetAnswer,
+    RowsGetRequest, RowsPage, RowsPutRequest, RowsUnderRequest, RowsWhereAnswer, RowsWhereRequest,
+    Storage, StorageInfo, Time, WriteAnswer, WriteRequest,
 };
+
+use area::absent;
 
 pub use noise::DEFAULT_NAMES;
 
 pub const RECORD_AREA: &str = ".pneuma-base";
 
+/// A view of a library: its content, or one record place's own area in it (`area.rs`).
 pub struct LocalFolder {
-    /// Canonical, in the case the volume keeps.
+    /// The library folder: canonical, in the case the volume keeps.
+    library: PathBuf,
+    /// Where this view's places start: the library folder, or a record place's own area.
     root: PathBuf,
     root_fd: OwnedFd,
     /// How close to a change a state can be taken before the file system's clock cannot tell a
     /// second change from the first.
     racy_ns: i128,
+    /// The record place whose own area this view is; `None` for the content.
+    records: Option<RecordPlace>,
 }
 
 impl LocalFolder {
@@ -57,14 +69,27 @@ impl LocalFolder {
         sys::forbid_fetching();
         let racy_ns = racy_window(sys::fs_type(root_fd.as_raw_fd()).as_deref());
         Ok(LocalFolder {
+            library: root.clone(),
             root,
             root_fd,
             racy_ns,
+            records: None,
         })
     }
 
+    /// Another view of the same library, starting at `root`.
+    fn with_root(&self, root: PathBuf, root_fd: OwnedFd, records: Option<RecordPlace>) -> Self {
+        LocalFolder {
+            library: self.library.clone(),
+            root,
+            root_fd,
+            racy_ns: self.racy_ns,
+            records,
+        }
+    }
+
     fn record_area(&self) -> PathBuf {
-        self.root.join(RECORD_AREA)
+        self.library.join(RECORD_AREA)
     }
 
     fn cache_area(&self) -> PathBuf {
@@ -80,7 +105,7 @@ impl LocalFolder {
         std::fs::create_dir_all(self.record_area()).map_err(|e| io_failure(&e))
     }
 
-    /// The absolute path of a place.
+    /// The absolute path of a place of this view.
     pub fn path_of(&self, place: &Place) -> PathBuf {
         if place.is_root() {
             self.root.clone()
@@ -170,19 +195,28 @@ fn unique_name(prefix: &str) -> String {
 
 impl Storage for LocalFolder {
     fn glance(&self, req: &GlanceRequest, ctx: &Ctx) -> Result<GlanceAnswer, Failure> {
-        self.glance_places(req, ctx)
+        match self.view(&req.area, false)? {
+            Some(view) => view.glance_places(req, ctx),
+            None => Ok(absent::glance(req)),
+        }
     }
 
     fn overview(&self, req: &OverviewRequest, ctx: &Ctx) -> Result<OverviewAnswer, Failure> {
-        self.overview_dir(req, ctx)
+        match self.view(&req.area, false)? {
+            Some(view) => view.overview_dir(req, ctx),
+            None => absent::overview(req),
+        }
     }
 
     fn probe(&self, req: &ProbeRequest, ctx: &Ctx) -> Result<ProbeAnswer, Failure> {
         self.probe_dir(req, ctx)
     }
 
-    fn look(&self, places: &[LookItem], ctx: &Ctx) -> Result<LookAnswer, Failure> {
-        self.look_places(places, ctx)
+    fn look(&self, req: &LookRequest, ctx: &Ctx) -> Result<LookAnswer, Failure> {
+        match self.view(&req.area, false)? {
+            Some(view) => view.look_places(&req.places, ctx),
+            None => Ok(absent::look(req)),
+        }
     }
 
     fn changed(&self, req: &ChangedRequest, ctx: &Ctx) -> Result<ChangedAnswer, Failure> {
@@ -190,23 +224,43 @@ impl Storage for LocalFolder {
     }
 
     fn content(&self, req: &ContentRequest, ctx: &Ctx) -> Result<ContentAnswer, Failure> {
-        self.content_of(req, ctx)
+        match self.view(&req.area, false)? {
+            Some(view) => view.content_of(req, ctx),
+            None => absent::content(req),
+        }
     }
 
     fn read(&self, req: &ReadRequest, ctx: &Ctx) -> Result<ReadAnswer, Failure> {
-        self.read_bytes(req, ctx)
+        match self.view(&req.area, false)? {
+            Some(view) => view.read_bytes(req, ctx),
+            None => Err(absent::read(req)),
+        }
     }
 
     fn write(&self, req: &WriteRequest, ctx: &Ctx) -> Result<WriteAnswer, Failure> {
-        self.write_place(req, ctx)
+        let view = match self.view(&req.area, false)? {
+            Some(view) => view,
+            None => {
+                absent::write(req)?;
+                self.view(&req.area, true)?
+                    .ok_or_else(|| Failure::new(Reason::Busy))?
+            }
+        };
+        view.write_place(req, ctx)
     }
 
     fn move_place(&self, req: &MoveRequest, ctx: &Ctx) -> Result<MoveAnswer, Failure> {
-        self.move_between(req, ctx)
+        match self.view(&req.area, false)? {
+            Some(view) => view.move_between(req, ctx),
+            None => Err(absent::move_place(req)),
+        }
     }
 
     fn remove(&self, req: &RemoveRequest, ctx: &Ctx) -> Result<RemoveAnswer, Failure> {
-        self.remove_place(req, ctx)
+        match self.view(&req.area, false)? {
+            Some(view) => view.remove_place(req, ctx),
+            None => Err(absent::remove(req)),
+        }
     }
 
     fn facts_append(&self, req: &FactsAppendRequest) -> Result<FactsAppendAnswer, Failure> {
@@ -258,6 +312,17 @@ impl Storage for LocalFolder {
             cursor: self.reliable_cursor(),
             facets: facets::available(),
         }
+    }
+
+    fn declaration_read(&self) -> Result<DeclarationAnswer, Failure> {
+        self.read_declaration()
+    }
+
+    fn declaration_write(
+        &self,
+        req: &DeclarationWriteRequest,
+    ) -> Result<DeclarationWritten, Failure> {
+        self.write_declaration(req)
     }
 
     fn noise_list(&self) -> Result<NoiseAnswer, Failure> {

@@ -1,6 +1,6 @@
 // The kernel's find: matching the words of a sentence for `start`, and plugin filters.
 import { describe, expect, it } from 'vitest'
-import { agentFace, BUNDLE_MARKER, searchTerms, type FindRequest, type LibraryPath, type PluginHit } from '../src/index.js'
+import { agentFace, BUNDLE_MARKER, rankHits, searchTerms, type FindRequest, type LibraryPath, type PluginHit } from '../src/index.js'
 import { fixture, plugin } from './support.js'
 
 const request = (text: string, match: FindRequest['match'], filters: Record<string, string> = {}): FindRequest => ({ text, match, filters, includeArchived: false, skipOwnSession: false })
@@ -23,42 +23,45 @@ describe('searchTerms', () => {
   })
 })
 
-describe('find in words mode', () => {
-  it('ranks names by how many distinct words they match and gives the best five', async () => {
-    const f = await fixture()
-    for (const name of ['支付-小店.md', '支付-1.md', '支付-2.md', '支付-3.md', '支付-4.md', '支付-5.md', '其他.md']) f.write(name, name)
-    const r = await agentFace.find(request('给小店接上支付', 'words'), f.ctx)
-    expect(paths(r)).toHaveLength(5)
-    expect(paths(r)[0]).toBe('支付-小店.md')
-    expect(paths(r)).not.toContain('其他.md')
+describe('ranking for find in words mode', () => {
+  // The kernel finds nothing by name itself (that would walk the library); a plugin's index ranks with
+  // the kernel's rankHits, handed to it as tools.rankHits.
+  const rank = (names: string[], sentence: string) => rankHits(names.map((n) => ({ hit: n, haystack: n.toLowerCase() })), searchTerms(sentence, 'words'), 'words')
+
+  it('ranks names by how many distinct words they match and gives the best five', () => {
+    const r = rank(['支付-小店.md', '支付-1.md', '支付-2.md', '支付-3.md', '支付-4.md', '支付-5.md', '其他.md'], '给小店接上支付')
+    expect(r).toHaveLength(5)
+    expect(r[0]).toBe('支付-小店.md')
+    expect(r).not.toContain('其他.md')
   })
 
-  it('finds an earlier 下单 from the sentence 看看下单进展', async () => {
+  it('finds an earlier 下单 from the sentence 看看下单进展', () => {
+    expect(rank(['下单流程.md'], '看看下单进展')).toEqual(['下单流程.md'])
+  })
+
+  it('matches nothing when the sentence has no word to match', () => {
+    expect(rank(['a.md'], '做')).toEqual([])
+  })
+})
+
+describe('find without a plugin that finds', () => {
+  it('finds nothing: the kernel walks no folder to match names', async () => {
     const f = await fixture()
     f.write('下单流程.md', 'x')
-    expect(paths(await agentFace.find(request('看看下单进展', 'words'), f.ctx))).toEqual(['下单流程.md'])
-  })
-
-  it('matches nothing when the sentence has no word to match', async () => {
-    const f = await fixture()
-    f.write('a.md', 'a')
-    expect(paths(await agentFace.find(request('做', 'words'), f.ctx))).toEqual([])
+    expect(paths(await agentFace.find(request('看看下单进展', 'words'), f.ctx))).toEqual([])
   })
 })
 
 describe('find with plugins that read content', () => {
   const contentHit = (path: string, detail: string | null): PluginHit => ({ path: path as LibraryPath, title: path.split('/').at(-1) as string, group: null, detail })
 
-  it('gives a path both the kernel and a plugin found once, from the plugin, at the best rank either gave it', async () => {
+  it('gives what the plugin found, and nothing the kernel matched by name', async () => {
     const reader = plugin('reader', { onFind: async () => [contentHit('notes/zebra.md', '正文：…zebra…')] })
     const f = await fixture([reader])
     f.write('notes/zebra.md', 'zebra')
     f.write('notes/zebra-2.md', 'other')
     const r = await agentFace.find(request('zebra', 'terms'), f.ctx)
-    expect(r.hits).toEqual([
-      { path: 'notes/zebra-2.md', title: 'zebra-2.md', by: 'kernel', group: null, detail: null },
-      { path: 'notes/zebra.md', title: 'zebra.md', by: 'reader', group: null, detail: '正文：…zebra…' },
-    ])
+    expect(r.hits).toEqual([{ path: 'notes/zebra.md', title: 'zebra.md', by: 'reader', group: null, detail: '正文：…zebra…' }])
   })
 
   it('keeps the kernel’s mark of a bundle in front of the plugin’s detail', async () => {
@@ -135,9 +138,8 @@ describe('find with plugins that know about paths others found', () => {
     })
     let found = ['a.md', 'b.md']
     const f = await fixture([both, finder(() => found)])
-    f.write('q-by-name.md', 'x')
     await agentFace.find(request('q', 'terms'), f.ctx)
-    expect(asked).toEqual([['b.md', 'q-by-name.md']])
+    expect(asked).toEqual([['b.md']])
 
     found = ['a.md']
     await agentFace.find(request('nothing-by-name', 'terms'), f.ctx)
@@ -169,10 +171,11 @@ describe('find with plugins that know about paths others found', () => {
 })
 
 describe('find with filters', () => {
-  it('lists no file by name, since the kernel cannot apply a plugin filter', async () => {
-    const f = await fixture()
+  it('passes the filters to the plugins and finds nothing by name itself', async () => {
+    const seen: Record<string, string>[] = []
+    const f = await fixture([plugin('reader', { onFind: async (req) => (seen.push(req.filters), []) })])
     f.write('a.md', 'a')
-    expect(paths(await agentFace.find(request('a', 'terms'), f.ctx))).toEqual(['a.md'])
     expect(paths(await agentFace.find(request('a', 'terms', { origin: 'made' }), f.ctx))).toEqual([])
+    expect(seen).toEqual([{ origin: 'made' }])
   })
 })

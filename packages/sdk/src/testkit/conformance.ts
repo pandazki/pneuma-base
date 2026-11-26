@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { chmod, lstat, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { KERNEL_COMMAND_NAMES, RESERVED_PLUGIN_NAMES } from '../index.js'
+import { CONTRACT, KERNEL_COMMAND_NAMES, RESERVED_PLUGIN_NAMES } from '../index.js'
 import type { Action, Block, Plugin } from '../types.js'
 import { runProcess, type Result } from './run.js'
 import { sandbox, type Sandbox, type SandboxOptions, type Viewer } from './sandbox.js'
@@ -18,9 +18,9 @@ export const RULES: Record<CheckName, string> = {
   names: '主人命令以「<插件名> 」开头，视图编号以「<插件名>.」开头，插件名不是命令行或内核自己用的词，命令名不是内核的命令',
   cognition: '认知段以「## <它带来什么>：<怎么用>」开头，第一句是「这个库装了**<标题>**插件。」，命令示例写成 pneuma-base @{{授权的名字}} …，只用 {{授权的名字}} 这一个占位，不重复内核管的规矩',
   examples: '认知段里的每条命令示例，在一个新库上做完准备步骤之后，照原样在 agent 的会话里能跑，退出码是 0',
-  hooks: '每个钩子在空库上、在每个动词之后都不抛错，答复里没有这个插件的问题',
+  hooks: '每个钩子在空库上、在每个动词之后都不抛错，答复里没有这个插件的问题；登记已在库里的文件（第 2 版的插件收到的指纹是 null，凭 now.token 认它）和登记一个目录这一层的散文件（第 2 版的插件收到一次 register-files）也一样',
   writes: '插件只往库里自己名下的 .pneuma-base/<插件名>/ 写；那里已有的文件不改写、不删（声明为配置的文件、缓存目录和破坏性的主人命令除外）；视图和条目面板里的一节什么都不写',
-  cache: '缓存删掉什么都不丢：删掉它在本机的缓存目录和声明为缓存的目录前后，找、看、查的答复一样',
+  cache: '缓存删掉什么都不丢：删掉它在本机的缓存目录、声明为缓存的目录和它记录处的行前后，找、看、查的答复一样',
   blocks: '视图和条目面板里的一节答复的都是合法的块，钩子不抛错；每个动作调的是一个动词或这个库里在的一条主人命令，参数合它的参数表；custom 块带 text，用字说出它画的；custom 块指向的页面在插件的 ui 目录里，取得到，载入 /plugin-kit/frame.js，脚本里调用 pneuma.onData',
   remove: '卸下插件之后库照常能用：配置和说明里没有它，动词照常答复、没有问题，界面没有它的视图，内容一样不少',
 }
@@ -173,10 +173,11 @@ type Snapshot = Map<string, Entry>
 type Change = { path: string; change: 'added' | 'changed' | 'removed' }
 
 /**
- * The kernel's scratch directory, and storage's cache area: what storage derives there for any plugin
- * (rows, listings) is its own to rewrite at any time, and may be thrown away.
+ * Storage's own areas, which no plugin writes: its scratch (`tmp`); its cache (`cache`: what it derives
+ * for any plugin, rows and listings, its own to rewrite and throw away); the holds a write keeps until
+ * its records are in (`holds`, gone on release); and what a remove or a replace set aside (`trash`).
  */
-const NOT_THE_LIBRARY = ['.pneuma-base/tmp', '.pneuma-base/cache']
+const NOT_THE_LIBRARY = ['.pneuma-base/tmp', '.pneuma-base/cache', '.pneuma-base/holds', '.pneuma-base/trash']
 
 /** Every file and directory of the library by its library path, NOT_THE_LIBRARY left out. */
 async function snapshot(root: string): Promise<Snapshot> {
@@ -250,12 +251,18 @@ async function checkLibrary(p: Plugin, install: Install, options: ConformanceOpt
     hooksOn('空库上再 plugin add（onAdd）', await expectDone(owner(['plugin', 'add', p.name]), 'plugin add', fail))
 
     await options.setup?.({ sandbox: sb, cwd: sb.work, bin: join(sb.work, '.bin') })
+    await addOpener(sb, owner, fail)
 
     // The scripted run of every verb, each step watched for what it changed.
     const t0 = new Date().toISOString()
     await mkdir(join(sb.work, 'site'), { recursive: true })
     await writeFile(join(sb.work, 'site', 'index.html'), '<h1>符合性检查</h1>\n')
     await writeFile(join(sb.work, 'site', 'style.css'), 'h1 { color: teal; }\n')
+    /** A file written into the library as an agent's tool writes it, without the command line. */
+    const written = async (path: string, text: string) => {
+      await mkdir(join(sb.library, path, '..'), { recursive: true })
+      await writeFile(join(sb.library, path), text)
+    }
     const purge = async () => {
       const action = await purgeAction(viewer)
       if (action === null) throw new Error('归档页没有「清空归档区」')
@@ -264,6 +271,23 @@ async function checkLibrary(p: Plugin, install: Install, options: ConformanceOpt
     const script: Step[] = [
       { what: 'put 一个文件', touches: ['conformance/note.md'], run: () => agent(['put', '-', '--to', 'conformance/note.md', '--made', '--note', '符合性检查'], '# 符合性检查\n\n一段文字。\n') },
       { what: 'put 一个目录', touches: ['conformance/site'], run: () => agent(['put', 'site', '--to', 'conformance/site', '--made']) },
+      {
+        what: 'put 登记一个已在库里的文件',
+        touches: ['conformance/written.md'],
+        run: async () => {
+          await written('conformance/written.md', '# 写在库里\n')
+          return agent(['put', 'conformance/written.md', '--made'])
+        },
+      },
+      {
+        what: 'put 登记一个目录这一层的散文件',
+        touches: [`${OPEN_DIR}/loose-a.md`, `${OPEN_DIR}/loose-b.md`],
+        run: async () => {
+          await written(`${OPEN_DIR}/loose-a.md`, '散文件 a\n')
+          await written(`${OPEN_DIR}/loose-b.md`, '散文件 b\n')
+          return agent(['put', OPEN_DIR, '--made'])
+        },
+      },
       { what: 'find', touches: [], run: () => agent(['find', '符合性']) },
       { what: 'inspect', touches: [], run: () => agent(['inspect', 'conformance/note.md']) },
       ...p.statements.map((kind): Step => ({ what: `say ${kind}`, touches: [], run: () => agent(['say', kind, 'conformance/site', '符合性检查']) })),
@@ -292,6 +316,21 @@ async function checkLibrary(p: Plugin, install: Install, options: ConformanceOpt
 }
 
 const WORD: Record<Change['change'], string> = { added: '多了出来', changed: '被改写了', removed: '被删掉了' }
+
+/** The directory the check's own plugin keeps open, as a ledger's records would: registering it registers the loose files of its level. */
+const OPEN_DIR = 'conformance/open'
+const OPENER = 'conformance-opener'
+
+/** Installs and adds the check's own plugin, whose only part is `openDirs`. */
+async function addOpener(sb: Sandbox, owner: (args: string[]) => Promise<unknown>, fail: (c: CheckName, what: string) => void): Promise<void> {
+  const dir = join(sb.work, '.opener')
+  await mkdir(dir, { recursive: true })
+  const plugin = { contract: CONTRACT, name: OPENER, cognition: null, storage: [], statements: [], ownerCommands: [] }
+  await writeFile(join(dir, 'index.js'), `export default { ...${JSON.stringify(plugin)}, openDirs: async () => [${JSON.stringify(OPEN_DIR)}] }\n`)
+  const installed = await sb.run(['plugin', 'install', dir, '--json'])
+  if (installed.json?.outcome !== 'done') return fail('loads', `检查自己用的插件 ${OPENER} 没装上：${installed.json?.text ?? installed.stderr}`)
+  await expectDone(owner(['plugin', 'add', OPENER]), `plugin add ${OPENER}`, fail)
+}
 
 /** An owner command every argument of which may be left out, so the check can run it as it is. */
 const callable = (c: Plugin['ownerCommands'][number]) => [...(c.params.positional ?? []), ...(c.params.flags ?? [])].every((x) => x.required !== true)
@@ -457,6 +496,9 @@ async function checkCache(
   const { id } = JSON.parse(await readFile(join(sb.library, '.pneuma-base', 'config.json'), 'utf8')) as { id: string }
   await rm(join(sb.home, 'cache', id, p.name), { recursive: true, force: true })
   for (const s of p.storage.filter((s) => s.kind === 'cache')) await rm(join(sb.library, '.pneuma-base', p.name, s.dir), { recursive: true, force: true })
+  // The rows of its record place, which storage keeps in its cache area (`<name>.sqlite` and the files beside it).
+  const rows = join(sb.library, '.pneuma-base', 'cache', 'rows')
+  for (const f of await readdir(rows).catch(() => [] as string[])) if (f === `${p.name}.sqlite` || f.startsWith(`${p.name}.sqlite-`)) await rm(join(rows, f), { force: true })
   const after = await answers()
   for (const [i, [what]] of asks.entries()) {
     if (first[i] !== again[i]) reminders.push(`${what} 问两次答得不一样，删掉缓存前后没法比，没有查。`)

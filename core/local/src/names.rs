@@ -7,7 +7,7 @@ use pneuma_base_storage::{Failure, Place, Time};
 
 use crate::noise::Noise;
 use crate::sys::{self, DirStream, Stat};
-use crate::{LocalFolder, RECORD_AREA, fnv64};
+use crate::{LocalFolder, fnv64};
 
 /// Directories with at least this many entries keep their sorted names in the cache area.
 const CACHE_FROM: usize = 1_000;
@@ -155,16 +155,21 @@ impl LocalFolder {
         let token = stat.token();
         let noise_key = noise.fingerprint();
         let cache_dir = self.cache_area().join("names");
+        // A record place's own area keys its places apart from the content's.
+        let key = match &self.records {
+            None => place.as_str().to_owned(),
+            Some(records) => format!("{}\0{}", records.as_str(), place.as_str()),
+        };
         let cache_file = self
             .has_record_area()
-            .then(|| cache_dir.join(format!("{:016x}", fnv64(place.as_str().as_bytes()))));
+            .then(|| cache_dir.join(format!("{:016x}", fnv64(key.as_bytes()))));
         if let Some(path) = &cache_file
             && let Ok(bytes) = std::fs::read(path)
             && let Some(listing) = decode(&bytes, place, token.as_str(), noise_key)
         {
             return Ok(listing);
         }
-        let (listing, entries) = read_level(place, dir, noise)?;
+        let (listing, entries) = read_level(place, dir, noise, self.hidden())?;
         let settled = stat.mtime_ns <= Time::now().nanos() - SETTLED_NS;
         let unchanged = || sys::stat_fd(dir).is_ok_and(|after| after.token() == token);
         if let Some(path) = cache_file
@@ -182,7 +187,12 @@ impl LocalFolder {
 
 /// Reads every name of the level. Names that are not UTF-8 cannot be named as places and are
 /// left out.
-fn read_level(place: &Place, dir: RawFd, noise: &Noise) -> Result<(Listing, usize), Failure> {
+fn read_level(
+    place: &Place,
+    dir: RawFd,
+    noise: &Noise,
+    hidden: &str,
+) -> Result<(Listing, usize), Failure> {
     let unreadable = |errno| Failure::unreadable(sys::errno_name(errno));
     let mut stream = DirStream::open(&dir).map_err(unreadable)?;
     let (mut names, mut noisy, mut entries) = (Vec::new(), Vec::new(), 0);
@@ -192,7 +202,7 @@ fn read_level(place: &Place, dir: RawFd, noise: &Noise) -> Result<(Listing, usiz
         let Ok(name) = std::str::from_utf8(name) else {
             continue;
         };
-        if place.is_root() && name == RECORD_AREA {
+        if place.is_root() && name == hidden {
             continue;
         }
         if noise.is_noise_entry(place, name) {

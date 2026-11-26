@@ -11,10 +11,10 @@ use pneuma_base_storage::{
     ProbeRequest, Reason, Seen, Token, Trust,
 };
 
+use crate::LocalFolder;
 use crate::facets::{self, At};
 use crate::noise::Noise;
 use crate::sys::{self, DirStream, EntryType, Errno, Stat};
-use crate::{LocalFolder, RECORD_AREA};
 
 /// Checked by name at the top of a probed place.
 const MARKERS: [&str; 13] = [
@@ -190,9 +190,10 @@ impl LocalFolder {
         }
     }
 
-    /// The record area is not content, and noise is neither reported nor entered.
+    /// What the view keeps out of its root (the record area, or a record place's facts) is not
+    /// in it, and noise is neither reported nor entered.
     pub fn admit(&self, place: &Place, noise: &Noise) -> Result<(), Failure> {
-        if place.segments().first() == Some(&RECORD_AREA) {
+        if place.segments().first() == Some(&self.hidden()) {
             return Err(Failure::new(Reason::Outside));
         }
         if noise.is_noise(place) {
@@ -492,7 +493,7 @@ impl LocalFolder {
             };
             let is_library_root = req.place.is_root() && relative.is_empty();
             while let Some(Ok((name, kind))) = stream.next_entry() {
-                if is_library_root && name == RECORD_AREA.as_bytes() {
+                if is_library_root && name == self.hidden().as_bytes() {
                     continue;
                 }
                 if let Ok(name) = std::str::from_utf8(name) {

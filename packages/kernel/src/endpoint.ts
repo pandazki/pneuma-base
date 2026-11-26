@@ -4,7 +4,7 @@
 // `$PNEUMA_BASE_HOME/endpoints/<port>.json`. ARCHITECTURE.md section 6.
 import { readdir, readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
-import { writeAtomic } from './files.js'
+import { writeAtomic } from './machine-files.js'
 import type { Instant } from '@pneuma-base/sdk'
 
 /** The port the server tries first; when it is taken, the next free one after it. */

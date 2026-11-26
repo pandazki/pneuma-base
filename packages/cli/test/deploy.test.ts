@@ -119,7 +119,7 @@ describe('ten sites, four switched on, to a dir target', () => {
     for (const [i, path] of paths.slice(0, 4).entries()) expect(tree(join(target, `sites-s${i}`))).toEqual(tree(join(lib, path)))
     const index = indexOf(target)
     expect(index.sites.map((s) => s.name)).toEqual(['sites-s0', 'sites-s1', 'sites-s2', 'sites-s3'])
-    for (const entry of index.sites) expect(entry.fingerprint).toBe(ok(agent(['inspect', entry.path])).file.fingerprint)
+    for (const entry of index.sites) expect(entry.fingerprint).toBe(ok(agent(['inspect', entry.path, '--content'])).file.fingerprint)
   })
 
   it('a changed site goes online with its new content; the put says so', () => {

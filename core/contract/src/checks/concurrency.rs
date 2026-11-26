@@ -290,3 +290,43 @@ pub fn concurrent_appends_and_puts_lose_nothing(env: &Env) -> Outcome {
     }
     Ok(())
 }
+
+/// A `serve` session that wrote holds no lock once its answer is out: another process, and the
+/// session's own concurrent requests, still write beside it.
+pub fn a_serve_session_keeps_no_lock_after_a_write(env: &Env) -> Outcome {
+    let lib = env.lib();
+    let mut serve = lib.serve();
+    for (id, place) in [(1, "a.txt"), (2, "d/a.txt")] {
+        let served = serve.ask(
+            json!(id),
+            "write",
+            json!({ "place": place, "from": data(b"served"), "expect": "empty" }),
+        );
+        assert_done(&served);
+    }
+    for place in ["b.txt", "d/b.txt"] {
+        let other = lib.run(
+            "write",
+            json!({ "place": place, "from": data(b"other"), "expect": "empty" }),
+        );
+        assert_done(&other);
+    }
+    for k in 0..8 {
+        serve.request(
+            json!(format!("w{k}")),
+            "write",
+            json!({ "place": format!("c{k}.txt"), "from": data(b"c"), "expect": "empty" }),
+        );
+    }
+    // Answers come in any order.
+    let mut answered = BTreeSet::new();
+    while answered.len() < 8 {
+        let answer = serve.receive();
+        if answer.get("progress").is_none() {
+            assert_done(&answer);
+            answered.insert(answer["id"].to_string());
+        }
+    }
+    assert_eq!(serve.finish(), 0);
+    Ok(())
+}

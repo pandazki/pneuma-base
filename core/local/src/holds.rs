@@ -11,20 +11,26 @@ use serde::{Deserialize, Serialize};
 
 use crate::{LocalFolder, io_failure, sys};
 
+/// One hold on disk: its places (`place` is the form of a hold over one, from before holds over
+/// several) and when it runs out.
 #[derive(Serialize, Deserialize)]
 struct HoldFile {
-    place: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    place: Option<String>,
+    #[serde(default)]
+    places: Vec<String>,
     until_ms: i64,
 }
 
-/// A hold that has not run out.
+/// A hold that has not run out, at one of its places.
 pub struct Hold {
     pub id: String,
     pub place: Place,
     pub until: Time,
 }
 
-/// The live holds, read once per operation.
+/// The live holds, one entry per held place, read once per operation. A record place's own area
+/// has none: holds do not reach it.
 pub struct Holds(Vec<Hold>);
 
 impl Holds {
@@ -60,6 +66,9 @@ impl LocalFolder {
     }
 
     pub fn live_holds(&self) -> Holds {
+        if self.records.is_some() {
+            return Holds(Vec::new());
+        }
         let Ok(entries) = std::fs::read_dir(self.holds_dir()) else {
             return Holds(Vec::new());
         };
@@ -75,12 +84,20 @@ impl LocalFolder {
                 .and_then(|bytes| serde_json::from_slice::<HoldFile>(&bytes).ok());
             let Some(file) = parsed else { continue };
             let until = Time::from_millis(file.until_ms);
-            match Place::parse(&file.place) {
-                Some(place) if until > now => live.push(Hold {
-                    id: id.to_owned(),
-                    place,
-                    until,
-                }),
+            let places: Option<Vec<Place>> = file
+                .place
+                .iter()
+                .chain(&file.places)
+                .map(|p| Place::parse(p))
+                .collect();
+            match places {
+                Some(places) if until > now && !places.is_empty() => {
+                    live.extend(places.into_iter().map(|place| Hold {
+                        id: id.to_owned(),
+                        place,
+                        until,
+                    }));
+                }
                 _ => {
                     let _ = std::fs::remove_file(entry.path());
                 }
@@ -89,20 +106,27 @@ impl LocalFolder {
         Holds(live)
     }
 
+    /// One hold over every place of the request, or none: refused when another hold blocks any.
     pub fn hold_place(&self, req: &HoldRequest) -> Result<HoldAnswer, Failure> {
         let noise = self.noise();
-        self.admit(&req.place, &noise)?;
+        for place in &req.places {
+            self.admit(place, &noise)?;
+        }
         self.ensure_record_area()?;
         let dir = self.holds_dir();
         std::fs::create_dir_all(&dir).map_err(|e| io_failure(&e))?;
         // Two holders at once must not both get the place: decide under a lock.
         let lock = File::open(&dir).map_err(|e| io_failure(&e))?;
         sys::lock(lock.as_raw_fd()).map_err(|e| Failure::unreadable(sys::errno_name(e)))?;
-        self.live_holds().refuse(&req.place, None)?;
+        let live = self.live_holds();
+        for place in &req.places {
+            live.refuse(place, None)?;
+        }
         let id = crate::unique_name("h");
         let until = Time::from_millis(Time::now().millis() + req.ttl_ms as i64);
         let file = HoldFile {
-            place: req.place.as_str().to_owned(),
+            place: None,
+            places: req.places.iter().map(|p| p.as_str().to_owned()).collect(),
             until_ms: until.millis(),
         };
         let bytes = serde_json::to_vec(&file).map_err(|_| Failure::bad_request())?;

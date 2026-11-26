@@ -9,6 +9,8 @@ import {
   type Content,
   type FindResult,
   type InspectResult,
+  type Level,
+  type PlaceFacts,
   type OwnerCommandInfo,
   type OwnerRequest,
   type OwnerResult,
@@ -86,12 +88,45 @@ export function findText(r: FindResult, none = '没有找到。'): string[] {
  * with no file may still be something a plugin knows, such as a scene.
  */
 export function inspectText(target: string, r: InspectResult, inner: string | null = null): string[] {
-  const kind = r.file?.kind === 'bundle' ? `目录，${r.file.files} 个文件，` : ''
-  const file = r.file
-    ? [`${r.file.path}${r.file.archived ? '（已归档）' : ''} · ${kind}${r.file.size} 字节，改于 ${minute(r.file.modifiedAt)} · 指纹 ${r.file.fingerprint.slice(0, 12)}…`]
-    : r.sections.length > 0 || r.request ? [] : [`库里没有这个文件：${target}`]
+  const f = r.file
+  const what = f === null ? '' : f.kind === 'bundle' ? '一样东西（带标记的目录）' : `${f.size ?? 0} 字节`
+  const print = f?.fingerprint ? ` · 指纹 ${f.fingerprint.slice(0, 12)}…` : ''
+  const file = f
+    ? [`${f.path}${f.archived ? '（已归档）' : ''} · ${what}，改于 ${minute(f.modifiedAt)}${print}`, ...(f.level && r.content?.kind !== 'level' ? levelText(f.path, f.level) : [])]
+    : r.place
+      ? placeText(r.place)
+      : r.sections.length > 0 || r.request
+        ? []
+        : [`库里没有这个文件：${target}`]
   const request = r.request ? requestText(r.request) : []
   return [...request, ...sectionsText(r.sections), ...file, ...(r.content && r.file ? contentText(target, r.content, inner) : []), ...tail([], r.problems)]
+}
+
+/** How many entries of a level the command line names before it gives the total and the command for the rest. */
+const LISTED = 20
+
+/** One level of a directory: its first entries, how many there are, and where to see the rest. */
+function levelText(dir: string, level: Level): string[] {
+  const total = level.entries.length + level.more
+  const named = level.entries.slice(0, LISTED).map((e) => `  ${e.kind === 'dir' ? `${e.name}/` : e.name}${e.kind === 'file' && e.size !== null ? `  ${e.size} 字节` : ''}`)
+  const count = level.more > 0 ? `至少 ${total} 项` : `${total} 项`
+  const rest = total > LISTED ? [`  ……共${count}，看全部：show files --dir ${quote(dir)}`] : []
+  return [`第一层，${count}：`, ...named, ...rest]
+}
+
+/** A directory that is no thing, or noise. */
+function placeText(p: PlaceFacts): string[] {
+  switch (p.kind) {
+    case 'open':
+      return [`${p.path}/ · 目录，里面有登记过的东西`, ...levelText(p.path, p.level)]
+    case 'closed': {
+      const files = p.exceeded ? `至少 ${p.files} 个文件` : `${p.files} 个文件`
+      const marks = p.markers.length === 0 ? '' : `，顶上有 ${p.markers.join('、')}`
+      return [`${p.path}/ · 目录，没有登记，${files}${marks}`]
+    }
+    case 'noise':
+      return [`${p.path} 是噪音，${'name' in p.by ? `按名字 ${p.by.name}` : `按路径 ${p.by.path}`}；找、查和登记都不涉及它。`]
+  }
 }
 
 /** One request in full: who asked and when, why, the command, and where it stands. */
@@ -121,8 +156,8 @@ function contentText(target: string, c: Content, inner: string | null): string[]
       return [`内容（UTF-8 文字，${c.size} 字节）：`, c.text.endsWith('\n') ? c.text.slice(0, -1) : c.text]
     case 'other':
       return [`内容：${c.why === 'not-utf8' ? '不是 UTF-8 文字' : `超过 ${CONTENT_LIMIT / 1024} KB 的上限`}${c.type === null ? '' : `，${c.type}`}，${c.size} 字节，没有给出。`]
-    case 'files':
-      return [`目录里的文件（${c.files.length} 个）：`, ...c.files.map((f) => `  ${f.path}  ${f.size} 字节`), `看其中一个：inspect ${target} --content <文件>`]
+    case 'level':
+      return [...levelText(c.path, c.level), `看其中一个：inspect ${target} --content <文件>`]
     case 'unavailable':
       if (c.reason === 'outside-grant') return [`内容：${c.path} 不在你的授权范围内，不给内容。`]
       if (c.reason === 'not-a-bundle') return [`内容：${c.path} 是一个文件，不是带标记的目录，里面没有别的文件；看它自己：inspect ${target} --content`]

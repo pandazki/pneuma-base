@@ -1,227 +1,266 @@
-import { readFileSync } from 'node:fs'
+// 记账与对账: the ledger plugin, on storage (plugin contract 2). Facts are appended through
+// `tools.storage.records`; every answer is read from the rows derived from them, a page at a time; a
+// thing is known by its state token, and its content is read only where a fingerprint decides
+// something or the owner names a whole pass. ledger-design.md; tmp/run-7 architecture.md section 5.
 import {
-  abs,
-  archivedPath,
   CONTRACT,
   PNEUMA_BASE_VERSION,
-  enclosingBundle,
-  parseLibraryPath,
+  isFailure,
   pluginName,
-  rankHits,
-  regionOf,
-  searchTerms,
-  thingAt,
   type AcceptedPut,
   type Event,
-  type Fingerprint,
   type Grant,
   type LibraryPath,
   type Plugin,
   type PluginContext,
   type PluginNote,
+  type PluginSection,
   type SayAnswer,
   type SayRequest,
+  type ThingNow,
 } from '@pneuma-base/kernel'
 import { LEDGER_EXPORT, LEDGER_STATS } from './audit.js'
+import { COGNITION } from './cognition.js'
 import { conversationOf } from './conversation.js'
-import { itemNamed, load, onDisk, snapshot, statesOf, textOf, type Disk } from './disk.js'
-import { fact, factActor, LEDGER_ACTOR, newItemId, readFacts, sceneOf, writeFacts, type Basis, type Fact, type FactActor, type FactBody, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
-import { fold, type ItemRecord, type Ledger, type SceneRecord } from './fold.js'
-import { heldCommands, heldCopies, heldPath, keep } from './held.js'
-import { reconcile } from './reconcile.js'
-import { LEAVE, REGISTER, unownedAsks } from './unowned.js'
-import { agentsOf, newsSince } from './since.js'
-import { rebase, rebaseMoved, sparseStanding } from './sparse.js'
-import { startFind, startFound } from './start-find.js'
-import { ledgerOf, openDirsNow } from './state.js'
+import { fact, factActor, LEDGER_ACTOR, newItemId, sceneOf, writeFacts, type Basis, type Entered, type Fact, type FactActor, type FactBody, type ItemId, type LedgerOrigin } from './facts.js'
 import { activityAnswer, homeAnswer, noSuchScene, sceneAnswer, scenesAnswer } from './feeds.js'
-import { DEFAULT_PERIOD, isPeriod, statsOf } from './stats.js'
+import { findHits, foundHits } from './find.js'
+import { heldCommands, heldCopies, heldPath, keep, keyOf } from './held.js'
+import { deepPass, foldAll, movedThings, rebase, refresh, stateOf, type Deep, type Listed } from './look.js'
+import { archived, type ActorRow, type HistoryRow, type ItemRow, type SceneRow } from './model.js'
+import { agentsOf, counters, getAll, itemAtPath, itemNamed, itemViewOf, lookupOf, newsSince, scenesNamed, standingList, standingLists, partialDirs } from './queries.js'
+import { pagesOf } from './rows.js'
+import { DEFAULT_PERIOD, isPeriod, statsFrom } from './stats.js'
 import { statsAnswer } from './stats-page.js'
-import { ACTIVITY_VIEW, heldAnswer, HELD_VIEW, HOME_VIEW, itemSection, itemsAnswer, ITEMS_VIEW, LEDGER_VIEWS, partOfSection, SCENE_VIEW, SCENES_VIEW, STANDING_VIEW, standingAnswer, STATS_VIEW, unownedSection } from './ui.js'
-import {
-  ambiguousText,
-  findableItems,
-  findCandidates,
-  itemHit,
-  itemText,
-  itemView,
-  originLabel,
-  scenesNamed,
-  sceneText,
-  sceneView,
-  sinceText,
-  sinceViewOf,
-  standingSections,
-  when,
-  type ItemView,
-} from './views.js'
+import { ACTIVITY_VIEW, heldAnswer, HELD_VIEW, HOME_VIEW, isStandingKind, itemSection, itemsAnswer, ITEMS_VIEW, LEDGER_VIEWS, partOfSection, SCENE_VIEW, SCENES_VIEW, STANDING_VIEW, standingAnswer, STATS_VIEW, unownedSection, type ItemsPage } from './ui.js'
+import { LEAVE, REGISTER, unownedAsks } from './unowned.js'
+import { ambiguousText, itemText, originLabel, sceneText, sceneView, sinceText, sinceViewOf, standingSections, when, type ItemView } from './views.js'
 
-/** One hook's writing: the ledger as read, and the facts it will write as one file. */
-/** A hook's writes: the facts, and `looked`, the things whose content it read and found as now recorded, so what is there is their baseline. */
-type Writing = { ctx: PluginContext; ledger: Ledger; facts: Fact[]; adopted: Map<LibraryPath, ItemId>; looked: LibraryPath[] }
+/** A hook's writes: the facts it will append as one write, and the things it adopted on the way. */
+type Writing = { ctx: PluginContext; facts: Fact[]; adopted: Map<LibraryPath, ItemId> }
 
-async function writing(ctx: PluginContext): Promise<Writing> {
-  return { ctx, ledger: await load(ctx), facts: [], adopted: new Map(), looked: [] }
+const writing = (ctx: PluginContext): Writing => ({ ctx, facts: [], adopted: new Map() })
+const records = (ctx: PluginContext) => ctx.tools.storage.records
+
+/** What storage says of a thing now, as a fact keeps it. */
+type Seen = { token: string | null; size: number; modified: string | null; bundle: boolean }
+const seenOf = (now: ThingNow): Seen => ({ token: now.token, size: now.size ?? 0, modified: now.modifiedAt, bundle: now.kind === 'bundle' })
+const seenFields = (s: Seen) => ({ ...(s.token === null ? {} : { token: s.token }), ...(s.modified === null ? {} : { modified: s.modified }), ...(s.bundle ? { bundle: true as const } : {}) })
+
+/** The item registered at a path, by the rows. */
+async function rowAt(ctx: PluginContext, path: LibraryPath): Promise<ItemRow | undefined> {
+  const id = (await getAll<{ id: ItemId }>(records(ctx), 'paths', [path])).get(path)?.id
+  return id === undefined ? undefined : (await getAll<ItemRow>(records(ctx), 'items', [id])).get(id)
 }
 
-/** The ledger a hook uses when what it records names nothing it would have to look up. */
-const NOTHING_READ: Ledger = fold([])
-
-const bundleFlag = (disk: Disk | null) => (disk?.bundle ? { bundle: true as const } : {})
-
-/** Enters a thing nobody registered, origin unknown. */
-function adopt(w: Writing, path: LibraryPath, disk: Disk): ItemId {
+/** Enters a thing nobody registered, origin unknown, with what storage says of it. */
+function adopt(w: Writing, path: LibraryPath, seen: Seen, fingerprint: ItemRow['fingerprint'] = null): ItemId {
   const item = newItemId()
-  w.facts.push(fact(w.ctx, 'tool', { kind: 'item.enter', item, path, fingerprint: disk.fingerprint, size: disk.size, origin: { kind: 'adopted' }, ...bundleFlag(disk) }))
+  w.facts.push(fact(w.ctx, 'tool', { kind: 'item.enter', item, path, fingerprint, size: seen.size, ...seenFields(seen), origin: { kind: 'adopted' } }))
   w.adopted.set(path, item)
   return item
 }
 
+/** A thing as a basis names it: its item, its state token now, and its fingerprint when the token is the one on record. */
+type Target = { id: ItemId; token: string | null; fingerprint: ItemRow['fingerprint'] }
+
 /**
- * The item a library path names, with the content it has now: the file at the path, else its
- * archived copy. A file nobody registered is adopted first. Null when there is no such file or item.
+ * The item a library path names, with the version it has now: the thing at the path, else its archived
+ * copy. A thing nobody registered is adopted first. Null when there is no such thing or item. No
+ * content is read: the version is the token storage gives.
  */
-async function itemAt(w: Writing, path: LibraryPath): Promise<{ id: ItemId; fingerprint: Fingerprint } | null> {
-  for (const candidate of regionOf(path) === 'content' ? [path, archivedPath(path)] : [path]) {
-    const disk = await onDisk(w.ctx.library.root, candidate)
-    if (disk) return { id: w.ledger.pathIndex.get(candidate) ?? w.adopted.get(candidate) ?? adopt(w, candidate, disk), fingerprint: disk.fingerprint }
+async function itemAt(w: Writing, path: LibraryPath): Promise<Target | null> {
+  const { ctx } = w
+  for (const candidate of ctx.tools.regionOf(path) === 'content' ? [path, ctx.tools.archivedPath(path)] : [path]) {
+    const [thing] = await ctx.tools.what([candidate])
+    if (!thing || (thing.kind !== 'file' && thing.kind !== 'bundle') || thing.entry === null) continue
+    const token = thing.entry.token ?? null
+    const item = await rowAt(ctx, candidate)
+    if (item) return { id: item.id, token, fingerprint: item.token === token ? item.fingerprint : null }
+    const seen = { token, size: thing.entry.size ?? 0, modified: thing.entry.modified ?? null, bundle: thing.kind === 'bundle' }
+    return { id: w.adopted.get(candidate) ?? adopt(w, candidate, seen), token, fingerprint: null }
   }
-  const known = w.ledger.items.get(w.ledger.pathIndex.get(path) ?? ('' as ItemId))
-  return known ? { id: known.id, fingerprint: known.fingerprint } : null
+  const known = await rowAt(ctx, path)
+  return known ? { id: known.id, token: known.token, fingerprint: known.fingerprint } : null
 }
 
 /** What a caller wrote: an item id, or a path in the library. A path inside a bundle names the bundle. */
-async function target(w: Writing, input: string): Promise<{ id: ItemId; fingerprint: Fingerprint } | null> {
-  const known = w.ledger.items.get(input as ItemId)
-  if (known) return { id: known.id, fingerprint: known.fingerprint }
-  const path = await thingPath(w.ctx.library.root, input)
-  return path === null ? null : itemAt(w, path)
+async function target(w: Writing, input: string): Promise<Target | null> {
+  if (input.startsWith('i_')) {
+    const known = (await getAll<ItemRow>(records(w.ctx), 'items', [input])).get(input)
+    if (known) return { id: known.id, token: known.token, fingerprint: known.fingerprint }
+  }
+  const resolved = await w.ctx.tools.resolve(input)
+  if (resolved === null || resolved.region === 'kernel') return null
+  return itemAt(w, resolved.bundle ?? resolved.path)
 }
 
-/** The library path of the thing an input names: itself, or the bundle it lies in. Null outside the content and the archive. */
-async function thingPath(root: string, input: string): Promise<LibraryPath | null> {
-  const path = parseLibraryPath(root, input)
-  if (path === null || regionOf(path) === 'kernel') return null
-  return (await enclosingBundle(root, path)) ?? path
-}
-
-/** Basis rows with each source's content as it is now. */
-async function basisOf(w: Writing, from: string[], outside: string[]): Promise<Basis | { missing: string }> {
+/** Basis rows with each source's version as it is now. */
+async function basisOf(w: Writing, from: readonly string[], outside: readonly string[]): Promise<Basis | { missing: string }> {
   const items: Basis['items'] = []
   for (const input of from) {
     const source = await target(w, input)
     if (!source) return { missing: input }
-    if (!items.some((row) => row.item === source.id)) items.push({ item: source.id, fingerprint: source.fingerprint })
+    if (!items.some((row) => row.item === source.id)) items.push({ item: source.id, fingerprint: source.fingerprint, ...(source.token === null ? {} : { token: source.token }) })
   }
-  return { items, outside }
+  return { items, outside: [...outside] }
 }
 
 const basisNote = (basis: Basis) => `，依据库里 ${basis.items.length} 样${basis.outside.length ? `、库外 ${basis.outside.length} 句` : ''}`
 
-async function recordPut(w: Writing, req: AcceptedPut): Promise<PluginNote> {
-  const { ctx, ledger } = w
-  const disk = await onDisk(ctx.library.root, req.path)
-  const size = disk?.size ?? 0
+/** The origin a put said, a made thing's sources as basis rows; the thing's own old content is no basis of itself. */
+async function originOf(w: Writing, origin: Extract<AcceptedPut, { origin: unknown }>['origin'], self: ItemId | undefined): Promise<LedgerOrigin> {
+  if (origin.kind !== 'made') return origin
+  const basis = await basisOf(w, origin.from, origin.outside)
+  // The kernel accepted the put only when every --from file was there; one gone since is a failure to record.
+  if ('missing' in basis) throw new Error(`依据的文件不在了，没能记下来历：${basis.missing}`)
+  return { kind: 'made', basis: { ...basis, items: basis.items.filter((row) => row.item !== self) } }
+}
+
+/** Whether the thing at a path holds the version on record: by token, else by content where the record has a fingerprint (one read). */
+async function sameAsRecorded(ctx: PluginContext, item: ItemRow, token: string, fingerprint: ItemRow['fingerprint']): Promise<{ same: boolean; fingerprint: ItemRow['fingerprint'] }> {
+  if (item.token === token) return { same: true, fingerprint: fingerprint ?? item.fingerprint }
+  if (item.fingerprint === null) return { same: false, fingerprint }
+  const now = fingerprint ?? (await (async () => {
+    const read = await ctx.tools.storage.content(item.path)
+    return isFailure(read) ? null : read.fingerprint
+  })())
+  return { same: now === item.fingerprint, fingerprint: now }
+}
+
+/** The loose files of a page of an open directory the kernel registered: the ones nobody knows are entered as one fact, the known ones left as they are. */
+async function recordFiles(w: Writing, req: Extract<AcceptedPut, { kind: 'register-files' }>): Promise<PluginNote> {
+  const { ctx } = w
+  const known = await getAll<{ id: ItemId }>(records(ctx), 'paths', req.files.map((f) => f.path))
+  const items: Entered[] = req.files
+    .filter((f) => !known.has(f.path))
+    .map((f) => {
+      const seen = seenOf(f.now)
+      return { item: newItemId(), path: f.path, fingerprint: null, size: seen.size, ...seenFields(seen) }
+    })
+  const dir = req.path === '' ? '库的根目录' : `${req.path}/`
+  if (items.length === 0) return { text: `${dir}这一页的 ${req.files.length} 个文件都已在册，没有新记`, data: { entered: 0 } }
+  const origin = await originOf(w, req.origin, undefined)
+  const how = req.observed ? 'observed' : 'tool'
+  w.facts.push(fact(ctx, how, { kind: 'items.enter', items, origin }))
+  return { text: `已记下 ${dir}里的 ${items.length} 个文件：${originLabel(origin.kind === 'made' ? { kind: 'made' } : origin, how)}`, data: { entered: items.length, items: items.map((i) => i.item) } }
+}
+
+async function recordPut(w: Writing, req: AcceptedPut): Promise<{ note: PluginNote; rebase: LibraryPath[] }> {
+  const { ctx } = w
+  if (req.kind === 'register-files') return { note: await recordFiles(w, req), rebase: [] }
+  const seen = seenOf(req.now)
   if (req.kind === 'move') {
-    const id = ledger.pathIndex.get(req.from)
-    if (id === undefined) return { text: `挪过来的东西没人登记过，已以来历不明入册 · 条目 ${adopt(w, req.path, { fingerprint: req.fingerprint, size, bundle: disk?.bundle ?? false })}` }
-    w.facts.push(fact(ctx, 'tool', { kind: 'item.move', item: id, from: req.from, to: req.path, archive: null }))
-    return { text: `已记下挪动 · 条目 ${id}`, data: { item: id } }
+    const moved = await rowAt(ctx, req.from)
+    if (!moved) return { note: { text: `挪过来的东西没人登记过，已以来历不明入册 · 条目 ${adopt(w, req.path, seen, req.fingerprint)}` }, rebase: [] }
+    w.facts.push(fact(ctx, 'tool', { kind: 'item.move', item: moved.id, from: req.from, to: req.path, archive: null, ...(seen.token === null ? {} : { token: seen.token }), ...(seen.modified === null ? {} : { modified: seen.modified }) }))
+    return { note: { text: `已记下挪动 · 条目 ${moved.id}`, data: { item: moved.id } }, rebase: [] }
   }
-  const item = ledger.items.get(ledger.pathIndex.get(req.path) ?? ('' as ItemId))
-  let origin: LedgerOrigin
-  if (req.origin.kind === 'made') {
-    const basis = await basisOf(w, req.origin.from, req.origin.outside)
-    // The kernel accepted the put only when every --from file was there; one gone since is a failure to record.
-    if ('missing' in basis) throw new Error(`依据的文件不在了，没能记下来历：${basis.missing}`)
-    // New content made from the thing's own old content: that it changed is the revise; it is no basis of itself.
-    origin = { kind: 'made', basis: { ...basis, items: basis.items.filter((row) => row.item !== item?.id) } }
-  } else origin = req.origin
+  const item = await rowAt(ctx, req.path)
+  const origin = await originOf(w, req.origin, item?.id)
   const noted = req.note === null ? {} : { note: req.note }
   const made = origin.kind === 'made' ? basisNote(origin.basis) : ''
   // An origin the owner's side saw, not one somebody said: a later one said replaces it.
   const how = req.kind === 'register' && req.observed ? 'observed' : 'tool'
+  const size = req.kind === 'place' && seen.bundle ? (req.now.size ?? 0) : seen.size
   if (!item) {
     const id = newItemId()
-    w.facts.push(fact(ctx, how, { kind: 'item.enter', item: id, path: req.path, fingerprint: req.fingerprint, size, origin, ...bundleFlag(disk), ...noted }))
-    return { text: `已记下：${originLabel(origin, how)}${made} · 条目 ${id}`, data: { item: id } }
+    w.facts.push(fact(ctx, how, { kind: 'item.enter', item: id, path: req.path, fingerprint: req.fingerprint, size, ...seenFields(seen), origin, ...noted }))
+    // A directory-thing's record is its token and its first level, taken now.
+    return { note: { text: `已记下：${originLabel(origin.kind === 'made' ? { kind: 'made' } : origin, how)}${made} · 条目 ${id}`, data: { item: id } }, rebase: seen.bundle ? [req.path] : [] }
   }
-  if (item.fingerprint === req.fingerprint) {
-    const seen = item.entered.how === 'observed'
-    if (!item.unknownOrigin && !(seen && how !== 'observed')) {
-      if (req.note === null) return { text: `已在册：条目 ${item.id}，内容和记录一致，没有新记`, data: { item: item.id } }
+  const { same, fingerprint } = await sameAsRecorded(ctx, item, req.now.token, req.fingerprint)
+  if (same) {
+    // The same content under a new token is the version on record: the look takes the token as recorded.
+    const rebased = item.token === req.now.token ? [] : [req.path]
+    const seenOnly = item.entered.how === 'observed'
+    if (!item.unknownOrigin && !(seenOnly && how !== 'observed')) {
+      if (req.note === null) return { note: { text: `已在册：条目 ${item.id}，内容和记录一致，没有新记`, data: { item: item.id } }, rebase: rebased }
       // No fact is written for this put, so its sentence is a note about the thing.
       w.facts.push(fact(ctx, 'reported', { kind: 'said', flavor: 'note', text: req.note, about: item.id }))
-      return { text: `已在册：条目 ${item.id}，内容和记录一致，已记下备注：${req.note}`, data: { item: item.id } }
+      return { note: { text: `已在册：条目 ${item.id}，内容和记录一致，已记下备注：${req.note}`, data: { item: item.id } }, rebase: rebased }
     }
     // An enter at a path an item holds is an alias of it; it gives the item the origin it lacked, or replaces one only seen.
-    w.facts.push(fact(ctx, how, { kind: 'item.enter', item: newItemId(), path: req.path, fingerprint: req.fingerprint, size, origin, ...bundleFlag(disk), ...noted }))
-    const label = `${originLabel(origin, how)}${made}`
+    w.facts.push(fact(ctx, how, { kind: 'item.enter', item: newItemId(), path: req.path, fingerprint: fingerprint ?? item.fingerprint, size, ...seenFields(seen), origin, ...noted }))
+    const label = `${originLabel(origin.kind === 'made' ? { kind: 'made' } : origin, how)}${made}`
     const text = item.unknownOrigin ? `已补上来历：${label}` : `已更正来历：${label}；先前是自动登记的：${originLabel(item.origin, 'observed')}`
-    return { text: `${text} · 条目 ${item.id}`, data: { item: item.id } }
+    return { note: { text: `${text} · 条目 ${item.id}`, data: { item: item.id } }, rebase: rebased }
   }
-  const held = req.kind === 'place' && req.previous !== null ? heldPath(ctx, item.id, req.previous, req.path) : null
+  const held = req.kind === 'place' && req.previous !== null ? heldPath(ctx, item.id, keyOf(item, req.previous.token, req.previous.fingerprint), req.path) : null
   const claimed = req.kind === 'register'
   const basis = origin.kind === 'made' ? { basis: origin.basis } : {}
-  w.facts.push(fact(ctx, how === 'observed' ? how : claimed ? 'reported' : 'tool', { kind: 'item.revise', item: item.id, base: item.fingerprint, fingerprint: req.fingerprint, size, ...basis, held, claimed, ...noted }))
+  const seenNow = { ...(seen.token === null ? {} : { token: seen.token }), ...(seen.modified === null ? {} : { modified: seen.modified }) }
+  w.facts.push(fact(ctx, how === 'observed' ? how : claimed ? 'reported' : 'tool', { kind: 'item.revise', item: item.id, base: item.fingerprint, fingerprint, size, ...seenNow, ...basis, held, claimed, ...noted }))
   const text = held ? '已记下换了新内容，旧内容进了留存，主人取得回' : how === 'observed' ? '已记下这次直接改动，自动登记' : claimed ? '已认下这次直接改动' : '已记下换了新内容'
-  return { text: `${text} · 条目 ${item.id}`, data: { item: item.id } }
+  return { note: { text: `${text} · 条目 ${item.id}`, data: { item: item.id } }, rebase: [] }
 }
 
 const heard = (note: string): SayAnswer => ({ outcome: 'heard', note })
 const refused = (note: string): SayAnswer => ({ outcome: 'not-heard', reason: 'refused', note })
 const SAID = { doing: '在做', decided: '决定', note: '备注' } as const
 
-async function recordSay(w: Writing, req: SayRequest): Promise<SayAnswer> {
+/** The versions of an item, oldest first, from its history rows. */
+async function versionsOf(ctx: PluginContext, item: ItemId): Promise<Extract<HistoryRow, { kind: 'version' }>[]> {
+  const out: Extract<HistoryRow, { kind: 'version' }>[] = []
+  for await (const page of pagesOf<HistoryRow>(records(ctx), 'history', `${item}|`)) for (const r of page) if (r.value.kind === 'version') out.push(r.value)
+  return out
+}
+
+async function recordSay(w: Writing, req: SayRequest): Promise<{ answer: SayAnswer; rebase: LibraryPath[] }> {
   const { ctx } = w
+  const just = (answer: SayAnswer) => ({ answer, rebase: [] })
   if (req.kind === 'doing' || req.kind === 'decided' || req.kind === 'note') {
-    if (!req.text) return refused(`要写一句话：say ${req.kind} "<一句话>"`)
+    if (!req.text) return just(refused(`要写一句话：say ${req.kind} "<一句话>"`))
     const about = req.about === null ? null : await target(w, req.about)
-    if (req.about !== null && !about) return refused(`库里没有这个文件：${req.about}`)
+    if (req.about !== null && !about) return just(refused(`库里没有这个文件：${req.about}`))
     w.facts.push(fact(ctx, 'reported', { kind: 'said', flavor: req.kind, text: req.text, about: about?.id ?? null }))
-    return heard(`${SAID[req.kind]}：${req.text}${req.about !== null ? `（关于 ${req.about}）` : ''}`)
+    return just(heard(`${SAID[req.kind]}：${req.text}${req.about !== null ? `（关于 ${req.about}）` : ''}`))
   }
   if (req.kind === 'from') {
     const input = req.about ?? req.text
     const subject = input === null ? null : await target(w, input)
-    if (!subject) return refused(input === null ? '要写是哪样东西：say from <库内路径> --from <库内路径…>' : `库里没有这个文件：${input}`)
+    if (!subject) return just(refused(input === null ? '要写是哪样东西：say from <库内路径> --from <库内路径…>' : `库里没有这个文件：${input}`))
     const basis = await basisOf(w, req.args.from ?? [], req.args['from-outside'] ?? [])
-    if ('missing' in basis) return refused(`库里没有这个文件：${basis.missing}`)
-    if (basis.items.length === 0 && basis.outside.length === 0) return refused('要写 --from <库内路径…> 或 --from-outside "<一句话>"')
-    const fingerprint = w.ledger.items.get(subject.id)?.fingerprint ?? subject.fingerprint
-    w.facts.push(fact(ctx, 'reported', { kind: 'item.basis', item: subject.id, fingerprint, basis }))
-    return heard(`已补上 ${input} 的依据${basisNote(basis)}`)
+    if ('missing' in basis) return just(refused(`库里没有这个文件：${basis.missing}`))
+    if (basis.items.length === 0 && basis.outside.length === 0) return just(refused('要写 --from <库内路径…> 或 --from-outside "<一句话>"'))
+    w.facts.push(fact(ctx, 'reported', { kind: 'item.basis', item: subject.id, fingerprint: subject.fingerprint, basis }))
+    return just(heard(`已补上 ${input} 的依据${basisNote(basis)}`))
   }
   if (req.kind === 'revised') {
     const input = req.about ?? req.text
     const by = req.args.by?.[0]?.trim() || null
     const observed = req.args.observed !== undefined
-    if (by !== null && by !== 'owner') return refused('say revised 的 --by 只能写 owner：say revised <库内路径> [--by owner]')
+    if (by !== null && by !== 'owner') return just(refused('say revised 的 --by 只能写 owner：say revised <库内路径> [--by owner]'))
     // What the owner's side saw is the owner's to record, and it cannot know who made the change.
-    if (observed && ctx.actor.kind !== 'owner') return refused('say revised 的 --observed 只给主人用，记的是主人这边自动看到的改动。是你改的，就不加 --observed。')
-    if (observed && by !== null) return refused('say revised 的 --observed 记的是看到的改动，不知道是谁改的，不和 --by 一起写。')
-    const path = input === null ? null : await thingPath(ctx.library.root, input)
-    const item = w.ledger.items.get((path !== null && w.ledger.pathIndex.get(path)) || ('' as ItemId))
-    if (!item || path === null) return refused(`没人登记过这个文件：${input ?? '（没写）'}。要补来历，用 put <库内路径> --brought 或 --made。`)
-    const disk = await onDisk(ctx.library.root, path)
-    if (!disk) return refused(`文件不在：${input}`)
+    if (observed && ctx.actor.kind !== 'owner') return just(refused('say revised 的 --observed 只给主人用，记的是主人这边自动看到的改动。是你改的，就不加 --observed。'))
+    if (observed && by !== null) return just(refused('say revised 的 --observed 记的是看到的改动，不知道是谁改的，不和 --by 一起写。'))
+    const resolved = input === null ? null : await ctx.tools.resolve(input)
+    const path = resolved === null || resolved.region === 'kernel' ? null : (resolved.bundle ?? resolved.path)
+    const item = path === null ? undefined : await rowAt(ctx, path)
+    if (!item || path === null) return just(refused(`没人登记过这个文件：${input ?? '（没写）'}。要补来历，用 put <库内路径> --brought 或 --made。`))
+    const [thing] = await ctx.tools.what([path])
+    if (!thing || thing.entry === null || (thing.kind !== 'file' && thing.kind !== 'bundle')) return just(refused(`文件不在：${input}`))
+    const token = thing.entry.token ?? ''
+    const { same, fingerprint } = await sameAsRecorded(ctx, item, token, null)
     // A change only seen is replaced by the claim somebody makes for the same content.
-    const seen = item.versions.at(-1)?.how === 'observed' && item.versions.at(-1)?.claimed === true
-    w.looked.push(path)
-    if (disk.fingerprint === item.fingerprint && (observed || !seen)) return heard(`${input} 的内容和记录一致，没有要认的改动`)
+    const seen = item.last.how === 'observed' && item.last.claimed
+    const rebased = same && item.token !== token ? [path] : []
+    if (same && (observed || !seen)) return { answer: heard(`${input} 的内容和记录一致，没有要认的改动`), rebase: rebased }
     // The envelope's actor is who the library recognised; what the caller says goes in the body.
     const forOwner = by === 'owner' && ctx.actor.kind !== 'owner'
-    const base = disk.fingerprint === item.fingerprint ? (item.versions.at(-2)?.fingerprint ?? null) : item.fingerprint
-    w.facts.push(fact(ctx, observed ? 'observed' : 'reported', { kind: 'item.revise', item: item.id, base, fingerprint: disk.fingerprint, size: disk.size, held: null, claimed: true, ...(forOwner ? { by: 'owner' as const } : {}) }))
-    const replaced = disk.fingerprint === item.fingerprint ? '，替下了自动登记的那条' : ''
-    if (observed) return heard(`已记下 ${input} 被直接改了，自动登记，没说是谁改的`)
-    return heard(forOwner ? `已记下 ${input} 的这次直接改动是主人做的${replaced}` : `已认下 ${input} 的直接改动${replaced}`)
+    const base = same ? ((await versionsOf(ctx, item.id)).at(-2)?.fingerprint ?? null) : item.fingerprint
+    const size = thing.kind === 'file' ? (thing.entry.size ?? item.size) : item.size
+    const modified = thing.entry.modified === undefined ? {} : { modified: thing.entry.modified }
+    w.facts.push(fact(ctx, observed ? 'observed' : 'reported', { kind: 'item.revise', item: item.id, base, fingerprint: same ? (fingerprint ?? item.fingerprint) : fingerprint, size, token, ...modified, held: null, claimed: true, ...(forOwner ? { by: 'owner' as const } : {}) }))
+    const replaced = same ? '，替下了自动登记的那条' : ''
+    if (observed) return { answer: heard(`已记下 ${input} 被直接改了，自动登记，没说是谁改的`), rebase: rebased }
+    return { answer: heard(forOwner ? `已记下 ${input} 的这次直接改动是主人做的${replaced}` : `已认下 ${input} 的直接改动${replaced}`), rebase: rebased }
   }
-  return refused(`记账插件不认识这个种类：${req.kind}`)
+  return just(refused(`记账插件不认识这个种类：${req.kind}`))
 }
 
 const archiveSide = (from: LibraryPath, to: LibraryPath) => {
-  const [a, b] = [regionOf(from) === 'archive', regionOf(to) === 'archive']
+  const [a, b] = [archived({ path: from }), archived({ path: to })]
   return a === b ? null : b ? ('in' as const) : ('out' as const)
 }
 
@@ -259,14 +298,13 @@ function recordOf(event: Event): FactBody | null {
   }
 }
 
-/** A decline's record names the request it turned down, and the agent that had asked, as the request's own fact says. */
-function withDeclined(body: FactBody, event: Event, ledger: Ledger): FactBody {
+/** A decline's record names the request it turned down, and the agent that had asked, as the request's row says. */
+async function withDeclined(ctx: PluginContext, body: FactBody, event: Event): Promise<FactBody> {
   if (body.kind !== 'owner.op' || event.face !== 'owner' || event.command !== 'request decline' || event.result.outcome !== 'done') return body
   const id = (event.result.data as { request?: unknown } | undefined)?.request
   if (typeof id !== 'string') return body
-  const asked = ledger.facts.find((f) => f.kind === 'request' && f.act === 'asked' && f.request === id)
-  const by: FactActor | null = asked?.actor ?? null
-  return { ...body, declined: { id, by } }
+  const asked = (await getAll<{ by: FactActor }>(records(ctx), 'requests', [id])).get(id)
+  return { ...body, declined: { id, by: asked?.by ?? null } }
 }
 
 /**
@@ -282,52 +320,111 @@ export const ownerSummary = (text: string) =>
     .join('；')
     .replace(/(^|[\s：:（(「，,]|file:\/\/)\/(?:[^\s/：:，,。；、）)」]+\/)*([^\s/：:，,。；、）)」]+\/?)/gu, (_, before: string, name: string) => `${before === 'file://' ? '' : before}${name}`)
 
-/** An item as inspect and the item panel show it: its state and its direct sources' states from their own files, and its held copies. */
-async function viewOfItem(ctx: PluginContext, ledger: Ledger, item: ItemRecord): Promise<ItemView> {
-  const states = await statesOf(ctx.library.root, ledger, [item.id, ...item.basis.items.map((row) => row.item)])
-  const held = (await heldCopies(ctx, item.id)).map((c) => c.path)
-  return itemView(ledger, item, states, held)
-}
-
-/** Whether a file is at a content or archive path, or at its archived copy. */
-async function fileAt(root: string, path: LibraryPath): Promise<boolean> {
-  if (regionOf(path) === 'kernel') return false
-  return (await onDisk(root, path)) !== null || (regionOf(path) === 'content' && (await onDisk(root, archivedPath(path))) !== null)
-}
-
-/**
- * The item the panel at `path` is about: the one recorded there, or the one that moved there.
- * Only full reconciliation tells a move, so it runs only when the item has no file or the file at
- * `path` has no item; it writes nothing, unlike check.
- */
-async function panelView(ctx: PluginContext, ledger: Ledger, path: LibraryPath): Promise<ItemView | null> {
-  const { root } = ctx.library
-  const named = itemNamed(ledger, root, path)
-  const known = named ? await viewOfItem(ctx, ledger, named) : null
-  if (known ? known.state.kind !== 'missing' : !(await fileAt(root, path))) return known
-  const standing = await reconcile(ledger, await snapshot(root))
-  const moved = named ?? [...ledger.items.values()].find((item) => {
-    const state = standing.states.get(item.id)
-    return state?.kind === 'moved' && state.to === path
-  })
-  const state = moved ? standing.states.get(moved.id) : undefined
-  if (!moved || state?.kind !== 'moved') return known
-  return { ...(known ?? (await viewOfItem(ctx, ledger, moved))), state }
-}
-
 /**
  * An agent by the grant it acts with, as `inspect @<grant>` names it: when it was last here, in how
  * many sessions, how many things it put in. Nothing for a name no grant of this library has.
  */
-function agentSections(ledger: Ledger, name: string, grants: readonly Grant[]) {
+async function agentSections(ctx: PluginContext, name: string, grants: readonly Grant[]): Promise<PluginSection[]> {
   const grant = grants.find((g) => g.name === name)
   if (grant === undefined) return []
-  const facts = ledger.facts.filter((f) => f.actor.kind === 'agent' && f.actor.grant === grant.id)
-  const last = facts.at(-1)?.at ?? null
-  const scenes = new Set(facts.map((f) => f.scene)).size
-  const put = facts.filter((f) => f.kind === 'item.enter').length
-  const body = last === null ? '还没在这里做过事' : `最近来过：${when(last)}；${scenes} 次会话，放进 ${put} 样东西`
+  const rows = (await records(ctx).where<ActorRow>('actors', 'grant', grant.id, { limit: 50 })).rows.map((r) => r.value)
+  const last = rows.reduce<string | null>((at, r) => (at === null || r.last.at > at ? r.last.at : at), null)
+  const scenes = rows.reduce((n, r) => n + r.scenes, 0)
+  const put = rows.reduce((n, r) => n + r.put, 0)
+  const body = last === null ? '还没在这里做过事' : `最近来过：${when(last as never)}；${scenes} 次会话，放进 ${put} 样东西`
   return [{ title: '来过', body, data: { kind: 'agent', grant: name, last, scenes, put } }]
+}
+
+/** The item panel's view of the thing at `path`: the one recorded there, or the one the look found moved there. */
+async function panelItem(ctx: PluginContext, path: LibraryPath): Promise<ItemRow | undefined> {
+  const named = await itemAtPath(records(ctx), ctx, path)
+  if (named) return named
+  const taken = (await getAll<{ id: ItemId }>(records(ctx), 'taken', [path])).get(path)
+  return taken ? (await getAll<ItemRow>(records(ctx), 'items', [taken.id])).get(taken.id) : undefined
+}
+
+/** Whether a thing is at a content or archive path, or at its archived copy. */
+async function thingAt(ctx: PluginContext, path: LibraryPath): Promise<boolean> {
+  if (ctx.tools.regionOf(path) === 'kernel') return false
+  const paths = ctx.tools.regionOf(path) === 'content' ? [path, ctx.tools.archivedPath(path)] : [path]
+  return (await ctx.tools.what(paths)).some((t) => t.kind === 'file' || t.kind === 'bundle')
+}
+
+/** The library page's rows: by latest change for the whole library, by path within a folder, a page at a time. */
+/** A page of the library and of one kind of the standing: architecture section 6. */
+const ITEMS_PAGE = 50
+const TREE_MAX = 2000
+
+async function itemsPage(ctx: PluginContext, params: Record<string, string>): Promise<ItemsPage> {
+  const recs = records(ctx)
+  const show = params.show ?? ''
+  const dir = params.dir ?? ''
+  const after = params.after
+  const c = await counters(recs)
+  const n = (k: string) => c[`class:${k}`] ?? 0
+  const counts = { '': n('brought') + n('made') + n('adopted'), brought: n('brought'), made: n('made'), archived: n('archived') }
+  const inShow = (item: ItemRow) => (show === 'archived' ? archived(item) : !archived(item) && (show === '' || item.origin.kind === show))
+  let items: ItemRow[] = []
+  let next: string | null = null
+  if (dir === '') {
+    const opts = { limit: ITEMS_PAGE, ...(after === undefined ? {} : { after }) }
+    const page = show === '' ? await recs.where<{ id: ItemId }>('bytime', 'live', 'y', opts) : await recs.where<{ id: ItemId }>('bytime', 'show', show, opts)
+    const rows = await getAll<ItemRow>(recs, 'items', page.rows.map((r) => r.value.id))
+    items = page.rows.flatMap((r) => rows.get(r.value.id) ?? [])
+    next = page.more?.after ?? null
+  } else {
+    const prefix = `${show === 'archived' ? ctx.tools.archivedPath(dir as LibraryPath) : dir}/`
+    let at = after
+    for (let pages = 0; items.length < ITEMS_PAGE && pages < 5; pages++) {
+      const page = await recs.under<{ id: ItemId }>('paths', prefix, { limit: ITEMS_PAGE, ...(at === undefined ? {} : { after: at }) })
+      const rows = await getAll<ItemRow>(recs, 'items', page.rows.map((r) => r.value.id))
+      items.push(...page.rows.flatMap((r) => rows.get(r.value.id) ?? []).filter((i) => !i.removed && i.absorbedInto === null && inShow(i)))
+      next = page.more?.after ?? null
+      if (next === null) break
+      at = next
+    }
+  }
+  const tree: { path: string; count: number }[] = []
+  for await (const page of pagesOf<number>(recs, 'dirs', show === 'archived' ? '_archive/' : '', 1000)) {
+    tree.push(...page.filter((r) => (show === 'archived' ? true : r.key !== '_archive' && !r.key.startsWith('_archive/'))).map((r) => ({ path: r.key, count: r.value })))
+    if (tree.length >= TREE_MAX) break
+  }
+  return { show, dir, items, after: next, counts, tree, params: { ...(show ? { show } : {}), ...(dir ? { dir } : {}) } }
+}
+
+/** The text of the named whole pass, its lists at most 20 long. */
+function deepSection(d: Deep): PluginSection {
+  const where = d.dir === null ? '整个库' : `${d.dir}`
+  const list = (title: string, l: Listed, after: string) => (l.count === 0 ? [] : [`${title}（${l.count} 样）：`, ...l.first.map((p) => `  ${p}`), ...(l.count > l.first.length ? [`  ……共 ${l.count} 样`] : []), ...(after ? [after] : [])])
+  const head = d.stopped ? `按内容查了 ${where}：停在 ${d.done} / ${d.scope} 样，查过的都记下了；再运行一次从头查。` : `按内容查了 ${where} 的 ${d.done} 样登记过的东西。`
+  const body = [
+    head,
+    ...list('内容变了', d.changed, '是你改的，就用 say revised <库内路径> 认下。'),
+    ...list('只是碰过，内容没变（已按现在的记下）', d.touched, ''),
+    ...list('读不了', d.failed, ''),
+    ...(d.changed.count + d.touched.count + d.failed.count === 0 ? ['内容都和记录的一样。'] : []),
+  ]
+  return { title: '按内容查', body: body.join('\n'), data: d }
+}
+
+/** The named whole pass of `check --deep`: says how much first, its progress on stderr, and stops after the page under way on Ctrl-C. */
+async function deepCheck(ctx: PluginContext, dir: LibraryPath | null): Promise<Deep> {
+  let stop = false
+  const interrupt = () => {
+    stop = true
+  }
+  const say = (text: string) => void process.stderr.write(`${text}\n`)
+  process.on('SIGINT', interrupt)
+  try {
+    return await deepPass(
+      ctx,
+      dir,
+      (done, scope) => say(done === 0 ? `要按内容查 ${dir ?? '整个库'} 的 ${scope} 样登记过的东西。可以随时打断（Ctrl-C），查过的会记下。` : `已查 ${done} / ${scope}`),
+      () => stop,
+    )
+  } finally {
+    process.off('SIGINT', interrupt)
+  }
 }
 
 /** 记账与对账. ledger-design.md. */
@@ -336,7 +433,7 @@ export const ledger: Plugin = {
   name: pluginName('ledger'),
   version: PNEUMA_BASE_VERSION,
   summary: '记下每样东西是哪次会话、哪个 agent 为了什么放进来的，依据了什么，谁读过、改过它。',
-  cognition: { title: '记账与对账', text: readFileSync(new URL('../cognition/2-ledger-section.md', import.meta.url), 'utf8') },
+  cognition: { title: '记账与对账', text: COGNITION },
   keeps: 'every',
   storage: [
     { dir: 'facts', kind: 'body' },
@@ -347,19 +444,26 @@ export const ledger: Plugin = {
   views: LEDGER_VIEWS,
 
   async onPut(req, ctx) {
-    const w = await writing(ctx)
-    const note = await recordPut(w, req)
+    await stateOf(ctx)
+    const w = writing(ctx)
+    const { note, rebase: paths } = await recordPut(w, req)
     await writeFacts(ctx, w.facts)
-    await rebase(ctx, [req.path])
+    await rebase(ctx, paths)
     return note
   },
 
-  /** Keeps the thing on disk in held/ before the kernel writes the new version; a thing nobody registered is adopted first. */
+  /** Keeps what is at the path in held/ before the kernel writes the new version; a thing nobody registered is adopted first. */
   async revise(req, ctx) {
-    const w = await writing(ctx)
-    const thing = await thingAt(abs(ctx.library.root, req.path))
-    const id = w.ledger.pathIndex.get(req.path) ?? adopt(w, req.path, { fingerprint: req.current, size: thing?.size ?? 0, bundle: thing?.kind === 'bundle' })
-    if ((await keep(ctx, id, req.path, req.current)) === null) return { outcome: 'declined', reason: `${req.path} 正在被改动，没能留存旧内容；稍后再放。` }
+    await stateOf(ctx)
+    const w = writing(ctx)
+    const item = await rowAt(ctx, req.path)
+    let id = item?.id
+    if (id === undefined) {
+      const [thing] = await ctx.tools.what([req.path])
+      id = adopt(w, req.path, { token: req.token, size: thing?.entry?.size ?? 0, modified: thing?.entry?.modified ?? null, bundle: thing?.kind === 'bundle' }, req.current)
+    }
+    const fingerprint = req.current ?? (item?.token === req.token ? item.fingerprint : null)
+    if ((await keep(ctx, id, req.path, keyOf(item, req.token, req.current), fingerprint)) === null) return { outcome: 'declined', reason: `${req.path} 正在被改动，没能留存旧内容；稍后再放。` }
     await writeFacts(ctx, w.facts)
     return { outcome: 'held', note: null }
   },
@@ -367,136 +471,157 @@ export const ledger: Plugin = {
   async onSay(req, ctx) {
     // A sentence about nothing in particular needs nothing read: start's `doing` costs one write.
     const plain = req.about === null && (req.kind === 'doing' || req.kind === 'decided' || req.kind === 'note')
-    const w: Writing = plain ? { ctx, ledger: NOTHING_READ, facts: [], adopted: new Map(), looked: [] } : await writing(ctx)
-    const answer = await recordSay(w, req)
+    if (!plain) await stateOf(ctx)
+    const w = writing(ctx)
+    const { answer, rebase: paths } = await recordSay(w, req)
     if (answer.outcome !== 'heard') return answer
     await writeFacts(ctx, w.facts)
-    await rebase(ctx, w.looked)
+    await rebase(ctx, paths)
     return answer
   },
 
   async onFind(req, ctx) {
-    // start's find asks the records only; the find verb keeps reading content until the kernel's find is rebuilt.
-    if (req.skipOwnSession) return startFind(req, ctx)
-    const ledger = await load(ctx)
-    const terms = searchTerms(req.text, req.match)
-    const scope = { ...req, skip: req.skipOwnSession ? sceneOf(ctx) : null }
-    const content = new Map<ItemId, string>()
-    if (terms.length > 0) for (const item of findableItems(ledger, scope)) content.set(item.id, await textOf(ctx.library.root, item.path))
-    return rankHits(findCandidates(ledger, { ...scope, content }), terms, req.match)
+    await stateOf(ctx)
+    return findHits(req, ctx)
   },
 
-  /**
-   * The scene and origin of each found path that is an item this find would give: start's own
-   * session stays left out, as in `onFind`. A file nobody registered gets nothing.
-   */
   async onFound(paths, req, ctx) {
-    if (req.skipOwnSession) return startFound(paths, ctx)
-    const ledger = await load(ctx)
-    const asked = new Set(paths)
-    const scope = { ...req, skip: req.skipOwnSession ? sceneOf(ctx) : null }
-    return findableItems(ledger, scope).flatMap((item) => (asked.has(item.path) ? [itemHit(ledger, item)] : []))
+    await stateOf(ctx)
+    return foundHits(paths, req, ctx)
   },
 
   /** The target is an agent's grant as `@<grant>`, a scene id, an item id or path, a file nobody registered, else a scene id prefix: exact names first. */
   async onInspect(req, ctx) {
-    const ledger = await load(ctx)
-    const { root } = ctx.library
-    if (req.target.startsWith('@')) return agentSections(ledger, req.target.slice(1), ctx.library.config.grants)
-    const card = (scene: SceneRecord) => {
-      const view = sceneView(ledger, scene, conversationOf(scene, ctx.session.machine))
+    await stateOf(ctx)
+    const recs = records(ctx)
+    if (req.target.startsWith('@')) return agentSections(ctx, req.target.slice(1), ctx.library.config.grants)
+    const card = async (scene: SceneRow) => {
+      const lookup = await lookupOf(recs, [], { items: scene.items })
+      const view = sceneView(lookup, scene, conversationOf(scene, ctx.session.machine))
       return [{ title: '场景', body: sceneText(view), data: view }]
     }
-    const scene = ledger.scenes.get(req.target as SceneId)
+    const scene = (await getAll<SceneRow>(recs, 'scenes', [req.target])).get(req.target)
     if (scene) return card(scene)
-    const item = itemNamed(ledger, root, req.target)
+    const item = await itemNamed(ctx, req.target)
     if (item) {
-      const view = await viewOfItem(ctx, ledger, item)
+      const view = await itemViewOf(recs, item)
       return [{ title: '来历', body: itemText(view), data: view }]
     }
-    const path = parseLibraryPath(root, req.target)
-    const region = path === null ? 'kernel' : regionOf(path)
-    const bundle = path === null || region === 'kernel' ? null : ((await enclosingBundle(root, path)) ?? (region === 'content' ? await enclosingBundle(root, archivedPath(path)) : null))
-    if (path !== null && bundle !== null) {
-      const body = `它是 ${bundle} 的一部分：${bundle} 是一样东西（带标记的目录），来历见 inspect ${bundle}。`
-      return [{ title: '来历', body, data: { kind: 'part-of', path, bundle } }]
+    const resolved = await ctx.tools.resolve(req.target)
+    if (resolved !== null && resolved.region !== 'kernel') {
+      const bundle = resolved.bundle ?? (resolved.region === 'content' ? ((await ctx.tools.resolve(ctx.tools.archivedPath(resolved.path)))?.bundle ?? null) : null)
+      if (bundle !== null) {
+        const body = `它是 ${bundle} 的一部分：${bundle} 是一样东西（带标记的目录），来历见 inspect ${bundle}。`
+        return [{ title: '来历', body, data: { kind: 'part-of', path: resolved.path, bundle } }]
+      }
+      if (await thingAt(ctx, resolved.path)) {
+        const body = '没人登记过这个文件，来历不明。知道它从哪来，就用 put <库内路径> --brought 或 --made 补上。'
+        return [{ title: '来历', body, data: { kind: 'unowned', path: resolved.path } }]
+      }
     }
-    if (path !== null && regionOf(path) !== 'kernel' && (await onDisk(root, path) ?? (regionOf(path) === 'content' ? await onDisk(root, archivedPath(path)) : null))) {
-      const body = '没人登记过这个文件，来历不明。知道它从哪来，就用 put <库内路径> --brought 或 --made 补上。'
-      return [{ title: '来历', body, data: { kind: 'unowned', path } }]
-    }
-    const scenes = scenesNamed(ledger, req.target)
-    if (scenes.length === 1) return card(scenes[0] as SceneRecord)
+    const { scenes, more } = await scenesNamed(recs, req.target)
+    if (scenes.length === 1 && !more) return card(scenes[0] as SceneRow)
     if (scenes.length === 0) return []
-    return [{ title: '场景', body: ambiguousText(req.target, scenes), data: { kind: 'ambiguous', prefix: req.target, scenes: scenes.map((s) => s.id) } }]
+    return [{ title: '场景', body: ambiguousText(req.target, scenes, more), data: { kind: 'ambiguous', prefix: req.target, scenes: scenes.map((s) => s.id) } }]
   },
 
   async onCheck(req, ctx) {
-    const { standing, moved, state } = await sparseStanding(ctx)
-    const news = await newsSince(ctx, state, factActor(ctx.actor), sceneOf(ctx), req.since)
-    // A moved thing is taken back: its new path is recorded, as seen by the ledger itself.
-    const moves = [...moved].flatMap(([item, to]) => {
-      const from = state.items.get(item)?.path
-      return from ? [fact(ctx, 'observed', { kind: 'item.move', item, from, to: to.place as LibraryPath, archive: archiveSide(from, to.place as LibraryPath) }, LEDGER_ACTOR)] : []
-    })
+    const deep = req.deep ? await deepCheck(ctx, req.deep.dir) : null
+    await refresh(ctx)
+    const recs = records(ctx)
+    const me = factActor(ctx.actor)
+    const news = await newsSince(recs, me, sceneOf(ctx), req.since)
+    // What moved is told as found, before its new path is recorded.
+    const moved = await standingList(recs, 'moved', req.includeArchived)
+    // A moved thing is taken back: its new path is recorded, as seen by the ledger itself, a page at a time.
+    for await (const page of movedThings(ctx)) {
+      const moves = page.map((m) => fact(ctx, 'observed', { kind: 'item.move', item: m.item, from: m.from, to: m.to, archive: archiveSide(m.from, m.to), ...(m.token === null ? {} : { token: m.token }), ...(m.modified === null ? {} : { modified: m.modified }) }, LEDGER_ACTOR))
+      await writeFacts(ctx, moves)
+    }
     // This look is what the next check counts since, for agents and for the owner's 都看过了 alike.
-    await writeFacts(ctx, [...moves, fact(ctx, 'tool', { kind: 'checked' })])
-    await rebaseMoved(ctx, moved)
-    const ledger = ledgerOf(state)
-    const since = sinceViewOf(ledger, news)
-    return [...(since.scenes.length > 0 ? [{ title: '自上次以来', body: sinceText(since), data: since }] : []), ...standingSections(ledger, standing, req.includeArchived)]
+    await writeFacts(ctx, [fact(ctx, 'tool', { kind: 'checked' })])
+    await foldAll(ctx)
+    const since = sinceViewOf(await lookupOf(recs, news.facts), news)
+    const lists = (await standingLists(recs, req.includeArchived)).map((l) => (l.kind === 'moved' ? moved : l))
+    return [
+      ...(deep ? [deepSection(deep)] : []),
+      ...(since.scenes.length > 0 ? [{ title: '自上次以来', body: sinceText(since), data: since }] : []),
+      ...standingSections(lists, await partialDirs(recs)),
+    ]
   },
 
-  openDirs: openDirsNow,
+  /** The open directories: each holds something registered at some depth. */
+  async openDirs(ctx) {
+    await stateOf(ctx)
+    const out: LibraryPath[] = []
+    for await (const page of pagesOf<number>(records(ctx), 'dirs', '')) out.push(...page.map((r) => r.key as LibraryPath))
+    return out
+  },
 
-  /** Things nobody registered, one ask for all of them, until they are registered or the owner leaves them so. */
+  /** Things nobody registered, one ask for each place, until they are registered or the owner leaves them so. */
   onAsks: unownedAsks,
 
   async onArchive(req, ctx) {
     if (!req.moved) return null
-    const w = await writing(ctx)
-    const known = w.ledger.pathIndex.get(req.from)
-    const disk = await onDisk(ctx.library.root, req.to)
-    const id = known ?? (disk ? adopt(w, req.from, disk) : undefined)
+    await stateOf(ctx)
+    const w = writing(ctx)
+    const known = await rowAt(ctx, req.from)
+    const [thing] = await ctx.tools.what([req.to])
+    const entry = thing?.entry ?? null
+    const seen = { token: entry?.token ?? null, size: entry?.size ?? 0, modified: entry?.modified ?? null, bundle: thing?.kind === 'bundle' }
+    const id = known?.id ?? (entry !== null && (thing?.kind === 'file' || thing?.kind === 'bundle') ? adopt(w, req.from, seen) : undefined)
     if (id === undefined) return null
-    w.facts.push(fact(ctx, 'tool', { kind: 'item.move', item: id, from: req.from, to: req.to, archive: req.kind === 'archive' ? 'in' : 'out' }))
+    w.facts.push(fact(ctx, 'tool', { kind: 'item.move', item: id, from: req.from, to: req.to, archive: req.kind === 'archive' ? 'in' : 'out', ...(seen.token === null ? {} : { token: seen.token }), ...(seen.modified === null ? {} : { modified: seen.modified }) }))
     await writeFacts(ctx, w.facts)
-    await rebase(ctx, [req.to])
     const what = req.kind === 'archive' ? '已记下归档' : '已记下取回'
     return { text: `${what}${known ? '' : '；这个文件以前没人登记过，已以来历不明入册'} · 条目 ${id}`, data: { item: id } }
   },
 
-  /** The ledger's pages, from the same fold and reconciliation check uses. Writes nothing: a move it sees stays for check to record. */
+  /** The ledger's pages, each from the rows it shows. Writes no fact: a move a look sees stays for check to record. */
   async onView(req, ctx) {
     const { grants } = ctx.library.config
+    const recs = records(ctx)
     switch (req.view) {
       case HOME_VIEW: {
-        const { standing, state } = await sparseStanding(ctx)
-        const news = await newsSince(ctx, state, factActor(ctx.actor), sceneOf(ctx), 'last')
-        return homeAnswer(ledgerOf(state), standing, news, agentsOf(state), grants)
+        await refresh(ctx)
+        const news = await newsSince(recs, factActor(ctx.actor), sceneOf(ctx), 'last')
+        return homeAnswer(recs, await standingLists(recs, false, 1), news, await agentsOf(recs), grants)
       }
       case ITEMS_VIEW:
-        return itemsAnswer(await load(ctx), (await sparseStanding(ctx)).standing, req.params, grants)
-      case STANDING_VIEW:
-        return standingAnswer(await load(ctx), (await sparseStanding(ctx)).standing, req.params)
+        await refresh(ctx)
+        return itemsAnswer(await itemsPage(ctx, req.params), grants)
+      case STANDING_VIEW: {
+        await refresh(ctx)
+        const only = isStandingKind(req.params.kind) ? req.params.kind : null
+        const lists = only === null ? await standingLists(recs, false) : [await standingList(recs, only, false, ITEMS_PAGE, req.params.after)]
+        return standingAnswer(lists, only)
+      }
       case SCENES_VIEW:
-        return scenesAnswer(await load(ctx), grants, ctx.now)
+        await stateOf(ctx)
+        return scenesAnswer(recs, req.params, grants, ctx.now)
       case SCENE_VIEW: {
-        const ledger = await load(ctx)
+        await stateOf(ctx)
         const input = req.params.scene ?? ''
-        const named = scenesNamed(ledger, input)
-        const scene = named.length === 1 ? named[0] : undefined
-        return scene ? sceneAnswer(ledger, scene, conversationOf(scene, ctx.session.machine), grants) : noSuchScene(input, named.length)
+        const { scenes, more } = await scenesNamed(recs, input)
+        const scene = scenes.length === 1 && !more ? scenes[0] : undefined
+        return scene ? sceneAnswer(recs, scene, conversationOf(scene, ctx.session.machine), grants, req.params.after) : noSuchScene(input, scenes.length, more)
       }
       case ACTIVITY_VIEW:
-        return activityAnswer(await load(ctx), req.params, grants, ctx.now)
+        await stateOf(ctx)
+        return activityAnswer(recs, req.params, grants, ctx.now)
       case STATS_VIEW: {
-        // From the facts alone: no file is read, so the page costs the same however large the library's files are.
+        // From the hours' rows alone: no file is read, so the page costs the same however large the library is.
+        await stateOf(ctx)
         const period = req.params.period
-        return statsAnswer(statsOf(await readFacts(ctx), isPeriod(period) ? period : DEFAULT_PERIOD, ctx.now))
+        return statsAnswer(await statsFrom(recs, isPeriod(period) ? period : DEFAULT_PERIOD, ctx.now))
       }
-      case HELD_VIEW:
-        return heldAnswer(await load(ctx), await heldCopies(ctx))
+      case HELD_VIEW: {
+        await stateOf(ctx)
+        const held = await heldCopies(ctx)
+        const glanced = await ctx.tools.storage.own.glance(held.copies.map((c) => c.place))
+        const sizes = new Map(glanced.map((g) => [g.place, 'kind' in g ? { size: g.kind === 'file' ? (g.size ?? null) : null, bundle: g.kind === 'dir' } : { size: null, bundle: false }]))
+        return heldAnswer(held, sizes)
+      }
       default:
         throw new Error(`the ledger has no view ${req.view}`)
     }
@@ -504,14 +629,17 @@ export const ledger: Plugin = {
 
   /** The item panel's provenance section, from the same view inspect gives; a file nobody registered says so. */
   async onItemView(path, ctx) {
-    const ledger = await load(ctx)
-    const { root } = ctx.library
-    // A file inside a bundle that was never an item of its own has the bundle's provenance.
-    const bundle = itemNamed(ledger, root, path) ? null : await enclosingBundle(root, path)
-    if (bundle !== null) return partOfSection(bundle)
-    const view = await panelView(ctx, ledger, path)
-    if (view) return itemSection(view, ledger, ctx.library.config.grants)
-    return (await fileAt(root, path)) ? unownedSection(path) : null
+    await refresh(ctx)
+    const recs = records(ctx)
+    const item = await panelItem(ctx, path)
+    if (!item) {
+      // A file inside a bundle that was never an item of its own has the bundle's provenance.
+      const bundle = (await ctx.tools.resolve(path))?.bundle ?? null
+      if (bundle !== null) return partOfSection(bundle)
+      return (await thingAt(ctx, path)) ? unownedSection(path) : null
+    }
+    const view: ItemView = await itemViewOf(recs, item)
+    return itemSection(view, await lookupOf(recs, [], { scenes: [item.entered.scene] }), ctx.library.config.grants)
   },
 
   /**
@@ -522,14 +650,18 @@ export const ledger: Plugin = {
   async observe(event, ctx) {
     const body = recordOf(event)
     if (body === null) return
-    const w = await writing(ctx)
-    w.facts.push(fact(ctx, 'tool', withDeclined(body, event, w.ledger)))
+    const needsRows = event.face === 'owner' && (event.command === 'request decline' || event.command === 'archive purge')
+    if (needsRows) await stateOf(ctx)
+    const facts: Fact[] = [fact(ctx, 'tool', await withDeclined(ctx, body, event))]
     if (event.face === 'owner') {
-      for (const path of purged(event)) {
-        const id = w.ledger.pathIndex.get(path)
-        if (id !== undefined) w.facts.push(fact(ctx, 'tool', { kind: 'item.remove', item: id }))
+      const gone = purged(event)
+      const held = await getAll<{ id: ItemId }>(records(ctx), 'paths', gone)
+      for (const path of gone) {
+        const id = held.get(path)?.id
+        if (id !== undefined) facts.push(fact(ctx, 'tool', { kind: 'item.remove', item: id }))
       }
     }
-    await writeFacts(ctx, w.facts)
+    await writeFacts(ctx, facts)
   },
 }
+

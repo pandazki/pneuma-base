@@ -1,12 +1,16 @@
 // The ledger's body: immutable facts, appended through storage, one write per hook. ledger-design.md
-// sections 1 and 2; where storage puts them is storage's (core/README.md).
+// sections 1 and 2; where storage puts them is storage's (core/README.md). A thing is known by its
+// state token, which storage gave when the fact was written; its fingerprint is there only when its
+// content passed through the kernel or somebody read it. Facts written before tokens existed have none.
 import { randomBytes } from 'node:crypto'
 import type { Actor, Context, Fingerprint, Instant, LibraryPath, PluginContext, Transcript } from '@pneuma-base/kernel'
 
 export type ItemId = string & { readonly __brand: 'ItemId' }
 export type SceneId = string & { readonly __brand: 'SceneId' }
 
-export type Basis = { items: { item: ItemId; fingerprint: Fingerprint }[]; outside: string[] }
+/** One source of a made thing, as it was when the thing was made from it: its state token and, when known, its fingerprint. */
+export type BasisRow = { item: ItemId; fingerprint: Fingerprint | null; token?: string }
+export type Basis = { items: BasisRow[]; outside: string[] }
 
 export type LedgerOrigin =
   | { kind: 'brought'; source: string | null; by: string | null }
@@ -15,16 +19,19 @@ export type LedgerOrigin =
 
 type SaidFlavor = 'doing' | 'decided' | 'note'
 
+/** What storage said of a thing when a fact recorded it: its state token and its moment. Absent in facts written before tokens. */
+export type Seen = { token?: string; modified?: string }
+
 /** One thing of an `items.enter`: what an `item.enter` says of it, but for the origin they share. */
-export type Entered = { item: ItemId; path: LibraryPath; fingerprint: Fingerprint; size: number; bundle?: true }
+export type Entered = Seen & { item: ItemId; path: LibraryPath; fingerprint: Fingerprint | null; size: number; bundle?: true }
 
 export type FactBody =
   | { kind: 'said'; flavor: SaidFlavor; text: string; about: ItemId | null }
-  | { kind: 'item.enter'; item: ItemId; path: LibraryPath; fingerprint: Fingerprint; size: number; origin: LedgerOrigin; bundle?: true; note?: string } // bundle: a marked directory; note: what this put changed
+  | (Seen & { kind: 'item.enter'; item: ItemId; path: LibraryPath; fingerprint: Fingerprint | null; size: number; origin: LedgerOrigin; bundle?: true; note?: string }) // bundle: a marked directory; note: what this put changed
   | { kind: 'items.enter'; items: Entered[]; origin: LedgerOrigin } // many things entered in one act, all with one origin: the owner registering what nobody had
-  | { kind: 'item.revise'; item: ItemId; base: Fingerprint | null; fingerprint: Fingerprint; size: number; basis?: Basis; held: string | null; claimed: boolean; by?: 'owner'; note?: string } // by: the owner made the edit the actor recorded
-  | { kind: 'item.move'; item: ItemId; from: LibraryPath; to: LibraryPath; archive: 'in' | 'out' | null }
-  | { kind: 'item.basis'; item: ItemId; fingerprint: Fingerprint; basis: Basis }
+  | (Seen & { kind: 'item.revise'; item: ItemId; base: Fingerprint | null; fingerprint: Fingerprint | null; size: number; basis?: Basis; held: string | null; claimed: boolean; by?: 'owner'; note?: string }) // by: the owner made the edit the actor recorded
+  | (Seen & { kind: 'item.move'; item: ItemId; from: LibraryPath; to: LibraryPath; archive: 'in' | 'out' | null })
+  | { kind: 'item.basis'; item: ItemId; fingerprint: Fingerprint | null; basis: Basis }
   | { kind: 'item.remove'; item: ItemId }
   | { kind: 'owner.op'; command: string; summary: string; destructive: boolean; readOnly?: true; setup?: true; request?: { id: string; by: FactActor }; refused?: string; declined?: { id: string; by: FactActor | null } } // request: the owner approved it at an agent's request; refused: the command's reason when it then refused; declined: the request a `request decline` turned down, and who had asked
   | { kind: 'request'; act: 'asked' | 'withdrawn'; request: string; line: string; why?: string } // an agent asked the owner to run a command, or took the request back
@@ -63,6 +70,8 @@ export function factActor(actor: Actor): FactActor {
   return { kind: 'owner', name: 'owner', grant: null }
 }
 
+export const actorKey = (a: FactActor) => `${a.kind}:${a.name}:${a.grant ?? ''}`
+
 const safe = (text: string) => text.replace(/[^A-Za-z0-9_-]/g, '')
 
 export const ADHOC_SCENE = 'adhoc-'
@@ -93,43 +102,32 @@ export async function writeFacts(ctx: PluginContext, facts: readonly Fact[]): Pr
   if (facts.length > 0) await ctx.tools.storage.records.append(facts)
 }
 
-/** How many facts one read of storage brings. */
-export const FACT_PAGE = 5000
+/** How many facts one read of storage brings, and so how many one fold of the rows takes at most. */
+export const FACT_PAGE = 2000
 
-/**
- * The facts after `cursor`, read through storage page by page, each fact checked for the envelope it
- * must have; null when the cursor no longer fits the facts there.
- */
-export async function factsSince(ctx: PluginContext, cursor: string | null): Promise<{ facts: Fact[]; cursor: string } | null> {
-  const facts: Fact[] = []
-  let at = cursor
-  for (;;) {
-    const page = await ctx.tools.storage.records.since(at, FACT_PAGE)
-    if (page === null) return null
-    for (const { fact } of page.facts) if (isFact(fact)) facts.push(fact)
-    at = page.cursor
-    if (!page.more) return { facts, cursor: page.cursor }
-  }
-}
+/** Facts in the order the rows take them: by time, then by id. */
+const byTime = (a: Fact, b: Fact) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+export const inOrder = (input: readonly Fact[]): Fact[] => [...input].sort(byTime)
 
-/** The facts this process has read, by the ledger directory they belong to, and where the reading stopped. */
-const read = new Map<string, { cursor: string; byId: Map<string, Fact> }>()
+/** What an owner command records besides the row of the command itself, which tells it: no news of its own. */
+export const toldByItsCommand = (f: Fact) => f.kind === 'items.enter' || f.kind === 'unowned.left'
 
-/** Every fact, duplicates by id kept once; within one process only what is new is read again. */
-export async function readFacts(ctx: PluginContext): Promise<Fact[]> {
-  const known = read.get(ctx.dir)
-  const more = await factsSince(ctx, known?.cursor ?? null)
-  if (more === null) {
-    read.delete(ctx.dir)
-    return readFacts(ctx)
-  }
-  const byId = known?.byId ?? new Map<string, Fact>()
-  for (const f of more.facts) if (!byId.has(f.id)) byId.set(f.id, f)
-  read.set(ctx.dir, { cursor: more.cursor, byId })
-  return [...byId.values()]
-}
+/** Owner commands that change neither the content nor the capabilities: recorded as facts, but no news to an agent. */
+export const QUIET_OWNER_COMMANDS: ReadonlySet<string> = new Set(['init', 'grant issue', 'grant revoke', 'skill install'])
 
-function isFact(raw: unknown): raw is Fact {
+/** Whether a feed tells a fact: every one but the looks, which are no news, and what the row of an owner command tells. */
+export const isTold = (f: Fact) => f.kind !== 'checked' && !toldByItsCommand(f)
+
+/** Whether a fact can be news to anyone: setup commands are judged against each reader when asked. */
+export const mayBeNews = (f: Fact) => isTold(f) && !(f.kind === 'owner.op' && (QUIET_OWNER_COMMANDS.has(f.command) || f.readOnly))
+
+export function isFact(raw: unknown): raw is Fact {
   const f = raw as Partial<Fact> | null
   return typeof f === 'object' && f !== null && typeof f.id === 'string' && typeof f.at === 'string' && typeof f.kind === 'string' && typeof f.scene === 'string'
 }
+
+/** A key that sorts the latest moment first: the digits of the moment turned around. */
+export const turned = (at: string) => at.replace(/[^0-9]/g, '').replace(/[0-9]/g, (d) => String(9 - Number(d)))
+
+/** A key that sorts the latest fact first: its moment turned around, then its id. */
+export const newsKey = (f: Pick<Fact, 'at' | 'id'>): string => `${turned(f.at)}|${f.id}`

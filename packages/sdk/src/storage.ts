@@ -1,10 +1,11 @@
-// Storage as the kernel and the plugins see it: the words of the storage contract (tmp/run-7 STORAGE.md,
-// contract version 1), typed. The kernel speaks the contract to its one implementation through a single
-// door; a plugin reaches storage only through `PluginContext.tools.storage`, bound to its own record place.
+// Storage as the kernel and the plugins see it: the words of the storage contract (STORAGE.md, contract
+// version 1), typed. The kernel speaks the contract to its one implementation through a single door; a
+// plugin reaches storage only through `PluginContext.tools.storage`, bound to its own record place.
+import type { Fingerprint } from './types.js'
 
 /**
- * A place in the content: a relative path with `/` separators, `''` for the root. Not branded: a place
- * comes back from storage as storage wrote it, and every library path is a place.
+ * A place: a relative path with `/` separators, `''` for the root. Not branded: a place comes back from
+ * storage as storage wrote it, and every library path is a place.
  */
 export type Place = string
 
@@ -27,12 +28,16 @@ export type StorageReason =
   | 'cancelled'
   | 'busy'
 
-export type StorageFailure = { outcome: 'failed' | 'refused'; reason: StorageReason; detail?: string; actual?: unknown; at_least?: number }
+/**
+ * A failed or refused answer. `actual`: what a write found instead of what it expected. `at_least`: how
+ * many files a directory has at least, past the limit. `side`: `from` when a copy's source failed.
+ */
+export type StorageFailure = { outcome: 'failed' | 'refused'; reason: StorageReason; detail?: string; actual?: unknown; at_least?: number; size?: number; until?: string; side?: 'from'; cursor?: string }
 
 /**
  * What storage says a place is. Only `kind`, `token`, `size` and `modified` may decide anything; the
  * token is opaque, kept and handed back, never read. A dir's `size` is how many entries its level
- * has, null where storage cannot say that without listing.
+ * has, null where storage cannot say that without listing. `held`: a write under way holds it.
  */
 export type Description = {
   place: Place
@@ -41,6 +46,7 @@ export type Description = {
   size?: number | null
   modified?: string
   facets?: Record<string, unknown>
+  held?: true
 }
 
 /** One answer of `glance`: a description, or why this one place has none. */
@@ -51,8 +57,34 @@ export type Overview = { entries: Description[]; more: { at_least: number; after
 
 export type Probe = { files: number; dirs: number; bytes: number; exceeded: boolean; markers: string[] }
 
-/** Places not named in `changed`, `gone` or `failed` are as the token said. */
-export type Looked = { same: number; changed: { place: Place; entry: Description }[]; gone: Place[]; failed: { place: Place; reason: StorageReason }[] }
+/** Places not named in `changed`, `gone`, `failed` or `held` are as the token said. */
+export type Looked = { same: number; changed: { place: Place; entry: Description }[]; gone: Place[]; failed: { place: Place; reason: StorageReason }[]; held: Place[] }
+
+/** The fingerprint of a file, or of a directory by the content rule, with the token of the version read. */
+export type ContentAnswer =
+  | { kind: 'file'; fingerprint: Fingerprint; token: string; size: number }
+  | { kind: 'dir'; fingerprint: Fingerprint; token: string; files: number; bytes: number }
+
+/** Bytes of a file and the token of the version they are of. With `to`, the bytes went to that file instead. */
+export type ReadAnswer = { token: string; size: number; offset: number; length: number; data: Uint8Array | null }
+
+/**
+ * Where a write's content comes from: a file or directory outside the library, bytes, or a place in
+ * the store (copying): in the content, or with `own` in the writer's own record place.
+ */
+export type WriteSource = { path: string } | { data: Uint8Array | string } | { place: Place; own?: true }
+
+/** What a write expects where it writes: nothing there, or the state of this token. */
+export type Expect = 'empty' | string
+
+/** What a write placed, described, and the fingerprint taken in the same pass. */
+export type Written = { entry: Description; fingerprint: Fingerprint; files?: number; bytes: number }
+
+/**
+ * What changed in the content since a mark kept by the asker: the places (a place may stand for its
+ * directory), or `null` when storage could not say, and then every registered place is to be compared.
+ */
+export type Changes = { places: Place[] | null; mark: string }
 
 export type StoredFact = { order: string; fact: unknown }
 export type FactsSince = { facts: StoredFact[]; cursor: string; more: boolean }
@@ -85,15 +117,45 @@ export interface RecordPlace {
   reset(): Promise<void>
 }
 
-/** What a plugin may ask of storage: to look at the content where its records point, and its own record place. */
-export interface PluginStorage {
+/**
+ * One area of places: the library's content, or a plugin's own record place, which keeps content too
+ * (held copies, versions). A directory's content is counted by the rule things follow: noise, the
+ * marker and what its `.gitignore` excludes are not content.
+ */
+export interface PlaceStore {
+  /** What these places are now, one each. */
   glance(places: readonly Place[]): Promise<Glanced[]>
+  /** One level of a directory, one page of at most `limit` (200, at most 1000) after `after`. */
   overview(place: Place, opts?: { limit?: number; after?: string }): Promise<Overview | StorageFailure>
+  /** Which of these places are not as their tokens say any more. */
   look(places: readonly { place: Place; token: string }[]): Promise<Looked>
-  /** How large a directory is at least, counted up to `budget` entries, and what well-known files are at its top. */
+  /** The fingerprint of the content: read only now, because asked. A directory over `limit` files (5000) answers `too_many`. */
+  content(place: Place, opts?: { limit?: number }): Promise<ContentAnswer | StorageFailure>
+  /** The bytes of a file, or a range of them; with `to`, written to that absolute path outside the library. */
+  read(place: Place, opts?: { offset?: number; length?: number; to?: string }): Promise<ReadAnswer | StorageFailure>
+  /** Puts content at a place where the expectation holds, all of it or none; refused with what is there. */
+  write(place: Place, from: WriteSource, expect: Expect, opts?: { hold?: string; limit?: number }): Promise<Written | StorageFailure>
+  move(from: Place, to: Place, expect: { from: string; to: Expect }, opts?: { hold?: string }): Promise<{ entry: Description } | StorageFailure>
+  remove(place: Place, expect: string, opts?: { hold?: string }): Promise<{ removed: true } | StorageFailure>
+}
+
+/** What a plugin may ask of storage: the content where its records point, its own record place, and its own content beside it. */
+export interface PluginStorage extends PlaceStore {
+  /** How large a directory is at least, counted up to `budget` entries (500), and what well-known files are at its top. */
   probe(place: Place, budget?: number): Promise<Probe | StorageFailure>
   /** The noise names and paths declared at the library's root. */
   noise(): Promise<{ names: string[]; paths: Place[] }>
+  /** Says these places are being written and their records follow, for `ttl` ms (30000); looks mark them held. */
+  hold(places: readonly Place[], ttl?: number): Promise<{ hold: string; until: string } | StorageFailure>
+  release(hold: string): Promise<void>
+  /**
+   * What changed in the content since `mark`, a mark this plugin kept from an earlier answer (null:
+   * none yet, and then the places are null). The kernel learns change from storage's cursor; a mark
+   * costs nothing to keep and is only good for this library.
+   */
+  changed(mark: string | null): Promise<Changes>
+  /** The plugin's own record place's content: places under `.pneuma-base/<plugin>/`, `facts` aside. */
+  readonly own: PlaceStore
   readonly records: RecordPlace
 }
 

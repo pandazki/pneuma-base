@@ -256,9 +256,19 @@ export const VERBS: readonly Verb[] = [
     name: 'check',
     summary: '库的变化与状况',
     readOnly: true,
-    params: { flags: [{ name: 'since', hint: '从什么时候起：last（上次查之后）或一个时间，比如 2026-11-25T08:00:00Z', kind: 'value' }, INCLUDE_ARCHIVED] },
-    run: async ({ since, 'include-archived': includeArchived }, { bound: { library, ctx } }) => {
-      const r = await agentFace.check({ since: sinceOf(since), includeArchived }, ctx)
+    params: {
+      positional: [{ name: 'dir', hint: '只和 --deep 一起写：深查哪个目录，不写是整个库' }],
+      flags: [
+        { name: 'since', hint: '从什么时候起：last（上次查之后）或一个时间，比如 2026-11-25T08:00:00Z', kind: 'value' },
+        INCLUDE_ARCHIVED,
+        { name: 'deep', hint: '深查：读每样登记过的东西的内容，比出真正改了的；先说要读多少，可以随时打断', kind: 'boolean' },
+      ],
+    },
+    run: async ({ dir, since, 'include-archived': includeArchived, deep }, { bound: { library, ctx } }) => {
+      if (dir !== null && !deep) throw new UsageError('目录只和 --deep 一起写：check --deep <目录>')
+      const scope = dir === null || dir === '.' ? null : parseLibraryPath(library.root, dir)
+      if (dir !== null && dir !== '.' && scope === null) throw new UsageError(`这不是库里的目录：${dir}`)
+      const r = await agentFace.check({ since: sinceOf(since), includeArchived, ...(deep ? { deep: { dir: scope } } : {}) }, ctx)
       return { json: r, lines: checkText(r, ownerFace.commands(library.plugins), library.root), exit: exitOf(r) }
     },
   }),

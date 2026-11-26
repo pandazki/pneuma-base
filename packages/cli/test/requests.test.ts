@@ -2,13 +2,31 @@
 // owner approves or declines with one act; the agent sees the outcome at its next check; the audit
 // names who asked and who decided. ARCHITECTURE.md section 4, 「请」.
 import { spawn } from 'node:child_process'
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { sandbox, tempDir, type Run, type Sandbox } from './helpers.js'
 
 const BIN = fileURLToPath(new URL('../dist/bin.js', import.meta.url))
+
+/** The facts of the kernel's record place for requests, every file storage wrote or a sync brought, in no order. */
+function requestFacts(lib: string): Record<string, unknown>[] {
+  const dir = join(lib, '.pneuma-base/requests/facts')
+  if (!existsSync(dir)) return []
+  return (readdirSync(dir, { recursive: true }) as string[])
+    .filter((f) => f.endsWith('.jsonl'))
+    .flatMap((f) => readFileSync(join(dir, f), 'utf8').trimEnd().split('\n').filter((l) => l !== '').map((l) => JSON.parse(l) as Record<string, unknown>))
+}
+
+/** Writes a facts file into the requests record place as another machine's would arrive by sync: its own file, named by its moment. */
+function syncedFacts(lib: string, facts: unknown[], at = new Date(Date.now() + 1000)): void {
+  const day = at.toISOString().slice(0, 10)
+  const stamp = at.toISOString().replace(/[^0-9]/g, '').slice(0, 17)
+  const dir = join(lib, '.pneuma-base/requests/facts', day)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, `${stamp}-othermachine-000001.jsonl`), facts.map((f) => `${JSON.stringify(f)}\n`).join(''))
+}
 const WHY = '要给方案留住每一版'
 
 let sb: Sandbox
@@ -164,7 +182,7 @@ describe('what cannot be asked for', () => {
     expect(refusal(['grant', 'issue', 'helper', '--agent', 'x', '--color', 'red'])).toMatchObject({ code: 1, stderr: expect.stringContaining('grant issue 不认识 --color') })
     expect(claude(['ask', '想要']).code).toBe(1)
     expect(claude(['ask']).code).toBe(1)
-    expect(readdirSync(join(lib, '.pneuma-base')).includes('requests') ? readdirSync(join(lib, '.pneuma-base/requests')) : []).toEqual([])
+    expect(requestFacts(lib)).toEqual([])
   })
 
   it('the owner has nobody to ask', () => {
@@ -195,31 +213,28 @@ describe('the store', () => {
     const list = ok(owner(['request', 'list'])).stdout
     for (const line of ['grant revoke a', 'grant revoke b', 'grant revoke c', 'grant revoke d']) expect(list).toContain(line)
     expect(list.match(/grant revoke d/g)).toHaveLength(1)
-    expect(readdirSync(join(lib, '.pneuma-base/requests'))).toHaveLength(4)
+    // Every ask is a fact; the same line asked twice at once folds into one request.
+    expect(new Set(requestFacts(lib).filter((f) => f.kind === 'asked').map((f) => (f.args as { positional: string[] }).positional[0])).size).toBe(4)
   })
 
-  it('is one file per request of appended lines, and a sync conflict copy of it reads as the same request', () => {
+  it('is facts appended to the kernel’s record place, and another machine’s decision arriving by sync settles the request', () => {
     const id = askVersion().json().request.id as string
-    const file = join(lib, '.pneuma-base/requests', `${id}.jsonl`)
-    const asked = readFileSync(file, 'utf8')
-    expect(asked.trimEnd().split('\n').map((l) => JSON.parse(l).kind)).toEqual(['asked'])
-    // The other machine declined it; the sync put its copy beside this one.
-    const declined = `${asked}${JSON.stringify({ kind: 'decided', at: new Date().toISOString(), decision: 'declined', reason: '另一台机器上拒绝的' })}\n`
-    writeFileSync(join(lib, '.pneuma-base/requests', `${id}.conflict-other-20261126T080000Z.jsonl`), declined)
+    expect(requestFacts(lib).filter((f) => f.request === id).map((f) => f.kind)).toEqual(['asked'])
+    syncedFacts(lib, [{ request: id, kind: 'decided', at: new Date().toISOString(), decision: 'declined', reason: '另一台机器上拒绝的' }])
     expect(ok(owner(['request', 'list', '--all'])).stdout).toContain('另一台机器上拒绝的')
     expect(ok(claude(['inspect', id, '--json'])).json().request.status).toMatchObject({ kind: 'declined', reason: '另一台机器上拒绝的' })
   })
 
-  it('request list --all lists the 50 latest settled requests and how many older ones it left out; --older lists them all; every file stays', () => {
-    const dir = join(lib, '.pneuma-base/requests')
-    mkdirSync(dir, { recursive: true })
+  it('request list --all lists the 50 latest settled requests and how many older ones it left out; --older lists them all; every fact stays', () => {
     const by = { name: 'claude', grant: null }
+    const facts: unknown[] = []
     for (let i = 0; i < 55; i++) {
       const at = new Date(Date.UTC(2026, 10, 1, 8, i)).toISOString()
-      const asked = { kind: 'asked', at, by, session: 's', why: `第 ${i} 个`, command: 'grant revoke', args: { positional: [`g${i}`], flags: {} } }
-      const decided = { kind: 'decided', at, decision: 'declined', reason: null }
-      writeFileSync(join(dir, `r-${i.toString(16).padStart(8, '0')}.jsonl`), `${JSON.stringify(asked)}\n${JSON.stringify(decided)}\n`)
+      const request = `r-${i.toString(16).padStart(8, '0')}`
+      facts.push({ request, kind: 'asked', at, by, session: 's', why: `第 ${i} 个`, command: 'grant revoke', args: { positional: [`g${i}`], flags: {} } })
+      facts.push({ request, kind: 'decided', at, decision: 'declined', reason: null })
     }
+    syncedFacts(lib, facts)
     const all = ok(owner(['request', 'list', '--all'])).stdout
     expect(all).toContain('grant revoke g54')
     expect(all).toContain('grant revoke g5 ')
@@ -232,7 +247,7 @@ describe('the store', () => {
     const older = ok(owner(['request', 'list', '--all', '--older'])).stdout
     expect(older).toContain('grant revoke g0 ')
     expect(older).not.toContain('更早的')
-    expect(readdirSync(dir)).toHaveLength(55)
+    expect(requestFacts(lib)).toHaveLength(110)
   })
 
   it('works in a library with no plugin', () => {

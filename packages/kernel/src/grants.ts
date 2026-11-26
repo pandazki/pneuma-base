@@ -1,6 +1,6 @@
 import { readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
-import { writeAtomic } from './files.js'
+import { writeAtomic } from './machine-files.js'
 import { openLibrary } from './library.js'
 import type { Grant, GrantId, Library, PluginTable } from '@pneuma-base/sdk'
 

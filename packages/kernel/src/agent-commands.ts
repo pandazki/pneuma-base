@@ -22,7 +22,7 @@ import {
   type Written,
 } from './connections.js'
 import { endpointOf, mcpUrl, type EndpointRecord } from './endpoint.js'
-import { exists } from './files.js'
+import { exists } from './machine-files.js'
 import { GRANT_NAME } from './grants.js'
 import { command, done, refused, type KernelCommand, type Outcome } from './kernel-command.js'
 import { ensureLauncher, launcherPath, launcherProblems, ranText } from './launcher.js'

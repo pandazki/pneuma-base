@@ -96,7 +96,7 @@ function agentWords({ verb, request }: AgentCall, action: Action): string[] {
         ...Object.entries(request.args).flatMap(([k, xs]) => (xs.length === 0 ? [`--${k}`] : listFlag(k, xs, action))),
       ]
     case 'check':
-      return ['check', ...(request.since === null ? [] : ['--since', v(request.since)]), ...(request.includeArchived ? ['--include-archived'] : [])]
+      return ['check', ...(request.deep ? ['--deep', ...(request.deep.dir === null ? [] : [v(request.deep.dir)])] : []), ...(request.since === null ? [] : ['--since', v(request.since)]), ...(request.includeArchived ? ['--include-archived'] : [])]
     case 'archive':
       return [request.kind, v(request.path)]
     case 'ask':

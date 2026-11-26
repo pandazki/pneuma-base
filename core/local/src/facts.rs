@@ -383,7 +383,7 @@ fn end_of_facts(facts_dir: &Path, fi: Option<u64>) -> Result<FactsSinceAnswer, F
     })
 }
 
-/// A directory of `facts/`: a day, or a scene of the old layout.
+/// A directory of facts files: a day, a scene of the old layout, or `facts/` itself (the flat old layout, named `""`).
 struct Subdir {
     path: PathBuf,
     name: String,
@@ -393,6 +393,15 @@ struct Subdir {
 
 fn subdirs(facts_dir: &Path) -> Result<Vec<Subdir>, Failure> {
     let mut dirs = Vec::new();
+    // The flat old layout: facts files right in `facts/`, as plugins wrote them before storage did.
+    if let Some(stat) = stat_dir(facts_dir)? {
+        dirs.push(Subdir {
+            layout: 0,
+            changed: stat.ctime_ns as i64,
+            path: facts_dir.to_path_buf(),
+            name: String::new(),
+        });
+    }
     for name in list_dirs(facts_dir)? {
         let path = facts_dir.join(&name);
         let Some(stat) = stat_dir(&path)? else {

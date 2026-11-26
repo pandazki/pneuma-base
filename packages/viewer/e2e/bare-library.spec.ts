@@ -53,8 +53,9 @@ test('a bare library: four pages, folders, text and image preview, archive and t
   expect(readFileSync(join(lib, '_archive/notes/hello.md'), 'utf8')).toContain('一段笔记')
   await expect(page.getByRole('main').getByRole('row', { name: /hello\.md/ })).toHaveCount(0)
 
-  // The archive page lists it; taking it back returns it to its path.
+  // The archive page lists one level at a time: the folder, then in it the file; taking it back returns it to its path.
   await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '归档区' }).click()
+  await page.getByRole('main').getByRole('row', { name: /^notes\// }).click()
   const row = page.getByRole('main').getByRole('row', { name: /notes\/hello\.md/ })
   await expect(row).toBeVisible()
   await shoot(page, 'c1-archive')

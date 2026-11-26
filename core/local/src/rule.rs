@@ -10,24 +10,29 @@ use ignore::Match;
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use pneuma_base_storage::{ContentRule, Ctx, Failure, Kind, Place};
 
-use crate::RECORD_AREA;
 use crate::noise::Noise;
 use crate::sys::{self, DirStream, EntryType, Errno, Stat};
 
-/// The rule as one walk applies it. `base` is the place the walked directory is or will be, so
-/// the library's noise paths apply to what is under it.
+/// A place the walked directory is, or will be once copied, in its area: the noise that applies
+/// there (none in a record place's own area) and the name the area keeps out of its root level.
+pub struct Side<'a> {
+    pub noise: &'a Noise,
+    pub base: Place,
+    pub hidden: &'static str,
+}
+
+/// The rule as one walk applies it: what any of its sides leaves out is left out, so a copy
+/// neither enters its source's noise nor puts noise where it lands.
 pub struct Matcher<'a> {
-    noise: &'a Noise,
-    base: Place,
+    sides: &'a [Side<'a>],
     names: HashSet<&'a str>,
     ignore_file: Option<&'a str>,
 }
 
 impl<'a> Matcher<'a> {
-    pub fn new(noise: &'a Noise, base: Place, rule: &'a ContentRule) -> Matcher<'a> {
+    pub fn new(sides: &'a [Side<'a>], rule: &'a ContentRule) -> Matcher<'a> {
         Matcher {
-            noise,
-            base,
+            sides,
             names: rule.noise.iter().map(String::as_str).collect(),
             ignore_file: rule.ignore_file.as_deref(),
         }
@@ -154,20 +159,24 @@ pub fn walk(top: OwnedFd, matcher: &Matcher, limit: u64, ctx: &Ctx) -> Result<Wa
     Ok(walked)
 }
 
-/// Noise, the caller's names, and the record area at the library's root.
+/// The caller's names, and on any side noise and what the area keeps out of its root.
 fn leaves_out(matcher: &Matcher, levels: &[Level], child: &str, name: &str) -> bool {
-    if matcher.names.contains(name) || matcher.noise.is_noise_name(name) {
+    if matcher.names.contains(name) {
         return true;
     }
-    if matcher.base.is_root() && levels.len() == 1 && name == RECORD_AREA {
-        return true;
-    }
-    let place = Place::parse(&if matcher.base.is_root() {
-        child.to_owned()
-    } else {
-        format!("{}/{child}", matcher.base.as_str())
-    });
-    place.is_some_and(|p| matcher.noise.is_noise(&p))
+    matcher.sides.iter().any(|side| {
+        if side.noise.is_noise_name(name)
+            || (side.base.is_root() && levels.len() == 1 && name == side.hidden)
+        {
+            return true;
+        }
+        let place = Place::parse(&if side.base.is_root() {
+            child.to_owned()
+        } else {
+            format!("{}/{child}", side.base.as_str())
+        });
+        place.is_some_and(|p| side.noise.is_noise(&p))
+    })
 }
 
 /// What the nearest ignore file that has a say about the path says.

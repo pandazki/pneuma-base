@@ -6,7 +6,7 @@
 import { realpathSync } from 'node:fs'
 import { chmod, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { delimiter, dirname, join, resolve } from 'node:path'
-import { exists, scratchName } from './files.js'
+import { exists, scratchName } from './machine-files.js'
 import { command, done, type KernelCommand } from './kernel-command.js'
 import type { Env } from './products.js'
 

@@ -551,9 +551,10 @@ describe('the owner’s operations on the ledger’s blocks', () => {
     await agentFace.archive({ kind: 'unarchive', path: '_archive/adopted.md' }, codex())
     const r = shown(await show('ledger.standing'))
     const items = (title: string) => listIn(sectionNamed(r.blocks, title))
+    // Each kind lists its rows by path, as the rows are asked for.
     expect(items('没人登记过的').map((i) => [i.cell.text, i.note, i.actions.map((a) => a.label), i.actions.map((a) => a.call.face === 'agent' && a.call.verb === 'put' && a.call.request.kind === 'register' && a.call.request.path)])).toEqual([
-      ['dropped.md', null, ['记为带进来的', '记为做出来的'], ['dropped.md', 'dropped.md']],
       ['adopted.md', '入了册，来历不明', ['记为带进来的', '记为做出来的'], ['adopted.md', 'adopted.md']],
+      ['dropped.md', null, ['记为带进来的', '记为做出来的'], ['dropped.md', 'dropped.md']],
     ])
     expect(items('被直接改过的')[0]?.actions).toMatchObject([{ label: '认下这次改动', call: { verb: 'say', request: { kind: 'revised', about: 'src/stripe.html' } } }])
     expect(items('可能过期')[0]?.actions).toEqual([])
@@ -569,6 +570,8 @@ describe('bundles in the ledger’s blocks', () => {
     mkdirSync(join(root, 'site'))
     writeFileSync(join(root, 'site/index.html'), '<h1>hi</h1>')
     await agentFace.put({ kind: 'register', path: 'site/index.html', origin: { kind: 'brought', source: null, by: null } }, codex())
+    // A directory holding a registered thing is open: registering it takes its loose files, unless its marker makes it one thing.
+    writeFileSync(join(root, 'site/.pneuma-item'), '')
     await agentFace.put({ kind: 'register', path: 'site', origin: { kind: 'made', from: ['comparison.md'], outside: [] } }, codex())
     const rows = rowsOf(await show('ledger.items'))
     expect(rows.map((r) => r.cells.path?.text)).not.toContain('site/index.html')
@@ -581,6 +584,7 @@ describe('bundles in the ledger’s blocks', () => {
     mkdirSync(join(root, 'site'))
     writeFileSync(join(root, 'site/index.html'), '<h1>hi</h1>')
     await agentFace.put({ kind: 'register', path: 'site/index.html', origin: { kind: 'brought', source: null, by: null } }, codex())
+    writeFileSync(join(root, 'site/.pneuma-item'), '')
     await agentFace.put({ kind: 'register', path: 'site', origin: { kind: 'brought', source: null, by: null } }, codex())
     writeFileSync(join(root, 'site/later.css'), 'h1{}')
     const absorbed = sectionNamed(shown(await show('item', { path: 'site/index.html' })).blocks, '来历').blocks[0]

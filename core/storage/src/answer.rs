@@ -80,6 +80,19 @@ impl Failure {
         Failure::with(Reason::CannotSay, "cursor", Value::String(cursor))
     }
 
+    /// The failure said of a write's source, not its target (`"side": "from"`), when it is one a
+    /// source can cause.
+    pub fn of_source(mut self) -> Failure {
+        use Reason::*;
+        if matches!(
+            self.reason,
+            NoSuchPlace | NotADir | NotAFile | Noise | Outside | Unreadable | Elsewhere
+        ) {
+            self.fields.insert("side".to_owned(), Value::from("from"));
+        }
+        self
+    }
+
     pub fn outcome(&self) -> &'static str {
         if self.reason == Reason::Refused {
             "refused"
@@ -388,6 +401,18 @@ pub struct RowsPage {
 pub enum RowsWhereAnswer {
     Page(RowsPage),
     Count { count: u64, exceeded: bool },
+}
+
+/// The library's root declaration as stored, and its token; both `None` when there is none.
+#[derive(Debug, Serialize)]
+pub struct DeclarationAnswer {
+    pub declaration: Option<Map<String, Value>>,
+    pub token: Option<Token>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeclarationWritten {
+    pub token: Token,
 }
 
 #[derive(Debug, Serialize)]

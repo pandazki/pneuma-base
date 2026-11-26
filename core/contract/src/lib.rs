@@ -319,4 +319,18 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn every_sentence_is_written_in_the_contract() {
+        let contract = include_str!("../../../STORAGE.md");
+        for sentence in SENTENCES {
+            for cell in sentence.text.split(" | ") {
+                assert!(
+                    contract.contains(cell),
+                    "{} is not in STORAGE.md as written: {cell}",
+                    sentence.id
+                );
+            }
+        }
+    }
 }

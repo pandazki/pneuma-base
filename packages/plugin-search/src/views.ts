@@ -1,6 +1,6 @@
 // What the owner and the UI see of the index: its status, and what it has of one thing. These only
 // read; nothing here builds or changes the index.
-import { abs, bundleFiles, formOf, thingAt, type Action, type Block, type Instant, type ItemSection, type LibraryPath, type OwnerArgs, type PluginContext, type ViewAnswer } from '@pneuma-base/kernel'
+import { formOf, type Action, type Block, type Instant, type ItemSection, type LibraryPath, type OwnerArgs, type PluginContext, type ViewAnswer } from '@pneuma-base/kernel'
 import { SET_EMBEDDER } from './commands.js'
 import { currentEmbedder } from './config.js'
 import { embedderFor, embedderLabel, KEY_SECRET, type EmbedderConfig } from './embed.js'
@@ -34,7 +34,7 @@ export async function statusOf(ctx: PluginContext): Promise<Status> {
   const index = SearchIndex.peek(ctx.cacheDir)
   if (index === null) return none
   try {
-    const plan = freshness(await diskStamps(ctx.library.root), index.stamps())
+    const plan = freshness(await diskStamps(ctx), index.stamps())
     return { ...none, indexed: true, ...index.stats(embedderId(embedder)), stale: plan.read.length + plan.drop.length }
   } finally {
     index.close()
@@ -94,11 +94,10 @@ export async function statusView(ctx: PluginContext): Promise<ViewAnswer> {
 
 /** What the index has of the thing at `path`: whether its text is indexed, in how many pieces, and how many have vectors. */
 export async function itemSection(path: LibraryPath, ctx: PluginContext): Promise<ItemSection | null> {
-  const file = abs(ctx.library.root, path)
-  const thing = await thingAt(file)
+  const thing = await ctx.tools.thing(path)
   if (thing === null) return null
   const disk: Stamp[] =
-    thing.kind === 'file' ? [{ path, inner: '', size: thing.size, modifiedAt: thing.modifiedAt }] : (await bundleFiles(file)).map((f) => ({ path, inner: f.path, size: f.size, modifiedAt: f.modifiedAt }))
+    thing.kind === 'file' ? [{ path, inner: '', size: thing.size, modifiedAt: thing.modifiedAt }] : ((await ctx.tools.files(path)) ?? []).map((f) => ({ path, inner: f.path, size: f.size, modifiedAt: f.modifiedAt }))
   const embedder = await currentEmbedder(ctx)
   const index = SearchIndex.peek(ctx.cacheDir)
   const docs = index?.docsAt(path, embedderId(embedder)) ?? []

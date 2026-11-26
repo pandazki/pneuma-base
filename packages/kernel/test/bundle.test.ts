@@ -1,10 +1,12 @@
 // A directory with the marker is one thing (ARCHITECTURE "一个目录算一样东西"): its fingerprint,
 // what is left out, and the put table's directory cells at the kernel's own interface.
 import { createHash } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { agentFace, BUNDLE_MARKER, bundleManifest, fingerprintOf, fingerprintOfManifest } from '../src/index.js'
+import { agentFace, BUNDLE_MARKER, fingerprintOfManifest, type LibraryPath } from '../src/index.js'
+import { storageOf } from '../src/storage.js'
+import { fingerprintOf } from '../src/things.js'
 import { fixture, tempDir } from './support.js'
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex')
@@ -21,29 +23,35 @@ function tree(files: Record<string, string>): string {
 const SITE = { 'index.html': 'home', 'css/site.css': 'body{}', 'z/é.txt': 'e', [BUNDLE_MARKER]: '{"format":1}\n' }
 const JUNK = { '.git/HEAD': 'ref', 'node_modules/x/index.js': 'x', '.DS_Store': 'ds', 'css/.DS_Store': 'ds', 'sub/.git': 'gitdir: ..' }
 
-describe('the fingerprint of a bundle', () => {
+/** The fingerprint storage gives of the thing at `path` in a fresh library holding `files` under `site/`. */
+async function printOf(files: Record<string, string>, path = 'site'): Promise<string | undefined> {
+  const f = await fixture()
+  for (const [p, content] of Object.entries(files)) f.write(`site/${p}`, content)
+  return (await fingerprintOf(storageOf(f.root), path as LibraryPath))?.fingerprint
+}
+
+describe('the fingerprint of a bundle, as storage reads it when asked', () => {
   it('is the sha256 of "<path>\\0<sha256 of content>\\n" per counted file, sorted by the UTF-8 bytes of the path', async () => {
     const expected = sha(`css/site.css\0${sha('body{}')}\nindex.html\0${sha('home')}\nz/é.txt\0${sha('e')}\n`)
-    expect(await fingerprintOf(tree(SITE))).toBe(expected)
+    expect(await printOf(SITE)).toBe(expected)
   })
 
-  it('leaves out the marker, .git, node_modules and .DS_Store at any depth', async () => {
-    expect(await fingerprintOf(tree({ ...SITE, ...JUNK }))).toBe(await fingerprintOf(tree(SITE)))
-    expect((await bundleManifest(tree({ ...SITE, ...JUNK }))).map((e) => e.path)).toEqual(['css/site.css', 'index.html', 'z/é.txt'])
+  it('leaves out the marker, the noise at any depth, and what its .gitignore excludes', async () => {
+    expect(await printOf({ ...SITE, ...JUNK })).toBe(await printOf(SITE))
+    expect(await printOf({ ...SITE, '.gitignore': 'build/\n', 'build/out.js': 'o' })).toBe(await printOf({ ...SITE, '.gitignore': 'build/\n' }))
   })
 
   it('changes when one inner file changes', async () => {
-    expect(await fingerprintOf(tree({ ...SITE, 'css/site.css': 'body{color:red}' }))).not.toBe(await fingerprintOf(tree(SITE)))
+    expect(await printOf({ ...SITE, 'css/site.css': 'body{color:red}' })).not.toBe(await printOf(SITE))
   })
 
-  it('can be computed from a manifest alone', async () => {
-    const dir = tree(SITE)
-    expect(fingerprintOfManifest(await bundleManifest(dir))).toBe(await fingerprintOf(dir))
+  it('is what the kernel computes from a manifest alone', async () => {
+    const manifest = [{ path: 'index.html', fingerprint: sha('home') }, { path: 'css/site.css', fingerprint: sha('body{}') }, { path: 'z/é.txt', fingerprint: sha('e') }]
+    expect(fingerprintOfManifest(manifest as never)).toBe(await printOf(SITE))
   })
 
   it('of a single file is the sha256 of its bytes', async () => {
-    const dir = tree({ 'a.txt': 'hello' })
-    expect(await fingerprintOf(join(dir, 'a.txt'))).toBe(sha('hello'))
+    expect(await printOf({ 'a.txt': 'hello' }, 'site/a.txt')).toBe(sha('hello'))
   })
 })
 
@@ -55,13 +63,12 @@ describe('placing an outside directory', () => {
     const source = tree({ 'a.html': 'a', 'b.html': 'b', 'z.html': 'z' })
     chmodSync(join(source, 'b.html'), 0o000)
     try {
-      await expect(agentFace.put({ kind: 'place', from: { kind: 'directory', path: source }, to: 'sites/a', origin: brought }, f.ctx)).rejects.toThrow(/EACCES/)
+      await expect(agentFace.put({ kind: 'place', from: { kind: 'directory', path: source }, to: 'sites/a', origin: brought }, f.ctx)).rejects.toThrow(/unreadable/)
     } finally {
       chmodSync(join(source, 'b.html'), 0o644)
     }
-    expect(existsSync(join(f.root, 'sites'))).toBe(false)
-    // The folder of the marks of puts in progress stays; the failed put's own mark is gone.
-    expect(readdirSync(join(f.root, '.pneuma-base/tmp'), { recursive: true })).toEqual(['putting'])
+    // Storage writes all of it or none of it.
+    expect(existsSync(join(f.root, 'sites', 'a'))).toBe(false)
   })
 
   it('copies the tree without the left-out names and writes the marker', async () => {

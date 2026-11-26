@@ -50,11 +50,11 @@ describe('a plugin that throws in every hook (C10)', () => {
       expect(r.code, args.join(' ')).toBe(3)
       expect(thrown(r.json().problems), args.join(' ')).toEqual(expected)
     }
-    expect(agent(['find', 'a']).json().hits.map((h: { path: string }) => h.path)).toEqual(['a.md'])
+    // Hits come only from plugins' indexes (tmp/run-7); this library's one plugin threw, so there are none.
+    expect(agent(['find', 'a']).json().hits).toEqual([])
     expect(agent(['say', 'boom', 'x']).json()).toMatchObject({ outcome: 'not-heard', reason: 'plugin-failed' })
     const start = agent(['start', 'a'])
     expect(start.code).toBe(3)
-    // start's find asks the records only (tmp/run-7); this library's one plugin keeps none.
     expect(start.json().find.hits).toEqual([])
   })
 

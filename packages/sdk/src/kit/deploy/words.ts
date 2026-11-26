@@ -46,11 +46,10 @@ export function unsettledText(kit: Kit, all: readonly Look[], targetSet: boolean
   return { body: [...lines, next].join('\n'), data: off.map((l) => ({ path: l.thing.path, status: l.status, held: [...l.held.keys()] })) }
 }
 
-/** check: the lines of the records that are not records. They stay as they are and count for nothing. */
+/** check: the facts of the records that are not records. They stay as they are and count for nothing. */
 export function skippedText(kit: Kit, skipped: readonly Skipped[]): { body: string; data: unknown } | null {
   if (skipped.length === 0) return null
-  const lines = skipped.map((s) => `.pneuma-base/${kit.name}/facts/${s.file} 第 ${s.line} 行：${s.reason}`)
-  return { body: [...lines, '这些行原样留着，没有算进去。'].join('\n'), data: skipped }
+  return { body: skipped.map((s) => `${kit.name} 的记录 ${s.at}：${s.reason}`).join('\n'), data: skipped }
 }
 
 /** How the flags of one kind are written after `<name> target set`, with `--kind` when the kit has several; `required`: those alone. */

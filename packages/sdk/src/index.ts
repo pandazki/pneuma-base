@@ -8,8 +8,12 @@ export * from './storage.js'
 export { ICON_NAMES, type IconName } from './icons.js'
 export { defineCommand, formOf, usageOf, type FixedValue } from './params.js'
 
-/** The version of the plugin contract this package describes. A plugin declares it as `contract`. */
-export const CONTRACT = 1
+/**
+ * The version of the plugin contract this package describes. A plugin declares it as `contract`.
+ * Version 2 hands a plugin storage's words (`tools.storage`); the kernel still runs a plugin written
+ * against version 1, whose tools are kept as a layer over version 2's until those plugins move.
+ */
+export const CONTRACT = 2
 
 /**
  * The version of Pneuma Base this package belongs to. The command line, this package and the built-in
@@ -55,11 +59,14 @@ export const KERNEL_COMMAND_NAMES = [
 /**
  * Names no plugin takes. A plugin's commands start with its name, so it is none of the command line's
  * own words or the first words of the kernel's commands; and its directory sits beside the kernel's
- * scratch directory `.pneuma-base/tmp/` and its requests `.pneuma-base/requests/`.
+ * record places: the kernel's (`kernel`, `requests`) and storage's own areas (`tmp`, `trash`, `holds`, `cache`).
  */
 export const RESERVED_PLUGIN_NAMES: readonly string[] = [
   'tmp',
   'requests',
+  'kernel',
+  'trash',
+  'holds',
   'ask',
   'request',
   'start',

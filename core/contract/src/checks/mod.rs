@@ -1,6 +1,7 @@
 //! The checks, by the part of `STORAGE.md` they drive. Each is `fn(&Env) -> Outcome`; the
 //! registry keys it to the sentences it decides.
 
+pub mod areas;
 pub mod basics;
 pub mod changes;
 pub mod concurrency;

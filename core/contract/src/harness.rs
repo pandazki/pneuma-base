@@ -42,7 +42,7 @@ pub const REASONS: [&str; 14] = [
 ];
 
 /// The operations the contract names, in its order (sections 4, 5 and 6).
-pub const OPS: [&str; 24] = [
+pub const OPS: [&str; 26] = [
     "glance",
     "overview",
     "probe",
@@ -62,6 +62,8 @@ pub const OPS: [&str; 24] = [
     "rows.reset",
     "init",
     "describe",
+    "declaration.read",
+    "declaration.write",
     "noise.list",
     "noise.add",
     "noise.remove",
@@ -101,6 +103,14 @@ impl Env {
     /// Whether `describe` says `changed` can give a reliable cursor.
     pub fn cursor(&self) -> bool {
         self.describe["cursor"] == true
+    }
+
+    /// Whether the provider answers path addresses: a local folder, whose record area the wire
+    /// (core/README.md) places at `.pneuma-base/`.
+    pub fn path_addressed(&self) -> bool {
+        self.describe["addresses"]
+            .as_array()
+            .is_some_and(|a| a.iter().any(|x| x == "path"))
     }
 
     /// Whether `describe` lists the facet.
@@ -693,6 +703,30 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 
 pub fn sha256_file(path: &Path) -> String {
     sha256_hex(&fs::read(path).unwrap())
+}
+
+pub fn base64_encode(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let n = chunk
+            .iter()
+            .enumerate()
+            .fold(0u32, |n, (i, b)| n | u32::from(*b) << (16 - 8 * i));
+        for i in 0..4 {
+            out.push(if i <= chunk.len() {
+                ALPHABET[(n >> (18 - 6 * i) & 63) as usize] as char
+            } else {
+                '='
+            });
+        }
+    }
+    out
+}
+
+/// A write's source that carries `bytes` in the request.
+pub fn data(bytes: &[u8]) -> Value {
+    json!({ "data": base64_encode(bytes) })
 }
 
 pub fn base64_decode(text: &str) -> Vec<u8> {

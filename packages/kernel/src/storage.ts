@@ -1,28 +1,33 @@
 // The only door to storage. Nothing else in the kernel, and nothing above it, reads or writes the
-// library's folder or its record area for the paths that go through here: they ask storage, the
-// `pneuma-base-core` program, which this module starts once per library and process (`serve`) and
-// speaks to one JSON line at a time. tmp/run-7 STORAGE.md; the wire form is core/README.md.
+// library's folder or its record area: they ask storage, the `pneuma-base-core` program, which this
+// module starts once per library and process (`serve`) and speaks to one JSON line at a time.
+// STORAGE.md is the contract; core/README.md is the wire form.
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
   isFailure,
+  type ContentAnswer,
+  type Description,
+  type Expect,
   type FactsSince,
   type Glanced,
   type Looked,
   type Overview,
   type Place,
-  type PluginStorage,
   type Probe,
+  type ReadAnswer,
   type RecordPlace,
   type Row,
   type RowsPage,
   type StorageFailure,
+  type Written,
 } from '@pneuma-base/sdk'
 
 /**
  * Where the program is: `PNEUMA_BASE_CORE`; else the one a package file carries beside the kernel
- * (scripts/pack-dist.mjs); else the one built in this repository, release before debug.
+ * (scripts/pack-dist.mjs); else the one built in this repository, release before debug. These are files
+ * of this installation, not of any library.
  */
 export function corePath(env: NodeJS.ProcessEnv = process.env): string {
   if (env.PNEUMA_BASE_CORE) return env.PNEUMA_BASE_CORE
@@ -123,8 +128,11 @@ const servedFor = (root: string): Served => {
 }
 
 /** A storage answer that is not `done` where only `done` makes sense: a fault of the caller or of storage, not of the library. */
-class StorageError extends Error {
-  constructor(op: string, readonly answer: StorageFailure) {
+export class StorageError extends Error {
+  constructor(
+    op: string,
+    readonly answer: StorageFailure,
+  ) {
     super(`存储答 ${op}：${answer.reason}${answer.detail ? `（${answer.detail}）` : ''}`)
   }
 }
@@ -140,7 +148,49 @@ const doneOrFailure = async <T>(answer: Promise<Answer>): Promise<T | StorageFai
   return isFailure(a) ? a : (a as unknown as T)
 }
 
-/** The library at `root` as storage: every operation this step built. */
+/** Which of a directory's files are its content, as the caller decides and storage applies: names left out at any depth, and an ignore file read in each directory. */
+export type ContentRule = { noise?: readonly string[]; ignore_file?: string }
+
+/**
+ * Where a write's content comes from, as the door takes it: a path outside the library, bytes, or a
+ * place in the content or in a record place's own area (copying).
+ */
+export type Source = { path: string } | { data: Uint8Array | string } | { place: Place; records?: string }
+
+const wireSource = (from: Source): unknown => {
+  if ('path' in from) return from.path
+  if ('data' in from) return { data: Buffer.from(typeof from.data === 'string' ? Buffer.from(from.data, 'utf8') : from.data).toString('base64') }
+  return { place: from.place, ...(from.records === undefined ? {} : { records: from.records }) }
+}
+
+/** The content operations on one area: the library's content (`records` undefined), or a record place's own content. */
+function areaOf(s: Served, records: string | undefined) {
+  const where = records === undefined ? {} : { records }
+  return {
+    glance: async (places: readonly Place[], facets?: readonly string[]) =>
+      places.length === 0 ? [] : (await done<{ entries: Glanced[] }>('glance', s.request('glance', { ...where, places, ...(facets ? { facets } : {}) }))).entries,
+    overview: (place: Place, opts: { limit?: number; after?: string } = {}) => doneOrFailure<Overview>(s.request('overview', { ...where, place, ...opts })),
+    look: async (places: readonly { place: Place; token: string }[]): Promise<Looked> => {
+      if (places.length === 0) return { same: 0, changed: [], gone: [], failed: [], held: [] }
+      const a = await done<Looked>('look', s.request('look', { ...where, places }))
+      return { ...a, held: a.held ?? [] }
+    },
+    content: (place: Place, opts: { rule?: ContentRule; limit?: number; fetch?: boolean } = {}) => doneOrFailure<ContentAnswer>(s.request('content', { ...where, place, ...opts })),
+    async read(place: Place, opts: { offset?: number; length?: number; to?: string; fetch?: boolean } = {}): Promise<ReadAnswer | StorageFailure> {
+      const a = await doneOrFailure<Omit<ReadAnswer, 'data'> & { data?: string }>(s.request('read', { ...where, place, ...opts }))
+      if (isFailure(a)) return a
+      return { token: a.token, size: a.size, offset: a.offset, length: a.length, data: a.data === undefined ? null : new Uint8Array(Buffer.from(a.data, 'base64')) }
+    },
+    write: (place: Place, from: Source, expect: Expect, opts: { hold?: string; rule?: ContentRule; limit?: number } = {}) =>
+      doneOrFailure<Written>(s.request('write', { ...where, place, from: wireSource(from), expect, ...opts })),
+    move: (from: Place, to: Place, expect: { from: string; to: Expect }, opts: { hold?: string } = {}) => doneOrFailure<{ entry: Description }>(s.request('move', { ...where, from, to, expect, ...opts })),
+    remove: (place: Place, expect: string, opts: { hold?: string } = {}) => doneOrFailure<{ removed: true }>(s.request('remove', { ...where, place, expect, ...opts })),
+  }
+}
+
+export type Area = ReturnType<typeof areaOf>
+
+/** The library at `root` as storage: every operation of the contract. */
 export function storageOf(root: string) {
   const s = servedFor(root)
   const records = (place: string): RecordPlace => ({
@@ -164,15 +214,36 @@ export function storageOf(root: string) {
     reset: async () => void (await done('rows.reset', s.request('rows.reset', { place }))),
   })
   return {
-    glance: async (places: readonly Place[]) => (await done<{ entries: Glanced[] }>('glance', s.request('glance', { places }))).entries,
-    overview: (place: Place, opts: { limit?: number; after?: string } = {}) => doneOrFailure<Overview>(s.request('overview', { place, ...opts })),
+    ...areaOf(s, undefined),
+    /** A record place's own content: places under `.pneuma-base/<name>/`, its facts aside. */
+    own: (name: string) => areaOf(s, name),
     probe: (place: Place, budget?: number) => doneOrFailure<Probe>(s.request('probe', { place, ...(budget === undefined ? {} : { budget }) })),
-    look: (places: readonly { place: Place; token: string }[]) => done<Looked>('look', s.request('look', { places })),
+    /** The places changed since `cursor`, or `cannot_say`; without a cursor only the current one. Each answer carries the cursor to keep. */
+    async changed(cursor: string | null, limit?: number): Promise<{ places: Place[]; cursor: string; more: boolean } | { places: null; cursor: string }> {
+      const a = await s.request('changed', { ...(cursor === null ? {} : { cursor }), ...(limit === undefined ? {} : { limit }) })
+      if (isFailure(a)) {
+        if (a.reason === 'cannot_say' && typeof a.cursor === 'string') return { places: null, cursor: a.cursor }
+        throw new StorageError('changed', a)
+      }
+      return a as unknown as { places: Place[]; cursor: string; more: boolean }
+    },
+    hold: (places: readonly Place[], ttl?: number) => doneOrFailure<{ hold: string; until: string }>(s.request('hold', { places, ...(ttl === undefined ? {} : { ttl }) })),
+    release: async (hold: string) => void (await done('release', s.request('release', { hold }))),
     records,
     noise: {
       list: () => done<{ names: string[]; paths: Place[]; declared: boolean }>('noise.list', s.request('noise.list', {})),
       add: (add: { names?: string[]; paths?: Place[] }) => done<{ names: string[]; paths: Place[] }>('noise.add', s.request('noise.add', add)),
       remove: (drop: { names?: string[]; paths?: Place[] }) => done<{ names: string[]; paths: Place[] }>('noise.remove', s.request('noise.remove', drop)),
+    },
+    /** The library's declaration at its root: what the kernel keeps there, which storage does not read. */
+    declaration: {
+      read: () => done<{ declaration: Record<string, unknown> | null; token: string | null }>('declaration.read', s.request('declaration.read', {})),
+      async write(declaration: Record<string, unknown>, expect: Expect): Promise<{ token: string } | { refused: string | null }> {
+        const a = await s.request('declaration.write', { declaration, expect })
+        if (a.outcome === 'refused' && a.reason === 'refused') return { refused: (a.actual as string | null | undefined) ?? null }
+        if (isFailure(a)) throw new StorageError('declaration.write', a)
+        return { token: a.token as string }
+      },
     },
     init: () => done<{ created: boolean }>('init', s.request('init', {})),
     describe: () => done<Record<string, unknown>>('describe', s.request('describe', {})),
@@ -180,19 +251,3 @@ export function storageOf(root: string) {
 }
 
 export type Storage = ReturnType<typeof storageOf>
-
-/** What a plugin gets: the looks, and its own record place under its name. Its records are only a name to storage. */
-export function pluginStorage(root: string, place: string): PluginStorage {
-  const s = storageOf(root)
-  return {
-    glance: s.glance,
-    overview: s.overview,
-    look: s.look,
-    probe: s.probe,
-    noise: async () => {
-      const { names, paths } = await s.noise.list()
-      return { names, paths }
-    },
-    records: s.records(place),
-  }
-}

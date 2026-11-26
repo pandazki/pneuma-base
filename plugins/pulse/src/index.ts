@@ -3,10 +3,11 @@
 // grid of day cells (ui/heat.html) and lists how many each actor did; the owner can clear the
 // records with `pulse clear`, a destructive command.
 //
-// Records are append-only (PLUGINS.md 3.7): clearing does not delete files, it appends a clear
-// record, and every activity record at or before the latest clear no longer counts.
+// Records are append-only (PLUGINS.md 3.7): clearing deletes nothing, it appends a clear record, and
+// every activity record at or before the latest clear no longer counts. Both kinds are stores of the
+// plugin's record place; the kit reads with them what this plugin wrote in activity/ and clears/
+// before it kept them there.
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CONTRACT, defineCommand, definePlugin, pluginName, type Action, type Block, type PluginContext } from '@pneuma-base/sdk'
 import { recordStore, type Envelope, type RecordActor } from '@pneuma-base/sdk/kit'
@@ -27,12 +28,13 @@ export function parseClear(raw: Record<string, unknown>): Clear | string {
   return raw.cleared === true ? { cleared: true } : '不是一条清空记录'
 }
 
-const activity = (ctx: PluginContext) => recordStore(join(ctx.dir, 'activity'), parseActivity)
-const clears = (ctx: PluginContext) => recordStore(join(ctx.dir, 'clears'), parseClear)
+const activity = (ctx: PluginContext) => recordStore(ctx, 'activity', parseActivity)
+const clears = (ctx: PluginContext) => recordStore(ctx, 'clears', parseClear)
 
-async function record(ctx: PluginContext, body: Activity): Promise<void> {
+/** One record each, written together. */
+async function record(ctx: PluginContext, bodies: readonly Activity[]): Promise<void> {
   const store = activity(ctx)
-  await store.append([store.stamp(ctx, body)])
+  await store.append(bodies.map((body) => store.stamp(ctx, body)))
 }
 
 /** The activity that still counts: after the latest clear. Records synced in later from before it stay cleared. */
@@ -130,6 +132,7 @@ export default definePlugin({
   summary: '记下每次放入和归档是谁、什么时候、哪样东西，用一页格子图看最近 30 天的活动热度。',
   cognition: { title: '活动热度', text: cognition },
   storage: [
+    { dir: 'facts', kind: 'body' },
     { dir: 'activity', kind: 'body' },
     { dir: 'clears', kind: 'body' },
   ],
@@ -138,15 +141,16 @@ export default definePlugin({
   views: [{ id: PAGE, title: '活动热度', icon: 'activity', nav: true, filters: [] }],
   ui: fileURLToPath(new URL('./ui/', import.meta.url)),
 
-  /** Registering or placing a thing counts as putting it in; a move only renames, so it does not count. */
+  /** Registering or placing a thing counts as putting it in, each loose file of a directory registered once; a move only renames, so it does not count. */
   async onPut(req, ctx) {
-    if (req.kind !== 'move') await record(ctx, { what: 'put', path: req.path })
+    if (req.kind === 'register-files') await record(ctx, req.files.map((f) => ({ what: 'put', path: f.path })))
+    else if (req.kind !== 'move') await record(ctx, [{ what: 'put', path: req.path }])
     return null
   },
 
   /** Archiving counts when something actually moved into the archive; taking it back does not. */
   async onArchive(req, ctx) {
-    if (req.kind === 'archive' && req.moved) await record(ctx, { what: 'archive', path: req.from })
+    if (req.kind === 'archive' && req.moved) await record(ctx, [{ what: 'archive', path: req.from }])
     return null
   },
 

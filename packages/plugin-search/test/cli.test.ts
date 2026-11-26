@@ -106,7 +106,7 @@ describe('find matches content (C7)', () => {
     const [hit, ...rest] = await searchHits('冷制皂')
     expect(rest).toEqual([])
     expect(hit?.path).toBe('sites/soap')
-    expect(hit?.detail).toMatch(/^index\.html：.*冷制皂.*橄榄油&椰子油/)
+    expect(hit?.detail).toMatch(/^目录，index\.html：.*冷制皂.*橄榄油&椰子油/)
     expect(hit?.detail).not.toContain('<')
     expect((await searchHits('工作室')).map((h) => h.path)).toEqual(['sites/soap'])
   })
@@ -312,17 +312,21 @@ describe('the cognition section comes and goes with the plugin (C8)', () => {
   it('beside the ledger, a path stands at the best rank either gave it, so the most relevant file is not pushed down by the ledger’s order', async () => {
     await newLibrary('ledger+search')
     const filler = '天气、交通、工作安排、读书计划、周末的打算、房租、快递、体检、旅行、搬家。'
-    await put('notes/y.md', `一份杂记，提到一次咖啡。${filler}\n`)
-    await put('notes/z.md', `另一份杂记，也提到一次咖啡。${filler}${filler}\n`)
-    await put('notes/x.md', '咖啡 咖啡 咖啡：手冲咖啡的咖啡豆。\n')
+    // The ledger matches its records, not content (tmp/run-7): each put's note holds some of the words
+    // asked for. alpha and beta are in no file, so search ranks by 咖啡 alone.
+    const noted = async (path: string, content: string, note: string) => ok(await agent(['put', '-', '--to', path, '--made', '--note', note], { input: content }))
+    await noted('notes/y.md', `一份杂记，提到一次咖啡。${filler}\n`, '咖啡 alpha beta')
+    await noted('notes/z.md', `另一份杂记，也提到一次咖啡。${filler}${filler}\n`, '咖啡 alpha')
+    await noted('notes/x.md', '咖啡 咖啡 咖啡：手冲咖啡的咖啡豆。\n', '咖啡')
+    const asked = '咖啡 alpha beta'
     const order = (all: { path: string | null }[]) => [...new Set(all.flatMap((h) => (h.path === null ? [] : [h.path])))]
-    // The ledger alone lists them as they came, x last. Search alone ranks x first (bm25: short, three times).
+    // The ledger alone ranks them by how many of the words their notes hold, x last. Search alone ranks x first (bm25: short, three times).
     ok(await owner(['plugin', 'remove', 'search']))
-    expect(order(await hits('咖啡'))).toEqual(['notes/y.md', 'notes/z.md', 'notes/x.md'])
+    expect(order(await hits(asked))).toEqual(['notes/y.md', 'notes/z.md', 'notes/x.md'])
     ok(await owner(['plugin', 'add', 'search']))
     // y and x are each one answerer's first; y comes first as the ledger comes first in the configuration.
-    expect(order(await hits('咖啡'))).toEqual(['notes/y.md', 'notes/x.md', 'notes/z.md'])
-    expect(ok(await agent(['find', '咖啡'])).stdout.split('\n').filter((l) => l.startsWith('  notes/')).map((l) => l.trim().split(' ')[0])).toEqual(['notes/y.md', 'notes/x.md', 'notes/z.md'])
+    expect(order(await hits(asked))).toEqual(['notes/y.md', 'notes/x.md', 'notes/z.md'])
+    expect(ok(await agent(['find', asked])).stdout.split('\n').filter((l) => l.startsWith('  notes/')).map((l) => l.trim().split(' ')[0])).toEqual(['notes/y.md', 'notes/x.md', 'notes/z.md'])
   })
 
   it('sits beside the ledger: one entry per path in the text, the ledger’s detail and the snippet on its line', async () => {

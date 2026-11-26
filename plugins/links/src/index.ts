@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { CONTRACT, defineCommand, definePlugin, pluginName, type Block } from '@pneuma-base/sdk'
+import { defineCommand, definePlugin, pluginName, type Block } from '@pneuma-base/sdk'
 import { scanItem, scanLibrary } from './scan.js'
 
 type BrokenLink = {
@@ -58,7 +58,9 @@ const list = defineCommand({
 })
 
 export default definePlugin({
-  contract: CONTRACT,
+  // Written against contract 1: it walks the library with tools.things and tools.files and reads
+  // files at tools.abs, which the kernel keeps for contract 1 until this plugin moves.
+  contract: 1,
   name: pluginName('links'),
   version: '0.1.0',
   summary: '检查 Markdown 和 HTML 文件中的库内相对链接',

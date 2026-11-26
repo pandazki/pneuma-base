@@ -42,15 +42,17 @@ describe('inspect --content', () => {
     expect(ok(owner(['inspect', 'big.txt', '--content'])).stdout).toContain('内容：超过 256 KB 的上限，307200 字节，没有给出。')
   })
 
-  it('lists a bundle’s files, reads one of them by its path in the bundle, and says when there is no such file', () => {
+  it('lists a bundle’s first level, reads one of its files by its path in the bundle, and says when there is no such file', () => {
     const site = join(outside, 'site')
     mkdirSync(join(site, 'css'), { recursive: true })
     writeFileSync(join(site, 'index.html'), '<h1>店</h1>\n')
     writeFileSync(join(site, 'css/a.css'), 'h1{}\n')
     ok(owner(['put', site, '--to', 'site', '--made']))
     const listed = ok(owner(['inspect', 'site', '--content']))
-    expect(listed.stdout).toContain('目录里的文件（2 个）：\n  css/a.css  5 字节\n  index.html  13 字节\n看其中一个：inspect site --content <文件>')
-    expect(content(ok(owner(['inspect', 'site', '--content', '--json'])))).toMatchObject({ kind: 'files', path: 'site', files: [{ path: 'css/a.css', size: 5 }, { path: 'index.html', size: 13 }] })
+    expect(listed.stdout).toContain('第一层，2 项：\n  css/\n  index.html  13 字节\n看其中一个：inspect site --content <文件>')
+    const json = ok(owner(['inspect', 'site', '--content', '--json'])).json()
+    expect(json.content).toMatchObject({ kind: 'level', path: 'site', level: { entries: [{ name: 'css', kind: 'dir' }, { name: 'index.html', kind: 'file', size: 13 }], more: 0 } })
+    expect(json.file.fingerprint).toMatch(/^[0-9a-f]{64}$/)
     expect(content(ok(owner(['inspect', 'site', '--content', 'index.html', '--json'])))).toEqual({ kind: 'text', path: 'site/index.html', size: 13, text: '<h1>店</h1>\n' })
     expect(content(ok(owner(['inspect', 'site/css/a.css', '--content', '--json'])))).toMatchObject({ kind: 'text', path: 'site/css/a.css' })
     expect(content(ok(owner(['inspect', 'site', '--content', '../notes/a.md', '--json'])))).toEqual({ kind: 'unavailable', path: 'site', reason: 'no-such-file' })

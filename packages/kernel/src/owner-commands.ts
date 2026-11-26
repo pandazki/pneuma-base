@@ -1,15 +1,15 @@
 // The kernel's own owner commands, as data shaped like a plugin's OwnerCommand. ARCHITECTURE.md section 6.
 import { randomUUID } from 'node:crypto'
-import { rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { agentCommands } from './agent-commands.js'
 import { said, takenBy } from './claims.js'
 import { skillText } from './cognition.js'
-import { exists, writeAtomic } from './files.js'
+import { exists, writeAtomic } from './machine-files.js'
 import { ensureLauncher, launcherInstall } from './launcher.js'
 import { installDir, loadDir, machineDirOf, machinePlugins, machinePluginsDir, uninstallDir, whyNotLoaded } from './plugin-table.js'
-import { listThings } from './things.js'
+import { storageOf } from './storage.js'
+import { thingsUnder } from './things.js'
 import { GRANT_NAME, readGrantFile, removeGrantFile, writeGrantFile } from './grants.js'
 import { command, done, refused, type KernelCommand } from './kernel-command.js'
 import { saveConfig } from './library.js'
@@ -23,13 +23,14 @@ import { REQUEST_COMMANDS } from './request-commands.js'
 import { readSecret, removeSecret, SECRET_LIMIT, secretNames, secretsDir, writeSecret } from './secrets.js'
 import {
   formOf,
+  isDescribed,
+  isFailure,
   SECRET_NAME,
   type Action,
   type Context,
   type Grant,
   type GrantId,
   type Library,
-  type LibraryPath,
   type Plugin,
   type PluginContext,
   type PluginName,
@@ -198,11 +199,19 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
     scope: 'library',
     /** Deletes everything in `_archive/`, then tells each plugin's onPurged. The answer's data names the library paths it deleted. */
     async run(_values, call) {
-      const dir = join(call.ctx.library.root, ARCHIVE_DIR)
-      const paths = (await exists(dir)) ? (await listThings(dir, new Set())).map((t) => `${ARCHIVE_DIR}/${t.path}` as LibraryPath) : []
-      await rm(dir, { recursive: true, force: true })
-      const heard = paths.length === 0 ? { problems: [] } : await eachPlugin(call.ctx, (plugin, pctx) => plugin.onPurged?.(paths, pctx))
-      return done(`已清空归档区，删掉了 ${paths.length} 样东西。`, { removed: paths.length, paths }, undefined, heard.problems)
+      const store = storageOf(call.ctx.library.root)
+      for (let tries = 0; ; tries++) {
+        const [there] = await store.glance([ARCHIVE_DIR])
+        if (there === undefined || !isDescribed(there) || there.kind !== 'dir') return done('归档区是空的。', { removed: 0, paths: [] })
+        const paths = (await thingsUnder(store, ARCHIVE_DIR)).map((t) => t.path)
+        const removed = await store.remove(ARCHIVE_DIR, there.token ?? '')
+        if (isFailure(removed)) {
+          if (removed.reason === 'refused' && tries < 3) continue
+          return refused('busy', `归档区正在被改动，没有清空：${removed.reason}`)
+        }
+        const heard = paths.length === 0 ? { problems: [] } : await eachPlugin(call.ctx, (plugin, pctx) => plugin.onPurged?.(paths, pctx))
+        return done(`已清空归档区，删掉了 ${paths.length} 样东西。`, { removed: paths.length, paths }, undefined, heard.problems)
+      }
     },
   }),
   command({

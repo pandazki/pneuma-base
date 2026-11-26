@@ -4,7 +4,7 @@ import type { IconName } from '../../icons.js'
 import { formOf } from '../../params.js'
 import type { Action, Block, Call, Cell, ItemSection, LibraryPath, TableRow, ViewAnswer, ViewDecl } from '../../types.js'
 import { kindFlag, SWITCH_PARAMS, switchName, targetSetName } from './commands.js'
-import { look, looks, onlyTarget, thingPath, type Kit, type Run } from './reconcile.js'
+import { look, looks, onlyTarget, thingPath, thingsAt, type Kit, type Run } from './reconcile.js'
 import type { Look, TargetPage } from './target.js'
 import { MEANING, STATUS } from './words.js'
 
@@ -136,7 +136,7 @@ export async function itemSection(run: Run, path: LibraryPath): Promise<ItemSect
 /** A thing of the content nobody declared deployable, as the panel of the thing itself shows it, not of a file inside a bundle. */
 async function undeclaredSection(run: Run, path: LibraryPath): Promise<ItemSection | null> {
   const { tools } = run.ctx
-  if ((await thingPath(tools, path)) !== path || tools.regionOf(path) !== 'content' || (await tools.thing(path)) === null) return null
+  if ((await thingPath(tools, path)) !== path || tools.regionOf(path) !== 'content' || (await thingsAt(tools, [path]))[0] === null) return null
   const declare = action('声明可以部署', { face: 'agent', verb: 'say', request: { kind: 'deployable', about: path, text: null, args: {} } })
   return {
     title: run.kit.title,

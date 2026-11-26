@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use serde_json::{Map, Value};
 
-use crate::{Failure, Place, PlaceArg, RecordPlace, Row, Token};
+use crate::{Area, Failure, Place, PlaceArg, RecordPlace, Row, Token, base64};
 
 pub const OVERVIEW_LIMIT: (u64, u64, u64) = (200, 1, 1_000);
 pub const PROBE_BUDGET: (u64, u64, u64) = (500, 1, 100_000);
@@ -14,8 +14,9 @@ pub const ROWS_LIMIT: (u64, u64, u64) = (100, 1, 10_000);
 pub const CHANGED_LIMIT: (u64, u64, u64) = (1_000, 1, 10_000);
 /// The most files a directory's content may have before `content` or `write` answers `too_many`.
 pub const FILES_LIMIT: (u64, u64, u64) = (5_000, 1, 10_000_000);
-/// The most bytes one `read` answer carries in `data`; `to` has no such bound.
-pub const READ_DATA_MAX: u64 = 16 << 20;
+/// The most bytes one `read` answer or `write` request carries in `data`; `read`'s `to` has no
+/// such bound.
+pub const DATA_MAX: u64 = 16 << 20;
 /// A hold's life in milliseconds.
 pub const HOLD_TTL_MS: (u64, u64, u64) = (30_000, 1, 600_000);
 /// The most a `rows.where` count goes to when the request gives no `limit`.
@@ -31,6 +32,7 @@ pub struct ContentRule {
 }
 
 pub struct OverviewRequest {
+    pub area: Area,
     pub place: Place,
     pub limit: usize,
     pub after: Option<String>,
@@ -38,6 +40,7 @@ pub struct OverviewRequest {
 }
 
 pub struct GlanceRequest {
+    pub area: Area,
     pub places: Vec<PlaceArg>,
     pub facets: Vec<String>,
 }
@@ -48,6 +51,7 @@ pub struct ChangedRequest {
 }
 
 pub struct ContentRequest {
+    pub area: Area,
     pub place: Place,
     pub rule: ContentRule,
     pub limit: u64,
@@ -55,6 +59,7 @@ pub struct ContentRequest {
 }
 
 pub struct ReadRequest {
+    pub area: Area,
     pub place: Place,
     pub offset: u64,
     pub length: Option<u64>,
@@ -73,9 +78,14 @@ pub enum Expect {
 pub enum Source {
     Path(PathBuf),
     Stdin,
+    /// Bytes carried in the request, at most `DATA_MAX`.
+    Data(Vec<u8>),
+    /// A place in the store: the write is a copy. Never overlapping the target in one area.
+    Place(Area, Place),
 }
 
 pub struct WriteRequest {
+    pub area: Area,
     pub place: Place,
     pub from: Source,
     pub expect: Expect,
@@ -84,7 +94,9 @@ pub struct WriteRequest {
     pub hold: Option<String>,
 }
 
+/// A move within one area.
 pub struct MoveRequest {
+    pub area: Area,
     pub from: Place,
     pub to: Place,
     pub expect_from: Token,
@@ -93,13 +105,15 @@ pub struct MoveRequest {
 }
 
 pub struct RemoveRequest {
+    pub area: Area,
     pub place: Place,
     pub expect: Token,
     pub hold: Option<String>,
 }
 
+/// One hold over one or more places.
 pub struct HoldRequest {
-    pub place: Place,
+    pub places: Vec<Place>,
     pub ttl_ms: u64,
 }
 
@@ -111,6 +125,17 @@ pub struct ProbeRequest {
 pub struct LookItem {
     pub place: PlaceArg,
     pub token: Token,
+}
+
+pub struct LookRequest {
+    pub area: Area,
+    pub places: Vec<LookItem>,
+}
+
+/// The library's root declaration, written whole when `expect` holds.
+pub struct DeclarationWriteRequest {
+    pub declaration: Map<String, Value>,
+    pub expect: Expect,
 }
 
 pub struct FactsAppendRequest {
@@ -299,6 +324,16 @@ impl<'a> Req<'a> {
         self.opt_string("hold")
     }
 
+    /// The content, or the record place named by `records`.
+    fn area(&self) -> Parsed<Area> {
+        match self.opt_string("records")? {
+            None => Ok(Area::Content),
+            Some(name) => RecordPlace::parse(&name)
+                .map(Area::Records)
+                .ok_or_else(Failure::bad_request),
+        }
+    }
+
     fn record_place(&self) -> Parsed<RecordPlace> {
         RecordPlace::parse(&self.string("place")?).ok_or_else(Failure::bad_request)
     }
@@ -327,6 +362,7 @@ fn valid_name(name: &String) -> bool {
 
 pub fn glance(req: &Req) -> Parsed<GlanceRequest> {
     Ok(GlanceRequest {
+        area: req.area()?,
         places: req
             .strings("places")?
             .iter()
@@ -338,6 +374,7 @@ pub fn glance(req: &Req) -> Parsed<GlanceRequest> {
 
 pub fn overview(req: &Req) -> Parsed<OverviewRequest> {
     Ok(OverviewRequest {
+        area: req.area()?,
         place: req.place()?,
         limit: usize_of(req.count("limit", OVERVIEW_LIMIT)?),
         after: req.opt_string("after")?,
@@ -354,6 +391,7 @@ pub fn changed(req: &Req) -> Parsed<ChangedRequest> {
 
 pub fn content(req: &Req) -> Parsed<ContentRequest> {
     Ok(ContentRequest {
+        area: req.area()?,
         place: req.place()?,
         rule: req.rule()?,
         limit: req.count("limit", FILES_LIMIT)?,
@@ -367,6 +405,7 @@ pub fn read(req: &Req) -> Parsed<ReadRequest> {
         Some(value) => Some(value.as_u64().ok_or_else(Failure::bad_request)?),
     };
     Ok(ReadRequest {
+        area: req.area()?,
         place: req.place()?,
         offset: req.count("offset", (0, 0, u64::MAX))?,
         length,
@@ -375,16 +414,45 @@ pub fn read(req: &Req) -> Parsed<ReadRequest> {
     })
 }
 
+/// `{ "data": base64 }`, or `{ "place": p, "records"?: name }`.
+fn source_object(from: &Req) -> Parsed<Source> {
+    match (from.get("data"), from.get("place")) {
+        (Some(Value::String(text)), None) if from.get("records").is_none() => {
+            // Four characters carry three bytes: too long a text is too many bytes, undecoded.
+            if text.len() as u64 > DATA_MAX.div_ceil(3) * 4 {
+                return Err(Failure::bad_request());
+            }
+            let bytes = base64::decode(text).ok_or_else(Failure::bad_request)?;
+            if bytes.len() as u64 > DATA_MAX {
+                return Err(Failure::bad_request());
+            }
+            Ok(Source::Data(bytes))
+        }
+        (None, Some(_)) => Ok(Source::Place(from.area()?, from.place()?)),
+        _ => Err(Failure::bad_request()),
+    }
+}
+
 pub fn write(req: &Req) -> Parsed<WriteRequest> {
-    let from = match req.string("from")?.as_str() {
-        "-" => Source::Stdin,
-        _ => Source::Path(
+    let from = match req.get("from") {
+        Some(Value::String(text)) if text == "-" => Source::Stdin,
+        Some(Value::String(_)) => Source::Path(
             req.absolute_path("from")?
                 .ok_or_else(Failure::bad_request)?,
         ),
+        Some(Value::Object(object)) => source_object(&Req(object))?,
+        _ => return Err(Failure::bad_request()),
     };
+    let (area, place) = (req.area()?, req.place()?);
+    if let Source::Place(from_area, from_place) = &from
+        && *from_area == area
+        && (from_place.is_at_or_under(&place) || place.is_at_or_under(from_place))
+    {
+        return Err(Failure::bad_request());
+    }
     Ok(WriteRequest {
-        place: req.place()?,
+        area,
+        place,
         from,
         expect: req.expect("expect")?,
         rule: req.rule()?,
@@ -399,6 +467,7 @@ pub fn move_place(req: &Req) -> Parsed<MoveRequest> {
         .and_then(Value::as_object)
         .ok_or_else(Failure::bad_request)?);
     Ok(MoveRequest {
+        area: req.area()?,
         from: req.place_at("from")?,
         to: req.place_at("to")?,
         expect_from: expect.token("from")?,
@@ -409,16 +478,38 @@ pub fn move_place(req: &Req) -> Parsed<MoveRequest> {
 
 pub fn remove(req: &Req) -> Parsed<RemoveRequest> {
     Ok(RemoveRequest {
+        area: req.area()?,
         place: req.place()?,
         expect: req.token("expect")?,
         hold: req.hold()?,
     })
 }
 
+/// `place`, or a non-empty list of `places`; not both.
 pub fn hold(req: &Req) -> Parsed<HoldRequest> {
+    let places = match (req.get("place"), req.get("places")) {
+        (Some(_), None) => vec![req.place()?],
+        (None, Some(Value::Array(items))) if !items.is_empty() => items
+            .iter()
+            .map(|item| item.as_str().and_then(Place::parse))
+            .collect::<Option<_>>()
+            .ok_or_else(Failure::bad_request)?,
+        _ => return Err(Failure::bad_request()),
+    };
     Ok(HoldRequest {
-        place: req.place()?,
+        places,
         ttl_ms: req.count("ttl", HOLD_TTL_MS)?,
+    })
+}
+
+pub fn declaration_write(req: &Req) -> Parsed<DeclarationWriteRequest> {
+    Ok(DeclarationWriteRequest {
+        declaration: req
+            .get("declaration")
+            .and_then(Value::as_object)
+            .cloned()
+            .ok_or_else(Failure::bad_request)?,
+        expect: req.expect("expect")?,
     })
 }
 
@@ -433,8 +524,9 @@ pub fn probe(req: &Req) -> Parsed<ProbeRequest> {
     })
 }
 
-pub fn look(req: &Req) -> Parsed<Vec<LookItem>> {
-    req.array("places")?
+pub fn look(req: &Req) -> Parsed<LookRequest> {
+    let places = req
+        .array("places")?
         .iter()
         .map(|item| {
             let place = item.get("place").and_then(Value::as_str);
@@ -447,7 +539,11 @@ pub fn look(req: &Req) -> Parsed<Vec<LookItem>> {
                 _ => Err(Failure::bad_request()),
             }
         })
-        .collect()
+        .collect::<Parsed<_>>()?;
+    Ok(LookRequest {
+        area: req.area()?,
+        places,
+    })
 }
 
 pub fn facts_append(req: &Req) -> Parsed<FactsAppendRequest> {

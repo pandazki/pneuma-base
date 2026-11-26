@@ -112,28 +112,53 @@ const pluginBoundary = {
 }
 
 // tmp/run-7: the records say what is in the library, and storage is looked at only through one door,
-// the kernel's storage.ts, which a plugin reaches as `tools.storage`. The files rebuilt on it are listed
-// here and may not read the library's folder or record area any other way; each step adds the ones it moves.
-const ON_STORAGE = {
-  kernel: ['home.ts', 'places.ts', 'plugin-views.ts', 'start.ts', 'noise-commands.ts'],
-  ledger: ['facts.ts', 'feeds.ts', 'fold.ts', 'reconcile.ts', 'since.ts', 'sparse.ts', 'start-find.ts', 'state.ts', 'unowned.ts', 'views.ts'],
-  viewer: ['src/server/api.ts'],
+// the kernel's storage.ts, which a plugin reaches as `tools.storage`. Every file of the kernel and of
+// the ledger is on storage (step 3): none may read or write the library's folder or record area any
+// other way. The files below may still use the file system, each for files that are no library's
+// folder or record area, and so are not checked:
+const OFF_STORAGE = {
+  kernel: {
+    'storage.ts': 'the door itself: it starts the storage program and finds its binary',
+    'address.ts': "a library's address: the real path of the folder a caller names, and the folder init makes, before storage can answer for it",
+    'paths.ts': 'an absolute path a caller wrote, resolved through links to the library path it names; a path already under the root is taken as written',
+    'outside.ts': "a put's source outside the library: its kind, size and sha256",
+    'contract-v1.ts': 'contract 1, removed next step: an outside file\'s sha256 and the outside directory a copy-out writes into',
+    'cognition.ts': "the package's own texts",
+    'machine-files.ts': 'machine state under $PNEUMA_BASE_HOME, and the files of other programs an owner command writes',
+    'grants.ts': 'grant files under $PNEUMA_BASE_HOME',
+    'endpoint.ts': 'the local endpoint files under $PNEUMA_BASE_HOME',
+    'pairing.ts': 'pairings under $PNEUMA_BASE_HOME',
+    'secrets.ts': "plugins' secrets under $PNEUMA_BASE_HOME",
+    'plugin-table.ts': 'plugins installed under $PNEUMA_BASE_HOME',
+    'launcher.ts': 'the launcher under $PNEUMA_BASE_HOME',
+    'connections.ts': "agents' configuration files and the connection records under $PNEUMA_BASE_HOME",
+    'products.ts': "where each agent product keeps its configuration and its conversations",
+    'agent-commands.ts': "agents' configuration files and skill folders",
+    'owner-commands.ts': 'the skill file an owner command writes where the owner says, and installed plugins',
+  },
+  ledger: {
+    'conversation.ts': "agents' conversation transcripts, outside the library",
+    'cognition.ts': "the package's own texts",
+    'export-file.ts': 'the audit export the owner names: one file outside the library, written page by page',
+  },
 }
-const DOOR = 'Rebuilt on storage: read the folder and the record area only through the storage door (the kernel\'s storage.ts; a plugin\'s tools.storage). tmp/run-7 architecture.md section 7.'
-const FS = ['node:fs', 'node:fs/promises', 'fs', 'fs/promises'].map((name) => ({ name, message: DOOR }))
-const DIRECT = ['abs', 'thingAt', 'libraryFiles', 'listThings', 'bundleFiles', 'bundleManifest', 'fingerprintOf', 'fingerprintOfFile', 'enclosingBundle', 'copyBundle']
-const TOOLS = { selector: "MemberExpression[property.name=/^(abs|thing|things|files|copyOut|manifest)$/][object.type='MemberExpression'][object.property.name='tools']", message: DOOR }
-const door = (boundary, files, paths, patterns) => ({
+const DOOR = 'On storage: read and write the folder and the record area only through the storage door (the kernel\'s storage.ts; a plugin\'s tools.storage). tmp/run-7 architecture.md section 7; eslint.config.js lists the files that may use the file system and why.'
+const FS = ['node:fs', 'node:fs/promises', 'fs', 'fs/promises', 'node:child_process', 'child_process'].map((name) => ({ name, message: DOOR }))
+const DIRECT = ['abs', 'canonical', 'thingAt', 'libraryFiles', 'listThings', 'bundleFiles', 'bundleManifest', 'fingerprintOf', 'fingerprintOfFile', 'enclosingBundle', 'copyBundle']
+const V1_TOOLS = 'abs|thing|things|files|copyOut|manifest|fingerprint|fingerprintOfFile|fingerprintOfManifest|putting'
+const TOOLS = { selector: `MemberExpression[property.name=/^(${V1_TOOLS})$/][object.type='MemberExpression'][object.property.name='tools']`, message: `${DOOR} The contract-1 tools are a layer for the plugins not moved yet.` }
+const door = (boundary, files, ignores, paths, patterns) => ({
   files,
+  ignores,
   rules: {
     'no-restricted-imports': ['error', { paths: [...FS, ...paths], patterns: [...boundary.rules['no-restricted-imports'][1].patterns, ...patterns] }],
     'no-restricted-syntax': ['error', TOOLS],
   },
 })
+const off = (dir, names) => Object.keys(names).map((f) => `${dir}/${f}`)
 const storageDoor = [
-  door(kernelBoundary, ON_STORAGE.kernel.map((f) => `packages/kernel/src/${f}`), [{ name: './paths.js', importNames: ['abs', 'canonical'], message: DOOR }], [{ regex: '^\\./(things|files|content|putting)(\\.js)?$', message: DOOR }]),
-  door(pluginBoundary, ON_STORAGE.ledger.map((f) => `packages/plugin-ledger/src/${f}`), [{ name: '@pneuma-base/kernel', importNames: DIRECT, message: DOOR }], [{ regex: '^\\./disk(\\.js)?$', message: DOOR }]),
-  door(viewerBoundary, ON_STORAGE.viewer.map((f) => `packages/viewer/${f}`), [{ name: '@pneuma-base/kernel', importNames: DIRECT, message: DOOR }], [{ regex: '^\\./files(\\.js)?$', message: DOOR }]),
+  door(kernelBoundary, ['packages/kernel/src/**/*.ts'], off('packages/kernel/src', OFF_STORAGE.kernel), [{ name: './paths.js', importNames: ['abs', 'canonical'], message: DOOR }], [{ regex: '^\\./machine-files(\\.js)?$', message: DOOR }]),
+  door(pluginBoundary, ['packages/plugin-ledger/src/**/*.ts'], off('packages/plugin-ledger/src', OFF_STORAGE.ledger), [{ name: '@pneuma-base/kernel', importNames: DIRECT, message: DOOR }], []),
 ]
 
 export default tseslint.config(

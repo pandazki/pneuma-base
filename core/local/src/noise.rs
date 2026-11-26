@@ -64,6 +64,11 @@ impl Noise {
         }
     }
 
+    /// No noise at all: a record place's own area has none.
+    fn none() -> Noise {
+        Noise::from_file(NoiseFile::default(), false)
+    }
+
     fn defaults() -> Noise {
         let file = NoiseFile {
             names: DEFAULT_NAMES.iter().map(|n| (*n).to_owned()).collect(),
@@ -120,8 +125,12 @@ impl LocalFolder {
         self.record_area().join("noise.json")
     }
 
-    /// The declaration; without a readable `noise.json`, the default list.
+    /// The declaration; without a readable `noise.json`, the default list. Noise is a property
+    /// of the content: a record place's own area has none.
     pub fn noise(&self) -> Noise {
+        if self.records.is_some() {
+            return Noise::none();
+        }
         match std::fs::read(self.noise_path()) {
             Ok(bytes) => match serde_json::from_slice::<NoiseFile>(&bytes) {
                 Ok(file) => Noise::from_file(file, true),

@@ -40,16 +40,30 @@ describe('pneuma-base show', () => {
     expect(list.views.find((v: { id: string }) => v.id === 'config')).toMatchObject({ by: 'kernel', ownerOnly: true })
   })
 
+  // tmp/run-7: the archive page lists one level at a time; a folder row opens the next level.
   it('prints a page in words, every button as the command that does the same, marked when only the owner may and with the question it asks', () => {
     const r = owner(['show', 'archive'])
     expect(r.code, r.stderr).toBe(0)
+    const head = [
+      '## 归档的东西',
+      '归档的东西不删；默认的找和查不带它们。',
+      '$ archive purge  # 清空归档区（只给主人）；先问：归档区里的东西会全部被删掉，不能撤回。',
+      expect.stringMatching(/^原来的路径 +在归档区的位置 +大小 +改于 +打开$/),
+    ]
     expect(r.stdout.trimEnd().split('\n')).toEqual([
       '# 归档区',
       '',
-      '## 归档的东西（1）',
-      '归档的东西不删；默认的找和查不带它们。',
-      '$ archive purge  # 清空归档区（只给主人）；先问：归档区里的 1 样东西会被删掉，不能撤回。',
-      expect.stringMatching(/^原来的路径 +在归档区的位置 +大小 +改于 +打开$/),
+      ...head,
+      expect.stringMatching(/^notes\/ +_archive\/notes +→ show archive --dir _archive\/notes$/),
+    ])
+    const inside = owner(['show', 'archive', '--dir', '_archive/notes'])
+    expect(inside.code, inside.stderr).toBe(0)
+    expect(inside.stdout.trimEnd().split('\n')).toEqual([
+      '# 归档区',
+      '_archive/notes',
+      '',
+      ...head,
+      '.. → show archive',
       expect.stringMatching(/^notes\/old\.md +_archive\/notes\/old\.md +4 B +\d{4}-\d\d-\d\d \d\d:\d\dZ +→ show item --path _archive\/notes\/old\.md$/),
       '  $ unarchive _archive/notes/old.md  # 取回',
     ])

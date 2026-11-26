@@ -1,11 +1,11 @@
-// The rows the ledger keeps (state.ts) say what the full fold of the facts says (fold.ts), however the
-// facts arrive: all at once, a few at a time, or each one alone, and with a batch seen twice.
-// tmp/run-7 architecture.md section 7: state is rows derived incrementally from the facts.
+// The rows the ledger keeps are the same however the facts arrive: all at once, a few at a time, or
+// each one alone, and with a batch seen twice. tmp/run-7 architecture.md section 7: state is rows
+// derived incrementally from the facts, saved with the cursor they were derived up to.
 import { describe, expect, it } from 'vitest'
-import type { Fact } from '../src/facts.js'
-import { fold } from '../src/fold.js'
-import { emptyState, foldInto, liveItems, mayBeNews, newsKey, type LedgerState } from '../src/state.js'
-import { basis, codex, enter, f, fp, id, p } from './support.js'
+import { mayBeNews, newsKey, type Fact } from '../src/facts.js'
+import { foldAll } from '../src/look.js'
+import { live } from '../src/model.js'
+import { basis, codex, enter, f, folded, fp, id, memoryRecords, p, recordsContext, rowsOf } from './support.js'
 
 const made = (rows: [string, string][]) => ({ kind: 'made' as const, basis: basis(rows) })
 
@@ -30,76 +30,75 @@ const HISTORY: Fact[] = [
   f(15, { kind: 'owner.op', command: 'grant issue', summary: '已发', destructive: false }, { scene: 's3' }),
 ]
 
-/** What both say about each item: where it is, whether it counts, what it holds and was made from. */
-function itemsOfFold(facts: Fact[]) {
-  const ledger = fold(facts)
-  return new Map(
-    [...ledger.items.values()].map((i) => [
-      i.id,
-      { path: i.path, removed: i.removed, absorbedInto: i.absorbedInto, fingerprint: i.fingerprint, origin: i.origin.kind, unknownOrigin: i.unknownOrigin, basis: i.basis.items.map((b) => b.item) },
-    ]),
-  )
-}
+/** What the rows say about each item: where it is, whether it counts, what it holds and was made from. */
+const itemsOf = (rows: Awaited<ReturnType<typeof folded>>) =>
+  new Map(rows.items().map((i) => [i.id, { path: i.path, removed: i.removed, absorbedInto: i.absorbedInto, fingerprint: i.fingerprint, origin: i.origin.kind, unknownOrigin: i.unknownOrigin, basis: i.basis.items.map((b) => b.item), dependents: i.dependents }]))
 
-function itemsOfRows(state: LedgerState) {
-  return new Map(
-    [...state.items.values()].map((i) => [
-      i.id,
-      { path: i.path, removed: i.removed, absorbedInto: i.absorbedInto, fingerprint: i.fingerprint, origin: i.origin.kind, unknownOrigin: i.unknownOrigin, basis: i.basis.items.map((b) => b.item) },
-    ]),
-  )
-}
+/** The tables that hold what the facts say, apart from the counters, which a batch boundary may order differently. */
+const TABLES = ['items', 'paths', 'dirs', 'alias', 'left', 'history', 'log', 'scenes', 'sceneOrder', 'actors', 'held', 'find', 'bytime', 'marks', 'stats']
 
-/** The facts folded into fresh rows in batches of `size`, each batch after the ones before. */
-function inBatches(facts: Fact[], size: number): LedgerState {
-  const state = emptyState()
-  const seen = new Set<string>()
-  for (let i = 0; i < facts.length; i += size) {
-    const batch = facts.slice(i, i + size)
-    foldInto(state, batch, seen)
-    for (const fact of batch) seen.add(fact.id)
-  }
-  return state
-}
-
-describe('the rows against the full fold', () => {
-  const expected = itemsOfFold(HISTORY)
-
-  for (const size of [HISTORY.length, 4, 1]) {
-    it(`agree on every item when the facts come ${size === 1 ? 'one at a time' : `${size} at a time`}`, () => {
-      const state = inBatches(HISTORY, size)
-      expect(itemsOfRows(state)).toEqual(expected)
-      // The paths each counting item holds, and the open directories: every directory above one of them.
-      const live = liveItems(state)
-      expect(new Map([...state.paths].filter(([, item]) => live.some((i) => i.id === item)))).toEqual(new Map(live.map((i) => [i.path, i.id])))
-      const above = new Map<string, number>()
-      for (const item of live) {
-        const parts = item.path.split('/')
-        for (let n = 1; n < parts.length; n++) above.set(parts.slice(0, n).join('/'), (above.get(parts.slice(0, n).join('/')) ?? 0) + 1)
-      }
-      expect(new Map([...state.dirs].filter(([, n]) => n > 0))).toEqual(above)
-      expect([...state.left]).toEqual(['stray.md'])
+describe('the rows however the facts arrive', () => {
+  for (const size of [4, 1]) {
+    it(`are the same when the facts come ${size === 1 ? 'one at a time' : `${size} at a time`}`, async () => {
+      const whole = await folded(HISTORY)
+      const parts = await folded(HISTORY, size)
+      for (const table of TABLES) expect([table, parts.all(table)]).toEqual([table, whole.all(table)])
     })
   }
 
-  it('fold a fact already seen once only', () => {
-    const state = inBatches(HISTORY, HISTORY.length)
-    const again = foldInto(state, HISTORY.slice(4, 8), new Set(HISTORY.map((x) => x.id)))
-    expect(itemsOfRows(state)).toEqual(expected)
-    expect(again.rows.news ?? []).toEqual([])
+  it('say where each item is and whether it counts', async () => {
+    const rows = await folded(HISTORY)
+    expect(itemsOf(rows)).toEqual(
+      new Map([
+        ['i_a', { path: 'made/a.md', removed: false, absorbedInto: null, fingerprint: fp('a'), origin: 'made', unknownOrigin: false, basis: ['i_s'], dependents: [] }],
+        ['i_b', { path: 'notes', removed: false, absorbedInto: null, fingerprint: fp('b'), origin: 'brought', unknownOrigin: false, basis: [], dependents: [] }],
+        ['i_r1', { path: '_archive/inbox/r1.md', removed: false, absorbedInto: null, fingerprint: fp('r1'), origin: 'brought', unknownOrigin: false, basis: [], dependents: [] }],
+        ['i_r2', { path: 'inbox/r2.md', removed: true, absorbedInto: null, fingerprint: fp('r2'), origin: 'brought', unknownOrigin: false, basis: [], dependents: [] }],
+        ['i_s', { path: 'notes/s.md', removed: false, absorbedInto: 'i_b', fingerprint: fp('s2'), origin: 'brought', unknownOrigin: false, basis: [], dependents: ['i_a', 'i_x'] }],
+        ['i_x', { path: 'loose.md', removed: false, absorbedInto: null, fingerprint: fp('x'), origin: 'brought', unknownOrigin: false, basis: ['i_s'], dependents: [] }],
+      ]),
+    )
+    // The paths each counting item holds, and the open directories: every directory above one of them, with how many.
+    const counting = rows.items().filter(live)
+    expect(new Map([...rows.all<{ id: string }>('paths')].filter(([, v]) => counting.some((i) => i.id === v.id)).map(([k, v]) => [k, v.id]))).toEqual(new Map(counting.map((i) => [i.path, i.id])))
+    expect(rows.all('dirs')).toEqual(new Map([['_archive', 1], ['_archive/inbox', 1], ['made', 1]]))
+    expect([...rows.all('left').keys()]).toEqual(['stray.md'])
   })
 
-  it('keep the scenes with what was said and the owner’s operations, and the news newest first', () => {
-    const state = emptyState()
-    const folded = foldInto(state, HISTORY, new Set())
-    expect([...state.scenes.keys()].sort()).toEqual(['s1', 's2', 's3'])
-    expect(state.scenes.get('s1' as never)?.said.map((s) => s.text)).toEqual(['整理支付资料'])
-    expect(state.scenes.get('s3' as never)?.ops.map((o) => o.command)).toEqual(['grant issue'])
+  it('fold a fact already seen once only', async () => {
+    const records = memoryRecords()
+    const ctx = recordsContext(records)
+    await records.append(HISTORY)
+    await foldAll(ctx)
+    const before = rowsOf(records)
+    const once = { log: before.all('log'), items: before.all('items'), counts: before.counts() }
+    await records.append(HISTORY.slice(4, 8))
+    await foldAll(ctx)
+    const after = rowsOf(records)
+    expect({ log: after.all('log'), items: after.all('items'), counts: after.counts() }).toEqual(once)
+  })
+
+  it('keep the scenes with what was said and the owner’s operations, and the news newest first', async () => {
+    const rows = await folded(HISTORY)
+    expect([...rows.all('scenes').keys()]).toEqual(['s1', 's2', 's3'])
+    expect(rows.scene('s1')?.said.map((s) => s.text)).toEqual(['整理支付资料'])
+    expect(rows.scene('s3')?.ops.map((o) => o.command)).toEqual(['grant issue'])
     // Storage gives rows in key order, so the news read from the first key are the latest first.
     const news = HISTORY.filter(mayBeNews)
-    const keys = (folded.rows.news ?? []).map((r) => r.key).sort()
+    const keys = [...rows.records.tables.get('log')!.values()].filter((r) => r.fields?.news === 'y').map((r) => r.key).sort()
     expect(keys).toHaveLength(news.length)
     expect(keys[0]).toBe(newsKey(news.at(-1) as Fact))
     expect(keys.at(-1)).toBe(newsKey(news[0] as Fact))
+  })
+
+  it('are derived again from the facts when their cursor no longer fits, or their shape changed', async () => {
+    const records = memoryRecords()
+    const ctx = recordsContext(records)
+    await records.append(HISTORY)
+    await foldAll(ctx)
+    const whole = rowsOf(records).all('items')
+    await records.put({ meta: [{ key: 'version', value: -1 }] })
+    await foldAll(ctx)
+    expect(rowsOf(records).all('items')).toEqual(whole)
   })
 })

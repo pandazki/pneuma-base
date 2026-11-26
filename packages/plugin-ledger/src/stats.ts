@@ -1,9 +1,11 @@
-// The figures of the statistics page and `ledger stats`: four questions about the library, each
-// figure counted from the facts in one pass of the fold. Pure; reads no disk. Days are this machine's,
-// as the view runs. ARCHITECTURE.md section 10 says how each figure is defined.
+// The figures of the statistics page and `ledger stats`: four questions about the library. The fold
+// counts each fact into the row of its hour (UTC), so a period's figures are the sum of its hours' rows,
+// asked for and nothing else; what needed looking at is kept as it stood at the end of each hour. Days
+// are this machine's, as the view runs. ARCHITECTURE.md section 10 says how each figure is defined.
 import type { Instant, LibraryPath } from '@pneuma-base/kernel'
-import { requestOf, type Fact, type FactActor, type ItemId, type SceneId } from './facts.js'
-import { folding, inOrder, isArchived, type Ledger } from './fold.js'
+import { turned, type FactActor, type ItemId } from './facts.js'
+import { pagesOf, type Records, type Tx } from './rows.js'
+import type { ItemRow } from './model.js'
 
 export type Period = '7d' | '30d' | 'all'
 export const PERIODS: readonly { value: Period; label: string }[] = [
@@ -59,9 +61,86 @@ export type Stats = {
   order: { now: Open; start: Open; byBucket: Open[]; archived: number; takenBack: number; purged: number; changes: number }
 }
 
-const TOP = 5
-const DAY_BARS = 31
-const WEEK_BARS = 26
+// ---- what the fold keeps ----
+
+export type AgentCounts = Omit<AgentRow, 'name' | 'sessions' | 'pending'>
+/** One hour's counts: what was put and by whom, the sessions begun, who did what, what was kept in order, what was built on what. */
+export type HourRow = {
+  hour: string
+  put: { brought: number; made: number }
+  sessions: Record<string, number>
+  agents: Record<string, AgentCounts>
+  owner: OwnerRow
+  order: { archived: number; takenBack: number; purged: number; changes: number }
+  reuse: { fromLibrary: number; otherSession: number; otherAgent: number }
+  uses: Record<string, { n: number; by: Record<string, number> }>
+  open: Open | null // after this hour's facts
+}
+/** A request an agent asked: who, in which hour, and how it stands. */
+export type RequestRow = { by: FactActor; hour: string; outcome: Outcome }
+export type Outcome = 'pending' | 'withdrawn' | 'declined' | 'approved' | 'refused'
+
+export const OPEN_COUNTERS = { stale: 'open:stale', changed: 'open:changed', unknown: 'open:unknown', archived: 'open:archived' } as const
+
+export const hourOf = (at: string) => at.slice(0, 13)
+const hourKey = (hour: string) => `h:${hour}`
+const emptyAgent = (): AgentCounts => ({ brought: 0, made: 0, decided: 0, notes: 0, asked: 0, approved: 0, refused: 0, declined: 0, withdrawn: 0 })
+const emptyOwner = (): OwnerRow => ({ commands: 0, approved: 0, declined: 0, brought: 0, made: 0, said: 0, registered: 0 })
+
+/** The row of an hour as this change has it, made when there is none; write it back with `putHour`. */
+export async function hourRow(tx: Tx, at: string): Promise<HourRow> {
+  const hour = hourOf(at)
+  const known = await tx.get<HourRow>('stats', hourKey(hour))
+  return known ?? { hour, put: { brought: 0, made: 0 }, sessions: {}, agents: {}, owner: emptyOwner(), order: { archived: 0, takenBack: 0, purged: 0, changes: 0 }, reuse: { fromLibrary: 0, otherSession: 0, otherAgent: 0 }, uses: {}, open: null }
+}
+
+export const putHour = (tx: Tx, row: HourRow) => tx.set('stats', hourKey(row.hour), row)
+export const agentOf = (row: HourRow, name: string): AgentCounts => (row.agents[name] ??= emptyAgent())
+
+/** Keeps what needs looking at as it stands now as the end of the hour. */
+export async function snapshot(tx: Tx, at: string): Promise<void> {
+  const row = await hourRow(tx, at)
+  row.open = { stale: await tx.counter(OPEN_COUNTERS.stale), changed: await tx.counter(OPEN_COUNTERS.changed), unknown: await tx.counter(OPEN_COUNTERS.unknown), archived: await tx.counter(OPEN_COUNTERS.archived) }
+  putHour(tx, row)
+  tx.set('hrev', turned(row.hour), { hour: row.hour, open: row.open })
+}
+
+/** Moves a request to `outcome` in the hour it was asked; an approval decides it whatever came before, a decline over a withdrawal. */
+export async function requestTo(tx: Tx, id: string, outcome: Outcome): Promise<void> {
+  const req = await tx.get<RequestRow>('requests', id)
+  if (!req) return
+  const rank = (o: Outcome) => (o === 'approved' || o === 'refused' ? 3 : o === 'declined' ? 2 : o === 'withdrawn' ? 1 : 0)
+  if (rank(outcome) < rank(req.outcome) || (rank(outcome) < 3 && outcome === req.outcome)) return
+  const row = await hourRow(tx, `${req.hour}:00:00.000Z`)
+  const counts = agentOf(row, req.by.name)
+  if (req.outcome !== 'pending') counts[req.outcome]--
+  if (outcome !== 'pending') counts[outcome]++
+  putHour(tx, row)
+  tx.set('requests', id, { ...req, outcome })
+}
+
+/** Counts a made thing's sources into the hour it was made in, after taking out what was counted before. */
+export async function countReuse(tx: Tx, item: ItemRow, next: ItemRow['reuse']): Promise<void> {
+  for (const [r, sign] of [
+    [item.reuse, -1],
+    [next, 1],
+  ] as const) {
+    if (r === null) continue
+    const row = await hourRow(tx, `${r.hour}:00:00.000Z`)
+    row.reuse.fromLibrary += r.fromLibrary ? sign : 0
+    row.reuse.otherSession += r.otherSession ? sign : 0
+    row.reuse.otherAgent += r.otherAgent ? sign : 0
+    for (const id of r.uses) {
+      const u = (row.uses[id] ??= { n: 0, by: {} })
+      u.n += sign
+      u.by[r.actor] = (u.by[r.actor] ?? 0) + sign
+      if (u.by[r.actor] === 0) delete u.by[r.actor]
+      if (u.n <= 0) delete row.uses[id]
+    }
+    putHour(tx, row)
+  }
+  item.reuse = next
+}
 
 // ---- local time ----
 
@@ -84,6 +163,10 @@ const plusMonths = (t: number, n: number) => {
 const mondayOf = (t: number) => plusDays(dayOf(t), -((new Date(t).getDay() + 6) % 7))
 const md = (t: number) => `${new Date(t).getMonth() + 1}月${new Date(t).getDate()}日`
 
+const DAY_BARS = 31
+const WEEK_BARS = 26
+const TOP = 5
+
 type Bucket = { start: number; label: string }
 
 /** The buckets from `from` to `end`, the grain chosen so `all` stays a few dozen bars. */
@@ -98,190 +181,122 @@ function bucketsOf(from: number, end: number): { grain: Grain; buckets: Bucket[]
   return { grain, buckets }
 }
 
-// ---- what needs looking at, as the ledger stands ----
-
-/**
- * The things not removed, not part of a bundle and not archived: made from a thing whose content
- * changed since or that is gone; whose latest content is a direct change only seen, nobody saying
- * who made it; whose origin nobody knows. And how many are archived.
- */
-export function openOf(ledger: Ledger): Open {
-  const open: Open = { stale: 0, changed: 0, unknown: 0, archived: 0 }
-  for (const item of ledger.items.values()) {
-    if (item.removed || item.absorbedInto !== null) continue
-    if (isArchived(item)) {
-      open.archived++
-      continue
-    }
-    if (item.unknownOrigin) open.unknown++
-    const last = item.versions.at(-1)
-    if (last?.claimed && last.how === 'observed') open.changed++
-    if (
-      item.basis.items.some((row) => {
-        const source = ledger.items.get(row.item)
-        return source === undefined || source.removed || source.fingerprint !== row.fingerprint
-      })
-    )
-      open.stale++
-  }
-  return open
-}
-
-// ---- the pass ----
-
-const whoName = (a: FactActor) => (a.kind === 'owner' ? '主人' : a.name)
-
-type Made = { item: ItemId; scene: SceneId; actor: FactActor; bucket: number }
-
 const zeros = (n: number) => Array.from({ length: n }, () => 0)
-const bump = (list: number[], i: number) => void (list[i] = (list[i] ?? 0) + 1)
-const emptyAgent = (name: string): AgentRow => ({ name, sessions: 0, brought: 0, made: 0, decided: 0, notes: 0, asked: 0, approved: 0, refused: 0, declined: 0, withdrawn: 0, pending: 0 })
+const sum = (list: readonly number[]) => list.reduce((a, b) => a + b, 0)
+const ZERO: Open = { stale: 0, changed: 0, unknown: 0, archived: 0 }
+const hourStart = (hour: string) => Date.parse(`${hour}:00:00.000Z`)
+const utcHour = (t: number) => new Date(t).toISOString().slice(0, 13)
 
-/** Every figure of the four questions over `period`, ending `now`, from the facts in one pass of the fold. */
-export function statsOf(input: readonly Fact[], period: Period, now: Instant): Stats {
-  const facts = inOrder(input)
+/** Every figure of the four questions over `period`, ending `now`, from the rows of the hours in it. */
+export async function statsFrom(records: Pick<Records, 'get' | 'under'>, period: Period, now: Instant): Promise<Stats> {
+  const meta = new Map((await records.get<unknown>('meta', ['counts', 'first'])).rows.map((r) => [r.key, r.value]))
+  const counts = (meta.get('counts') ?? {}) as Record<string, number>
+  const firstAt = meta.get('first') as string | undefined
   const today = dayOf(Date.parse(now))
   const end = plusDays(today, 1)
-  const first = facts[0] ? dayOf(Date.parse(facts[0].at)) : today
+  const first = firstAt ? dayOf(Date.parse(firstAt)) : today
   const from = period === '7d' ? plusDays(today, -6) : period === '30d' ? plusDays(today, -29) : Math.min(first, today)
   const { grain, buckets } = bucketsOf(from, end)
   const n = buckets.length
+  const fromHour = utcHour(from)
+  const endHour = utcHour(end)
+
+  const before = await records.under<{ hour: string; open: Open }>('hrev', '', { after: turned(fromHour), limit: 1 })
+  const final: Open = { stale: counts[OPEN_COUNTERS.stale] ?? 0, changed: counts[OPEN_COUNTERS.changed] ?? 0, unknown: counts[OPEN_COUNTERS.unknown] ?? 0, archived: counts[OPEN_COUNTERS.archived] ?? 0 }
 
   const put = { brought: zeros(n), made: zeros(n) }
   const sessions = new Map<string, number[]>()
-  const agents = new Map<string, AgentRow>()
-  const agent = (name: string) => agents.get(name) ?? (agents.set(name, emptyAgent(name)).get(name) as AgentRow)
-  const owner: OwnerRow = { commands: 0, approved: 0, declined: 0, brought: 0, made: 0, said: 0, registered: 0 }
-  const made: Made[] = []
-  const asked = new Map<string, string>() // request id → the agent that asked, for requests asked in the period
-  const approved = new Map<string, boolean>() // request id → whether the command refused
-  const declined = new Set<string>()
-  const withdrawn = new Set<string>()
-  const seen = new Set<ItemId>()
-  const started = new Set<SceneId>()
+  const agents = new Map<string, AgentCounts>()
+  const owner = emptyOwner()
   const order = { archived: 0, takenBack: 0, purged: 0, changes: 0 }
-
-  const folder = folding()
-  const samples: Open[] = []
-  let start: Open | null = null
-  let at = -1 // the bucket the walk is in; -1 before the period
-  /** Moves the walk into the bucket that holds `t`, keeping what needed looking at when each bucket it leaves ended. */
-  const advance = (t: number) => {
-    if (at + 1 >= n || t < (buckets[at + 1] as Bucket).start) return
-    const open = openOf(folder.ledger)
-    while (at + 1 < n && t >= (buckets[at + 1] as Bucket).start) {
-      if (at < 0) start = open
-      else samples[at] = open
-      at++
-    }
-  }
-
-  for (const raw of facts) {
-    const t = Date.parse(raw.at)
-    advance(t)
-    const f = folder.take(raw)
-    const counted = at >= 0 && t < end
-    if (f.actor.kind === 'agent' && f.kind !== 'checked' && !started.has(f.scene)) {
-      started.add(f.scene)
-      if (counted) bump(sessions.get(f.actor.name) ?? (sessions.set(f.actor.name, zeros(n)).get(f.actor.name) as number[]), at)
-    }
-    if (f.kind === 'items.enter') {
-      for (const e of f.items) seen.add(e.item)
-      if (counted && f.actor.kind === 'owner') owner.registered += f.items.length
-      continue
-    }
-    if (f.kind === 'item.enter') {
-      const fresh = !seen.has(f.item)
-      seen.add(f.item)
-      if (!fresh || !counted || f.origin.kind === 'adopted') continue
-      const kind = f.origin.kind
-      bump(put[kind], at)
-      if (f.actor.kind === 'agent') agent(f.actor.name)[kind]++
-      else if (f.actor.kind === 'owner') owner[kind]++
-      if (kind === 'made') made.push({ item: f.item, scene: f.scene, actor: f.actor, bucket: at })
-      continue
-    }
-    if (f.kind === 'request') {
-      if (f.act === 'withdrawn') withdrawn.add(f.request)
-      else if (counted && f.actor.kind === 'agent') {
-        asked.set(f.request, f.actor.name)
-        agent(f.actor.name).asked++
+  const reuse = { fromLibrary: 0, otherSession: 0, otherAgent: 0, byBucket: { otherSession: zeros(n), made: zeros(n) } }
+  const uses = new Map<string, { n: number; by: Set<string> }>()
+  const samples: (Open | undefined)[] = []
+  let current: Open | null = null
+  let at = 0
+  let last = -1
+  for await (const page of pagesOf<HourRow>(records, 'stats', 'h:', 1000, hourKey(utcHour(hourStart(fromHour) - 3_600_000)))) {
+    for (const { value: row } of page) {
+      if (row.hour >= endHour) break
+      const t = hourStart(row.hour)
+      while (at + 1 < n && t >= (buckets[at + 1] as Bucket).start) samples[at++] = current ?? undefined
+      last = at
+      if (row.open) current = row.open
+      put.brought[at] = (put.brought[at] ?? 0) + row.put.brought
+      put.made[at] = (put.made[at] ?? 0) + row.put.made
+      reuse.byBucket.made[at] = (reuse.byBucket.made[at] ?? 0) + row.put.made
+      reuse.byBucket.otherSession[at] = (reuse.byBucket.otherSession[at] ?? 0) + row.reuse.otherSession
+      reuse.fromLibrary += row.reuse.fromLibrary
+      reuse.otherSession += row.reuse.otherSession
+      reuse.otherAgent += row.reuse.otherAgent
+      for (const [name, k] of Object.entries(row.sessions)) {
+        const list = sessions.get(name) ?? zeros(n)
+        sessions.set(name, list)
+        list[at] = (list[at] ?? 0) + k
       }
-      continue
-    }
-    if (f.kind === 'owner.op') {
-      const decline = f.request ? null : requestOf(f)
-      if (f.request) approved.set(f.request.id, f.refused !== undefined)
-      if (decline !== null) declined.add(decline)
-      if (!counted || f.actor.kind !== 'owner') continue
-      if (!f.readOnly) owner.commands++
-      if (f.request) owner.approved++
-      if (decline !== null) owner.declined++
-      continue
-    }
-    if (!counted) continue
-    if (f.kind === 'said') {
-      if (f.actor.kind === 'agent' && f.flavor !== 'doing') agent(f.actor.name)[f.flavor === 'decided' ? 'decided' : 'notes']++
-      else if (f.actor.kind === 'owner') owner.said++
-    } else if (f.kind === 'item.move' && f.archive !== null) order[f.archive === 'in' ? 'archived' : 'takenBack']++
-    else if (f.kind === 'item.remove') order.purged++
-    else if (f.kind === 'item.revise' && f.claimed) order.changes++
-  }
-  const ledger = folder.ledger
-  const final = openOf(ledger)
-  start ??= final
-  for (let i = Math.max(0, at); i < n; i++) samples[i] ??= final
-
-  for (const [name, byBucket] of sessions) agent(name).sessions = byBucket.reduce((a, b) => a + b, 0)
-  for (const [id, name] of asked) {
-    const row = agent(name)
-    const refused = approved.get(id)
-    if (refused !== undefined) row[refused ? 'refused' : 'approved']++
-    else if (declined.has(id)) row.declined++
-    else if (withdrawn.has(id)) row.withdrawn++
-    else row.pending++
-  }
-
-  // What was made in the period and what it was made from: its recorded sources, each by where and by whom it was registered.
-  const reuse = { made: made.length, fromLibrary: 0, otherSession: 0, otherAgent: 0, byBucket: { otherSession: zeros(n), rest: zeros(n) } }
-  const uses = new Map<ItemId, { uses: number; by: Set<string> }>()
-  for (const m of made) {
-    const sources = (ledger.items.get(m.item)?.basis.items ?? []).flatMap((row) => (row.item === m.item ? [] : (ledger.items.get(row.item) ?? [])))
-    const otherSession = sources.some((s) => s.entered.scene !== m.scene)
-    if (sources.length > 0) reuse.fromLibrary++
-    if (otherSession) reuse.otherSession++
-    if (sources.some((s) => s.entered.actor.kind === 'agent' && whoName(s.entered.actor) !== whoName(m.actor))) reuse.otherAgent++
-    bump(reuse.byBucket[otherSession ? 'otherSession' : 'rest'], m.bucket)
-    for (const s of new Set(sources)) {
-      const u = uses.get(s.id) ?? { uses: 0, by: new Set<string>() }
-      uses.set(s.id, u)
-      u.uses++
-      u.by.add(whoName(m.actor))
+      for (const [name, c] of Object.entries(row.agents)) {
+        const into = agents.get(name) ?? emptyAgent()
+        agents.set(name, into)
+        for (const key of Object.keys(c) as (keyof AgentCounts)[]) into[key] += c[key]
+      }
+      for (const key of Object.keys(owner) as (keyof OwnerRow)[]) owner[key] += row.owner[key]
+      for (const key of Object.keys(order) as (keyof typeof order)[]) order[key] += row.order[key]
+      for (const [id, u] of Object.entries(row.uses)) {
+        const into = uses.get(id) ?? { n: 0, by: new Set<string>() }
+        uses.set(id, into)
+        into.n += u.n
+        for (const name of Object.keys(u.by)) into.by.add(name)
+      }
     }
   }
-  const top = [...uses]
-    .flatMap(([id, u]) => {
-      const item = ledger.items.get(id)
-      return item && !item.removed ? [{ item: id, path: item.path, uses: u.uses, by: [...u.by].sort() }] : []
-    })
-    .sort((a, b) => b.uses - a.uses || (a.path < b.path ? -1 : 1))
-    .slice(0, TOP)
+  const start = last === -1 ? final : (before.rows[0]?.value.open ?? ZERO)
+  let carry = start
+  const byBucket = buckets.map((_, i) => {
+    if (i >= Math.max(0, last)) return final
+    carry = samples[i] ?? carry
+    return carry
+  })
 
-  const byAgent = [...sessions].map(([name, byBucket]) => ({ agent: name, total: byBucket.reduce((a, b) => a + b, 0), byBucket })).sort((a, b) => b.total - a.total || (a.agent < b.agent ? -1 : 1))
+  // The most built-upon things, as the rows name them now; one removed since is left out.
+  const ranked = [...uses].filter(([, u]) => u.n > 0).sort((a, b) => b[1].n - a[1].n)
+  const top: Stats['reuse']['top'] = []
+  for (let i = 0; i < ranked.length && top.length < TOP * 4; i += TOP * 4) {
+    const chunk = ranked.slice(i, i + TOP * 4)
+    const rows = new Map((await records.get<ItemRow>('items', chunk.map(([id]) => id))).rows.map((r) => [r.key, r.value]))
+    for (const [id, u] of chunk) {
+      const item = rows.get(id)
+      if (item && !item.removed) top.push({ item: id as ItemId, path: item.path, uses: u.n, by: [...u.by].sort() })
+    }
+  }
+  top.sort((a, b) => b.uses - a.uses || (a.path < b.path ? -1 : 1))
+
+  const names = new Set([...sessions.keys(), ...agents.keys()])
+  const agentRows: AgentRow[] = [...names].map((name) => {
+    const c = agents.get(name) ?? emptyAgent()
+    const s = sum(sessions.get(name) ?? [])
+    return { name, sessions: s, ...c, pending: c.asked - c.approved - c.refused - c.declined - c.withdrawn }
+  })
+  const byAgent = [...sessions].map(([agent, list]) => ({ agent, total: sum(list), byBucket: list })).sort((a, b) => b.total - a.total || (a.agent < b.agent ? -1 : 1))
+  const made = sum(put.made)
   return {
     period,
     from: new Date(from).toISOString() as Instant,
     to: now,
     grain,
     buckets: buckets.map((b) => b.label),
-    facts: facts.length,
-    put: { brought: sum(put.brought), made: sum(put.made), byBucket: put },
+    facts: counts.facts ?? 0,
+    put: { brought: sum(put.brought), made, byBucket: put },
     sessions: { total: sum(byAgent.map((a) => a.total)), byAgent },
-    reuse: { ...reuse, top },
-    agents: [...agents.values()].sort((a, b) => b.sessions - a.sessions || b.brought + b.made - (a.brought + a.made) || (a.name < b.name ? -1 : 1)),
+    reuse: {
+      made,
+      fromLibrary: reuse.fromLibrary,
+      otherSession: reuse.otherSession,
+      otherAgent: reuse.otherAgent,
+      byBucket: { otherSession: reuse.byBucket.otherSession, rest: reuse.byBucket.made.map((m, i) => m - (reuse.byBucket.otherSession[i] ?? 0)) },
+      top: top.slice(0, TOP),
+    },
+    agents: agentRows.sort((a, b) => b.sessions - a.sessions || b.brought + b.made - (a.brought + a.made) || (a.name < b.name ? -1 : 1)),
     owner,
-    order: { now: final, start, byBucket: samples, ...order },
+    order: { now: final, start, byBucket, ...order },
   }
 }
-
-const sum = (list: readonly number[]) => list.reduce((a, b) => a + b, 0)

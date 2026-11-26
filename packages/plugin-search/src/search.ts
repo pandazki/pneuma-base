@@ -3,11 +3,8 @@ import { open } from 'node:fs/promises'
 import { join, posix } from 'node:path'
 import {
   abs,
-  bundleFiles,
-  libraryFiles,
   searchTerms,
   SENTENCE_HITS,
-  thingAt,
   type FindRequest,
   type LibraryPath,
   type PluginContext,
@@ -27,12 +24,12 @@ const EMBED_BATCH = 32
 const FUSION_K = 60
 
 /** Every file of the library the index keys: each file outside bundles, and each file inside a bundle under the bundle's path. */
-export async function diskStamps(root: string): Promise<Stamp[]> {
+export async function diskStamps(ctx: PluginContext): Promise<Stamp[]> {
   const out: Stamp[] = []
-  for (const path of await libraryFiles(root)) {
-    const thing = await thingAt(abs(root, path))
+  for (const path of await ctx.tools.things()) {
+    const thing = await ctx.tools.thing(path)
     if (thing?.kind === 'file') out.push({ path, inner: '', size: thing.size, modifiedAt: thing.modifiedAt })
-    if (thing?.kind === 'bundle') for (const f of await bundleFiles(abs(root, path))) out.push({ path, inner: f.path, size: f.size, modifiedAt: f.modifiedAt })
+    if (thing?.kind === 'bundle') for (const f of (await ctx.tools.files(path)) ?? []) out.push({ path, inner: f.path, size: f.size, modifiedAt: f.modifiedAt })
   }
   return out
 }
@@ -67,8 +64,9 @@ async function readDoc(root: string, stamp: Stamp): Promise<Doc | null> {
 }
 
 /** Brings the index up to the library: reads only the files whose size or time changed, forgets the ones gone. */
-export async function refresh(index: SearchIndex, root: string): Promise<void> {
-  const plan = freshness(await diskStamps(root), index.stamps())
+export async function refresh(index: SearchIndex, ctx: PluginContext): Promise<void> {
+  const root = ctx.library.root
+  const plan = freshness(await diskStamps(ctx), index.stamps())
   const docs: Doc[] = []
   for (const stamp of plan.read) {
     const doc = await readDoc(root, stamp)
@@ -140,7 +138,7 @@ export async function findHits(req: FindRequest, ctx: PluginContext): Promise<Pl
   const config = await currentEmbedder(ctx)
   const index = SearchIndex.open(ctx.cacheDir, ctx.now)
   try {
-    await refresh(index, ctx.library.root)
+    await refresh(index, ctx)
     const problems: string[] = []
     let query: { embedder: string; vector: Float32Array } | null = null
     if (config === null) index.keepVectorsOf(null)
