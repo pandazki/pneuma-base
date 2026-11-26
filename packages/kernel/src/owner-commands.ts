@@ -7,6 +7,7 @@ import { agentCommands } from './agent-commands.js'
 import { said, takenBy } from './claims.js'
 import { skillText } from './cognition.js'
 import { exists, writeAtomic } from './files.js'
+import { ensureLauncher, launcherInstall } from './launcher.js'
 import { installDir, loadDir, machineDirOf, machinePlugins, machinePluginsDir, uninstallDir, whyNotLoaded } from './plugin-table.js'
 import { listThings } from './things.js'
 import { GRANT_NAME, readGrantFile, removeGrantFile, writeGrantFile } from './grants.js'
@@ -118,7 +119,8 @@ const skillInstall = command({
     const agent = agentInput ?? grant.agent
     const folder = join(typedDir(dir, call.ctx.session.cwd), `pneuma-base-${grant.name}`)
     const file = join(folder, 'SKILL.md')
-    await writeAtomic(file, skillText(grant.name, library.root), folder)
+    const { launcher } = await ensureLauncher(call.ctx.home, call.env)
+    await writeAtomic(file, skillText(grant.name, library.root, launcher.path), folder)
     const text = `已为 ${agent} 写好技能：${file}`
     if (agent !== 'codex' && !agent.startsWith('codex-')) return done(text, { file })
     const hint = codexHint(library.root)
@@ -323,6 +325,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
     },
   }),
   ...agentCommands({ grantIssue, grantRevoke, skillInstall }),
+  launcherInstall,
   ...REQUEST_COMMANDS,
 ]
 

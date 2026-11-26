@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { quote } from './requests.js'
 import type { Library } from '@pneuma-base/sdk'
 
 // The texts live in packages/kernel/cognition/, next to src/ and dist/.
@@ -8,6 +9,7 @@ const text = (name: string): string => readFileSync(new URL(name, COGNITION), 'u
 const GRANT_NAME = '{{授权的名字}}'
 const SAME_NAME = '{{同名时怎么办}}'
 const LIBRARY_PATH = '{{库的路径}}'
+const COMMAND = '{{命令}}'
 
 /** The description is a file of the library, not of one grant, so it names the grant generically. */
 export const DESCRIPTION_GRANT_NAME = '<你的授权名>'
@@ -45,7 +47,11 @@ function configuration(library: Pick<Library, 'config' | 'plugins'>): string {
   return ['## 这个库现在的配置', '', '装了这些插件，各自的说明在上文：', '', ...lines].join('\n')
 }
 
-/** The skill file for one grant: the library's location and the grant's name, pointing at the description. */
-export function skillText(grantName: string, libraryRoot: string): string {
-  return text('SKILL.md').replaceAll(GRANT_NAME, grantName).replaceAll(LIBRARY_PATH, libraryRoot)
+/**
+ * The skill file for one grant: the library's location, the grant's name, and the command as this
+ * machine runs it (the launcher, by absolute path), pointing at the description. The skill is a file
+ * of one machine; the description, which names `pneuma-base`, is the library's and travels with it.
+ */
+export function skillText(grantName: string, libraryRoot: string, launcher: string): string {
+  return text('SKILL.md').replaceAll(GRANT_NAME, grantName).replaceAll(LIBRARY_PATH, libraryRoot).replaceAll(COMMAND, quote(launcher))
 }

@@ -4,16 +4,18 @@
 #   app/measure.sh <library> [runs]
 # The app is driven through its test hooks (distributed notifications, see App.swift); while it is
 # idle with the window open, the window is parked almost off the screen so it stays visible to
-# WebKit without covering anything. Uses the spike home, app/.spike-home.
+# WebKit without covering anything. Uses a temporary PNEUMA_BASE_HOME, never the real one.
 set -eu
 cd "$(dirname "$0")"
 lib=$1
 runs=${2:-3}
 app="$(pwd)/dist/Pneuma Base.app"
-log="$(pwd)/.spike-home/app/app.log"
+pb_home=$(mktemp -d "${TMPDIR:-/tmp}/pneuma-measure.XXXXXX")
+log="$pb_home/app/app.log"
+mkdir -p "$pb_home/app"
 
 now() { perl -MTime::HiRes=time -e 'printf "%.3f\n", time'; }
-hook() { osascript -l JavaScript -e "ObjC.import('Foundation'); \$.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately('dev.pneumabase.spike', '$1', \$(), true)" >/dev/null; }
+hook() { osascript -l JavaScript -e "ObjC.import('Foundation'); \$.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately('dev.pneumabase.hooks.measure', '$1', \$(), true)" >/dev/null; }
 running() { pgrep -f "Pneuma Base.app/Contents/MacOS" >/dev/null; }
 quit_app() {
   osascript -e 'quit app "Pneuma Base"' >/dev/null 2>&1 || true
@@ -48,7 +50,7 @@ while [ $r -le "$runs" ]; do
   : > "$log"
   helpers_before=$(webkit_helpers)
   t0=$(now)
-  open "$app" --args --library "$lib"
+  open "$app" --env PNEUMA_BASE_HOME="$pb_home" --args --library "$lib" --hooks measure
   wait_for "status item shown" 1
   t1=$(grep "status item shown" "$log" | head -1 | cut -d' ' -f1)
   launch=$(echo "$t0 $t1" | awk '{ printf "%.0f", ($2-$1)*1000 }')
@@ -83,4 +85,4 @@ while [ $r -le "$runs" ]; do
   r=$((r+1))
 done
 quit_app
-defaults delete dev.pneumabase.spike "NSWindow Frame PneumaBaseMain" 2>/dev/null || true
+defaults delete dev.pneumabase.PneumaBase "NSWindow Frame PneumaBaseMain" 2>/dev/null || true

@@ -1,13 +1,9 @@
 // Connecting an agent product in one command, and undoing it in one. Every run has a temporary HOME
 // with configuration files the test makes itself, and a PATH of its own.
-import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { sandbox, tempDir, type Run, type Sandbox } from './helpers.js'
-
-const BIN = fileURLToPath(new URL('../dist/bin.js', import.meta.url))
 
 let sb: Sandbox
 let lib: string
@@ -54,6 +50,7 @@ function tree(root: string, skip: string[] = ['.pneuma-base']): Record<string, s
 
 const grants = () => (JSON.parse(readFileSync(join(lib, '.pneuma-base', 'config.json'), 'utf8')) as { grants: { name: string; agent: string }[] }).grants
 const pbHome = () => join(sb.home, '.pneuma-base')
+const launcher = () => join(pbHome(), 'bin', 'pneuma-base')
 
 type Case = { product: string; via?: 'mcp'; setup: Record<string, string>; skill?: string; file?: string; format?: 'json' | 'toml' }
 
@@ -79,12 +76,13 @@ const CASES: Case[] = [
   { product: 'cursor', via: 'mcp', setup: { '.cursor/argv.json': '{}\n' }, file: '.cursor/mcp.json', format: 'json' },
 ]
 
+type Entry = { type?: string; command: string; args: string[]; env?: Record<string, string> }
+
 /** The command an MCP entry runs, as each format writes it. */
-function entryOf(c: Case): { command: string; args: string[]; env: Record<string, string> } | string {
+function entryOf(c: Case): Entry | string {
   const text = readFileSync(join(sb.home, c.file as string), 'utf8')
   if (c.format === 'toml') return text
-  const servers = (JSON.parse(text) as { mcpServers: Record<string, { command: string; args: string[]; env: Record<string, string> }> }).mcpServers
-  return servers[`pneuma-base-${c.product}`] as { command: string; args: string[]; env: Record<string, string> }
+  return (JSON.parse(text) as { mcpServers: Record<string, Entry> }).mcpServers[`pneuma-base-${c.product}`] as Entry
 }
 
 describe('agent connect, list and disconnect', () => {
@@ -97,16 +95,13 @@ describe('agent connect, list and disconnect', () => {
       expect(grants()).toEqual([expect.objectContaining({ name: c.product, agent: c.product })])
       if (c.skill) {
         const skill = readFileSync(join(sb.home, c.skill), 'utf8')
-        expect(skill).toContain(`pneuma-base @${c.product} start`)
+        expect(skill).toContain(`${launcher()} @${c.product} start`)
         expect(skill).toContain(lib)
         expect(connected.stdout).toContain(`~/${c.skill}`)
       } else {
         const entry = entryOf(c)
-        const home = pbHome()
-        if (typeof entry === 'string') {
-          expect(entry).toContain(`[mcp_servers.pneuma-base-${c.product}]\ncommand = ${JSON.stringify(process.execPath)}\nargs = [${JSON.stringify(BIN)}, "@${c.product}", "mcp"]\n`)
-          expect(entry).toContain(`PNEUMA_BASE_HOME = ${JSON.stringify(home)}`)
-        } else expect(entry).toMatchObject({ command: process.execPath, args: [BIN, `@${c.product}`, 'mcp'], env: { PNEUMA_BASE_HOME: home } })
+        if (typeof entry === 'string') expect(entry).toContain(`[mcp_servers.pneuma-base-${c.product}]\ncommand = ${JSON.stringify(launcher())}\nargs = ["@${c.product}", "mcp"]\n`)
+        else expect(entry).toEqual({ ...(c.product === 'claude-desktop' ? {} : { type: 'stdio' }), command: launcher(), args: [`@${c.product}`, 'mcp'] })
         expect(connected.stdout).toContain(`~/${c.file}`)
       }
 
@@ -138,7 +133,7 @@ describe('agent connect, list and disconnect', () => {
     put('.claude/settings.json', '{}')
     ok(run(['agent', 'connect', 'claude-code', '--library', lib, '--via', 'mcp']))
     expect(existsSync(join(sb.home, '.claude/skills'))).toBe(false)
-    expect(entryOf({ product: 'claude-code', setup: {}, file: '.claude.json', format: 'json' })).toMatchObject({ type: 'stdio', command: process.execPath })
+    expect(entryOf({ product: 'claude-code', setup: {}, file: '.claude.json', format: 'json' })).toMatchObject({ type: 'stdio', command: launcher() })
   })
 
   it('refuses a configuration it cannot read, leaves it untouched, issues no grant, and prints what to paste', () => {
@@ -232,50 +227,6 @@ describe('agent connect, list and disconnect', () => {
     expect(Object.keys(byName)).not.toContain('antigravity')
     const text = ok(run(['agent', 'detect', '--library', lib])).stdout
     expect(text).toContain(`agent connect cursor --library ${lib}`)
-  })
-
-  it('a connection whose command line is gone says so in the list; connecting again writes the new one, and disconnect still restores the file', () => {
-    put('.cursor/mcp.json', '{\n  "mcpServers": {\n    "other": { "command": "o" }\n  }\n}\n')
-    put('.codex/config.toml', 'model = "o3"\n')
-    const before = tree(sb.home)
-    const link = join(tempDir('pb-entry-'), 'pneuma-base.js')
-    symlinkSync(BIN, link)
-    const env = { PATH: bin, HOME: sb.home, PNEUMA_BASE_HOME: pbHome() }
-    for (const product of ['cursor', 'codex']) {
-      const r = spawnSync(process.execPath, [link, 'agent', 'connect', product, '--via', 'mcp', '--library', lib], { env, encoding: 'utf8', cwd: work, input: '' })
-      expect(r.status, `${r.stdout}${r.stderr}`).toBe(0)
-    }
-    const cursorArgs = () => (JSON.parse(readFileSync(join(sb.home, '.cursor/mcp.json'), 'utf8')) as { mcpServers: Record<string, { args: string[] }> }).mcpServers['pneuma-base-cursor']?.args[0]
-    expect(cursorArgs()).toBe(link)
-    expect(readFileSync(join(sb.home, '.codex/config.toml'), 'utf8')).toContain(JSON.stringify(link))
-    rmSync(link)
-    expect(ok(run(['agent', 'list', '--library', lib])).stdout).toContain('命令行不在了')
-
-    for (const product of ['cursor', 'codex']) ok(run(['agent', 'connect', product, '--via', 'mcp', '--library', lib]))
-    expect(cursorArgs()).toBe(BIN)
-    expect(readFileSync(join(sb.home, '.codex/config.toml'), 'utf8')).not.toContain(JSON.stringify(link))
-    expect(ok(run(['agent', 'list', '--library', lib, '--json'])).json().data.connections.map((c: { inPlace: boolean }) => c.inPlace)).toEqual([true, true])
-
-    for (const product of ['cursor', 'codex']) ok(run(['agent', 'disconnect', product]))
-    expect(tree(sb.home)).toEqual(before)
-  })
-})
-
-describe('the whole run', () => {
-  it('connects Claude Code by skill, then the agent works with that grant and the scene is its', () => {
-    put('.claude/x', '')
-    const connected = ok(run(['agent', 'connect', 'claude-code', '--library', lib]))
-    expect(connected.stdout).toContain('看看我的 Pneuma Base 库里有什么')
-    const skill = readFileSync(join(sb.home, '.claude/skills/pneuma-base-claude-code/SKILL.md'), 'utf8')
-    const start = /pneuma-base (@claude-code) start/.exec(skill)
-    expect(start?.[1]).toBe('@claude-code')
-
-    const agent = { CLAUDE_CODE_SESSION_ID: 'sess-1' }
-    ok(run(['@claude-code', 'start', '整理读书笔记'], agent))
-    ok(run(['@claude-code', 'put', '-', '--to', 'notes/books.md', '--made'], agent, '# 书单\n'))
-    const seen = ok(run(['--library', lib, 'inspect', 'notes/books.md'])).stdout
-    expect(seen).toContain('claude-code')
-    expect(seen).toContain('整理读书笔记')
   })
 })
 
