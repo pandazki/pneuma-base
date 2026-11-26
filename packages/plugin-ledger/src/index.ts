@@ -27,24 +27,8 @@ import { fact, factActor, LEDGER_ACTOR, newItemId, sceneOf, writeFacts, type Bas
 import type { ItemRecord, Ledger, SceneRecord } from './fold.js'
 import { heldCommands, heldCopies, heldPath, keep } from './held.js'
 import { confirm, findsAnything, reconcile, type Standing } from './reconcile.js'
-import {
-  ACTIVITY_VIEW,
-  activityAnswer,
-  heldAnswer,
-  HELD_VIEW,
-  itemSection,
-  itemsAnswer,
-  ITEMS_VIEW,
-  LEDGER_VIEWS,
-  SCENE_VIEW,
-  sceneAnswer,
-  SCENES_VIEW,
-  scenesAnswer,
-  STANDING_VIEW,
-  standingAnswer,
-  partOfSection,
-  unownedSection,
-} from './ui.js'
+import { activityAnswer, homeAnswer, noSuchScene, sceneAnswer, scenesAnswer } from './feeds.js'
+import { ACTIVITY_VIEW, heldAnswer, HELD_VIEW, HOME_VIEW, itemSection, itemsAnswer, ITEMS_VIEW, LEDGER_VIEWS, partOfSection, SCENE_VIEW, SCENES_VIEW, STANDING_VIEW, standingAnswer, unownedSection } from './ui.js'
 import {
   ambiguousText,
   findableItems,
@@ -391,7 +375,8 @@ export const ledger: Plugin = {
       const from = ledger.items.get(item)?.path
       return state.kind === 'moved' && from ? [fact(ctx, 'observed', { kind: 'item.move', item, from, to: state.to, archive: archiveSide(from, state.to) }, LEDGER_ACTOR)] : []
     })
-    await writeFacts(ctx.dir, moves)
+    // This look is what the next check counts since, for agents and for the owner's 都看过了 alike.
+    await writeFacts(ctx.dir, [...moves, fact(ctx, 'tool', { kind: 'checked' })])
     const since = sinceView(ledger, factActor(ctx.actor), sceneOf(ctx), req.since)
     return [...(since.scenes.length > 0 ? [{ title: '自上次以来', body: sinceText(since), data: since }] : []), ...standingSections(ledger, standing, req.includeArchived)]
   },
@@ -411,21 +396,31 @@ export const ledger: Plugin = {
 
   /** The ledger's pages, from the same fold and reconciliation check uses. Writes nothing: a move it sees stays for check to record. */
   async onView(req, ctx) {
+    const { grants } = ctx.library.config
     switch (req.view) {
+      case HOME_VIEW: {
+        const { ledger, standing } = await standingNow(ctx)
+        return homeAnswer(ledger, standing, factActor(ctx.actor), sceneOf(ctx), grants)
+      }
       case ITEMS_VIEW: {
         const { ledger, standing } = await standingNow(ctx)
-        return itemsAnswer(ledger, standing, req.params)
+        return itemsAnswer(ledger, standing, req.params, grants)
       }
       case STANDING_VIEW: {
         const { ledger, standing } = await standingNow(ctx)
-        return standingAnswer(ledger, standing)
+        return standingAnswer(ledger, standing, req.params)
       }
       case SCENES_VIEW:
-        return scenesAnswer(await load(ctx))
-      case SCENE_VIEW:
-        return sceneAnswer(await load(ctx), req.params, (scene) => conversationOf(scene, ctx.session.machine))
+        return scenesAnswer(await load(ctx), grants, ctx.now)
+      case SCENE_VIEW: {
+        const ledger = await load(ctx)
+        const input = req.params.scene ?? ''
+        const named = scenesNamed(ledger, input)
+        const scene = named.length === 1 ? named[0] : undefined
+        return scene ? sceneAnswer(ledger, scene, conversationOf(scene, ctx.session.machine), grants) : noSuchScene(input, named.length)
+      }
       case ACTIVITY_VIEW:
-        return activityAnswer(await load(ctx), req.params)
+        return activityAnswer(await load(ctx), req.params, grants, ctx.now)
       case HELD_VIEW:
         return heldAnswer(await load(ctx), await heldCopies(ctx))
       default:
@@ -441,7 +436,7 @@ export const ledger: Plugin = {
     const bundle = itemNamed(ledger, root, path) ? null : await enclosingBundle(root, path)
     if (bundle !== null) return partOfSection(bundle)
     const view = await panelView(ctx, ledger, path)
-    if (view) return itemSection(view)
+    if (view) return itemSection(view, ledger, ctx.library.config.grants)
     return (await fileAt(root, path)) ? unownedSection(path) : null
   },
 

@@ -443,6 +443,7 @@ html[data-window='inactive'] .fresh {
   line-height: 20px;
 }
 .page-body {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -659,6 +660,7 @@ html[data-window='inactive'] .fresh {
   opacity: 1;
 }
 .detail-body {
+  container-type: inline-size;
   flex: 1;
   min-height: 0;
   padding: 16px 16px 20px;

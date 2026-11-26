@@ -1,5 +1,5 @@
-import { CONTENT_LIMIT, type ArchiveResult, type CheckResult, type Content, type FindResult, type InspectResult, type OwnerResult, type PluginProblem, type PutRequest, type PutResult, type SayResult, type Section } from '@pneuma-base/kernel'
-import { minute } from './page.js'
+import { CONTENT_LIMIT, type ArchiveResult, type Ask, type CheckResult, type OwnerCommandInfo, type Content, type FindResult, type InspectResult, type OwnerResult, type PluginProblem, type PutRequest, type PutResult, type SayResult, type Section } from '@pneuma-base/kernel'
+import { commandOf, minute, quote } from './page.js'
 
 const REFUSAL: Record<string, (subject: string) => string> = {
   'outside-library': (s) => `${s} 不在库的内容里。库内路径相对库的根目录写，不能是 .pneuma-base/ 或 PNEUMA-BASE.md；_archive/ 只经 archive 和 unarchive 进出。`,
@@ -94,16 +94,34 @@ export function sayText(r: SayResult): string[] {
   return [head, ...tail([], r.problems)]
 }
 
-export function checkText(r: CheckResult): string[] {
-  return [...(r.sections.length === 0 ? ['没有可报告的。'] : sectionsText(r.sections)), ...tail([], r.problems)]
+/**
+ * What only the owner can settle, for an agent to pass on: each sentence and who raises it, then for
+ * each answer the command the owner runs, the suggested one marked.
+ */
+function asksText(asks: readonly Ask[], commands: readonly OwnerCommandInfo[], root: string): string[] {
+  if (asks.length === 0) return []
+  const library = `--library ${quote(root)}`
+  return [
+    '## 要主人来做的',
+    ...asks.flatMap((a) => [
+      `- ${a.text}（${typeof a.by === 'string' ? a.by : a.by.name}）`,
+      ...a.actions.map((x, i) => `  pneuma-base ${commandOf(x, commands)} ${library}  # ${x.label}${i === a.suggested ? '（推荐）' : ''}`),
+    ]),
+    '这些只有主人能定：告诉主人，主人在自己的终端里运行上面的命令，或在管理界面的首页上点。',
+  ]
+}
+
+export function checkText(r: CheckResult, commands: readonly OwnerCommandInfo[], root: string): string[] {
+  const asks = asksText(r.asks, commands, root)
+  return [...(r.sections.length === 0 && asks.length === 0 ? ['没有可报告的。'] : [...sectionsText(r.sections), ...asks]), ...tail([], r.problems)]
 }
 
 /** start's three parts under their headings. A part with nothing prints nothing; the related part says when nothing is related. */
-export function startText(say: SayResult, check: CheckResult, find: FindResult): string[] {
+export function startText(say: SayResult, check: CheckResult, find: FindResult, commands: readonly OwnerCommandInfo[], root: string): string[] {
   const part = (heading: string, lines: string[]) => (lines.length > 0 ? [heading, ...lines] : [])
   return [
     ...part('【记下】', sayText(say)),
-    ...part('【库的变化与状况】', [...sectionsText(check.sections), ...tail([], check.problems)]),
+    ...part('【库的变化与状况】', [...sectionsText(check.sections), ...asksText(check.asks, commands, root), ...tail([], check.problems)]),
     ...part('【库里可能相关的】', findText(find, '库里没有和这件事相关的东西。')),
   ]
 }

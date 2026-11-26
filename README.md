@@ -61,7 +61,7 @@ pneuma-base --help
    pneuma-base view ~/base
    ```
 
-   界面里能看条目、场景、状况和动态，开关部署，同步，取回留存，装卸插件，接上和断开 agent。在界面里做的操作，agent 下次 `check` 时会看到。界面的每一页也是一条只读的命令：`pneuma-base show --library ~/base` 列出各页，`show <页的编号>` 把一页印成字，每个按钮写成做同一件事的命令。
+   界面打开在首页：等你决定的事（比如 agent 声明了可以部署、还没上线的网站），你上次看过之后 agent 做了什么，哪些东西要留意。另有库、活动、场景、状况，开关部署，同步，取回留存，装卸插件，接上和断开 agent。在界面里做的操作，agent 下次 `check` 时会看到；agent 的 `check` 也会列出等你决定的事，告诉你要跑哪条命令。界面的每一页也是一条只读的命令：`pneuma-base show --library ~/base` 列出各页，`show <页的编号>` 把一页印成字，每个按钮写成做同一件事的命令。
 
 5. **别的只能接 MCP 的应用。** 产品表里没有的应用，先为它发一份授权，再在它的 MCP 配置里加一个 stdio 服务，命令是 `pneuma-base @<授权名> mcp`：
 
@@ -113,4 +113,6 @@ pnpm test:slow    # 脚手架和 PLUGINS.md 的五分钟：生成插件项目，
 
 ## 许可
 
-[MIT](LICENSE)。
+[MIT](LICENSE)，只有一个文件夹例外。
+
+管理界面的 `packages/viewer/web/src/aui/` 里的代码改自 [affectUI Pro](https://www.affectui.com)，按它自己的许可（https://www.affectui.com/license）使用，不在 MIT 之内，不要把它复制到这个项目外面。那里的每个文件第一行都写着这句声明；它们只打进构建出来的管理界面，不在 sdk、插件开发包、`plugin new` 生成的项目和 `plugins/` 里。详见 [`NOTICE`](NOTICE)。

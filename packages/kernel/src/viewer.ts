@@ -4,7 +4,8 @@ import { readdir } from 'node:fs/promises'
 import { join, posix } from 'node:path'
 import { fileFacts } from './agent.js'
 import { agentsPage } from './agents-page.js'
-import { callableIn, checkBlocks, checkRefresh, type Callable } from './blocks.js'
+import { asksOf } from './asks.js'
+import { callableIn, checkBlocks, checkFilters, checkRefresh, type Callable } from './blocks.js'
 import { exists } from './files.js'
 import { bundleFiles, enclosingBundle, kindAt, listThings, thingAt } from './things.js'
 import { KERNEL_COMMANDS } from './owner-commands.js'
@@ -19,6 +20,7 @@ import {
   formOf,
   type Action,
   type ActionInput,
+  type ActorMark,
   type Block,
   type FixedValue,
   type Cell,
@@ -363,9 +365,15 @@ const answered = (a: unknown): a is { title: string; blocks: Block[] } =>
 /** A section of the item panel; a plugin's part is stamped with the plugin's name. */
 const section = (title: string, blocks: Block[], plugin?: PluginName): Block => ({ kind: 'section', title, note: null, count: null, blocks, actions: [], ...(plugin === undefined ? {} : { plugin }) })
 
-/** Each installed plugin's section about `path`, in configuration order. A plugin that fails gets a section that says so (K8). */
-async function pluginSections(ctx: Context, path: LibraryPath, callable: Callable): Promise<{ blocks: Block[]; problems: PluginProblem[] }> {
+type Parts = { blocks: Block[]; actions: Action[]; problems: PluginProblem[] }
+
+/**
+ * Each installed plugin's section about `path`, in configuration order, and the actions each gives
+ * for the panel's bottom row. A plugin that fails gets a section that says so (K8).
+ */
+async function pluginSections(ctx: Context, path: LibraryPath, callable: Callable): Promise<Parts> {
   const blocks: Block[] = []
+  const actions: Action[] = []
   const problems: PluginProblem[] = []
   for (const plugin of ctx.library.plugins) {
     if (!plugin.onItemView) continue
@@ -376,34 +384,48 @@ async function pluginSections(ctx: Context, path: LibraryPath, callable: Callabl
       const checked = checkBlocks(answer.blocks, plugin, callable)
       blocks.push(section(answer.title, checked.blocks, plugin.name))
       problems.push(...checked.problems)
+      const own = checkBlocks([{ kind: 'actions', actions: answer.actions ?? [] }], plugin, callable, 'actions')
+      const [row] = own.blocks
+      if (row?.kind === 'actions') actions.push(...row.actions)
+      else blocks.push(...own.blocks)
+      problems.push(...own.problems)
     } catch (error) {
       const message = messageOf(error)
       problems.push({ plugin: plugin.name, message })
       blocks.push(section(`插件 ${plugin.name}`, [{ kind: 'empty', title: `插件 ${plugin.name} 出错了，没能给出它知道的`, hint: message }], plugin.name))
     }
   }
-  return { blocks, problems }
+  return { blocks, actions, problems }
+}
+
+/** What a thing is, in one line: a file or a bundle, its size, and whether it is archived or part of a bundle. */
+function whatItIs(facts: FileFacts, bundle: LibraryPath | null): Block {
+  const kind = facts.kind === 'bundle' ? `一样东西（带标记的目录），${facts.files} 个文件` : '文件'
+  const where = facts.archived ? ' · 已归档' : bundle !== null ? ` · ${bundle} 的一部分` : ''
+  return { kind: 'text', tone: 'neutral', text: `${kind} · ${sizeText(facts.size)}${where}` }
 }
 
 /**
- * One thing of the library: archive or take back; what each plugin knows about it; then its own
- * facts, and a bundle's files or a file's preview. A file inside a bundle names the bundle and
- * offers no archive: the bundle changes only as a whole.
+ * One thing of the library, in a fixed order: what it is in one line; what each plugin knows about
+ * it; its own facts, and a bundle's files or a file's preview; then what can be done with it, in one
+ * row at the bottom: archive or take back and move, then each plugin's actions. A file inside a
+ * bundle names the bundle and offers no archive: the bundle changes only as a whole.
  */
 async function itemPage(params: Record<string, string>, { ctx }: ViewerCall): Promise<Shown> {
   const { root } = ctx.library
   const target = params.path ?? ''
   const facts = target === '' ? null : ((await fileFacts(root, target)) ?? (await takenBack(root, target)))
   const path = facts?.path ?? parseLibraryPath(root, target)
-  const known = path === null || regionOf(path) === 'kernel' ? { blocks: [], problems: [] } : await pluginSections(ctx, path, callableIn(ctx.library))
+  const known = path === null || regionOf(path) === 'kernel' ? { blocks: [], actions: [], problems: [] } : await pluginSections(ctx, path, callableIn(ctx.library))
+  const bottom = (own: Action[]): Block[] => (own.length + known.actions.length > 0 ? [{ kind: 'actions', actions: [...own, ...known.actions] }] : [])
   if (!facts) {
     const missing: Block = { kind: 'text', tone: 'warn', text: `${target || '这个路径'} 上没有文件：不在，或已经除掉了。` }
-    return shown(posix.basename(target) || '一样东西', target || null, [missing, ...known.blocks], known.problems)
+    return shown(posix.basename(target) || '一样东西', target || null, [missing, ...known.blocks, ...bottom([])], known.problems)
   }
   const original = facts.archived ? (originalPath(facts.path) ?? facts.path) : facts.path
   const bundle = facts.kind === 'file' ? await enclosingBundle(root, facts.path) : null
-  const archive: Block[] = bundle === null ? [{ kind: 'actions', actions: facts.archived ? [archiveAction('unarchive', facts.path)] : [archiveAction('archive', original), moveAction(original)] }] : []
-  return shown(posix.basename(original), facts.path, [...archive, ...known.blocks, ...(await thingSections(root, facts, bundle))], known.problems)
+  const own = bundle !== null ? [] : facts.archived ? [archiveAction('unarchive', facts.path)] : [archiveAction('archive', original), moveAction(original)]
+  return shown(posix.basename(original), facts.path, [whatItIs(facts, bundle), ...known.blocks, ...(await thingSections(root, facts, bundle)), ...bottom(own)], known.problems)
 }
 
 /** How many files of a bundle the panel lists. */
@@ -444,10 +466,46 @@ async function thingSections(root: string, facts: FileFacts, bundle: LibraryPath
   return [own, inner]
 }
 
+// ---- home ----
+
+/**
+ * The page the owner opens on: what waits on the owner, from every plugin's `onAsks`; then each
+ * plugin view declared `home`, its blocks as they are, in configuration order. With no such view the
+ * page says so and shows the library's top folder, so a library without plugins has a home too.
+ */
+async function homePage(_params: Record<string, string>, call: ViewerCall): Promise<Shown> {
+  const { ctx } = call
+  const asked = await asksOf(ctx, callableIn(ctx.library))
+  const titleOf = (by: string | ActorMark) => (typeof by === 'string' ? (ctx.library.plugins.find((p) => p.name === by)?.cognition?.title ?? by) : by)
+  const decide: Block = {
+    kind: 'section',
+    title: '等你决定',
+    note: null,
+    count: asked.asks.length > 0 ? asked.asks.length : null,
+    blocks: [{ kind: 'asks', asks: asked.asks.map((a) => ({ ...a, by: titleOf(a.by) })), empty: '没有要你决定的事。' }],
+    actions: [],
+  }
+  const parts = pluginViews(ctx.library).views.filter((v) => v.decl.home === true)
+  const problems = [...asked.problems]
+  const blocks: Block[] = [decide]
+  for (const { plugin, decl } of parts) {
+    const part = await pluginPage(plugin, decl, { view: decl.id, params: Object.fromEntries(decl.filters.map((f) => [f.name, f.default])) }, ctx)
+    blocks.push(...part.blocks)
+    problems.push(...part.problems)
+  }
+  if (parts.length === 0) {
+    const files = await filesPage({}, call)
+    const why = ctx.library.plugins.length === 0 ? '这个库没装插件：首页只有要你决定的事和库里的文件。装上插件，这里会有 agent 做了什么、哪些东西要留意。' : '装着的插件没有给首页添内容，下面是库里的文件。'
+    blocks.push({ kind: 'text', tone: 'neutral', text: why }, { kind: 'section', title: '库里的文件', note: null, count: null, blocks: files.blocks, actions: [] })
+  }
+  return shown('首页', null, blocks, problems)
+}
+
 // ---- the face ----
 
 /** The kernel's own views, each with the page that answers it. */
 const KERNEL_VIEWS: readonly { decl: ViewDecl; page: KernelPage }[] = [
+  { decl: { id: 'home', title: '首页', icon: 'house', nav: true, filters: [] }, page: homePage },
   { decl: { id: 'files', title: '文件', icon: 'folder', nav: true, filters: [] }, page: filesPage },
   { decl: { id: 'archive', title: '归档区', icon: 'archive', nav: true, filters: [] }, page: archivePage },
   { decl: { id: 'agents', title: 'Agent', icon: 'users', nav: true, filters: [], ownerOnly: true }, page: agentsPage },
@@ -476,7 +534,12 @@ async function pluginPage(plugin: Plugin, decl: ViewDecl, req: ViewRequest, ctx:
     if (!answered(answer)) throw new Error(`onView answered something that is not a view for ${decl.id}`)
     const { blocks, problems } = checkBlocks(answer.blocks, plugin, callableIn(ctx.library))
     const { refresh, problems: refreshProblems } = checkRefresh((answer as ViewAnswer).refresh, plugin)
-    return { ...shown(answer.title, answer.subtitle ?? null, blocks, [...problems, ...refreshProblems]), ...(refresh === undefined ? {} : { refresh }) }
+    const { filters, problems: filterProblems } = checkFilters((answer as ViewAnswer).filters, decl, plugin)
+    return {
+      ...shown(answer.title, answer.subtitle ?? null, blocks, [...problems, ...refreshProblems, ...filterProblems]),
+      ...(refresh === undefined ? {} : { refresh }),
+      ...(filters === undefined ? {} : { filters }),
+    }
   } catch (error) {
     const message = messageOf(error)
     return shown(decl.title, null, [{ kind: 'empty', title: `插件 ${plugin.name} 出错了，没能给出这一页`, hint: message }], [{ plugin: plugin.name, message }])

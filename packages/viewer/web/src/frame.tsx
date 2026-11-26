@@ -98,7 +98,7 @@ function Frame({ block, plugin, src }: { block: Custom; plugin: string; src: str
           break
         case 'run': {
           const action = Object.hasOwn(block.actions, message.name) ? block.actions[message.name] : undefined
-          if (action) env.onAction(action, declared(action, message.values))
+          if (action) void env.onAction(action, declared(action, message.values))
           else console.warn(`插件 ${plugin} 的页要做一件这一块没有声明的事：${message.name}`)
         }
       }

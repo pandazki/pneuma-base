@@ -261,7 +261,8 @@ export type SayAnswer =
   | { outcome: 'not-heard'; reason: 'refused'; note: string }
 
 export type CheckRequest = { since: Instant | 'last' | null; includeArchived: boolean }
-export type CheckResult = { sections: Section[]; problems: PluginProblem[] }
+/** `asks`: what only the owner can settle now, from every plugin's `onAsks`; an agent tells the owner. */
+export type CheckResult = { sections: Section[]; asks: Ask[]; problems: PluginProblem[] }
 
 // ---- archive ----
 
@@ -408,6 +409,11 @@ export interface Plugin {
   readonly onInspect?: (req: InspectRequest, ctx: PluginContext) => Promise<PluginSection[]>
   readonly onSay?: (req: SayRequest, ctx: PluginContext) => Promise<SayAnswer>
   readonly onCheck?: (req: CheckRequest, ctx: PluginContext) => Promise<PluginSection[]>
+  /**
+   * What only the owner can settle now, such as a thing declared deployable that is not online yet.
+   * Read-only: the home page asks on every look, and `check` gives the same to agents.
+   */
+  readonly onAsks?: (ctx: PluginContext) => Promise<PluginAsk[]>
   readonly onArchive?: (req: AcceptedArchive, ctx: PluginContext) => Promise<PluginNoteAnswer | null>
   readonly observe?: (event: Event, ctx: PluginContext) => Promise<void>
   /** After `archive purge` deleted things, with their library paths as they were in the archive. */
@@ -440,12 +446,18 @@ export type Tag = { text: string; tone: Tone }
 /** Where a click goes: another view, opened in the main area or the side panel. */
 export type Link = { view: string; params: Record<string, string>; target: 'main' | 'panel' }
 /**
+ * Who did something, where a block says who: an agent, with the name of the grant it used, or the
+ * owner. The page draws an agent as its mark, its initial on a colour that comes from its name.
+ */
+export type ActorMark = { kind: 'agent' | 'owner'; name: string; grant?: string }
+/**
  * `at`: the cell is a moment. The page shows it in the viewer's local time, short, with the whole
  * time on hover; `text` is what a reader without a clock shows. `icon`: one of `ICON_NAMES`, shown
  * before the text, such as `folder`, `file` or `package` for a bundle. `href`: an outside address the
- * cell opens in a new tab; only http and https are links. `copy`: a button that copies `href`, else `text`.
+ * cell opens in a new tab; only http and https are links. `copy`: a button that copies `href`, else
+ * `text`. `actor`: the cell says who; the page draws the mark before `text`, which is the name.
  */
-export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; link?: Link; at?: Instant; icon?: IconName; href?: string; copy?: true }
+export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; link?: Link; at?: Instant; icon?: IconName; href?: string; copy?: true; actor?: ActorMark }
 
 /**
  * What a button does: one verb of the agent face, or one owner command. Strings may hold `{input}`,
@@ -480,12 +492,46 @@ export type TableRow = { key: string; cells: Record<string, Cell>; link: Link | 
 export type TableColumn = { key: string; label: string; optional?: boolean }
 
 /**
+ * One thing that happened, as a feed tells it: when, who, one sentence, a grey line of `meta`, and
+ * `whose` act it was, where that says something: an agent's on its own, the owner's, or one the app
+ * only observed. It carries one quiet `action`, such as the one that undoes it, or `settled`, a grey
+ * word saying how it ended, such as that it was taken back; not both. A row with a `link` opens it.
+ */
+export type FeedRow = {
+  key: string
+  at: Instant
+  actor: ActorMark | string
+  text: string
+  meta: Cell[]
+  whose?: 'agent' | 'owner' | 'observed'
+  action?: Action
+  settled?: string
+  link: Link | null
+}
+/** Rows under a heading, such as a day or a scene; `link` opens what the heading names. */
+export type FeedGroup = { title: string; count: number | null; link?: Link; rows: FeedRow[] }
+/** One figure: a label, a number or a short text, and a grey sentence about it. */
+export type Stat = { label: string; value: string; note: string | null }
+/** A folder of a tree: the value its selection gives the view's parameter, and how many things it holds. */
+export type TreeNode = { value: string; label: string; count: number | null; children: TreeNode[] }
+/**
+ * Something only the owner can settle: who raises it, a plugin's name or an actor; one sentence, a
+ * question or a statement; the library path it is `about`, which opens its panel; the answers, each an
+ * action, and which of them is the `suggested` one, by its place in `actions`.
+ */
+export type Ask = { key: string; by: string | ActorMark; text: string; about: LibraryPath | null; actions: Action[]; suggested?: number }
+/** What `onAsks` answers: an ask without naming its plugin, which the kernel stamps as `by`. */
+export type PluginAsk = Omit<Ask, 'by'>
+
+/**
  * A section with `collapse` can be folded by the viewer; the value is how it starts. A section of the
  * item panel carries `plugin`, the plugin whose part it is, stamped by the kernel. `embed`: an
  * outside http or https page in a sandboxed frame. `custom`: a page of the plugin's own, `entry`
  * relative to its `ui` directory, sent `data` and the names of `actions`, which it may ask to run;
  * `text` says in words what the frame shows, for the command line, screen readers and the page
- * that failed to load; `plugin` is stamped by the kernel.
+ * that failed to load; `plugin` is stamped by the kernel. `feed`, `asks`: `empty` is the one grey
+ * sentence shown when there is nothing. `tree`: choosing a folder sets the view's parameter `param`
+ * to its value and shows the view again, as a filter does; `selected` is the value it has now.
  */
 export type Block =
   | { kind: 'section'; title: string; note: string | null; count: number | null; blocks: Block[]; actions: Action[]; collapse?: 'open' | 'closed'; plugin?: PluginName }
@@ -499,27 +545,36 @@ export type Block =
   | { kind: 'empty'; title: string; hint: string | null }
   | { kind: 'embed'; url: string; title: string; height: number }
   | { kind: 'custom'; entry: string; height: number; text: string; data: unknown; actions: Record<string, Action>; plugin?: PluginName }
+  | { kind: 'feed'; groups: FeedGroup[]; empty: string }
+  | { kind: 'stats'; stats: Stat[] }
+  | { kind: 'tree'; param: string; selected: string; nodes: TreeNode[] }
+  | { kind: 'asks'; asks: Ask[]; empty: string }
 
-export type ViewFilter = { name: string; label: string; options: { value: string; label: string }[]; default: string }
+/** `count`: how many things the view shows with this option, given by its answer. */
+export type FilterOption = { value: string; label: string; count?: number }
+export type ViewFilter = { name: string; label: string; options: FilterOption[]; default: string }
 /**
  * `icon` is one of `ICON_NAMES`. A view with `nav` false is reached only through links, as a detail.
  * `ownerOnly`: a page of management, refused in an agent's session as an owner-only command is.
+ * `home`: the view is also a part of the home page: its blocks stand there, after what waits on the
+ * owner, in configuration order.
  */
-export type ViewDecl = { id: string; title: string; icon: IconName; nav: boolean; filters: ViewFilter[]; ownerOnly?: boolean }
+export type ViewDecl = { id: string; title: string; icon: IconName; nav: boolean; filters: ViewFilter[]; ownerOnly?: boolean; home?: boolean }
 /** A view as the library lists it, with who gives it. */
 export type ListedView = ViewDecl & { by: PluginName | 'kernel' }
 export type ViewRequest = { view: string; params: Record<string, string> }
 /**
  * `refresh`: seconds after which the page asks again, at least 5: for a view showing state from
  * outside the library, or one whose content changes with the clock. A view runs on the machine of
- * the viewer's server, in its time zone; a cell's `at` is shown in the browser's.
+ * the viewer's server, in its time zone; a cell's `at` is shown in the browser's. `filters`: the
+ * options of declared filters as this answer sees them, such as the agents there are, with counts.
  */
-export type ViewAnswer = { title: string; subtitle: string | null; blocks: Block[]; refresh?: number }
+export type ViewAnswer = { title: string; subtitle: string | null; blocks: Block[]; refresh?: number; filters?: { name: string; options: FilterOption[] }[] }
 export type ViewResult =
   | ({ outcome: 'shown' } & ViewAnswer & { problems: PluginProblem[] })
   | { outcome: 'no-such-view'; problems: PluginProblem[] }
   | { outcome: 'refused'; reason: 'agent-session'; text: string; problems: PluginProblem[] }
 /** Every view of a library: the plugins' first, in configuration order, then the kernel's. */
 export type ViewList = { views: ListedView[]; problems: PluginProblem[] }
-/** A plugin's part of the item panel: its own section title and blocks. */
-export type ItemSection = { title: string; blocks: Block[] }
+/** A plugin's part of the item panel: its own section title and blocks, and `actions` for the thing, which stand in the panel's bottom row. */
+export type ItemSection = { title: string; blocks: Block[]; actions?: Action[] }

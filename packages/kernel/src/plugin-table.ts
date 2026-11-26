@@ -179,6 +179,7 @@ const HOOKS: Record<Hook, true> = {
   onInspect: true,
   onSay: true,
   onCheck: true,
+  onAsks: true,
   onArchive: true,
   observe: true,
   onPurged: true,
@@ -319,6 +320,6 @@ function paramsWrong(params: unknown): string | null {
 function viewWrong(view: unknown, plugin: string): string | null {
   if (!isObject(view) || !isText(view.id)) return 'views 的每一项要是带 id 的视图'
   if (!view.id.startsWith(`${plugin}.`)) return `视图 ${view.id} 不以 ${plugin}. 开头`
-  const ok = isText(view.title) && isText(view.icon) && typeof view.nav === 'boolean' && Array.isArray(view.filters) && (view.ownerOnly === undefined || typeof view.ownerOnly === 'boolean')
-  return ok ? null : `视图 ${view.id} 要有文字的 title 和 icon、真假的 nav、列表 filters，ownerOnly 没有或是真假`
+  const ok = isText(view.title) && isText(view.icon) && typeof view.nav === 'boolean' && Array.isArray(view.filters) && optional(view.ownerOnly, isBoolean) && optional(view.home, isBoolean)
+  return ok ? null : `视图 ${view.id} 要有文字的 title 和 icon、真假的 nav、列表 filters，ownerOnly 和 home 没有或是真假`
 }

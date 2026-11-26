@@ -178,3 +178,61 @@ export const pager: Plugin = {
     }
   },
 }
+
+/** Whether the owner answered asker's question, kept in asker's own directory. */
+const answered = async (ctx: PluginContext) => (await readFile(join(ctx.dir, 'answered'), 'utf8').catch(() => null)) !== null
+const answer = (word: string): OwnerCommand => ({
+  name: `asker ${word}`,
+  summary: `Answer ${word}.`,
+  params: {},
+  destructive: false,
+  ownerOnly: true,
+  run: async (_args, ctx) => {
+    await writeFile(join(ctx.dir, 'answered'), word)
+    return { outcome: 'done', text: word === 'yes' ? '好，上线了' : '好，先不上线' }
+  },
+})
+const yes: Action = { label: '上线', tone: 'default', confirm: null, inputs: [], call: owner('asker yes') }
+const no: Action = { label: '不上线', tone: 'default', confirm: null, inputs: [], call: owner('asker no') }
+const undo: Action = { label: '取回', tone: 'default', confirm: null, inputs: [], call: { face: 'agent', verb: 'archive', request: { kind: 'unarchive', path: '_archive/old.md' } } }
+
+/** Asks the owner one thing until answered, adds a line to the home page, and has one page of the newer blocks with counted filter options. */
+export const asker: Plugin = {
+  contract: 1,
+  name: pluginName('asker'),
+  cognition: { title: '问主人的测试插件', text: '## 测试插件\n\n它问主人一件事。' },
+  storage: [{ dir: '.', kind: 'body' }],
+  statements: [],
+  ownerCommands: [answer('yes'), answer('no')],
+  onAsks: async (ctx) => ((await answered(ctx)) ? [] : [{ key: 'asker:site', text: 'site 可以上线了，要上线吗？', about: 'site' as LibraryPath, actions: [yes, no], suggested: 0 }]),
+  views: [
+    { id: 'asker.story', title: '新的块', icon: 'activity', nav: true, filters: [{ name: 'who', label: '谁做的', options: [{ value: '', label: '全部' }, { value: 'agent', label: 'agent 做的' }], default: '' }] },
+    { id: 'asker.home', title: '首页的一部分', icon: 'house', nav: false, filters: [], home: true },
+  ],
+  onView: async (req) => {
+    if (req.view === 'asker.home') return { title: '首页的一部分', subtitle: null, blocks: [{ kind: 'text', text: '问主人的测试插件也在首页上。', tone: 'neutral' }] }
+    const blocks: Block[] = [
+      { kind: 'stats', stats: [{ label: '放入', value: '4', note: '带进来 2 样' }, { label: '决定', value: '1', note: null }] },
+      { kind: 'tree', param: 'dir', selected: req.params.dir ?? '', nodes: [{ value: '', label: '全部文件夹', count: 3, children: [{ value: 'notes', label: 'notes', count: 2, children: [{ value: 'notes/old', label: 'old', count: 1, children: [] }] }] }] },
+      {
+        kind: 'feed',
+        groups: [
+          {
+            title: '今天',
+            count: 2,
+            link: { view: 'ledger.scene', params: { scene: 's1' }, target: 'panel' },
+            rows: [
+              { key: 'f1', at: '2026-11-25T11:11:00.000Z' as Instant, actor: { kind: 'agent', name: 'claude-code', grant: 'claude' }, text: '归档 notes/old.md', meta: [{ text: '整理笔记' }, { text: '凭授权 claude', muted: true }], whose: 'agent', action: undo, link: { view: 'item', params: { path: '_archive/old.md' }, target: 'panel' } },
+              { key: 'f2', at: '2026-11-25T11:12:00.000Z' as Instant, actor: { kind: 'owner', name: '主人' }, text: '主人面的操作 plugin add', meta: [], whose: 'owner', settled: '已定', link: null },
+            ],
+          },
+        ],
+        empty: '没有记录。',
+      },
+      { kind: 'feed', groups: [], empty: '空的一串。' },
+      { kind: 'asks', asks: [{ key: 'k', by: { kind: 'agent', name: 'claude-code' }, text: '要上线吗？', about: 'site' as LibraryPath, actions: [yes, no], suggested: 0 }], empty: '没有要决定的。' },
+      { kind: 'asks', asks: [], empty: '没有要你决定的事。' },
+    ]
+    return { title: '新的块', subtitle: null, blocks, filters: [{ name: 'who', options: [{ value: '', label: '全部', count: 12 }, { value: 'agent', label: 'agent 做的', count: 8 }] }] }
+  },
+}

@@ -131,10 +131,15 @@ describe('the whole story, with every plugin installed', () => {
   it('check, as an agent at the end, is quiet about what is in order and mentions nothing stale', () => {
     const r = ok(sb.run(['--library', lib, '--as', 'claude-code', '--session', 'claude-2', 'check', '--json'], { cwd: claudeDir }))
     expect(r.json().sections.map((s: { title: string }) => s.title)).toEqual(['自上次以来'])
-    const text = ok(sb.run(['--library', lib, '--as', 'claude-code', '--session', 'claude-2', 'check'], { cwd: claudeDir })).stdout
+    // That check was a look; the text asks from the same moment the look did.
+    const since = r.json().sections[0].data.since as string
+    const text = ok(sb.run(['--library', lib, '--as', 'claude-code', '--session', 'claude-2', 'check', '--since', since], { cwd: claudeDir })).stdout
     expect(text).toContain('sites/coffee 换了新内容')
     expect(text).not.toMatch(/可能过期|来源不在|没人登记过|被直接改过|不一致|冲突副本|在工具之外/)
     // A scene's heading says where it ran; the lines under it name things, never a directory outside the library.
-    expect(text.split('\n').filter((line) => line.startsWith('  ')).join('\n')).not.toContain(root)
+    // (What only the owner can settle comes after, each answer as the owner's command for this library.)
+    const told = text.split('## 要主人来做的')[0] ?? ''
+    expect(told.split('\n').filter((line) => line.startsWith('  ')).join('\n')).not.toContain(root)
+    expect(text).toContain(`pneuma-base deploy on sites/cycling --library ${lib}  # 上线（推荐）`)
   })
 })

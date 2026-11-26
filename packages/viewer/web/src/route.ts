@@ -81,6 +81,13 @@ export function follow(route: Route, req: ViewRequest, newTab: boolean): Route {
   return { ...route, tabs: route.tabs.map((tab, i) => (i === route.active ? [...tab, req] : tab)) }
 }
 
+/** The front tab showing `req` in place of what it shows, as a filter changed there; no step to go back to. */
+export function retop(route: Route, req: ViewRequest): Route {
+  const front = route.tabs[route.active]
+  if (!front) return route
+  return { ...route, tabs: route.tabs.map((tab, i) => (i === route.active ? [...tab.slice(0, -1), req] : tab)) }
+}
+
 /** The front tab one view back. */
 export function back(route: Route): Route {
   const front = route.tabs[route.active]

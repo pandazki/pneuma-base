@@ -6,7 +6,7 @@
 // - every business verb and command has a button or is the read behind a page, and every management
 //   command has a place on the owner's pages; what has none is listed below with why.
 import { join } from 'node:path'
-import { actionFault, callableIn, openLibrary, ownerFace, type Action, type Block, type Cell, type Link, type ListedView, type ViewResult } from '@pneuma-base/kernel'
+import { actionFault, callableIn, openLibrary, ownerFace, type Action, type Block, type Cell, type Link, type ListedView, type TreeNode, type ViewResult } from '@pneuma-base/kernel'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { main, type Io } from '../dist/main.js'
 import { commandOf, minute } from '../dist/page.js'
@@ -19,7 +19,6 @@ type Page = { link: Link; json: Shown; text: string }
 /** What a business verb or command reads, where a page shows the same: it has no button because the page is the reading. */
 const READS: Record<string, string> = {
   inspect: 'item',
-  check: 'ledger.standing',
   'plugin list': 'config',
   'secret list': 'config',
   'ledger held list': 'ledger.held',
@@ -33,7 +32,7 @@ const READS: Record<string, string> = {
 
 /** What has no button on any page, and why. */
 const NO_PLACE: Record<string, string> = {
-  find: '一个搜索框要一个人自己打字的页面参数，界面的页现在只从筛选的选项和链接拿参数；要等界面能问一个自由的输入。找按名字时，人翻「文件」和「条目」',
+  find: '一个搜索框要一个人自己打字的页面参数，界面的页现在只从筛选的选项和链接拿参数；要等界面能问一个自由的输入。找按名字时，人翻「文件」和「库」',
   'say doing': '说的是 agent 这次会话在做什么；人在界面里的操作自成一个主人的场景，场景里记的就是做了哪些操作',
 }
 
@@ -84,6 +83,10 @@ function actionsOf(b: Block): Action[] {
       return b.entries.flatMap((e) => e.actions ?? [])
     case 'custom':
       return Object.values(b.actions)
+    case 'feed':
+      return b.groups.flatMap((g) => g.rows.flatMap((r) => (r.action ? [r.action] : [])))
+    case 'asks':
+      return b.asks.flatMap((a) => a.actions)
     default:
       return []
   }
@@ -99,14 +102,29 @@ function cellsOf(b: Block): Cell[] {
       return b.items.map((i) => i.cell)
     case 'timeline':
       return b.entries.map((e) => e.title)
+    case 'feed':
+      return b.groups.flatMap((g) => g.rows.flatMap((r) => r.meta))
     default:
       return []
   }
 }
 
-function linksOf(b: Block): Link[] {
+/** The links of a block on the page of `view`: a tree's folders are that view with its parameter set. */
+function linksOf(b: Block, view: string): Link[] {
   const cells = cellsOf(b).flatMap((c) => (c.link ? [c.link] : []))
-  return b.kind === 'table' ? [...cells, ...b.rows.flatMap((r) => (r.link ? [r.link] : []))] : cells
+  const nodes = (list: readonly TreeNode[]): TreeNode[] => list.flatMap((n) => [n, ...nodes(n.children)])
+  switch (b.kind) {
+    case 'table':
+      return [...cells, ...b.rows.flatMap((r) => (r.link ? [r.link] : []))]
+    case 'feed':
+      return [...cells, ...b.groups.flatMap((g) => [...(g.link ? [g.link] : []), ...g.rows.flatMap((r) => (r.link ? [r.link] : []))])]
+    case 'tree':
+      return nodes(b.nodes).map((n) => ({ view, params: { [b.param]: n.value }, target: 'main' as const }))
+    case 'asks':
+      return b.asks.flatMap((a) => (a.about === null ? [] : [{ view: 'item', params: { path: a.about }, target: 'panel' as const }]))
+    default:
+      return cells
+  }
 }
 
 /** What a button does, as the coverage counts it: an owner command by name, a verb with the kind of its request. */
@@ -189,14 +207,14 @@ beforeAll(async () => {
     expect(text.code, `${args.join(' ')}\n${text.err}`).toBe(0)
     const page: Page = { link, json: JSON.parse(json.out) as Shown, text: text.out }
     pages.push(page)
-    queue.push(...allBlocks(page.json.blocks).flatMap(linksOf))
+    queue.push(...allBlocks(page.json.blocks).flatMap((b) => linksOf(b, link.view)))
   }
 }, 120_000)
 
 describe('every page of a library with every built-in plugin', () => {
   it('is reached: each view in the list, the item panel of a file, a bundle, a file inside one and an archived file, and a scene card', () => {
     const views = new Set(pages.map((p) => p.link.view))
-    for (const id of ['ledger.items', 'ledger.scenes', 'ledger.standing', 'ledger.activity', 'ledger.held', 'ledger.scene', 'version.things', 'deploy.sites', 'sync.status', 'search.status', 'files', 'archive', 'agents', 'config', 'item']) expect(views, id).toContain(id)
+    for (const id of ['home', 'ledger.items', 'ledger.scenes', 'ledger.standing', 'ledger.activity', 'ledger.held', 'ledger.scene', 'version.things', 'deploy.sites', 'sync.status', 'search.status', 'files', 'archive', 'agents', 'config', 'item']) expect(views, id).toContain(id)
     const items = pages.filter((p) => p.link.view === 'item').map((p) => p.link.params.path)
     expect(items).toEqual(expect.arrayContaining(['notes/plan.md', 'sites/shop', 'sites/shop/index.html', '_archive/notes/old.md']))
   })
@@ -216,6 +234,10 @@ describe('every page of a library with every built-in plugin', () => {
         if (block.kind === 'custom') expect(text, where).toContain(block.text)
         if (block.kind === 'section') expect(text, where).toContain(block.title)
         if (block.kind === 'text') expect(text, where).toContain(block.text)
+        if (block.kind === 'feed') for (const row of block.groups.flatMap((g) => g.rows)) expect(text, `${where}: ${row.text}`).toContain(row.text)
+        if (block.kind === 'asks') for (const ask of block.asks) expect(text, `${where}: ${ask.text}`).toContain(ask.text)
+        if (block.kind === 'stats') for (const stat of block.stats) expect(text, `${where}: ${stat.label}`).toContain(`${stat.label}：${stat.value}`)
+        if (block.kind === 'tree') for (const node of block.nodes) expect(text, `${where}: ${node.label}`).toContain(node.label)
         for (const action of actionsOf(block)) expect(text, `${where}: ${action.label}`).toContain(`$ ${commandOf(action, commands)}  # ${action.label}`)
       }
     }

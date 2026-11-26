@@ -5,6 +5,7 @@ import { ArrowLeft, PanelRightClose, X } from 'lucide-react'
 import { useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { ViewIcon } from './chrome'
 import { topOf, type Tab } from './route'
+import { localMoments } from './time'
 
 type Props = {
   tabs: Tab[]
@@ -87,7 +88,7 @@ export function DetailPanel({ tabs, active, labelOf, iconOf, result, children, o
           ) : null}
           <div className="min-w-0">
             <h2 data-testid="panel-title">{shown?.title ?? ''}</h2>
-            {shown?.subtitle ? <p>{shown.subtitle}</p> : null}
+            {shown?.subtitle ? <p>{localMoments(shown.subtitle)}</p> : null}
           </div>
         </div>
         {children}

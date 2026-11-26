@@ -9,16 +9,16 @@ test('the items page and the provenance chain of a relayed library', async ({ pa
   const { url } = await pb.view(lib)
   await page.goto(url)
 
-  // The ledger's page comes first in the navigation, so it is what opens.
+  // The app opens on the home page; the ledger's library page is next in the navigation.
   const main = page.getByRole('main')
-  await expect(main.getByRole('heading', { level: 1, name: '条目' })).toBeVisible()
+  await expect(main.getByRole('heading', { level: 1, name: '首页' })).toBeVisible()
+  await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '库' }).click()
+  await expect(main.getByRole('heading', { level: 1, name: '库' })).toBeVisible()
   await expect(main.getByText('7 样东西')).toBeVisible()
   const row = (path: string) => main.getByRole('row', { name: new RegExp(`^${path.replaceAll('.', '\\.')}\\b`) })
   await expect(row('payments/integration-notes.md')).toContainText('做出来的')
   await expect(row('payments/integration-notes.md')).toContainText('codex')
-  await expect(row('payments/integration-notes.md')).toContainText('把支付服务接进电子书小店')
   await expect(row('payments/comparison.md')).toContainText('claude-code')
-  await expect(row('payments/comparison.md')).toContainText(DOING)
   await expect(row('payments/comparison.md')).toContainText('一致')
   await expect(row('payments/sources/stripe-pricing.html')).toContainText('带进来的')
   // With room, nothing in the table is cut short.
@@ -33,7 +33,7 @@ test('the items page and the provenance chain of a relayed library', async ({ pa
   await expect(title).toHaveText('integration-notes.md')
   await expect(provenance).toContainText('做出来的')
   await expect(provenance).toContainText('codex')
-  const basis = provenance.getByRole('region', { name: '依据', exact: true })
+  const basis = provenance.getByRole('region', { name: '怎么来的', exact: true })
   await expect(basis.getByRole('listitem').filter({ hasText: 'payments/recommendation.md' })).toContainText('一致')
 
   await basis.getByRole('button', { name: /payments\/recommendation\.md/ }).click()
@@ -43,10 +43,11 @@ test('the items page and the provenance chain of a relayed library', async ({ pa
 
   await expect(title).toHaveText('comparison.md')
   await expect(provenance).toContainText(DOING)
-  await expect(provenance.getByRole('region', { name: '决定与备注' })).toContainText(DECIDED)
+  const happened = provenance.getByRole('region', { name: '发生过什么' })
+  await expect(happened).toContainText(DECIDED)
   await expect(basis).toContainText('主人在对话里说：客户主要在欧洲')
   for (const source of Object.keys(SOURCES)) await expect(basis.getByRole('listitem').filter({ hasText: source })).toContainText('一致')
-  await expect(provenance.getByRole('region', { name: '内容的变化' })).toContainText('当前')
+  await expect(happened).toContainText('放进来')
   await expect(row('payments/comparison.md')).toHaveAttribute('aria-selected', 'true')
   // With the panel open, the paths keep their width; other columns give way.
   expect(await cutTexts(items, 'td:first-child')).toEqual([])
@@ -63,7 +64,7 @@ test('the items page and the provenance chain of a relayed library', async ({ pa
   await expect(title).toHaveText('comparison.md')
 
   // Filters narrow the table.
-  await main.getByRole('radiogroup', { name: '来历' }).getByRole('radio', { name: '带进来的' }).click()
+  await main.getByRole('radiogroup', { name: '显示' }).getByRole('radio', { name: /^带进来的/ }).click()
   await expect(main.getByText('4 样东西')).toBeVisible()
   await expect(row('payments/comparison.md')).toHaveCount(0)
 
@@ -74,7 +75,7 @@ test('the items page and the provenance chain of a relayed library', async ({ pa
   await shoot(page, 'c3-config')
 
   // By keyboard: a row opens its panel with Enter; Escape closes it.
-  await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '条目' }).click()
+  await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '库' }).click()
   await row('payments/comparison.md').focus()
   await page.keyboard.press('Enter')
   await expect(title).toHaveText('comparison.md')

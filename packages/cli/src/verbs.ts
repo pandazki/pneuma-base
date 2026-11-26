@@ -157,11 +157,11 @@ export const VERBS: readonly Verb[] = [
     summary: '开始一件事：记下在做什么，看库的变化与状况，找库里可能相关的',
     readOnly: false,
     params: { positional: [{ name: 'sentence', hint: '一句话，说要做什么', required: true, words: true }] },
-    run: async ({ sentence }, { bound: { ctx } }) => {
+    run: async ({ sentence }, { bound: { library, ctx } }) => {
       const say = await agentFace.say({ kind: 'doing', about: null, text: sentence, args: {} }, ctx)
       const check = await agentFace.check({ since: 'last', includeArchived: false }, ctx)
       const find = await agentFace.find({ text: sentence, match: 'words', filters: {}, includeArchived: false, skipOwnSession: true }, ctx)
-      return { json: { say, check, find }, lines: startText(say, check, find), exit: exitOf(say, check, find) }
+      return { json: { say, check, find }, lines: startText(say, check, find, ownerFace.commands(library.plugins), library.root), exit: exitOf(say, check, find) }
     },
   }),
   verb({
@@ -243,9 +243,9 @@ export const VERBS: readonly Verb[] = [
     summary: '库的变化与状况',
     readOnly: true,
     params: { flags: [{ name: 'since', hint: '从什么时候起：last（上次查之后）或一个时间，比如 2026-11-25T08:00:00Z', kind: 'value' }, INCLUDE_ARCHIVED] },
-    run: async ({ since, 'include-archived': includeArchived }, { bound: { ctx } }) => {
+    run: async ({ since, 'include-archived': includeArchived }, { bound: { library, ctx } }) => {
       const r = await agentFace.check({ since: sinceOf(since), includeArchived }, ctx)
-      return { json: r, lines: checkText(r), exit: exitOf(r) }
+      return { json: r, lines: checkText(r, ownerFace.commands(library.plugins), library.root), exit: exitOf(r) }
     },
   }),
   archiving('archive', '不用了，把一样东西归档：不删，默认的找和查不再带它'),
@@ -266,7 +266,8 @@ export const VERBS: readonly Verb[] = [
       const r = await viewerFace.show({ view, params: { ...params } }, { ctx, table, env, viaGrant })
       if (r.outcome === 'no-such-view') throw new UsageError(`这个库没有这一页：${view}。pneuma-base show 列出这个库的页。`)
       if (r.outcome === 'refused') return answer(r, [`拒绝（${r.reason}）：${r.text}`])
-      return { json: r, lines: pageText(r, ownerFace.commands(library.plugins)), exit: exitOf(r) }
+      const decl = viewerFace.views(library).views.find((v) => v.id === view)
+      return { json: r, lines: pageText(r, ownerFace.commands(library.plugins), { view, params: { ...params } }, decl), exit: exitOf(r) }
     },
   }),
 ]

@@ -20,7 +20,8 @@ export type FactBody =
 
 export type Fact = Envelope & FactBody
 
-export type Declared = { id: ThingId; path: LibraryPath; on: boolean; declaredAt: Instant; declaredBy: string; note: string | null }
+/** `decided`: the owner has set its switch, on or off, at least once; until then whether it goes online waits on the owner. */
+export type Declared = { id: ThingId; path: LibraryPath; on: boolean; decided: boolean; declaredAt: Instant; declaredBy: string; note: string | null }
 export type OnTarget = { thing: ThingId; content: ContentId; url: string | null; at: Instant }
 
 export type Deployments = {
@@ -55,12 +56,12 @@ export function apply(d: Deployments, f: Fact): void {
         if (there !== f.thing) d.alias.set(f.thing, there)
         return
       }
-      d.things.set(f.thing, { id: f.thing, path: f.path, on: false, declaredAt: f.at, declaredBy: f.actor.name, note: f.note })
+      d.things.set(f.thing, { id: f.thing, path: f.path, on: false, decided: false, declaredAt: f.at, declaredBy: f.actor.name, note: f.note })
       d.byPath.set(f.path, f.thing)
       return
     }
     case 'switch':
-      if (thing) thing.on = f.on
+      if (thing) Object.assign(thing, { on: f.on, decided: true })
       return
     case 'move': {
       if (!thing) return

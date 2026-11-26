@@ -1,0 +1,11 @@
+Pneuma Base is under the MIT License (LICENSE), with one exception.
+
+The files under packages/viewer/web/src/aui/ contain code adapted from affectUI Pro
+(https://www.affectui.com). That code is licensed under https://www.affectui.com/license,
+not under this project's open-source license. Do not copy it out of this project.
+
+Each of those files states this on its first line. They are bundled only into the built
+management UI, which the pneuma-base package ships with this file. They are not part of packages/sdk, the plugin frame kit
+(packages/viewer/web/kit), the projects that `pneuma-base plugin new` generates, or plugins/.
+packages/viewer/test/licensed-code.test.ts checks that no file carrying the notice lives
+anywhere else.
