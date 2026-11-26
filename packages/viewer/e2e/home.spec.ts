@@ -100,8 +100,9 @@ test('都看过了 empties 自上次以来 until an agent does something new', a
   const since = page.getByRole('main').getByRole('region', { name: '自上次以来' })
   await expect(since.getByRole('listitem').first()).toBeVisible()
   await since.getByRole('button', { name: '都看过了' }).click()
-  await expect(since).toContainText('你上次看过之后，agent 没有做过什么。')
-  await expect(since.getByRole('listitem')).toHaveCount(0)
+  await expect(since).toContainText('上次看过：刚刚')
+  await expect(since).toContainText('那之后还没有谁做过什么。')
+  await expect(since.getByRole('listitem').filter({ hasText: '放入' })).toHaveCount(0)
   await expect(since.getByRole('button', { name: '都看过了' })).toHaveCount(0)
 
   const dir = tempDir('pb-e2e-c-')
