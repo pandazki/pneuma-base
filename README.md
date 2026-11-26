@@ -83,3 +83,7 @@ pnpm test:slow    # 脚手架和 PLUGINS.md 的五分钟：生成插件项目，
 ```
 
 测试都用临时目录和临时的 `PNEUMA_BASE_HOME`，不碰 `~/.pneuma-base`；除了 `pnpm test:slow` 从 npm 装生成项目的开发依赖，都不联网。`scripts/agent-relay/` 和 `scripts/agent-site/` 用真的 Claude 和 Codex 走一遍故事，会花主人的模型额度，不在 `pnpm test` 里。
+
+## 许可
+
+[MIT](LICENSE)。

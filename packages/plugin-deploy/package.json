@@ -1,6 +1,7 @@
 {
   "name": "@pneuma-base/plugin-deploy",
   "version": "0.9.0",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "exports": {
