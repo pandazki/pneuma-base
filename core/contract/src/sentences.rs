@@ -158,7 +158,10 @@ pub const SENTENCES: &[Sentence] = &[
     checked("3.1", "`glance` 和 `overview` 里的每个条目都是这个形状："),
     checked("3.2", "中性的部分是 `kind`、`token`、`size`、`modified`。"),
     outside("3.3", "内核的逻辑只许依赖这些。", KERNEL),
-    checked("3.4", "`dir` 的 `size` 是它这一层的条目数。"),
+    checked(
+        "3.4",
+        "`dir` 的 `size` 是它这一层的条目数，存储便宜地给得出时才有，否则是 `null`；要确切的数就做一次 `overview`。",
+    ),
     checked("3.5", "`facets` 是可有可无的。"),
     checked("3.6", "每个面有自己的名字和字段，在第 7 节列出；"),
     outside(

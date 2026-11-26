@@ -215,9 +215,44 @@ pub fn entry_count_at(dir: RawFd, name: Option<&CStr>) -> Option<u64> {
     (rc == 0 && buf.length as usize >= size).then_some(u64::from(buf.count))
 }
 
+/// Without a call that gives the count, count by listing, up to a bound: past it there is no count.
 #[cfg(not(target_os = "macos"))]
-pub fn entry_count_at(_dir: RawFd, _name: Option<&CStr>) -> Option<u64> {
-    None
+pub fn entry_count_at(dir: RawFd, name: Option<&CStr>) -> Option<u64> {
+    const BOUND: u64 = 10_000;
+    let here = c".";
+    let name = name.unwrap_or(here);
+    let flags = libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC | libc::O_NOFOLLOW;
+    // SAFETY: `name` is a valid C string; the descriptor is handed to `fdopendir`, which owns it
+    // until `closedir`, or closed here when that fails.
+    unsafe {
+        let fd = libc::openat(dir, name.as_ptr(), flags);
+        if fd < 0 {
+            return None;
+        }
+        let stream = libc::fdopendir(fd);
+        if stream.is_null() {
+            libc::close(fd);
+            return None;
+        }
+        let mut count = 0u64;
+        loop {
+            let entry = libc::readdir(stream);
+            if entry.is_null() {
+                break;
+            }
+            let entry_name = CStr::from_ptr((*entry).d_name.as_ptr()).to_bytes();
+            if entry_name == b"." || entry_name == b".." {
+                continue;
+            }
+            count += 1;
+            if count > BOUND {
+                libc::closedir(stream);
+                return None;
+            }
+        }
+        libc::closedir(stream);
+        Some(count)
+    }
 }
 
 /// What readdir says an entry is, without a stat.

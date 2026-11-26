@@ -14,7 +14,8 @@ async function until(f: () => Promise<string[] | null>, want: (places: string[] 
 }
 
 describe('the kernel’s cursor', () => {
-  it('says it cannot say for an asker with no mark, then names what changed since the mark it handed out', async () => {
+  // These two need a change journal, which only the macOS provider has; elsewhere storage always cannot say.
+  it.runIf(process.platform === 'darwin')('says it cannot say for an asker with no mark, then names what changed since the mark it handed out', async () => {
     const fx = await fixture()
     const store = storageOf(fx.root)
     const first = await changesSince(store, null)
@@ -29,7 +30,7 @@ describe('the kernel’s cursor', () => {
     expect(places?.some((x) => x === 'notes/a.md' || x === 'notes')).toBe(true)
   })
 
-  it('answers nothing changed while nothing changes', async () => {
+  it.runIf(process.platform === 'darwin')('answers nothing changed while nothing changes', async () => {
     const fx = await fixture()
     const store = storageOf(fx.root)
     let mark = (await changesSince(store, null)).mark
