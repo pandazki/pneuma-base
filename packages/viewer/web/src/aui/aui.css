@@ -191,6 +191,13 @@ button.aui-feed-head:hover {
   flex: none;
   color: var(--ink-2);
 }
+.aui-feed-meta-time {
+  display: none;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+}
 .aui-feed-whose {
   display: inline-flex;
   flex: none;
@@ -517,14 +524,19 @@ button.aui-feed-head:hover {
     animation: none;
   }
 }
+/* Narrow, as in the panel: the moment moves into the grey line, and the sentence wraps whole. */
 @container (max-width: 560px) {
   .aui-feed-time {
     display: none;
   }
+  .aui-feed-meta-time {
+    display: inline-flex;
+  }
   .aui-feed-line {
-    display: -webkit-box;
     white-space: normal;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
+    overflow-wrap: anywhere;
+  }
+  .aui-feed-end:empty {
+    min-width: 0;
   }
 }
