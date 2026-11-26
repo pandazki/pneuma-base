@@ -227,6 +227,9 @@ export function whereConversation(c: Conversation): string {
 
 export const SINCE_LIMIT = 20
 
+/** What an owner command records besides the row of the command itself, which tells it: no news of its own. */
+export const toldByItsCommand = (f: Fact) => f.kind === 'items.enter' || f.kind === 'unowned.left'
+
 /** Owner commands that change neither the content nor the capabilities: recorded as facts, but no news to an agent. */
 export const QUIET_OWNER_COMMANDS: ReadonlySet<string> = new Set(['init', 'grant issue', 'grant revoke', 'skill install'])
 
@@ -256,7 +259,7 @@ export function sinceFacts(ledger: Ledger, me: FactActor, current: SceneId, sinc
   const start = explicit ? since : lastHere(ledger, me, current)
   const firstSeen = ledger.facts.find((f) => actorKey(f.actor) === mine)?.at ?? null
   const isNews = (f: Fact) =>
-    f.kind !== 'checked' && (f.kind !== 'owner.op' || !(QUIET_OWNER_COMMANDS.has(f.command) || f.readOnly || (!explicit && f.setup && (firstSeen === null || f.at <= firstSeen))))
+    f.kind !== 'checked' && !toldByItsCommand(f) && (f.kind !== 'owner.op' || !(QUIET_OWNER_COMMANDS.has(f.command) || f.readOnly || (!explicit && f.setup && (firstSeen === null || f.at <= firstSeen))))
   const facts = ledger.facts.filter((f) => actorKey(f.actor) !== mine && f.scene !== current && (start === null || f.at > start) && isNews(f)).slice(-SINCE_LIMIT)
   return { since: start, facts }
 }
@@ -288,6 +291,8 @@ export function factLine(ledger: Ledger, f: Fact): string {
       return `${SAID_LABEL[f.flavor]}：${f.text}${f.about !== null ? `（关于 ${pathOf(ledger, f.about)}）` : ''}`
     case 'item.enter':
       return `放入 ${now(f.item, f.path)}（${originLabel(f.origin, f.how)}）${noteTail(f.note)}`
+    case 'items.enter':
+      return `一次登记了 ${f.items.length} 样没人登记过的东西（${originLabel(f.origin, f.how)}）`
     case 'item.revise': {
       const path = pathOf(ledger, f.item)
       const what = !f.claimed
@@ -316,6 +321,8 @@ export function factLine(ledger: Ledger, f: Fact): string {
       return f.act === 'asked' ? `请主人做 ${f.line}：${f.why ?? ''}` : `撤回了请求 ${f.request}：${f.line}`
     case 'checked':
       return '看过了库的变化'
+    case 'unowned.left':
+      return `${f.paths.length} 样没人登记过的东西照原样留着，不再问`
   }
 }
 

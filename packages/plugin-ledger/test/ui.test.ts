@@ -1,9 +1,9 @@
 // Run 2 C3 at the ledger: the items view and the ledger's section of the item panel, through the
 // kernel's viewer face, from the same fold and reconcile that inspect and check use. Views write nothing.
-import { mkdirSync, mkdtempSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, realpathSync, renameSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { agentFace, initLibrary, makeContext, openLibrary, viewerFace, type Actor, type Block, type Instant, type Session, type ViewResult } from '@pneuma-base/kernel'
+import { agentFace, initLibrary, makeContext, openLibrary, ownerFace, viewerFace, type Actor, type Block, type Instant, type Library, type Session, type ViewResult } from '@pneuma-base/kernel'
 import { describe, expect, it } from 'vitest'
 import { ledger } from '../src/index.js'
 
@@ -33,7 +33,9 @@ async function relayed() {
   const show = (view: string, params: Record<string, string> = {}, ctx = makeContext(lib, { kind: 'owner' }, session('ui'), home, next())) => viewerFace.show({ view, params }, { ctx, table, env: {}, viaGrant: false })
   /** Later work by codex in another scene. */
   const codex = () => makeContext(lib, { kind: 'agent', name: 'codex', grant: null }, session('sess-b'), home, next())
-  return { root, show, codex }
+  /** Later work by claude-code in a scene of its own. */
+  const claudeIn = (id: string) => makeContext(lib, claude, session(id), home, next())
+  return { root, show, codex, claudeIn }
 }
 
 function shown(r: ViewResult) {
@@ -161,6 +163,14 @@ describe('the ledger’s part of the item panel', () => {
     expect(r.blocks[0]).toMatchObject({ kind: 'text', text: expect.stringMatching(/^文件 · /) })
     expect(r.blocks.at(-1)).toMatchObject({ kind: 'actions' })
     expect(actionsIn([r.blocks.at(-1) as Block]).map((a) => a.label)).toEqual(['归档', '挪到', '补上依据', '记一条决定', '记一条备注'])
+  })
+
+  it('says 决定 once: the tag says it, the grey line under it says who and in which scene', async () => {
+    const { show } = await relayed()
+    const happened = sectionNamed(sectionNamed(shown(await show('item', { path: 'comparison.md' })).blocks, '来历').blocks, '发生过什么').blocks[0]
+    const decision = happened?.kind === 'timeline' ? happened.entries.find((e) => e.title.text === '用 Paddle') : undefined
+    expect(decision?.tag?.text).toBe('决定')
+    expect(decision?.lines).toEqual(['claude-code · 场景 sess-a'])
   })
 
   it('shows a brought source with where it came from', async () => {
@@ -346,8 +356,10 @@ describe('the ledger’s part of the home page', () => {
     expect(sectionNamed(first.blocks, '需要留意').blocks).toMatchObject([{ kind: 'text', tone: 'neutral' }])
 
     await agentFace.check({ since: 'last', includeArchived: false }, codex())
+    // Nothing since: when that look was, and the way to all that ever happened.
     const seen = sectionNamed(shown(await asCodex()).blocks, '自上次以来')
-    expect(seen).toMatchObject({ actions: [], blocks: [{ kind: 'feed', groups: [], empty: '你上次看过之后，agent 没有做过什么。' }] })
+    expect(seen).toMatchObject({ actions: [], note: expect.stringMatching(/^你上次看是 2026-11-25 02:00Z$/), blocks: [{ kind: 'feed', groups: [], empty: '那之后还没有谁做过什么。' }, { kind: 'list' }] })
+    expect(listIn(seen).map((i) => [i.cell.text, i.cell.link])).toEqual([['看全部活动', { view: 'ledger.activity', params: {}, target: 'main' }]])
 
     writeFileSync(join(root, 'src/stripe.html'), 'stripe, new prices')
     const attention = sectionNamed(shown(await asCodex()).blocks, '需要留意')
@@ -358,6 +370,76 @@ describe('the ledger’s part of the home page', () => {
     ])
     expect(sectionNamed(shown(await show('ledger.standing', { kind: 'changed' })).blocks, '被直接改过的').count).toBe(1)
     expect(shown(await show('ledger.standing', { kind: 'changed' })).blocks).toHaveLength(1)
+  })
+})
+
+describe('the ledger’s part of the home page, when a scene only said what it was doing', () => {
+  it('tells that sentence as the group’s row, and counts it', async () => {
+    const { show, codex, claudeIn } = await relayed()
+    await agentFace.check({ since: 'last', includeArchived: false }, codex())
+    await agentFace.say({ kind: 'doing', about: null, text: '整理首页文案', args: {} }, claudeIn('sess-c'))
+    const since = sectionNamed(shown(await show('home', {}, codex())).blocks, '自上次以来')
+    const feed = since.blocks[0]
+    expect(feed?.kind === 'feed' && feed.groups.map((g) => [g.title, g.count, g.rows.map((r) => r.text)])).toEqual([['整理首页文案', 1, ['在做：整理首页文案']]])
+    expect(since.note).toBe('claude-code 做了 1 件事')
+  })
+})
+
+describe('things nobody registered', () => {
+  /** A folder with files in it that becomes a library, and the owner's way to its pages and commands. */
+  async function folderWithFiles(count: number) {
+    second = 0
+    const base = realpathSync(mkdtempSync(join(process.env.PNEUMA_BASE_TEST_TMP ?? tmpdir(), 'pb-ui-')))
+    const root = join(base, 'lib')
+    const home = join(base, 'home')
+    mkdirSync(join(root, 'notes'), { recursive: true })
+    for (let i = 0; i < count; i++) writeFileSync(join(root, i % 2 ? `notes/n${i}.md` : `f${i}.txt`), `file ${i}`)
+    // The files were there a while before the folder became a library.
+    for (let i = 0; i < count; i++) utimesSync(join(root, i % 2 ? `notes/n${i}.md` : `f${i}.txt`), new Date('2026-01-01'), new Date('2026-01-01'))
+    await initLibrary(root, { plugins: ['ledger'], table, actor: { kind: 'owner' }, session: session('init'), home })
+    const lib = (await openLibrary(root, table)) as Library
+    const owner = () => makeContext(lib, { kind: 'owner' }, session('ui'), home, new Date().toISOString() as Instant)
+    const show = (view: string, params: Record<string, string> = {}) => viewerFace.show({ view, params }, { ctx: owner(), table, env: {}, viaGrant: false })
+    const run = (call: { command: string; args: { positional: string[]; flags: Record<string, string[] | true> } }) =>
+      ownerFace.dispatch({ ctx: owner(), table, env: {}, viaGrant: false, confirm: async () => true }, call.command, call.args)
+    const asks = async () => (flat(shown(await show('home')).blocks).find((b) => b.kind === 'asks') as Extract<Block, { kind: 'asks' }>).asks
+    return { root, show, run, asks }
+  }
+
+  it('is one question on the home page, not something to look at: register them all as brought in by the owner, or leave them', async () => {
+    const { show, asks } = await folderWithFiles(3)
+    const [ask, ...more] = await asks()
+    expect(more).toEqual([])
+    expect(ask).toMatchObject({ by: '记账与对账', text: '这里原来有 3 样东西，还没登记。都记为你带进来的吗？', suggested: 0 })
+    expect(ask?.actions.map((a) => [a.label, a.call])).toEqual([
+      ['都记为我带进来的', { face: 'owner', command: 'ledger register', args: { positional: [], flags: {} } }],
+      ['不登记，不再问', { face: 'owner', command: 'ledger leave', args: { positional: [], flags: {} } }],
+    ])
+    expect(sectionNamed(shown(await show('home')).blocks, '需要留意').blocks).toMatchObject([{ kind: 'text', tone: 'neutral' }])
+  })
+
+  it('registered all at once: each is the owner’s, brought in; the activity has one row for the act; nothing is asked any more', async () => {
+    const { show, run, asks } = await folderWithFiles(3)
+    const register = (await asks())[0]?.actions[0]?.call
+    if (register?.face !== 'owner') throw new Error('no owner call')
+    expect(await run(register)).toMatchObject({ outcome: 'done', text: '已把 3 样东西记为主人带进来的。', data: { registered: 3 } })
+    expect(await asks()).toEqual([])
+    const came = sectionNamed(sectionNamed(shown(await show('item', { path: 'notes/n1.md' })).blocks, '来历').blocks, '怎么来的').blocks[0]
+    expect(came?.kind === 'fields' && came.fields[0]?.value.text).toBe('带进来的，主人给的')
+    const rows = feedRows(shown(await show('ledger.activity')).blocks)
+    expect(rows.map((r) => r.text).filter((t) => t.includes('ledger register') || t.includes('放入'))).toEqual(['主人面的操作 ledger register：已把 3 样东西记为主人带进来的。'])
+    expect(shown(await show('ledger.standing')).blocks).toMatchObject([{ kind: 'empty' }])
+  })
+
+  it('left as they are: not asked about again, still on the standing page; a later pile is asked about anew', async () => {
+    const { root, show, run, asks } = await folderWithFiles(2)
+    const leave = (await asks())[0]?.actions[1]?.call
+    if (leave?.face !== 'owner') throw new Error('no owner call')
+    expect(await run(leave)).toMatchObject({ outcome: 'done', data: { left: 2 } })
+    expect(await asks()).toEqual([])
+    expect(sectionNamed(shown(await show('ledger.standing')).blocks, '没人登记过的').count).toBe(2)
+    writeFileSync(join(root, 'later.md'), 'dropped in later')
+    expect((await asks()).map((a) => a.text)).toEqual(['这里有 1 样东西，还没登记。都记为你带进来的吗？'])
   })
 })
 

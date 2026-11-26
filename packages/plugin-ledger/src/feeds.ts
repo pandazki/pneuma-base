@@ -5,8 +5,8 @@ import type { Conversation } from './conversation.js'
 import type { Fact, FactActor, SceneId } from './facts.js'
 import { isArchived, type Ledger, type SceneRecord } from './fold.js'
 import type { Standing } from './reconcile.js'
-import { actorMark, grantCell, itemLink, sceneCell, sceneDoing, sceneLink, standingCounts, STANDING_VIEW, WHO_OPTIONS } from './ui.js'
-import { actorNames, factLine, shortScene, sinceFacts, when, whereConversation } from './views.js'
+import { ACTIVITY_VIEW, actorMark, grantCell, itemLink, sceneCell, sceneDoing, sceneLink, standingCounts, STANDING_VIEW, WHO_OPTIONS } from './ui.js'
+import { actorNames, factLine, shortScene, sinceFacts, toldByItsCommand, when, whereConversation } from './views.js'
 
 /** A day as a feed's heading, in this machine's time zone, as the view runs: 今天, 昨天, else the date and the weekday. */
 export function dayTitle(at: Instant, now: Instant): string {
@@ -80,8 +80,8 @@ function factRow(ledger: Ledger, f: Fact, grants: readonly Grant[], withScene: b
   return { key: f.id, at: f.at, actor: actorMark(f.actor, grants), text: factLine(ledger, f), meta, whose: whoseOf(f), link: factLink(ledger, f), ...endOf(ledger, f) }
 }
 
-/** The facts a feed tells: every one but the looks, which are no news. */
-const told = (facts: readonly Fact[]) => facts.filter((f) => f.kind !== 'checked')
+/** The facts a feed tells: every one but the looks, which are no news, and what the row of an owner command tells. */
+const told = (facts: readonly Fact[]) => facts.filter((f) => f.kind !== 'checked' && !toldByItsCommand(f))
 
 // ---- home ----
 
@@ -104,22 +104,28 @@ export function homeAnswer(ledger: Ledger, standing: Standing, me: FactActor, cu
   const groups: FeedGroup[] = grouped(facts, (f) => f.scene).map(({ members }) => {
     const scene = (members[0] as Fact).scene
     const title = sceneTitle(ledger, scene)
-    // The sentence that heads the group is not a row of it as well.
-    const rows = members.filter((f) => !(f.kind === 'said' && f.flavor === 'doing' && f.text === title)).map((f) => factRow(ledger, f, grants, false))
+    // The sentence that heads the group is not a row of it as well, unless it is all the group tells.
+    const heading = (f: Fact) => f.kind === 'said' && f.flavor === 'doing' && f.text === title
+    const rows = (members.every(heading) ? members : members.filter((f) => !heading(f))).map((f) => factRow(ledger, f, grants, false))
     return { title, count: rows.length, link: sceneLink(scene), rows }
   })
   const done = groups.reduce((n, g) => n + g.rows.length, 0)
   const actors = actorNames(facts.map((f) => f.actor))
-  const sinceNote = facts.length === 0 ? null : `${since === null ? '你还没看过，这是最近的：' : ''}${actors} 做了 ${done} 件事`
+  // Nothing new since the last look: when that was, and the way to everything that ever happened.
+  const looked = done === 0 && since !== null
   const sinceSection: Block = {
     kind: 'section',
     title: '自上次以来',
-    note: sinceNote,
+    note: done > 0 ? `${since === null ? '你还没看过，这是最近的：' : ''}${actors} 做了 ${done} 件事` : looked ? `你上次看是 ${when(since)}` : null,
     count: null,
-    blocks: [{ kind: 'feed', groups: groups.filter((g) => g.rows.length > 0), empty: since === null ? '还没有谁做过什么。' : '你上次看过之后，agent 没有做过什么。' }],
-    actions: facts.length > 0 ? [SEEN_ALL] : [],
+    blocks: [
+      { kind: 'feed', groups, empty: looked ? '那之后还没有谁做过什么。' : '还没有谁做过什么。' },
+      ...(looked ? [{ kind: 'list' as const, items: [{ cell: { text: '看全部活动', link: { view: ACTIVITY_VIEW, params: {}, target: 'main' as const } }, note: '每个 agent 和你做过的事，按天排着', actions: [] }] }] : []),
+    ],
+    actions: done > 0 ? [SEEN_ALL] : [],
   }
-  const kinds = standingCounts(ledger, standing)
+  // Things nobody registered are a question on the home page, the ledger's ask, not something to look at.
+  const kinds = standingCounts(ledger, standing).filter((k) => k.kind !== 'unowned')
   const attention: Block = {
     kind: 'section',
     title: '需要留意',

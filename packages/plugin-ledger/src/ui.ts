@@ -360,10 +360,11 @@ export function itemSection(v: ItemView, ledger: Ledger, grants: readonly Grant[
     ],
     tag: i === v.versions.length - 1 && i > 0 ? { text: '当前', tone: 'neutral' as const } : ver.held ? { text: '换下的进了留存', tone: 'neutral' as const } : null,
   }))
+  // A decision says so in its tag; a note in its grey line. Either way the word comes once.
   const said = v.said.map((s) => ({
     at: s.at,
     title: { text: s.text },
-    lines: [`${SAID_LABEL[s.flavor]} · ${who(s.actor)} · 场景 ${shortScene(s.scene)}${s.about !== null && s.about !== v.path ? ` · 关于 ${s.about}` : ''}`],
+    lines: [[...(s.flavor === 'decided' ? [] : [SAID_LABEL[s.flavor]]), who(s.actor), `场景 ${shortScene(s.scene)}`, ...(s.about !== null && s.about !== v.path ? [`关于 ${s.about}`] : [])].join(' · ')],
     tag: s.flavor === 'decided' ? { text: SAID_LABEL.decided, tone: 'neutral' as const } : null,
   }))
   const happened = [...changes, ...said].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))

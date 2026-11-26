@@ -45,20 +45,14 @@ export type Standing = {
 }
 
 /**
- * Full reconciliation, for check and start. Takes the fingerprint of every item's file, and of the
- * unowned files whose size matches an item that has no file at its path.
+ * The things no item holds, and which of them are items that moved there: exactly one of them holds
+ * a missing item's content, and no other missing item has that content. Takes the fingerprint of only
+ * those whose size matches an item that has no file at its path.
  */
-export async function reconcile(ledger: Ledger, files: Files): Promise<Standing> {
-  const states = new Map<ItemId, ItemState>()
-  const missing: ItemRecord[] = []
-  for (const item of ledger.items.values()) {
-    // An absorbed item's file lies inside a bundle, which the snapshot lists as one thing.
-    if (!item.removed && item.absorbedInto === null && !files.sizes.has(item.path)) missing.push(item)
-    else states.set(item.id, classify(item, item.removed ? null : await files.fingerprint(item.path), null))
-  }
+async function strays(ledger: Ledger, files: Files): Promise<{ missing: ItemRecord[]; movedTo: Map<ItemId, LibraryPath>; unowned: LibraryPath[] }> {
+  // An absorbed item's file lies inside a bundle, which the snapshot lists as one thing.
+  const missing = [...ledger.items.values()].filter((item) => !item.removed && item.absorbedInto === null && !files.sizes.has(item.path))
   const unowned = [...files.sizes.keys()].filter((path) => !ledger.pathIndex.has(path))
-
-  // Moved: exactly one unowned file holds the content, and no other missing item has that content.
   const sizes = new Set(missing.map((item) => item.size))
   const holders = new Map<Fingerprint, LibraryPath[]>()
   for (const path of unowned) {
@@ -67,14 +61,29 @@ export async function reconcile(ledger: Ledger, files: Files): Promise<Standing>
     if (print !== null) holders.set(print, [...(holders.get(print) ?? []), path])
   }
   const sharing = (print: Fingerprint) => missing.filter((item) => item.fingerprint === print).length
-  const taken = new Set<LibraryPath>()
+  const movedTo = new Map<ItemId, LibraryPath>()
   for (const item of missing) {
     const found = holders.get(item.fingerprint) ?? []
-    const to = found.length === 1 && sharing(item.fingerprint) === 1 ? (found[0] ?? null) : null
-    if (to !== null) taken.add(to)
-    states.set(item.id, classify(item, null, to))
+    const to = found.length === 1 && sharing(item.fingerprint) === 1 ? found[0] : undefined
+    if (to !== undefined) movedTo.set(item.id, to)
   }
-  return withMarks(ledger, states, unowned.filter((path) => !taken.has(path)))
+  const taken = new Set(movedTo.values())
+  return { missing, movedTo, unowned: unowned.filter((path) => !taken.has(path)) }
+}
+
+/** The things nobody registered, as full reconciliation finds them, without the fingerprint of every item. */
+export const unownedOf = async (ledger: Ledger, files: Files): Promise<LibraryPath[]> => (await strays(ledger, files)).unowned
+
+/** Full reconciliation, for check and start. Takes the fingerprint of every item's file besides what `strays` takes. */
+export async function reconcile(ledger: Ledger, files: Files): Promise<Standing> {
+  const { missing, movedTo, unowned } = await strays(ledger, files)
+  const absent = new Set(missing.map((item) => item.id))
+  const states = new Map<ItemId, ItemState>()
+  for (const item of ledger.items.values()) {
+    if (absent.has(item.id)) states.set(item.id, classify(item, null, movedTo.get(item.id) ?? null))
+    else states.set(item.id, classify(item, item.removed ? null : await files.fingerprint(item.path), null))
+  }
+  return withMarks(ledger, states, unowned)
 }
 
 /** Whether a standing reports anything about the files: a stray, or an item changed, moved or gone. */

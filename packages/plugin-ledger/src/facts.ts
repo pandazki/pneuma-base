@@ -17,9 +17,13 @@ export type LedgerOrigin =
 
 type SaidFlavor = 'doing' | 'decided' | 'note'
 
+/** One thing of an `items.enter`: what an `item.enter` says of it, but for the origin they share. */
+export type Entered = { item: ItemId; path: LibraryPath; fingerprint: Fingerprint; size: number; bundle?: true }
+
 export type FactBody =
   | { kind: 'said'; flavor: SaidFlavor; text: string; about: ItemId | null }
   | { kind: 'item.enter'; item: ItemId; path: LibraryPath; fingerprint: Fingerprint; size: number; origin: LedgerOrigin; bundle?: true; note?: string } // bundle: a marked directory; note: what this put changed
+  | { kind: 'items.enter'; items: Entered[]; origin: LedgerOrigin } // many things entered in one act, all with one origin: the owner registering what nobody had
   | { kind: 'item.revise'; item: ItemId; base: Fingerprint | null; fingerprint: Fingerprint; size: number; basis?: Basis; held: string | null; claimed: boolean; by?: 'owner'; note?: string } // by: the owner made the edit the actor recorded
   | { kind: 'item.move'; item: ItemId; from: LibraryPath; to: LibraryPath; archive: 'in' | 'out' | null }
   | { kind: 'item.basis'; item: ItemId; fingerprint: Fingerprint; basis: Basis }
@@ -27,6 +31,7 @@ export type FactBody =
   | { kind: 'owner.op'; command: string; summary: string; destructive: boolean; readOnly?: true; setup?: true; request?: { id: string; by: FactActor }; refused?: string } // request: the owner approved it at an agent's request; refused: the command's reason when it then refused
   | { kind: 'request'; act: 'asked' | 'withdrawn'; request: string; line: string; why?: string } // an agent asked the owner to run a command, or took the request back
   | { kind: 'checked' } // the actor looked at what changed: its check, or the owner's 都看过了 on the home page
+  | { kind: 'unowned.left'; paths: LibraryPath[] } // the owner left these things unregistered, not to be asked about them again
 
 export type FactActor = { kind: 'agent' | 'owner' | 'plugin'; name: string; grant: string | null }
 export type How = 'tool' | 'reported' | 'observed' // the tool did it; the actor said so; seen mechanically
