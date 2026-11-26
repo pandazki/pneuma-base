@@ -304,13 +304,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "pneuma-base-contract"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "serde_json",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
 name = "pneuma-base-core"
 version = "0.1.0"
 dependencies = [
+ "pneuma-base-contract",
  "pneuma-base-local",
  "pneuma-base-storage",
  "serde_json",
- "tempfile",
 ]
 
 [[package]]

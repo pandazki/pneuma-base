@@ -15,5 +15,10 @@ pneuma-base-local.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+pneuma-base-contract = { path = "../contract" }
 serde_json.workspace = true
-tempfile.workspace = true
+
+# The contract suite runs as one program against the built binary; see tests/contract.rs.
+[[test]]
+name = "contract"
+harness = false

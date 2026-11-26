@@ -1,5 +1,5 @@
 [workspace]
-members = ["storage", "local", "cli", "bench"]
+members = ["storage", "local", "cli", "bench", "contract"]
 resolver = "3"
 
 [workspace.package]
