@@ -87,6 +87,22 @@ describe('conformance over plugins that break the rules', () => {
     expect(r.text).toContain(`规则：${r.checks.find((c) => c.name === 'writes')?.rule}`)
   })
 
+  it('names a plugin that pages through the library’s directories: what it took past a page, and the directories nobody registered it looked in', async () => {
+    const r = await conformance(fixture('walker'), { cli })
+    const failed = Object.fromEntries(r.checks.filter((c) => !c.ok).map((c) => [c.name, c.problems.join('\n')]))
+    expect(Object.keys(failed), r.text).toEqual(['bounded'])
+    expect(failed.bounded).toMatch(/check时，它一览和探查库的内容共取了 \d+ 条，多于一页（1000 条）/)
+    expect(failed.bounded).toContain('check时，它一览了没人登记过的目录 conformance-heap：conformance-heap')
+    expect(failed.bounded).toContain('check时，它一览了没人登记过的目录 conformance-locked：conformance-locked')
+    expect(r.text).toContain(`规则：${r.checks.find((c) => c.name === 'bounded')?.rule}`)
+  })
+
+  it('stops at loading a plugin written against contract 1', async () => {
+    const r = await conformance(fixture('old-contract'), { cli })
+    expect(r.checks.find((c) => c.name === 'loads')?.ok, r.text).toBe(false)
+    expect(r.checks.find((c) => c.name === 'hooks')?.problems).toEqual(['没有查：插件没装上'])
+  })
+
   it('stops at loading a plugin named after a word of the command line', async () => {
     const r = await conformance(fixture('reserved-name'), { cli })
     expect(r.ok).toBe(false)
