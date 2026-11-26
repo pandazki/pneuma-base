@@ -23,7 +23,9 @@ describe('the change stamp', () => {
     const f = await fixture([plugin('keeper', { openDirs: async () => [p('notes')] })])
     f.write('notes/a.md', 'a')
     f.write('vendor/x.js', 'x')
-    const first = await changeStamp(f.ctx)
+    // The first ask starts the kernel's cursor; the next may still learn of the writes just made.
+    let first = await changeStamp(f.ctx)
+    for (let settled = await changeStamp(f.ctx), i = 0; settled !== first && i < 5; first = settled, settled = await changeStamp(f.ctx), i++);
     expect(await changeStamp(f.ctx)).toBe(first)
     await pluginContext(f.ctx, 'keeper' as PluginName).tools.storage.records.append([{ said: 'something' }])
     const second = await changeStamp(f.ctx)

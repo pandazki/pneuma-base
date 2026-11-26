@@ -31,7 +31,6 @@ import {
   type Grant,
   type GrantId,
   type Library,
-  type LibraryPath,
   type Plugin,
   type PluginContext,
   type PluginName,

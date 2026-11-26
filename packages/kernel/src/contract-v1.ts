@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { dirname, isAbsolute, join, posix, relative, sep } from 'node:path'
-import { isDescribed, isFailure, type AcceptedPut, type BundleFile, type Fingerprint, type Instant, type LibraryPath, type ManifestEntry, type Place, type PlaceOverExisting, type Plugin, type PluginTools, type Thing } from '@pneuma-base/sdk'
+import { isDescribed, isFailure, type AcceptedPut, type BundleFile, type Fingerprint, type Instant, type LibraryPath, type ManifestEntry, type Place, type Plugin, type PluginTools, type Thing } from '@pneuma-base/sdk'
 import { DESCRIPTION_FILE, KERNEL_DIR, parseLibraryPath } from './paths.js'
 import type { Storage } from './storage.js'
 import { BUNDLE_MARKER, fingerprintOf, fingerprintOfManifest, whatIsOne } from './things.js'
@@ -26,14 +26,17 @@ export async function putsFor(plugin: Plugin, put: AcceptedPut, store: Storage):
     return { ...p, fingerprint, ...(p.kind === 'place' ? { previous: p.previous?.fingerprint ?? null } : {}) } as unknown as AcceptedPut
   }
   if (put.kind !== 'register-files') return [await one(put)]
-  const { files, path: _dir, ...rest } = put
-  return Promise.all(files.map((f) => one({ ...rest, kind: 'register', path: f.path, now: f.now, fingerprint: null })))
+  const { files, origin, note, observed } = put
+  return Promise.all(files.map((f) => one({ kind: 'register', path: f.path, now: f.now, fingerprint: null, origin, note, ...(observed ? { observed } : {}) })))
 }
 
-/** A replacement as a contract-1 plugin's `revise` takes it: the current content's fingerprint always. */
-export async function reviseFor(plugin: Plugin, req: PlaceOverExisting, store: Storage): Promise<PlaceOverExisting> {
-  if (!isV1(plugin) || req.current !== null) return req
-  return { ...req, current: (await fingerprintOf(store, req.path))?.fingerprint ?? null }
+/**
+ * The fingerprint of the content a place replaces, as contract 1 promised it to `revise` and to `onPut`
+ * (`previous`): read now, before the write, only when a contract-1 plugin is installed that hears either.
+ */
+export async function replacedFor(plugins: readonly Plugin[], known: Fingerprint | null, store: Storage, path: LibraryPath): Promise<Fingerprint | null> {
+  if (known !== null || !plugins.some((p) => isV1(p) && (p.revise || p.onPut))) return known
+  return (await fingerprintOf(store, path))?.fingerprint ?? null
 }
 
 const nameOf = (place: Place) => place.slice(place.lastIndexOf('/') + 1)

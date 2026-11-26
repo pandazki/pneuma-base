@@ -52,8 +52,9 @@ async function find(req: FindRequest, ctx: Context): Promise<FindResult> {
   const answers = heard.values.map(({ plugin, value }) => ({ plugin, ...(Array.isArray(value) ? { hits: value, problems: [] } : value) }))
   const found = answers.map(({ plugin, hits }) => hits.map((h) => ({ ...h, by: plugin })))
   const known = await annotate(req, ctx, found.flat())
+  const merged = mergeHits(ctx.library.plugins.map((p) => p.name), found, known.hits)
   return {
-    hits: mergeHits(ctx.library.plugins.map((p) => p.name), found, known.hits),
+    hits: await marked(storageOf(ctx.library.root), merged),
     problems: [...heard.problems, ...answers.flatMap(({ plugin, problems }) => problems.map((message) => ({ plugin, message }))), ...known.problems],
   }
 }
@@ -103,6 +104,23 @@ function mergeHits(answerers: readonly Hit['by'][], found: Hit[][], annotations:
   const place = (hit: Hit) => answerers.indexOf(hit.by)
   const ranked = [...entries.values()].sort((a, b) => a.rank - b.rank || a.answerer - b.answerer || a.order - b.order)
   return ranked.flatMap(({ hits }) => hits.sort((a, b) => place(a) - place(b)))
+}
+
+/**
+ * The kernel's mark (目录, 已归档) in front of the detail of the first hit on each path: a bundle from one
+ * glance at the found paths, an archived thing from its path. The kernel finds nothing by name itself:
+ * that would walk the library; what is found comes from the plugins' indexes.
+ */
+async function marked(store: Storage, hits: Hit[]): Promise<Hit[]> {
+  const paths = [...new Set(hits.flatMap((h) => (h.path === null ? [] : [h.path])))]
+  const bundles = new Set((await whatIs(store, paths)).filter((at) => at.kind === 'bundle').map((at) => at.path))
+  const seen = new Set<string>()
+  return hits.map((hit) => {
+    if (hit.path === null || seen.has(hit.path)) return hit
+    seen.add(hit.path)
+    const marks = [...(bundles.has(hit.path) ? ['目录'] : []), ...(regionOf(hit.path) === 'archive' ? ['已归档'] : [])].join('，')
+    return marks === '' ? hit : { ...hit, detail: hit.detail === null ? marks : `${marks}，${hit.detail}` }
+  })
 }
 
 async function inspect(req: InspectRequest, ctx: Context): Promise<InspectResult> {

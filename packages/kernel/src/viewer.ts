@@ -122,6 +122,8 @@ function thingName(text: string, kind: 'file' | 'bundle', entries: number | null
 const modified = (at: string | undefined): Cell => (at ? { text: when(at), muted: true, at: at as FileFacts['modifiedAt'] } : { text: '' })
 const blank: Cell = { text: '' }
 const nameOf = (place: string) => place.slice(place.lastIndexOf('/') + 1)
+/** How many entries a bundle's first level has, its marker not counted, from what storage said of the directory. */
+const entriesOf = (entry: Description) => (entry.size === undefined || entry.size === null ? null : Math.max(0, entry.size - 1))
 
 type Listed = { entry: Description; kind: 'file' | 'bundle' | 'folder' }
 
@@ -174,7 +176,7 @@ async function filesPage(params: Record<string, string>, { ctx }: ViewerCall): P
       rows.push({ key: entry.place, cells: { name: { text: `${name}/`, mono: true, icon: 'folder', link: folderLink(entry.place) }, size: blank, modified: blank }, link: folderLink(entry.place), actions: [] })
       continue
     }
-    const cells = { name: thingName(name, kind, kind === 'bundle' ? (entry.size ?? null) : null), size: { text: kind === 'file' ? sizeText(entry.size ?? 0) : '', muted: true }, modified: modified(entry.modified) }
+    const cells = { name: thingName(name, kind, kind === 'bundle' ? entriesOf(entry) : null), size: { text: kind === 'file' ? sizeText(entry.size ?? 0) : '', muted: true }, modified: modified(entry.modified) }
     rows.push({ key: entry.place, cells, link: itemLink(entry.place), actions: [] })
   }
   if (page.more !== null) rows.push(moreRow('files', { ...(dir === null ? {} : { dir }), after: page.more.after }, page.more.atLeast))
@@ -208,7 +210,7 @@ async function archivePage(params: Record<string, string>, { ctx }: ViewerCall):
     rows.push({
       key: path,
       cells: {
-        original: thingName(originalPath(path) ?? path, kind, kind === 'bundle' ? (entry.size ?? null) : null),
+        original: thingName(originalPath(path) ?? path, kind, kind === 'bundle' ? entriesOf(entry) : null),
         at: { text: path, mono: true, muted: true },
         size: { text: kind === 'file' ? sizeText(entry.size ?? 0) : '', muted: true },
         modified: modified(entry.modified),

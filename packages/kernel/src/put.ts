@@ -2,13 +2,12 @@
 // "放". Every change goes through storage with its expectation, under a hold from the write until every
 // plugin's records are in; a register reads no content: a glance for a file, the marker for a directory.
 import { createHash } from 'node:crypto'
-import { createReadStream } from 'node:fs'
-import { stat } from 'node:fs/promises'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { isAbsolute, relative, sep } from 'node:path'
 import { writableContent } from './access.js'
-import { putsFor, reviseFor } from './contract-v1.js'
+import { putsFor, replacedFor } from './contract-v1.js'
 import { openDirectories } from './places.js'
-import { archivedPath, canonical, originalPath, parseLibraryPath, regionOf } from './paths.js'
+import { hashOutside, outsideDir, outsideFile } from './outside.js'
+import { archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
 import { eachPlugin, notesOf } from './pipeline.js'
 import { storageOf, type Source, type Storage } from './storage.js'
 import { enclosingBundle, LEVEL, markBundle, nowOf, THING_FILES, THING_RULE, whatIs, whatIsOne, type At } from './things.js'
@@ -20,6 +19,7 @@ import {
   type LibraryPath,
   type Note,
   type Origin,
+  type PlaceOverExisting,
   type PluginNoteAnswer,
   type PluginProblem,
   type PutRefusal,
@@ -191,12 +191,6 @@ async function registerFiles(req: Extract<PutRequest, { kind: 'register' }>, sto
 /** Where a place's content comes from, as storage takes it, with its fingerprint when it is a file read here or a place in the store. */
 type Incoming = { source: Source; kind: ThingKind; size: number | null; fingerprint: () => Promise<Fingerprint | null> }
 
-async function hashFile(path: string): Promise<Fingerprint> {
-  const hash = createHash('sha256')
-  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer)
-  return hash.digest('hex') as Fingerprint
-}
-
 /**
  * The incoming content. A file or directory outside the library is read by storage as it copies; a
  * file inside the library is copied from its place; standard input is bytes. Null when there is no such file.
@@ -215,14 +209,13 @@ async function incomingOf(ctx: Context, store: Storage, from: Extract<PutRequest
       if (at.kind !== 'file' || at.entry === null) return refuse('no-such-file', from.path)
       return { source: { place: inside }, kind: 'file', size: at.entry.size ?? null, fingerprint: async () => (await contentOf(store, inside))?.fingerprint ?? null }
     }
-    const s = await stat(from.path).catch(() => null)
-    if (s === null || !s.isFile()) return refuse('no-such-file', from.path)
+    const file = await outsideFile(from.path)
+    if (file === null) return refuse('no-such-file', from.path)
     let print: Promise<Fingerprint> | null = null
-    return { source: { path: resolve(from.path) }, kind: 'file', size: s.size, fingerprint: () => (print ??= hashFile(from.path)) }
+    return { source: { path: file.path }, kind: 'file', size: file.size, fingerprint: () => (print ??= hashOutside(file.path)) }
   }
-  const dir = canonical(resolve(from.path))
-  const s = await stat(dir).catch(() => null)
-  if (s === null || !s.isDirectory()) return refuse('no-such-file', from.path)
+  const dir = await outsideDir(from.path)
+  if (dir === null) return refuse('no-such-file', from.path)
   if (overlapsLibrary(root, dir)) return refuse('outside-library', from.path)
   return { source: { path: dir }, kind: 'bundle', size: null, fingerprint: async () => null }
 }
@@ -277,13 +270,15 @@ async function place(req: Extract<PutRequest, { kind: 'place' }>, ctx: Context, 
   if (action === 'revise') {
     // Ask every plugin that keeps replaced content; replace when at least one kept it.
     const token = at.entry?.token ?? ''
-    const asked = await eachPlugin(ctx, async (plugin, pctx) => plugin.revise?.(await reviseFor(plugin, { path: target.path, token, current, incoming: await incoming.fingerprint() }, store), pctx))
+    const replaced = await replacedFor(ctx.library.plugins, current, store, target.path)
+    const over: PlaceOverExisting = { path: target.path, token, current: replaced, incoming: await incoming.fingerprint() }
+    const asked = await eachPlugin(ctx, (plugin, pctx) => plugin.revise?.(over, pctx))
     const held = asked.values.flatMap(({ plugin, value }) => (value.outcome === 'held' ? [{ plugin, note: value.note }] : []))
     const declined = asked.values.flatMap(({ plugin, value }) => (value.outcome === 'declined' ? [{ plugin, text: value.reason }] : []))
     if (held.length === 0) return refuse('would-overwrite', req.to, asked.problems, declined)
     notes = held.flatMap(({ plugin, note }) => (note === null ? [] : [{ plugin, text: note }]))
     problems = asked.problems
-    previous = { token, fingerprint: current }
+    previous = { token, fingerprint: replaced }
   }
   const expect = action === 'copy' ? 'empty' : (at.entry?.token ?? 'empty')
   const written = await store.write(target.path, incoming.source, expect, { hold, ...(incoming.kind === 'bundle' ? { rule: THING_RULE, limit: THING_FILES } : {}) })

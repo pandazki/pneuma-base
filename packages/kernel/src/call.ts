@@ -1,6 +1,6 @@
 // A Call parsed from JSON, or what is wrong with it: at the viewer's POST /api/call, and for the
 // actions a view's blocks carry (blocks.ts).
-import type { Call, Instant, Origin, OwnerArgs, PutRequest } from '@pneuma-base/sdk'
+import type { Call, Instant, LibraryPath, Origin, OwnerArgs, PutRequest } from '@pneuma-base/sdk'
 
 type Raw = Record<string, unknown>
 
@@ -60,7 +60,9 @@ function agentCall(verb: unknown, r: Raw): Call {
       need((r.since === null || isString(r.since)) && typeof r.includeArchived === 'boolean', 'check needs since and includeArchived')
       const since = r.since === null || r.since === 'last' ? r.since : Number.isNaN(Date.parse(r.since as string)) ? undefined : (new Date(r.since as string).toISOString() as Instant)
       need(since !== undefined, 'check since is neither last nor a time')
-      return { face: 'agent', verb, request: { since: since as Instant | 'last' | null, includeArchived: r.includeArchived as boolean } }
+      const deep = r.deep === undefined ? undefined : isObject(r.deep) && (r.deep.dir === null || isString(r.deep.dir)) ? { dir: r.deep.dir as LibraryPath | null } : null
+      need(deep !== null, 'check deep needs dir, a library path or null')
+      return { face: 'agent', verb, request: { since: since as Instant | 'last' | null, includeArchived: r.includeArchived as boolean, ...(deep ? { deep } : {}) } }
     }
     case 'archive':
       need((r.kind === 'archive' || r.kind === 'unarchive') && isString(r.path), 'archive needs kind and path')

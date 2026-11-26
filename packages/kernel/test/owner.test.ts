@@ -1,10 +1,10 @@
 // K7 at the kernel: the confirmed path of a destructive command, through an injected confirmer.
 // K5 on failure: an operation that throws still sends exactly one event, marked failed.
-import { existsSync } from 'node:fs'
+import { chmodSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { agentFace, ownerFace, type Event, type OwnerCall } from '../src/index.js'
-import { fixture, plugin, type Fixture } from './support.js'
+import { fixture, outsideFile, plugin, type Fixture } from './support.js'
 
 const NO_ARGS = { positional: [], flags: {} }
 
@@ -102,10 +102,12 @@ describe('the single exit', () => {
     const events: Event[] = []
     const f = await fixture([plugin('recorder', { observe: async (e) => void events.push(e) })])
     events.length = 0 // forget the init event
-    f.write('a.md', 'a')
-    // a.md is a file, so a.md/b.md cannot be created.
-    const put = agentFace.put({ kind: 'place', from: { kind: 'stdin', content: new Uint8Array([1]) }, to: 'a.md/b.md', origin: { kind: 'made', from: [], outside: [] } }, f.ctx)
+    // A source nobody can read: storage fails the copy, and the put throws.
+    const source = outsideFile('a')
+    chmodSync(source, 0o000)
+    const put = agentFace.put({ kind: 'place', from: { kind: 'file', path: source }, to: 'a.md', origin: { kind: 'made', from: [], outside: [] } }, f.ctx)
     await expect(put).rejects.toThrow()
+    chmodSync(source, 0o644)
     expect(events).toHaveLength(1)
     expect(events[0]).toMatchObject({ face: 'agent', verb: 'put', result: { outcome: 'failed' } })
   })

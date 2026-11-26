@@ -11,7 +11,7 @@ const brought = { kind: 'brought' as const, source: null, by: null }
 
 describe('the sdk', () => {
   it('names the contract version, types a plugin as it is, and builds the branded values a plugin makes', () => {
-    expect(sdk.CONTRACT).toBe(1)
+    expect(sdk.CONTRACT).toBe(2)
     const plugin = { contract: sdk.CONTRACT, name: sdk.pluginName('echo'), cognition: null, storage: [], statements: [], ownerCommands: [] }
     expect(sdk.definePlugin(plugin)).toBe(plugin)
     expect(() => sdk.pluginName('Echo')).toThrow()
@@ -20,7 +20,7 @@ describe('the sdk', () => {
   })
 
   it('is what the kernel exports, so imports from the kernel keep working', () => {
-    expect(kernel.CONTRACT).toBe(1)
+    expect(kernel.CONTRACT).toBe(2)
     expect(kernel.pluginName).toBe(sdk.pluginName)
     expect(kernel.definePlugin).toBe(sdk.definePlugin)
   })
@@ -71,8 +71,8 @@ describe('the loader of a plugin outside the repository', () => {
   })
 
   it('refuses one without a contract, or with one it does not support, saying so in Chinese', async () => {
-    expect(await why({}, ['contract'])).toMatch(/没有写 contract.*第 1 版/)
-    expect(await why({ contract: 2 })).toMatch(/contract 是 2.*只认识第 1 版/)
+    expect(await why({}, ['contract'])).toMatch(/没有写 contract.*第 1、2 版/)
+    expect(await why({ contract: 3 })).toMatch(/contract 是 3.*只认识第 1、2 版/)
   })
 
   it('refuses the shapes it can check without calling a hook, naming each', async () => {
@@ -106,15 +106,22 @@ describe('the loader of a plugin outside the repository', () => {
   })
 })
 
-describe('a plugin’s own directory', () => {
-  it('exists whenever a hook runs, also in a library that arrived by sync before this machine had the plugin', async () => {
-    const p = plugin('keeper', { onPut: async (_req, ctx) => ({ text: existsSync(ctx.dir) ? 'there' : 'missing' }) })
+describe('a plugin’s own area', () => {
+  it('takes a write whenever a hook runs, also in a library that arrived by sync before this machine had the plugin', async () => {
+    const p = plugin('keeper', {
+      contract: 2,
+      onPut: async (_req, ctx) => {
+        const written = await ctx.tools.storage.own.write('state.json', { data: '{}' }, 'empty')
+        return { text: 'entry' in written ? 'written' : `refused ${written.reason}` }
+      },
+    })
     const f = await fixture([p])
-    // A synced library carries the configuration; an empty plugin directory may not come with it.
-    rmSync(join(f.root, '.pneuma-base', 'keeper'), { recursive: true })
+    // A synced library carries the configuration, and nothing of the plugin's own area need come with it.
+    rmSync(join(f.root, '.pneuma-base', 'keeper'), { recursive: true, force: true })
     await f.reopen()
     const r = await kernel.agentFace.put({ kind: 'place', from: { kind: 'file', path: outsideFile('a') }, to: 'a.md', origin: brought }, f.ctx)
-    expect(r).toMatchObject({ outcome: 'accepted', notes: [{ plugin: 'keeper', text: 'there' }] })
+    expect(r).toMatchObject({ outcome: 'accepted', notes: [{ plugin: 'keeper', text: 'written' }] })
+    expect(f.read('.pneuma-base/keeper/state.json')).toBe('{}')
   })
 })
 
@@ -250,7 +257,8 @@ describe('the tools on a plugin’s context', () => {
     expect(await put({ kind: 'register', path: 'alias.md', origin: brought })).toMatchObject({ outcome: 'refused', reason: 'no-such-file' })
     expect(await put({ kind: 'register', path: 'notelink/a.md', origin: brought })).toMatchObject({ outcome: 'refused', reason: 'no-such-file' })
     expect(await put({ kind: 'move', from: 'out.md', to: 'moved.md' })).toMatchObject({ outcome: 'refused', reason: 'no-such-file' })
-    expect(await put({ kind: 'place', from: { kind: 'file', path: outsideFile('new') }, to: 'outdir/new.md', origin: brought })).toMatchObject({ outcome: 'refused', reason: 'would-overwrite' })
+    // Storage takes nothing below a link: a place there is outside the library.
+    expect(await put({ kind: 'place', from: { kind: 'file', path: outsideFile('new') }, to: 'outdir/new.md', origin: brought })).toMatchObject({ outcome: 'refused', reason: 'outside-library' })
     expect(existsSync(join(outside, 'dir', 'new.md'))).toBe(false)
     expect(await kernel.agentFace.archive({ kind: 'archive', path: 'alias.md' }, ctx)).toMatchObject({ outcome: 'refused', reason: 'no-such-file' })
     expect(await kernel.agentFace.inspect({ target: 'out.md' }, ctx)).toMatchObject({ file: null })
@@ -347,7 +355,7 @@ describe('a plugin’s own lifecycle', () => {
     const seen: string[] = []
     const reporter = plugin('reporter', {
       onAdd: async (ctx) => {
-        seen.push(`${ctx.library.plugins.map((p) => p.name).join(',')} ${existsSync(ctx.dir)}`)
+        seen.push(ctx.library.plugins.map((p) => p.name).join(','))
         return { problems: ['目标还没设：运行 reporter target set'] }
       },
     })
@@ -355,7 +363,7 @@ describe('a plugin’s own lifecycle', () => {
     const table = new Map<string, sdk.Plugin>([['reporter', reporter], ['thrower', thrower]])
     const add = (name: string) => kernel.ownerFace.dispatch(calls(f, table), 'plugin add', { positional: [name], flags: {} })
     expect(await add('reporter')).toMatchObject({ outcome: 'done', problems: [{ plugin: 'reporter', message: '目标还没设：运行 reporter target set' }] })
-    expect(seen).toEqual(['reporter true'])
+    expect(seen).toEqual(['reporter'])
     f.ctx = { ...f.ctx, library: (await kernel.openLibrary(f.root, table)) as sdk.Library }
     expect(await add('reporter')).toMatchObject({ outcome: 'done', problems: [] })
     expect(seen).toHaveLength(1)

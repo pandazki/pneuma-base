@@ -78,3 +78,14 @@ export async function changesSince(store: Storage, mark: string | null): Promise
   }
   return { places: [...places].sort(), mark: next }
 }
+
+/** The newest `n` asks up to `seq` that learned something, newest first: what each learned. */
+export async function recentChanges(store: Storage, seq: number, n: number): Promise<{ seq: number; places: Place[] | null }[]> {
+  const seqs = Array.from({ length: Math.min(n, seq) }, (_, i) => seq - i)
+  const { rows } = await store.records(KERNEL_PLACE).get<Learned>('changes', seqs.map(logKey))
+  const byKey = new Map(rows.map((r) => [r.key, r.value]))
+  return seqs.flatMap((s) => {
+    const learned = byKey.get(logKey(s))
+    return learned === undefined ? [] : [{ seq: s, places: learned.places }]
+  })
+}
