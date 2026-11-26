@@ -1,10 +1,12 @@
 // C7 and C8 through the real command line. With the search plugin, find matches the content of
-// things, ranked by relevance, each hit with its context; two-character Chinese words match; the
-// index is a cache whose deletion changes no answer; with an embedder, a sentence finds things by
-// meaning, and an embedder that fails costs only the hits by meaning. The cognition section comes
-// and goes with the plugin and promises meaning only on the condition that an embedder is set.
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+// registered things, ranked by relevance, each hit with its context; two-character Chinese words
+// match; the index is a cache whose deletion changes no answer; with an embedder, a sentence finds
+// things by meaning, and an embedder that fails costs only the hits by meaning. The cognition section
+// comes and goes with the plugin and promises meaning only on the condition that an embedder is set.
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { fakeEmbedder, libraryId, ok, sandbox, tempDir, type FakeEmbedder, type Run, type RunOptions, type Sandbox } from './cli-support.js'
 
@@ -15,6 +17,8 @@ let outside: string
 const agent = (args: string[], opts: RunOptions = {}) => sb.run(['--library', lib, '--as', 'claude-code', ...args], { cwd: outside, ...opts })
 const owner = (args: string[], opts: RunOptions = {}) => sb.run([...args, '--library', lib], opts)
 const put = async (path: string, content: string) => ok(await agent(['put', '-', '--to', path, '--made'], { input: content }))
+/** Registers what is already at `path` in the library. */
+const register = async (path: string) => ok(await agent(['put', join(lib, path), '--made']))
 const hits = async (...args: string[]) => ok(await agent(['find', ...args, '--json'])).json().hits as { path: string | null; by: string; detail: string | null }[]
 const searchHits = async (...args: string[]) => (await hits(...args)).filter((h) => h.by === 'search')
 const cacheDir = () => join(sb.home, '.pneuma-base', 'cache', libraryId(lib), 'search')
@@ -115,6 +119,7 @@ describe('find matches content (C7)', () => {
     const filler = Array.from({ length: 40_000 }, (_, i) => `filler line ${i} of the log`).join('\n')
     writeFileSync(join(lib, 'big.log'), `alphaword starts the log\n${filler}\nomegaword ends it\n`)
     expect(statSync(join(lib, 'big.log')).size).toBeGreaterThan(1024 * 1024)
+    await register('big.log')
     const [hit] = await searchHits('alphaword')
     expect(hit?.path).toBe('big.log')
     expect(hit?.detail).toContain('只索引了前 1 MB')
@@ -123,7 +128,174 @@ describe('find matches content (C7)', () => {
 
   it('does not index a file that is not UTF-8 text', async () => {
     writeFileSync(join(lib, 'image.bin'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe, 0x7a, 0x65, 0x62, 0x72, 0x61]))
+    await register('image.bin')
     expect(await searchHits('zebra')).toEqual([])
+  })
+})
+
+/** The files the search plugin read from the library while `args` ran, from the log of what plugins ask storage. */
+async function readsBy(run: (opts: RunOptions) => Promise<Run>): Promise<string[]> {
+  const log = join(tempDir('pb-s-log-'), 'tools.jsonl')
+  ok(await run({ env: { PNEUMA_BASE_TOOL_LOG: log } }))
+  const calls = existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter((l) => l !== '').map((l) => JSON.parse(l) as { plugin: string; area: string; tool: string; place?: string; reason?: string }) : []
+  return calls.filter((c) => c.plugin === 'search' && c.area === 'content' && c.tool === 'read' && c.reason === undefined).map((c) => c.place ?? '')
+}
+const status = async () => ok(await owner(['search', 'status', '--json'])).json().data as { files: number; pending: number; tooMany: number }
+const itemText = async (path: string) => ok(await owner(['show', 'item', '--path', path])).stdout
+
+describe('what find indexes: the registered things, read when put or when storage says they changed', () => {
+  beforeEach(async () => {
+    await newLibrary('search')
+  })
+
+  it('finds a file written into the library by its body only once it is put', async () => {
+    writeFileSync(join(lib, 'loose.md'), 'quokka sightings on the island\n')
+    expect(await searchHits('quokka')).toEqual([])
+    await register('loose.md')
+    expect((await searchHits('quokka')).map((h) => h.path)).toEqual(['loose.md'])
+  })
+
+  it('reads a thing when it is put, and a find after that reads nothing', async () => {
+    expect(await readsBy((opts) => agent(['put', '-', '--to', 'notes/a.md', '--made'], { ...opts, input: '袋鼠和考拉\n' }))).toEqual(['notes/a.md'])
+    expect(await readsBy((opts) => agent(['find', '考拉'], opts))).toEqual([])
+    expect((await searchHits('考拉')).map((h) => h.path)).toEqual(['notes/a.md'])
+  })
+
+  it('finds a moved and an archived thing at its new path, a directory thing without reading its files again', async () => {
+    await put('notes/a.md', 'platypus notes\n')
+    const site = join(outside, 'site')
+    mkdirSync(site, { recursive: true })
+    writeFileSync(join(site, 'index.html'), '<p>wombat burrows</p>')
+    writeFileSync(join(site, 'about.html'), '<p>about the wombat</p>')
+    ok(await agent(['put', site, '--to', 'sites/w', '--made']))
+
+    ok(await agent(['put', 'notes/a.md', '--to', 'notes/b.md']))
+    expect((await searchHits('platypus')).map((h) => h.path)).toEqual(['notes/b.md'])
+    ok(await agent(['archive', 'notes/b.md']))
+    expect(await searchHits('platypus')).toEqual([])
+    expect((await searchHits('platypus', '--include-archived')).map((h) => h.path)).toEqual(['_archive/notes/b.md'])
+
+    ok(await agent(['archive', 'sites/w']))
+    expect(await readsBy((opts) => agent(['find', 'wombat', '--include-archived'], opts))).toEqual([])
+    expect((await searchHits('wombat', '--include-archived')).map((h) => h.path)).toEqual(['_archive/sites/w'])
+    ok(await agent(['unarchive', 'sites/w']))
+    expect((await searchHits('wombat')).map((h) => h.path)).toEqual(['sites/w'])
+  })
+
+  it('reads at most 200 files in one call, leaves the rest for the next, and reads none when nothing changed', async () => {
+    mkdirSync(join(lib, 'many'))
+    for (let i = 0; i < 250; i++) writeFileSync(join(lib, 'many', `f${String(i).padStart(3, '0')}.md`), `numbat ${i}\n`)
+    expect(await readsBy((opts) => agent(['put', join(lib, 'many'), '--made'], opts))).toHaveLength(200)
+    expect(await status()).toMatchObject({ files: 200, pending: 1 })
+    expect(await readsBy((opts) => agent(['find', 'numbat'], opts))).toHaveLength(50)
+    expect(await status()).toMatchObject({ files: 250, pending: 0 })
+    expect(await readsBy((opts) => agent(['find', 'numbat'], opts))).toEqual([])
+    writeFileSync(join(lib, 'many', 'f007.md'), 'echidna instead\n')
+    expect(await readsBy((opts) => agent(['find', 'echidna'], opts))).toEqual(['many/f007.md'])
+    expect((await searchHits('echidna')).map((h) => h.path)).toEqual(['many'])
+  })
+
+  it('does not read a directory thing of more than 5000 files, and says so on the item panel and the status', async () => {
+    mkdirSync(join(lib, 'huge', 'sub'), { recursive: true })
+    for (let i = 0; i < 5001; i++) writeFileSync(join(lib, 'huge', 'sub', `f${i}.md`), `dingo ${i}\n`)
+    expect(await readsBy((opts) => agent(['put', join(lib, 'huge'), '--made'], opts))).toEqual([])
+    expect(await readsBy((opts) => agent(['find', 'dingo'], opts))).toEqual([])
+    expect(await searchHits('dingo')).toEqual([])
+    expect(await status()).toMatchObject({ files: 0, pending: 0, tooMany: 1 })
+    expect(await itemText('huge')).toContain('正文：目录里至少 5001 个文件，超过 5000 个，不索引')
+  })
+})
+
+const CORE = process.env.PNEUMA_BASE_CORE ?? fileURLToPath(new URL('../../../core/target/release/pneuma-base-core', import.meta.url))
+
+describe('who tells find what changed', () => {
+  const listeners: ChildProcessWithoutNullStreams[] = []
+  afterEach(() => {
+    for (const child of listeners.splice(0)) child.kill('SIGKILL')
+  })
+
+  /** The places storage reports since `cursor` without replaying: from a live listener's log, or null. */
+  const heard = (l: string, cursor: string): string[] | null => {
+    const a = JSON.parse(spawnSync(CORE, ['changed', '--root', l, JSON.stringify({ cursor, budget: 0, limit: 10000 })], { encoding: 'utf8' }).stdout) as { outcome: string; places?: string[] }
+    return a.outcome === 'done' ? (a.places ?? []) : null
+  }
+  const cursorOf = (l: string) => (JSON.parse(spawnSync(CORE, ['changed', '--root', l, '{}'], { encoding: 'utf8' }).stdout) as { cursor: string }).cursor
+  async function until<T>(f: () => T | undefined): Promise<T> {
+    for (let i = 0; i < 500; i++) {
+      const found = f()
+      if (found !== undefined) return found
+      await new Promise((r) => setTimeout(r, 20))
+    }
+    throw new Error('not within ten seconds')
+  }
+
+  // A listener needs a change journal, which only the macOS provider has.
+  it.runIf(process.platform === 'darwin')('a live listener names the places, and find reads the same as when storage compares every row', async () => {
+    sb = sandbox()
+    outside = tempDir('pb-s-outside-')
+    const as = (l: string, args: string[], opts: RunOptions = {}) => sb.run(['--library', l, '--as', 'claude-code', ...args], { cwd: outside, ...opts })
+    const site = join(outside, 'site')
+    mkdirSync(site)
+    writeFileSync(join(site, 'index.html'), '<p>kookaburra calls</p>')
+    const make = async () => {
+      const l = join(tempDir(), 'lib')
+      ok(await sb.run(['init', l, '--bare']))
+      ok(await sb.run(['plugin', 'add', 'search', '--library', l]))
+      for (const name of ['kept', 'edited', 'gone']) ok(await as(l, ['put', '-', '--to', `${name}.md`, '--made'], { input: `${name} lyrebird\n` }))
+      ok(await as(l, ['put', site, '--to', 'sites/k', '--made']))
+      return l
+    }
+    const listened = await make()
+    const alone = await make()
+    const child = spawn(CORE, ['serve', '--root', listened], { stdio: ['pipe', 'pipe', 'pipe'] })
+    child.stdin.write(`${JSON.stringify({ id: 'sub', op: 'subscribe' })}\n`)
+    listeners.push(child)
+    await until(() => (heard(listened, cursorOf(listened)) === null ? undefined : true))
+    expect(heard(alone, cursorOf(alone))).toBeNull()
+    for (const l of [listened, alone]) ok(await as(l, ['find', 'lyrebird']))
+
+    const from = cursorOf(listened)
+    for (const l of [listened, alone]) {
+      writeFileSync(join(l, 'edited.md'), 'edited cassowary\n')
+      unlinkSync(join(l, 'gone.md'))
+      writeFileSync(join(l, 'sites/k/new.html'), '<p>new cassowary page</p>')
+    }
+    await until(() => {
+      const p = heard(listened, from)
+      return p !== null && ['edited.md', 'gone.md', 'sites/k/new.html'].every((w) => p.includes(w)) ? true : undefined
+    })
+    const reads = await Promise.all([listened, alone].map((l) => readsBy((opts) => as(l, ['find', 'cassowary'], opts))))
+    expect(reads[0]).toEqual(['edited.md', 'sites/k/new.html'])
+    expect(reads[1]).toEqual(reads[0])
+    for (const q of ['cassowary', 'lyrebird', 'kookaburra']) {
+      const [a, b] = await Promise.all([listened, alone].map(async (l) => ok(await as(l, ['find', q, '--json'])).json().hits))
+      expect(a).toEqual(b)
+    }
+    expect(ok(await as(listened, ['find', 'lyrebird', '--json'])).json().hits.map((h: { path: string }) => h.path)).toEqual(['kept.md'])
+  })
+})
+
+describe('a file changed through put (C7)', () => {
+  it('is found by its new words and not its old', async () => {
+    await newLibrary('ledger+search')
+    await put('notes/plan.md', '第一版：先做袋熊的页面\n')
+    expect((await searchHits('袋熊')).map((h) => h.path)).toEqual(['notes/plan.md'])
+    expect(await readsBy((opts) => agent(['put', '-', '--to', 'notes/plan.md', '--made'], { ...opts, input: '第二版：改做鸭嘴兽的页面\n' }))).toEqual(['notes/plan.md'])
+    expect((await searchHits('鸭嘴兽')).map((h) => h.path)).toEqual(['notes/plan.md'])
+    expect(await searchHits('袋熊')).toEqual([])
+  })
+})
+
+describe('a folder of files on record, registered as one thing', () => {
+  it('is found as the one thing, not also as the files it absorbed, and stays so when the index is rebuilt', async () => {
+    await newLibrary('ledger+search')
+    await put('notes/a.md', 'bilby burrows\n')
+    await put('notes/deep/b.md', 'bilby diet\n')
+    writeFileSync(join(lib, 'notes', '.pneuma-item'), '{"format":1}\n')
+    ok(await agent(['put', join(lib, 'notes'), '--brought']))
+    expect((await searchHits('bilby')).map((h) => h.path)).toEqual(['notes'])
+    ok(await owner(['search', 'rebuild']))
+    expect((await searchHits('bilby')).map((h) => h.path)).toEqual(['notes'])
   })
 })
 
@@ -254,15 +426,12 @@ describe('the owner commands', () => {
   }
 
   it('status says what is indexed and which embedder is set', async () => {
-    const empty = ok(await owner(['search', 'status']))
-    expect(empty.stdout).toContain('还没有索引')
-    ok(await agent(['find', '退款']))
     const status = ok(await owner(['search', 'status', '--json'])).json()
-    expect(status.data).toMatchObject({ files: 1, textFiles: 1, chunks: 1, stale: 0, embedder: null })
+    expect(status.data).toMatchObject({ files: 1, textFiles: 1, chunks: 1, pending: 0, tooMany: 0, embedder: null })
     expect(ok(await owner(['search', 'status'])).stdout).toContain('没配嵌入器')
   })
 
-  it('rebuild builds the index again from the files', async () => {
+  it('rebuild builds the index again from the registered things', async () => {
     const r = ok(await owner(['search', 'rebuild', '--json'])).json()
     expect(r.data).toMatchObject({ files: 1, textFiles: 1, chunks: 1 })
     expect((await searchHits('退款')).map((h) => h.path)).toEqual(['a.md'])
@@ -302,6 +471,9 @@ describe('the cognition section comes and goes with the plugin (C8)', () => {
     ok(await owner(['plugin', 'add', 'search']))
     expect(description()).toContain('**查找**插件')
     expect(description()).toMatch(/主人配了嵌入器时[^\n]*按意思/)
+    // Put before the plugin was added: its body is indexed once it is registered again.
+    expect(await hits('zebra')).toEqual([])
+    await register('a.md')
     expect((await hits('zebra')).map((h) => h.path)).toEqual(['a.md'])
 
     ok(await owner(['plugin', 'remove', 'search']))

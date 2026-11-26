@@ -16,11 +16,11 @@ it('a sentence only search matches gives the item under its scene with its origi
   }
   const as = (agent: string, session: string, args: string[]) => ok(['--library', lib, '--as', agent, '--session', session, ...args])
   ok(['init', lib])
+  ok(['plugin', 'add', 'search', '--library', lib])
+  ok(['search', 'embedder', 'set', '--kind', 'hash', '--library', lib])
   writeFileSync(join(outside, 'coffee.md'), '手冲咖啡要注意水温和研磨度，闷蒸三十秒。\n')
   as('claude-code', 's1', ['say', 'doing', '写咖啡笔记'])
   as('claude-code', 's1', ['put', join(outside, 'coffee.md'), '--to', 'notes/coffee.md', '--made'])
-  ok(['plugin', 'add', 'search', '--library', lib])
-  ok(['search', 'embedder', 'set', '--kind', 'hash', '--library', lib])
 
   const exact = as('codex', 's2', ['find', '水温'])
   expect(exact).toHaveLength(2)

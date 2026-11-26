@@ -1,21 +1,12 @@
-// Keeping the index up to date with the library, and answering find from it.
-import { open } from 'node:fs/promises'
-import { join, posix } from 'node:path'
-import {
-  abs,
-  searchTerms,
-  SENTENCE_HITS,
-  type FindRequest,
-  type LibraryPath,
-  type PluginContext,
-  type PluginFindAnswer,
-  type PluginHit,
-} from '@pneuma-base/kernel'
+// Keeping the index up to date with the registered things, and answering find from it.
+import { posix } from 'node:path'
+import { searchTerms, SENTENCE_HITS, type FindRequest, type LibraryPath, type PluginContext, type PluginFindAnswer, type PluginHit } from '@pneuma-base/kernel'
 import { currentEmbedder } from './config.js'
 import { embedderFor, KEY_SECRET, movedKey, type Embedder } from './embed.js'
-import { freshness, type Stamp } from './fresh.js'
-import { SearchIndex, type ChunkRow, type Doc, type Ranked } from './store.js'
-import { chunksOf, decodeHead, firstLine, indexTerms, snippet, TEXT_LIMIT, visibleText } from './text.js'
+import { READS, readPending, type Budget } from './reader.js'
+import { fold, noticeChanges } from './registry.js'
+import { SearchIndex, type ChunkRow, type Ranked } from './store.js'
+import { firstLine, snippet } from './text.js'
 
 /** How many things find gives at most; start, which matches a sentence's words, gives the kernel's SENTENCE_HITS. */
 const FIND_HITS = 20
@@ -23,56 +14,14 @@ const EMBED_BATCH = 32
 /** Reciprocal rank fusion's constant: how much the first few places count over the rest. */
 const FUSION_K = 60
 
-/** Every file of the library the index keys: each file outside bundles, and each file inside a bundle under the bundle's path. */
-export async function diskStamps(ctx: PluginContext): Promise<Stamp[]> {
-  const out: Stamp[] = []
-  for (const path of await ctx.tools.things()) {
-    const thing = await ctx.tools.thing(path)
-    if (thing?.kind === 'file') out.push({ path, inner: '', size: thing.size, modifiedAt: thing.modifiedAt })
-    if (thing?.kind === 'bundle') for (const f of (await ctx.tools.files(path)) ?? []) out.push({ path, inner: f.path, size: f.size, modifiedAt: f.modifiedAt })
-  }
-  return out
-}
-
-/** The file's first TEXT_LIMIT bytes and its size; null when it is gone. */
-async function readHead(file: string): Promise<{ head: Uint8Array; size: number } | null> {
-  const handle = await open(file, 'r').catch(() => null)
-  if (handle === null) return null
-  try {
-    const { size } = await handle.stat()
-    const head = new Uint8Array(Math.min(size, TEXT_LIMIT))
-    let filled = 0
-    while (filled < head.length) {
-      const { bytesRead } = await handle.read(head, filled, head.length - filled, filled)
-      if (bytesRead === 0) break
-      filled += bytesRead
-    }
-    // Ending before the buffer filled means the file is now that long.
-    return { head: head.subarray(0, filled), size: filled < head.length ? filled : size }
-  } finally {
-    await handle.close()
-  }
-}
-
-async function readDoc(root: string, stamp: Stamp): Promise<Doc | null> {
-  const read = await readHead(stamp.inner === '' ? abs(root, stamp.path) : join(abs(root, stamp.path), stamp.inner))
-  if (read === null) return null
-  const decoded = decodeHead(read.head, read.size)
-  if (decoded === null) return { stamp, text: false, truncated: false, chunks: [] }
-  const chunks = chunksOf(visibleText(stamp.inner || stamp.path, decoded.text)).map((body) => ({ body, terms: indexTerms(body) }))
-  return { stamp, text: true, truncated: decoded.truncated, chunks }
-}
-
-/** Brings the index up to the library: reads only the files whose size or time changed, forgets the ones gone. */
-export async function refresh(index: SearchIndex, ctx: PluginContext): Promise<void> {
-  const root = ctx.library.root
-  const plan = freshness(await diskStamps(ctx), index.stamps())
-  const docs: Doc[] = []
-  for (const stamp of plan.read) {
-    const doc = await readDoc(root, stamp)
-    if (doc) docs.push(doc)
-  }
-  if (plan.drop.length > 0 || docs.length > 0) index.apply(plan.drop, docs)
+/**
+ * Brings the index up to the registered things: the facts folded, what changed since the kept mark
+ * made pending, and the pending things read while `budget` lasts.
+ */
+export async function refresh(index: SearchIndex, ctx: PluginContext, budget: Budget = { files: READS }): Promise<void> {
+  await fold(ctx, index)
+  await noticeChanges(ctx)
+  await readPending(ctx, index, budget)
 }
 
 /** Gives every piece a vector of this embedder, in batches; what one batch stored stays when a later one fails. */
