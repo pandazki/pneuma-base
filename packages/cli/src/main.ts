@@ -374,7 +374,7 @@ const SPECS: Spec[] = [
       const port = flagValue(parsed, 'port')
       if (port !== null && !/^\d{1,5}$/.test(port)) throw new UsageError(`--port 要写一个端口号：${port}`)
       const dir = resolve(io.cwd, args[0] ?? '.')
-      const stopped = await view({ dir, builtins, home, io, port: port === null ? 0 : Number(port), open: !hasFlag(parsed, 'no-open') })
+      const stopped = await view({ dir, builtins, home, io, port: port === null ? undefined : Number(port), open: !hasFlag(parsed, 'no-open') })
       return { json: stopped, lines: ['界面已关闭。'], exit: 0 }
     },
   },

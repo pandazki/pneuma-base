@@ -65,7 +65,7 @@ describe('pneuma-base show', () => {
   })
 
   it('gives with --json the ViewResult the page gets', async () => {
-    const server = await startServer({ dir: lib, builtins: builtinPlugins, home: join(sb.home, '.pneuma-base'), env: {} })
+    const server = await startServer({ dir: lib, builtins: builtinPlugins, home: join(sb.home, '.pneuma-base'), env: {}, port: 0 })
     try {
       for (const [view, params] of [['ledger.items', {}], ['item', { path: 'notes/a.md' }], ['archive', {}]] as const) {
         const query = new URLSearchParams({ view, ...params })
