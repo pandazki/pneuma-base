@@ -11,11 +11,10 @@ export type SiteFile = { readonly path: string; readonly abs: string }
 
 /**
  * What a publish is about. `content` is what the kit decided on, checked against the copy in `dir`;
- * `files` are the copy's files, sorted by the UTF-8 bytes of their paths, as `identify` was given them;
- * `others`, the places in the thing that storage does not take as files (symbolic links, devices),
- * relative to it and sorted: the copy has none of them.
+ * `files` are the copy's files, the ones storage's content rule counts, sorted by the UTF-8 bytes of
+ * their paths, as `identify` was given them. Links and devices are no content, so the copy has none.
  */
-export type PublishMeta = { readonly content: ContentId; readonly path: LibraryPath; readonly at: Instant; readonly files: readonly SiteFile[]; readonly others: readonly string[] }
+export type PublishMeta = { readonly content: ContentId; readonly path: LibraryPath; readonly at: Instant; readonly files: readonly SiteFile[] }
 
 /**
  * What a target tells of one site it was asked about: the content it serves there for this library

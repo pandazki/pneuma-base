@@ -9,17 +9,18 @@ import type { Action, Block, Plugin } from '../types.js'
 import { runProcess, type Result } from './run.js'
 import { sandbox, type Sandbox, type SandboxOptions, type Viewer } from './sandbox.js'
 
-export const CHECKS = ['loads', 'names', 'cognition', 'examples', 'hooks', 'writes', 'cache', 'blocks', 'remove'] as const
+export const CHECKS = ['loads', 'names', 'cognition', 'examples', 'hooks', 'writes', 'bounded', 'cache', 'blocks', 'remove'] as const
 export type CheckName = (typeof CHECKS)[number]
 
 /** What each check holds a plugin to, as the standard says it. */
 export const RULES: Record<CheckName, string> = {
-  loads: '插件目录的 index.js 缺省导出一个插件，contract 是这个 pneuma-base 认识的版本，过得了装载时的核对',
+  loads: '插件目录的 index.js 缺省导出一个插件，按这个 pneuma-base 的插件契约写（contract 是 sdk 的 CONTRACT，现在是 2），过得了装载时的核对',
   names: '主人命令以「<插件名> 」开头，视图编号以「<插件名>.」开头，插件名不是命令行或内核自己用的词，命令名不是内核的命令',
   cognition: '认知段以「## <它带来什么>：<怎么用>」开头，第一句是「这个库装了**<标题>**插件。」，命令示例写成 pneuma-base @{{授权的名字}} …，只用 {{授权的名字}} 这一个占位，不重复内核管的规矩',
   examples: '认知段里的每条命令示例，在一个新库上做完准备步骤之后，照原样在 agent 的会话里能跑，退出码是 0',
-  hooks: '每个钩子在空库上、在每个动词之后都不抛错，答复里没有这个插件的问题；登记已在库里的文件（第 2 版的插件收到的指纹是 null，凭 now.token 认它）和登记一个目录这一层的散文件（第 2 版的插件收到一次 register-files）也一样',
+  hooks: '每个钩子在空库上、在每个动词之后都不抛错，答复里没有这个插件的问题；登记已在库里的文件（插件收到的指纹是 null，凭 now.token 认它）和登记一个目录这一层的散文件（插件收到一次 register-files）也一样',
   writes: '插件只往库里自己名下的 .pneuma-base/<插件名>/ 写；那里已有的文件不改写、不删（声明为配置的文件、缓存目录和破坏性的主人命令除外）；视图和条目面板里的一节什么都不写',
+  bounded: '插件只在自己的记录指到的地方问存储，一次只取一页：一个钩子或命令里，一览和探查库的内容合起来不超过 1000 条；没人登记过的目录，它和它下面的地方，不一览、不探查、不取内容、不读',
   cache: '缓存删掉什么都不丢：删掉它在本机的缓存目录、声明为缓存的目录和它记录处的行前后，找、看、查的答复一样',
   blocks: '视图和条目面板里的一节答复的都是合法的块，钩子不抛错；每个动作调的是一个动词或这个库里在的一条主人命令，参数合它的参数表；custom 块带 text，用字说出它画的；custom 块指向的页面在插件的 ui 目录里，取得到，载入 /plugin-kit/frame.js，脚本里调用 pneuma.onData',
   remove: '卸下插件之后库照常能用：配置和说明里没有它，动词照常答复、没有问题，界面没有它的视图，内容一样不少',
@@ -87,7 +88,7 @@ export async function conformance(subject: Subject, options: ConformanceOptions 
     fail('loads', error instanceof Error ? error.message : String(error))
   }
   if ((found.get('loads') as string[]).length > 0) {
-    for (const c of ['examples', 'hooks', 'writes', 'cache', 'blocks', 'remove'] as const) if ((found.get(c) as string[]).length === 0) fail(c, '没有查：插件没装上')
+    for (const c of ['examples', 'hooks', 'writes', 'bounded', 'cache', 'blocks', 'remove'] as const) if ((found.get(c) as string[]).length === 0) fail(c, '没有查：插件没装上')
   }
   return report(plugin.name, found, reminders)
 }
@@ -179,17 +180,21 @@ type Change = { path: string; change: 'added' | 'changed' | 'removed' }
  */
 const NOT_THE_LIBRARY = ['.pneuma-base/tmp', '.pneuma-base/cache', '.pneuma-base/holds', '.pneuma-base/trash']
 
-/** Every file and directory of the library by its library path, NOT_THE_LIBRARY left out. */
+/** Every file and directory of the library by its library path, NOT_THE_LIBRARY left out; of the check's own unreadable directory, only that it is there. */
 async function snapshot(root: string): Promise<Snapshot> {
   const out: Snapshot = new Map()
-  for (const e of await readdir(root, { recursive: true, withFileTypes: true })) {
-    const abs = join(e.parentPath, e.name)
-    const path = relative(root, abs).split(sep).join('/')
-    if (NOT_THE_LIBRARY.some((dir) => path === dir || path.startsWith(`${dir}/`))) continue
-    const s = await lstat(abs, { bigint: true })
-    const hash = s.isFile() ? createHash('sha256').update(await readFile(abs)).digest('hex') : null
-    out.set(path, { dir: s.isDirectory(), hash, ino: s.ino, mtime: s.mtimeNs })
+  const walk = async (dir: string): Promise<void> => {
+    for (const e of await readdir(dir, { withFileTypes: true })) {
+      const abs = join(dir, e.name)
+      const path = relative(root, abs).split(sep).join('/')
+      if (NOT_THE_LIBRARY.some((d) => path === d || path.startsWith(`${d}/`))) continue
+      const s = await lstat(abs, { bigint: true })
+      const hash = s.isFile() ? createHash('sha256').update(await readFile(abs)).digest('hex') : null
+      out.set(path, { dir: s.isDirectory(), hash, ino: s.ino, mtime: s.mtimeNs })
+      if (s.isDirectory() && path !== LOCKED) await walk(abs)
+    }
   }
+  await walk(root)
   return out
 }
 
@@ -215,6 +220,7 @@ type Step = { what: string; touches: readonly string[]; dropsOwn?: true; run: ()
 
 async function checkLibrary(p: Plugin, install: Install, options: ConformanceOptions, fail: (c: CheckName, what: string) => void, reminders: string[]): Promise<void> {
   const sb = await sandbox({ bare: true, ...pick(options) })
+  let planted = false
   try {
     if ('plugins' in install) {
       const r = await sb.run(['plugin', 'install', install.plugins[0] as string, '--json'])
@@ -223,6 +229,7 @@ async function checkLibrary(p: Plugin, install: Install, options: ConformanceOpt
     const listed = (await sb.run(['plugin', 'list', '--json'])).json?.data?.plugins?.find((x: { name: string }) => x.name === p.name)
     if (listed === undefined) return fail('loads', `plugin list 里没有 ${p.name}`)
     if (listed.failed !== null) return fail('loads', `它没能加载：${listed.failed}`)
+    if (p.contract !== CONTRACT) return fail('loads', `它按插件契约第 ${p.contract} 版写，这个 pneuma-base 的插件契约是第 ${CONTRACT} 版`)
     if (listed.contract !== p.contract) fail('loads', `plugin list 说它的契约是 ${listed.contract}，它自己写的是 ${p.contract}`)
 
     const own = `.pneuma-base/${p.name}`
@@ -232,6 +239,7 @@ async function checkLibrary(p: Plugin, install: Install, options: ConformanceOpt
     }
     const agent = (args: string[], input?: string) => sb.agent(AGENT, SESSION, [...args, '--json'], input === undefined ? {} : { input }).then((r) => jsonOf(r))
     const owner = (args: string[]) => sb.owner([...args, '--json']).then((r) => jsonOf(r))
+    const watch = boundedWatch(sb.toolLog, p.name, fail)
 
     // On the empty library: being added and removed, and every hook that needs no content.
     hooksOn('plugin add（onAdd）', await expectDone(owner(['plugin', 'add', p.name]), 'plugin add', fail))
@@ -245,15 +253,17 @@ async function checkLibrary(p: Plugin, install: Install, options: ConformanceOpt
         { what: `空库上的 say ${kind} conformance/nothing.md`, touches: [], run: () => agent(['say', kind, 'conformance/nothing.md', '符合性检查']) },
       ]),
     ]
-    await runSteps(sb.library, empty, own, p, options, fail, hooksOn)
-    await checkViews(p, viewer, ['conformance/nothing.md'], '空库上', fail)
+    await runSteps(sb.library, empty, own, p, options, fail, hooksOn, watch)
+    await checkViews(p, viewer, ['conformance/nothing.md'], '空库上', fail, watch)
     hooksOn('空库上的 plugin remove（onRemove）', await removeIt(owner, p.name, fail))
     hooksOn('空库上再 plugin add（onAdd）', await expectDone(owner(['plugin', 'add', p.name]), 'plugin add', fail))
 
     await options.setup?.({ sandbox: sb, cwd: sb.work, bin: join(sb.work, '.bin') })
     await addOpener(sb, owner, fail)
 
-    // The scripted run of every verb, each step watched for what it changed.
+    // The scripted run of every verb, each step watched for what it changed and what it asked of storage.
+    await plantUnregistered(sb.library)
+    planted = true
     const t0 = new Date().toISOString()
     await mkdir(join(sb.work, 'site'), { recursive: true })
     await writeFile(join(sb.work, 'site', 'index.html'), '<h1>符合性检查</h1>\n')
@@ -303,15 +313,62 @@ async function checkLibrary(p: Plugin, install: Install, options: ConformanceOpt
       ...p.ownerCommands.filter((c) => c.destructive && callable(c)).map((c): Step => ({ what: `主人命令 ${c.name}`, touches: [], dropsOwn: true, run: async () => (await viewer.act(confirmedCall(c.name))).result })),
     ]
     for (const c of p.ownerCommands.filter((c) => c.destructive && !callable(c))) reminders.push(`破坏性的主人命令 ${c.name} 要参数，没有跑：它只该删、改写插件自己目录里的文件，别处什么都不动。`)
-    await runSteps(sb.library, script, own, p, options, fail, hooksOn)
+    await runSteps(sb.library, script, own, p, options, fail, hooksOn, watch)
     const before = await snapshot(sb.library)
-    await checkViews(p, viewer, ['conformance/moved.md', 'conformance/site', '_archive/conformance/site'], '', fail)
+    await checkViews(p, viewer, ['conformance/moved.md', 'conformance/site', '_archive/conformance/site'], '', fail, watch)
     for (const c of changes(before, await snapshot(sb.library))) fail('writes', `打开视图和条目面板时，${c.path} ${WORD[c.change]}`)
 
     await checkCache(p, sb, agent, t0, fail, reminders)
     await checkRemove(p, sb, viewer, owner, agent, fail)
   } finally {
+    if (planted) await chmod(join(sb.library, LOCKED), 0o755)
     await sb.cleanup()
+  }
+}
+
+/** The directories the scripted run makes in the library and nobody registers: one with more files than a page, one nobody can read. */
+const HEAP = 'conformance-heap'
+const LOCKED = 'conformance-locked'
+const UNREGISTERED = [HEAP, LOCKED]
+const HEAP_FILES = 1200
+/** The most entries a plugin's listings of the content take in one step: one page of an overview. */
+const PAGE = 1000
+
+async function plantUnregistered(root: string): Promise<void> {
+  await mkdir(join(root, HEAP))
+  for (let i = 0; i < HEAP_FILES; i++) await writeFile(join(root, HEAP, `${i}.txt`), `${i}\n`)
+  await mkdir(join(root, LOCKED))
+  await writeFile(join(root, LOCKED, 'inside.txt'), '读不到\n')
+  await chmod(join(root, LOCKED), 0o000)
+}
+
+/** One line of the kernel's tool log (`PNEUMA_BASE_TOOL_LOG`): what a plugin asked of storage, and how many entries came back. */
+type ToolCall = { plugin: string; area: string; tool: string; place?: string; entries?: number }
+
+/** The tools that look into a place of the content, as the report names them. */
+const LOOKS: Record<string, string> = { overview: '一览', probe: '探查', content: '取内容', read: '读' }
+
+/** Runs a step, then judges what the plugin asked of the content in it, from the lines the step added to the tool log. */
+type Watch = <T>(what: string, run: () => Promise<T>) => Promise<T>
+
+function boundedWatch(log: string, plugin: string, fail: (c: CheckName, what: string) => void): Watch {
+  const calls = async () =>
+    (await readFile(log, 'utf8').catch(() => ''))
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line) as ToolCall)
+  return async (what, run) => {
+    const before = (await calls()).length
+    const result = await run()
+    const asked = (await calls()).slice(before).filter((c) => c.plugin === plugin && c.area === 'content')
+    const listed = asked.filter((c) => c.tool === 'overview' || c.tool === 'probe').reduce((n, c) => n + (c.entries ?? 0), 0)
+    if (listed > PAGE) fail('bounded', `${what}时，它一览和探查库的内容共取了 ${listed} 条，多于一页（${PAGE} 条）`)
+    const inside = asked.flatMap((c) => {
+      const dir = UNREGISTERED.find((d) => c.place !== undefined && within(c.place, d))
+      return dir === undefined || LOOKS[c.tool] === undefined ? [] : [`${what}时，它${LOOKS[c.tool]}了没人登记过的目录 ${dir}：${c.place}`]
+    })
+    for (const problem of new Set(inside)) fail('bounded', problem)
+    return result
   }
 }
 
@@ -375,11 +432,12 @@ async function runSteps(
   options: ConformanceOptions,
   fail: (c: CheckName, what: string) => void,
   hooksOn: (what: string, r: { problems?: { plugin: string; message: string }[] } | null) => void,
+  watch: Watch,
 ): Promise<void> {
   const rewritable = [...(options.configuration ?? []), ...p.storage.filter((s) => s.kind === 'cache').map((s) => s.dir)]
   for (const step of steps) {
     const before = await snapshot(root)
-    hooksOn(step.what, await step.run())
+    hooksOn(step.what, await watch(step.what, step.run))
     for (const c of changes(before, await snapshot(root))) {
       if (within(c.path, own)) {
         const rel = c.path === own ? '.' : c.path.slice(own.length + 1)
@@ -422,13 +480,13 @@ function actionsOf(b: Block) {
 }
 
 /** Every view of the plugin with its filters' defaults, and its item section for each path: no problem of its own, each custom page served. */
-async function checkViews(p: Plugin, viewer: Viewer, paths: readonly string[], where: string, fail: (c: CheckName, what: string) => void): Promise<void> {
+async function checkViews(p: Plugin, viewer: Viewer, paths: readonly string[], where: string, fail: (c: CheckName, what: string) => void, watch: Watch): Promise<void> {
   const pages = [
     ...(p.views ?? []).map((v) => ({ what: `${where}视图 ${v.id}`, get: () => viewer.view(v.id, Object.fromEntries(v.filters.map((f) => [f.name, f.default]))) })),
     ...(p.onItemView ? paths.map((path) => ({ what: `${where}${path} 的条目面板`, get: () => viewer.item(path) })) : []),
   ]
   for (const page of pages) {
-    const r = await page.get()
+    const r = await watch(page.what, page.get)
     for (const x of r.problems.filter((x) => x.plugin === p.name)) fail('blocks', `${page.what}：${x.message}`)
     if (r.outcome !== 'shown') {
       fail('blocks', `${page.what}没有打开（${r.outcome}）`)
