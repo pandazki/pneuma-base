@@ -22,3 +22,18 @@ npm test
 `scripts/test-example-plugins.sh` 把三个都跑一遍，CI 里也跑它。`space` 的生命周期测试要一个在跑的 PneumaSpace，没有时自己跳过并说明；它的符合性检查用测试工具里的 HTTP 替身，不需要真服务。
 
 `package-lock.json` 不进仓库：包文件每次重打，校验值都会变。
+
+## 只装不改
+
+只想用一个插件、不改它的人，不用进插件目录装依赖。在仓库根打出包文件，再把每个插件构建好：
+
+```sh
+pnpm build && pnpm pack:dist && pnpm pack:plugins
+```
+
+`pack:plugins` 把每个插件写到 `dist-packages/plugins/<名字>/`，这就是 `plugin install` 要的目录：
+
+```sh
+pneuma-base plugin install dist-packages/plugins/space
+pneuma-base plugin add space --library ~/base
+```
