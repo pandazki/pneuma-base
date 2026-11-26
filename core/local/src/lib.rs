@@ -4,12 +4,18 @@
 //! `<root>/.pneuma-base/config.json`.
 
 mod area;
+#[cfg(target_os = "macos")]
+mod changelog;
 mod declaration;
 mod facets;
 mod facts;
 mod fingerprint;
+#[cfg(target_os = "macos")]
+mod fsevents;
 mod holds;
 mod journal;
+#[cfg(target_os = "macos")]
+mod listen;
 mod metadata;
 mod names;
 mod noise;
@@ -31,7 +37,7 @@ use pneuma_base_storage::{
     NoiseChange, NoiseEdit, OverviewAnswer, OverviewRequest, Place, ProbeAnswer, ProbeRequest,
     ReadAnswer, ReadRequest, Reason, RecordPlace, RemoveAnswer, RemoveRequest, RowsGetAnswer,
     RowsGetRequest, RowsPage, RowsPutRequest, RowsUnderRequest, RowsWhereAnswer, RowsWhereRequest,
-    Storage, StorageInfo, Time, WriteAnswer, WriteRequest,
+    Storage, StorageInfo, SubscribeRequest, Time, WriteAnswer, WriteRequest,
 };
 
 use area::absent;
@@ -221,6 +227,10 @@ impl Storage for LocalFolder {
 
     fn changed(&self, req: &ChangedRequest, ctx: &Ctx) -> Result<ChangedAnswer, Failure> {
         self.changes_since(req, ctx)
+    }
+
+    fn subscribe(&self, req: &SubscribeRequest, ctx: &Ctx) -> Result<(), Failure> {
+        self.listen(req, ctx)
     }
 
     fn content(&self, req: &ContentRequest, ctx: &Ctx) -> Result<ContentAnswer, Failure> {

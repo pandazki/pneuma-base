@@ -85,6 +85,10 @@ fn main() -> ExitCode {
 }
 
 fn one(storage: &LocalFolder, op: Op, request: Option<String>) -> String {
+    // A subscription lasts until cancelled, which only `serve` can do.
+    if op == Op::Subscribe {
+        return failure_text(&Failure::bad_request());
+    }
     // Standard input carries a write's bytes unless it carries the request.
     let mut ctx = Ctx::default();
     ctx.stdin_free = request.as_deref() != Some("-");
@@ -125,6 +129,9 @@ fn answer_line(id: &Value, answer: &str) -> String {
 
 fn serve(storage: Arc<LocalFolder>) {
     let in_flight: InFlight = Arc::default();
+    // Subscriptions never finish on their own: each runs on a thread of its own, not a worker's,
+    // and ends when cancelled or when input ends.
+    let mut subscriptions: Vec<(Ctx, std::thread::JoinHandle<()>)> = Vec::new();
     let (sender, receiver) = mpsc::channel::<Job>();
     let receiver = Arc::new(Mutex::new(receiver));
     let workers = std::thread::available_parallelism().map_or(2, |n| n.get().clamp(2, 8));
@@ -183,6 +190,21 @@ fn serve(storage: Arc<LocalFolder>) {
         if let Ok(mut in_flight) = in_flight.lock() {
             in_flight.insert(id_key(&id), ctx.clone());
         }
+        if op == Op::Subscribe {
+            let (storage, in_flight) = (storage.clone(), in_flight.clone());
+            let job = Job {
+                id,
+                op,
+                request,
+                ctx: ctx.clone(),
+            };
+            subscriptions.retain(|(_, thread)| !thread.is_finished());
+            subscriptions.push((
+                ctx,
+                std::thread::spawn(move || run_job(storage.as_ref(), &in_flight, job)),
+            ));
+            continue;
+        }
         if sender
             .send(Job {
                 id,
@@ -196,8 +218,14 @@ fn serve(storage: Arc<LocalFolder>) {
         }
     }
     drop(sender);
+    for (ctx, _) in &subscriptions {
+        ctx.cancel();
+    }
     for handle in handles {
         let _ = handle.join();
+    }
+    for (_, thread) in subscriptions {
+        let _ = thread.join();
     }
 }
 

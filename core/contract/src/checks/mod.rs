@@ -13,4 +13,5 @@ pub mod places;
 pub mod reads;
 pub mod records;
 pub mod rules;
+pub mod subscribe;
 pub mod writes;

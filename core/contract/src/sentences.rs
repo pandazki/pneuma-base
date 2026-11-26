@@ -214,10 +214,10 @@ pub const SENTENCES: &[Sentence] = &[
         "每个位置：`same`、`changed`（带新描述）、`gone`",
     ),
     outside("4.look.cost", "位置的个数", COST),
-    checked("4.changed.input", "游标（没有则只取当前游标）"),
+    checked("4.changed.input", "游标（没有则只取当前游标）、时间预算"),
     checked(
         "4.changed.answer",
-        "`places`（位置，粒度可以是它所在的目录）和新游标；或 `cannot_say`（这段时间的日志不可靠）和新游标",
+        "`places`（位置，粒度可以是它所在的目录）和新游标；或 `cannot_say`（这段时间的日志不可靠，或在预算内答不出）和新游标",
     ),
     outside("4.changed.cost", "变化的个数", COST),
     checked("4.content.input", "位置；目录另带内容规则和文件数上限"),
@@ -277,6 +277,16 @@ pub const SENTENCES: &[Sentence] = &[
         "答的是目录时，内核对那个目录做一次 `overview` 或对其中登记过的位置做 `look`，不往下走。",
         KERNEL,
     ),
+    checked(
+        "4.budget",
+        "`changed` 带一个时间预算：在预算内答得出就答，答不出就立刻答 `cannot_say`，不先试到预算用完。",
+    ),
+    checked(
+        "4.heard.1",
+        "提供者可以用一个活着的订阅者记下的东西答任何进程的 `changed`（第 6 节 `subscribe`）；",
+    ),
+    outside("4.heard.2", "这样答的代价只跟变了的东西走，", COST),
+    checked("4.heard.3", "答复和回放得出的一样。"),
     checked(
         "4.s8",
         "内容规则：除去噪音名字，以及目录自带的忽略文件（`.gitignore`）排除的。",
@@ -434,6 +444,44 @@ pub const SENTENCES: &[Sentence] = &[
     ),
     checked("6.serve.2", "长操作先发若干条进度再发结果；"),
     checked("6.serve.3", "可按 `id` 取消"),
+    checked(
+        "6.subscribe.1",
+        "`subscribe` | 只在 `serve` 里：订阅库的变化，直到取消。每听到一批，按 `changed` 答复的形状发一条进度",
+    ),
+    checked(
+        "6.subscribe.2",
+        "`subscribe` 开始时从一个游标回放一次，补上没人在听的那一段，之后是实时的。",
+    ),
+    checked(
+        "6.subscribe.3",
+        "订阅者把听到的记进缓存区里一份有界的小日志：不同步，可以删；",
+    ),
+    checked(
+        "6.subscribe.4",
+        "装不下时最老的先走，游标比走掉的还老的读者得到 `cannot_say`。",
+    ),
+    checked(
+        "6.subscribe.5",
+        "日志带心跳，读者据此分清活着的订阅者和已经停了的：订阅者无声无息地停了，下一个读者就不再从它的日志答。",
+    ),
+    checked(
+        "6.subscribe.6",
+        "同一个库可以有几个订阅者，日志不会因此坏掉。",
+    ),
+    checked(
+        "6.subscribe.7",
+        "提供者给不出可靠的游标时，`subscribe` 立刻答 `cannot_say`。",
+    ),
+    outside(
+        "6.subscribe.8",
+        "在对象存储上，订阅就是消费变更通知（例如用 SQS 长轮询）；小日志和心跳是缓存区里的对象。",
+        "says how an object store would do it, not what this provider answers",
+    ),
+    outside(
+        "6.subscribe.9",
+        "没有跨机器的锁：几个订阅者用带条件的写争同一份租约，拿到的那个写日志，读者只凭心跳的时刻判断它是否活着。",
+        "says how an object store would do it, not what this provider answers",
+    ),
     // 7. The local folder's facets and token
     checked("7.fs", "`fs` | `inode`、`device`、`created`、`mode` | 总有"),
     checked(
@@ -472,7 +520,10 @@ pub const SENTENCES: &[Sentence] = &[
     checked("8.too_many", "`too_many`（带 `at_least`）"),
     checked("8.elsewhere", "`elsewhere`（内容不在本机，带大小）"),
     checked("8.held", "`held`（位置正被别人写入）"),
-    checked("8.cannot_say", "`cannot_say`（只用于 `changed`）"),
+    checked(
+        "8.cannot_say",
+        "`cannot_say`（只用于 `changed` 和 `subscribe`）",
+    ),
     checked(
         "8.unreadable",
         "`unreadable`（存储读不了它，带系统给的原因）",
