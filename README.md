@@ -4,12 +4,13 @@
 
 ## 主人怎么开始
 
-要 Node 22.18 以上和 pnpm。还没发布到 npm，先在这个仓库里构建，再让 `pneuma-base` 指向构建出的命令：
+要 Node 22.18 以上。还没发布到 npm，所以先在这个仓库里打出包文件（这一步要 pnpm），再像装任何命令行工具那样装上：
 
 ```sh
 pnpm install
-pnpm build
-alias pneuma-base="node $PWD/packages/cli/dist/bin.js"
+pnpm build && pnpm pack:dist && pnpm pack:plugins     # 写到 dist-packages/
+npm install --global ./dist-packages/pneuma-base-0.9.0.tgz
+pneuma-base --help
 ```
 
 下面的命令都在你自己的终端里运行。在 agent 的会话里，主人命令会被拒绝。
@@ -33,6 +34,13 @@ alias pneuma-base="node $PWD/packages/cli/dist/bin.js"
    ```
 
    装上或卸下一个插件，库根目录的 `PNEUMA-BASE.md` 会跟着重写，agent 读到的就是现在装了的。
+
+   要把 agent 做的网站发布到你自己的 PneumaSpace（一台机器上的，或 Cloudflare 上的），装 `space` 插件代替 `deploy`：它不是自带的，先装到这台机器，再在库里启用。一步步的做法在 [`plugins/space/README.md`](plugins/space/README.md)。
+
+   ```sh
+   pneuma-base plugin install dist-packages/plugins/space
+   pneuma-base plugin add space --library ~/base
+   ```
 
 3. **给 agent 授权，并装上技能。** 授权名同时定下是哪个库、是谁：
 
