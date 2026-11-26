@@ -29,7 +29,7 @@ export type OwnerCall = {
 /** An owner call with a library. */
 export type LibraryCall = OwnerCall & { ctx: Context }
 
-/** An owner command as the owner face lists it, and who provides it. `machine`: it needs no library. */
+/** An owner command as the owner face lists it, and who provides it. `machine`: it needs no library. `readOnly`: it changes nothing. */
 export type OwnerCommandInfo = {
   name: string
   summary: string
@@ -37,6 +37,7 @@ export type OwnerCommandInfo = {
   params: OwnerParams
   destructive: boolean
   ownerOnly: boolean
+  readOnly: boolean
   machine: boolean
   by: PluginName | 'kernel'
 }
@@ -114,6 +115,7 @@ export const ownerFace = {
       params: c.params,
       destructive: c.destructive,
       ownerOnly: c.ownerOnly,
+      readOnly: c.readOnly ?? false,
       machine: c.scope === 'machine',
       by: 'kernel',
     }))
@@ -125,6 +127,7 @@ export const ownerFace = {
         params: c.params,
         destructive: c.destructive,
         ownerOnly: c.ownerOnly,
+        readOnly: c.readOnly ?? false,
         machine: false,
         by: p.name,
       })),

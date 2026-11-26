@@ -1,10 +1,9 @@
 import { spawn } from 'node:child_process'
-import { existsSync, statSync } from 'node:fs'
+import { statSync } from 'node:fs'
 import { homedir, hostname } from 'node:os'
-import { isAbsolute, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import {
-  agentFace,
   identifyActor,
   identifySession,
   initLibrary,
@@ -12,29 +11,25 @@ import {
   makeContext,
   openLibrary,
   ownerFace,
-  parseLibraryPath,
   PNEUMA_BASE_VERSION,
   resolveGrant,
-  viewerFace,
-  type Context,
   type Env,
   type Grant,
   type Instant,
   type Library,
   type MachineContext,
-  type Origin,
   type OwnerArgs,
   type OwnerCall,
   type OwnerCommandInfo,
   type OwnerResult,
-  type PluginProblem,
   type PluginTable,
-  type PutRequest,
 } from '@pneuma-base/kernel'
 import { UsageError, flagList, flagValue, hasFlag, leadingWords, ownFlags, parseCommand, splitLine, type FlagKind, type Line, type Parsed } from './args.js'
-import { archiveText, checkText, findText, inspectText, ownerText, putText, sayText, startText } from './format.js'
-import { pageText, viewListText } from './page.js'
+import { ownerText } from './format.js'
+import { serve } from './mcp/server.js'
+import { libraryFace } from './mcp/tools.js'
 import { KINDS, scaffold, type Kind } from './scaffold.js'
+import { answer, refusal, VERBS, type Answer, type Bound, type Verb, type VerbInput } from './verbs.js'
 import { view } from './view.js'
 
 export type Io = {
@@ -43,6 +38,8 @@ export type Io = {
   out(text: string): void
   err(text: string): void
   readStdin(): Promise<Uint8Array>
+  /** Standard input line by line, as it arrives, until it ends: a long-running command's channel, such as mcp's. */
+  readLines(): AsyncIterable<string>
   /** A value given besides the arguments: standard input, less one final newline; in a terminal, typed without echo. Null when none was given. */
   readSecret(question: string): Promise<string | null>
   confirm(question: string): Promise<boolean>
@@ -91,6 +88,11 @@ export function processIo(): Io {
     out: (text) => void process.stdout.write(`${text}\n`),
     err: (text) => void process.stderr.write(`${text}\n`),
     readStdin,
+    // Iterated from the start: readline's iterator, made later, would miss the lines and the end that came before.
+    readLines: () => {
+      const lines = createInterface({ input: process.stdin, crlfDelay: Infinity })[Symbol.asyncIterator]()
+      return { [Symbol.asyncIterator]: () => lines }
+    },
     readSecret: async (question) => (process.stdin.isTTY ? hiddenAnswer(question) : Buffer.from(await readStdin()).toString('utf8').replace(/\r?\n$/, '')),
     // Input that ends before an answer (Ctrl+D) is no confirmation, as any answer but yes is.
     confirm: async (question) => {
@@ -123,6 +125,7 @@ const USAGE = `用法：
       say <种类> [<关于>] [<内容>] | check [--since <时间>|last] [--include-archived]
       archive <库内路径> | unarchive <库内路径>
 看管理界面的一页：show [<页的编号> [--<参数> <值>…]]（不写编号列出这个库的页；条目面板是 show item --path <库内路径>）
+给只能接 MCP 的 agent 应用：pneuma-base @<授权名> mcp（在标准输入输出上跑 MCP 服务，动词和能用的命令都是工具）
 主人：view [<目录>] [--port <端口>] [--no-open]（在浏览器里打开管理界面；pneuma-base <目录> 也一样）
       init <目录> [--bare]
 插件作者：plugin new <目录> [--kind blank|deploy] [--name <插件名>] [--packages <两个包文件所在的目录>]（生成一个插件项目）
@@ -163,10 +166,6 @@ async function help(argv: readonly string[], io: Io, table: PluginTable, home: s
   return `${USAGE}\n${ownerHelp(ownerFace.commands(library?.plugins ?? []), library)}`
 }
 
-/** 0 answered; 2 refused; 3 accepted but a plugin reported a problem. Usage errors are 1. */
-type Answer = { json: unknown; lines: string[]; exit: number }
-
-type Bound = { library: Library; ctx: Context; viaGrant: boolean }
 /** `table`: every plugin this machine has; `builtins`: the command line's own, which the UI's server joins with the machine's on each request. */
 type Invocation = { parsed: Parsed; args: string[]; io: Io; table: PluginTable; builtins: PluginTable; home: string }
 
@@ -176,171 +175,79 @@ type Spec = { words: string[]; flags: Readonly<Record<string, FlagKind>> | 'any'
   | { library: false; run: (inv: Invocation) => Promise<Answer> }
 )
 
-function exitOf(...results: { outcome?: string; reason?: string; problems: PluginProblem[] }[]): number {
-  if (results.some((r) => r.outcome === 'refused' || (r.outcome === 'not-heard' && r.reason === 'refused'))) return 2
-  return results.some((r) => r.problems.length > 0) ? 3 : 0
-}
-
-const answer = (json: { outcome: string; reason?: string; problems: PluginProblem[] }, lines: string[]): Answer => ({ json, lines, exit: exitOf(json) })
 const owner = (r: OwnerResult): Answer => answer(r, ownerText(r))
-
-const ORIGIN_HELP =
-  '要说明来历：带进来的用 --brought（可加 --source <出处>、--by owner），做出来的用 --made（可加 --from <库内路径…>、--from-outside "<一句话…>"）。两个只能选一个。'
-
-function originOf(parsed: Parsed): Origin<string> | null {
-  const brought = hasFlag(parsed, 'brought')
-  const made = hasFlag(parsed, 'made')
-  if (brought && made) throw new UsageError(ORIGIN_HELP)
-  if (!brought && (hasFlag(parsed, 'source') || hasFlag(parsed, 'by'))) throw new UsageError('--source 和 --by 只跟 --brought 一起用。')
-  if (!made && (hasFlag(parsed, 'from') || hasFlag(parsed, 'from-outside'))) throw new UsageError('--from 和 --from-outside 只跟 --made 一起用。')
-  if (brought) return { kind: 'brought', source: flagValue(parsed, 'source'), by: flagValue(parsed, 'by') }
-  if (made) return { kind: 'made', from: flagList(parsed, 'from'), outside: flagList(parsed, 'from-outside') }
-  return null
-}
-
-function requireOrigin(origin: Origin<string> | null): Origin<string> {
-  if (!origin) throw new UsageError(ORIGIN_HELP)
-  return origin
-}
-
-/**
- * The four forms of put. A relative first argument names a file or directory next to the caller
- * when one is there, otherwise a path in the library. A file or directory outside the library is
- * placed; a path inside is registered, or moved when `--to` is given.
- */
-async function putRequest(inv: Invocation, library: Library): Promise<PutRequest> {
-  const first = inv.args[0] as string
-  const to = flagValue(inv.parsed, 'to')
-  const origin = originOf(inv.parsed)
-  const note = flagValue(inv.parsed, 'note')
-  if (first === '-') {
-    if (to === null) throw new UsageError('从标准输入放进来要写 --to <库内路径>。')
-    return { kind: 'place', from: { kind: 'stdin', content: await inv.io.readStdin() }, to, origin: requireOrigin(origin), note }
-  }
-  const local = resolve(inv.io.cwd, first)
-  const onDisk = isAbsolute(first) || existsSync(local)
-  if (onDisk && parseLibraryPath(library.root, local) === null) {
-    if (to === null) throw new UsageError('从库外放进来要写 --to <库内路径>。')
-    const kind = statSync(local, { throwIfNoEntry: false })?.isDirectory() ? 'directory' : 'file'
-    return { kind: 'place', from: { kind, path: local }, to, origin: requireOrigin(origin), note }
-  }
-  const path = onDisk ? local : first
-  if (to === null) return { kind: 'register', path, origin: requireOrigin(origin), note }
-  if (origin || note !== null) throw new UsageError('在库里挪位置不需要 --brought、--made 或 --note。')
-  return { kind: 'move', from: path, to }
-}
-
-function sinceOf(value: string | null): Instant | 'last' | null {
-  if (value === null || value === 'last') return value
-  const t = Date.parse(value)
-  if (Number.isNaN(t)) throw new UsageError(`--since 要写 last 或一个时间，比如 2026-11-25T08:00:00Z：${value}`)
-  return new Date(t).toISOString() as Instant
-}
 
 function ownerCall(inv: Invocation, bound: Bound): OwnerCall {
   return { ctx: bound.ctx, table: inv.table, env: inv.io.env, viaGrant: bound.viaGrant, confirm: (q) => inv.io.confirm(q), readSecret: (q) => inv.io.readSecret(q) }
 }
 
+/**
+ * A verb's values from its words, by the verb's table: positionals in order (the optional ones from
+ * the last under `fromEnd`), a `words` one as the rest joined with spaces, each declared flag by its
+ * kind, and the flags it does not declare under `more`.
+ */
+function verbValues({ params }: Verb, parsed: Parsed): VerbInput {
+  const args = parsed.positional
+  const positional = params.positional ?? []
+  const firstOptional = positional.findIndex((p) => !p.required)
+  const skipped = params.fromEnd ? Math.max(0, positional.length - args.length) : 0
+  const values: Record<string, VerbInput[string]> = {}
+  let next = 0
+  for (const [i, p] of positional.entries()) {
+    if (i >= firstOptional && i < firstOptional + skipped) values[p.name] = null
+    else if (p.words || p.many) {
+      const rest = args.slice(next)
+      next = args.length
+      values[p.name] = p.many ? rest : rest.length === 0 ? null : rest.join(' ')
+    } else values[p.name] = args[next++] ?? null
+  }
+  const declared = params.flags ?? []
+  for (const f of declared) values[f.name] = f.kind === 'boolean' ? hasFlag(parsed, f.name) : f.kind === 'list' ? flagList(parsed, f.name) : flagValue(parsed, f.name)
+  const { more } = params
+  if (more) {
+    const undeclared = ownFlags(parsed).filter(([name]) => !declared.some((f) => f.name === name))
+    values[more.name] = Object.fromEntries(undeclared.map(([name, v]) => [name, more.each === 'list' ? (v === true ? [] : v) : v === true ? '' : (v[0] as string)]))
+  }
+  return values
+}
+
+/** A verb of the table as the command line's own command: its flags and how many words it takes, read from its `params`. */
+function specOf(verb: Verb): Spec {
+  const { positional = [], flags = [], more } = verb.params
+  const takesRest = positional.some((p) => p.words || p.many)
+  return {
+    words: [verb.name],
+    flags: more ? (more.each === 'list' ? 'any' : 'params') : Object.fromEntries(flags.map((f) => [f.name, f.kind])),
+    arity: [positional.filter((p) => p.required).length, takesRest ? Infinity : positional.length],
+    library: true,
+    run: (inv, bound) => verb.run(verbValues(verb, inv.parsed), { bound, table: inv.table, env: inv.io.env, cwd: inv.io.cwd, stdin: () => inv.io.readStdin() }),
+  }
+}
+
 const SPECS: Spec[] = [
+  ...VERBS.map(specOf),
   {
-    words: ['start'],
+    words: ['mcp'],
     flags: {},
-    arity: [1, Infinity],
-    library: true,
-    run: async ({ args }, { ctx }) => {
-      const sentence = args.join(' ')
-      const say = await agentFace.say({ kind: 'doing', about: null, text: sentence, args: {} }, ctx)
-      const check = await agentFace.check({ since: 'last', includeArchived: false }, ctx)
-      const find = await agentFace.find({ text: sentence, match: 'words', filters: {}, includeArchived: false, skipOwnSession: true }, ctx)
-      return { json: { say, check, find }, lines: startText(say, check, find), exit: exitOf(say, check, find) }
-    },
-  },
-  {
-    words: ['find'],
-    flags: { 'include-archived': 'boolean', scene: 'value', origin: 'value' },
-    arity: [0, Infinity],
-    library: true,
-    run: async ({ args, parsed }, { ctx }) => {
-      const filters = Object.fromEntries((['scene', 'origin'] as const).flatMap((name) => (hasFlag(parsed, name) ? [[name, flagValue(parsed, name) as string]] : [])))
-      const text = args.length === 0 ? null : args.join(' ')
-      const r = await agentFace.find({ text, match: 'terms', filters, includeArchived: hasFlag(parsed, 'include-archived'), skipOwnSession: false }, ctx)
-      return { json: r, lines: findText(r), exit: exitOf(r) }
-    },
-  },
-  {
-    words: ['inspect'],
-    flags: {},
-    arity: [1, 1],
-    library: true,
-    run: async ({ args }, { ctx }) => {
-      const target = args[0] as string
-      const r = await agentFace.inspect({ target }, ctx)
-      return { json: r, lines: inspectText(target, r), exit: exitOf(r) }
-    },
-  },
-  {
-    words: ['put'],
-    flags: { to: 'value', brought: 'boolean', made: 'boolean', source: 'value', by: 'value', from: 'list', 'from-outside': 'list', note: 'value' },
-    arity: [1, 1],
-    library: true,
-    run: async (inv, { library, ctx }) => {
-      const req = await putRequest(inv, library)
-      const r = await agentFace.put(req, ctx)
-      return answer(r, putText(req, r))
-    },
-  },
-  {
-    words: ['say'],
-    flags: 'any',
-    arity: [1, 3],
-    library: true,
-    run: async ({ args, parsed }, { ctx }) => {
-      const [kind, ...rest] = args as [string, ...string[]]
-      const [about, text] = rest.length === 2 ? [rest[0] as string, rest[1] as string] : [null, rest[0] ?? null]
-      const sayArgs = Object.fromEntries(ownFlags(parsed).map(([name, value]) => [name, value === true ? [] : value]))
-      const r = await agentFace.say({ kind, about, text, args: sayArgs }, ctx)
-      return answer(r, sayText(r))
-    },
-  },
-  {
-    words: ['check'],
-    flags: { since: 'value', 'include-archived': 'boolean' },
     arity: [0, 0],
-    library: true,
-    run: async ({ parsed }, { ctx }) => {
-      const r = await agentFace.check({ since: sinceOf(flagValue(parsed, 'since')), includeArchived: hasFlag(parsed, 'include-archived') }, ctx)
-      return { json: r, lines: checkText(r), exit: exitOf(r) }
-    },
-  },
-  {
-    words: ['show'],
-    flags: 'params',
-    arity: [0, 1],
-    library: true,
-    run: async ({ args, parsed, io, table }, { library, ctx, viaGrant }) => {
-      if (args.length === 0) {
-        const list = viewerFace.views(library)
-        return { json: list, lines: viewListText(list), exit: exitOf(list) }
+    library: false,
+    run: async ({ parsed, io, table, builtins, home }) => {
+      const grant = parsed.grant
+      if (grant === null) throw new UsageError('mcp 要写 @<授权名>：授权定了是哪个库、是谁。')
+      if (['library', 'as', 'session'].some((f) => hasFlag(parsed, f))) throw new UsageError('mcp 只认 @<授权名>：库和身份由授权定，一次连接是一次会话，不写 --library、--as 或 --session。')
+      // Standard output carries the protocol alone: a refusal before it starts, and whatever a plugin logs, go to standard error.
+      const resolved = await resolveGrant(home, grant, table)
+      if (!resolved.ok) {
+        io.err(`拒绝（${resolved.reason}）：${resolved.text}`)
+        return { json: undefined, lines: [], exit: 2 }
       }
-      const params = Object.fromEntries(ownFlags(parsed).map(([name, value]) => [name, value === true ? '' : (value[0] as string)]))
-      const r = await viewerFace.show({ view: args[0] as string, params }, { ctx, table, env: io.env, viaGrant })
-      if (r.outcome === 'no-such-view') throw new UsageError(`这个库没有这一页：${args[0]}。pneuma-base show 列出这个库的页。`)
-      if (r.outcome === 'refused') return answer(r, [`拒绝（${r.reason}）：${r.text}`])
-      return { json: r, lines: pageText(r, ownerFace.commands(library.plugins)), exit: exitOf(r) }
+      for (const method of ['log', 'info', 'debug'] as const) console[method] = console.error
+      const session = identifySession({ flag: null, env: {}, cwd: io.cwd, machine: hostname() })
+      const face = libraryFace({ grant, home, builtins, env: io.env, cwd: io.cwd, session })
+      await serve({ incoming: io.readLines(), send: (message) => io.out(JSON.stringify(message)) }, face)
+      return { json: undefined, lines: [], exit: 0 }
     },
   },
-  ...(['archive', 'unarchive'] as const).map(
-    (kind): Spec => ({
-      words: [kind],
-      flags: {},
-      arity: [1, 1],
-      library: true,
-      run: async ({ args }, { ctx }) => {
-        const r = await agentFace.archive({ kind, path: args[0] as string }, ctx)
-        return answer(r, archiveText(kind, r))
-      },
-    }),
-  ),
   {
     words: ['init'],
     flags: { bare: 'boolean' },
@@ -396,10 +303,6 @@ function matchSpec(typed: readonly string[]): Spec | null {
     if (spec.words.every((w, i) => typed[i] === w) && spec.words.length > (best?.words.length ?? 0)) best = spec
   }
   return best
-}
-
-function refusal(reason: string, text: string): Answer {
-  return answer({ outcome: 'refused', reason, problems: [] }, [`拒绝（${reason}）：${text}`])
 }
 
 /** Which library and who: `@<grant>` fixes both; `--library` with an optional `--as` is for use without a grant file. */
@@ -526,7 +429,8 @@ export async function main(argv: readonly string[], builtins: PluginTable, io: I
     const parsed = spec ? parseSpec(line, spec) : { grant: line.grant, positional: [], flags: new Map(line.global) }
     const inv: Invocation = { parsed, args: parsed.positional, io, table, builtins, home }
     const result = spec ? await runSpec(spec, inv) : await ownerCommand(inv, line)
-    io.out(hasFlag(parsed, 'json') ? JSON.stringify(result.json, null, 2) : result.lines.join('\n'))
+    // A command that printed as it went, as mcp did on its channel, answers nothing more.
+    if (hasFlag(parsed, 'json') ? result.json !== undefined : result.lines.length > 0) io.out(hasFlag(parsed, 'json') ? JSON.stringify(result.json, null, 2) : result.lines.join('\n'))
     return result.exit
   } catch (error) {
     if (error instanceof UsageError) {
