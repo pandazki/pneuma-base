@@ -116,7 +116,7 @@ agent 手里有六个动词：放、找、看、说、查、归档。试插件�
 | 动词 | 写法 | 做什么 |
 | --- | --- | --- |
 | 放：放入 | `put <库外的文件或目录> --to <库内路径> <来历> [--note "<一句话>"]`；`put - --to …` 从标准输入读 | 把库外的东西复制进库。钩子拿到的 `kind` 是 `place` |
-| 放：登记 | `put <库内路径> <来历> [--note "<一句话>"]` | 记下库里已有的文件或目录的来历；没有标记的目录加上标记，成为一样东西。`kind` 是 `register` |
+| 放：登记 | `put <库内路径> <来历> [--note "<一句话>"] [--observed]` | 记下库里已有的文件或目录的来历；没有标记的目录加上标记，成为一样东西。`kind` 是 `register`。`--observed` 只给主人，和 `--brought --by owner` 一起写：来历是主人这边自动看到的（应用登记主人复制进库的文件），不是谁说的，钩子拿到的 `observed` 为 `true` |
 | 放：挪 | `put <库内路径> --to <库内路径>` | 在库里挪位置，不写来历。`kind` 是 `move` |
 | 找 | `find [<文字>…] [--include-archived] [--scene <场景号>] [--origin brought\|made]` | 内核按名字列，插件加上它知道的 |
 | 看 | `inspect <库内路径\|条目号\|场景号>` | 一样东西的事实，和每个插件知道的 |
@@ -133,7 +133,7 @@ agent 手里有六个动词：放、找、看、说、查、归档。试插件�
 | 钩子 | 什么时候被调 | 拿到的 | 可以答 |
 | --- | --- | --- | --- |
 | `revise` | 放入的目标上已有同类、内容不同的东西，写入之前；一个插件答了照样问下一个 | `{ path, current, incoming }`，路径解析过 | `{ outcome: 'held', note }`：插件把当前内容留在主人取得回的地方；`{ outcome: 'declined', reason }` |
-| `onPut` | 内核接受了一次放（登记、放入、挪）之后；被拒绝的放不调 | `AcceptedPut`，路径解析过；`note` 去掉了首尾空白，空的是 `null` | 一条说明 `{ text, data? }`、`{ note, problems }` 或 `null` |
+| `onPut` | 内核接受了一次放（登记、放入、挪）之后；被拒绝的放不调 | `AcceptedPut`，路径解析过；`note` 去掉了首尾空白，空的是 `null`；登记的 `observed` 为 `true` 时，来历是看到的，之后有人说的来历可以换掉它 | 一条说明 `{ text, data? }`、`{ note, problems }` 或 `null` |
 | `onFind` | 每次找（`start` 也找），内核按名字列完之后 | `FindRequest`，`text` 是原样 | `PluginHit[]`，或 `{ hits, problems }` |
 | `onFound` | 内核和所有 `onFind` 都答完之后；只问它自己没给命中的路径，一个都没有就不问 | 路径（解析过）和 `FindRequest` | `PluginHit[]`，每条的 `path` 必须是问它的路径之一 |
 | `onInspect` | 每次看 | `{ target }`，原样：一个路径，或某个插件认得的编号 | `PluginSection[]` |

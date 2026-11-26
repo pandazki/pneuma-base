@@ -109,15 +109,17 @@ type Origin =
   | { kind: 'made'; from: string[]; outside: string[] }             // 做出来的：依据库里的哪些，库外的各写一句
 
 type PutRequest =   // note：一句话，说这次放入改了什么
-  | { kind: 'register'; path: LibraryPath; origin: Origin; note?: string | null }                 // 文件或目录已经在库里
+  | { kind: 'register'; path: LibraryPath; origin: Origin; note?: string | null; observed?: true } // 文件或目录已经在库里；observed：来历是看到的，不是谁说的
   | { kind: 'place'; from: string | 'stdin'; to: LibraryPath; origin: Origin; note?: string | null }   // 从库外的文件、目录或标准输入放进来
   | { kind: 'move'; from: LibraryPath; to: LibraryPath }                                               // 在库里挪位置
 
 type PutResult =
   | { outcome: 'accepted'; path: LibraryPath; fingerprint: Fingerprint; copied: boolean
       notes: Note[]; problems: PluginProblem[] }
-  | { outcome: 'refused'; reason: 'outside-library' | 'outside-grant' | 'no-such-file' | 'would-overwrite' | 'inside-bundle'; notes: Note[] }
+  | { outcome: 'refused'; reason: 'outside-library' | 'outside-grant' | 'no-such-file' | 'would-overwrite' | 'inside-bundle' | 'agent-session'; notes: Note[] }
 ```
+
+**看到的和说的。** 应用会把主人用 Finder 复制进库的文件自动登记成「主人带进来的」。这是看到的，不是谁说的，可能看错：比如 agent 违反说明直接写了文件。所以登记可以带 `observed`（命令行 `put <库内路径> --brought --by owner --observed`）：只有主人能这样放，行动者是 agent 时以 `agent-session` 拒绝，agent 只说来历，不替主人「看到」。`onPut` 收到的 `AcceptedPut` 带着它。记成什么、谁能更正，归记账插件（第 10 节）。
 
 内核自己能看到的是「东西」：一个普通文件，或一个带标记的目录（见下一小节「一个目录算一样东西」）。全化表里「同类」指和放进来的东西同一类：文件对文件，带标记的目录对带标记的目录；「另一类」是另一类的东西，或既不是文件也不是目录的东西。
 
@@ -526,6 +528,7 @@ $PNEUMA_BASE_HOME/
 - 用词：被新内容换下的旧内容进**留存**，是给主人的保险，只有主人取得回（`ledger held restore` 只给主人）。记账插件的说明、放的答复、`inspect`、界面都说留存、换了新内容，不说版本或一版：版本归版本插件。`inspect` 列出内容换过的每一次，「被换下，在留存里」标在被留存的那一份上，按留存目录里的指纹认。
 - `put --made --from` 写了被换掉的东西自己时，依据里不记它自己：换内容本身就是 `item.revise`，它不是自己的依据。
 - 给来历不明的条目补来历的那条 `item.enter` 是它的别名，不多一份内容；它带的 `note` 由 `fold` 放到它登记的那份内容上，那份已有一句时不盖掉。
+- 看到的来历和改动（第 4 节「看到的和说的」）：`put --observed` 写的 `item.enter`、`say revised --observed` 写的 `item.revise`，信封的 `how` 是 `observed`，事实本来就记着它是怎么来的。来历显示的每一处都带「（自动登记）」：「带进来的，主人给的（自动登记）」；看到的改动是「直接改的，自动登记」。之后谁再登记同一路径、内容没变、写明了来历，就换掉看到的来历，和今天给来历不明的条目补来历一样（「已更正来历」）；`fold` 把被换掉的那条 enter 留在 `earlier` 里，`inspect` 写成「先前：…」，条目的「谁」「何时」「场景」跟着说的那一条。之后谁再 `say revised`（带不带 `--by owner` 都行）同一份内容，就换掉看到的那条改动的归属，版本不多一个，那一版标「先是自动登记」。说的永远不被看到的换掉：内核和记账插件都不让看到的盖过说的，`fold` 里事实的次序反过来（同步带来的）也一样。`--observed` 只给主人；`say revised --observed` 不和 `--by` 一起写，看到的不知道是谁改的。
 - `say revised <库内路径>` 认下一个被直接改过的文件的现内容，记一条 `claimed` 的 `item.revise`。主人说是自己改的，agent 加 `--by owner`：事实体带 `by: 'owner'`，信封的 `actor` 仍是这个 agent，显示时两个人都出现；主人自己说时不带 `by`。信封的 `actor` 是库从授权和会话认出来的，调用方说什么都不改它。
 - 主人面操作的事实里，答复写成一行：几行连起来，绝对路径和 `file://` 地址只留最后的名字。它在 `check`、场景卡和动态里给人读，名字就够了。只读的命令（事件的 `readOnly`）照样记，但不算「自上次以来」的消息；只设插件、目标或嵌入器的命令（事件的 `setup`）在某个行动者第一次来之前发生的不算消息（说明里已是最新配置），在它来过之后再改才列出。
 - 「一次命令行调用写一个文件」落成「每个钩子写一个文件」：`start` 里「说」和「查」各写一个，`put` 盖掉无主文件时 `revise` 写入册、`onPut` 写改。每个文件照样是新文件、写完不动。

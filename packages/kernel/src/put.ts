@@ -85,6 +85,8 @@ async function writable(ctx: Context, input: string): Promise<{ path: LibraryPat
 }
 
 async function register(req: Extract<PutRequest, { kind: 'register' }>, ctx: Context): Promise<Accepted | Refused> {
+  // What the owner's side saw is the owner's to record: an agent says where a thing came from.
+  if (req.observed && ctx.actor.kind !== 'owner') return refuse('agent-session', req.path)
   const target = await writable(ctx, req.path)
   if ('refused' in target) return target
   const origin = await parseOrigin(ctx, req.origin)
@@ -95,7 +97,8 @@ async function register(req: Extract<PutRequest, { kind: 'register' }>, ctx: Con
   const action = PUT_TABLE.register[state]
   if (typeof action === 'object') return refuse(action.refuse, req.path)
   if (action === 'mark') await markBundle(file)
-  return { put: { kind: 'register', path: target.path, fingerprint: await fingerprintOf(file), origin, note: given(req.note ?? null) }, copied: false, notes: [], problems: [] }
+  const put: AcceptedPut = { kind: 'register', path: target.path, fingerprint: await fingerprintOf(file), origin, note: given(req.note ?? null), ...(req.observed ? { observed: true } : {}) }
+  return { put, copied: false, notes: [], problems: [] }
 }
 
 async function place(req: Extract<PutRequest, { kind: 'place' }>, ctx: Context): Promise<Accepted | Refused> {

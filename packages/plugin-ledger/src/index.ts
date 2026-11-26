@@ -140,27 +140,32 @@ async function recordPut(w: Writing, req: AcceptedPut): Promise<PluginNote> {
   } else origin = req.origin
   const noted = req.note === null ? {} : { note: req.note }
   const made = origin.kind === 'made' ? basisNote(origin.basis) : ''
+  // An origin the owner's side saw, not one somebody said: a later one said replaces it.
+  const how = req.kind === 'register' && req.observed ? 'observed' : 'tool'
   if (!item) {
     const id = newItemId()
-    w.facts.push(fact(ctx, 'tool', { kind: 'item.enter', item: id, path: req.path, fingerprint: req.fingerprint, size, origin, ...bundleFlag(disk), ...noted }))
-    return { text: `已记下：${originLabel(origin)}${made} · 条目 ${id}`, data: { item: id } }
+    w.facts.push(fact(ctx, how, { kind: 'item.enter', item: id, path: req.path, fingerprint: req.fingerprint, size, origin, ...bundleFlag(disk), ...noted }))
+    return { text: `已记下：${originLabel(origin, how)}${made} · 条目 ${id}`, data: { item: id } }
   }
   if (item.fingerprint === req.fingerprint) {
-    if (!item.unknownOrigin) {
+    const seen = item.entered.how === 'observed'
+    if (!item.unknownOrigin && !(seen && how !== 'observed')) {
       if (req.note === null) return { text: `已在册：条目 ${item.id}，内容和记录一致，没有新记`, data: { item: item.id } }
       // No fact is written for this put, so its sentence is a note about the thing.
       w.facts.push(fact(ctx, 'reported', { kind: 'said', flavor: 'note', text: req.note, about: item.id }))
       return { text: `已在册：条目 ${item.id}，内容和记录一致，已记下备注：${req.note}`, data: { item: item.id } }
     }
-    // An enter at a path an item holds is an alias of it; it gives the adopted item its origin.
-    w.facts.push(fact(ctx, 'tool', { kind: 'item.enter', item: newItemId(), path: req.path, fingerprint: req.fingerprint, size, origin, ...bundleFlag(disk), ...noted }))
-    return { text: `已补上来历：${originLabel(origin)}${made} · 条目 ${item.id}`, data: { item: item.id } }
+    // An enter at a path an item holds is an alias of it; it gives the item the origin it lacked, or replaces one only seen.
+    w.facts.push(fact(ctx, how, { kind: 'item.enter', item: newItemId(), path: req.path, fingerprint: req.fingerprint, size, origin, ...bundleFlag(disk), ...noted }))
+    const label = `${originLabel(origin, how)}${made}`
+    const text = item.unknownOrigin ? `已补上来历：${label}` : `已更正来历：${label}；先前是自动登记的：${originLabel(item.origin, 'observed')}`
+    return { text: `${text} · 条目 ${item.id}`, data: { item: item.id } }
   }
   const held = req.kind === 'place' && req.previous !== null ? heldPath(ctx, item.id, req.previous, req.path) : null
   const claimed = req.kind === 'register'
   const basis = origin.kind === 'made' ? { basis: origin.basis } : {}
-  w.facts.push(fact(ctx, claimed ? 'reported' : 'tool', { kind: 'item.revise', item: item.id, base: item.fingerprint, fingerprint: req.fingerprint, size, ...basis, held, claimed, ...noted }))
-  const text = held ? '已记下换了新内容，旧内容进了留存，主人取得回' : claimed ? '已认下这次直接改动' : '已记下换了新内容'
+  w.facts.push(fact(ctx, how === 'observed' ? how : claimed ? 'reported' : 'tool', { kind: 'item.revise', item: item.id, base: item.fingerprint, fingerprint: req.fingerprint, size, ...basis, held, claimed, ...noted }))
+  const text = held ? '已记下换了新内容，旧内容进了留存，主人取得回' : how === 'observed' ? '已记下这次直接改动，自动登记' : claimed ? '已认下这次直接改动' : '已记下换了新内容'
   return { text: `${text} · 条目 ${item.id}`, data: { item: item.id } }
 }
 
@@ -191,17 +196,26 @@ async function recordSay(w: Writing, req: SayRequest): Promise<SayAnswer> {
   if (req.kind === 'revised') {
     const input = req.about ?? req.text
     const by = req.args.by?.[0]?.trim() || null
+    const observed = req.args.observed !== undefined
     if (by !== null && by !== 'owner') return refused('say revised 的 --by 只能写 owner：say revised <库内路径> [--by owner]')
+    // What the owner's side saw is the owner's to record, and it cannot know who made the change.
+    if (observed && ctx.actor.kind !== 'owner') return refused('say revised 的 --observed 只给主人用，记的是主人这边自动看到的改动。是你改的，就不加 --observed。')
+    if (observed && by !== null) return refused('say revised 的 --observed 记的是看到的改动，不知道是谁改的，不和 --by 一起写。')
     const path = input === null ? null : await thingPath(ctx.library.root, input)
     const item = w.ledger.items.get((path !== null && w.ledger.pathIndex.get(path)) || ('' as ItemId))
     if (!item || path === null) return refused(`没人登记过这个文件：${input ?? '（没写）'}。要补来历，用 put <库内路径> --brought 或 --made。`)
     const disk = await onDisk(ctx.library.root, path)
     if (!disk) return refused(`文件不在：${input}`)
-    if (disk.fingerprint === item.fingerprint) return heard(`${input} 的内容和记录一致，没有要认的改动`)
+    // A change only seen is replaced by the claim somebody makes for the same content.
+    const seen = item.versions.at(-1)?.how === 'observed' && item.versions.at(-1)?.claimed === true
+    if (disk.fingerprint === item.fingerprint && (observed || !seen)) return heard(`${input} 的内容和记录一致，没有要认的改动`)
     // The envelope's actor is who the library recognised; what the caller says goes in the body.
     const forOwner = by === 'owner' && ctx.actor.kind !== 'owner'
-    w.facts.push(fact(ctx, 'reported', { kind: 'item.revise', item: item.id, base: item.fingerprint, fingerprint: disk.fingerprint, size: disk.size, held: null, claimed: true, ...(forOwner ? { by: 'owner' as const } : {}) }))
-    return heard(forOwner ? `已记下 ${input} 的这次直接改动是主人做的` : `已认下 ${input} 的直接改动`)
+    const base = disk.fingerprint === item.fingerprint ? (item.versions.at(-2)?.fingerprint ?? null) : item.fingerprint
+    w.facts.push(fact(ctx, observed ? 'observed' : 'reported', { kind: 'item.revise', item: item.id, base, fingerprint: disk.fingerprint, size: disk.size, held: null, claimed: true, ...(forOwner ? { by: 'owner' as const } : {}) }))
+    const replaced = disk.fingerprint === item.fingerprint ? '，替下了自动登记的那条' : ''
+    if (observed) return heard(`已记下 ${input} 被直接改了，自动登记，没说是谁改的`)
+    return heard(forOwner ? `已记下 ${input} 的这次直接改动是主人做的${replaced}` : `已认下 ${input} 的直接改动${replaced}`)
   }
   return refused(`记账插件不认识这个种类：${req.kind}`)
 }

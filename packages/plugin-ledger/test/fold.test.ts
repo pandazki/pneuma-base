@@ -132,3 +132,26 @@ describe('a scene seen by one agent with and without a grant', () => {
     expect(sceneText(sceneView(ledger, scene)).split('\n')[1]).toMatch(/^claude-code、codex · /)
   })
 })
+
+describe('what was seen and what was said', () => {
+  const owner = { kind: 'owner' as const, name: 'owner', grant: null }
+  const seen = (fact: ReturnType<typeof f>) => ({ ...fact, how: 'observed' as const })
+  const claim = (second: number, print: string, how: 'observed' | 'reported') => ({
+    ...f(second, { kind: 'item.revise', item: id('i_a'), base: fp('a'), fingerprint: fp(print), size: 1, held: null, claimed: true }, how === 'observed' ? { actor: owner } : {}),
+    how,
+  })
+
+  it('replaces an origin only seen with one said, keeping the seen one, and never the other way round', () => {
+    const said = fold([seen(f(1, enter('i_a', 'a.md', 'a', { kind: 'brought', source: null, by: 'owner' }), { actor: owner })), f(2, enter('i_x', 'a.md', 'a', { kind: 'made', basis: basis([]) }))])
+    expect(said.items.get(id('i_a'))).toMatchObject({ origin: { kind: 'made' }, entered: { id: 'f_0002' }, earlier: [{ id: 'f_0001', how: 'observed' }] })
+    const kept = fold([f(1, enter('i_a', 'a.md', 'a')), seen(f(2, enter('i_x', 'a.md', 'a', { kind: 'brought', source: null, by: 'owner' }), { actor: owner }))])
+    expect(kept.items.get(id('i_a'))).toMatchObject({ origin: { kind: 'brought', by: null }, entered: { id: 'f_0001' }, earlier: [] })
+  })
+
+  it('replaces a change only seen with the claim said for the same content, and keeps a claim said against a later sighting', () => {
+    const replaced = fold([f(1, enter('i_a', 'a.md', 'a')), claim(2, 'b', 'observed'), claim(3, 'b', 'reported')])
+    expect(replaced.items.get(id('i_a'))?.versions).toMatchObject([{ fingerprint: fp('a') }, { fingerprint: fp('b'), how: 'reported', seen: { actor: owner } }])
+    const kept = fold([f(1, enter('i_a', 'a.md', 'a')), claim(2, 'b', 'reported'), claim(3, 'b', 'observed')])
+    expect(kept.items.get(id('i_a'))?.versions).toMatchObject([{ fingerprint: fp('a') }, { fingerprint: fp('b'), how: 'reported', seen: null }])
+  })
+})

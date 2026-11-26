@@ -85,6 +85,8 @@ function verb<const P extends VerbParams>(v: Omit<Verb, 'params' | 'run'> & { re
 const ORIGIN_HELP =
   '要说明来历：带进来的用 --brought（可加 --source <出处>、--by owner），做出来的用 --made（可加 --from <库内路径…>、--from-outside "<一句话…>"）。两个只能选一个。'
 
+const OBSERVED_HELP = '--observed 只用来登记库里已有的东西，和 --brought --by owner 一起写：主人这边自动看到、没人说过来历的，比如应用登记主人复制进库的文件。'
+
 type OriginValues = { brought: boolean; made: boolean; source: string | null; by: string | null; from: readonly string[]; 'from-outside': readonly string[] }
 
 function originOf(v: OriginValues): Origin<string> | null {
@@ -106,9 +108,10 @@ function requireOrigin(origin: Origin<string> | null): Origin<string> {
  * when one is there, otherwise a path in the library. A file or directory outside the library is
  * placed; a path inside is registered, or moved when `--to` is given.
  */
-async function putRequest(v: OriginValues & { what: string; to: string | null; note: string | null }, { bound, cwd, stdin }: VerbCall): Promise<PutRequest> {
-  const { what: first, to, note } = v
+async function putRequest(v: OriginValues & { what: string; to: string | null; note: string | null; observed: boolean }, { bound, cwd, stdin }: VerbCall): Promise<PutRequest> {
+  const { what: first, to, note, observed } = v
   const origin = originOf(v)
+  if (observed && (origin?.kind !== 'brought' || origin.by !== 'owner' || to !== null || first === '-')) throw new UsageError(OBSERVED_HELP)
   if (first === '-') {
     if (to === null) throw new UsageError('从标准输入放进来要写 --to <库内路径>。')
     return { kind: 'place', from: { kind: 'stdin', content: await stdin() }, to, origin: requireOrigin(origin), note }
@@ -121,7 +124,7 @@ async function putRequest(v: OriginValues & { what: string; to: string | null; n
     return { kind: 'place', from: { kind, path: local }, to, origin: requireOrigin(origin), note }
   }
   const path = onDisk ? local : first
-  if (to === null) return { kind: 'register', path, origin: requireOrigin(origin), note }
+  if (to === null) return { kind: 'register', path, origin: requireOrigin(origin), note, ...(observed ? { observed: true as const } : {}) }
   if (origin || note !== null) throw new UsageError('在库里挪位置不需要 --brought、--made 或 --note。')
   return { kind: 'move', from: path, to }
 }
@@ -200,6 +203,7 @@ export const VERBS: readonly Verb[] = [
         { name: 'from', hint: '依据库里的哪些，库内路径，跟 made 一起写', kind: 'list' },
         { name: 'from-outside', hint: '依据库外的什么，各一句话，跟 made 一起写', kind: 'list' },
         { name: 'note', hint: '一句话，说这次放入改了什么', kind: 'value' },
+        { name: 'observed', hint: '来历是主人这边自动看到的，不是谁说的；只给主人，跟 brought 和 by owner 一起写', kind: 'boolean' },
       ],
       stdin: 'what',
     },

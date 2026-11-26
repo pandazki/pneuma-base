@@ -161,19 +161,21 @@ export type PlaceSource = { kind: 'file'; path: string } | { kind: 'directory'; 
 
 /**
  * Paths are as the caller wrote them: library-relative or absolute. The kernel parses them.
- * `note`: one sentence on what this put changed.
+ * `note`: one sentence on what this put changed. `observed`: the origin was seen, not said, as when
+ * the app registers a file the owner copied in; only the owner may put so, and a later origin
+ * somebody says replaces it.
  */
 export type PutRequest =
-  | { kind: 'register'; path: string; origin: Origin<string>; note?: string | null }
+  | { kind: 'register'; path: string; origin: Origin<string>; note?: string | null; observed?: true }
   | { kind: 'place'; from: PlaceSource; to: string; origin: Origin<string>; note?: string | null }
   | { kind: 'move'; from: string; to: string }
 
 /**
  * `inside-bundle`: the path lies inside a bundle, which changes only as a whole; `subject` is the
  * bundle. A put refused because no plugin held the replaced content carries, as `notes`, why each
- * plugin with `revise` declined.
+ * plugin with `revise` declined. `agent-session`: an agent put with `observed`, which is the owner's.
  */
-export type PutRefusal = 'outside-library' | 'outside-grant' | 'no-such-file' | 'would-overwrite' | 'inside-bundle'
+export type PutRefusal = 'outside-library' | 'outside-grant' | 'no-such-file' | 'would-overwrite' | 'inside-bundle' | 'agent-session'
 
 export type PutResult =
   | { outcome: 'accepted'; path: LibraryPath; fingerprint: Fingerprint; copied: boolean; notes: Note[]; problems: PluginProblem[] }
@@ -181,7 +183,7 @@ export type PutResult =
 
 /** What `onPut` receives after the kernel accepted a put. `note` is trimmed; blank or absent is null. */
 export type AcceptedPut =
-  | { kind: 'register'; path: LibraryPath; fingerprint: Fingerprint; origin: Origin; note: string | null }
+  | { kind: 'register'; path: LibraryPath; fingerprint: Fingerprint; origin: Origin; note: string | null; observed?: true }
   | {
       kind: 'place'
       path: LibraryPath
