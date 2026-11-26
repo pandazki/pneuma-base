@@ -2,8 +2,9 @@
 // named with the rule its report states; every TypeScript example compiles against the sdk with the
 // scaffold's compiler options, and every example plugin passes the loader; every shell block runs as
 // written from the state the five minutes leave (the blocks that install from the registry run in
-// plugins-doc.slow.test.ts); the icon, frame class and frame token lists are the sdk's; and the
-// friction appendix accounts for all 55 entries of the first plugin and the 13 of its rebuild.
+// plugins-doc.slow.test.ts); the icon, frame class and frame token lists are the sdk's; the
+// conformance test it shows is the one plugin new writes; and the friction appendix accounts for all
+// 55 entries of the first plugin and the 13 of its rebuild.
 import { spawnSync } from 'node:child_process'
 import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -21,6 +22,7 @@ const BIN = fileURLToPath(new URL('../dist/bin.js', import.meta.url))
 const SDK = fileURLToPath(new URL('../../sdk/', import.meta.url))
 const REPO = fileURLToPath(new URL('../../../', import.meta.url))
 const SCAFFOLD_TSCONFIG = fileURLToPath(new URL('../templates/common/tsconfig.json', import.meta.url))
+const SCAFFOLD_CONFORMANCE = fileURLToPath(new URL('../templates/blank/test/conformance.test.ts', import.meta.url))
 
 const text = readFileSync(STANDARD, 'utf8')
 const blocks = fences(text)
@@ -85,11 +87,18 @@ describe('PLUGINS.md', () => {
     expect(rowNames('`frame.css` 的变量（`FRAME_TOKENS`）', /`(--[a-z0-9-]+)`/g)).toEqual([...FRAME_TOKENS])
   })
 
-  it('names this version and contract, and points into no source file of this repository', () => {
+  it('names this version and contract, and points into no source file of this repository, nor to it for the package files', () => {
     expect(text).toContain(`契约第 ${CONTRACT} 版`)
     expect(text).toContain(`pneuma-base ${PNEUMA_BASE_VERSION}`)
     expect(text).toContain(`pneuma-base-${PNEUMA_BASE_VERSION}.tgz`)
     expect(text.match(/(?<!dist-)packages\/[\w./-]*|\w+\.ts:\d+/g)).toBeNull()
+    expect(text.match(/pack:dist|dist-packages/g)).toBeNull()
+  })
+
+  it('shows the conformance test plugin new writes, word for word', () => {
+    const line = text.slice(0, text.indexOf('生成的 `test/conformance.test.ts` 就是这样用它的')).split('\n').length
+    const shown = ts_.find((b) => b.line > line)
+    expect(shown?.body).toBe(readFileSync(SCAFFOLD_CONFORMANCE, 'utf8').trimEnd())
   })
 
   it('has no shell block that no test runs: each is plain or marked to run with the registry, and each output follows a block', () => {

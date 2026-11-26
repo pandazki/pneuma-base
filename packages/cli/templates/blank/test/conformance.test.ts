@@ -14,6 +14,8 @@ test('the plugin follows the standard', async () => {
       const put = await sandbox.agent('setup', 'setup', ['put', '-', '--to', 'notes/plan.md', '--made'], { input: '# 计划\n' })
       assert.equal(put.code, 0, put.stderr)
     },
+    // Files in its own directory it replaces whole, as configuration: none, marks are only ever added.
+    configuration: [],
   })
   assert.ok(report.ok, report.text)
 })

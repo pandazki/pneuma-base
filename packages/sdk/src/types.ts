@@ -475,7 +475,11 @@ export type ViewFilter = { name: string; label: string; options: { value: string
 /** `icon` is one of `ICON_NAMES`. A view with `nav` false is reached only through links, as a detail. */
 export type ViewDecl = { id: string; title: string; icon: IconName; nav: boolean; filters: ViewFilter[] }
 export type ViewRequest = { view: string; params: Record<string, string> }
-/** `refresh`: seconds after which the page asks again, for a view showing state from outside the library; at least 5. */
+/**
+ * `refresh`: seconds after which the page asks again, at least 5: for a view showing state from
+ * outside the library, or one whose content changes with the clock. A view runs on the machine of
+ * the viewer's server, in its time zone; a cell's `at` is shown in the browser's.
+ */
 export type ViewAnswer = { title: string; subtitle: string | null; blocks: Block[]; refresh?: number }
 export type ViewResult =
   | ({ outcome: 'shown' } & ViewAnswer & { problems: PluginProblem[] })

@@ -10,8 +10,6 @@ export const KINDS = ['blank', 'deploy'] as const
 export type Kind = (typeof KINDS)[number]
 
 const TEMPLATES = fileURLToPath(new URL('../templates/', import.meta.url))
-/** Where `pnpm pack:dist` puts the package files, when this command line runs from the repository it was built in. */
-const OWN_PACKAGES = fileURLToPath(new URL('../../../dist-packages/', import.meta.url))
 const PACKAGE_FILES = { 'pneuma-base': `pneuma-base-${PNEUMA_BASE_VERSION}.tgz`, '@pneuma-base/sdk': `pneuma-base-sdk-${PNEUMA_BASE_VERSION}.tgz` }
 
 /**
@@ -46,7 +44,7 @@ function templateFiles(kind: Kind): Map<string, string> {
 /**
  * Writes the project `kind` for the plugin `name` (the directory's name when null) into `dir`, which
  * must be missing or empty. It depends on the two package files in `packages` by absolute path; when
- * that is null, on those `pnpm pack:dist` built beside this command line, else on the packages by name.
+ * that is null, on the packages by name.
  */
 export function scaffold(opts: { dir: string; kind: Kind; name: string | null; packages: string | null }): Scaffolded {
   const name = opts.name ?? basename(opts.dir)
@@ -54,9 +52,9 @@ export function scaffold(opts: { dir: string; kind: Kind; name: string | null; p
   if (RESERVED_PLUGIN_NAMES.includes(name)) return { ok: false, reason: 'usage', text: `插件名 ${name} 是命令行或内核自己用的词。用 --name 换一个。` }
   if (existsSync(opts.dir) && readdirSync(opts.dir).length > 0) return { ok: false, reason: 'not-empty', text: `${opts.dir} 不是空的，什么都没写。换一个目录。` }
   if (opts.packages !== null && !hasPackageFiles(opts.packages)) {
-    return { ok: false, reason: 'no-package-files', text: `${opts.packages} 里没有 ${Object.values(PACKAGE_FILES).join(' 和 ')}。在 Pneuma Base 仓库里 pnpm pack:dist 打出它们。` }
+    return { ok: false, reason: 'no-package-files', text: `${opts.packages} 里没有 ${Object.values(PACKAGE_FILES).join(' 和 ')}。--packages 要写这两个包文件所在的目录。` }
   }
-  const packages = opts.packages ?? (hasPackageFiles(OWN_PACKAGES) ? OWN_PACKAGES : null)
+  const { packages } = opts
   // By absolute path, so the project can move; the package files stay where they are.
   const dependency = (pkg: keyof typeof PACKAGE_FILES) => (packages === null ? `^${PNEUMA_BASE_VERSION}` : `file:${join(packages, PACKAGE_FILES[pkg]).split(sep).join('/')}`)
   const manifest = {

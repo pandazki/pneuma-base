@@ -150,6 +150,7 @@ type PutResult =
 - 一个带标记的目录只能整体地变：它里面的路径不是 agent 面写的目标，放、挪、登记、归档到它里面都以 `inside-bundle` 拒绝。要改它，把整个目录重新放进来。
 - 找：一个带标记的目录是一个命中，`detail` 是「目录」。看：`FileFacts` 多 `kind: 'file' | 'bundle'` 和 `files`（文件数）。
 - 挪、归档、取回：整个目录一起动。取回时原路径上有任何东西，包括没标记的目录，都算原路径被占。
+- 符号链接不是东西：列东西、算指纹、同步都不进到链接里，所以一个路径本身是链接、或路径上有一段是链接时，内核当那里有「另一类」的东西（`kindAt`）。登记、挪、归档、看都不认它，往它上面或它里面放以 `would-overwrite` 拒绝，不会经过链接写到库外。解析调用方写的绝对路径时，只解析通到库根的那一段链接，库里的链接不跟（`parseLibraryPath`）。插件的工具用同样的判断，所以 `thing` 和 `things` 说的一样。
 
 ### 找、看、说、查、归档
 
@@ -309,11 +310,11 @@ type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems: string
 ### 写一个库外的插件
 
 - 两个包文件，`pnpm pack:dist` 打进 `dist-packages/`（不进 git，不发布）：`pneuma-base-<版本>.tgz` 是命令行，内核、五个自带插件、界面的服务和网页都作为捆绑的依赖在里面，另带插件规范 `PLUGINS.md`，`npm install` 它不用别的包，也不用联网；`pneuma-base-sdk-<版本>.tgz` 是 `@pneuma-base/sdk`，不依赖这个仓库的别的包，声明文件自成一体。两个的版本都是 sdk 的 `PNEUMA_BASE_VERSION`，自带的五个插件的 `version` 也是它，每个工作区包的 `package.json` 和它不一样时打包拒绝。实现在 `scripts/pack-dist.mjs`。
-- 测试工具 `@pneuma-base/sdk/testkit` 跑真的命令行，不另造一个假的内核：插件在测试里和在主人的机器上走同一条路。调用的环境从空的建起，所以没有任何 agent 产品的会话变量。`serve(handler)` 起一个库外 HTTP 服务的替身、交回地址，沙箱收尾时一起停，所以目标是网络服务的插件不连真的服务也能跑符合性检查和自己的测试；`viewer().item(路径, { plugin })` 只要一个插件的那一节。
-- `conformance` 把规范里行为上的规矩跑成检查（九项，见 `PLUGINS.md` 第 7 节），每项的规则文字在 `RULES` 里，报告原样引用，规范也原样引用（`plugins-doc.test.ts` 核对）。仓库自己的测试拿它查自带的五个插件，也拿故意违规的插件看每条检查都会变红（`packages/cli/test/conformance.test.ts`）。
-- 脚手架 `pneuma-base plugin new` 是命令行的命令，不是内核的：它只从命令行包里的 `templates/` 写一个项目目录，不碰库，不碰 `$PNEUMA_BASE_HOME`，不发事件。生成的项目按绝对路径依赖两个包文件（`--packages` 给的目录；没给时用构建这个命令行的仓库里 `dist-packages/` 的，都没有就按包名，发布之后能装），所以项目挪到哪里都装得上；`plugin new --help` 说它自己的用法；esbuild 打成一个 `dist/index.js`，旁边是 `cognition.md` 和 `ui/`；测试用 Node 自己的测试运行器，直接导入 `src/` 的源码。它的答复和生成的 `README.md` 指向插件规范。两种项目都不改一行就通过自己的测试：`packages/cli/test/scaffold.slow.test.ts`（`pnpm test:slow`，要联网）把生成的项目先挪到别处，再从安装一直走到装进库、调命令、开视图；`plugins-doc.slow.test.ts` 照原样跑规范里从安装开始的例子。
+- 测试工具 `@pneuma-base/sdk/testkit` 跑真的命令行，不另造一个假的内核：插件在测试里和在主人的机器上走同一条路。调用的环境从空的建起，所以没有任何 agent 产品的会话变量。`serve(handler)` 起一个库外 HTTP 服务的替身、交回地址，沙箱收尾时一起停，所以目标是网络服务的插件不连真的服务也能跑符合性检查和自己的测试；`viewer().item(路径, { plugin })` 只要一个插件的那一节。沙箱建在 `$PNEUMA_BASE_TEST_TMP` 下，没设时在系统的临时目录下。
+- `conformance` 把规范里行为上的规矩跑成检查（九项，见 `PLUGINS.md` 第 7 节），每项的规则文字在 `RULES` 里，报告原样引用，规范也原样引用（`plugins-doc.test.ts` 核对）。破坏性的主人命令经界面的服务跑，带着界面那样的当面确认，只许它改自己的目录。`custom` 页不在浏览器里跑：只读页和它直接载入的脚本，看它载入 `/plugin-kit/frame.js`、调用 `pneuma.onData`。仓库自己的测试拿它查自带的五个插件，也拿故意违规的插件看每条检查都会变红（`packages/cli/test/conformance.test.ts`）。
+- 脚手架 `pneuma-base plugin new` 是命令行的命令，不是内核的：它只从命令行包里的 `templates/` 写一个项目目录，不碰库，不碰 `$PNEUMA_BASE_HOME`，不发事件。生成的项目按绝对路径依赖两个包文件（`--packages` 给的目录；没给时按包名，发布之后才装得上），所以项目挪到哪里都装得上；`plugin new --help` 说它自己的用法；esbuild 打成一个 `dist/index.js`，旁边是 `cognition.md` 和 `ui/`；测试用 Node 自己的测试运行器，直接导入 `src/` 的源码。它的答复和生成的 `README.md` 指向插件规范。两种项目都不改一行就通过自己的测试：`packages/cli/test/scaffold.slow.test.ts`（`pnpm test:slow`，要联网）把生成的项目先挪到别处，再从安装一直走到装进库、调命令、开视图；`plugins-doc.slow.test.ts` 照原样跑规范里从安装开始的例子。
 
-插件的规矩写在 `PLUGINS.md` 第 3.7 和第 6 节：只往自己名下写，不改别的插件的东西，不认识的内容原样留着，agent 面上做的事主人撤得回。插件可以做要模型、要联网、带判断的事；内核不做。
+插件的规矩写在 `PLUGINS.md` 第 3.7 和第 6 节：只往自己名下写，不改别的插件的东西，不认识的内容原样留着，agent 面上做的事主人撤得回。记录只新增；只有破坏性的主人命令删、改写插件自己名下的文件，主人总能丢掉数据，同步插件把这样删掉的文件在别的副本上也删掉（第 12 节）。插件可以做要模型、要联网、带判断的事；内核不做。
 
 ## 6. 两个面
 
@@ -331,7 +332,7 @@ type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems: string
 主人面的命令都是数据：名字、一句说明、参数表、是否破坏性、是否只给主人、是否只读（可选）、是否配置（可选）、`run`。内核自己的十二条在 `owner-commands.ts`，都带参数表，和插件的 `OwnerCommand` 同形，只是 `run` 收到整个主人调用（上下文、插件表、环境、是否带授权、怎么问当面确认、怎么读主人另给的值；本机的家目录就是上下文的 `home`），并可交回重开的库。其中六条要一个库（`grant issue`、`grant revoke`、`plugin add`、`plugin remove`、`skill install`、`archive purge`）；六条只动这台机器的 `$PNEUMA_BASE_HOME`，有没有库都能跑（`plugin install`、`plugin uninstall`、`plugin list`、`secret set`、`secret list`、`secret remove`）：没有库时上下文的 `library` 是 null，没有插件可告诉，不发事件；带着库（比如从界面）时照常在单一出口发事件。
 
 - `ownerFace.commands(插件表)` 列出可用的命令：先内核的，后各插件的，按配置次序；名字已被占的不再列，插件盖不住内核的命令。命令行的 `--help` 用它列出主人命令：带 `--library` 或 `@<授权名>` 时是那个库的，否则是内核的。
-- 门：破坏性的和只给主人的，在 agent 的会话里都以 `agent-session` 拒绝；然后按参数表核对；破坏性的再要当面确认。内核自己的命令里，`archive purge` 是破坏性的，`skill install` 和 `plugin list` 谁都能跑，其余只给主人。
+- 门：破坏性的和只给主人的，在 agent 的会话里都以 `agent-session` 拒绝；然后按参数表核对；破坏性的再要当面确认。终端里只有输入 `yes` 才算确认；别的回答、输入结束（Ctrl+D）、不在终端里，都以 `not-confirmed` 拒绝。内核自己的命令里，`archive purge` 是破坏性的，`skill install` 和 `plugin list` 谁都能跑，其余只给主人。
 - `ownerFace.dispatch(主人调用, 命令名, 参数)` 是唯一的入口，命令行和界面的服务都走它。命令经同一道门（K7），在单一出口发事件（K5）。
 - 没有这条命令：在任何操作开始前拒绝（`unknown-command`），不发事件。要库的命令没给库，同样在开始前拒绝（`no-library`）。
 - 参数不对：以 `usage` 拒绝，说出哪一样不对，带参数表生成的用法；命令行把它当用法错误，退出码 1。表单里留空的可选值等于没给；开关在表单里写成值 `yes` 或 `no`。
@@ -343,7 +344,7 @@ type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems: string
 
 管理界面是内核的一个客户端：看用视图，改用 agent 面的动词和主人面的命令。视图不是操作，不改东西，不发事件。K5 说的是两个面的操作。
 
-界面重取一个视图只在三种时候：库的摘要（`/api/rev`，界面每两秒问一次）变了；做完一个动作；视图的答复带 `refresh: <秒>` 时，每隔这么久一次，少于 5 秒按 5 秒。另外，连不上服务之后又连上时取一次，补上断着时没取到的。没有别的会让视图重算。所以视图可以读库外的东西（比如部署目标上的状态），只要不写；状态来自库外的视图才带 `refresh`。视图写了库里的东西，摘要就变，界面每两秒重取一次，这是插件的错。
+界面重取一个视图只在三种时候：库的摘要（`/api/rev`，界面每两秒问一次）变了；做完一个动作；视图的答复带 `refresh: <秒>` 时，每隔这么久一次，少于 5 秒按 5 秒。另外，连不上服务之后又连上时取一次，补上断着时没取到的。没有别的会让视图重算。所以视图可以读库外的东西（比如部署目标上的状态），只要不写；状态来自库外的视图要带 `refresh`，内容随时钟变的视图（比如「最近 30 天」）也可以带。视图在界面的服务所在的机器上运行，用那台机器的时区；格里的 `at` 由网页按浏览器的时区显示。视图写了库里的东西，摘要就变，界面每两秒重取一次，这是插件的错。
 
 ```ts
 viewerFace.views(library): { views: ViewDecl[]; problems: PluginProblem[] }

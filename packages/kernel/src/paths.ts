@@ -1,6 +1,6 @@
 import { realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, dirname, isAbsolute, join, posix, relative, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, normalize, posix, relative, sep } from 'node:path'
 import type { LibraryPath, PluginName, Region } from '@pneuma-base/sdk'
 
 export const KERNEL_DIR = '.pneuma-base'
@@ -9,13 +9,14 @@ export const DESCRIPTION_FILE = 'PNEUMA-BASE.md'
 
 /**
  * Parses what a caller wrote into a library path: relative to the library root, or absolute and
- * inside it. Null when it names the root itself or anything outside.
+ * inside it. Null when it names the root itself or anything outside. Like every listing of the
+ * library, it follows no symbolic link inside the library: only the links on the way to the root.
  */
 export function parseLibraryPath(root: string, input: string): LibraryPath | null {
   if (input.trim() === '') return null
   let rel = input
   if (isAbsolute(input)) {
-    rel = relative(root, canonical(input))
+    rel = relative(root, belowRoot(root, normalize(input)))
     if (isAbsolute(rel)) return null
     rel = rel.split(sep).join('/')
   }
@@ -76,6 +77,21 @@ export function pluginDir(root: string, name: PluginName): string {
 
 export function scratchDir(root: string): string {
   return join(root, KERNEL_DIR, 'tmp')
+}
+
+/**
+ * `path` with the part up to the library root resolved, when an ancestor of it is the root by its
+ * real path, and the rest as written; else the real path of `path`, for one that reaches the
+ * library only through a link outside it.
+ */
+function belowRoot(root: string, path: string): string {
+  if (path === root || path.startsWith(`${root}${sep}`)) return path
+  const rest: string[] = []
+  for (let dir = path; dirname(dir) !== dir; dir = dirname(dir)) {
+    if (canonical(dir) === root) return join(root, ...rest)
+    rest.unshift(basename(dir))
+  }
+  return canonical(path)
 }
 
 /** The real path of `path`, resolving symbolic links in the part of it that exists. */

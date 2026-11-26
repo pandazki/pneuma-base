@@ -13,6 +13,7 @@ import {
   openLibrary,
   ownerFace,
   parseLibraryPath,
+  PNEUMA_BASE_VERSION,
   resolveGrant,
   type Context,
   type Env,
@@ -89,12 +90,16 @@ export function processIo(): Io {
     err: (text) => void process.stderr.write(`${text}\n`),
     readStdin,
     readSecret: async (question) => (process.stdin.isTTY ? hiddenAnswer(question) : Buffer.from(await readStdin()).toString('utf8').replace(/\r?\n$/, '')),
+    // Input that ends before an answer (Ctrl+D) is no confirmation, as any answer but yes is.
     confirm: async (question) => {
       if (!process.stdin.isTTY) return false
       const rl = createInterface({ input: process.stdin, output: process.stderr })
-      const answer = await rl.question(`${question} 输入 yes 确认：`)
+      const answer = await rl.question(`${question} 输入 yes 确认：`).catch(() => {
+        process.stderr.write('\n')
+        return null
+      })
       rl.close()
-      return answer.trim() === 'yes'
+      return answer?.trim() === 'yes'
     },
     untilStopped: () =>
       new Promise((resolve) => {
@@ -125,7 +130,7 @@ const PLUGIN_NEW_USAGE = `用法：pneuma-base plugin new <目录> [--kind blank
 在一个空的或还不存在的目录里生成一个插件项目，不改一行就能构建、通过自己的测试、装进这台机器。不碰任何库。
   --kind      blank（缺省）：一种「说」的种类、一条带参数表的主人命令、一个视图和一个自己画的块；deploy：开发包里的部署库加一个发布到本地目录的目标
   --name      插件名：小写字母开头，只用小写字母、数字和连字符；不写就用目录名
-  --packages  pneuma-base 和 @pneuma-base/sdk 两个包文件所在的目录。项目按绝对路径依赖它们，挪到哪里都装得上；包文件要留在原处。不写就用构建这个命令行的仓库里 pnpm pack:dist 打出的，都没有就按包名依赖
+  --packages  pneuma-base 和 @pneuma-base/sdk 两个包文件（pneuma-base-${PNEUMA_BASE_VERSION}.tgz、pneuma-base-sdk-${PNEUMA_BASE_VERSION}.tgz）所在的目录。项目按绝对路径依赖它们，挪到哪里都装得上；包文件要留在原处。不写时按包名依赖，两个包没有发布到 npm，npm install 装不上
 生成之后：cd <目录>，npm install，npm test，npm run install-local；README.md 说每个文件是什么。`
 
 /**
@@ -343,7 +348,7 @@ const SPECS: Spec[] = [
         if (r.reason === 'usage') throw new UsageError(r.text)
         return refusal(r.reason, r.text)
       }
-      const where = r.packages === null ? ['没找到两个包文件，package.json 按包名依赖它们，发布之后才装得上；要现在用，加 --packages <目录> 指向 pnpm pack:dist 打出的包文件。'] : []
+      const where = r.packages === null ? ['没写 --packages，package.json 按包名依赖两个包，它们没有发布到 npm，npm install 装不上。换一个空目录，加 --packages <两个包文件所在的目录> 再生成。'] : []
       const next = [`cd ${dir}`, 'npm install', 'npm test', 'npm run install-local', `npx -- pneuma-base plugin add ${r.name} --library <库的目录>`]
       const standard = `插件规范：${r.standard ?? 'npm install 之后在 node_modules/pneuma-base/PLUGINS.md'}`
       const lines = [`已在 ${dir} 生成插件 ${r.name}（${r.kind}），${r.files.length} 个文件，README.md 说每个是什么。`, standard, ...where, '接着：', ...next.map((l) => `  ${l}`)]

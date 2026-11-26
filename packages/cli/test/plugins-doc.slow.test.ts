@@ -1,6 +1,6 @@
 // PLUGINS.md's blocks that install from the registry, the five minutes first, run as written in a
-// directory holding the two package files pack:dist builds. npm installs globally into a temporary
-// prefix, the home is temporary, and the browser `pneuma-base view` would open is a stand-in. The
+// directory holding the two package files pack:dist builds. npm installs the command line into that
+// directory, the home is temporary, and the browser `pneuma-base view` would open is a stand-in. The
 // block that ends by serving the UI is stopped once its page answers with the plugin's view.
 // Slow and needs the registry, so it runs with `pnpm test:slow`, not `pnpm test`.
 import { spawnSync } from 'node:child_process'
@@ -20,10 +20,9 @@ describe('PLUGINS.md, the blocks that install from the registry', () => {
   const root = tempDir('pb-doc-slow-')
   const bin = join(root, 'bin')
   const env = {
-    PATH: `${bin}:${join(root, 'global/bin')}:${process.env.PATH ?? ''}`,
+    PATH: `${bin}:${process.env.PATH ?? ''}`,
     HOME: join(root, 'home'),
     PNEUMA_BASE_HOME: join(root, 'home/.pneuma-base'),
-    npm_config_prefix: join(root, 'global'),
     npm_config_cache: process.env.npm_config_cache ?? join(homedir(), '.npm'),
     npm_config_update_notifier: 'false',
     ...Object.fromEntries(['LANG', 'LC_ALL', 'TMPDIR'].flatMap((n) => (process.env[n] === undefined ? [] : [[n, process.env[n] as string]]))),
@@ -57,7 +56,7 @@ describe('PLUGINS.md, the blocks that install from the registry', () => {
       const shown = `PLUGINS.md line ${block.line}\n--- stdout\n${r.stdout}--- stderr\n${r.stderr}`
       expect(r.code, shown).toBe(0)
       expect(unprinted(blocks, block, r), shown).toEqual([])
-      expect(r.stdout, 'plugin new names the standard installed with the command line').toContain(`插件规范：${join(root, 'global/lib/node_modules/pneuma-base/PLUGINS.md')}`)
+      expect(r.stdout, 'plugin new names the standard installed with the command line').toContain(`插件规范：${join(packages, 'node_modules/pneuma-base/PLUGINS.md')}`)
     }, 600_000)
   }
 })
