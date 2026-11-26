@@ -176,6 +176,10 @@ struct Opened {
 }
 
 fn open_place_file(walker: &mut Walker, place: &Place) -> Result<Opened, Failure> {
+    // The root is a directory like any other, not a malformed place.
+    if place.is_root() {
+        return Err(Failure::new(Reason::NotAFile));
+    }
     let (dir, name) = parent_of(walker, place)?;
     let c_name = sys::c_name(name.as_bytes());
     let file = match sys::open_file_at(dir, &c_name) {
