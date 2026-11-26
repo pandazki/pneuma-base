@@ -271,10 +271,10 @@ function TableView({ block }: { block: Extract<Block, { kind: 'table' }> }) {
               onMouseDown={
                 row.link
                   ? (e) => {
-                      // A press focuses the row where it is; the card does not scroll sideways to it.
-                      if ((e.target as Element).closest('button, a')) return
-                      e.preventDefault()
-                      e.currentTarget.focus({ preventScroll: true })
+                      // A press focuses the row; the card stays where it was rather than scrolling sideways to it.
+                      const card = e.currentTarget.closest('.table-card')
+                      const left = card?.scrollLeft ?? 0
+                      requestAnimationFrame(() => card && (card.scrollLeft = left))
                     }
                   : undefined
               }

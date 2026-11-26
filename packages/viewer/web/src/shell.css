@@ -403,6 +403,9 @@ html[data-window='inactive'] .fresh {
   min-height: 48px;
   padding: 9px 16px;
   background: var(--panel);
+  transition: box-shadow 140ms ease;
+}
+.main[data-scrolled] .page-head {
   box-shadow: 0 0.5px 0 var(--line);
 }
 .page-head > h1 {
@@ -591,9 +594,10 @@ html[data-window='inactive'] .fresh {
 .tab {
   display: flex;
   align-items: center;
+  gap: 6px;
   width: 100%;
   height: 28px;
-  padding: 0 26px 0 10px;
+  padding: 0 26px 0 8px;
   border-radius: var(--radius-field);
   color: var(--ink-3);
   font-size: 13px;
@@ -605,6 +609,12 @@ html[data-window='inactive'] .fresh {
     background-color 140ms ease,
     color 140ms ease,
     box-shadow 140ms ease;
+}
+.tab > svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--ink-3);
 }
 .tab:hover {
   background: var(--wash);
@@ -668,7 +678,23 @@ html[data-window='inactive'] .fresh {
   margin-bottom: 16px;
 }
 .detail-title > .icon-btn {
-  margin: -3px 0 0 -6px;
+  margin: 2px -4px 0 -6px;
+}
+.detail-tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-top: 4px;
+  border-radius: var(--radius-field);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  color: var(--ink-2);
+}
+.detail-tile > svg {
+  width: 16px;
+  height: 16px;
 }
 .detail-title h2 {
   color: var(--ink-strong);

@@ -3,6 +3,7 @@
 import type { ViewRequest, ViewResult } from '@pneuma-base/kernel'
 import { ArrowLeft, PanelRightClose, X } from 'lucide-react'
 import { useRef, type KeyboardEvent, type ReactNode } from 'react'
+import { ViewIcon } from './chrome'
 import { topOf, type Tab } from './route'
 
 type Props = {
@@ -10,6 +11,8 @@ type Props = {
   active: number
   /** A tab's name: its view's title once it was shown, else what the address says. */
   labelOf(req: ViewRequest): string
+  /** The icon of a tab's view. */
+  iconOf(req: ViewRequest): string
   result: ViewResult | null
   children: ReactNode
   onActivate(i: number): void
@@ -18,7 +21,7 @@ type Props = {
   onBack(): void
 }
 
-export function DetailPanel({ tabs, active, labelOf, result, children, onActivate, onClose, onCloseAll, onBack }: Props) {
+export function DetailPanel({ tabs, active, labelOf, iconOf, result, children, onActivate, onClose, onCloseAll, onBack }: Props) {
   const strip = useRef<HTMLDivElement | null>(null)
   const shown = result?.outcome === 'shown' ? result : null
   const front = tabs[active]
@@ -56,6 +59,7 @@ export function DetailPanel({ tabs, active, labelOf, result, children, onActivat
                   onClick={() => onActivate(i)}
                   onAuxClick={(e) => e.button === 1 && onClose(i)}
                 >
+                  <ViewIcon name={iconOf(topOf(tab))} />
                   <span>{label}</span>
                 </button>
                 <button type="button" className="tab-close" aria-label={`关闭 ${label}`} tabIndex={-1} onClick={() => onClose(i)}>
@@ -75,6 +79,11 @@ export function DetailPanel({ tabs, active, labelOf, result, children, onActivat
             <button type="button" className="icon-btn" aria-label="返回" data-tip="返回" onClick={onBack}>
               <ArrowLeft strokeWidth={2} aria-hidden />
             </button>
+          ) : null}
+          {front ? (
+            <span className="detail-tile" aria-hidden>
+              <ViewIcon name={iconOf(topOf(front))} />
+            </span>
           ) : null}
           <div className="min-w-0">
             <h2 data-testid="panel-title">{shown?.title ?? ''}</h2>

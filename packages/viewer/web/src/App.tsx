@@ -235,6 +235,7 @@ export function App() {
   const [prefs, setPrefs] = usePrefs()
   const [resizing, setResizing] = useState(false)
   const [keepSide, setKeepSide] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
   const width = useWindowWidth()
   const titles = useRef(new Map<string, string>())
   const asked = useRef(0)
@@ -388,7 +389,7 @@ export function App() {
           <Resizer label="侧栏的宽度" className="resizer-side" value={prefs.side} min={SIDE.min} max={SIDE.max} initial={SIDE.initial} grows="right" onChange={(side) => setPrefs({ side })} onDrag={setResizing} />
         )}
         <div className="work">
-          <main className="main">
+          <main className="main" data-scrolled={scrolled || undefined} onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}>
             {down ? (
               <div className="down" role="alert">
                 <Unplug strokeWidth={2} aria-hidden />
@@ -412,6 +413,7 @@ export function App() {
                 tabs={route.tabs}
                 active={route.active}
                 labelOf={(req) => titles.current.get(keyOf(req) as string) ?? fallbackLabel(req, views.find((v) => v.id === req.view))}
+                iconOf={(req) => views.find((v) => v.id === req.view)?.icon ?? 'file'}
                 result={detail.data}
                 onActivate={(i) => go((r) => activate(r, i))}
                 onClose={(i) => go((r) => closeTab(r, i))}
