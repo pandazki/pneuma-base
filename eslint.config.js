@@ -111,6 +111,31 @@ const pluginBoundary = {
   },
 }
 
+// tmp/run-7: the records say what is in the library, and storage is looked at only through one door,
+// the kernel's storage.ts, which a plugin reaches as `tools.storage`. The files rebuilt on it are listed
+// here and may not read the library's folder or record area any other way; each step adds the ones it moves.
+const ON_STORAGE = {
+  kernel: ['home.ts', 'places.ts', 'plugin-views.ts', 'start.ts', 'noise-commands.ts'],
+  ledger: ['facts.ts', 'feeds.ts', 'fold.ts', 'reconcile.ts', 'since.ts', 'sparse.ts', 'start-find.ts', 'state.ts', 'unowned.ts', 'views.ts'],
+  viewer: ['src/server/api.ts'],
+}
+const DOOR = 'Rebuilt on storage: read the folder and the record area only through the storage door (the kernel\'s storage.ts; a plugin\'s tools.storage). tmp/run-7 architecture.md section 7.'
+const FS = ['node:fs', 'node:fs/promises', 'fs', 'fs/promises'].map((name) => ({ name, message: DOOR }))
+const DIRECT = ['abs', 'thingAt', 'libraryFiles', 'listThings', 'bundleFiles', 'bundleManifest', 'fingerprintOf', 'fingerprintOfFile', 'enclosingBundle', 'copyBundle']
+const TOOLS = { selector: "MemberExpression[property.name=/^(abs|thing|things|files|copyOut|manifest)$/][object.type='MemberExpression'][object.property.name='tools']", message: DOOR }
+const door = (boundary, files, paths, patterns) => ({
+  files,
+  rules: {
+    'no-restricted-imports': ['error', { paths: [...FS, ...paths], patterns: [...boundary.rules['no-restricted-imports'][1].patterns, ...patterns] }],
+    'no-restricted-syntax': ['error', TOOLS],
+  },
+})
+const storageDoor = [
+  door(kernelBoundary, ON_STORAGE.kernel.map((f) => `packages/kernel/src/${f}`), [{ name: './paths.js', importNames: ['abs', 'canonical'], message: DOOR }], [{ regex: '^\\./(things|files|content|putting)(\\.js)?$', message: DOOR }]),
+  door(pluginBoundary, ON_STORAGE.ledger.map((f) => `packages/plugin-ledger/src/${f}`), [{ name: '@pneuma-base/kernel', importNames: DIRECT, message: DOOR }], [{ regex: '^\\./disk(\\.js)?$', message: DOOR }]),
+  door(viewerBoundary, ON_STORAGE.viewer.map((f) => `packages/viewer/${f}`), [{ name: '@pneuma-base/kernel', importNames: DIRECT, message: DOOR }], [{ regex: '^\\./files(\\.js)?$', message: DOOR }]),
+]
+
 export default tseslint.config(
   // The plugin project templates are checked where they run: the scaffold's test builds and tests a generated project.
   { ignores: ['**/dist/**', '**/node_modules/**', 'tmp/**', 'dist-packages/**', 'packages/cli/templates/**', 'plugins/**'] },
@@ -146,4 +171,5 @@ export default tseslint.config(
   viewerBoundary,
   agentRoutesBoundary,
   webBoundary,
+  ...storageDoor,
 )

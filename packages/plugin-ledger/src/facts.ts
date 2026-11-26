@@ -1,9 +1,7 @@
-// The ledger's body: immutable facts, one JSON object per line, one file per write.
-// ledger-design.md sections 1 and 2.
+// The ledger's body: immutable facts, appended through storage, one write per hook. ledger-design.md
+// sections 1 and 2; where storage puts them is storage's (core/README.md).
 import { randomBytes } from 'node:crypto'
-import { link, mkdir, open, readdir, readFile, unlink } from 'node:fs/promises'
-import { join, sep } from 'node:path'
-import type { Actor, Context, Fingerprint, Instant, LibraryPath, Transcript } from '@pneuma-base/kernel'
+import type { Actor, Context, Fingerprint, Instant, LibraryPath, PluginContext, Transcript } from '@pneuma-base/kernel'
 
 export type ItemId = string & { readonly __brand: 'ItemId' }
 export type SceneId = string & { readonly __brand: 'SceneId' }
@@ -56,8 +54,6 @@ export type Envelope = {
 
 export type Fact = Envelope & FactBody
 
-const FACTS_DIR = 'facts'
-
 /** The ledger plugin acting on its own, for what it observes. */
 export const LEDGER_ACTOR: FactActor = { kind: 'plugin', name: 'ledger', grant: null }
 
@@ -92,70 +88,48 @@ export function fact(ctx: Context, how: How, body: FactBody, actor: FactActor = 
   return { id, at: ctx.now, scene: sceneOf(ctx), actor, where: { cwd, machine, sessionSource: source, transcript }, how, ...body }
 }
 
+/** Appends the facts through storage as one write; they are never rewritten. */
+export async function writeFacts(ctx: PluginContext, facts: readonly Fact[]): Promise<void> {
+  if (facts.length > 0) await ctx.tools.storage.records.append(facts)
+}
+
+/** How many facts one read of storage brings. */
+export const FACT_PAGE = 5000
+
 /**
- * Writes the facts as one new file in their scene's folder: a temporary name first, then linked to
- * its final name, which fails rather than replace a file that is there. Nothing is ever rewritten.
+ * The facts after `cursor`, read through storage page by page, each fact checked for the envelope it
+ * must have; null when the cursor no longer fits the facts there.
  */
-export async function writeFacts(dir: string, facts: Fact[]): Promise<void> {
-  const first = facts[0]
-  if (!first) return
-  const folder = join(dir, FACTS_DIR, first.scene)
-  await mkdir(folder, { recursive: true })
-  const bytes = facts.map((f) => `${JSON.stringify(f)}\n`).join('')
+export async function factsSince(ctx: PluginContext, cursor: string | null): Promise<{ facts: Fact[]; cursor: string } | null> {
+  const facts: Fact[] = []
+  let at = cursor
   for (;;) {
-    const name = `${compact(first.at)}-${randomBytes(4).toString('hex')}.jsonl`
-    const tmp = join(folder, `.tmp-${name}`)
-    const handle = await open(tmp, 'wx')
-    try {
-      await handle.writeFile(bytes)
-      await handle.sync()
-    } finally {
-      await handle.close()
-    }
-    try {
-      await link(tmp, join(folder, name))
-      return
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-    } finally {
-      await unlink(tmp)
-    }
+    const page = await ctx.tools.storage.records.since(at, FACT_PAGE)
+    if (page === null) return null
+    for (const { fact } of page.facts) if (isFact(fact)) facts.push(fact)
+    at = page.cursor
+    if (!page.more) return { facts, cursor: page.cursor }
   }
 }
 
-/** The facts of each file read in this process, by its path: a fact file is written once and never changed. */
-const parsedFiles = new Map<string, Fact[]>()
+/** The facts this process has read, by the ledger directory they belong to, and where the reading stopped. */
+const read = new Map<string, { cursor: string; byId: Map<string, Fact> }>()
 
-/** Every fact on disk, skipping temporary files and lines that are not facts. Duplicates by id kept once. */
-export async function readFacts(dir: string): Promise<Fact[]> {
-  const root = join(dir, FACTS_DIR)
-  const scenes = await readdir(root).catch(() => [] as string[])
-  const listed = await Promise.all(
-    scenes.map(async (scene) => {
-      const folder = join(root, scene)
-      const names = await readdir(folder).catch(() => [] as string[])
-      return names.filter((name) => !name.startsWith('.') && name.endsWith('.jsonl')).map((name) => `${folder}${sep}${name}`)
-    }),
-  )
-  const files = listed.flat()
-  await Promise.all(
-    files
-      .filter((file) => !parsedFiles.has(file))
-      .map(async (file) => {
-        parsedFiles.set(file, (await readFile(file, 'utf8')).split('\n').flatMap((line) => parseFact(line) ?? []))
-      }),
-  )
-  const byId = new Map<string, Fact>()
-  for (const file of files) for (const parsed of parsedFiles.get(file) ?? []) if (!byId.has(parsed.id)) byId.set(parsed.id, parsed)
+/** Every fact, duplicates by id kept once; within one process only what is new is read again. */
+export async function readFacts(ctx: PluginContext): Promise<Fact[]> {
+  const known = read.get(ctx.dir)
+  const more = await factsSince(ctx, known?.cursor ?? null)
+  if (more === null) {
+    read.delete(ctx.dir)
+    return readFacts(ctx)
+  }
+  const byId = known?.byId ?? new Map<string, Fact>()
+  for (const f of more.facts) if (!byId.has(f.id)) byId.set(f.id, f)
+  read.set(ctx.dir, { cursor: more.cursor, byId })
   return [...byId.values()]
 }
 
-function parseFact(line: string): Fact | null {
-  if (line.trim() === '') return null
-  try {
-    const raw = JSON.parse(line) as Partial<Fact>
-    return typeof raw.id === 'string' && typeof raw.at === 'string' && typeof raw.kind === 'string' && typeof raw.scene === 'string' ? (raw as Fact) : null
-  } catch {
-    return null
-  }
+function isFact(raw: unknown): raw is Fact {
+  const f = raw as Partial<Fact> | null
+  return typeof f === 'object' && f !== null && typeof f.id === 'string' && typeof f.at === 'string' && typeof f.kind === 'string' && typeof f.scene === 'string'
 }

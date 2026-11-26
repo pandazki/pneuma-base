@@ -122,7 +122,7 @@ export const HELD_RESTORE = defineCommand({
     const short = copy.fingerprint.slice(0, 8)
     const origin = { kind: 'brought' as const, source: `留存：${item.path} 换下的旧内容 ${short}`, by: 'owner' }
     const enter = { kind: 'item.enter' as const, item: newItemId(), path: target, fingerprint: copy.fingerprint, size: copy.size, origin, ...(copy.bundle ? { bundle: true as const } : {}) }
-    await writeFacts(ctx.dir, [fact(ctx, 'tool', enter)])
+    await writeFacts(ctx, [fact(ctx, 'tool', enter)])
     return done(`已把 ${item.path} 换下的旧内容 ${short} 从留存取回到 ${target}。`, { item: item.id, fingerprint: copy.fingerprint, to: target })
   },
 })

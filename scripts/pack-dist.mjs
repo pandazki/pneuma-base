@@ -1,7 +1,8 @@
 // Builds the two package files a plugin project depends on, from the workspace as built:
 //   pneuma-base-<version>.tgz      the command line, with the kernel, the built-in plugins and the
 //                                  viewer bundled inside, so `npm install <tgz>` needs nothing else,
-//                                  and the plugin standard PLUGINS.md
+//                                  storage's program as built on this machine, and the plugin
+//                                  standard PLUGINS.md
 //   pneuma-base-sdk-<version>.tgz  @pneuma-base/sdk: the contract, the kit and the test kit
 // Nothing is published. usage: node scripts/pack-dist.mjs [--out <directory>]   (default dist-packages/)
 import { execFileSync } from 'node:child_process'
@@ -75,6 +76,11 @@ try {
   }))
   cpSync(join(repo, 'PLUGINS.md'), join(cli, 'PLUGINS.md'))
   for (const [name, dir] of Object.entries(inside)) stage(pkg(dir), join(cli, 'node_modules', name), (m) => m)
+  // Storage, built for this machine by `pnpm build`: the kernel finds it beside its dist/.
+  const core = join(repo, 'core/target/release/pneuma-base-core')
+  if (!existsSync(core)) throw new Error('core/target/release/pneuma-base-core is missing: run pnpm build first.')
+  mkdirSync(join(cli, 'node_modules/@pneuma-base/kernel/bin'), { recursive: true })
+  cpSync(core, join(cli, 'node_modules/@pneuma-base/kernel/bin/pneuma-base-core'))
 
   for (const file of [pack(sdk), pack(cli)]) console.log(file)
 } finally {

@@ -24,12 +24,16 @@ import {
 } from '@pneuma-base/kernel'
 import { LEDGER_EXPORT, LEDGER_STATS } from './audit.js'
 import { conversationOf } from './conversation.js'
-import { itemNamed, load, onDisk, snapshot, standingNow, statesOf, textOf, type Disk } from './disk.js'
+import { itemNamed, load, onDisk, snapshot, statesOf, textOf, type Disk } from './disk.js'
 import { fact, factActor, LEDGER_ACTOR, newItemId, readFacts, sceneOf, writeFacts, type Basis, type Fact, type FactActor, type FactBody, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
-import type { ItemRecord, Ledger, SceneRecord } from './fold.js'
+import { fold, type ItemRecord, type Ledger, type SceneRecord } from './fold.js'
 import { heldCommands, heldCopies, heldPath, keep } from './held.js'
 import { reconcile } from './reconcile.js'
 import { LEAVE, REGISTER, unownedAsks } from './unowned.js'
+import { agentsOf, newsSince } from './since.js'
+import { rebase, rebaseMoved, sparseStanding } from './sparse.js'
+import { startFind, startFound } from './start-find.js'
+import { ledgerOf, openDirsNow } from './state.js'
 import { activityAnswer, homeAnswer, noSuchScene, sceneAnswer, scenesAnswer } from './feeds.js'
 import { DEFAULT_PERIOD, isPeriod, statsOf } from './stats.js'
 import { statsAnswer } from './stats-page.js'
@@ -46,18 +50,22 @@ import {
   sceneText,
   sceneView,
   sinceText,
-  sinceView,
+  sinceViewOf,
   standingSections,
   when,
   type ItemView,
 } from './views.js'
 
 /** One hook's writing: the ledger as read, and the facts it will write as one file. */
-type Writing = { ctx: PluginContext; ledger: Ledger; facts: Fact[]; adopted: Map<LibraryPath, ItemId> }
+/** A hook's writes: the facts, and `looked`, the things whose content it read and found as now recorded, so what is there is their baseline. */
+type Writing = { ctx: PluginContext; ledger: Ledger; facts: Fact[]; adopted: Map<LibraryPath, ItemId>; looked: LibraryPath[] }
 
 async function writing(ctx: PluginContext): Promise<Writing> {
-  return { ctx, ledger: await load(ctx), facts: [], adopted: new Map() }
+  return { ctx, ledger: await load(ctx), facts: [], adopted: new Map(), looked: [] }
 }
+
+/** The ledger a hook uses when what it records names nothing it would have to look up. */
+const NOTHING_READ: Ledger = fold([])
 
 const bundleFlag = (disk: Disk | null) => (disk?.bundle ? { bundle: true as const } : {})
 
@@ -199,6 +207,7 @@ async function recordSay(w: Writing, req: SayRequest): Promise<SayAnswer> {
     if (!disk) return refused(`文件不在：${input}`)
     // A change only seen is replaced by the claim somebody makes for the same content.
     const seen = item.versions.at(-1)?.how === 'observed' && item.versions.at(-1)?.claimed === true
+    w.looked.push(path)
     if (disk.fingerprint === item.fingerprint && (observed || !seen)) return heard(`${input} 的内容和记录一致，没有要认的改动`)
     // The envelope's actor is who the library recognised; what the caller says goes in the body.
     const forOwner = by === 'owner' && ctx.actor.kind !== 'owner'
@@ -340,7 +349,8 @@ export const ledger: Plugin = {
   async onPut(req, ctx) {
     const w = await writing(ctx)
     const note = await recordPut(w, req)
-    await writeFacts(ctx.dir, w.facts)
+    await writeFacts(ctx, w.facts)
+    await rebase(ctx, [req.path])
     return note
   },
 
@@ -350,18 +360,24 @@ export const ledger: Plugin = {
     const thing = await thingAt(abs(ctx.library.root, req.path))
     const id = w.ledger.pathIndex.get(req.path) ?? adopt(w, req.path, { fingerprint: req.current, size: thing?.size ?? 0, bundle: thing?.kind === 'bundle' })
     if ((await keep(ctx, id, req.path, req.current)) === null) return { outcome: 'declined', reason: `${req.path} 正在被改动，没能留存旧内容；稍后再放。` }
-    await writeFacts(ctx.dir, w.facts)
+    await writeFacts(ctx, w.facts)
     return { outcome: 'held', note: null }
   },
 
   async onSay(req, ctx) {
-    const w = await writing(ctx)
+    // A sentence about nothing in particular needs nothing read: start's `doing` costs one write.
+    const plain = req.about === null && (req.kind === 'doing' || req.kind === 'decided' || req.kind === 'note')
+    const w: Writing = plain ? { ctx, ledger: NOTHING_READ, facts: [], adopted: new Map(), looked: [] } : await writing(ctx)
     const answer = await recordSay(w, req)
-    if (answer.outcome === 'heard') await writeFacts(ctx.dir, w.facts)
+    if (answer.outcome !== 'heard') return answer
+    await writeFacts(ctx, w.facts)
+    await rebase(ctx, w.looked)
     return answer
   },
 
   async onFind(req, ctx) {
+    // start's find asks the records only; the find verb keeps reading content until the kernel's find is rebuilt.
+    if (req.skipOwnSession) return startFind(req, ctx)
     const ledger = await load(ctx)
     const terms = searchTerms(req.text, req.match)
     const scope = { ...req, skip: req.skipOwnSession ? sceneOf(ctx) : null }
@@ -375,6 +391,7 @@ export const ledger: Plugin = {
    * session stays left out, as in `onFind`. A file nobody registered gets nothing.
    */
   async onFound(paths, req, ctx) {
+    if (req.skipOwnSession) return startFound(paths, ctx)
     const ledger = await load(ctx)
     const asked = new Set(paths)
     const scope = { ...req, skip: req.skipOwnSession ? sceneOf(ctx) : null }
@@ -415,17 +432,22 @@ export const ledger: Plugin = {
   },
 
   async onCheck(req, ctx) {
-    const { ledger, standing } = await standingNow(ctx)
-    // A moved file is taken back: its new path is recorded, as seen by the ledger itself.
-    const moves = [...standing.states].flatMap(([item, state]) => {
-      const from = ledger.items.get(item)?.path
-      return state.kind === 'moved' && from ? [fact(ctx, 'observed', { kind: 'item.move', item, from, to: state.to, archive: archiveSide(from, state.to) }, LEDGER_ACTOR)] : []
+    const { standing, moved, state } = await sparseStanding(ctx)
+    const news = await newsSince(ctx, state, factActor(ctx.actor), sceneOf(ctx), req.since)
+    // A moved thing is taken back: its new path is recorded, as seen by the ledger itself.
+    const moves = [...moved].flatMap(([item, to]) => {
+      const from = state.items.get(item)?.path
+      return from ? [fact(ctx, 'observed', { kind: 'item.move', item, from, to: to.place as LibraryPath, archive: archiveSide(from, to.place as LibraryPath) }, LEDGER_ACTOR)] : []
     })
     // This look is what the next check counts since, for agents and for the owner's 都看过了 alike.
-    await writeFacts(ctx.dir, [...moves, fact(ctx, 'tool', { kind: 'checked' })])
-    const since = sinceView(ledger, factActor(ctx.actor), sceneOf(ctx), req.since)
+    await writeFacts(ctx, [...moves, fact(ctx, 'tool', { kind: 'checked' })])
+    await rebaseMoved(ctx, moved)
+    const ledger = ledgerOf(state)
+    const since = sinceViewOf(ledger, news)
     return [...(since.scenes.length > 0 ? [{ title: '自上次以来', body: sinceText(since), data: since }] : []), ...standingSections(ledger, standing, req.includeArchived)]
   },
+
+  openDirs: openDirsNow,
 
   /** Things nobody registered, one ask for all of them, until they are registered or the owner leaves them so. */
   onAsks: unownedAsks,
@@ -438,7 +460,8 @@ export const ledger: Plugin = {
     const id = known ?? (disk ? adopt(w, req.from, disk) : undefined)
     if (id === undefined) return null
     w.facts.push(fact(ctx, 'tool', { kind: 'item.move', item: id, from: req.from, to: req.to, archive: req.kind === 'archive' ? 'in' : 'out' }))
-    await writeFacts(ctx.dir, w.facts)
+    await writeFacts(ctx, w.facts)
+    await rebase(ctx, [req.to])
     const what = req.kind === 'archive' ? '已记下归档' : '已记下取回'
     return { text: `${what}${known ? '' : '；这个文件以前没人登记过，已以来历不明入册'} · 条目 ${id}`, data: { item: id } }
   },
@@ -448,17 +471,14 @@ export const ledger: Plugin = {
     const { grants } = ctx.library.config
     switch (req.view) {
       case HOME_VIEW: {
-        const { ledger, standing } = await standingNow(ctx)
-        return homeAnswer(ledger, standing, factActor(ctx.actor), sceneOf(ctx), grants)
+        const { standing, state } = await sparseStanding(ctx)
+        const news = await newsSince(ctx, state, factActor(ctx.actor), sceneOf(ctx), 'last')
+        return homeAnswer(ledgerOf(state), standing, news, agentsOf(state), grants)
       }
-      case ITEMS_VIEW: {
-        const { ledger, standing } = await standingNow(ctx)
-        return itemsAnswer(ledger, standing, req.params, grants)
-      }
-      case STANDING_VIEW: {
-        const { ledger, standing } = await standingNow(ctx)
-        return standingAnswer(ledger, standing, req.params)
-      }
+      case ITEMS_VIEW:
+        return itemsAnswer(await load(ctx), (await sparseStanding(ctx)).standing, req.params, grants)
+      case STANDING_VIEW:
+        return standingAnswer(await load(ctx), (await sparseStanding(ctx)).standing, req.params)
       case SCENES_VIEW:
         return scenesAnswer(await load(ctx), grants, ctx.now)
       case SCENE_VIEW: {
@@ -473,7 +493,7 @@ export const ledger: Plugin = {
       case STATS_VIEW: {
         // From the facts alone: no file is read, so the page costs the same however large the library's files are.
         const period = req.params.period
-        return statsAnswer(statsOf(await readFacts(ctx.dir), isPeriod(period) ? period : DEFAULT_PERIOD, ctx.now))
+        return statsAnswer(statsOf(await readFacts(ctx), isPeriod(period) ? period : DEFAULT_PERIOD, ctx.now))
       }
       case HELD_VIEW:
         return heldAnswer(await load(ctx), await heldCopies(ctx))
@@ -510,6 +530,6 @@ export const ledger: Plugin = {
         if (id !== undefined) w.facts.push(fact(ctx, 'tool', { kind: 'item.remove', item: id }))
       }
     }
-    await writeFacts(ctx.dir, w.facts)
+    await writeFacts(ctx, w.facts)
   },
 }

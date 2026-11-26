@@ -28,7 +28,11 @@ const ok = <R extends { code: number; stdout: string; stderr: string }>(r: R): R
   return r
 }
 const sections = (r: { json: () => any }) => r.json().sections as { title: string; body: string; data: any }[]
-const section = (list: { title: string; data: any }[], title: string) => list.find((s) => s.title === title)?.data
+/** A check section's data; for a list of things, the first ones it names, which are all of them below twenty. */
+const section = (list: { title: string; data: any }[], title: string) => {
+  const data = list.find((s) => s.title === title)?.data
+  return data?.shown ?? data
+}
 
 const OLD = Buffer.from(Array.from({ length: 256 }, (_, i) => i))
 const NEW = Buffer.from('the new version\n')

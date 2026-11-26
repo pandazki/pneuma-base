@@ -8,6 +8,7 @@ import { checkArgs } from './params.js'
 import { makeContext, performOwner, pluginContext } from './pipeline.js'
 import { askLine } from './requests.js'
 import { agentSign, ownerOnlyRefusal, OWNER_DECIDES, type Env } from './session.js'
+import { storageOf } from './storage.js'
 import { usageOf, type Actor, type Context, type OwnerArgs, type OwnerParams, type OwnerResult, type OwnerValues, type Plugin, type PluginName, type PluginTable, type Requested, type Session } from '@pneuma-base/sdk'
 
 /** Who acts, in which session, on this machine, with no library at hand: the context of a command that needs none. */
@@ -108,6 +109,8 @@ export async function initLibrary(
     return { outcome: 'refused', reason: 'name-taken', text: `没有建库：${what}。一个名字只归一个插件，${pairs} 只能选一个。`, problems: [] }
   }
   await mkdir(dir, { recursive: true })
+  // Storage's part first (tmp/run-7 architecture.md section 4): its cache area, and the noise declared at the root with the default names.
+  await storageOf(await realpath(dir)).init()
   const library = await saveConfig(await realpath(dir), newConfig(opts.plugins as PluginName[]), opts.table)
   const ctx = makeContext(library, opts.actor, opts.session, opts.home)
   const args: OwnerArgs = { positional: [library.root], flags: opts.plugins.length === 0 ? { bare: true } : {} }

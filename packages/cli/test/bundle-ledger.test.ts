@@ -4,7 +4,7 @@
 import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { sandbox, tempDir, type Sandbox } from './helpers.js'
+import { factsOf, sandbox, tempDir, type Sandbox } from './helpers.js'
 
 let sb: Sandbox
 let lib: string
@@ -61,17 +61,17 @@ describe('a bundle with the ledger', () => {
     const r = ok(agent(['inspect', 'sites/a', '--json']))
     expect(r.json().file).toMatchObject({ kind: 'bundle', files: 3 })
     expect(ledgerData(r)).toMatchObject({ path: 'sites/a', origin: { kind: 'made' }, basis: [{ path: 'sources/brief.md', state: 'consistent' }] })
-    const facts = readdirSync(join(lib, '.pneuma-base/ledger/facts/s1')).flatMap((name) =>
-      readFileSync(join(lib, '.pneuma-base/ledger/facts/s1', name), 'utf8').trim().split('\n').map((l) => JSON.parse(l)),
-    )
+    const facts = factsOf(lib).filter((f) => f.scene === 's1')
     expect(facts.filter((f) => f.kind === 'item.enter').map((f) => [f.path, f.bundle ?? false])).toEqual([['sources/brief.md', false], ['sites/a', true]])
   })
 
-  it('is consistent in check, and an edit inside it shows the bundle as changed', () => {
+  // tmp/run-7 section 5: check compares a directory-thing's token and its first level; an edit
+  // deeper inside is for the named deep look, which reads content.
+  it('is consistent in check, and an edit in its first level shows the bundle as changed', () => {
     expect(sectionTitles(ok(agent(['check', '--json'])))).toEqual([])
-    writeFileSync(join(lib, 'sites/a/css/site.css'), 'body{color:red}')
+    writeFileSync(join(lib, 'sites/a/index.html'), '<h1>edited by hand</h1>')
     const changed = ok(agent(['check', '--json'])).json().sections.find((s: any) => s.title === '被直接改过的')
-    expect(changed.data).toMatchObject([{ path: 'sites/a' }])
+    expect(changed.data.shown).toMatchObject([{ path: 'sites/a' }])
   })
 
   it('a new tree over it keeps the old tree; ledger held restore gives it back byte for byte', () => {

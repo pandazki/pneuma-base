@@ -3,14 +3,14 @@
 // connected to this library, and whether anything is in it. A part of the home page adds its own
 // steps by answering a `steps` block, as the ledger does for whether an agent has worked here yet;
 // they join the kernel's in one part, which is gone once every step is done. ARCHITECTURE.md section 6.
-import { basename } from 'node:path'
-import { formOf, type Action, type Block, type Step } from '@pneuma-base/sdk'
+import { formOf, isFailure, type Action, type Block, type Step } from '@pneuma-base/sdk'
 import { connectionFacts, WAY_WORD, whereOf } from './agent-commands.js'
 import { endpointOf } from './endpoint.js'
 import { KERNEL_COMMANDS } from './owner-commands.js'
 import { sentenceBlock } from './pairing.js'
 import { CONNECTABLE, lookedFor, signsOf, waysOf, type Way } from './products.js'
-import { libraryFiles } from './things.js'
+import { KERNEL_ENTRIES } from './places.js'
+import { storageOf } from './storage.js'
 import type { ViewerCall } from './viewer.js'
 
 /** Where the app puts what the owner drops on it, and where the step tells the owner to put things. */
@@ -50,16 +50,25 @@ async function connectStep({ ctx, table, env }: ViewerCall): Promise<Step> {
   return { key: 'connect', title: '接上你的 agent', done: connections.length > 0, summary: connections.length > 0 ? `已接上 ${titles.join('、')}` : null, blocks }
 }
 
-/** Put the first thing in: a drop area in the app, the command in a browser. A hidden file such as .DS_Store is not a thing put in. */
+/** How many entries of the root the step looks at: it only asks whether anything is there. */
+const FIRST_LOOK = 50
+
+/**
+ * Put the first thing in: a drop area in the app, the command in a browser. Done once the root holds
+ * anything but the kernel's own; a hidden name such as .DS_Store is not a thing put in. One look at
+ * one page of the root, so the step costs the same however much the library holds.
+ */
 async function firstThingStep({ ctx }: ViewerCall): Promise<Step> {
   const { root } = ctx.library
-  const things = (await libraryFiles(root)).filter((path) => !basename(path).startsWith('.'))
+  const page = await storageOf(root).overview('', { limit: FIRST_LOOK })
+  const things = isFailure(page) ? [] : page.entries.filter((e) => !KERNEL_ENTRIES.has(e.place) && !e.place.startsWith('.'))
+  const atLeast = !isFailure(page) && page.more !== null ? '至少 ' : ''
   const command = `pneuma-base put <文件或文件夹> --to ${INBOX}/<名字> --brought --by owner --library ${shellWord(root)}`
   return {
     key: 'first',
     title: '放进第一样东西',
     done: things.length > 0,
-    summary: things.length > 0 ? `库里有 ${things.length} 样东西` : null,
+    summary: things.length > 0 ? `库的根目录里有 ${atLeast}${things.length} 样东西` : null,
     blocks: [{ kind: 'drop', to: INBOX, command }],
   }
 }

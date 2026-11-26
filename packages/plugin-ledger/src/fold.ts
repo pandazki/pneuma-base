@@ -58,11 +58,24 @@ export type Ledger = {
   left: Set<LibraryPath> // things nobody registered that the owner chose to leave so, not to be asked about again
 }
 
+/**
+ * What the reads rebuilt on rows need of the ledger: items by id, the scenes they ask about, and those
+ * scenes' owner operations. The folded `Ledger` gives it, and so do the ledger's rows (state.ts).
+ */
+/** An origin as the reads of an item need it: a made one without the basis it was made from, which `basis` carries. */
+export type OriginLike = Exclude<LedgerOrigin, { kind: 'made' }> | { kind: 'made' }
+export type ItemLike = Pick<ItemRecord, 'id' | 'path' | 'fingerprint' | 'size' | 'basis' | 'unknownOrigin' | 'removed' | 'bundle' | 'absorbedInto'> & {
+  origin: OriginLike
+  entered: Pick<Enter, 'how' | 'scene' | 'at' | 'actor'>
+}
+export type SceneLike = Pick<SceneRecord, 'id' | 'first' | 'last' | 'actors' | 'cwds'> & { said: readonly Pick<Said, 'flavor' | 'text' | 'at'>[] }
+export type LedgerLike = { items: ReadonlyMap<ItemId, ItemLike>; scenes: ReadonlyMap<SceneId, SceneLike>; ownerOps: readonly Pick<OwnerOp, 'scene' | 'command' | 'actor'>[] }
+
 export const NO_BASIS: Basis = { items: [], outside: [] }
 
 export const actorKey = (a: FactActor) => `${a.kind}:${a.name}:${a.grant ?? ''}`
 
-export const isArchived = (item: ItemRecord) => regionOf(item.path) === 'archive'
+export const isArchived = (item: { path: LibraryPath }) => regionOf(item.path) === 'archive'
 
 const byTime = (a: Fact, b: Fact) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 

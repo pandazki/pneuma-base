@@ -8,7 +8,8 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "build": "tsc -b packages/cli && pnpm --filter @pneuma-base/viewer build:web",
+    "build": "pnpm build:core && tsc -b packages/cli && pnpm --filter @pneuma-base/viewer build:web",
+    "build:core": "cargo build --release --manifest-path core/Cargo.toml",
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "test": "pnpm build && vitest run",

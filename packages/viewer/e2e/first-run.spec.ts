@@ -59,7 +59,7 @@ test('开始 walks the owner from a new library to an agent at work, each step f
   const paper = join(tempDir('pb-e2e-out-'), 'paper.pdf')
   writeFileSync(paper, '%PDF')
   pb.run(['--library', lib, 'put', paper, '--to', 'inbox/paper.pdf', '--brought', '--by', 'owner'], { env: noAgentPath() })
-  await expect(start.getByRole('listitem', { name: /第 2 步，放进第一样东西，做完了/ })).toContainText('库里有 1 样东西')
+  await expect(start.getByRole('listitem', { name: /第 2 步，放进第一样东西，做完了/ })).toContainText('库的根目录里有 1 样东西')
   await expect(start).toContainText('做完了 2 步，还有 1 步。')
   await shoot(page, 'home-start-2', SHOTS)
 

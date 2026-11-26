@@ -3,7 +3,9 @@
 // bring sources and make things from them, often from what another session or another agent left;
 // they decide, note, ask the owner; the owner approves, declines, drops files in, archives; sources
 // change and some made things go stale until they are made again; a few files are changed directly.
-// The files on disk hold the content the facts record, so every other page agrees with it.
+// The files on disk hold the content the facts record, so every other page agrees with it. The facts
+// are laid out as storage writes them: a directory per day, a file per write named by its moment, its
+// writer and a sequence number (core/README.md).
 import { createHash, randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -71,12 +73,15 @@ export function writeHistory(lib: string, shape: Shape): { things: number; facts
   let seq = 0
   let written = 0
   const pending = new Map<string, Fact[]>()
+  const fileWriter = randomBytes(6).toString('hex')
+  let files = 0
   const flush = (scene: string) => {
     const list = pending.get(scene)
     if (!list || list.length === 0) return
-    const dir = join(factsDir, scene)
+    const at = list[0]?.at as string
+    const dir = join(factsDir, at.slice(0, 10))
     mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, `${compact(list[0]?.at as string)}-${randomBytes(4).toString('hex')}.jsonl`), list.map((f) => `${JSON.stringify(f)}\n`).join(''))
+    writeFileSync(join(dir, `${compact(at)}-${fileWriter}-${String(files++).padStart(6, '0')}.jsonl`), list.map((f) => `${JSON.stringify(f)}\n`).join(''))
     pending.set(scene, [])
   }
   const emit = (at: Date, scene: string, actor: Actor, body: Record<string, unknown>, how = 'tool') => {
@@ -106,14 +111,14 @@ export function writeHistory(lib: string, shape: Shape): { things: number; facts
     live.push(thing)
     byPath.set(path, thing)
     byId.set(thing.id, thing)
-    emit(at, scene, actor, { kind: 'item.enter', item: thing.id, path, fingerprint: thing.print, size: content.length, origin }, how)
+    emit(at, scene, actor, { kind: 'item.enter', item: thing.id, path, fingerprint: thing.print, size: Buffer.byteLength(content), origin }, how)
     return thing
   }
   const revise = (at: Date, scene: string, actor: Actor, thing: Thing, extra: Record<string, unknown> = {}, how = 'tool') => {
     const base = thing.print
     thing.content = `${thing.content}改过一次，${at.toISOString()}\n`
     thing.print = sha(thing.content)
-    emit(at, scene, actor, { kind: 'item.revise', item: thing.id, base, fingerprint: thing.print, size: thing.content.length, held: null, claimed: false, ...extra }, how)
+    emit(at, scene, actor, { kind: 'item.revise', item: thing.id, base, fingerprint: thing.print, size: Buffer.byteLength(thing.content), held: null, claimed: false, ...extra }, how)
   }
 
   const requests: { id: string; asked: Date; scene: string; agent: Actor; line: string }[] = []
@@ -170,7 +175,7 @@ export function writeHistory(lib: string, shape: Shape): { things: number; facts
       // A direct change only seen: claimed later by the agent that made it.
       const unclaimed = live.slice(-200).find((t) => t.observed)
       if (unclaimed && unclaimed.agent === actor.name && rnd() < 0.6) {
-        emit(tick(), scene, actor, { kind: 'item.revise', item: unclaimed.id, base: unclaimed.print, fingerprint: unclaimed.print, size: unclaimed.content.length, held: null, claimed: true }, 'reported')
+        emit(tick(), scene, actor, { kind: 'item.revise', item: unclaimed.id, base: unclaimed.print, fingerprint: unclaimed.print, size: Buffer.byteLength(unclaimed.content), held: null, claimed: true }, 'reported')
         unclaimed.observed = false
       }
       if (rnd() < 0.08) {

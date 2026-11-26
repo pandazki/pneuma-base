@@ -152,19 +152,36 @@ function asksText(asks: readonly Ask[], commands: readonly OwnerCommandInfo[], r
   ]
 }
 
+/** The most an agent's start or check prints, in bytes: the answer fits its context however much the library holds. */
+export const AGENT_TEXT_LIMIT = 8 * 1024
+
+/** The lines, one per line of text, up to AGENT_TEXT_LIMIT bytes; past that, one line saying so and where the rest is. */
+export function bounded(lines: readonly string[]): string[] {
+  const tail = `……到 ${AGENT_TEXT_LIMIT / 1024} KB 为止，后面的没有印出。状况的全部：show ledger.standing；要主人做的：首页上的「等你决定」。`
+  const budget = AGENT_TEXT_LIMIT - Buffer.byteLength(tail) - 1
+  const out: string[] = []
+  let size = 0
+  for (const line of lines.flatMap((l) => l.split('\n'))) {
+    size += Buffer.byteLength(line) + 1
+    if (size > budget) return [...out, tail]
+    out.push(line)
+  }
+  return out
+}
+
 export function checkText(r: CheckResult, commands: readonly OwnerCommandInfo[], root: string): string[] {
   const own = [...requestsText(r.requests), ...asksText(r.asks, commands, root)]
-  return [...(r.sections.length === 0 && own.length === 0 ? ['没有可报告的。'] : [...sectionsText(r.sections), ...own]), ...tail([], r.problems)]
+  return bounded([...(r.sections.length === 0 && own.length === 0 ? ['没有可报告的。'] : [...sectionsText(r.sections), ...own]), ...tail([], r.problems)])
 }
 
 /** start's three parts under their headings. A part with nothing prints nothing; the related part says when nothing is related. */
 export function startText(say: SayResult, check: CheckResult, find: FindResult, commands: readonly OwnerCommandInfo[], root: string): string[] {
   const part = (heading: string, lines: string[]) => (lines.length > 0 ? [heading, ...lines] : [])
-  return [
+  return bounded([
     ...part('【记下】', sayText(say)),
     ...part('【库的变化与状况】', [...sectionsText(check.sections), ...requestsText(check.requests), ...asksText(check.asks, commands, root), ...tail([], check.problems)]),
     ...part('【库里可能相关的】', findText(find, '库里没有和这件事相关的东西。')),
-  ]
+  ])
 }
 
 export function archiveText(kind: 'archive' | 'unarchive', r: ArchiveResult): string[] {

@@ -4,12 +4,12 @@ import { join } from 'node:path'
 import { abs, archivedPath, bundleFiles, fingerprintOf, libraryFiles, parseLibraryPath, regionOf, thingAt, type Fingerprint, type LibraryPath, type PluginContext } from '@pneuma-base/kernel'
 import { readFacts, type ItemId } from './facts.js'
 import { fold, type ItemRecord, type Ledger } from './fold.js'
-import { classify, confirm, findsAnything, reconcile, unownedOf, type Files, type ItemState, type Standing } from './reconcile.js'
+import { classify, type Files, type ItemState } from './reconcile.js'
 
 const TEXT_LIMIT = 1024 * 1024
 
 export async function load(ctx: PluginContext): Promise<Ledger> {
-  return fold(await readFacts(ctx.dir))
+  return fold(await readFacts(ctx))
 }
 
 export type Disk = { fingerprint: Fingerprint; size: number; bundle: boolean }
@@ -87,31 +87,4 @@ export function itemNamed(ledger: Ledger, root: string, input: string): ItemReco
   if (path === null) return undefined
   const id = ledger.pathIndex.get(path) ?? (regionOf(path) === 'content' ? ledger.pathIndex.get(archivedPath(path)) : undefined)
   return id === undefined ? undefined : ledger.items.get(id)
-}
-
-/**
- * check's reconciliation. A put lands its file before its record, so whatever the first look finds is
- * confirmed: against the paths being put, read after the files were looked at, and the facts read
- * once more after that.
- */
-export async function standingNow(ctx: PluginContext): Promise<{ ledger: Ledger; standing: Standing }> {
-  const ledger = await load(ctx)
-  const standing = await reconcile(ledger, await snapshot(ctx.library.root))
-  if (!findsAnything(standing)) return { ledger, standing }
-  const putting = new Set(await ctx.tools.putting())
-  return { ledger, standing: confirm(ledger, standing, await load(ctx), putting) }
-}
-
-
-/**
- * The things nobody registered, as check would find them but without the fingerprint of every item:
- * a path being put now, and one a fact read after the files were looked at gave an item, are left out.
- */
-export async function unownedNow(ctx: PluginContext): Promise<{ ledger: Ledger; unowned: LibraryPath[] }> {
-  const ledger = await load(ctx)
-  const found = await unownedOf(ledger, await snapshot(ctx.library.root))
-  if (found.length === 0) return { ledger, unowned: found }
-  const putting = new Set(await ctx.tools.putting())
-  const later = await load(ctx)
-  return { ledger, unowned: found.filter((path) => !putting.has(path) && !later.pathIndex.has(path)) }
 }

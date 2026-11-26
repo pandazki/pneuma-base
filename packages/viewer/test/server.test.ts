@@ -244,6 +244,12 @@ describe('a library with no plugin over HTTP (C1)', () => {
     expect(await rev()).toBe(a)
     lib.write('new.md', 'n')
     expect(await rev()).not.toBe(a)
+    // tmp/run-7: the stamp looks at the open directories only, never into one no record points into.
+    lib.write('closed/x.md', 'x')
+    const b = await rev()
+    expect(b).not.toBe(a)
+    lib.write('closed/y.md', 'y')
+    expect(await rev()).toBe(b)
   })
 })
 

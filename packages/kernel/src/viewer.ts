@@ -4,15 +4,14 @@ import { readdir } from 'node:fs/promises'
 import { join, posix } from 'node:path'
 import { fileFacts } from './agent.js'
 import { agentsPage } from './agents-page.js'
-import { asksOf } from './asks.js'
-import { callableIn, checkBlocks, checkFilters, checkOpen, checkRefresh, type Callable } from './blocks.js'
+import { callableIn, checkBlocks, type Callable } from './blocks.js'
 import { exists } from './files.js'
 import { bundleFiles, enclosingBundle, kindAt, listThings, thingAt } from './things.js'
 import { KERNEL_COMMANDS } from './owner-commands.js'
+import { noiseSection } from './noise-commands.js'
 import { codexHint } from './products.js'
-import { kernelSteps, startPart } from './start.js'
-import { pairingAsks } from './pairing.js'
-import { requestAsks } from './requests.js'
+import { homePage } from './home.js'
+import { answered, pluginPage, pluginViews, shown, type KernelPage, type Shown } from './plugin-views.js'
 import { agentSign, ownerOnlyRefusal, OWNER_DECIDES, type Env } from './session.js'
 import type { KernelCommandName } from './claims.js'
 import { machineDirOf } from './plugin-table.js'
@@ -23,7 +22,6 @@ import {
   formOf,
   type Action,
   type ActionInput,
-  type ActorMark,
   type Block,
   type FixedValue,
   type Cell,
@@ -33,14 +31,12 @@ import {
   type LibraryPath,
   type Link,
   type ListedView,
-  type Plugin,
   type PluginName,
   type PluginProblem,
   type PluginTable,
   type TableRow,
   type Tag,
   type Thing,
-  type ViewAnswer,
   type ViewDecl,
   type ViewList,
   type ViewRequest,
@@ -53,11 +49,6 @@ import {
  * call came with a grant.
  */
 export type ViewerCall = { ctx: Context; table: PluginTable; env: Env; viaGrant: boolean }
-
-type Shown = ViewAnswer & { problems: PluginProblem[] }
-type KernelPage = (params: Record<string, string>, call: ViewerCall) => Promise<Shown>
-
-const shown = (title: string, subtitle: string | null, blocks: Block[], problems: PluginProblem[] = []): Shown => ({ title, subtitle, blocks, problems })
 
 const when = (at: string) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`
 
@@ -349,7 +340,7 @@ async function configPage(_params: Record<string, string>, { ctx, table }: Viewe
     actions: [kernelAction('grant issue', '发授权')],
   }
   const secrets = await secretsSection(ctx)
-  return shown('配置', null, [about, plugins, grants, ...(secrets ? [secrets] : [])])
+  return shown('配置', null, [about, plugins, grants, ...(secrets ? [secrets] : []), await noiseSection(root)])
 }
 
 // ---- item ----
@@ -360,10 +351,6 @@ async function takenBack(root: string, target: string) {
   const original = path !== null && regionOf(path) === 'archive' ? originalPath(path) : null
   return original === null ? null : fileFacts(root, original)
 }
-
-/** A plugin's answer has at least a title and a list of blocks; anything else is the plugin failing. */
-const answered = (a: unknown): a is { title: string; blocks: Block[] } =>
-  typeof a === 'object' && a !== null && typeof (a as { title?: unknown }).title === 'string' && Array.isArray((a as { blocks?: unknown }).blocks)
 
 /** A section of the item panel; a plugin's part is stamped with the plugin's name. */
 const section = (title: string, blocks: Block[], plugin?: PluginName): Block => ({ kind: 'section', title, note: null, count: null, blocks, actions: [], ...(plugin === undefined ? {} : { plugin }) })
@@ -469,93 +456,17 @@ async function thingSections(root: string, facts: FileFacts, bundle: LibraryPath
   return [own, inner]
 }
 
-// ---- home ----
-
-/**
- * The page the owner opens on: 「开始」 while a step of getting started is left (start.ts); what waits
- * on the owner, the agents asking to be connected first, then the agents' pending requests, each
- * oldest first, then every plugin's `onAsks`; then
- * each plugin view declared `home`, its blocks as they are, in configuration order, but for the steps
- * they give, which join 「开始」. With no such view the page says so and shows the library's top
- * folder, so a library without plugins has a home too.
- */
-async function homePage(_params: Record<string, string>, call: ViewerCall): Promise<Shown> {
-  const { ctx } = call
-  const asked = await asksOf(ctx, callableIn(ctx.library))
-  const titleOf = (by: string | ActorMark) => (typeof by === 'string' ? (ctx.library.plugins.find((p) => p.name === by)?.cognition?.title ?? by) : by)
-  const asks = [...(await pairingAsks(ctx.home, call.env, ctx.library, ctx.now)), ...(await requestAsks(ctx.library)), ...asked.asks.map((a) => ({ ...a, by: titleOf(a.by) }))]
-  const decide: Block = {
-    kind: 'section',
-    title: '等你决定',
-    note: null,
-    count: asks.length > 0 ? asks.length : null,
-    blocks: [{ kind: 'asks', asks, empty: '没有要你决定的事。' }],
-    actions: [],
-  }
-  const parts = pluginViews(ctx.library).views.filter((v) => v.decl.home === true)
-  const problems = [...asked.problems]
-  const given: Block[] = []
-  for (const { plugin, decl } of parts) {
-    const part = await pluginPage(plugin, decl, { view: decl.id, params: Object.fromEntries(decl.filters.map((f) => [f.name, f.default])) }, ctx)
-    given.push(...part.blocks)
-    problems.push(...part.problems)
-  }
-  const { start, rest } = startPart(await kernelSteps(call), given)
-  const blocks: Block[] = [...(start === null ? [] : [start]), decide, ...rest]
-  if (parts.length === 0) {
-    const files = await filesPage({}, call)
-    const why = ctx.library.plugins.length === 0 ? '这个库没装插件：首页只有要你决定的事和库里的文件。装上插件，这里会有 agent 做了什么、哪些东西要留意。' : '装着的插件没有给首页添内容，下面是库里的文件。'
-    blocks.push({ kind: 'text', tone: 'neutral', text: why }, { kind: 'section', title: '库里的文件', note: null, count: null, blocks: files.blocks, actions: [] })
-  }
-  return shown('首页', null, blocks, problems)
-}
-
 // ---- the face ----
 
 /** The kernel's own views, each with the page that answers it. */
 const KERNEL_VIEWS: readonly { decl: ViewDecl; page: KernelPage }[] = [
-  { decl: { id: 'home', title: '首页', icon: 'house', nav: true, filters: [] }, page: homePage },
+  { decl: { id: 'home', title: '首页', icon: 'house', nav: true, filters: [] }, page: (params, call) => homePage(params, call, filesPage) },
   { decl: { id: 'files', title: '文件', icon: 'folder', nav: true, filters: [] }, page: filesPage },
   { decl: { id: 'archive', title: '归档区', icon: 'archive', nav: true, filters: [] }, page: archivePage },
   { decl: { id: 'agents', title: 'Agent', icon: 'users', nav: true, filters: [], ownerOnly: true }, page: agentsPage },
   { decl: { id: 'config', title: '配置', icon: 'settings', nav: true, filters: [], ownerOnly: true }, page: configPage },
   { decl: { id: 'item', title: '一样东西', icon: 'file', nav: false, filters: [] }, page: itemPage },
 ]
-
-/** Each installed plugin's views, in configuration order. A view whose id does not start with `<plugin name>.` is left out as a problem. */
-function pluginViews(library: Library): { views: { plugin: Plugin; decl: ViewDecl }[]; problems: PluginProblem[] } {
-  const views: { plugin: Plugin; decl: ViewDecl }[] = []
-  const problems: PluginProblem[] = []
-  for (const plugin of library.plugins) {
-    for (const decl of plugin.views ?? []) {
-      if (decl.id.startsWith(`${plugin.name}.`)) views.push({ plugin, decl })
-      else problems.push({ plugin: plugin.name, message: `view ${decl.id} does not start with ${plugin.name}.` })
-    }
-  }
-  return { views, problems }
-}
-
-/** A plugin's view. A plugin that throws or answers no view gets a page that says it failed, and the problem (K8). */
-async function pluginPage(plugin: Plugin, decl: ViewDecl, req: ViewRequest, ctx: Context): Promise<Shown> {
-  try {
-    if (!plugin.onView) throw new Error(`declares the view ${decl.id} but has no onView`)
-    const answer = await plugin.onView(req, pluginContext(ctx, plugin.name))
-    if (!answered(answer)) throw new Error(`onView answered something that is not a view for ${decl.id}`)
-    const { blocks, problems } = checkBlocks(answer.blocks, plugin, callableIn(ctx.library))
-    const { refresh, problems: refreshProblems } = checkRefresh((answer as ViewAnswer).refresh, plugin)
-    const { filters, problems: filterProblems } = checkFilters((answer as ViewAnswer).filters, decl, plugin)
-    const { open, problems: openProblems } = checkOpen((answer as ViewAnswer).open, plugin)
-    return {
-      ...shown(answer.title, answer.subtitle ?? null, blocks, [...problems, ...refreshProblems, ...filterProblems, ...openProblems]),
-      ...(refresh === undefined ? {} : { refresh }),
-      ...(filters === undefined ? {} : { filters }),
-      ...(open === undefined ? {} : { open }),
-    }
-  } catch (error) {
-    const message = messageOf(error)
-    return shown(decl.title, null, [{ kind: 'empty', title: `插件 ${plugin.name} 出错了，没能给出这一页`, hint: message }], [{ plugin: plugin.name, message }])
-  }
-}
 
 export const viewerFace = {
   /** Every view of the library, each with who gives it: the plugins' first, in configuration order, then the kernel's. */

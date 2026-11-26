@@ -4,7 +4,7 @@ import { posix } from 'node:path'
 import { originalPath, regionOf, shortDir, type Instant, type LibraryPath, type PluginHit, type PluginSection } from '@pneuma-base/kernel'
 import { ADHOC_SCENE, type Fact, type FactActor, type How, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
 import type { Conversation } from './conversation.js'
-import { actorKey, isArchived, type Enter, type ItemRecord, type Ledger, type Said, type SceneRecord, type Version } from './fold.js'
+import { isArchived, type Enter, type ItemLike, type ItemRecord, type Ledger, type LedgerLike, type OriginLike, type Said, type SceneLike, type SceneRecord, type Version } from './fold.js'
 import { marksOf, type ItemState, type Mark, type Standing } from './reconcile.js'
 
 export const when = (at: Instant) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`
@@ -13,7 +13,7 @@ export const who = (a: FactActor) => (a.kind === 'owner' ? '主人' : a.name)
  * The actors of a scene by name, each name once: one agent can act in a scene both with a grant and
  * without one, or under two grants, which are distinct actors with the same name.
  */
-export const actorNames = (actors: FactActor[]) => [...new Set(actors.map(who))].join('、')
+export const actorNames = (actors: readonly FactActor[]) => [...new Set(actors.map(who))].join('、')
 
 /** A scene id as text shows it: its first 8 characters; an ad hoc scene's id whole. */
 export const shortScene = (id: SceneId) => (id.startsWith(ADHOC_SCENE) ? id : id.slice(0, 8))
@@ -28,13 +28,13 @@ export function scenesNamed(ledger: Ledger, input: string): SceneRecord[] {
 }
 
 /** Who was in a scene, when it began, what it was doing. */
-function sceneParts(scene: SceneRecord): string[] {
+function sceneParts(scene: SceneLike): string[] {
   const doing = [...new Set(scene.said.filter((s) => s.flavor === 'doing').map((s) => s.text))]
   return [actorNames(scene.actors), when(scene.first), ...(doing.length ? [`在做：${doing.join('；')}`] : [])]
 }
 
 /** The heading find puts a scene's hits under. */
-const sceneLine = (scene: SceneRecord) => [`场景 ${shortScene(scene.id)}`, ...sceneParts(scene)].join(' · ')
+export const sceneLine = (scene: SceneLike) => [`场景 ${shortScene(scene.id)}`, ...sceneParts(scene)].join(' · ')
 
 /** The answer to a scene id prefix that several scenes share: each with its whole id. */
 export function ambiguousText(prefix: string, scenes: SceneRecord[]): string {
@@ -45,7 +45,7 @@ export function ambiguousText(prefix: string, scenes: SceneRecord[]): string {
 export const OBSERVED = '（自动登记）'
 
 /** An origin in words; one only seen (`how` 'observed') says so. */
-export function originLabel(origin: LedgerOrigin, how: How): string {
+export function originLabel(origin: OriginLike, how: How): string {
   const label = origin.kind === 'made' ? '做出来的' : origin.kind === 'adopted' ? '来历不明' : origin.by === 'owner' ? '带进来的，主人给的' : '带进来的'
   return how === 'observed' ? `${label}${OBSERVED}` : label
 }
@@ -61,7 +61,7 @@ export function claimText(ver: Version): string | null {
 export const STATE_LABEL: Record<ItemState['kind'], string> = { consistent: '一致', changed: '已变', moved: '已搬', missing: '不在', removed: '已除', absorbed: '并入' }
 export const MARK_LABEL: Record<Mark['kind'], string> = { stale: '可能过期', 'source-gone': '来源不在' }
 
-const pathOf = (ledger: Ledger, id: ItemId) => ledger.items.get(id)?.path ?? id
+const pathOf = (ledger: LedgerLike, id: ItemId) => ledger.items.get(id)?.path ?? id
 
 /** What the scene was doing when `at` came: its latest `doing` up to then, else its first. */
 export function doingAt(scene: SceneRecord | undefined, at: Instant): string | null {
@@ -236,52 +236,23 @@ export const QUIET_OWNER_COMMANDS: ReadonlySet<string> = new Set(['init', 'grant
 export type SinceFact = { kind: Fact['kind']; at: Instant; actor: string; text: string }
 export type SinceView = { since: Instant | null; scenes: { scene: SceneId; actors: string[]; cwds: string[]; facts: SinceFact[] }[] }
 
-/**
- * When this actor was last here: its latest look (a check, or the owner's 都看过了), else, before it
- * ever looked, its latest fact in another scene; null when it never was.
- */
-export function lastHere(ledger: Ledger, me: FactActor, current: SceneId): Instant | null {
-  const mine = actorKey(me)
-  const looked = ledger.facts.findLast((f) => f.kind === 'checked' && actorKey(f.actor) === mine)
-  return looked?.at ?? ledger.facts.findLast((f) => actorKey(f.actor) === mine && f.scene !== current)?.at ?? null
-}
-
-/**
- * What others did since this actor was last here (`lastHere`), else from the start: at most the
- * latest `SINCE_LIMIT` facts that are news, by scene. Looks and read-only owner commands are never
- * news; setup commands (installing plugins, setting targets or an embedder) are already reflected in
- * PNEUMA-BASE.md when an agent first comes, so they are news only once they happened after this
- * actor's earliest visit.
- */
-export function sinceFacts(ledger: Ledger, me: FactActor, current: SceneId, since: Instant | 'last' | null): { since: Instant | null; facts: Fact[] } {
-  const mine = actorKey(me)
-  const explicit = since !== null && since !== 'last'
-  const start = explicit ? since : lastHere(ledger, me, current)
-  const firstSeen = ledger.facts.find((f) => actorKey(f.actor) === mine)?.at ?? null
-  const isNews = (f: Fact) =>
-    f.kind !== 'checked' && !toldByItsCommand(f) && (f.kind !== 'owner.op' || !(QUIET_OWNER_COMMANDS.has(f.command) || f.readOnly || (!explicit && f.setup && (firstSeen === null || f.at <= firstSeen))))
-  const facts = ledger.facts.filter((f) => actorKey(f.actor) !== mine && f.scene !== current && (start === null || f.at > start) && isNews(f)).slice(-SINCE_LIMIT)
-  return { since: start, facts }
-}
-
-/** `sinceFacts` by scene, each fact as one line: check's section. */
-export function sinceView(ledger: Ledger, me: FactActor, current: SceneId, since: Instant | 'last' | null): SinceView {
-  const { since: start, facts: recent } = sinceFacts(ledger, me, current, since)
+/** The news since the actor was last here by scene, each fact as one line: check's section. */
+export function sinceViewOf(ledger: LedgerLike, news: { since: Instant | null; facts: readonly Fact[] }): SinceView {
   const scenes = new Map<SceneId, SinceView['scenes'][number]>()
-  for (const f of recent) {
+  for (const f of news.facts) {
     const entry = scenes.get(f.scene) ?? { scene: f.scene, actors: [], cwds: [], facts: [] }
     scenes.set(f.scene, entry)
     if (!entry.actors.includes(who(f.actor))) entry.actors.push(who(f.actor))
     if (f.where?.cwd && !entry.cwds.includes(f.where.cwd)) entry.cwds.push(f.where.cwd)
     entry.facts.push({ kind: f.kind, at: f.at, actor: who(f.actor), text: factLine(ledger, f) })
   }
-  return { since: start, scenes: [...scenes.values()] }
+  return { since: news.since, scenes: [...scenes.values()] }
 }
 
 const noteTail = (note: string | undefined) => (note ? `：${note}` : '')
 
 /** One fact as one line of text, paths as they are now where they moved since. */
-export function factLine(ledger: Ledger, f: Fact): string {
+export function factLine(ledger: LedgerLike, f: Fact): string {
   const now = (id: ItemId, then: LibraryPath) => {
     const path = pathOf(ledger, id)
     return path === then ? then : `${then}（现在在 ${path}）`
@@ -345,6 +316,7 @@ export type StandingData = {
   gone: (Ref & { sources: Ref[] })[]
   upstream: (Ref & { via: Ref[] })[]
   unowned: ({ path: LibraryPath; adopted: false } | (Ref & { adopted: true }))[]
+  closed: { path: LibraryPath }[]
   changed: Ref[]
   missing: Ref[]
   moved: { item: ItemId; from: LibraryPath; to: LibraryPath }[]
@@ -354,8 +326,8 @@ export type StandingData = {
  * An archived item is no subject of these lists, and an unowned file in the archive is not
  * listed, unless `includeArchived`.
  */
-export function standingData(ledger: Ledger, standing: Standing, includeArchived: boolean): StandingData {
-  const shown = (item: ItemRecord) => !item.removed && item.absorbedInto === null && (includeArchived || !isArchived(item))
+export function standingData(ledger: LedgerLike, standing: Standing, includeArchived: boolean): StandingData {
+  const shown = (item: ItemLike) => !item.removed && item.absorbedInto === null && (includeArchived || !isArchived(item))
   const items = [...ledger.items.values()].filter(shown)
   const ref = (id: ItemId): Ref => ({ item: id, path: pathOf(ledger, id) })
   const withMark = (kind: Mark['kind']) =>
@@ -374,6 +346,7 @@ export function standingData(ledger: Ledger, standing: Standing, includeArchived
       ...standing.unowned.filter((path) => includeArchived || regionOf(path) !== 'archive').map((path) => ({ path, adopted: false as const })),
       ...items.filter((item) => item.unknownOrigin).map((item) => ({ ...ref(item.id), adopted: true as const })),
     ],
+    closed: (standing.closed ?? []).filter((path) => includeArchived || regionOf(path) !== 'archive').map((path) => ({ path })),
     changed: inState('changed'),
     missing: inState('missing'),
     moved: [...ledger.items.values()].flatMap((item) => {
@@ -383,20 +356,34 @@ export function standingData(ledger: Ledger, standing: Standing, includeArchived
   }
 }
 
-/** check's sections, empty ones left out. */
-export function standingSections(ledger: Ledger, standing: Standing, includeArchived: boolean): PluginSection[] {
-  const { stale, gone, upstream, unowned, changed, missing, moved } = standingData(ledger, standing, includeArchived)
+/** How many entries a list in check names; past that it says how many there are and where they all are. */
+export const LIST_LIMIT = 20
+
+/**
+ * check's sections, empty ones left out. Each names at most LIST_LIMIT things, then how many there
+ * are and the page that lists them all; `data` carries the same first ones and the count.
+ */
+export function standingSections(ledger: LedgerLike, standing: Standing, includeArchived: boolean): PluginSection[] {
+  const d = standingData(ledger, standing, includeArchived)
   const names = (rows: { path: string }[]) => rows.map((r) => r.path).join('、')
-  const sections: [string, unknown[], string[]][] = [
-    ['可能过期', stale, stale.map((r) => `  ${r.path} ← 依据 ${names(r.sources)} 变了`)],
-    ['来源不在', gone, gone.map((r) => `  ${r.path} ← 依据 ${names(r.sources)} 不在了`)],
-    ['上游有标记', upstream, upstream.map((r) => `  ${r.path} ← 上游 ${names(r.via)} 有标记`)],
-    ['没人登记过的', unowned, [...unowned.map((r) => `  ${r.path}${r.adopted ? '（入了册，来历不明）' : ''}`), '它们不是经 put 放进来的。要留着用的，知道来历就用 put <库内路径> --brought 或 --made 补上；不要的归档。']],
-    ['被直接改过的', changed, [...changed.map((r) => `  ${r.path}`), '是你改的，就用 say revised <库内路径> 认下；主人说是自己改的，加 --by owner。']],
-    ['不在了的', missing, missing.map((r) => `  ${r.path}`)],
-    ['挪过的', moved, moved.map((r) => `  ${r.from} → ${r.to}，已接回`)],
+  const partial = (standing.more ?? []).map((m) => `${m.dir === '' ? '库的根目录' : `${m.dir}/`}的条目多，只看了前面的，至少还有 ${m.atLeast} 个没看。`)
+  const sections: [keyof StandingData, string, unknown[], (r: never) => string, string[]][] = [
+    ['stale', '可能过期', d.stale, (r: StandingData['stale'][number]) => `  ${r.path} ← 依据 ${names(r.sources)} 变了`, []],
+    ['gone', '来源不在', d.gone, (r: StandingData['gone'][number]) => `  ${r.path} ← 依据 ${names(r.sources)} 不在了`, []],
+    ['upstream', '上游有标记', d.upstream, (r: StandingData['upstream'][number]) => `  ${r.path} ← 上游 ${names(r.via)} 有标记`, []],
+    ['unowned', '没人登记过的', d.unowned, (r: StandingData['unowned'][number]) => `  ${r.path}${r.adopted ? '（入了册，来历不明）' : ''}`, [...partial, '它们不是经 put 放进来的。要留着用的，知道来历就用 put <库内路径> --brought 或 --made 补上；不要的归档。']],
+    ['closed', '没看过的目录', d.closed, (r: StandingData['closed'][number]) => `  ${r.path}/`, ['里面的东西都没登记，也没有打开看过。登记成一样东西、登记里面的文件，还是不用管，由主人定。']],
+    ['changed', '被直接改过的', d.changed, (r: StandingData['changed'][number]) => `  ${r.path}`, ['是你改的，就用 say revised <库内路径> 认下；主人说是自己改的，加 --by owner。']],
+    ['missing', '不在了的', d.missing, (r: StandingData['missing'][number]) => `  ${r.path}`, []],
+    ['moved', '挪过的', d.moved, (r: StandingData['moved'][number]) => `  ${r.from} → ${r.to}，已接回`, []],
   ]
-  return sections.filter(([, data]) => data.length > 0).map(([title, data, lines]) => ({ title, body: lines.join('\n'), data }))
+  return sections
+    .filter(([, , data]) => data.length > 0)
+    .map(([kind, title, data, line, after]) => {
+      const shown = data.slice(0, LIST_LIMIT)
+      const rest = data.length > LIST_LIMIT ? [`  ……共 ${data.length} 样，看全部：show ledger.standing --kind ${kind}`] : []
+      return { title, body: [...shown.map((r) => line(r as never)), ...rest, ...after].join('\n'), data: { count: data.length, shown } }
+    })
 }
 
 // ---- find ----

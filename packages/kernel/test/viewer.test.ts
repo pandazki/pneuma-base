@@ -94,7 +94,7 @@ describe('the views of a library with no plugin', () => {
     ])
     const r = shown(await viewerFace.show({ view: 'config', params: {} }, { ctx: f.ctx, table, env: {}, viaGrant: false }))
     const sections = r.blocks.filter((b) => b.kind === 'section')
-    expect(sections.map((s) => s.kind === 'section' && s.title)).toEqual(['插件', '授权与技能'])
+    expect(sections.map((s) => s.kind === 'section' && s.title)).toEqual(['插件', '授权与技能', '噪音'])
     const plugins = tableOf({ outcome: 'shown', title: '', subtitle: null, blocks: [sections[0] as Block], problems: [] })
     // Its version and what it brings, as plugin list shows them: the summary, else the cognition's title.
     expect(plugins.columns.map((c) => c.label)).toEqual(['名字', '版本', '做什么', '状态'])

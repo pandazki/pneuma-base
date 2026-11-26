@@ -6,6 +6,9 @@ import type { Plugin } from '@pneuma-base/kernel'
 /** The sync's own folder in a target: the target's id and its temporary files. Never synced. */
 export const TARGET_DIR = '.pneuma-sync'
 
+/** Storage's cache area: rows derived from the facts and listings it keeps, each machine its own. */
+const STORAGE_CACHE = '.pneuma-base/cache'
+
 /**
  * The configuration names this machine's grants and the library id that keys this machine's
  * caches, and the description is assembled from it, so each machine keeps its own.
@@ -18,11 +21,11 @@ const notContent = (name: string) => NOT_CONTENT.has(name) || name.startsWith('.
 
 /**
  * Whether a path, of a file or a folder, is synced, given the installed plugins: their folders
- * declared as caches are not, nor the kernel's temporary folder. A folder that is not synced holds
- * nothing that is.
+ * declared as caches are not, nor the kernel's temporary folder, nor storage's cache area. A folder
+ * that is not synced holds nothing that is.
  */
 export function scopeOf(plugins: readonly Plugin[]): (path: string) => boolean {
   const caches = plugins.flatMap((p) => p.storage.filter((s) => s.kind === 'cache').map((s) => posix.join('.pneuma-base', p.name, s.dir)))
-  const folders = ['.pneuma-base/tmp', TARGET_DIR, ...caches]
+  const folders = ['.pneuma-base/tmp', STORAGE_CACHE, TARGET_DIR, ...caches]
   return (path) => !MACHINE_FILES.has(path) && !folders.some((f) => path === f || path.startsWith(`${f}/`)) && !path.split('/').some(notContent)
 }

@@ -172,13 +172,19 @@ type Entry = { dir: boolean; hash: string | null; ino: bigint; mtime: bigint }
 type Snapshot = Map<string, Entry>
 type Change = { path: string; change: 'added' | 'changed' | 'removed' }
 
-/** Every file and directory of the library by its library path, the kernel's scratch directory left out. */
+/**
+ * The kernel's scratch directory, and storage's cache area: what storage derives there for any plugin
+ * (rows, listings) is its own to rewrite at any time, and may be thrown away.
+ */
+const NOT_THE_LIBRARY = ['.pneuma-base/tmp', '.pneuma-base/cache']
+
+/** Every file and directory of the library by its library path, NOT_THE_LIBRARY left out. */
 async function snapshot(root: string): Promise<Snapshot> {
   const out: Snapshot = new Map()
   for (const e of await readdir(root, { recursive: true, withFileTypes: true })) {
     const abs = join(e.parentPath, e.name)
     const path = relative(root, abs).split(sep).join('/')
-    if (path === '.pneuma-base/tmp' || path.startsWith('.pneuma-base/tmp/')) continue
+    if (NOT_THE_LIBRARY.some((dir) => path === dir || path.startsWith(`${dir}/`))) continue
     const s = await lstat(abs, { bigint: true })
     const hash = s.isFile() ? createHash('sha256').update(await readFile(abs)).digest('hex') : null
     out.set(path, { dir: s.isDirectory(), hash, ino: s.ino, mtime: s.mtimeNs })

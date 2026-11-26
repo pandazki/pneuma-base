@@ -1,11 +1,22 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { mkdtempSync, realpathSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const BIN = fileURLToPath(new URL('../dist/bin.js', import.meta.url))
 const BIN_WITH_TEST_PLUGINS = fileURLToPath(new URL('./fixtures/bin-with-test-plugins.ts', import.meta.url))
+
+/**
+ * Every fact a plugin's records hold, as written: every .jsonl file under its facts/, in the dated
+ * layout storage writes (tmp/run-7 STORAGE.md) and the layout by scene it still reads.
+ */
+export function factsOf(lib: string, plugin = 'ledger'): any[] {
+  const dir = join(lib, '.pneuma-base', plugin, 'facts')
+  return readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter((e) => e.isFile() && e.name.endsWith('.jsonl') && !e.name.startsWith('.tmp-'))
+    .flatMap((e) => readFileSync(join(e.parentPath, e.name), 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line)))
+}
 
 export function tempDir(prefix = 'pb-'): string {
   return realpathSync(mkdtempSync(join(process.env.PNEUMA_BASE_TEST_TMP ?? tmpdir(), prefix)))

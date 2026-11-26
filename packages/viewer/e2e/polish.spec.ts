@@ -88,7 +88,9 @@ test('3: an agent’s request for the act a plugin asks about is the one row; de
   await expect(page.getByRole('main').getByRole('region', { name: '等你决定' })).toContainText('没有要你决定的事。')
 })
 
-test('4: a folder that had files before it became a library asks once; the suggested answer registers them all as the owner’s', async ({ page, pb }) => {
+// tmp/run-7: asked per place. Each directory nothing registered is in is one question with three
+// answers, and is never opened until one is chosen.
+test('4: a folder that had files before it became a library asks about each directory; registering one’s files makes them the owner’s', async ({ page, pb }) => {
   const lib = join(tempDir(), 'lib')
   const old = new Date('2026-01-01T00:00:00Z')
   for (const path of ['notes/2025-review.md', 'notes/ideas.txt', 'photos/shop-front.png', 'contracts/lease.pdf']) {
@@ -100,11 +102,12 @@ test('4: a folder that had files before it became a library asks once; the sugge
   await page.goto(url)
   const main = page.getByRole('main')
   const decide = main.getByRole('region', { name: '等你决定' })
-  await expect(decide).toContainText('这里原来有 4 样东西，还没登记。都记为你带进来的吗？')
-  await expect(main.getByRole('region', { name: '需要留意' })).not.toContainText('没人登记')
+  for (const dir of ['contracts', 'notes', 'photos']) await expect(decide).toContainText(`${dir}/ 还没看过，里面的东西都没登记。登记成一样东西、登记里面的文件，还是不用管？`)
+  await expect(main.getByRole('region', { name: '需要留意' })).not.toContainText('没看过的目录')
   await shoot(page, '4-ask', SHOTS)
-  await decide.getByRole('button', { name: '都记为我带进来的' }).click()
-  await expect(decide.getByRole('status')).toContainText('已把 4 样东西记为主人带进来的')
+  // The questions come in the order of the root's listing: contracts/, notes/, photos/.
+  await decide.getByRole('button', { name: '登记里面的文件' }).nth(1).click()
+  await expect(decide.getByRole('status')).toContainText('已把 notes/里的 2 个文件记为主人带进来的')
   await shoot(page, '4-registered', SHOTS)
   expect(pb.run(['inspect', 'notes/ideas.txt', '--library', lib]).stdout).toContain('带进来的，主人给的')
 })

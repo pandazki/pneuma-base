@@ -2,6 +2,7 @@
 import { hostname } from 'node:os'
 import {
   agentFace,
+  changeStamp,
   identifySession,
   initLibrary,
   loadPlugins,
@@ -49,6 +50,12 @@ export async function state(served: Served): Promise<Reply> {
   // `shown`: the root as people read it, the home directory as ~; the page cuts it to its room.
   const shown = shortDir(library.root, Number.POSITIVE_INFINITY)
   return reply({ dir: served.dir, library: { root: library.root, shown, id: library.config.id }, views, problems, available: available(table) })
+}
+
+/** What the page polls: a stamp that changes when it has something new to show. */
+export async function changes(served: Served): Promise<string> {
+  const library = await openLibrary(served.dir, await tableOf(served))
+  return library ? changeStamp(ownerContext(library, served)) : 'not-a-library'
 }
 
 /** `query` holds the view's id under `view`; every other entry is a parameter of the view. */

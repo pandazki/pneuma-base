@@ -1,6 +1,7 @@
-// A folder that already had files when it became a library: the ledger asks the owner once whether
-// they are all the owner's, brought in, and one owner command registers them all, however many, in
-// one run of one process. ARCHITECTURE.md section 6.
+// A folder that already had files when it became a library: the ledger asks the owner about each place
+// (tmp/run-7 architecture.md section 7): a directory nobody looked into is one question with three
+// answers, and registering everything in it is a named act over all of it, in one run of one process,
+// a fact for every few hundred so an interrupted run keeps what it did.
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -31,29 +32,32 @@ beforeEach(() => {
 })
 
 describe('things nobody registered, settled by the owner at once', () => {
-  it('show home asks with both answers as commands; ledger register settles it and says how many', () => {
+  it('show home asks with the three answers as commands; registering everything inside settles it and says how many', () => {
     lib = folder(3)
     ok(sb.run(['init', lib]))
     const home = ok(owner(['show', 'home'])).stdout
-    expect(home).toContain('这里原来有 3 样东西，还没登记。都记为你带进来的吗？')
-    expect(home).toContain('$ ledger register  # 都记为我带进来的')
-    expect(home).toContain('$ ledger leave  # 不登记，不再问')
-    expect(home).not.toContain('没人登记过的')
-    expect(ok(owner(['ledger', 'register'])).stdout).toContain('已把 3 样东西记为主人带进来的。')
+    expect(home).toContain('d0/ 还没看过，里面的东西都没登记。登记成一样东西、登记里面的文件，还是不用管？')
+    expect(home).toContain('$ put d0 --brought --by owner  # 登记成一样东西')
+    expect(home).toContain('$ ledger register d0 --inside  # 登记里面的文件')
+    expect(home).toContain('$ noise add d0  # 不用管')
+    expect(home).not.toContain('没看过的目录')
+    const registered = ok(owner(['ledger', 'register', 'd0', '--inside']))
+    expect(registered.stdout).toContain('已把 d0/里的 3 个文件记为主人带进来的。')
+    expect(registered.stderr).toContain('要登记 d0/里的全部文件：3 个')
     expect(ok(owner(['show', 'home'])).stdout).not.toContain('还没登记')
     expect(ok(owner(['inspect', 'd0/f1.txt'])).stdout).toContain('带进来的，主人给的')
   })
 
-  it('registers two thousand files in one run, written as one fact', () => {
+  it('registers two thousand files in one run, five hundred to a fact', () => {
     lib = folder(2_000)
     ok(sb.run(['init', lib]))
-    expect(ok(owner(['ledger', 'register', '--json'])).json().data).toEqual({ registered: 2_000 })
+    expect(ok(owner(['ledger', 'register', '.', '--inside', '--json'])).json().data).toEqual({ registered: 2_000 })
     const facts = join(lib, '.pneuma-base/ledger/facts')
     const lines = readdirSync(facts, { recursive: true, withFileTypes: true })
       .filter((e) => e.isFile() && e.name.endsWith('.jsonl'))
       .flatMap((e) => readFileSync(join(e.parentPath, e.name), 'utf8').trimEnd().split('\n'))
       .map((l) => JSON.parse(l) as { kind: string; items?: unknown[] })
-    expect(lines.filter((f) => f.kind === 'items.enter').map((f) => f.items?.length)).toEqual([2_000])
+    expect(lines.filter((f) => f.kind === 'items.enter').map((f) => f.items?.length)).toEqual([500, 500, 500, 500])
     expect(lines.filter((f) => f.kind === 'item.enter')).toEqual([])
     expect(ok(owner(['show', 'home'])).stdout).not.toContain('还没登记')
   })

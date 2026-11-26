@@ -44,7 +44,8 @@ export const agentFace: AgentFace = {
 }
 
 async function find(req: FindRequest, ctx: Context): Promise<FindResult> {
-  const named = Object.keys(req.filters).length === 0 ? await nameHits(req, ctx.library.root) : []
+  // start's find (skipOwnSession) asks the records only: walking the names of the folder stays for the find verb until it is rebuilt on storage.
+  const named = Object.keys(req.filters).length === 0 && !req.skipOwnSession ? await nameHits(req, ctx.library.root) : []
   const heard = await eachPlugin(ctx, (plugin, pctx) => plugin.onFind?.(req, pctx))
   const answers = heard.values.map(({ plugin, value }) => ({ plugin, ...(Array.isArray(value) ? { hits: value, problems: [] } : value) }))
   const found = [named, ...answers.map(({ plugin, hits }) => hits.map((h) => ({ ...h, by: plugin })))]
