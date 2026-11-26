@@ -522,6 +522,11 @@ export type TreeNode = { value: string; label: string; count: number | null; chi
 export type Ask = { key: string; by: string | ActorMark; text: string; about: LibraryPath | null; actions: Action[]; suggested?: number }
 /** What `onAsks` answers: an ask without naming its plugin, which the kernel stamps as `by`. */
 export type PluginAsk = Omit<Ask, 'by'>
+/**
+ * One step of getting started with the library. One not `done` shows its `blocks`, what to do right
+ * there; a done one folds into its title and `summary`, one line, and opens again when clicked.
+ */
+export type Step = { key: string; title: string; done: boolean; summary: string | null; blocks: Block[] }
 
 /**
  * A section with `collapse` can be folded by the viewer; the value is how it starts. A section of the
@@ -532,6 +537,10 @@ export type PluginAsk = Omit<Ask, 'by'>
  * that failed to load; `plugin` is stamped by the kernel. `feed`, `asks`: `empty` is the one grey
  * sentence shown when there is nothing. `tree`: choosing a folder sets the view's parameter `param`
  * to its value and shows the view again, as a filter does; `selected` is the value it has now.
+ * `steps`: the steps of getting started, each with its own blocks, checked as a section's are.
+ * `drop`: where the owner brings files in. In the Mac app it is an area files and folders are dropped
+ * on, or chosen from, and they are put into the library folder `to` as brought by the owner;
+ * elsewhere the page cannot hand over a file, and it shows `command`, which does the same in a terminal.
  */
 export type Block =
   | { kind: 'section'; title: string; note: string | null; count: number | null; blocks: Block[]; actions: Action[]; collapse?: 'open' | 'closed'; plugin?: PluginName }
@@ -549,6 +558,8 @@ export type Block =
   | { kind: 'stats'; stats: Stat[] }
   | { kind: 'tree'; param: string; selected: string; nodes: TreeNode[] }
   | { kind: 'asks'; asks: Ask[]; empty: string }
+  | { kind: 'steps'; steps: Step[] }
+  | { kind: 'drop'; to: string; command: string }
 
 /** `count`: how many things the view shows with this option, given by its answer. */
 export type FilterOption = { value: string; label: string; count?: number }

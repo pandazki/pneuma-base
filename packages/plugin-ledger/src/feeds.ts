@@ -1,6 +1,6 @@
 // The ledger's pages that tell what happened, each a feed of facts: the home page's part (since the
 // owner last looked, and what needs looking at), the activity page, the scenes and one scene. Pure.
-import { shortDir, type Action, type Block, type Cell, type FeedGroup, type FeedRow, type Grant, type Instant, type Stat, type ViewAnswer } from '@pneuma-base/kernel'
+import { FIRST_WORDS, shortDir, type Action, type Block, type Cell, type FeedGroup, type FeedRow, type Grant, type Instant, type Stat, type ViewAnswer } from '@pneuma-base/kernel'
 import type { Conversation } from './conversation.js'
 import type { Fact, FactActor, SceneId } from './facts.js'
 import { isArchived, type Ledger, type SceneRecord } from './fold.js'
@@ -123,7 +123,18 @@ export function homeAnswer(ledger: Ledger, standing: Standing, me: FactActor, cu
         : [{ kind: 'list', items: kinds.map((k) => ({ cell: { text: `${k.count} 样${k.title}`, link: { view: STANDING_VIEW, params: { kind: k.kind }, target: 'main' } }, note: k.note, actions: [] })) }],
     actions: [],
   }
-  return { title: '自上次以来', subtitle: since === null ? null : `你上次看是 ${when(since)}`, blocks: [sinceSection, attention] }
+  return { title: '自上次以来', subtitle: since === null ? null : `你上次看是 ${when(since)}`, blocks: [sayStep(ledger), sinceSection, attention] }
+}
+
+/**
+ * The step of getting started only the ledger can tell: whether an agent has worked here yet. It
+ * joins the kernel's steps in the home page's 「开始」, which is gone once all are done.
+ */
+function sayStep(ledger: Ledger): Block {
+  const agents = ledger.facts.filter((f) => f.actor.kind === 'agent').map((f) => f.actor)
+  const blocks: Block[] = [{ kind: 'list', items: [{ cell: { text: FIRST_WORDS, copy: true }, note: '在接上的 agent 里说这一句，它会先看看库里有什么，再接着做你要它做的事。', actions: [] }] }]
+  const done = agents.length > 0
+  return { kind: 'steps', steps: [{ key: 'say', title: '对你的 agent 说一句', done, summary: done ? `${actorNames(agents)} 在这里做过事了` : null, blocks }] }
 }
 
 // ---- activity ----

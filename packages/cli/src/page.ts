@@ -223,6 +223,13 @@ function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: 
         `${indent}- ${a.text}（${whoText(a.by)}）${a.about === null ? '' : `  关于 ${a.about} → ${linkCommand({ view: 'item', params: { path: a.about }, target: 'panel' })}`}`,
         ...a.actions.map((x, i) => `${actionLine(x, commands, `${indent}    `)}${i === a.suggested ? '（推荐）' : ''}`),
       ])
+    case 'steps':
+      return block.steps.flatMap((s) => [
+        `${indent}[${s.done ? '✓' : ' '}] ${s.title}${s.summary === null ? '' : `：${s.summary}`}`,
+        ...s.blocks.flatMap((b) => blockLines(b, commands, depth + 1, `${indent}    `, req)).filter((l) => l !== ''),
+      ])
+    case 'drop':
+      return [`${indent}放进 ${block.to}/，记成主人带进来的：在应用里把文件或文件夹拖到窗口上，或选出来；在终端里：`, `${indent}$ ${block.command}`]
   }
 }
 

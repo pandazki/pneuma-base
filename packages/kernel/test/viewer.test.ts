@@ -2,9 +2,11 @@
 // given as blocks; showing a view changes nothing and sends no event.
 import { describe, expect, it } from 'vitest'
 import { agentFace, viewerFace, type Action, type Block, type Event, type ViewResult } from '../src/index.js'
+import { saveConnection } from '../src/connections.js'
 import { fixture, plugin, type Fixture } from './support.js'
 
-const show = (f: Fixture, view: string, params: Record<string, string> = {}, env: Record<string, string> = {}) => viewerFace.show({ view, params }, { ctx: f.ctx, table: new Map(), env, viaGrant: false })
+/** Shown as the owner, with the fixture's home as HOME and nothing on PATH, so no agent product of this machine is found. */
+const show = (f: Fixture, view: string, params: Record<string, string> = {}, env: Record<string, string> = {}) => viewerFace.show({ view, params }, { ctx: f.ctx, table: new Map(), env: { HOME: f.home, PATH: '', ...env }, viaGrant: false })
 
 function shown(r: ViewResult) {
   if (r.outcome !== 'shown') throw new Error(`not shown: ${r.outcome}`)
@@ -507,9 +509,9 @@ describe('the home page', () => {
     f.write('a.md', 'a')
     const r = shown(await show(f, 'home'))
     expect(r.title).toBe('首页')
-    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['section:等你决定', 'text', 'section:库里的文件'])
-    expect(r.blocks[0]).toMatchObject({ count: null, blocks: [{ kind: 'asks', asks: [], empty: '没有要你决定的事。' }] })
-    expect(r.blocks[1]).toMatchObject({ tone: 'neutral', text: expect.stringContaining('没装插件') })
+    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['section:开始', 'section:等你决定', 'text', 'section:库里的文件'])
+    expect(r.blocks[1]).toMatchObject({ count: null, blocks: [{ kind: 'asks', asks: [], empty: '没有要你决定的事。' }] })
+    expect(r.blocks[2]).toMatchObject({ tone: 'neutral', text: expect.stringContaining('没装插件') })
     expect(tableOf(r).rows.map((row) => row.key)).toEqual(['a.md'])
   })
 
@@ -524,17 +526,50 @@ describe('the home page', () => {
     const f = await fixture([part('one'), part('two')])
     const r = shown(await show(f, 'home'))
     expect(r.problems).toEqual([])
-    expect(r.blocks[0]).toMatchObject({ title: '等你决定', count: 2, blocks: [{ kind: 'asks', asks: [{ key: 'one:a', by: '插件one', text: 'one 问' }, { key: 'two:a', by: '插件two' }] }] })
-    expect(r.blocks.slice(1)).toMatchObject([{ text: 'one 的部分' }, { text: 'two 的部分' }])
+    expect(r.blocks[1]).toMatchObject({ title: '等你决定', count: 2, blocks: [{ kind: 'asks', asks: [{ key: 'one:a', by: '插件one', text: 'one 问' }, { key: 'two:a', by: '插件two' }] }] })
+    expect(r.blocks.slice(2)).toMatchObject([{ text: 'one 的部分' }, { text: 'two 的部分' }])
   })
 
   it('leaves out an ask that is not one, as the plugin’s problem; check carries the same asks, each with whose it is', async () => {
     const f = await fixture([asker('good', [{ key: 'k', text: '要上线吗？', about: 'a.md', actions: [off], suggested: 0 }]), asker('bad', [{ key: 'k', text: 3, about: null, actions: [] }]), asker('worse', 'nothing')])
     const r = shown(await show(f, 'home'))
-    expect(r.blocks[0]).toMatchObject({ blocks: [{ asks: [{ key: 'k', by: 'good' }] }] })
+    expect(r.blocks[1]).toMatchObject({ blocks: [{ asks: [{ key: 'k', by: 'good' }] }] })
     expect(r.problems.map((p) => p.plugin)).toEqual(['bad', 'worse'])
     const check = await agentFace.check({ since: 'last', includeArchived: false }, f.ctx)
     expect(check.asks).toMatchObject([{ key: 'k', by: 'good', text: '要上线吗？', suggested: 0 }])
     expect(check.problems.map((p) => p.plugin)).toEqual(['bad', 'worse'])
+  })
+
+  const stepper = (name: string, done: boolean, inner: unknown[] = [{ kind: 'text', text: `${name} 的一步`, tone: 'neutral' }]) =>
+    plugin(name, {
+      views: [{ id: `${name}.home`, title: '一部分', icon: 'house', nav: false, filters: [], home: true }],
+      onView: async () => ({ title: '一部分', subtitle: null, blocks: [{ kind: 'steps', steps: [{ key: name, title: `${name} 这一步`, done, summary: done ? '做了' : null, blocks: inner }] }, { kind: 'text', text: `${name} 的部分`, tone: 'neutral' }] as never }),
+    })
+
+  it('opens with 开始 while a step is left: the kernel’s two, then the steps the home parts give, which leave those parts', async () => {
+    const f = await fixture([stepper('one', false)])
+    const r = shown(await show(f, 'home'))
+    expect(r.problems).toEqual([])
+    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['section:开始', 'section:等你决定', 'text'])
+    expect(r.blocks[0]).toMatchObject({ note: '做完了 0 步，还有 3 步。', blocks: [{ kind: 'steps', steps: [{ key: 'connect', done: false }, { key: 'first', done: false }, { key: 'one', title: 'one 这一步', blocks: [{ text: 'one 的一步' }] }] }] })
+    expect(r.blocks[2]).toMatchObject({ text: 'one 的部分' })
+  })
+
+  it('drops 开始 once every step is done, the parts’ steps included', async () => {
+    const f = await fixture([stepper('one', true)])
+    f.write('a.md', 'a')
+    const before = shown(await show(f, 'home'))
+    expect(before.blocks[0]).toMatchObject({ title: '开始', note: '做完了 2 步，还有 1 步。' })
+    await saveConnection(f.home, { format: 1, grant: 'claude-code', grantId: 'g', product: 'claude-code', library: f.root, way: 'skill', at: f.ctx.now, wrote: { kind: 'skill', file: `${f.home}/SKILL.md`, fingerprint: 'x', dirs: [] }, command: null })
+    const after = shown(await show(f, 'home'))
+    expect(after.blocks.map((b) => (b.kind === 'section' ? b.title : b.kind))).toEqual(['等你决定', 'text'])
+  })
+
+  it('checks the blocks inside a part’s steps as a section’s, and a drop as a block of its own', async () => {
+    const f = await fixture([stepper('one', false, [{ kind: 'nope' }, { kind: 'drop', to: 'inbox', command: 'pneuma-base put <文件> --to inbox/<名字>' }])])
+    const r = shown(await show(f, 'home'))
+    expect(r.problems).toEqual([{ plugin: 'one', message: expect.stringContaining('steps[0].blocks[0] 是不认识的块：nope') }])
+    const steps = flat(r.blocks).find((b) => b.kind === 'steps')
+    expect(steps?.kind === 'steps' && steps.steps.find((s) => s.key === 'one')).toMatchObject({ blocks: [{ kind: 'text', tone: 'bad' }, { kind: 'drop', to: 'inbox' }] })
   })
 })

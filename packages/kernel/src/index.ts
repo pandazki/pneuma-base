@@ -26,3 +26,4 @@ export {
   thingAt,
 } from './things.js'
 export { loadPlugins, whyNotLoaded } from './plugin-table.js'
+export { FIRST_WORDS } from './products.js'

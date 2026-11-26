@@ -158,6 +158,8 @@ const KINDS: Record<Block['kind'], Check> = {
   stats: shape({ stats: listOf(shape({ label: string, value: string, note: nullable(string) })) }),
   tree: shape({ param: string, selected: string, nodes: listOf(treeNode) }),
   asks: shape({ asks: listOf(ask), empty: string }),
+  steps: shape({ steps: listOf(shape({ key: string, title: string, done: boolean, summary: nullable(string), blocks: listOf(anything) })) }),
+  drop: shape({ to: string, command: string }),
 }
 
 /** An ask a plugin's `onAsks` answered, its `by` not yet stamped: what is wrong with it, or null. */
@@ -255,6 +257,14 @@ export function checkBlocks(blocks: unknown[], plugin: Plugin, callable: Callabl
     }
     const block = value as Block
     if (block.kind === 'custom') return { ...block, plugin: plugin.name }
+    if (block.kind === 'steps') {
+      const steps = block.steps.map((step, j) => {
+        const inner = checkBlocks(step.blocks, plugin, callable, `${where}.steps[${j}].blocks`)
+        problems.push(...inner.problems)
+        return { ...step, blocks: inner.blocks }
+      })
+      return { ...block, steps }
+    }
     if (block.kind !== 'section') return block
     const inner = checkBlocks(block.blocks, plugin, callable, `${where}.blocks`)
     problems.push(...inner.problems)

@@ -185,9 +185,9 @@ describe('the words of each kind of block', () => {
     expect(run(['plugin', 'add', 'asker', '--library', lib2]).code).toBe(0)
     const r = run(['show', 'home', '--library', lib2])
     expect(r.code, r.stderr).toBe(0)
-    expect(r.stdout.trimEnd().split('\n')).toEqual([
-      '# 首页',
-      '',
+    // 开始 comes first while no agent is connected; start.test.ts has its words.
+    expect(r.stdout.startsWith('# 首页\n\n## 开始\n')).toBe(true)
+    expect(r.stdout.slice(r.stdout.indexOf('## 等你决定')).trimEnd().split('\n')).toEqual([
       '## 等你决定（1）',
       '- site 可以上线了，要上线吗？（问主人的测试插件）  关于 site → show item --path site',
       '    $ asker yes  # 上线（只给主人）（推荐）',

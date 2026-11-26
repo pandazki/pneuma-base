@@ -333,7 +333,8 @@ describe('the ledger’s part of the home page', () => {
     const { root, show, codex } = await relayed()
     const asCodex = () => show('home', {}, codex())
     const first = shown(await asCodex())
-    expect(first.blocks.map((b) => (b.kind === 'section' ? b.title : b.kind))).toEqual(['等你决定', '自上次以来', '需要留意'])
+    // No agent is connected on this machine, so the page opens with 开始; the ledger's step in it is done.
+    expect(first.blocks.map((b) => (b.kind === 'section' ? b.title : b.kind))).toEqual(['开始', '等你决定', '自上次以来', '需要留意'])
     const since = sectionNamed(first.blocks, '自上次以来')
     expect(since.actions).toMatchObject([{ label: '都看过了', call: { face: 'agent', verb: 'check', request: { since: 'last', includeArchived: false } } }])
     const feed = since.blocks[0]
