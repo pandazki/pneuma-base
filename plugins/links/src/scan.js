@@ -1,127 +1,87 @@
-import { constants } from 'node:fs'
-import { lstat, open, readlink, realpath } from 'node:fs/promises'
-import { dirname, isAbsolute, join, sep } from 'node:path'
+// Which documents the plugin checks, and their broken links. It follows the puts it hears: a record
+// store of the Markdown and HTML documents put or registered, moved, archived and purged. A check reads
+// only those documents, each up to READ_BYTES, and asks storage what is at their link targets.
+import { isFailure } from '@pneuma-base/sdk'
+import { recordStore } from '@pneuma-base/sdk/kit'
 import { extractFileLinks, isDocumentPath } from './links.js'
 
-function missing(error) {
-  return error.code === 'ENOENT' || error.code === 'ENOTDIR'
+const READ_BYTES = 1 << 20
+const MANIFEST_PAGE = 10_000
+
+// A record says either that the documents at or under `under` are now `paths`, or that what was at
+// `from` moved to `to`.
+function parse(raw) {
+  const strings = value => Array.isArray(value) && value.every(v => typeof v === 'string')
+  if (typeof raw.under === 'string' && strings(raw.paths)) return { under: raw.under, paths: raw.paths }
+  if (typeof raw.from === 'string' && typeof raw.to === 'string') return { from: raw.from, to: raw.to }
+  return '不是一条文档记录'
 }
 
-// Test each component before following it. A library symlink may point to a
-// file inside the library, a missing file, or somewhere outside our scope.
-function fileLookup(root) {
-  const entries = new Map()
-  async function entry(path) {
-    if (entries.has(path)) return entries.get(path)
-    let value
-    try {
-      const stat = await lstat(path)
-      if (stat.isSymbolicLink()) value = { link: await readlink(path) }
-      else if (stat.isDirectory()) value = 'directory'
-      else if (stat.isFile()) value = 'file'
-      else value = 'other'
-    } catch (error) {
-      if (!missing(error)) throw error
-      value = 'missing'
-    }
-    entries.set(path, value)
-    return value
-  }
+const store = ctx => recordStore(ctx, 'documents', parse)
+const within = (path, dir) => path === dir || path.startsWith(`${dir}/`)
 
-  return async function kind(path, followLinks) {
-    const pending = path.split('/').reverse()
-    let at = root
-    let value = 'directory'
-    let hops = 0
-    while (pending.length) {
-      if (value !== 'directory') return 'missing'
-      const part = pending.pop()
-      if (!part || part === '.') continue
-      if (part === '..') {
-        if (at === root) return 'outside'
-        at = dirname(at)
-        continue
-      }
-      at = join(at, part)
-      value = await entry(at)
-      if (value === 'missing') return value
-      if (typeof value === 'object') {
-        if (!followLinks || ++hops > 40) return 'ignored'
-        let link = value.link
-        if (isAbsolute(link)) {
-          // Keep ".." components for the loop to resolve after any symlinks.
-          if (link !== root && !link.startsWith(root.endsWith(sep) ? root : root + sep)) return 'outside'
-          link = link.slice(root.length)
-          at = root
-        } else {
-          at = dirname(at)
-        }
-        for (const component of link.split(sep).reverse()) pending.push(component)
-        value = 'directory'
-      }
-    }
-    return value
-  }
+async function append(ctx, bodies) {
+  const s = store(ctx)
+  await s.append(bodies.map(body => s.stamp(ctx, body)))
 }
 
-async function scanDocument(ctx, source, kind) {
-  if (await kind(source, false) !== 'file') return null
-  let file
-  let contents
-  try {
-    const absolute = ctx.tools.abs(source)
-    // The source list may predate a directory move or replacement.
-    if (await realpath(absolute) !== absolute) return null
-    file = await open(absolute, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
-    if (!(await file.stat()).isFile()) return null
-    contents = await file.readFile('utf8')
-  } catch (error) {
-    if (missing(error) || error.code === 'ELOOP') return null
-    throw error
-  } finally {
-    await file?.close()
+/** The documents the records name now, sorted. */
+async function documents(ctx) {
+  const docs = new Set()
+  for (const r of (await store(ctx).read()).records) {
+    const there = [...docs].filter(p => within(p, r.from ?? r.under))
+    for (const p of there) docs.delete(p)
+    if (r.from !== undefined) for (const p of there) docs.add(r.to + p.slice(r.from.length))
+    else for (const p of r.paths) docs.add(p)
   }
-  const broken = []
-  for (const link of extractFileLinks(source, contents)) {
-    if (await kind(link.target, true) === 'missing') broken.push({ source, ...link })
+  return [...docs].sort()
+}
+
+/** The documents of a directory thing: the Markdown and HTML files of storage's manifest of it. */
+async function documentsIn(ctx, dir) {
+  const out = []
+  let after
+  do {
+    const answer = await ctx.tools.storage.content(dir, { manifest: { limit: MANIFEST_PAGE, ...(after === undefined ? {} : { after }) } })
+    if (isFailure(answer) || answer.manifest === undefined) return out
+    for (const e of answer.manifest.entries) if (isDocumentPath(e.path)) out.push(`${dir}/${e.path}`)
+    after = answer.manifest.more?.after
+  } while (after !== undefined)
+  return out
+}
+
+/** Records what a put changed among the documents. */
+export async function heardPut(ctx, req) {
+  if (req.kind === 'register-files') {
+    return append(ctx, req.files.filter(f => isDocumentPath(f.path)).map(f => ({ under: f.path, paths: [f.path] })))
   }
-  return broken
+  const bundle = req.now.kind === 'bundle'
+  if (!bundle && !isDocumentPath(req.path)) return
+  if (req.kind === 'move') return append(ctx, [{ from: req.from, to: req.path }])
+  return append(ctx, [{ under: req.path, paths: bundle ? await documentsIn(ctx, req.path) : [req.path] }])
+}
+
+export const heardMove = (ctx, from, to) => append(ctx, [{ from, to }])
+export const heardPurge = (ctx, paths) => append(ctx, paths.map(under => ({ under, paths: [] })))
+
+/** The broken links of these documents: each read up to READ_BYTES, every target looked at in one glance. */
+async function brokenIn(ctx, sources) {
+  const links = []
+  for (const source of sources) {
+    const read = await ctx.tools.storage.read(source, { length: READ_BYTES })
+    if (isFailure(read) || read.data === null) continue
+    for (const link of extractFileLinks(source, new TextDecoder().decode(read.data))) links.push({ source, ...link })
+  }
+  const at = await ctx.tools.what([...new Set(links.map(l => l.target))])
+  const missing = new Set(at.filter(t => t.kind === 'none').map(t => t.path))
+  return links.filter(l => missing.has(l.target))
 }
 
 export async function scanLibrary(ctx, { includeArchived = false } = {}) {
-  const kind = fileLookup(ctx.library.root)
-  const sources = []
-  for (const item of await ctx.tools.things()) {
-    const region = ctx.tools.regionOf(item)
-    if (region === 'kernel' || (region === 'archive' && !includeArchived)) continue
-    // tools.files lists only fingerprinted members and uses bundle-relative paths.
-    if (await kind(item, false) === 'directory') {
-      for (const file of await ctx.tools.files(item) ?? []) {
-        if (isDocumentPath(file.path)) sources.push(item + '/' + file.path)
-      }
-    } else if (isDocumentPath(item)) {
-      sources.push(item)
-    }
-  }
-  const broken = []
-  for (const source of sources.sort()) {
-    const links = await scanDocument(ctx, source, kind)
-    for (const link of links ?? []) broken.push(link)
-  }
-  return broken
+  const sources = (await documents(ctx)).filter(p => includeArchived || ctx.tools.regionOf(p) !== 'archive')
+  return brokenIn(ctx, sources)
 }
 
 export async function scanItem(ctx, path) {
-  if (!isDocumentPath(path)) return null
-  const resolved = await ctx.tools.resolve(path)
-  if (!resolved || resolved.region === 'kernel') return null
-  const { path: source, bundle } = resolved
-  const kind = fileLookup(ctx.library.root)
-  if (bundle) {
-    if (await kind(source, false) !== 'file') return null
-    const member = source.slice(bundle.length + 1)
-    const files = await ctx.tools.files(bundle)
-    if (!files?.some(file => file.path === member)) return null
-  }
-  return scanDocument(ctx, source, kind)
+  return (await documents(ctx)).includes(path) ? brokenIn(ctx, [path]) : null
 }
