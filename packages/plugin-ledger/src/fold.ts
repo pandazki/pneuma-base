@@ -214,6 +214,7 @@ function absorb(ledger: Ledger, id: ItemId, path: LibraryPath): void {
   }
 }
 
+/** Only a bundle absorbs; asking only for bundles keeps a ledger of many moves linear. */
 const absorbedBy = (ledger: Ledger, bundle: ItemRecord) => [...ledger.items.values()].filter((other) => other.absorbedInto === bundle.id)
 
 /** Moves an item to `to`, and the items a bundle absorbed along with it. */
@@ -222,14 +223,14 @@ function relocate(ledger: Ledger, item: ItemRecord, to: LibraryPath): void {
   if (ledger.pathIndex.get(from) === item.id) ledger.pathIndex.delete(from)
   item.path = to
   ledger.pathIndex.set(to, item.id)
-  for (const other of absorbedBy(ledger, item)) relocate(ledger, other, `${to}${other.path.slice(from.length)}` as LibraryPath)
+  if (item.bundle) for (const other of absorbedBy(ledger, item)) relocate(ledger, other, `${to}${other.path.slice(from.length)}` as LibraryPath)
 }
 
 /** Marks an item removed, and the items a bundle absorbed with it. */
 function remove(ledger: Ledger, item: ItemRecord): void {
   item.removed = true
   if (ledger.pathIndex.get(item.path) === item.id) ledger.pathIndex.delete(item.path)
-  for (const other of absorbedBy(ledger, item)) remove(ledger, other)
+  if (item.bundle) for (const other of absorbedBy(ledger, item)) remove(ledger, other)
 }
 
 function touchScene(ledger: Ledger, f: Fact, sceneItems: Map<SceneId, Set<ItemId>>): void {

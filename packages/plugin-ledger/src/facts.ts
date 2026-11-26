@@ -2,7 +2,7 @@
 // ledger-design.md sections 1 and 2.
 import { randomBytes } from 'node:crypto'
 import { link, mkdir, open, readdir, readFile, unlink } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { join, sep } from 'node:path'
 import type { Actor, Context, Fingerprint, Instant, LibraryPath, Transcript } from '@pneuma-base/kernel'
 
 export type ItemId = string & { readonly __brand: 'ItemId' }
@@ -130,19 +130,23 @@ const parsedFiles = new Map<string, Fact[]>()
 export async function readFacts(dir: string): Promise<Fact[]> {
   const root = join(dir, FACTS_DIR)
   const scenes = await readdir(root).catch(() => [] as string[])
-  const listed = await Promise.all(scenes.map(async (scene) => (await readdir(join(root, scene)).catch(() => [] as string[])).map((name) => join(root, scene, name))))
-  const files = listed.flat().filter((file) => !basename(file).startsWith('.') && file.endsWith('.jsonl'))
-  const read = await Promise.all(
-    files.map(async (file) => {
-      const known = parsedFiles.get(file)
-      if (known !== undefined) return known
-      const facts = (await readFile(file, 'utf8')).split('\n').flatMap((line) => parseFact(line) ?? [])
-      parsedFiles.set(file, facts)
-      return facts
+  const listed = await Promise.all(
+    scenes.map(async (scene) => {
+      const folder = join(root, scene)
+      const names = await readdir(folder).catch(() => [] as string[])
+      return names.filter((name) => !name.startsWith('.') && name.endsWith('.jsonl')).map((name) => `${folder}${sep}${name}`)
     }),
   )
+  const files = listed.flat()
+  await Promise.all(
+    files
+      .filter((file) => !parsedFiles.has(file))
+      .map(async (file) => {
+        parsedFiles.set(file, (await readFile(file, 'utf8')).split('\n').flatMap((line) => parseFact(line) ?? []))
+      }),
+  )
   const byId = new Map<string, Fact>()
-  for (const parsed of read.flat()) if (!byId.has(parsed.id)) byId.set(parsed.id, parsed)
+  for (const file of files) for (const parsed of parsedFiles.get(file) ?? []) if (!byId.has(parsed.id)) byId.set(parsed.id, parsed)
   return [...byId.values()]
 }
 
