@@ -22,13 +22,24 @@
 #[cfg(not(target_os = "macos"))]
 use pneuma_base_storage::{ChangedAnswer, ChangedRequest, Ctx, Failure};
 
-#[cfg(not(target_os = "macos"))]
 use crate::LocalFolder;
 
-#[cfg(target_os = "macos")]
-pub const RELIABLE: bool = true;
-#[cfg(not(target_os = "macos"))]
-pub const RELIABLE: bool = false;
+impl LocalFolder {
+    /// Whether `changed` can give a reliable cursor for this library: on macOS, when its volume
+    /// keeps an event history.
+    pub fn reliable_cursor(&self) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            use std::os::fd::AsRawFd;
+            crate::sys::stat_fd(self.root_fd.as_raw_fd())
+                .is_ok_and(|root| fsevents::volume_uuid(root.device).is_some())
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            false
+        }
+    }
+}
 
 #[cfg(not(target_os = "macos"))]
 impl LocalFolder {
@@ -237,7 +248,7 @@ mod fsevents {
     extern "C" fn nothing(_: *mut c_void) {}
 
     /// The UUID of the volume's event database, or `None` when the volume keeps no history.
-    fn volume_uuid(device: u64) -> Option<String> {
+    pub fn volume_uuid(device: u64) -> Option<String> {
         // SAFETY: plain CoreFoundation calls; every object made here is released here.
         unsafe {
             let uuid = FSEventsCopyUUIDForDevice(device as u32 as i32);

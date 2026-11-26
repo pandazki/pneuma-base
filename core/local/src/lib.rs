@@ -255,7 +255,7 @@ impl Storage for LocalFolder {
             name: "local-folder",
             version: env!("CARGO_PKG_VERSION"),
             addresses: vec!["path"],
-            cursor: journal::RELIABLE,
+            cursor: self.reliable_cursor(),
             facets: facets::available(),
         }
     }
