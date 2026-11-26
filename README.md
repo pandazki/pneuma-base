@@ -42,18 +42,18 @@ pneuma-base --help
    pneuma-base plugin add space --library ~/base
    ```
 
-3. **给 agent 授权，并装上技能。** 授权名同时定下是哪个库、是谁：
+3. **接上你的 agent。** 先看这台机器上有哪些，再一个一个接上：
 
    ```sh
-   pneuma-base grant issue claude --agent claude-code --library ~/base
-   pneuma-base skill install claude --dir ~/.claude/skills
-   pneuma-base grant issue codex --agent codex --library ~/base
-   pneuma-base skill install codex --dir ~/.agents/skills
+   pneuma-base agent detect --library ~/base
+   pneuma-base agent connect claude-code --library ~/base
+   pneuma-base agent connect codex --library ~/base
+   pneuma-base agent connect claude-desktop --library ~/base
    ```
 
-   Codex 在沙箱里运行，启动时要把库加进可写目录：`codex --add-dir ~/base`。
+   接上一个 agent 是一条命令：发一份以产品命名的授权，再把技能装进那个产品读技能的目录（Claude Code、Codex、Cursor），不读技能的（Claude Desktop）把 MCP 服务登记进它的配置。答复说写了什么、写在哪、在那个产品里接着做什么。`--via mcp` 改用 MCP 服务，`--area <子文件夹>` 和 `--read-only` 收窄授权，`--name` 另起授权名。`pneuma-base agent list --library ~/base` 列出接上的，`pneuma-base agent disconnect <授权名>` 拿掉接上时写的、撤回授权；主人改过的条目原样留着。
 
-   别的 agent 产品一样：发一份授权，再把技能写进那个产品读技能的目录。几个产品共用一个技能目录时只装一份，agent 拿哪份授权，账上记的就是哪个名字。
+   Codex 在沙箱里运行，启动时要把库加进可写目录：`codex --add-dir ~/base`。
 
 4. **看和管。** 在浏览器里打开管理界面：
 
@@ -61,14 +61,18 @@ pneuma-base --help
    pneuma-base view ~/base
    ```
 
-   界面打开在首页：等你决定的事（比如 agent 声明了可以部署、还没上线的网站），你上次看过之后 agent 做了什么，哪些东西要留意。另有库、活动、场景、状况，开关部署，同步，取回留存，装卸插件，发授权。在界面里做的操作，agent 下次 `check` 时会看到；agent 的 `check` 也会列出等你决定的事，告诉你要跑哪条命令。界面的每一页也是一条只读的命令：`pneuma-base show --library ~/base` 列出各页，`show <页的编号>` 把一页印成字，每个按钮写成做同一件事的命令。
+   界面打开在首页：等你决定的事（比如 agent 声明了可以部署、还没上线的网站），你上次看过之后 agent 做了什么，哪些东西要留意。另有库、活动、场景、状况，开关部署，同步，取回留存，装卸插件，接上和断开 agent。在界面里做的操作，agent 下次 `check` 时会看到；agent 的 `check` 也会列出等你决定的事，告诉你要跑哪条命令。界面的每一页也是一条只读的命令：`pneuma-base show --library ~/base` 列出各页，`show <页的编号>` 把一页印成字，每个按钮写成做同一件事的命令。
 
-5. **给只能接 MCP 的应用。** 桌面的对话应用、编辑器这类跑不了 shell、也装不了技能的 agent 应用，经 MCP 用库。先为它发一份授权，再在它的 MCP 配置里加一个 stdio 服务，命令是 `pneuma-base @<授权名> mcp`：
+5. **别的只能接 MCP 的应用。** 产品表里没有的应用，先为它发一份授权，再在它的 MCP 配置里加一个 stdio 服务，命令是 `pneuma-base @<授权名> mcp`：
+
+   ```sh
+   pneuma-base grant issue <授权名> --agent <给谁> --library ~/base
+   ```
 
    ```json
    {
      "mcpServers": {
-       "pneuma-base": {
+       "pneuma-base-<授权名>": {
          "command": "pneuma-base",
          "args": ["@<授权名>", "mcp"]
        }

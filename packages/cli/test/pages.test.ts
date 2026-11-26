@@ -26,6 +26,8 @@ const READS: Record<string, string> = {
   'sync status': 'sync.status',
   'deploy list': 'deploy.sites',
   'search status': 'search.status',
+  'agent list': 'agents',
+  'agent detect': 'agents',
 }
 
 /** What has no button on any page, and why. */
@@ -157,6 +159,10 @@ beforeAll(async () => {
   expect(sb.run(['init', lib]).code).toBe(0)
   for (const p of ['version', 'deploy', 'sync', 'search']) owner(['plugin', 'add', p])
   owner(['grant', 'issue', 'claude', '--agent', 'claude-code'])
+  // One agent product connected and one found and not connected, so the agents page has 断开 and 接上.
+  await write(join(sb.home, '.claude/settings.json'), '{}\n')
+  await write(join(sb.home, '.cursor/argv.json'), '{}\n')
+  owner(['agent', 'connect', 'claude-code'])
   owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', join(tempDir('pb-www-'), 'www')])
   owner(['sync', 'target', 'set', '--kind', 'dir', '--to', tempDir('pb-sync-')])
   owner(['search', 'embedder', 'set', '--kind', 'hash'])
@@ -208,7 +214,7 @@ beforeAll(async () => {
 describe('every page of a library with every built-in plugin', () => {
   it('is reached: each view in the list, the item panel of a file, a bundle, a file inside one and an archived file, and a scene card', () => {
     const views = new Set(pages.map((p) => p.link.view))
-    for (const id of ['home', 'ledger.items', 'ledger.scenes', 'ledger.standing', 'ledger.activity', 'ledger.held', 'ledger.scene', 'version.things', 'deploy.sites', 'sync.status', 'search.status', 'files', 'archive', 'config', 'item']) expect(views, id).toContain(id)
+    for (const id of ['home', 'ledger.items', 'ledger.scenes', 'ledger.standing', 'ledger.activity', 'ledger.held', 'ledger.scene', 'version.things', 'deploy.sites', 'sync.status', 'search.status', 'files', 'archive', 'agents', 'config', 'item']) expect(views, id).toContain(id)
     const items = pages.filter((p) => p.link.view === 'item').map((p) => p.link.params.path)
     expect(items).toEqual(expect.arrayContaining(['notes/plan.md', 'sites/shop', 'sites/shop/index.html', '_archive/notes/old.md']))
   })

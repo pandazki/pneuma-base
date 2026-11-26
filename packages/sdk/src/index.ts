@@ -38,6 +38,10 @@ export const KERNEL_COMMAND_NAMES = [
   'secret set',
   'secret list',
   'secret remove',
+  'agent detect',
+  'agent connect',
+  'agent disconnect',
+  'agent list',
 ] as const
 
 /**
@@ -63,6 +67,7 @@ export const RESERVED_PLUGIN_NAMES: readonly string[] = [
   'plugin',
   'skill',
   'secret',
+  'agent',
 ]
 
 /** The name of a secret a plugin declares; it is also a file name under `$PNEUMA_BASE_HOME/secrets/<plugin>/`. */

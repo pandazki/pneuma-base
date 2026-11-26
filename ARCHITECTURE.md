@@ -54,7 +54,7 @@ packages/cli ──▶ packages/viewer ──▶ packages/kernel ◀── packa
 | 包 | 职责 | 不许 |
 | --- | --- | --- |
 | `packages/sdk` | 插件契约（`@pneuma-base/sdk`）：全部类型、契约版本 `CONTRACT`、`definePlugin`、`defineCommand`，从命令的参数表生成用法和表单的 `usageOf`、`formOf`，和插件自己造带品牌的值用的 `pluginName`、`instant`、`PLUGIN_NAME`、`SECRET_NAME`，插件不能用的名字 `KERNEL_COMMAND_NAMES`、`RESERVED_PLUGIN_NAMES`，这一版的版本号 `PNEUMA_BASE_VERSION`。另一个入口 `@pneuma-base/sdk/kit` 是插件打进自己包里的库：只新增文件的记录库 `recordStore`、配置文件助手 `configFile`、部署库 `deployPlugin` 和写目标用的 `defineTarget`（第 13 节）。第三个入口 `@pneuma-base/sdk/testkit` 是测试工具和符合性检查（第 5 节「写一个库外的插件」）。库外的插件只依赖它 | 导入内核、命令行、界面或任何插件；含内核的逻辑（内核的工具经上下文的 `tools` 给，库也只用 `tools`） |
-| `packages/kernel` | 打开库、解析配置、识别行动者和会话、六个动词的管线、授权的门、事件、认知的拼装、技能的生成、装载和安装库外的插件、本机的密钥。依赖 sdk，并把它原样再导出 | 依赖 sdk 以外的任何包；认识任何插件的事实或目录 |
+| `packages/kernel` | 打开库、解析配置、识别行动者和会话、六个动词的管线、授权的门、事件、认知的拼装、技能的生成、接上和断开 agent 产品（产品表）、装载和安装库外的插件、本机的密钥。依赖 sdk，并把它原样再导出 | 依赖 sdk 以外的任何包；认识任何插件的事实或目录 |
 | `packages/plugin-ledger` | 记账与对账：事实、场景、条目、对账、来历、过期、变化，留存（第 10 节） | 读写别的插件的目录；绕过内核的公开接口；导入别的插件 |
 | `packages/plugin-version` | 版本：声明了有版本的东西，每一版都留着（第 11 节） | 同上 |
 | `packages/plugin-sync` | 同步：库和一个目标双向同步，不合并、不丢内容（第 12 节） | 同上 |
@@ -103,7 +103,7 @@ interface AgentFace {
 }
 ```
 
-**会话指回对话。** 会话号来自某个 agent 产品的环境变量时，内核按 `session.ts` 里的产品表找这次会话的对话文件，找到了就放进 `session.transcript`：只是一个指针，不复制、也不读里面的内容，只看文件在不在。表里每个产品一行：带会话号的变量、只表示它在跑的变量、怎么找对话：
+**会话指回对话。** 会话号来自某个 agent 产品的环境变量时，内核按产品表（`products.ts`，见第 6 节「接上一个 agent」）找这次会话的对话文件，找到了就放进 `session.transcript`：只是一个指针，不复制、也不读里面的内容，只看文件在不在。表里关于会话的是每个产品带会话号的变量、只表示它在跑的变量、怎么找对话；没见过会话变量的产品（Claude Desktop、Cursor）不从环境认：
 
 | 产品 | 会话号 | 对话文件 | 接着聊 |
 | --- | --- | --- | --- |
@@ -346,16 +346,16 @@ type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems: string
 
 | | agent 面 | 主人面 |
 | --- | --- | --- |
-| 能做什么 | 六个动词；看管理界面的每一页（`show`），管理的页除外 | 建库、改配置、装卸插件、发和撤授权、生成技能、清留存、清归档、丢数据；在这台机器上装卸插件、设密钥 |
+| 能做什么 | 六个动词；看管理界面的每一页（`show`），管理的页除外 | 建库、改配置、装卸插件、发和撤授权、生成技能、接上和断开 agent、清留存、清归档、丢数据；在这台机器上装卸插件、设密钥 |
 | 破坏性 | 没有 | 有。要人在终端当面确认；在 agent 的会话里被拒绝 |
-| 只给主人 | 不适用 | 不丢数据、但替主人做决定的命令（对外发布、设部署和同步的目标、设嵌入器、发撤授权、装卸插件、取回留存、设密钥）：在 agent 的会话里被拒绝，不用确认 |
+| 只给主人 | 不适用 | 不丢数据、但替主人做决定的命令（对外发布、设部署和同步的目标、设嵌入器、发撤授权、接上和断开 agent、装卸插件、取回留存、设密钥）：在 agent 的会话里被拒绝，不用确认 |
 | 留痕 | 每次调用之后发一个事件 | 同样。主人可以关 |
 
 「在 agent 的会话里」的判断：环境里有 agent 产品的会话变量，或调用带着授权，或行动者被 `--as` 写成了一个 agent。拒绝的话说出是哪一样让它这样判的。这是第二级的拦法，和认知里的「不该做」一起构成默认强度。让 agent 对库的目录没有直接写权限是第三级，靠 agent 产品自己的沙箱，是装的时候可选的。
 
 ### 主人面的一个入口
 
-主人面的命令都是数据：名字、一句说明、参数表、是否破坏性、是否只给主人、是否只读（可选）、是否配置（可选）、`run`。内核自己的十二条在 `owner-commands.ts`，都带参数表，和插件的 `OwnerCommand` 同形，只是 `run` 收到整个主人调用（上下文、插件表、环境、是否带授权、怎么问当面确认、怎么读主人另给的值；本机的家目录就是上下文的 `home`），并可交回重开的库。其中六条要一个库（`grant issue`、`grant revoke`、`plugin add`、`plugin remove`、`skill install`、`archive purge`）；六条只动这台机器的 `$PNEUMA_BASE_HOME`，有没有库都能跑（`plugin install`、`plugin uninstall`、`plugin list`、`secret set`、`secret list`、`secret remove`）：没有库时上下文的 `library` 是 null，没有插件可告诉，不发事件；带着库（比如从界面）时照常在单一出口发事件。
+主人面的命令都是数据：名字、一句说明、参数表、是否破坏性、是否只给主人、是否只读（可选）、是否配置（可选）、`run`。内核自己的十六条在 `owner-commands.ts` 和 `agent-commands.ts`，都带参数表，和插件的 `OwnerCommand` 同形，只是 `run` 收到整个主人调用（上下文、插件表、环境、是否带授权、怎么问当面确认、怎么读主人另给的值；本机的家目录就是上下文的 `home`），并可交回重开的库。其中七条要一个库（`grant issue`、`grant revoke`、`plugin add`、`plugin remove`、`skill install`、`archive purge`、`agent connect`）；九条只动这台机器，有没有库都能跑（`plugin install`、`plugin uninstall`、`plugin list`、`secret set`、`secret list`、`secret remove`、`agent detect`、`agent list`、`agent disconnect`）：没有库时上下文的 `library` 是 null，没有插件可告诉，不发事件；带着库（比如从界面）时照常在单一出口发事件。
 
 - `ownerFace.commands(插件表)` 列出可用的命令：先内核的，后各插件的，按配置次序；名字已被占的不再列，插件盖不住内核的命令。命令行的 `--help` 用它列出主人命令：带 `--library` 或 `@<授权名>` 时是那个库的，否则是内核的。
 - 门：破坏性的和只给主人的，在 agent 的会话里都以 `agent-session` 拒绝；然后按参数表核对；破坏性的再要当面确认。终端里只有输入 `yes` 才算确认；别的回答、输入结束（Ctrl+D）、不在终端里，都以 `not-confirmed` 拒绝。内核自己的命令里，`archive purge` 是破坏性的，`skill install` 和 `plugin list` 谁都能跑，其余只给主人。
@@ -386,6 +386,7 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
 | `home` | 是，第一个 | 首页，界面打开时的那一页。先是「等你决定」：每个插件 `onAsks` 给的事（`asks` 块），由插件的认知段标题署名，没有就是一句灰字；然后按配置次序放每个插件标了 `home` 的视图的块，默认参数。一个都没有时，一句话说明（没装插件，或装着的插件没给首页添内容），下面是库里的文件 |
 | `files` | 是 | 库的一个文件夹，参数 `dir`。先文件夹，后东西；内核的文件和归档区不列。文件夹链到下一层；文件和带标记的目录各是一行，链到 `item` 面板，带标记的目录有自己的图标和文件数，不往里走。「从这台机器放进来」把一个文件以带进来的放入（页给不了标准输入，目录从命令行放） |
 | `archive` | 是 | 归档区里的每样东西和它原来的路径，带标记的目录是一行，各带「取回」；整区一个「清空归档区」，先问 |
+| `agents` | 是 | 只给主人。接上的 agent：产品、授权、方式、区域、权限、状态、写在哪，各带「断开」；这台机器上找到、还没接上的产品，各带「接上」，表单问区域和只读；没找到的产品和看了哪里；接上的 agent 能做什么，分三组，用和 MCP 服务同一条规则从命令表生成：自己能做的（动词，和既不破坏也不只给主人的命令，就是 MCP 服务的工具）、要你来做的（只给主人的命令）、红线（破坏性的命令）。`show agents` 印的是同一页 |
 | `config` | 是 | 只给主人。库的位置；这个 pneuma-base 认识的每个插件和库里装了的每个插件，各带版本和一句说明（没有 `summary` 用认知段的标题，同 `plugin list`），装了的带「卸下」，没装的带「装上」，装到这台机器上来的另带「从这台机器卸掉」，插件不肯卸时提示里带「仍然卸下」；「从目录装一个插件到这台机器」；授权，各带为 Claude 或 Codex 生成技能（目录可以写 `~/…`）、撤回；发授权；Codex 要把库加进可写目录的提示；已装插件声明的密钥，各带设没设、「设」和「删掉」。这些按钮的表单都由内核命令的参数表生成 |
 | `item` | 否 | 一样东西，参数 `path`，开在右侧面板，次序固定：先一行说它是什么和一句状态（`文件 · 2.1 KB`，已归档的、是谁的一部分的跟在后面）；每个插件的 `onItemView` 给的一节；「文件」一节是它自己的事实（路径、种类、文件数、大小、改于、指纹）；带标记的目录接着列出里面的文件，各链到自己的 `item`，文件接着是可以折起来的预览。带标记的目录里面的文件说明它是谁的一部分，不给归档。路径上没有东西时说明不在，插件的节照常给。最后是一行动作：归档或取回，没归档的还能挪到别处，然后是各插件节的 `actions`。`_archive/…` 的东西被取回后，面板跟到它原来的路径 |
 
@@ -480,6 +481,36 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
 - **协议**：新旧两代都接。2026-07-28 版每个请求在 `_meta` 里带版本，有 `server/discover`，通知经 `subscriptions/listen` 来，可缓存的结果写 `ttlMs: 0` 和 `cacheScope: 'private'`（库随时在变，答复因授权而异）；更早的版本以 `initialize` 开头，`notifications/initialized` 之后的通知直接发。2026-07-28 版说一条连接不算会话，这里按上面定的仍把一次连接记成一个场景。
 - 协议是自己写的（`src/mcp/server.ts`，约两百五十行），没有用官方的 SDK：命令行的包文件里没有任何第三方依赖，SDK 的服务端连同它要的 zod 解开约 14 MB，工具的输入又是从参数表生成的 JSON Schema，用 SDK 也只剩它的低层接口。传输是参数（`Transport`：收到的每一行，和发一条的办法），HTTP 跟着应用来。仓库的测试用官方 SDK 的客户端（只是开发依赖）分别以两代协议连上它。
 
+### 接上一个 agent
+
+主人在应用里的主路是：选一个文件夹，把自己的 agent 一个一个接上，开始干活。接上是一条主人命令，断开是它的逆，界面的按钮就是这两条命令：
+
+- `agent detect`：这台机器上有哪些 agent 产品、各能怎么接上。只看程序和文件夹在不在。
+- `agent connect <产品> [--name <授权名>] [--area <子文件夹>] [--read-only] [--via skill|mcp]`：先发授权（缺省以产品命名；这个库里同名、给同一个产品、区域和权限也一样的授权接着用，撞名的拒绝，说用 `--name`），再按产品能用的方式写：读技能的，把技能装进它读技能的目录；不读的，把 MCP 服务 `pneuma-base @<授权名> mcp` 登记进它的配置。两种都行时装技能，`--via` 改。先看能不能写、再发授权，所以拒绝时什么都没留下。答复说写了什么、写在哪、在那个产品里接着做什么（重启它，或对它说一句话），Codex 另有把库加进可写目录的提示。
+- `agent disconnect <授权名> [--keep-grant]`：拿掉接上时写的，再撤回授权。它只动这台机器，不用指明库；授权在记录里的那个库里撤回，作为那个库的一次操作发事件。
+- `agent list`：接上的 agent，各自的产品、授权、方式、区域、只读与否，接上时写的还在不在，条目里的 node 和命令行还在不在。
+
+四条都只给主人，不是 MCP 服务的工具。`grant issue`、`grant revoke`、`skill install` 原样留着，接上就是用它们拼出来的。
+
+**产品表**（`products.ts`）是关于每个 agent 产品知道的一切的唯一一处：怎么认出它的会话、找它的对话（第 4 节），怎么看出它装在这台机器上，从哪个目录读技能，MCP 服务登记在哪个文件、什么格式、哪个键下，还要告诉主人什么。一个产品一行；没在产品自己的文档或它自己的行为上核过的事实不写，这个产品就少一种接法：
+
+| 产品 | 看出装着 | 技能 | MCP 服务 | 核过的 |
+| --- | --- | --- | --- | --- |
+| `claude-code` | PATH 上的 `claude`；`~/.claude` | `~/.claude/skills/` | `~/.claude.json` 的 `mcpServers`，条目带 `"type": "stdio"` | 技能目录和「当前会话里就看得到」按 Claude Code 的文档；MCP 的文件、键和条目的样子按 `claude mcp add --scope user` 在临时家目录里写出的文件；`claude mcp list` 连得上接上写的条目 |
+| `codex` | PATH 上的 `codex`；`~/.codex` | `~/.agents/skills/` | `~/.codex/config.toml` 的 `[mcp_servers.<名字>]`，环境变量在 `[mcp_servers.<名字>.env]` | 技能目录按 Codex 的文档；表的写法按 `codex mcp add` 在临时家目录里写出的文件；`codex mcp get` 读得出接上写的表 |
+| `claude-desktop` | `~/Library/Application Support/Claude` | 不从目录读技能 | 那个目录里 `claude_desktop_config.json` 的 `mcpServers` | MCP 的文档（modelcontextprotocol.io）：位置、键、条目，要完全退出再打开 |
+| `cursor` | `~/.cursor` | `~/.cursor/skills/` | `~/.cursor/mcp.json` 的 `mcpServers`，条目带 `"type": "stdio"` | Cursor 的文档；文档没写它在 PATH 上的程序名，所以只看文件夹 |
+| `antigravity` | — | — | — | 只认会话 |
+
+**写别的程序的文件**是危险的部分，规矩是：
+
+- 接上写了什么记在本机的 `$PNEUMA_BASE_HOME/connections/<授权名>/connection.json`，不在库里：哪个文件、哪个键或哪个文件夹、写的东西的指纹、为它造出来的文件夹、授权的编号。第一次改一个已有的文件之前，原样复制一份到旁边的 `before/`，断开时和记录一起删。目录 `0700`，副本 `0600`：配置文件里可能有密钥。
+- 文件按字改，不经解析器重写（`config-edit.ts`）。JSON 先用 `JSON.parse` 确认读得懂，再在原文里找出对象和成员的位置，在服务那一层的最后加一个成员，缩进和换行照文件自己的，其余每个字节不动，所以数字、键的次序、格式都还是主人的。读不懂的（带注释、最外层不是对象、键重复）不改，拒绝，答复里给要自己粘的那段和先发授权的命令。TOML（Codex）在末尾空一行追加两张表，拿掉时按追加的原文精确匹配。不引 TOML 库：已经写着这个名字、或服务表写成了一行里的表的，不加，同样给那段。
+- 写回时在同一个目录里先写临时名，带原来的权限，再改名；文件是链接时写它指向的那个，链接还是链接。
+- 断开只拿掉自己写的，而且只在它还是写的时候的样子：主人改过的，断开说出来，原样留着。接上之后没人动过那个文件时，断开后的文件和接上前一个字节都不差；接上时造出来的文件和文件夹，空了就删。
+- 条目里的命令写 node 和命令行入口文件此刻的绝对路径（PATH 上的 `node` 就是这个 node 时写 PATH 上的那个：包管理器升级时它不变），环境变量写 `PNEUMA_BASE_HOME`，所以没有 shell 配置的应用也启动得了。哪个不在了，`agent list` 说出来；再接一次换成新的。
+- 接两次，第二次什么都不改；断开两次，第二次安静地说没有这个连接。
+
 **授权**在内核里，只有最小的形状：编号、名字、给谁、哪个区域、读还是读写。没配任何授权时，谁都能用整个库。区域是库里的一个子文件夹。
 
 授权有两处：库的配置里是权威的那份；发给 agent 的那份是它本机的一个小文件，放在 `~/.pneuma-base/grants/<名字>.json`，写着库的位置和授权编号。agent 用 `pneuma-base @<名字> <动词>` 调用，一个名字同时定下是哪个库、是谁。这个文件不是库的状态，丢了重新生成。
@@ -520,6 +551,7 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
 ```
 $PNEUMA_BASE_HOME/
   grants/<名字>.json          发给 agent 的授权副本
+  connections/<授权名>/        agent connect 写进别的程序的东西的记录，和改之前那份文件的副本（before/）
   plugins/<名字>/              装到这台机器上的插件：index.js、它导入的文件、可选的 ui/
   secrets/<插件名>/<密钥名>     插件的凭证，只有用户能读，不进任何库
   cache/<库的 id>/<插件名>/    插件的缓存，删了能重建

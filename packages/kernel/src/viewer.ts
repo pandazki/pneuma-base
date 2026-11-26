@@ -3,11 +3,13 @@
 import { readdir } from 'node:fs/promises'
 import { join, posix } from 'node:path'
 import { fileFacts } from './agent.js'
+import { agentsPage } from './agents-page.js'
 import { asksOf } from './asks.js'
 import { callableIn, checkBlocks, checkFilters, checkRefresh, type Callable } from './blocks.js'
 import { exists } from './files.js'
 import { bundleFiles, enclosingBundle, kindAt, listThings, thingAt } from './things.js'
-import { codexHint, KERNEL_COMMANDS } from './owner-commands.js'
+import { KERNEL_COMMANDS } from './owner-commands.js'
+import { codexHint } from './products.js'
 import { agentSign, ownerOnlyRefusal, OWNER_DECIDES, type Env } from './session.js'
 import type { KernelCommandName } from './claims.js'
 import { machineDirOf } from './plugin-table.js'
@@ -506,6 +508,7 @@ const KERNEL_VIEWS: readonly { decl: ViewDecl; page: KernelPage }[] = [
   { decl: { id: 'home', title: '首页', icon: 'house', nav: true, filters: [] }, page: homePage },
   { decl: { id: 'files', title: '文件', icon: 'folder', nav: true, filters: [] }, page: filesPage },
   { decl: { id: 'archive', title: '归档区', icon: 'archive', nav: true, filters: [] }, page: archivePage },
+  { decl: { id: 'agents', title: 'Agent', icon: 'users', nav: true, filters: [], ownerOnly: true }, page: agentsPage },
   { decl: { id: 'config', title: '配置', icon: 'settings', nav: true, filters: [], ownerOnly: true }, page: configPage },
   { decl: { id: 'item', title: '一样东西', icon: 'file', nav: false, filters: [] }, page: itemPage },
 ]

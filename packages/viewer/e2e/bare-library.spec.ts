@@ -15,13 +15,13 @@ function bareLibrary(pb: { run(args: string[]): unknown }): string {
   return lib
 }
 
-test('a bare library: three pages, folders, text and image preview, archive and take back', async ({ page, pb }) => {
+test('a bare library: four pages, folders, text and image preview, archive and take back', async ({ page, pb }) => {
   const lib = bareLibrary(pb)
   const { url } = await pb.view(lib)
   await page.goto(url)
 
   await expect(page.getByRole('heading', { level: 1, name: '首页' })).toBeVisible()
-  expect(await navTitles(page)).toEqual(['首页', '文件', '归档区', '配置'])
+  expect(await navTitles(page)).toEqual(['首页', '文件', '归档区', 'Agent', '配置'])
   await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '文件' }).click()
   await expect(page.getByRole('heading', { level: 1, name: '文件' })).toBeVisible()
 

@@ -183,15 +183,15 @@ describe('the file endpoint (C8)', () => {
 })
 
 describe('a library with no plugin over HTTP (C1)', () => {
-  it('has the files, archive and config pages in the navigation, each shown', async () => {
+  it('has the files, archive, agents and config pages in the navigation, each shown', async () => {
     const lib = await library()
     lib.write('a.md', 'a')
     const server = await serve(lib.root)
     const state = (await http(server, '/api/state')).json()
     expect(state.library.root).toBe(lib.root)
     expect(state.library.shown).toBe(lib.root) // not under the home directory: as it is
-    expect(state.views.filter((v: any) => v.nav).map((v: any) => v.id)).toEqual(['home', 'files', 'archive', 'config'])
-    for (const view of ['home', 'files', 'archive', 'config']) expect((await http(server, `/api/view?view=${view}`)).json()).toMatchObject({ outcome: 'shown' })
+    expect(state.views.filter((v: any) => v.nav).map((v: any) => v.id)).toEqual(['home', 'files', 'archive', 'agents', 'config'])
+    for (const view of ['home', 'files', 'archive', 'agents', 'config']) expect((await http(server, `/api/view?view=${view}`)).json()).toMatchObject({ outcome: 'shown' })
     expect((await http(server, '/api/view?view=item&path=a.md')).json()).toMatchObject({ outcome: 'shown', title: 'a.md' })
     expect((await http(server, '/api/view?view=nope')).json()).toMatchObject({ outcome: 'no-such-view' })
   })
@@ -316,11 +316,11 @@ describe('the view slot over HTTP (C2)', () => {
     const table = new Map([['page', page]])
     const server = await serve(lib.root, { table, home: lib.home })
     const navOf = async () => (await http(server, '/api/state')).json().views.filter((v: any) => v.nav).map((v: any) => v.id)
-    expect(await navOf()).toEqual(['page.one', 'home', 'files', 'archive', 'config'])
+    expect(await navOf()).toEqual(['page.one', 'home', 'files', 'archive', 'agents', 'config'])
     expect((await http(server, '/api/view?view=page.one')).json()).toMatchObject({ outcome: 'shown', blocks: [{ text: 'hello from page' }], problems: [] })
     const removed = await http(server, '/api/call', { body: { call: { face: 'owner', command: 'plugin remove', args: { positional: ['page'], flags: {} } }, confirmed: false } })
     expect(removed.json()).toMatchObject({ tone: 'good' })
-    expect(await navOf()).toEqual(['home', 'files', 'archive', 'config'])
+    expect(await navOf()).toEqual(['home', 'files', 'archive', 'agents', 'config'])
     expect((await http(server, '/api/view?view=page.one')).json()).toMatchObject({ outcome: 'no-such-view' })
   })
 

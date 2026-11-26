@@ -3,16 +3,19 @@ import { randomUUID } from 'node:crypto'
 import { rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { said, takenBy, type KernelCommandName } from './claims.js'
+import { agentCommands } from './agent-commands.js'
+import { said, takenBy } from './claims.js'
 import { skillText } from './cognition.js'
 import { exists, writeAtomic } from './files.js'
 import { installDir, loadDir, machineDirOf, machinePlugins, machinePluginsDir, uninstallDir, whyNotLoaded } from './plugin-table.js'
 import { listThings } from './things.js'
 import { GRANT_NAME, readGrantFile, removeGrantFile, writeGrantFile } from './grants.js'
+import { command, done, refused, type KernelCommand } from './kernel-command.js'
 import { saveConfig } from './library.js'
-import type { LibraryCall, OwnerCall } from './owner.js'
+import type { OwnerCall } from './owner.js'
 import { ARCHIVE_DIR, parseLibraryPath, regionOf } from './paths.js'
 import { eachPlugin, messageOf, pluginContext } from './pipeline.js'
+import { codexHint } from './products.js'
 import { readSecret, removeSecret, SECRET_LIMIT, secretNames, secretsDir, writeSecret } from './secrets.js'
 import {
   formOf,
@@ -23,10 +26,6 @@ import {
   type GrantId,
   type Library,
   type LibraryPath,
-  type OwnerAnswer,
-  type OwnerParams,
-  type OwnerValues,
-  type ParamValues,
   type Plugin,
   type PluginContext,
   type PluginName,
@@ -35,102 +34,100 @@ import {
   type SecretDecl,
 } from '@pneuma-base/sdk'
 
-export type Outcome = { answer: OwnerAnswer; library?: Library; problems?: PluginProblem[] }
-
-type KernelBase = {
-  readonly name: KernelCommandName
-  readonly summary: string
-  readonly params: OwnerParams
-  readonly destructive: boolean
-  readonly ownerOnly: boolean
-  readonly readOnly?: boolean
-  readonly setup?: boolean
-}
-
-/**
- * Like a plugin's OwnerCommand with `params`, but it runs with the whole owner call and may hand back
- * the reopened library. A `library` command needs one; a `machine` one changes only this machine's
- * `$PNEUMA_BASE_HOME` and runs with a library or without.
- */
-export type KernelCommand = KernelBase &
-  ({ readonly scope: 'library'; run(values: OwnerValues, call: LibraryCall): Promise<Outcome> } | { readonly scope: 'machine'; run(values: OwnerValues, call: OwnerCall): Promise<Outcome> })
-
-/** A kernel command with `run` typed by its `params`; the owner face calls it only with values it checked against them. */
-function command<const P extends OwnerParams>(
-  c: Omit<KernelBase, 'params'> & { readonly params: P } & (
-      | { readonly scope: 'library'; run(values: ParamValues<P>, call: LibraryCall): Promise<Outcome> }
-      | { readonly scope: 'machine'; run(values: ParamValues<P>, call: OwnerCall): Promise<Outcome> }
-    ),
-): KernelCommand {
-  return c as unknown as KernelCommand
-}
-
-const refused = (reason: string, text: string): Outcome => ({ answer: { outcome: 'refused', reason, text } })
-const done = (text: string, data?: unknown, library?: Library, problems: PluginProblem[] = []): Outcome => ({
-  answer: { outcome: 'done', text, ...(data === undefined ? {} : { data }) },
-  ...(library ? { library } : {}),
-  problems,
-})
-
 /** A directory as the person typed it: `~` is the home directory, a relative one is taken from the caller's working directory. */
 const typedDir = (dir: string, cwd: string) => resolve(cwd, dir === '~' || dir.startsWith('~/') ? join(homedir(), dir.slice(1)) : dir)
 
 const PLUGIN = { name: 'plugin', hint: '插件名', required: true } as const
 const REMOVE = { positional: [PLUGIN], flags: [{ name: 'anyway', hint: '插件不肯也卸', kind: 'boolean' }] } as const
 
+export type { KernelCommand, Outcome } from './kernel-command.js'
+
+const grantIssue = command({
+  name: 'grant issue',
+  summary: '发一份授权：给谁、哪个区域、只读还是读写',
+  params: {
+    positional: [{ name: 'name', hint: '授权名', required: true, pattern: GRANT_NAME.source }],
+    flags: [
+      { name: 'agent', hint: '给谁', kind: 'value', required: true },
+      { name: 'area', hint: '子文件夹', kind: 'value' },
+      { name: 'read-only', hint: '只读', kind: 'boolean' },
+    ],
+  },
+  destructive: false,
+  ownerOnly: true,
+  scope: 'library',
+  async run({ name, agent, area: areaInput, 'read-only': readOnly }, call) {
+    const { library } = call.ctx
+    let area: Grant['area'] = null
+    if (areaInput !== null) {
+      const parsed = parseLibraryPath(library.root, areaInput)
+      if (parsed === null || regionOf(parsed) !== 'content') return refused('bad-area', `区域要是库里的一个子文件夹：${areaInput}`)
+      area = parsed
+    }
+    const local = await readGrantFile(call.ctx.home, name)
+    if (local && local.library !== library.root) return refused('grant-name-taken', `本机已有叫 ${name} 的授权，指向另一个库：${local.library}`)
+    const existing = library.config.grants.find((g) => g.name === name)
+    if (existing && (existing.agent !== agent || existing.area !== area || existing.readOnly !== readOnly)) {
+      return refused('grant-exists', `这个库已有叫 ${name} 的授权，给的是 ${existing.agent}。先撤回再发。`)
+    }
+    // Issuing the same grant again keeps its id and rewrites the local copy.
+    const grant: Grant = existing ?? { id: randomUUID() as GrantId, name, agent, area, readOnly }
+    const updated = existing ? library : await saveConfig(library.root, { ...library.config, grants: [...library.config.grants, grant] }, call.table)
+    const file = await writeGrantFile(call.ctx.home, { name: grant.name, library: library.root, grant: grant.id })
+    return done(`已发授权 ${grant.name} 给 ${grant.agent}。本机副本：${file}`, { grant, file }, updated)
+  },
+})
+
+const grantRevoke = command({
+  name: 'grant revoke',
+  summary: '撤回一份授权',
+  params: { positional: [{ name: 'name', hint: '授权名', required: true }] },
+  destructive: false,
+  ownerOnly: true,
+  scope: 'library',
+  async run({ name }, call) {
+    const { library } = call.ctx
+    const grant = library.config.grants.find((g) => g.name === name)
+    if (!grant) return refused('no-such-grant', `这个库没有叫 ${name} 的授权`)
+    const updated = await saveConfig(library.root, { ...library.config, grants: library.config.grants.filter((g) => g.id !== grant.id) }, call.table)
+    const local = await readGrantFile(call.ctx.home, name)
+    if (local?.library === library.root) await removeGrantFile(call.ctx.home, name)
+    return done(`已撤回授权 ${name}。`, { grant }, updated)
+  },
+})
+
+const skillInstall = command({
+  name: 'skill install',
+  summary: '为一个 agent 产品写一份指向说明的技能',
+  params: {
+    positional: [{ name: 'grant', hint: '授权名', required: true }],
+    flags: [
+      { name: 'agent', hint: '给谁', kind: 'value' },
+      { name: 'dir', hint: '放技能的目录', kind: 'value', required: true },
+    ],
+  },
+  destructive: false,
+  ownerOnly: false,
+  scope: 'library',
+  /** Writes `<dir>/pneuma-base-<grant>/SKILL.md`. A relative `--dir` is taken from the caller's working directory; `~` is the home directory. */
+  async run({ grant: grantName, agent: agentInput, dir }, call) {
+    const { library } = call.ctx
+    const grant = library.config.grants.find((g) => g.name === grantName)
+    if (!grant) return refused('no-such-grant', `这个库没有叫 ${grantName} 的授权`)
+    const agent = agentInput ?? grant.agent
+    const folder = join(typedDir(dir, call.ctx.session.cwd), `pneuma-base-${grant.name}`)
+    const file = join(folder, 'SKILL.md')
+    await writeAtomic(file, skillText(grant.name, library.root), folder)
+    const text = `已为 ${agent} 写好技能：${file}`
+    if (agent !== 'codex' && !agent.startsWith('codex-')) return done(text, { file })
+    const hint = codexHint(library.root)
+    return done(`${text}\n${hint}`, { file, hint })
+  },
+})
+
 export const KERNEL_COMMANDS: readonly KernelCommand[] = [
-  command({
-    name: 'grant issue',
-    summary: '发一份授权：给谁、哪个区域、只读还是读写',
-    params: {
-      positional: [{ name: 'name', hint: '授权名', required: true, pattern: GRANT_NAME.source }],
-      flags: [
-        { name: 'agent', hint: '给谁', kind: 'value', required: true },
-        { name: 'area', hint: '子文件夹', kind: 'value' },
-        { name: 'read-only', hint: '只读', kind: 'boolean' },
-      ],
-    },
-    destructive: false,
-    ownerOnly: true,
-    scope: 'library',
-    async run({ name, agent, area: areaInput, 'read-only': readOnly }, call) {
-      const { library } = call.ctx
-      let area: Grant['area'] = null
-      if (areaInput !== null) {
-        const parsed = parseLibraryPath(library.root, areaInput)
-        if (parsed === null || regionOf(parsed) !== 'content') return refused('bad-area', `区域要是库里的一个子文件夹：${areaInput}`)
-        area = parsed
-      }
-      const local = await readGrantFile(call.ctx.home, name)
-      if (local && local.library !== library.root) return refused('grant-name-taken', `本机已有叫 ${name} 的授权，指向另一个库：${local.library}`)
-      const existing = library.config.grants.find((g) => g.name === name)
-      if (existing && (existing.agent !== agent || existing.area !== area || existing.readOnly !== readOnly)) {
-        return refused('grant-exists', `这个库已有叫 ${name} 的授权，给的是 ${existing.agent}。先撤回再发。`)
-      }
-      // Issuing the same grant again keeps its id and rewrites the local copy.
-      const grant: Grant = existing ?? { id: randomUUID() as GrantId, name, agent, area, readOnly }
-      const updated = existing ? library : await saveConfig(library.root, { ...library.config, grants: [...library.config.grants, grant] }, call.table)
-      const file = await writeGrantFile(call.ctx.home, { name: grant.name, library: library.root, grant: grant.id })
-      return done(`已发授权 ${grant.name} 给 ${grant.agent}。本机副本：${file}`, { grant, file }, updated)
-    },
-  }),
-  command({
-    name: 'grant revoke',
-    summary: '撤回一份授权',
-    params: { positional: [{ name: 'name', hint: '授权名', required: true }] },
-    destructive: false,
-    ownerOnly: true,
-    scope: 'library',
-    async run({ name }, call) {
-      const { library } = call.ctx
-      const grant = library.config.grants.find((g) => g.name === name)
-      if (!grant) return refused('no-such-grant', `这个库没有叫 ${name} 的授权`)
-      const updated = await saveConfig(library.root, { ...library.config, grants: library.config.grants.filter((g) => g.id !== grant.id) }, call.table)
-      const local = await readGrantFile(call.ctx.home, name)
-      if (local?.library === library.root) await removeGrantFile(call.ctx.home, name)
-      return done(`已撤回授权 ${name}。`, { grant }, updated)
-    },
-  }),
+  grantIssue,
+  grantRevoke,
   command({
     name: 'plugin add',
     summary: '在这个库里装上一个插件',
@@ -186,34 +183,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       return done(text, undefined, updated, heard.problems)
     },
   }),
-  command({
-    name: 'skill install',
-    summary: '为一个 agent 产品写一份指向说明的技能',
-    params: {
-      positional: [{ name: 'grant', hint: '授权名', required: true }],
-      flags: [
-        { name: 'agent', hint: '给谁', kind: 'value' },
-        { name: 'dir', hint: '放技能的目录', kind: 'value', required: true },
-      ],
-    },
-    destructive: false,
-    ownerOnly: false,
-    scope: 'library',
-    /** Writes `<dir>/pneuma-base-<grant>/SKILL.md`. A relative `--dir` is taken from the caller's working directory; `~` is the home directory. */
-    async run({ grant: grantName, agent: agentInput, dir }, call) {
-      const { library } = call.ctx
-      const grant = library.config.grants.find((g) => g.name === grantName)
-      if (!grant) return refused('no-such-grant', `这个库没有叫 ${grantName} 的授权`)
-      const agent = agentInput ?? grant.agent
-      const folder = join(typedDir(dir, call.ctx.session.cwd), `pneuma-base-${grant.name}`)
-      const file = join(folder, 'SKILL.md')
-      await writeAtomic(file, skillText(grant.name, library.root), folder)
-      const text = `已为 ${agent} 写好技能：${file}`
-      if (agent !== 'codex' && !agent.startsWith('codex-')) return done(text, { file })
-      const hint = codexHint(library.root)
-      return done(`${text}\n${hint}`, { file, hint })
-    },
-  }),
+  skillInstall,
   command({
     name: 'archive purge',
     summary: '清空归档区',
@@ -349,6 +319,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       return done(had ? `已删掉插件 ${plugin} 的密钥 ${name}。` : `插件 ${plugin} 在这台机器上本来就没设密钥 ${name}。`, { plugin, name, removed: had })
     },
   }),
+  ...agentCommands({ grantIssue, grantRevoke, skillInstall }),
 ]
 
 /** A plugin by name and version, as `pager 0.2.0`. */
@@ -399,9 +370,4 @@ async function hear<T>(plugin: Plugin | undefined, call: (p: Plugin, pctx: Plugi
   } catch (error) {
     return { answer: undefined, problems: [{ plugin: plugin.name, message: messageOf(error) }] }
   }
-}
-
-/** What Codex needs before it can write the library from its sandbox. */
-export function codexHint(root: string): string {
-  return `Codex 在沙箱里运行，这个库要是它能写的目录之一，比如：codex --add-dir ${root}`
 }
