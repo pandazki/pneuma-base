@@ -1,7 +1,7 @@
 // What agents read: a thing's timeline as text and as data. Pure.
 import { regionOf, type Instant } from '@pneuma-base/kernel'
 import type { Who } from './facts.js'
-import { latest, type Thing, type Version } from './model.js'
+import { filesOf, latest, type Thing, type Version } from './model.js'
 import type { DiskState } from './versions.js'
 
 export const minute = (at: Instant) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`
@@ -14,7 +14,7 @@ export function aboutVersion(v: Version): string[] {
     ...(v.note ? [`「${v.note}」`] : []),
     ...(v.via === 'outside' ? ['在工具之外改的'] : []),
     ...(v.same !== null ? [`同第 ${v.same} 版`] : []),
-    ...(v.manifest.kind === 'bundle' ? [`${v.manifest.rows.length} 个文件`] : []),
+    ...(v.kept.kind === 'file' ? [] : [`${filesOf(v)} 个文件`]),
     `指纹 ${v.fingerprint.slice(0, 8)}`,
     ...(v.pruned ? ['已清掉，取不回'] : []),
   ]
@@ -55,7 +55,7 @@ export function timelineData(thing: Thing, state: DiskState) {
       via: v.via,
       same: v.same,
       fingerprint: v.fingerprint,
-      files: v.manifest.rows.length,
+      files: filesOf(v),
       pruned: v.pruned,
     })),
   }

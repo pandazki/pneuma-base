@@ -1,6 +1,6 @@
 // Driven through the kernel's faces with an injected confirmation, as a terminal would give: the
 // confirmed prune, the archive purge, and the blocks the UI shows (onItemView, onView).
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   agentFace,
@@ -76,6 +76,28 @@ describe('version prune, confirmed', () => {
     ])
     expect(await owned('version prune', ['a.md'], { keep: ['5'] })).toMatchObject({ outcome: 'done', text: 'a.md 留着的只有 2 版，没有要清的。' })
     expect(await owned('version prune', ['a.md'], {})).toMatchObject({ outcome: 'refused', reason: 'usage' })
+  })
+})
+
+describe('version prune and what a crash left', () => {
+  it('removes copies left in pending/ more than an hour old, and says so only when it removed some', async () => {
+    const { root, owned, put, declare } = await library()
+    await put('one', 'a.md')
+    await declare('a.md')
+    await put('two', 'a.md')
+    await put('three', 'a.md')
+    const pending = join(root, '.pneuma-base/version/pending')
+    writeTree(pending, { old: 'x', 'tree/index.html': 'y', fresh: 'z' })
+    const long = new Date('2026-11-25T00:00:00.000Z')
+    for (const name of ['old', 'tree/index.html', 'tree']) utimesSync(join(pending, name), long, long)
+    // The operations here are dated 2026-11-25T02:…, so a copy made now is not an hour old for them.
+    const pruned = await owned('version prune', ['a.md'], { keep: ['2'] })
+    expect(pruned).toMatchObject({ outcome: 'done', data: { pruned: [1], leftovers: 2 } })
+    expect((pruned as any).text).toContain('2 份中断时留下的复制')
+    expect(Object.keys(readTree(pending))).toEqual(['fresh'])
+    const again = await owned('version prune', ['a.md'], { keep: ['1'] })
+    expect(again).toMatchObject({ outcome: 'done', data: { pruned: [2], leftovers: 0 } })
+    expect((again as any).text).not.toContain('中断')
   })
 })
 
@@ -190,3 +212,48 @@ describe('the page of versioned things', () => {
     expect(await rows('show')).toContainEqual(['_archive/c.md', '1 版', '已归档'])
   })
 })
+
+/** The plugin's context, with every call that reads a thing's content counted: a copy from a place, a fingerprint, a read. */
+function counting(ctx: PluginContext): { ctx: PluginContext; reads: string[] } {
+  const reads: string[] = []
+  const READS = new Set(['write', 'content', 'read'])
+  const wrap = <T extends object>(store: T, area: string): T =>
+    new Proxy(store, {
+      get(target, key) {
+        const value = Reflect.get(target, key) as unknown
+        if (key === 'own') return wrap(value as object, 'own')
+        if (typeof value !== 'function' || !READS.has(String(key))) return value
+        return (...args: unknown[]) => {
+          reads.push(`${area}.${String(key)} ${String(args[0])}`)
+          return (value as (...a: unknown[]) => unknown).apply(target, args)
+        }
+      },
+    })
+  return { ctx: { ...ctx, tools: { ...ctx.tools, storage: wrap(ctx.tools.storage, 'content') } }, reads }
+}
+
+describe('check over many declared things', () => {
+  it('reads content only for the things whose token changed: none when nothing did, one new version for the one changed', async () => {
+    const { root, put, declare, plugin, owned } = await library()
+    const names = Array.from({ length: 40 }, (_, i) => `notes/n${String(i).padStart(2, '0')}.md`)
+    for (const name of names) {
+      await put(name, name)
+      await declare(name)
+    }
+    const check = async () => {
+      const counted = counting(plugin())
+      const sections = (await version.onCheck?.({ since: null, includeArchived: false }, counted.ctx)) ?? []
+      return { sections, reads: counted.reads }
+    }
+    expect(await check()).toEqual({ sections: [], reads: [] })
+
+    writeFileSync(join(root, 'notes/n07.md'), 'by hand')
+    const changed = await check()
+    expect(changed.sections.map((s) => s.data)).toEqual([{ recorded: [{ path: 'notes/n07.md', version: 2 }], missing: [] }])
+    expect(changed.reads).toHaveLength(1)
+    expect(await check()).toEqual({ sections: [], reads: [] })
+    const counts = await Promise.all(names.map(async (name) => ((await owned('version list', [name])) as any).data.versions.length))
+    expect(counts.filter((n) => n !== 1)).toEqual([2])
+  })
+})
+
