@@ -174,6 +174,22 @@ impl LocalFolder {
         facets::describe(&at, found.count, wanted, None)
     }
 
+    /// What `again` finds once the change `found` shows is past the file system's racy window,
+    /// so the token described vouches for itself. The wait is at most 25 ms, and in a batch the
+    /// first wait mostly covers the rest; on a file system whose clock is coarser than that, the
+    /// token says it is racy instead.
+    pub fn once_settled(
+        &self,
+        found: Located,
+        again: impl FnOnce() -> Result<Option<Located>, Failure>,
+    ) -> Result<Option<Located>, Failure> {
+        if self.settle(&found.stat) {
+            again()
+        } else {
+            Ok(Some(found))
+        }
+    }
+
     /// The record area is not content, and noise is neither reported nor entered.
     pub fn admit(&self, place: &Place, noise: &Noise) -> Result<(), Failure> {
         if place.segments().first() == Some(&RECORD_AREA) {
@@ -232,6 +248,10 @@ impl LocalFolder {
                     let found = self
                         .admit(place, &noise)
                         .and_then(|()| self.locate(&mut walker, place));
+                    let found = found.and_then(|found| match found {
+                        Some(found) => self.once_settled(found, || self.locate(&mut walker, place)),
+                        None => Ok(None),
+                    });
                     match found {
                         Ok(Some(found)) => Seen::Present(self.describe(place, &found, &req.facets)),
                         Ok(None) => Seen::Absent(place.as_str().to_owned()),
@@ -333,7 +353,11 @@ impl LocalFolder {
             Ok(None) => Verdict::Gone(place.clone()),
             Ok(Some(found)) => match self.still(walker, place, &found, &item.token) {
                 Ok(true) => Verdict::Same,
-                Ok(false) => Verdict::Changed(self.describe(place, &found, &[])),
+                Ok(false) => match self.once_settled(found, || self.locate(walker, place)) {
+                    Ok(Some(found)) => Verdict::Changed(self.describe(place, &found, &[])),
+                    Ok(None) => Verdict::Gone(place.clone()),
+                    Err(failure) => Verdict::Failed(failure),
+                },
                 Err(failure) => Verdict::Failed(failure),
             },
         }
@@ -398,7 +422,13 @@ impl LocalFolder {
         for index in start..end {
             let name = names.get(index);
             // An entry removed since the listing is simply not there any more.
-            if let Some(found) = locate_at(dir, name).map_err(unreadable)? {
+            let found = match locate_at(dir, name).map_err(unreadable)? {
+                Some(found) => {
+                    self.once_settled(found, || locate_at(dir, name).map_err(unreadable))?
+                }
+                None => None,
+            };
+            if let Some(found) = found {
                 let place = req.place.child(name);
                 let mut entry = self.describe(&place, &found, &req.facets);
                 entry.held = holds.covers(&place);

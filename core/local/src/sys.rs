@@ -93,9 +93,12 @@ impl Stat {
         self.flags & DATALESS != 0
     }
 
-    /// The latest moment the place's state changed, as its own clock says.
+    /// The latest moment the place's state changed: its change time, which every change to its
+    /// bytes or metadata sets from this machine's clock and no caller can set. (A modification
+    /// time dated in the future, as syncs and `touch` leave, says nothing about the next change,
+    /// which moves the change time anyway.)
     pub fn last_change_ns(&self) -> i128 {
-        self.mtime_ns.max(self.ctime_ns)
+        self.ctime_ns
     }
 }
 
@@ -356,7 +359,6 @@ pub fn open_file_at(dir: RawFd, name: &CStr) -> Result<std::fs::File, Errno> {
     owned(fd).map(std::fs::File::from)
 }
 
-/// Makes a file below `dir` that must not exist yet, for writing.
 /// Hands a file's data to the drive with a plain `fsync(2)`. The standard library's `sync_data`
 /// is `F_FULLFSYNC` on macOS, which also waits for the drive's own cache: about 5 ms a file.
 pub fn fsync(file: &std::fs::File) -> std::io::Result<()> {
@@ -368,6 +370,7 @@ pub fn fsync(file: &std::fs::File) -> std::io::Result<()> {
     }
 }
 
+/// Makes a file below `dir` that must not exist yet, for writing.
 pub fn create_file_at(dir: RawFd, name: &CStr, mode: u32) -> Result<std::fs::File, Errno> {
     let flags = libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC;
     // SAFETY: `dir` is an open descriptor and `name` a valid C string.

@@ -293,12 +293,9 @@ impl LocalFolder {
 
     /// What is at `name` once this write's own change has settled.
     fn settled(&self, parent: RawFd, name: &str) -> Result<Option<Located>, Failure> {
-        let found = locate_at(parent, name).map_err(unreadable)?;
-        match &found {
-            Some(located) if self.settle(&located.stat) => {
-                locate_at(parent, name).map_err(unreadable)
-            }
-            _ => Ok(found),
+        match locate_at(parent, name).map_err(unreadable)? {
+            Some(found) => self.once_settled(found, || locate_at(parent, name).map_err(unreadable)),
+            None => Ok(None),
         }
     }
 
