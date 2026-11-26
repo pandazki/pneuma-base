@@ -754,7 +754,7 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `params` | `target set` 在 `--kind` 之后的开关，一份 `FlagParam[]`。命令的参数表、帮助、页面上的表单和核对都从这里来；有几种目标时，选定的那种必填的开关才必填 |
 | `secrets` | 它读的密钥，可以标 `optional: true`。部署库把它们声明成插件的密钥，`secret set` 和配置页就认得 |
 | `views` | 可选，目标自己的页，每项 `{ name, title, icon }`。每页是导航里的一项，排在部署库的页之后，视图编号 `<插件名>.<name>`；`name` 用小写字母、数字、连字符，不得是 `sites` |
-| `configure(值, ctx)` | 把核过的值变成要存的配置（一个 JSON 对象），或答 `{ ok: false, reason, text }` |
+| `configure(值, ctx)` | 把核过的值变成要存的配置（一个 JSON 对象），或答 `{ ok: false, reason, text }`。可以带 `note`：一句给主人的话，`target set` 的答复用它代替部署库对没设的密钥的提醒，用在凭据能从几处来的目标上，说这次用哪一处、都没有时运行什么 |
 | `open(配置, env)` | 在边界上解析存下的配置，交回这一次钩子或命令用的 `Target`；读不懂就抛错 |
 
 `env` 是 `{ ctx, scratch, plugin, secret }`：`ctx` 是这次的上下文，`scratch` 是库外给它用的临时目录，`plugin` 是插件名（它的命令以此开头），`secret(名字)` 读主人在这台机器上设的密钥。必需的密钥没设时 `secret` 以一句说明用哪条命令设的错误拒绝，开关的答复里是 `publish-failed` 带这句话；可选的没设时读出 `null`，类型是 `string | null`。要密钥的目标从不在开关里要它。
@@ -769,6 +769,7 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `identify(文件)` | 可选，内容的编号；没有就用内核的指纹 |
 | `serving(站点名, ask)` | 可选，问的这些站点它现在真在服务什么：按站点答 `{ content, url, detail? }`，没在服务的 `content` 为 `null`，答复里没有的站点它既不服务也不知道。`detail` 是目标自己类型的其余信息，交给它的视图。有 `serving`，部署库按目标报的对账，`<名字> sync` 修得好断在一半的发布和在目标那边被删掉的站点；它抛错时状态是「不知道」，什么都不做。没有它，按插件自己的记录对账 |
 | `view` | 可选，往部署库的页、目标自己的页和条目面板里加东西，见下表 |
+| `close()` | 可选，这个 `Target` 为之打开的钩子、命令或视图结束时调一次，失败了也调。登录服务的目标在这里退出登录；它抛的错不影响答复 |
 
 `serving` 什么时候被问：
 

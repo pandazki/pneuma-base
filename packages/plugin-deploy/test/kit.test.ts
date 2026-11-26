@@ -674,4 +674,72 @@ describe('what a target shows', () => {
     await l.put(P, 'v2')
     expect(tokens).toEqual([null, 'tok-1'])
   })
+
+  it('lets configure say where the credentials come from, in place of the reminder of unset secrets', async () => {
+    const adapter = defineTarget({
+      kind: 'keyed',
+      label: '要钥匙的目标',
+      params: [],
+      secrets: [{ name: 'key', description: '账户的钥匙', optional: true }],
+      configure: async () => ({ ok: true, config: {}, note: '钥匙从凭据文件读。' }),
+      open: () => ({ key: 'keyed', label: '要钥匙的目标', publish: async (site) => ({ url: url(site) }), remove: async () => {} }),
+    })
+    const l = await library(deployPlugin('keyed', adapter), true)
+    expect(await l.cmd('keyed target set')).toMatchObject({ outcome: 'done', text: '部署目标已设为 要钥匙的目标。钥匙从凭据文件读。' })
+  })
+})
+
+describe('a target opened for a run', () => {
+  /** A target that counts how often it is opened and closed; `fail`: publishing throws; `badClose`: closing throws. */
+  function countingTarget() {
+    const n = { opened: 0, closed: 0, fail: false, badClose: false }
+    const adapter = defineTarget({
+      kind: 'counted',
+      label: '数开关的目标',
+      params: [],
+      configure: async () => ({ ok: true, config: {} }),
+      open: () => {
+        n.opened++
+        return {
+          key: 'counted',
+          label: '数开关的目标',
+          async publish(site) {
+            if (n.fail) throw new Error('目标坏了')
+            return { url: url(site) }
+          },
+          async remove() {},
+          async close() {
+            n.closed++
+            if (n.badClose) throw new Error('退出登录失败')
+          },
+        }
+      },
+    })
+    return { n, adapter }
+  }
+
+  it('is closed once when its hook, command or view ends, also when publishing failed or closing throws', async () => {
+    const { n, adapter } = countingTarget()
+    const plugin = deployPlugin('counted', adapter)
+    const l = await library(plugin, true)
+    const balanced = (step: string) => expect([n.opened, n.closed], step).toEqual([n.opened, n.opened])
+    expect(await l.cmd('counted target set')).toMatchObject({ outcome: 'done' })
+    balanced('target set')
+    await l.put(P, 'v1')
+    await l.say(P)
+    balanced('put, say')
+    expect(await l.cmd('counted on', [P])).toMatchObject({ outcome: 'done' })
+    balanced('on')
+    n.fail = true
+    expect(await l.put(P, 'v2')).toMatchObject({ outcome: 'accepted' })
+    balanced('a put whose publish failed')
+    n.fail = false
+    n.badClose = true
+    expect(await l.cmd('counted sync')).toMatchObject({ outcome: 'done' })
+    balanced('a sync whose close threw')
+    await plugin.onView?.({ view: 'counted.sites', params: {} }, l.pctx())
+    await plugin.onItemView?.(P, l.pctx())
+    balanced('the page and the item panel')
+    expect(n.opened).toBeGreaterThan(5)
+  })
 })
