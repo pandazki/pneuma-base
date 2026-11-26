@@ -2,7 +2,7 @@
 // ledger-design.md sections 1 and 2.
 import { randomBytes } from 'node:crypto'
 import { link, mkdir, open, readdir, readFile, unlink } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import type { Actor, Context, Fingerprint, Instant, LibraryPath } from '@pneuma-base/kernel'
 
 export type ItemId = string & { readonly __brand: 'ItemId' }
@@ -107,22 +107,26 @@ export async function writeFacts(dir: string, facts: Fact[]): Promise<void> {
   }
 }
 
+/** The facts of each file read in this process, by its path: a fact file is written once and never changed. */
+const parsedFiles = new Map<string, Fact[]>()
+
 /** Every fact on disk, skipping temporary files and lines that are not facts. Duplicates by id kept once. */
 export async function readFacts(dir: string): Promise<Fact[]> {
   const root = join(dir, FACTS_DIR)
   const scenes = await readdir(root).catch(() => [] as string[])
+  const listed = await Promise.all(scenes.map(async (scene) => (await readdir(join(root, scene)).catch(() => [] as string[])).map((name) => join(root, scene, name))))
+  const files = listed.flat().filter((file) => !basename(file).startsWith('.') && file.endsWith('.jsonl'))
+  const read = await Promise.all(
+    files.map(async (file) => {
+      const known = parsedFiles.get(file)
+      if (known !== undefined) return known
+      const facts = (await readFile(file, 'utf8')).split('\n').flatMap((line) => parseFact(line) ?? [])
+      parsedFiles.set(file, facts)
+      return facts
+    }),
+  )
   const byId = new Map<string, Fact>()
-  for (const scene of scenes) {
-    const names = await readdir(join(root, scene)).catch(() => [] as string[])
-    for (const name of names) {
-      if (name.startsWith('.') || !name.endsWith('.jsonl')) continue
-      const text = await readFile(join(root, scene, name), 'utf8')
-      for (const line of text.split('\n')) {
-        const parsed = parseFact(line)
-        if (parsed && !byId.has(parsed.id)) byId.set(parsed.id, parsed)
-      }
-    }
-  }
+  for (const parsed of read.flat()) if (!byId.has(parsed.id)) byId.set(parsed.id, parsed)
   return [...byId.values()]
 }
 

@@ -4,6 +4,7 @@ import { writableContent } from './access.js'
 import { discard, moveInto, regularFile, replaceWith, scratchName } from './files.js'
 import { abs, archivedPath, canonical, originalPath, parseLibraryPath, regionOf, scratchDir } from './paths.js'
 import { eachPlugin, notesOf } from './pipeline.js'
+import { whilePutting } from './putting.js'
 import { copyBundle, enclosingBundle, fingerprintOf, kindAt, markBundle } from './things.js'
 import type {
   AcceptedPut,
@@ -47,18 +48,30 @@ export const PUT_TABLE = {
 type Accepted = { put: AcceptedPut; copied: boolean; notes: Note[]; problems: PluginProblem[] }
 type Refused = { refused: PutRefusal; subject: string; notes: Note[]; problems: PluginProblem[] }
 
+/** A put, with the paths it names marked as being put from before it touches anything until every plugin's hooks are done. */
 export async function put(req: PutRequest, ctx: Context): Promise<PutResult> {
-  const step = req.kind === 'register' ? await register(req, ctx) : req.kind === 'place' ? await place(req, ctx) : await move(req, ctx)
-  if ('refused' in step) return { outcome: 'refused', reason: step.refused, subject: step.subject, notes: step.notes, problems: step.problems }
-  const heard = notesOf(await eachPlugin(ctx, (plugin, pctx) => plugin.onPut?.(step.put, pctx)))
-  return {
-    outcome: 'accepted',
-    path: step.put.path,
-    fingerprint: step.put.fingerprint,
-    copied: step.copied,
-    notes: [...step.notes, ...heard.notes],
-    problems: [...step.problems, ...heard.problems],
-  }
+  return whilePutting(ctx.library.root, targets(ctx.library.root, req), async () => {
+    const step = req.kind === 'register' ? await register(req, ctx) : req.kind === 'place' ? await place(req, ctx) : await move(req, ctx)
+    if ('refused' in step) return { outcome: 'refused', reason: step.refused, subject: step.subject, notes: step.notes, problems: step.problems }
+    const heard = notesOf(await eachPlugin(ctx, (plugin, pctx) => plugin.onPut?.(step.put, pctx)))
+    return {
+      outcome: 'accepted',
+      path: step.put.path,
+      fingerprint: step.put.fingerprint,
+      copied: step.copied,
+      notes: [...step.notes, ...heard.notes],
+      problems: [...step.problems, ...heard.problems],
+    }
+  })
+}
+
+/** The content paths a put places, registers or moves; a path that does not parse is refused by the put itself. */
+function targets(root: string, req: PutRequest): LibraryPath[] {
+  const inputs = req.kind === 'register' ? [req.path] : req.kind === 'place' ? [req.to] : [req.from, req.to]
+  return inputs.flatMap((input) => {
+    const path = parseLibraryPath(root, input)
+    return path === null || regionOf(path) !== 'content' ? [] : [path]
+  })
 }
 
 const refuse = (refused: PutRefusal, subject: string, problems: PluginProblem[] = [], notes: Note[] = []): Refused => ({ refused, subject, notes, problems })

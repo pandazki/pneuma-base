@@ -4,6 +4,7 @@ import { dirname, isAbsolute, join, posix } from 'node:path'
 import type { Context, LibraryPath, PluginTools } from '@pneuma-base/sdk'
 import { fingerprintOfFile } from './files.js'
 import { abs, archivedPath, isWithin, originalPath, parseLibraryPath, regionOf } from './paths.js'
+import { puttingNow } from './putting.js'
 import { rankHits, searchTerms, SENTENCE_HITS } from './terms.js'
 import { bundleFiles, bundleManifest, copyCounted, enclosingBundle, fingerprintOf, fingerprintOfManifest, kindAt, libraryFiles, thingAt } from './things.js'
 
@@ -56,5 +57,6 @@ export function pluginTools(ctx: Context, dir: string): PluginTools {
       const { agentFace } = await import('./agent.js')
       return agentFace.put(req, ctx)
     },
+    putting: () => puttingNow(root),
   }
 }

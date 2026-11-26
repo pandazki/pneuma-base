@@ -582,6 +582,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CODEX_THREAD_ID -u ANTIGRAVITY_CO
 | `rankHits(候选, 词, match)` | 候选里的 `hit` 的列表 | 内核怎么排，`words` 匹配时最多 `sentenceHits` 条 |
 | `sentenceHits` | 数 | `words` 匹配时每个答复者最多给几条 |
 | `put(请求)`，异步 | 放的结果：`{ outcome: 'accepted', path, fingerprint, copied, notes, problems }` 或 `{ outcome: 'refused', reason, subject, notes, problems }` | 经 agent 面放入，行动者和会话是这次操作的：每个插件都听到，它发自己的事件。所有插件的 `onPut` 都会再被调，包括调它的插件自己；内核不防重入（第 9 节） |
+| `putting()`，异步 | 库内路径的列表，按路径排 | 此刻正在放入、登记或挪（来去两个）的路径。放先把文件放到目标上，插件后才记下它，这些路径上的东西不是没人登记的，是放还没做完。标记从放动手之前到所有插件的 `revise` 和 `onPut` 做完；放被杀时，标记 10 秒后不算。插件要报「没人登记的」「被改过的」这类东西，先看过文件，再问它，再读自己的记录：在这中间开始又做完的放，记录里已经有了 |
 
 带标记的目录是库里的「一样东西」：目录里有一个 `.pneuma-item` 文件。它只能整体地变，算指纹时不算标记文件和任何一层的 `.git`、`node_modules`、`.DS_Store`。
 

@@ -2,7 +2,7 @@
 import type { Fingerprint, LibraryPath } from '@pneuma-base/kernel'
 import { describe, expect, it } from 'vitest'
 import { fold } from '../src/fold.js'
-import { reconcile, type Files } from '../src/reconcile.js'
+import { confirm, reconcile, type Files } from '../src/reconcile.js'
 import { basis, enter, f, fp, id, p } from './support.js'
 
 /** A snapshot of files given as path → [size, fingerprint seed]; records which fingerprints were taken. */
@@ -108,5 +108,39 @@ describe('marks on the basis', () => {
     const moved = await reconcile(ledger, files({ 'elsewhere/s.md': [1, 's'], 'a.md': [1, 'a'], 'b.md': [1, 'b'] }))
     expect(moved.states.get(id('i_s'))).toEqual({ kind: 'moved', to: p('elsewhere/s.md') })
     expect(moved.marks.size).toBe(0)
+  })
+})
+
+describe('a standing confirmed against puts', () => {
+  const made = (rows: [string, string][]) => ({ kind: 'made' as const, basis: basis(rows) })
+  const before = [f(1, sized('i_s', 's.md', 's', 1)), f(2, sized('i_a', 'a.md', 'a', 1, made([['i_s', 's']])))]
+  const ledger = fold(before)
+  // What the first look saw: a new file, s.md with new content, and a stray nobody put.
+  const seen = () => reconcile(ledger, files({ 's.md': [1, 's2'], 'a.md': [1, 'a'], 'new.md': [1, 'n'], 'stray.md': [1, 'x'] }))
+
+  it('keeps every finding when no put is at its path and no fact since names it', async () => {
+    const standing = confirm(ledger, await seen(), fold(before), new Set())
+    expect(standing.unowned).toEqual(['new.md', 'stray.md'])
+    expect(standing.states.get(id('i_s'))).toEqual({ kind: 'changed', now: fp('s2') })
+    expect(standing.marks.get(id('i_a'))).toMatchObject([{ kind: 'stale' }])
+  })
+
+  it('drops what a put still running explains, and the marks it put on the things made from it', async () => {
+    const standing = confirm(ledger, await seen(), fold(before), new Set([p('new.md'), p('s.md')]))
+    expect(standing.unowned).toEqual(['stray.md'])
+    expect(standing.states.get(id('i_s'))).toEqual({ kind: 'consistent' })
+    expect(standing.marks.size).toBe(0)
+  })
+
+  it('drops what puts that finished meanwhile explain, even a thing recorded and then moved on', async () => {
+    const later = fold([
+      ...before,
+      f(3, sized('i_n', 'new.md', 'n', 1)),
+      f(4, { kind: 'item.move', item: id('i_n'), from: p('new.md'), to: p('moved/new.md'), archive: null }),
+      f(5, { kind: 'item.revise', item: id('i_s'), base: fp('s'), fingerprint: fp('s2'), size: 1, held: null, claimed: false }),
+    ])
+    const standing = confirm(ledger, await seen(), later, new Set())
+    expect(standing.unowned).toEqual(['stray.md'])
+    expect(standing.states.get(id('i_s'))).toEqual({ kind: 'consistent' })
   })
 })

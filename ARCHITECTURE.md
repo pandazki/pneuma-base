@@ -130,6 +130,8 @@ type PutResult =
 
 接受之后，内核把请求交给每个插件的 `onPut`，把它们的答复收进 `notes`。`onPut` 收到的 `note` 一定有，由内核规整过：去掉首尾空白，空白或没写就是 `null`，插件不再自己判。
 
+**正在放入的标记。** 一次放先把文件放到目标上，插件后才记下它；这中间看库的人（别的 agent 的 `check`、应用的监看）会看到一个没人登记的文件。所以内核在放动手之前，为它要放入、登记或挪的每个内容路径（挪是来去两个）在 `.pneuma-base/tmp/putting/` 下写一个标记，等放和所有插件的 `revise`、`onPut` 都做完、被拒绝或出错之后删掉（`putting.ts`）。标记写着库内路径，在内核的临时区里，不同步。放在进行时每 2 秒刷新一次标记的修改时间；超过 10 秒没刷新的标记算死了：进程被杀时标记删不掉。10 秒只要盖过一次刷新加事件循环的一次停顿，放多久都不会过期；它也是被杀的那次放留下的文件最多被藏多久，比应用的监看登记一个文件要等的（安静 3 秒、隔 3 秒再看一次）略长。下一次放写标记时顺手删掉死了的。插件用 `tools.putting()` 问此刻正在放的路径。`observe` 不在标记里面：它听的是做完了的事。
+
 「有插件留住旧内容」的分工：内核问配置里每一个提供了 `revise` 的插件，按配置的次序，一个答了之后照样问下一个。插件把当前内容留到自己名下（`held`）或拒绝（`declined`）。至少一个答 `held`，内核就把新内容先写临时名再改名放到目标上，每个答 `held` 的插件附的那句话都收进 `notes`。一个都没答 `held`，内核拒绝这次放入，目标不动，每个答 `declined` 的插件说的理由收进拒绝的 `notes`：只装了版本插件时，agent 从这里读到要先声明有版本。出错的插件列进 `problems`，算没留住。这样不管插件写得对不对，目标上都不会出现半截内容。
 
 实现里的细化（形状在 `packages/sdk/src/types.ts`）：
@@ -298,7 +300,7 @@ type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems: string
 | 东西 | `thing(路径)`（文件或目录条目，带大小和文件数）、`things()`、`files(目录条目)`、`copyOut(路径, 库外或自己名下的目录)` → 复制件的指纹 | `thingAt`、`libraryFiles`、`bundleFiles`、`copyBundle` |
 | 指纹 | `fingerprint(路径)`、`manifest(目录条目)`、`fingerprintOfManifest`、`fingerprintOfFile(绝对路径)` | `fingerprintOf`、`bundleManifest`、`fingerprintOfManifest`、`fingerprintOfFile` |
 | 找 | `searchTerms`、`rankHits`、`sentenceHits` | 同名的三样 |
-| 放 | `put(请求)`：经 agent 面放入，行动者和会话是这次操作的，所以每个插件都听到、它发自己的事件 | `agentFace.put` |
+| 放 | `put(请求)`：经 agent 面放入，行动者和会话是这次操作的，所以每个插件都听到、它发自己的事件；`putting()`：此刻正在放的库内路径（第 4 节「正在放入的标记」） | `agentFace.put` |
 
 `shortDir` 和 `withSuffix` 只是把字写给人看，不涉库的事实，不进 `tools`；`pluginName` 是 sdk 的构造。自带插件这一程照旧直接导入内核。
 
@@ -465,7 +467,7 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
   PNEUMA-BASE.md              说明（认知的载体，由内核拼）
   .pneuma-base/
     config.json               库标识、格式版本、插件表、授权
-    tmp/                      内核写到一半的临时名
+    tmp/                      内核写到一半的临时名；putting/ 下是正在放入的标记。不同步
     <插件名>/                  每个插件名下的目录
   _archive/                   归档区，里面保持原来的相对路径
   <某个目录>/.pneuma-item      带这个标记的目录是一样东西
@@ -529,6 +531,7 @@ $PNEUMA_BASE_HOME/
 - 「一次命令行调用写一个文件」落成「每个钩子写一个文件」：`start` 里「说」和「查」各写一个，`put` 盖掉无主文件时 `revise` 写入册、`onPut` 写改。每个文件照样是新文件、写完不动。
 - 发布事实文件用硬链接到最终名再删临时名，最终名已存在时失败重试，而不是覆盖。
 - `check` 比设计多一节「不在了的」，验收 C4 要求报告不在；「上游有标记」也单列一节，直接带标记的条目不重复列在里面。
+- 放先落文件后记账，所以对账先看一遍：读事实，列库里的东西，取指纹。看出了什么（没人登记过的、被直接改过的、挪过的、不在了的），再用内核的 `tools.putting()` 读正在放的路径，然后重读一次事实：看出的一样东西，路径正在放，或重读时新出现的事实提到了它的路径或条目，就不报，按记录算（`reconcile.ts` 的 `confirm`）。次序是要紧的：标记在看过文件之后读，正在放的路径不报；事实在读过标记之后读，在对账期间开始又做完的放已经记下了，单靠标记挡不住它。新事实只要提到就算，因为一个放记下之后可能紧接着被挪走，路径已经不在册上了。`check`、条目页和状况页都这样对账，`check` 也就不会把正在挪的东西当成看到的挪动记下来。事实文件写完不动，同一个进程里读过的不再读；各个场景的目录并发地列。600 个事实文件的库上，`check` 有要报的东西时也比改之前快（中位约 0.21 秒对 0.24 秒）。
 - `find` 什么都给，包括调用者自己这次会话的场景和条目；`start` 的找（`skipOwnSession`）不带调用者自己的场景和在其中放入的条目。找的结果按场景分组，`group` 是场景那一行。`inspect` 一个条目时只看它自己和它直接依据的文件，不找已搬；已搬只在 `check` 和 `start` 里认。
 - 界面的视图在 `ui.ts`，是纯函数：取自 `fold`、`reconcile`、`itemView`、`sceneView` 背后的同一份归并与 `standingData`，不另算一套来历；都不写事实，不收养没人登记过的文件，看到的挪动也不记，留给 `check`。面板里一样东西没有文件、或一个文件没人登记时，才做一次全量对账，认出挪到这里的条目。
 - 「自上次以来」只列改了内容或能力的事。不改两者的主人面操作（`init`、`grant issue`、`grant revoke`、`skill install`）照样记成事实，但不列出；名单是 `views.ts` 里的一个集合。

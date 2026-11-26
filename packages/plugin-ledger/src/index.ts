@@ -25,7 +25,7 @@ import { itemNamed, load, onDisk, snapshot, statesOf, textOf, type Disk } from '
 import { fact, factActor, LEDGER_ACTOR, newItemId, sceneOf, writeFacts, type Basis, type Fact, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
 import type { ItemRecord, Ledger, SceneRecord } from './fold.js'
 import { heldCommands, heldCopies, heldPath, keep } from './held.js'
-import { reconcile } from './reconcile.js'
+import { confirm, findsAnything, reconcile, type Standing } from './reconcile.js'
 import {
   ACTIVITY_VIEW,
   activityAnswer,
@@ -238,6 +238,19 @@ async function viewOfItem(ctx: PluginContext, ledger: Ledger, item: ItemRecord):
   return itemView(ledger, item, states, held)
 }
 
+/**
+ * check's reconciliation. A put lands its file before its record, so whatever the first look finds is
+ * confirmed: against the paths being put, read after the files were looked at, and the facts read
+ * once more after that.
+ */
+async function standingNow(ctx: PluginContext): Promise<{ ledger: Ledger; standing: Standing }> {
+  const ledger = await load(ctx)
+  const standing = await reconcile(ledger, await snapshot(ctx.library.root))
+  if (!findsAnything(standing)) return { ledger, standing }
+  const putting = new Set(await ctx.tools.putting())
+  return { ledger, standing: confirm(ledger, standing, await load(ctx), putting) }
+}
+
 /** Whether a file is at a content or archive path, or at its archived copy. */
 async function fileAt(root: string, path: LibraryPath): Promise<boolean> {
   if (regionOf(path) === 'kernel') return false
@@ -357,8 +370,7 @@ export const ledger: Plugin = {
   },
 
   async onCheck(req, ctx) {
-    const ledger = await load(ctx)
-    const standing = await reconcile(ledger, await snapshot(ctx.library.root))
+    const { ledger, standing } = await standingNow(ctx)
     // A moved file is taken back: its new path is recorded, as seen by the ledger itself.
     const moves = [...standing.states].flatMap(([item, state]) => {
       const from = ledger.items.get(item)?.path
@@ -384,21 +396,23 @@ export const ledger: Plugin = {
 
   /** The ledger's pages, from the same fold and reconciliation check uses. Writes nothing: a move it sees stays for check to record. */
   async onView(req, ctx) {
-    const ledger = await load(ctx)
-    const standing = async () => reconcile(ledger, await snapshot(ctx.library.root))
     switch (req.view) {
-      case ITEMS_VIEW:
-        return itemsAnswer(ledger, await standing(), req.params)
-      case STANDING_VIEW:
-        return standingAnswer(ledger, await standing())
+      case ITEMS_VIEW: {
+        const { ledger, standing } = await standingNow(ctx)
+        return itemsAnswer(ledger, standing, req.params)
+      }
+      case STANDING_VIEW: {
+        const { ledger, standing } = await standingNow(ctx)
+        return standingAnswer(ledger, standing)
+      }
       case SCENES_VIEW:
-        return scenesAnswer(ledger)
+        return scenesAnswer(await load(ctx))
       case SCENE_VIEW:
-        return sceneAnswer(ledger, req.params)
+        return sceneAnswer(await load(ctx), req.params)
       case ACTIVITY_VIEW:
-        return activityAnswer(ledger, req.params)
+        return activityAnswer(await load(ctx), req.params)
       case HELD_VIEW:
-        return heldAnswer(ledger, await heldCopies(ctx))
+        return heldAnswer(await load(ctx), await heldCopies(ctx))
       default:
         throw new Error(`the ledger has no view ${req.view}`)
     }

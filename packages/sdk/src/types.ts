@@ -126,6 +126,11 @@ export interface PluginTools {
   readonly sentenceHits: number
   /** A put through the agent face, as the operation's actor and session, so every plugin hears it and it sends its event. */
   put(req: PutRequest): Promise<PutResult>
+  /**
+   * The paths a put is placing, registering or moving right now, sorted. A put lands its file before
+   * any plugin records it, so a file at one of these paths is no stray: its put has not finished.
+   */
+  putting(): Promise<LibraryPath[]>
 }
 
 export type Note = { plugin: PluginName; text: string; data?: unknown }
