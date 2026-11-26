@@ -163,8 +163,8 @@ type FindRequest = { text: string | null; match: 'terms' | 'words'; filters: Rec
 type Hit = { path: LibraryPath | null; title: string; by: PluginName | 'kernel'; group: string | null; detail: string | null }
 type FindResult = { hits: Hit[]; problems: PluginProblem[] }
 
-type InspectRequest = { target: string }                    // 路径，或某个插件认得的标识
-type InspectResult = { file: FileFacts | null; sections: Section[]; problems: PluginProblem[] }
+type InspectRequest = { target: string; content?: { file: string | null } }   // 路径，或某个插件认得的标识；content：也要内容
+type InspectResult = { file: FileFacts | null; sections: Section[]; problems: PluginProblem[]; content?: Content }
 
 type SayRequest = { kind: string; about: string | null; text: string | null; args: Record<string, string[]> }
 type SayResult =
@@ -207,6 +207,8 @@ type PluginProblem = { plugin: PluginName; message: string }
 
 找和查默认跳过归档区，`includeArchived` 打开才带上。看一样已归档的东西照常给出，并标明它已归档。命令行里除了 `find` 和 `check`，库的目录树本身也把归档的东西隔开了，agent 用自己的工具翻目录时同样看不到它们混在里面。
 
+**看内容。** 命令行的 agent 自己读文件；经 MCP 的 agent 读不了，只能找和看。所以看可以带上内容：`inspect <库内路径> --content`。文件是 UTF-8 文字、不超过 256 KB 时给全文（`text`），一篇长文档、网站的一页放得下，一份导出的数据放不下；别的给大小和文件名说的媒体类型（`other`，`why` 是 `not-utf8` 或 `too-large`，超过上限的不读）；带标记的目录给它算进指纹的文件清单（`files`），`--content <内部路径>` 读其中一个，只认清单上的，爬不出去；写目录里的文件的库内路径也一样。内容在内核里读（`content.ts`），插件的 `onInspect` 照旧只给它们知道的。授权限在一个区域时，区域外的东西照样给事实（今天的看、找、查都不按区域限读，区域只限写），只是不给内容（`unavailable`，`outside-grant`）；归档的东西按它原来的路径算。只读的授权读得了区域里的内容。
+
 命令行另有一个 `start "<一句话>"`，是「说：在做什么」「查」「找」三个动词的组合，不是第七个动词。
 
 命令行另有一个 `show [<视图编号> [--<参数> <值>…]]`：管理界面的一页，只读，也不是动词（第 6 节「只读的一面：视图」）。不写编号列出这个库的页。
@@ -221,7 +223,7 @@ type PluginProblem = { plugin: PluginName; message: string }
 | --- | --- |
 | 放 | 按上面的全化表。接受时 `notes` 为空。放入遇到内容不同的同名文件：拒绝 |
 | 找 | 按名字列出库里的文件和带标记的目录 |
-| 看 | 这样东西本身的情况（文件或带标记的目录），`sections` 为空 |
+| 看 | 这样东西本身的情况（文件或带标记的目录），`sections` 为空；要内容时照样给 |
 | 说 | `not-heard`，`no-plugin-for-kind`，附一句「这个库没配能记下这句话的插件」 |
 | 查 | `sections` 为空 |
 | 归档 | 按上面的全化表 |
@@ -436,7 +438,7 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
 
 - **工具**都是生成的，没有为哪个工具手写的代码。每个动词和 `show` 一个，输入是那个动词的参数表；`put` 读标准输入的那个位置参数在这里可以不写，内容写在 `text`（文字）或 `base64`（字节）里，库外的文件或目录照旧写这台机器上的路径。每条既不破坏也不只给主人的命令一个，名字是命令名的词用 `_` 连起来（`space list` 是 `space_list`），输入由它的 `params` 生成：位置参数和开关是同名的属性，种类、必填、`pattern`、`options` 照搬，`hint` 是属性的说明。工具的说明是动词或命令的一句中文说明。管理的命令不列出；按名字调，它照样经主人面的门，以命令行同样的理由和话拒绝。没有这个名字的工具，是协议层的错。
 - **答复**和命令行的一样：命令行印的字是工具答的文字，`--json` 印的结果对象是结构化的内容。拒绝（退出码 2 的那些）标成出错，字和理由不变；用法错误是 `reason: 'usage'` 的拒绝，字是命令行在标准错误印的那句；插件的问题和命令行一样写在字里和 `problems` 里。退出码在这里没有意义，看 `outcome`。
-- **认知**随连接来：服务的 `instructions` 是库的说明（内核此刻拼出的 `PNEUMA-BASE.md`），前面加四句写给这一面的话：说明里的命令行就是同名的工具、参数相同，`put` 怎么给内容，管理由主人在界面上做。说明也是一个资源；管理界面导航里不只给主人的每一页也是一个资源，读它得到 `show <编号>` 印的字。
+- **认知**随连接来：服务的 `instructions` 是库的说明（内核此刻拼出的 `PNEUMA-BASE.md`），前面加五句写给这一面的话：说明里的命令行就是同名的工具、参数相同，`put` 怎么给内容，内容用 `inspect` 加 `content` 读，管理由主人在界面上做。说明也是一个资源；管理界面导航里不只给主人的每一页也是一个资源，读它得到 `show <编号>` 印的字。
 - **变化**：服务每两秒重读一次工具表、资源表和被订阅的资源，变了就发协议的通知（工具表变了、资源表变了、某个资源更新了）。插件在连着时装上或卸下，三样都会变。
 - **协议**：新旧两代都接。2026-07-28 版每个请求在 `_meta` 里带版本，有 `server/discover`，通知经 `subscriptions/listen` 来，可缓存的结果写 `ttlMs: 0` 和 `cacheScope: 'private'`（库随时在变，答复因授权而异）；更早的版本以 `initialize` 开头，`notifications/initialized` 之后的通知直接发。2026-07-28 版说一条连接不算会话，这里按上面定的仍把一次连接记成一个场景。
 - 协议是自己写的（`src/mcp/server.ts`，约两百五十行），没有用官方的 SDK：命令行的包文件里没有任何第三方依赖，SDK 的服务端连同它要的 zod 解开约 14 MB，工具的输入又是从参数表生成的 JSON Schema，用 SDK 也只剩它的低层接口。传输是参数（`Transport`：收到的每一行，和发一条的办法），HTTP 跟着应用来。仓库的测试用官方 SDK 的客户端（只是开发依赖）分别以两代协议连上它。

@@ -222,12 +222,25 @@ export type FindRequest = { text: string | null; match: 'terms' | 'words'; filte
 export type Hit = { path: LibraryPath | null; title: string; by: PluginName | 'kernel'; group: string | null; detail: string | null }
 export type FindResult = { hits: Hit[]; problems: PluginProblem[] }
 
-export type InspectRequest = { target: string }
+/** `content`: give the thing's content too, for a caller that cannot read files; `file` is one in a bundle, relative to it. */
+export type InspectRequest = { target: string; content?: { file: string | null } }
 /** One thing of the library: a regular file, or a directory with the marker `.pneuma-item`. */
 export type ThingKind = 'file' | 'bundle'
 /** A bundle's `size` and `files` count the files its fingerprint counts; `modifiedAt` is the latest of theirs. */
 export type FileFacts = { path: LibraryPath; kind: ThingKind; files: number; size: number; modifiedAt: Instant; fingerprint: Fingerprint; archived: boolean }
-export type InspectResult = { file: FileFacts | null; sections: Section[]; problems: PluginProblem[] }
+/**
+ * A thing's content, as inspect gives it when asked. `text`: a file of UTF-8 text within the kernel's
+ * limit (256 KB). `other`: any other file, with its size and the media type its name says, null when
+ * the name says none. `files`: a bundle's files. `unavailable`: outside the caller's grant, no such
+ * file in the bundle or nothing at the target, or a file asked of a thing that is no bundle.
+ */
+export type Content =
+  | { kind: 'text'; path: LibraryPath; size: number; text: string }
+  | { kind: 'other'; path: LibraryPath; size: number; type: string | null; why: 'not-utf8' | 'too-large' }
+  | { kind: 'files'; path: LibraryPath; files: BundleFile[] }
+  | { kind: 'unavailable'; path: LibraryPath | null; reason: 'outside-grant' | 'no-such-file' | 'not-a-bundle' }
+/** `content` is there only when the request asked for it. */
+export type InspectResult = { file: FileFacts | null; sections: Section[]; problems: PluginProblem[]; content?: Content }
 
 export type SayRequest = { kind: string; about: string | null; text: string | null; args: Record<string, string[]> }
 export type SayResult =

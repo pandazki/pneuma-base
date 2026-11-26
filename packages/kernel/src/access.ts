@@ -1,4 +1,4 @@
-import { isWithin, parseLibraryPath, regionOf } from './paths.js'
+import { isWithin, originalPath, parseLibraryPath, regionOf } from './paths.js'
 import type { Context, LibraryPath } from '@pneuma-base/sdk'
 
 export type Writable = { ok: true; path: LibraryPath } | { ok: false; reason: 'outside-library' | 'outside-grant' }
@@ -20,4 +20,17 @@ export function mayWrite(ctx: Context, path: LibraryPath): boolean {
   const grant = ctx.library.config.grants.find((g) => g.id === actor.grant)
   if (!grant || grant.readOnly) return false
   return grant.area === null || isWithin(path, grant.area)
+}
+
+/**
+ * Whether the caller may read a thing's content: inside its grant's area, read-only or not; an
+ * archived thing by the path it came from. Facts are no content: every verb gives them as before.
+ */
+export function mayRead(ctx: Context, path: LibraryPath): boolean {
+  const { actor } = ctx
+  if (actor.kind !== 'agent' || actor.grant === null) return true
+  const grant = ctx.library.config.grants.find((g) => g.id === actor.grant)
+  if (!grant) return false
+  const content = regionOf(path) === 'archive' ? originalPath(path) : path
+  return grant.area === null || (content !== null && isWithin(content, grant.area))
 }

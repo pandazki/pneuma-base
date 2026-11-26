@@ -1,4 +1,4 @@
-import type { ArchiveResult, CheckResult, FindResult, InspectResult, OwnerResult, PluginProblem, PutRequest, PutResult, SayResult, Section } from '@pneuma-base/kernel'
+import { CONTENT_LIMIT, type ArchiveResult, type CheckResult, type Content, type FindResult, type InspectResult, type OwnerResult, type PluginProblem, type PutRequest, type PutResult, type SayResult, type Section } from '@pneuma-base/kernel'
 import { minute } from './page.js'
 
 const REFUSAL: Record<string, (subject: string) => string> = {
@@ -62,13 +62,31 @@ export function findText(r: FindResult, none = '没有找到。'): string[] {
   return [...(lines.length === 0 ? [none] : lines), ...tail([], r.problems)]
 }
 
-/** What plugins know comes first, the file's own facts last. A target with no file may still be something a plugin knows, such as a scene. */
-export function inspectText(target: string, r: InspectResult): string[] {
+/**
+ * What plugins know comes first, the file's own facts after, its content last when asked. A target
+ * with no file may still be something a plugin knows, such as a scene.
+ */
+export function inspectText(target: string, r: InspectResult, inner: string | null = null): string[] {
   const kind = r.file?.kind === 'bundle' ? `目录，${r.file.files} 个文件，` : ''
   const file = r.file
     ? [`${r.file.path}${r.file.archived ? '（已归档）' : ''} · ${kind}${r.file.size} 字节，改于 ${minute(r.file.modifiedAt)} · 指纹 ${r.file.fingerprint.slice(0, 12)}…`]
     : r.sections.length > 0 ? [] : [`库里没有这个文件：${target}`]
-  return [...sectionsText(r.sections), ...file, ...tail([], r.problems)]
+  return [...sectionsText(r.sections), ...file, ...(r.content && r.file ? contentText(target, r.content, inner) : []), ...tail([], r.problems)]
+}
+
+function contentText(target: string, c: Content, inner: string | null): string[] {
+  switch (c.kind) {
+    case 'text':
+      return [`内容（UTF-8 文字，${c.size} 字节）：`, c.text.endsWith('\n') ? c.text.slice(0, -1) : c.text]
+    case 'other':
+      return [`内容：${c.why === 'not-utf8' ? '不是 UTF-8 文字' : `超过 ${CONTENT_LIMIT / 1024} KB 的上限`}${c.type === null ? '' : `，${c.type}`}，${c.size} 字节，没有给出。`]
+    case 'files':
+      return [`目录里的文件（${c.files.length} 个）：`, ...c.files.map((f) => `  ${f.path}  ${f.size} 字节`), `看其中一个：inspect ${target} --content <文件>`]
+    case 'unavailable':
+      if (c.reason === 'outside-grant') return [`内容：${c.path} 不在你的授权范围内，不给内容。`]
+      if (c.reason === 'not-a-bundle') return [`内容：${c.path} 是一个文件，不是带标记的目录，里面没有别的文件；看它自己：inspect ${target} --content`]
+      return [`内容：${c.path} 里没有 ${inner}。`]
+  }
 }
 
 export function sayText(r: SayResult): string[] {

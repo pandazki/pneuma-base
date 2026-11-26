@@ -119,7 +119,7 @@ agent 手里有六个动词：放、找、看、说、查、归档。试插件�
 | 放：登记 | `put <库内路径> <来历> [--note "<一句话>"] [--observed]` | 记下库里已有的文件或目录的来历；没有标记的目录加上标记，成为一样东西。`kind` 是 `register`。`--observed` 只给主人，和 `--brought --by owner` 一起写：来历是主人这边自动看到的（应用登记主人复制进库的文件），不是谁说的，钩子拿到的 `observed` 为 `true` |
 | 放：挪 | `put <库内路径> --to <库内路径>` | 在库里挪位置，不写来历。`kind` 是 `move` |
 | 找 | `find [<文字>…] [--include-archived] [--scene <场景号>] [--origin brought\|made]` | 内核按名字列，插件加上它知道的 |
-| 看 | `inspect <库内路径\|条目号\|场景号>` | 一样东西的事实，和每个插件知道的 |
+| 看 | `inspect <库内路径\|条目号\|场景号> [--content [<内部路径>]]` | 一样东西的事实，和每个插件知道的。`--content` 再由内核给它的内容：不超过 256 KB 的 UTF-8 文字给全文，别的给大小和种类，带标记的目录给文件清单，写了内部路径给其中一个；授权限在区域时，区域外的不给内容 |
 | 说 | `say <种类> [<关于>] [<内容>] [--<开关> <值>…]` | 把一句话交给认领这个种类的插件（3.3） |
 | 查 | `check [--since <时间>\|last] [--include-archived]` | 每个插件说它知道的：发生了什么，现在要处理什么 |
 | 归档、取回 | `archive <库内路径>`、`unarchive <库内路径>` | 挪进 `_archive/`，或挪回原处 |
@@ -136,7 +136,7 @@ agent 手里有六个动词：放、找、看、说、查、归档。试插件�
 | `onPut` | 内核接受了一次放（登记、放入、挪）之后；被拒绝的放不调 | `AcceptedPut`，路径解析过；`note` 去掉了首尾空白，空的是 `null`；登记的 `observed` 为 `true` 时，来历是看到的，之后有人说的来历可以换掉它 | 一条说明 `{ text, data? }`、`{ note, problems }` 或 `null` |
 | `onFind` | 每次找（`start` 也找），内核按名字列完之后 | `FindRequest`，`text` 是原样 | `PluginHit[]`，或 `{ hits, problems }` |
 | `onFound` | 内核和所有 `onFind` 都答完之后；只问它自己没给命中的路径，一个都没有就不问 | 路径（解析过）和 `FindRequest` | `PluginHit[]`，每条的 `path` 必须是问它的路径之一 |
-| `onInspect` | 每次看 | `{ target }`，原样：一个路径，或某个插件认得的编号 | `PluginSection[]` |
+| `onInspect` | 每次看 | `{ target, content? }`，`target` 原样：一个路径，或某个插件认得的编号；内容由内核给，插件不用管 `content` | `PluginSection[]` |
 | `onSay` | 说的种类在它的 `statements` 里时 | `{ kind, about, text, args }`，`about` 和 `text` 是原样 | `{ outcome: 'heard', note, problems? }`，或 `{ outcome: 'not-heard', reason: 'refused', note }` |
 | `onCheck` | 每次查 | `{ since, includeArchived }` | `PluginSection[]` |
 | `onArchive` | 归档或取回被接受之后；什么都没动（`moved` 为 `false`）也调 | `{ kind, from, to, moved }`，路径解析过 | 和 `onPut` 一样 |

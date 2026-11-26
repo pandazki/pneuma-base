@@ -180,12 +180,19 @@ export const VERBS: readonly Verb[] = [
   }),
   verb({
     name: 'inspect',
-    summary: '看关于一样东西知道的一切（不含内容本身）',
+    summary: '看关于一样东西知道的一切；加 content 也给它的内容，给读不了文件的 agent',
     readOnly: true,
-    params: { positional: [{ name: 'target', hint: '库内路径、条目号或场景号', required: true }] },
-    run: async ({ target }, { bound: { ctx } }) => {
-      const r = await agentFace.inspect({ target }, ctx)
-      return { json: r, lines: inspectText(target, r), exit: exitOf(r) }
+    params: {
+      positional: [
+        { name: 'target', hint: '库内路径、条目号或场景号', required: true },
+        { name: 'file', hint: '带标记的目录里的一个文件，相对这个目录，跟 content 一起写' },
+      ],
+      flags: [{ name: 'content', hint: '也给内容：UTF-8 文字给全文，别的给大小和种类，带标记的目录给文件清单', kind: 'boolean' }],
+    },
+    run: async ({ target, file, content }, { bound: { ctx } }) => {
+      if (file !== null && !content) throw new UsageError(`${file}：目录里的文件跟 --content 一起写：inspect ${target} --content ${file}`)
+      const r = await agentFace.inspect({ target, ...(content ? { content: { file } } : {}) }, ctx)
+      return { json: r, lines: inspectText(target, r, file), exit: exitOf(r) }
     },
   }),
   verb({
