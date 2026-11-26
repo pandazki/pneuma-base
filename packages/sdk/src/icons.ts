@@ -23,6 +23,7 @@ export const ICON_NAMES = [
   'git-branch',
   'globe',
   'history',
+  'house',
   'image',
   'key',
   'layers',

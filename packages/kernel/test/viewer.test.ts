@@ -1,7 +1,7 @@
 // The viewer face on a library with no plugin (K2): the kernel's three pages and the item panel,
 // given as blocks; showing a view changes nothing and sends no event.
 import { describe, expect, it } from 'vitest'
-import { viewerFace, type Block, type Event, type ViewResult } from '../src/index.js'
+import { agentFace, viewerFace, type Action, type Block, type Event, type ViewResult } from '../src/index.js'
 import { fixture, plugin, type Fixture } from './support.js'
 
 const show = (f: Fixture, view: string, params: Record<string, string> = {}, env: Record<string, string> = {}) => viewerFace.show({ view, params }, { ctx: f.ctx, table: new Map(), env, viaGrant: false })
@@ -20,10 +20,11 @@ const tableOf = (r: ViewResult) => {
 }
 
 describe('the views of a library with no plugin', () => {
-  it('are files, archive and config in the navigation, and the item panel outside it, each the kernel’s; config is the owner’s', async () => {
+  it('are home, files, archive and config in the navigation, and the item panel outside it, each the kernel’s; config is the owner’s', async () => {
     const f = await fixture()
     expect(viewerFace.views(f.library)).toEqual({
       views: [
+        expect.objectContaining({ id: 'home', nav: true, by: 'kernel' }),
         expect.objectContaining({ id: 'files', nav: true, by: 'kernel' }),
         expect.objectContaining({ id: 'archive', nav: true, by: 'kernel' }),
         expect.objectContaining({ id: 'config', nav: true, by: 'kernel', ownerOnly: true }),
@@ -123,8 +124,9 @@ describe('the views of a library with no plugin', () => {
     const f = await fixture()
     f.write('a.md', 'hello')
     const r = shown(await show(f, 'item', { path: 'a.md' }))
-    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['actions', 'section:文件', 'section:预览'])
-    expect(r.blocks[0]).toMatchObject({
+    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['text', 'section:文件', 'section:预览', 'actions'])
+    expect(r.blocks[0]).toMatchObject({ kind: 'text', tone: 'neutral', text: '文件 · 5 B' })
+    expect(r.blocks[3]).toMatchObject({
       actions: [
         { label: '归档', call: { verb: 'archive', request: { kind: 'archive', path: 'a.md' } } },
         { label: '挪到', inputs: [{ name: 'to', value: 'a.md' }], call: { verb: 'put', request: { kind: 'move', from: 'a.md', to: '{to}' } } },
@@ -140,7 +142,8 @@ describe('the views of a library with no plugin', () => {
     f.write('_archive/a.md', 'a')
     for (const path of ['a.md', '_archive/a.md']) {
       const r = shown(await show(f, 'item', { path }))
-      expect(r.blocks[0]).toMatchObject({ actions: [{ label: '取回', call: { request: { kind: 'unarchive', path: '_archive/a.md' } } }] })
+      expect(r.blocks[0]).toMatchObject({ kind: 'text', text: '文件 · 1 B · 已归档' })
+      expect(r.blocks.at(-1)).toMatchObject({ actions: [{ label: '取回', call: { request: { kind: 'unarchive', path: '_archive/a.md' } } }] })
     }
   })
 
@@ -181,7 +184,7 @@ describe('bundles in the views', () => {
     const f = await fixture()
     site(f)
     const r = shown(await show(f, 'item', { path: 'site' }))
-    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['actions', 'section:文件', 'section:里面的文件'])
+    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['text', 'section:文件', 'section:里面的文件', 'actions'])
     const facts = r.blocks[1]?.kind === 'section' ? r.blocks[1].blocks[0] : undefined
     expect(facts?.kind === 'fields' && facts.fields.map((x) => `${x.label}:${x.value.text}`)).toEqual(['路径:site', '种类:一样东西（带标记的目录）', '文件数:3', expect.stringMatching(/^大小:\d+ B$/), expect.stringMatching(/^改于:/), expect.stringMatching(/^指纹:[0-9a-f]{16}$/)])
     const inner = tableOf({ outcome: 'shown', title: '', subtitle: null, blocks: [r.blocks[2] as Block], problems: [] })
@@ -196,8 +199,9 @@ describe('bundles in the views', () => {
     const f = await fixture()
     site(f)
     const r = shown(await show(f, 'item', { path: 'site/index.html' }))
-    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['section:文件', 'section:预览'])
-    const facts = r.blocks[0]?.kind === 'section' ? r.blocks[0].blocks : []
+    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['text', 'section:文件', 'section:预览'])
+    expect(r.blocks[0]).toMatchObject({ kind: 'text', text: '文件 · 11 B · site 的一部分' })
+    const facts = r.blocks[1]?.kind === 'section' ? r.blocks[1].blocks : []
     expect(facts).toMatchObject([
       { kind: 'fields', fields: expect.arrayContaining([expect.objectContaining({ label: '在', value: expect.objectContaining({ text: 'site', icon: 'package', link: { view: 'item', params: { path: 'site' }, target: 'panel' } }) })]) },
       { kind: 'text' },
@@ -210,7 +214,7 @@ describe('bundles in the views', () => {
     site(f)
     const r = shown(await show(f, 'item', { path: 'site/css/main.css' }))
     expect(asked).toEqual(['site/css/main.css'])
-    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['section:知道的', 'section:文件', 'section:预览'])
+    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['text', 'section:知道的', 'section:文件', 'section:预览'])
   })
 
   it('archive lists an archived bundle as one row', async () => {
@@ -253,7 +257,7 @@ describe('the view slot', () => {
     const stray = plugin('stray', { views: [{ id: 'files', title: '冒名的页', icon: 'triangle-alert', nav: true, filters: [] }] })
     const f = await fixture([pager, thrower, stray])
     const { views, problems } = viewerFace.views(f.library)
-    expect(views.map((v) => v.id)).toEqual(['pager.page', 'thrower.page', 'files', 'archive', 'config', 'item'])
+    expect(views.map((v) => v.id)).toEqual(['pager.page', 'thrower.page', 'home', 'files', 'archive', 'config', 'item'])
     expect(problems).toEqual([{ plugin: 'stray', message: 'view files does not start with stray.' }])
   })
 
@@ -298,7 +302,7 @@ describe('the view slot', () => {
     const f = await fixture([thrower, pager])
     f.write('a.md', 'a')
     const r = shown(await show(f, 'item', { path: 'a.md' }))
-    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['actions', 'section:插件 thrower', 'section:测试插件知道的', 'section:文件', 'section:预览'])
+    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['text', 'section:插件 thrower', 'section:测试插件知道的', 'section:文件', 'section:预览', 'actions'])
     expect(r.blocks[2]).toMatchObject({ blocks: [{ text: 'pager knows a.md' }] })
     expect(r.problems).toEqual([{ plugin: 'thrower', message: 'thrower failed in onItemView' }])
   })
@@ -449,5 +453,87 @@ describe('what a plugin’s view answers is checked (D7)', () => {
     const f = await fixture([answering('regex', { title: '一页', subtitle: null, blocks: [{ kind: 'actions', actions: [act] }] })])
     const r = shown(await show(f, 'regex.page'))
     expect(r.blocks).toMatchObject([{ kind: 'text', tone: 'bad', text: expect.stringContaining('pattern') }])
+  })
+})
+
+describe('the new blocks are checked too (D7)', () => {
+  const answering = (name: string, answer: unknown) =>
+    plugin(name, { views: [{ id: `${name}.page`, title: '一页', icon: 'triangle-alert', nav: true, filters: [{ name: 'who', label: '谁', options: [{ value: '', label: '全部' }], default: '' }] }], onView: async () => answer as never })
+  const page = (blocks: unknown[], extra: object = {}) => ({ title: '一页', subtitle: null, blocks, ...extra })
+  const archive = { label: '取回', tone: 'default', confirm: null, inputs: [], call: { face: 'agent', verb: 'archive', request: { kind: 'unarchive', path: '_archive/a.md' } } }
+  const row = (extra: object = {}) => ({ key: 'f1', at: '2026-11-25T01:00:00.000Z', actor: { kind: 'agent', name: 'claude-code', grant: 'g' }, text: '归档 a.md', meta: [{ text: '场景 s' }], whose: 'agent', link: null, ...extra })
+  const good = [
+    { kind: 'feed', groups: [{ title: '今天', count: 2, rows: [row({ action: archive }), row({ key: 'f2', actor: '记账', whose: 'observed', settled: '已定' })] }], empty: '没有' },
+    { kind: 'stats', stats: [{ label: '放入', value: '4', note: null }, { label: '时长', value: '3 分钟', note: '刚开始' }] },
+    { kind: 'tree', param: 'dir', selected: 'a', nodes: [{ value: '', label: '全部', count: 3, children: [{ value: 'a', label: 'a', count: null, children: [] }] }] },
+    { kind: 'asks', asks: [{ key: 'k', by: { kind: 'owner', name: '主人' }, text: '要上线吗？', about: 'a.md', actions: [archive, archive], suggested: 1 }], empty: '没有' },
+    { kind: 'fields', fields: [{ label: '谁', value: { text: 'claude-code', actor: { kind: 'agent', name: 'claude-code' } } }] },
+  ]
+
+  it('lets a feed, stats, a tree, asks and an actor on a cell through as they are, with the filter options the view answered', async () => {
+    const options = [{ value: '', label: '全部', count: 3 }, { value: 'x', label: '某个', count: 1 }]
+    const f = await fixture([answering('fine', page(good, { filters: [{ name: 'who', options }] }))])
+    const r = shown(await show(f, 'fine.page'))
+    expect(r.problems).toEqual([])
+    expect(r.blocks).toEqual(good)
+    expect(r.filters).toEqual([{ name: 'who', options }])
+  })
+
+  it('replaces a malformed one with a block saying why, and drops filter options for a filter the view does not declare', async () => {
+    const bad = [
+      { kind: 'feed', groups: [{ title: '今天', count: 1, rows: [row({ action: archive, settled: '已定' })] }], empty: '没有' },
+      { kind: 'feed', groups: [{ title: '今天', count: 1, rows: [row({ whose: 'someone' })] }], empty: '没有' },
+      { kind: 'stats', stats: [{ label: '放入', value: 4, note: null }] },
+      { kind: 'tree', param: 'dir', selected: '', nodes: [{ value: '', label: '全部', count: 3 }] },
+      { kind: 'asks', asks: [{ key: 'k', by: '某人', text: '要吗？', about: null, actions: [archive], suggested: 1 }], empty: '没有' },
+      { kind: 'fields', fields: [{ label: '谁', value: { text: 'x', actor: { kind: 'robot', name: 'x' } } }] },
+    ]
+    const f = await fixture([answering('odd', page(bad, { filters: [{ name: 'nope', options: [] }] }))])
+    const r = shown(await show(f, 'odd.page'))
+    expect(r.blocks.map((b) => b.kind === 'text' && b.tone)).toEqual(Array(bad.length).fill('bad'))
+    expect(r.problems).toHaveLength(bad.length + 1)
+    expect(r.problems.at(-1)?.message).toContain('nope')
+    expect(r.filters).toEqual([])
+  })
+})
+
+describe('the home page', () => {
+  const asker = (name: string, asks: unknown) => plugin(name, { onAsks: async () => asks as never })
+  const off: Action = { label: '不上线', tone: 'default', confirm: null, inputs: [], call: { face: 'agent', verb: 'archive', request: { kind: 'archive', path: 'a.md' } } }
+
+  it('with no plugin, says so under what waits on the owner, and shows the files', async () => {
+    const f = await fixture()
+    f.write('a.md', 'a')
+    const r = shown(await show(f, 'home'))
+    expect(r.title).toBe('首页')
+    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['section:等你决定', 'text', 'section:库里的文件'])
+    expect(r.blocks[0]).toMatchObject({ count: null, blocks: [{ kind: 'asks', asks: [], empty: '没有要你决定的事。' }] })
+    expect(r.blocks[1]).toMatchObject({ tone: 'neutral', text: expect.stringContaining('没装插件') })
+    expect(tableOf(r).rows.map((row) => row.key)).toEqual(['a.md'])
+  })
+
+  it('stands each plugin’s asks first, by the plugin’s title, then the blocks of each view a plugin gives the home page, in configuration order', async () => {
+    const part = (name: string) =>
+      plugin(name, {
+        cognition: { title: `插件${name}`, text: '它做的事。' },
+        views: [{ id: `${name}.home`, title: '一部分', icon: 'house', nav: false, filters: [], home: true }],
+        onView: async () => ({ title: '一部分', subtitle: null, blocks: [{ kind: 'text', text: `${name} 的部分`, tone: 'neutral' }] }),
+        onAsks: async () => [{ key: `${name}:a`, text: `${name} 问`, about: null, actions: [off] }],
+      })
+    const f = await fixture([part('one'), part('two')])
+    const r = shown(await show(f, 'home'))
+    expect(r.problems).toEqual([])
+    expect(r.blocks[0]).toMatchObject({ title: '等你决定', count: 2, blocks: [{ kind: 'asks', asks: [{ key: 'one:a', by: '插件one', text: 'one 问' }, { key: 'two:a', by: '插件two' }] }] })
+    expect(r.blocks.slice(1)).toMatchObject([{ text: 'one 的部分' }, { text: 'two 的部分' }])
+  })
+
+  it('leaves out an ask that is not one, as the plugin’s problem; check carries the same asks, each with whose it is', async () => {
+    const f = await fixture([asker('good', [{ key: 'k', text: '要上线吗？', about: 'a.md', actions: [off], suggested: 0 }]), asker('bad', [{ key: 'k', text: 3, about: null, actions: [] }]), asker('worse', 'nothing')])
+    const r = shown(await show(f, 'home'))
+    expect(r.blocks[0]).toMatchObject({ blocks: [{ asks: [{ key: 'k', by: 'good' }] }] })
+    expect(r.problems.map((p) => p.plugin)).toEqual(['bad', 'worse'])
+    const check = await agentFace.check({ since: 'last', includeArchived: false }, f.ctx)
+    expect(check.asks).toMatchObject([{ key: 'k', by: 'good', text: '要上线吗？', suggested: 0 }])
+    expect(check.problems.map((p) => p.plugin)).toEqual(['bad', 'worse'])
   })
 })

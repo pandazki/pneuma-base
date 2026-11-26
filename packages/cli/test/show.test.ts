@@ -32,7 +32,7 @@ describe('pneuma-base show', () => {
   it('with no view lists the views of the library, each with its title and who gives it', () => {
     const r = owner(['show'])
     expect(r.code, r.stderr).toBe(0)
-    expect(r.stdout).toMatch(/^ {2}ledger\.items +条目 +ledger/m)
+    expect(r.stdout).toMatch(/^ {2}ledger\.items +库 +ledger/m)
     expect(r.stdout).toMatch(/^ {2}config +配置 +kernel +只给主人$/m)
     expect(r.stdout).toMatch(/^ {2}item +一样东西 +kernel +从别的页的链接打开$/m)
     const list = owner(['show', '--json']).json()
@@ -139,5 +139,82 @@ describe('the words of each kind of block', () => {
     expect(fresh.stdout).toContain('  $ pager restore --release 1  # 放回这一版；先问：把线上换回第 1 版？')
     expect(fresh.stdout).toContain('$ pager prefix [<前缀>]  # 设前缀')
     expect(fresh.stdout).toContain('计数：{"count":0,"note":"插件自己画的一页"}\n$ pager bump  # 加一；先问：把计数加一？')
+  })
+
+  it('a feed by its groups and rows, each row with who, what, whose, its meta and what it opens or does; stats; a tree with its parameter; asks with their commands, the suggested marked; counted filter options', () => {
+    const home = tempDir('pb-show-')
+    const lib2 = join(home, 'lib')
+    const run = (args: string[]) => sb.runWithTestPlugins(args, { cwd: home })
+    expect(run(['init', lib2, '--bare']).code).toBe(0)
+    expect(run(['plugin', 'add', 'asker', '--library', lib2]).code).toBe(0)
+    const story = run(['show', 'asker.story', '--library', lib2])
+    expect(story.code, story.stderr).toBe(0)
+    const at = (iso: string) => {
+      const d = new Date(iso)
+      return `${d.toISOString().slice(0, 10)} ${d.toISOString().slice(11, 16)}Z`
+    }
+    expect(story.stdout.trimEnd().split('\n')).toEqual([
+      '# 新的块',
+      '谁做的（--who）：*全部 12 · agent 做的 8',
+      '放入：4（带进来 2 样）',
+      '决定：1',
+      '文件夹（--dir）：',
+      "  * 全部文件夹（3）  → show asker.story --dir ''",
+      '      notes（2）  → show asker.story --dir notes',
+      '        old（1）  → show asker.story --dir notes/old',
+      '今天（2）  → show ledger.scene --scene s1',
+      `  - ${at('2026-11-25T11:11:00.000Z')}  claude-code  归档 notes/old.md  [自己做的]  整理笔记 · 凭授权 claude  → show item --path _archive/old.md`,
+      '      $ unarchive _archive/old.md  # 取回',
+      `  - ${at('2026-11-25T11:12:00.000Z')}  主人  主人面的操作 plugin add  [主人做的]  [已定]`,
+      '空的一串。',
+      '- 要上线吗？（claude-code）  关于 site → show item --path site',
+      '    $ asker yes  # 上线（只给主人）（推荐）',
+      '    $ asker no  # 不上线（只给主人）',
+      '没有要你决定的事。',
+    ])
+  })
+
+  it('the home page in words: what waits on the owner, by the plugin’s title, then each plugin’s part', () => {
+    const home = tempDir('pb-show-')
+    const lib2 = join(home, 'lib')
+    const run = (args: string[]) => sb.runWithTestPlugins(args, { cwd: home })
+    expect(run(['init', lib2, '--bare']).code).toBe(0)
+    const bare = run(['show', 'home', '--library', lib2])
+    expect(bare.stdout).toContain('## 等你决定\n没有要你决定的事。')
+    expect(bare.stdout).toContain('没装插件')
+    expect(run(['plugin', 'add', 'asker', '--library', lib2]).code).toBe(0)
+    const r = run(['show', 'home', '--library', lib2])
+    expect(r.code, r.stderr).toBe(0)
+    expect(r.stdout.trimEnd().split('\n')).toEqual([
+      '# 首页',
+      '',
+      '## 等你决定（1）',
+      '- site 可以上线了，要上线吗？（问主人的测试插件）  关于 site → show item --path site',
+      '    $ asker yes  # 上线（只给主人）（推荐）',
+      '    $ asker no  # 不上线（只给主人）',
+      '',
+      '问主人的测试插件也在首页上。',
+    ])
+  })
+
+  it('check tells an agent what only the owner can settle, with the owner’s command for each answer and what to do with them', () => {
+    const home = tempDir('pb-show-')
+    const lib2 = join(home, 'lib')
+    const run = (args: string[]) => sb.runWithTestPlugins(args, { cwd: home })
+    expect(run(['init', lib2, '--bare']).code).toBe(0)
+    expect(run(['plugin', 'add', 'asker', '--library', lib2]).code).toBe(0)
+    expect(run(['grant', 'issue', 'helper', '--agent', 'codex', '--library', lib2]).code).toBe(0)
+    const check = run(['@helper', 'check'])
+    expect(check.code, check.stderr).toBe(0)
+    expect(check.stdout.trimEnd().split('\n')).toEqual([
+      '## 要主人来做的',
+      '- site 可以上线了，要上线吗？（asker）',
+      `  pneuma-base asker yes --library ${lib2}  # 上线（推荐）`,
+      `  pneuma-base asker no --library ${lib2}  # 不上线`,
+      '这些只有主人能定：告诉主人，主人在自己的终端里运行上面的命令，或在管理界面的首页上点。',
+    ])
+    expect(run(['@helper', 'check', '--json']).json().asks).toMatchObject([{ key: 'asker:site', by: 'asker', about: 'site', suggested: 0 }])
+    expect(run(['asker', 'yes', '--library', lib2]).code).toBe(0)
+    expect(run(['@helper', 'check']).stdout).not.toContain('要主人来做的')
   })
 })

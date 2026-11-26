@@ -1,5 +1,7 @@
 import { posix } from 'node:path'
 import { archive } from './archive.js'
+import { asksOf } from './asks.js'
+import { callableIn } from './blocks.js'
 import { contentOf } from './content.js'
 import { ARCHIVE_DIR, DESCRIPTION_FILE, KERNEL_DIR, abs, archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
 import { eachPlugin, messageOf, performVerb, pluginContext, type Collected } from './pipeline.js'
@@ -157,7 +159,8 @@ async function say(req: SayRequest, ctx: Context): Promise<SayResult> {
 
 async function check(req: CheckRequest, ctx: Context): Promise<CheckResult> {
   const heard = await eachPlugin(ctx, (plugin, pctx) => plugin.onCheck?.(req, pctx))
-  return { sections: stamp(heard), problems: heard.problems }
+  const asked = await asksOf(ctx, callableIn(ctx.library))
+  return { sections: stamp(heard), asks: asked.asks, problems: [...heard.problems, ...asked.problems] }
 }
 
 function stamp(heard: Collected<PluginSection[]>): Section[] {
