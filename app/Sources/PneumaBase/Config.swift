@@ -2,31 +2,40 @@ import Foundation
 
 /// What the app needs to run the command line, fixed at launch.
 struct Config: Sendable {
+  /// The Node program inside the bundle, next to the app's own executable.
   let node: String
-  /// The command line's entry, baked into Info.plist by build.sh.
+  /// The command line's entry inside the bundle: `Resources/cli/dist/bin.js`.
   let cli: String
-  /// `$PNEUMA_BASE_HOME` for every child. The spike defaults to a scratch home next to app/dist.
+  /// `$PNEUMA_BASE_HOME` for every child: `--home`, else the environment's, else `~/.pneuma-base`.
   let home: URL
   /// One scene per run of the app, so what it registers and brings in is grouped in the ledger.
   let session: String
   let started = Date()
 
   static func load() -> Config {
-    let info = Bundle.main.infoDictionary ?? [:]
     let env = ProcessInfo.processInfo.environment
-    let home = argument("--home") ?? env["PNEUMA_BASE_HOME"] ?? (info["PBSpikeHome"] as? String)
-      ?? NSHomeDirectory() + "/Library/Application Support/Pneuma Base Spike"
-    let node = ["/opt/homebrew/bin/node", "/usr/local/bin/node"].first { FileManager.default.isExecutableFile(atPath: $0) } ?? "/usr/bin/false"
+    let home = argument("--home") ?? env["PNEUMA_BASE_HOME"] ?? (env["HOME"] ?? NSHomeDirectory()) + "/.pneuma-base"
     return Config(
-      node: node,
-      cli: info["PBCliPath"] as? String ?? "",
+      node: Bundle.main.url(forAuxiliaryExecutable: "node")?.path ?? "",
+      cli: Bundle.main.resourceURL?.appendingPathComponent("cli/dist/bin.js").path ?? "",
       home: URL(fileURLWithPath: (home as NSString).expandingTildeInPath, isDirectory: true),
       session: UUID().uuidString.lowercased())
   }
 
-  /// The name of the distributed notification the test hooks listen on; `--hooks <name>` gives a run
-  /// its own, so a check never drives another copy of the app.
-  static var hooksName: String { "dev.pneumabase.spike" + (argument("--hooks").map { ".\($0)" } ?? "") }
+  /// Whether the bundle holds what the app runs; a copy built without them cannot do anything.
+  var complete: Bool { FileManager.default.isExecutableFile(atPath: node) && FileManager.default.fileExists(atPath: cli) }
+
+  /// The command on this machine that what agent connect writes names: the app points it at its own
+  /// Node and command line at each launch.
+  var launcher: URL { home.appendingPathComponent("bin/pneuma-base") }
+
+  /// The name of the distributed notification the test hooks listen on, only when the app was started
+  /// with `--hooks <name>`; each run gets its own, so a check never drives another copy of the app.
+  static var hooksName: String? { argument("--hooks").map { "dev.pneumabase.hooks.\($0)" } }
+
+  /// macOS runs a downloaded app that was opened where it was unpacked from a temporary, read-only
+  /// place (App Translocation), which goes away; a launcher pointing there would break.
+  static var translocated: Bool { Bundle.main.bundlePath.contains("/AppTranslocation/") }
 
   static func argument(_ name: String) -> String? {
     let args = CommandLine.arguments
@@ -99,6 +108,8 @@ struct Prefs: Codable {
   /// 直接放进来的文件算主人的: the watcher registers a file that appeared outside the tools as the
   /// owner's, seen rather than said, and records a direct change as seen. Unset means on.
   var ownerFiles: Bool?
+  /// The symbolic link to the launcher that 在终端里用 pneuma-base put on the owner's PATH; unset means off.
+  var pathLink: String?
 
   var watchesOwnerFiles: Bool { ownerFiles ?? true }
 

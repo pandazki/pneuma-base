@@ -1,12 +1,18 @@
 #!/bin/sh
 # Checks the built app without a person, along the path a new owner walks, with a temporary HOME
 # and a temporary PNEUMA_BASE_HOME, so no real agent configuration or library is read or written.
-# The first launch shows the welcome window; choosing a folder (the same code, by a test hook) makes
+# Build it first: app/build.sh. Everything runs on the app's own Node and command line, with nothing
+# on PATH but system tools. The first launch points the machine's launcher at the app's Node and
+# command line and shows the welcome window; choosing a folder (the same code, by a test hook) makes
 # it a library and opens the window on home with 「开始」; a file dropped on the window (the drop code,
 # by a test hook) is put as brought by the owner, into inbox/ or the folder the library page shows; a file written straight into the library is
 # registered as the owner's and seen, a direct change recorded as seen; an agent's puts stay the
-# agent's; connecting the fake Claude Code folds the first step; an ask puts the dot on the icon and
-# shows in the menu bar panel; quitting and killing the app leave no process behind.
+# agent's; connecting the fake Claude Code folds the first step; with env -i and system tools only,
+# the exact command lines the installed skill names and the command the fake Claude Desktop's MCP
+# entry names work, and what they do is the agent's; an ask puts the dot on the icon and shows in the
+# menu bar panel; 在终端里用 pneuma-base puts a link in a folder on PATH and takes it out; a moved copy
+# of the app repoints the launcher and the agents keep working; quitting and killing the app leave no
+# process behind.
 #
 # Only the copy of the app this script starts is driven or stopped: it has its own hook name and is
 # found by it, never by the app's name. With PNEUMA_BASE_SHOTS set to a folder, it saves pictures of
@@ -15,22 +21,32 @@ set -eu
 cd "$(dirname "$0")"
 app="$(pwd)/dist/Pneuma Base.app"
 work=$(mktemp -d "${TMPDIR:-/tmp}/pneuma-verify.XXXXXX")
+# As the system spells it: /private/var, one slash. The app and the command line both see it so.
+work=$(cd "$work" && pwd -P)
 fake_home="$work/home"
 pb_home="$work/pneuma-base-home"
 lib="$work/我的库"
 tag="verify$$"
 log="$pb_home/app/app.log"
 shots="${PNEUMA_BASE_SHOTS:-}"
-mkdir -p "$fake_home/.claude" "$pb_home/app" "$work/Downloads"
+launcher="$pb_home/bin/pneuma-base"
+mkdir -p "$fake_home/.claude" "$fake_home/Library/Application Support/Claude" "$pb_home/app" "$work/Downloads" "$work/bin"
 : > "$log"
 
-# The command line as the owner, with no agent-session variables, or as an agent with --as.
-pb() { env -i HOME="$fake_home" PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin PNEUMA_BASE_HOME="$pb_home" node ../packages/cli/dist/bin.js "$@"; }
-hook() { osascript -l JavaScript -e "ObjC.import('Foundation'); \$.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately('dev.pneumabase.spike.$tag', '$1', \$(), true)" >/dev/null; }
+# The command line as the owner, with no agent-session variables, or as an agent with --as: the app's own Node and command line.
+pb() { env -i HOME="$fake_home" PATH=/usr/bin:/bin PNEUMA_BASE_HOME="$pb_home" "$app/Contents/MacOS/node" "$app/Contents/Resources/cli/dist/bin.js" "$@"; }
+# A command line as an agent product runs it: through sh, with system tools only, a HOME, no PNEUMA_BASE_HOME.
+bare() { env -i HOME="$fake_home" PATH=/usr/bin:/bin CLAUDE_CODE_SESSION_ID=verify-session /bin/sh -c "$1"; }
+hook() { osascript -l JavaScript -e "ObjC.import('Foundation'); \$.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately('dev.pneumabase.hooks.$tag', '$1', \$(), true)" >/dev/null; }
 app_pid() { pgrep -f "Pneuma Base.app/Contents/MacOS/Pneuma Base --hooks $tag" || true; }
+# Starts the app at $1 (default the built one); its PATH has $work/bin, a folder the owner can write.
 start() {
-  open -n -a "$app" --env HOME="$fake_home" --env PNEUMA_BASE_HOME="$pb_home" --args --hooks "$tag" "$@"
+  open -n -a "${1:-$app}" --env HOME="$fake_home" --env PNEUMA_BASE_HOME="$pb_home" --env PATH="$work/bin:/usr/bin:/bin" --args --hooks "$tag"
   i=0; while [ -z "$(app_pid)" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done
+}
+stop() {
+  pid=$(app_pid); hook quit
+  i=0; while kill -0 "$pid" 2>/dev/null && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done
 }
 # Waits up to $2 seconds for the log to have a line matching $1.
 wait_for() { i=0; while ! grep -q "$1" "$log" && [ $i -lt $(($2 * 10)) ]; do sleep 0.1; i=$((i+1)); done; grep -q "$1" "$log"; }
@@ -45,6 +61,8 @@ status=0
 
 start
 wait_for "welcome: shown" 10 && ok "first launch with no library: the welcome window" || fail "first launch: the welcome window"
+wait_for "launcher: written" 10 && ok "first launch writes the launcher $launcher" || fail "the launcher: $(grep 'launcher:' "$log")"
+grep -q "exec '$app/Contents/MacOS/node' '$app/Contents/Resources/cli/dist/bin.js'" "$launcher" && grep -q "PNEUMA_BASE_HOME='$pb_home'" "$launcher" && ok "the launcher runs the app's own Node and command line, with this home" || fail "the launcher's content: $(cat "$launcher")"
 snap snap-welcome first-launch
 
 hook "library:$lib"
@@ -53,6 +71,7 @@ wait_for "window: shown" 15 && ok "the main window opens" || fail "the main wind
 pid=$(app_pid)
 child=$(pgrep -P "$pid" -f "parent-watch.mjs" || true)
 [ -n "$child" ] && ok "the server is a child of the app (pid $child)" || fail "server child running"
+ps -o command= -p "$child" | grep -q "$app/Contents/MacOS/node .*$app/Contents/Resources/cli/dist/bin.js view" && ok "the server runs the app's own Node and command line" || fail "the server runs: $(ps -o command= -p "$child")"
 page_shows home-0.txt "接上你的 agent" 10 && page_text home-0.txt | grep -q "做完了 0 步，还有 3 步" && ok "home opens with 开始, 0 of 3 done" || fail "home opens with 开始: $(head -c 300 "$work/home-0.txt")"
 
 echo "dropped" > "$work/Downloads/dropped.txt"
@@ -87,8 +106,33 @@ pb --library "$lib" inspect inbox/dropped.txt | grep -q "直接改的，自动�
 
 page_text home-2.txt | grep -q "Claude Code" && ok "step 1 lists Claude Code, found in the fake HOME" || fail "step 1 lists Claude Code"
 pb --library "$lib" agent connect claude-code >/dev/null
-[ -f "$fake_home/.claude/skills/pneuma-base-claude-code/SKILL.md" ] && ok "connect wrote the skill into the fake HOME" || fail "connect wrote the skill"
+skill="$fake_home/.claude/skills/pneuma-base-claude-code/SKILL.md"
+[ -f "$skill" ] && ok "connect wrote the skill into the fake HOME" || fail "connect wrote the skill"
 page_shows home-3.txt "已接上 Claude Code" 10 && ok "the first step folds: 已接上 Claude Code" || fail "the first step folds: $(head -c 300 "$work/home-3.txt")"
+
+# The skill's own three command lines, run as Claude Code would: placeholders filled, system tools only.
+echo "# 书单" > "$work/books.md"
+line() { grep "^$launcher @claude-code $1 " "$skill" | sed 's/ *#.*//'; }
+start_line=$(line start | sed 's/"<一句话：这次在做什么>"/整理读书笔记/')
+put_line=$(line put | sed -e "s|<库外的文件或目录>|$work/books.md|" -e 's|<库内路径>|notes/books.md|' -e 's| --from <依据的库内路径…>||')
+find_line=$(line find | sed 's/<文字>/书单/')
+[ -n "$start_line" ] && [ -n "$put_line" ] && [ -n "$find_line" ] && ok "the skill names the launcher by absolute path in its three command lines" || fail "the skill's command lines: $(grep '@claude-code' "$skill")"
+for l in "$start_line" "$put_line" "$find_line"; do
+  out=$(bare "$l" 2>&1) && echo "     \$ $l" && echo "$out" | sed -n '1,3s/^/       /p' || fail "with env -i: $l: $out"
+done
+bare "$find_line" | grep -q "notes/books.md" && ok "with env -i: start, put, find from the skill work; find finds what put put" || fail "find finds what put put"
+pb --library "$lib" inspect notes/books.md | grep -q "做出来的 · claude-code" && pb --library "$lib" inspect notes/books.md | grep -q "整理读书笔记" && ok "the scene is Claude Code's, in this library: 做出来的 · claude-code, 整理读书笔记" || fail "the scene: $(pb --library "$lib" inspect notes/books.md | head -5)"
+
+# The fake Claude Desktop by MCP: start what its entry names, with system tools only, and list its tools.
+pb --library "$lib" agent connect claude-desktop >/dev/null
+desktop="$fake_home/Library/Application Support/Claude/claude_desktop_config.json"
+entry() { plutil -extract "mcpServers.pneuma-base-claude-desktop.$1" raw -o - "$desktop"; }
+[ "$(entry command)" = "$launcher" ] && [ "$(entry args.0) $(entry args.1)" = "@claude-desktop mcp" ] && ! entry env >/dev/null 2>&1 && ok "the MCP entry: $(entry command) @claude-desktop mcp, no env" || fail "the MCP entry: $(cat "$desktop")"
+{ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"verify","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"put","arguments":{"to":"notes/desktop.md","made":true,"text":"# 桌面\n"}}}'; sleep 4; } \
+  | env -i HOME="$fake_home" PATH=/usr/bin:/bin "$(entry command)" "$(entry args.0)" "$(entry args.1)" > "$work/mcp.out" 2> "$work/mcp.err"
+tools=$(grep '"id":2' "$work/mcp.out" | grep -o '"name":"[a-z_]*"' | sed 's/"name":"\(.*\)"/\1/' | tr '\n' ' ')
+echo "$tools" | grep -q "start find inspect put" && ok "with env -i: the MCP entry starts and lists its tools: $tools" || fail "the MCP entry's tools: $(head -c 400 "$work/mcp.out") $(head -c 300 "$work/mcp.err")"
+pb --library "$lib" inspect notes/desktop.md | grep -q "做出来的 · claude-desktop" && ok "a put through MCP is Claude Desktop's" || fail "the MCP put: $(pb --library "$lib" inspect notes/desktop.md | head -3)"
 
 for i in 1 2 3 4 5; do
   echo "made by an agent $i" > "$work/made-$i.md"
@@ -113,11 +157,40 @@ wait_for "tray: shown" 5 && ok "a click on the icon opens the panel" || fail "th
 page_shows tray.txt "要上线吗" 10 text-tray && grep -q "我的库" "$work/tray.txt" && grep -q "打开窗口" "$work/tray.txt" && ok "the panel: the library, the ask, 打开窗口" || fail "the panel: $(head -c 300 "$work/tray.txt")"
 snap snap-tray tray-app
 
+hook settings
+wait_for "settings: PATH folders" 10
+hook "text-settings:$work/settings.txt"; sleep 1
+grep -q "在终端里用 pneuma-base：关着" "$work/settings.txt" && grep -q "登录时打开：关着" "$work/settings.txt" && ok "settings: both conveniences start off" || fail "settings: $(cat "$work/settings.txt")"
+grep -q "PATH 上能放的文件夹：.*$work/bin" "$work/settings.txt" && ok "settings: a folder on the owner's PATH they can write is offered" || fail "settings: the PATH folders: $(cat "$work/settings.txt")"
+snap snap-settings settings
+hook "path-link:$work/bin"; sleep 1
+[ "$(readlink "$work/bin/pneuma-base")" = "$launcher" ] && env -i HOME="$fake_home" PATH="$work/bin:/usr/bin:/bin" pneuma-base --library "$lib" find 书单 | grep -q "notes/books.md" && ok "在终端里用 pneuma-base: a link on PATH, and pneuma-base runs in a terminal" || fail "the link on PATH: $(ls -l "$work/bin")"
+hook path-unlink; sleep 1
+[ ! -e "$work/bin/pneuma-base" ] && [ ! -L "$work/bin/pneuma-base" ] && ok "turned off: the link is gone" || fail "the link is left"
+
 hook quit
 i=0; while kill -0 "$pid" 2>/dev/null && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done
 sleep 1
 kill -0 "$pid" 2>/dev/null && fail "quit: the app is still running" || ok "quit: the app ended"
 kill -0 "$child" 2>/dev/null && fail "quit: the server $child is left" || ok "quit: no server left"
+
+# The app moves: a copy elsewhere repoints the launcher at its own Node and command line, and the
+# agents' entries, untouched, keep working. Moved away, the launcher dangles and agent list says so;
+# the next launch of an app repairs it.
+mkdir -p "$work/moved"
+ditto "$app" "$work/moved/Pneuma Base.app"
+desktop_before=$(cat "$desktop"); skill_before=$(cat "$skill")
+: > "$log"
+start "$work/moved/Pneuma Base.app"
+wait_for "launcher: written" 10 && grep -q "exec '$work/moved/Pneuma Base.app/Contents/MacOS/node'" "$launcher" && ok "moved: the launcher now runs the moved app's Node" || fail "moved: $(grep 'launcher:' "$log") $(tail -1 "$launcher")"
+[ "$(cat "$desktop")" = "$desktop_before" ] && [ "$(cat "$skill")" = "$skill_before" ] && bare "$find_line" | grep -q "notes/books.md" && ok "moved: the skill and the MCP entry are unchanged and still work" || fail "moved: the entries"
+stop
+mv "$work/moved/Pneuma Base.app" "$work/moved/gone.app"
+pb agent list | grep -q "指向的 node 不在了" && ok "moved away: agent list says the launcher points at a Node that is gone" || fail "moved away: $(pb agent list)"
+: > "$log"
+start
+wait_for "launcher: written" 10 && pb agent list --json | grep -q '"inPlace": true' && ! pb agent list | grep -q "不在了" && ok "launching the app again repairs it: every connection in use" || fail "repaired: $(pb agent list)"
+stop
 : > "$log"
 start
 wait_for "server: ready" 10 || true

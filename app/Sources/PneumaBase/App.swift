@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   private let window = MainWindow()
   private let tray = TrayPanel()
   private let welcome = WelcomeWindow()
+  private var settings: SettingsWindow?
   private var server: Server?
   private var watcher: Watcher?
   /// How many things wait for the owner in the current library: the dot on the icon.
@@ -27,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     Log.config = config
     Log.line("app: launched, home \(config.home.path), process age \(String(format: "%.0f", processAge() * 1000)) ms")
     prefs = Prefs.load(config)
+    makeSettings()
     if let dir = Config.argument("--library") { remember(URL(fileURLWithPath: (dir as NSString).expandingTildeInPath, isDirectory: true)) }
     NSApp.mainMenu = mainMenu()
     makeStatusItem()
@@ -42,10 +44,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     welcome.onChoose = { [weak self] in self?.chooseLibrary() }
     welcome.onClose = { [weak self] in if self?.window.isOpen == false { NSApp.setActivationPolicy(.accessory) } }
     countTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.countWaiting() } }
+    if Config.hooksName != nil { listenForTestCommands() }
+    guard config.complete else { return alert("这份 Pneuma Base 不完整", detail: "应用里缺少它自带的 Node 或命令行，什么都做不了。重新下载一份，或用 app/build.sh 重新构建。") }
+    if Config.translocated { warnTranslocated() }
+    Task { await installLauncher() }
     switchTo(current)
-    listenForTestCommands()
     if !hasLibrary { welcome.show() } else if CommandLine.arguments.contains("--open") { openWindow() }
   }
+
+  /// Points the launcher at this app's own Node and command line, at every launch: what connected
+  /// agents run names the launcher, so moving or updating the app keeps them working.
+  private func installLauncher() async {
+    let r = await runCli(["launcher", "install", "--json"], in: FileManager.default.homeDirectoryForCurrentUser, config: config)
+    let changed = (r.json?["data"] as? [String: Any])?["changed"] as? Bool
+    Log.line(changed.map { "launcher: \($0 ? "written" : "unchanged") \(config.launcher.path)" } ?? "launcher: not written: \(r.err.prefix(300))")
+  }
+
+  /// Opened where it was unpacked, a downloaded app runs from a temporary place that goes away when it
+  /// quits, and the launcher would point there.
+  private func warnTranslocated() {
+    Log.line("app: translocated, at \(Bundle.main.bundlePath)")
+    NSApp.activate()
+    let alert = NSAlert()
+    alert.messageText = "先把 Pneuma Base 拖进「应用程序」文件夹，再从那里打开"
+    alert.informativeText = "它现在是在解压出来的地方直接打开的，macOS 让它在一个临时的位置运行。接上的 agent 按一个固定的路径找它，应用退出后那个临时位置就没了，agent 会找不到它。"
+    alert.addButton(withTitle: "退出")
+    alert.addButton(withTitle: "先这样用")
+    if alert.runModal() == .alertFirstButtonReturn { NSApp.terminate(nil) }
+  }
+
+  private func makeSettings() {
+    let model = MachineSettings(launcher: config.launcher, ownerFiles: prefs.watchesOwnerFiles, link: prefs.pathLink)
+    model.onOwnerFiles = { [weak self] on in
+      guard let self else { return }
+      self.prefs.ownerFiles = on
+      self.prefs.save(self.config)
+      self.watcher?.recordsOwnerFiles = on
+      Log.line("app: owner files \(on ? "on" : "off")")
+    }
+    model.onLink = { [weak self] link in
+      guard let self else { return }
+      self.prefs.pathLink = link
+      self.prefs.save(self.config)
+    }
+    let window = SettingsWindow(model: model)
+    window.onClose = { [weak self] in
+      guard let self, !self.window.isOpen, !self.welcome.isOpen else { return }
+      NSApp.setActivationPolicy(.accessory)
+    }
+    settings = window
+  }
+
+  @objc func openSettings() { settings?.show() }
 
   func applicationWillTerminate(_ notification: Notification) {
     watcher?.stop()
@@ -238,6 +288,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     menu.addItem(withTitle: "打开窗口", action: #selector(openWindow), keyEquivalent: "").target = self
     menu.addItem(.separator())
     menu.addItem(ownerFilesItem())
+    menu.addItem(withTitle: "设置…", action: #selector(openSettings), keyEquivalent: "").target = self
     menu.addItem(.separator())
     menu.addItem(withTitle: "退出 Pneuma Base", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     // Shown the way a status item shows its own menu, so the system places it.
@@ -329,12 +380,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     return item
   }
 
-  @objc private func toggleOwnerFiles() {
-    prefs.ownerFiles = !prefs.watchesOwnerFiles
-    prefs.save(config)
-    watcher?.recordsOwnerFiles = prefs.watchesOwnerFiles
-    Log.line("app: owner files \(prefs.watchesOwnerFiles ? "on" : "off")")
-  }
+  @objc private func toggleOwnerFiles() { settings?.model.ownerFiles.toggle() }
 
   func validateMenuItem(_ item: NSMenuItem) -> Bool {
     if item.action == #selector(toggleOwnerFiles) { item.state = prefs.watchesOwnerFiles ? .on : .off }
@@ -398,6 +444,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     submenu("Pneuma Base", [
       item("关于 Pneuma Base", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
       .separator(),
+      item("设置…", #selector(openSettings), ",", target: self),
       ownerFilesItem(),
       .separator(),
       item("隐藏 Pneuma Base", #selector(NSApplication.hide(_:)), "h"),
@@ -452,16 +499,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
   // MARK: Test hooks
 
-  /// Lets the measurements and checks drive the app without a person: a distributed notification
-  /// named `Config.hooksName` with object `open`, `close`, `quit`, `pids`, `park` (moves the window
+  /// Lets the measurements and checks drive the app without a person, only when it was started with
+  /// `--hooks <name>`: a distributed notification named `Config.hooksName` with object `open`, `close`, `quit`, `pids`, `park` (moves the window
   /// almost off the screen, still visible to WebKit), `dark`, `light` or `system` (the app's
   /// appearance, as a change of the system's would set it), `hit:<x>,<y>`, `find:<text>`,
   /// `library:<folder>` (as if chosen in the first-launch window or 新建或打开一个库…), `drop:<path>`
   /// and `drop-window:<path>` (through the same code as a file dropped on the menu bar item or the
   /// window), `route:<fragment>` (the page's address fragment), `tray` (a click on the icon), `text:<file>` and `text-tray:<file>` (the page's text),
-  /// `snap:<file>`, `snap-tray:<file>` and `snap-welcome:<file>` (a picture of it).
+  /// `snap:<file>`, `snap-tray:<file>`, `snap-welcome:<file>` and `snap-settings:<file>` (a picture of it),
+  /// `settings` (the settings window), `path-link:<folder>` and `path-unlink` (as the 在终端里用
+  /// pneuma-base switch does), `text-settings:<file>` (the settings in words).
   private func listenForTestCommands() {
-    DistributedNotificationCenter.default().addObserver(forName: Notification.Name(Config.hooksName), object: nil, queue: .main) { [weak self] note in
+    guard let name = Config.hooksName else { return }
+    DistributedNotificationCenter.default().addObserver(forName: Notification.Name(name), object: nil, queue: .main) { [weak self] note in
       let command = note.object as? String
       MainActor.assumeIsolated {
         guard let self, let command else { return }
@@ -481,6 +531,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case "snap": self.window.snapshotForTest(to: file)
         case "snap-tray": snapshot(self.tray.webView, to: file, ground: .windowBackgroundColor)
         case "snap-welcome": self.welcome.snapshotForTest(to: file)
+        case "settings": self.openSettings()
+        case "path-link": self.settings?.model.link(in: rest)
+        case "path-unlink": self.settings?.model.unlink()
+        case "text-settings": try? self.settings?.model.text.write(to: file, atomically: true, encoding: .utf8)
+        case "snap-settings": self.settings?.snapshotForTest(to: file)
         case "park": self.window.park()
         case "dark", "light", "system":
           NSApp.appearance = verb == "system" ? nil : NSAppearance(named: verb == "dark" ? .darkAqua : .aqua)
