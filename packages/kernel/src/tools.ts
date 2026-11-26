@@ -4,7 +4,9 @@ import { type Context, type LibraryPath, type PlaceStore, type PluginName, type 
 import { changesSince } from './changes.js'
 import { v1Tools } from './contract-v1.js'
 import { archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
+import { PLACE as REQUESTS } from './requests.js'
 import { storageOf, type Area, type Source, type Storage } from './storage.js'
+import { loggedStorage } from './tool-log.js'
 import { rankHits, searchTerms, SENTENCE_HITS } from './terms.js'
 import { enclosingBundle, markBundle, THING_FILES, THING_RULE, whatIs } from './things.js'
 
@@ -24,8 +26,11 @@ function placeStore(area: Area, own: PluginName): PlaceStore {
   }
 }
 
-/** What a plugin gets of storage: the content, its own record place and its content, holds, and change learned from the kernel's cursor. */
-export function pluginStorage(store: Storage, name: PluginName): PluginStorage {
+/**
+ * What a plugin gets of storage: the content, its own record place and its content, holds, change
+ * learned from the kernel's cursor, and the library's other record places by name.
+ */
+export function pluginStorage(store: Storage, name: PluginName, places: readonly string[]): PluginStorage {
   return {
     ...placeStore(store, name),
     probe: store.probe,
@@ -38,6 +43,11 @@ export function pluginStorage(store: Storage, name: PluginName): PluginStorage {
     changed: (mark) => changesSince(store, mark),
     own: placeStore(store.own(name), name),
     records: store.records(name),
+    recordPlaces: async () => [REQUESTS, ...places],
+    recordPlace(place) {
+      const { append, since } = store.records(place)
+      return { own: placeStore(store.own(place), name), facts: { append, since } }
+    },
   }
 }
 
@@ -63,7 +73,7 @@ export function pluginTools(ctx: Context, name: PluginName): PluginTools {
       const { agentFace } = await import('./agent.js')
       return agentFace.put(req, ctx)
     },
-    storage: pluginStorage(store, name),
+    storage: loggedStorage(pluginStorage(store, name, ctx.library.config.plugins), name),
     ...v1Tools(store, root, name),
   }
 }

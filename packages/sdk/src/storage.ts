@@ -156,6 +156,16 @@ export interface PlaceStore {
   remove(place: Place, expect: string, opts?: { hold?: string }): Promise<{ removed: true } | StorageFailure>
 }
 
+/**
+ * Another record place of the library: its facts, read in storage's order and appended to, and its own
+ * content. Only a plugin whose work is to carry the whole library elsewhere (sync) reaches one; any
+ * other keeps to its own record place (the conformance check `writes`).
+ */
+export interface OtherRecordPlace {
+  readonly own: PlaceStore
+  readonly facts: Pick<RecordPlace, 'append' | 'since'>
+}
+
 /** What a plugin may ask of storage: the content where its records point, its own record place, and its own content beside it. */
 export interface PluginStorage extends PlaceStore {
   /** How large a directory is at least, counted up to `budget` entries (500), and what well-known files are at its top. */
@@ -176,6 +186,10 @@ export interface PluginStorage extends PlaceStore {
   /** The plugin's own record place's content: places under `.pneuma-base/<plugin>/`, `facts` aside. */
   readonly own: PlaceStore
   readonly records: RecordPlace
+  /** The record places the kernel knows in this library, by name: its own (`requests`) and each installed plugin's. */
+  recordPlaces(): Promise<string[]>
+  /** The record place `name`, which need not be one `recordPlaces` names: one a plugin of another machine wrote. */
+  recordPlace(name: string): OtherRecordPlace
 }
 
 /** Whether a glance found the place described, of whatever kind, rather than failing on it. */

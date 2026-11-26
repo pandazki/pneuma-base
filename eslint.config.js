@@ -124,6 +124,7 @@ const OFF_STORAGE = {
     'outside.ts': "a put's source outside the library: its kind, size and sha256",
     'contract-v1.ts': 'contract 1, removed next step: an outside file\'s sha256 and the outside directory a copy-out writes into',
     'cognition.ts': "the package's own texts",
+    'tool-log.ts': 'the log of what plugins ask storage, at a path outside every library a test harness names in PNEUMA_BASE_TOOL_LOG',
     'machine-files.ts': 'machine state under $PNEUMA_BASE_HOME, and the files of other programs an owner command writes',
     'grants.ts': 'grant files under $PNEUMA_BASE_HOME',
     'endpoint.ts': 'the local endpoint files under $PNEUMA_BASE_HOME',
