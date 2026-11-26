@@ -5,26 +5,40 @@ import { ownerFace } from './owner.js'
 import { APPROVE, DECLINE, endText, isPending, pendingLines, readRequests, recordDecision, requestNamed, when } from './requests.js'
 import type { OwnerRequest } from '@pneuma-base/sdk'
 
+/** How many settled requests `request list --all` shows, the latest. */
+const SETTLED_SHOWN = 50
+
 const notPending = (r: OwnerRequest) => refused('not-pending', `请求 ${r.id} ${endText(r)}，不能再决定。`)
 const noSuch = (id: string) => refused('no-such-request', `没有请求 ${id}。request list 列出等你决定的。`)
 
 export const REQUEST_COMMANDS: readonly KernelCommand[] = [
   command({
     name: 'request list',
-    summary: 'agent 请你做的事：每个请求为什么、要运行的命令，和批准、拒绝它的命令；--all 也列出已经了结的',
-    params: { flags: [{ name: 'all', hint: '也列出已经了结的', kind: 'boolean' }] },
+    summary: `agent 请你做的事：每个请求为什么、要运行的命令，和批准、拒绝它的命令；--all 也列出最近 ${SETTLED_SHOWN} 个已经了结的，--older 连更早的一起列出`,
+    params: {
+      flags: [
+        { name: 'all', hint: '也列出已经了结的', kind: 'boolean' },
+        { name: 'older', hint: `已经了结的全部列出，不只最近 ${SETTLED_SHOWN} 个`, kind: 'boolean' },
+      ],
+    },
     destructive: false,
     ownerOnly: true,
     readOnly: true,
     askable: false,
     scope: 'library',
-    async run({ all }, call) {
+    async run({ all, older: every }, call) {
       const requests = await readRequests(call.ctx.library.root)
       const pending = requests.filter(isPending)
       const ended = requests.filter((r) => !isPending(r))
+      // Every request stays on disk as the record; the list shows the latest unless asked for all.
+      const shown = every ? ended : ended.slice(-SETTLED_SHOWN)
+      const older = ended.length - shown.length
       const lines = pending.length === 0 ? ['没有等你决定的请求。'] : [`等你决定的请求（${pending.length}）：`, ...pending.flatMap(pendingLines)]
-      if (all && ended.length > 0) lines.push('已经了结的：', ...ended.map((r) => `- ${r.id} · ${r.by.name} · ${when(r.at)} · ${r.line} · ${endText(r)}`))
-      return done(lines.join('\n'), { requests: all ? requests : pending })
+      if ((all || every) && ended.length > 0) {
+        lines.push(older > 0 ? `已经了结的（最近 ${shown.length} 个；更早的 ${older} 个没有列出，加 --older 全部列出）：` : '已经了结的：')
+        lines.push(...shown.map((r) => `- ${r.id} · ${r.by.name} · ${when(r.at)} · ${r.line} · ${endText(r)}`))
+      }
+      return done(lines.join('\n'), all || every ? { requests: [...pending, ...shown], older } : { requests: pending })
     },
   }),
   command({
