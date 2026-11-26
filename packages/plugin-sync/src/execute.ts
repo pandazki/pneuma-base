@@ -1,28 +1,29 @@
-// Applies a plan to two sides. Each write and removal first checks that the file is what the plan
-// saw, so a file changed during the sync is skipped, never overwritten.
-import { createHash } from 'node:crypto'
-import type { Fingerprint, LibraryPath } from '@pneuma-base/kernel'
+// Applies a plan to two sides. Each step first checks that what it copies, replaces or removes is what
+// the plan saw, so a thing changed during the sync is skipped, never overwritten.
+import type { Fingerprint } from '@pneuma-base/kernel'
 import { stepPath, type Deletion, type Files, type Plan, type Side, type Step } from './rules.js'
+import type { Key } from './scope.js'
+import type { Staged } from './target.js'
 
 /**
- * Where a library is synced to, and the library itself seen the same way. Paths are library
- * paths. `read` of a missing file rejects with an error whose `code` is `ENOENT`; `write` puts the
- * whole file in place at once.
+ * One side of a sync as a plan's steps use it. `stage` takes a copy of what `key` holds out to the
+ * target's temporary folder while it is still `fingerprint`; `place` puts a staged copy at `key` while
+ * what is there is what the plan saw, holding `fingerprint` already counting as done; `remove` takes
+ * `key` away while it is what the plan saw. Each answers false, changing nothing, when it is not.
  */
-export interface SyncTarget {
-  list(): Promise<Map<LibraryPath, Fingerprint>>
-  read(path: LibraryPath): Promise<Uint8Array>
-  write(path: LibraryPath, bytes: Uint8Array): Promise<void>
-  remove(path: LibraryPath): Promise<void>
+export interface SideIO {
+  stage(key: Key, fingerprint: Fingerprint): Promise<Staged | null>
+  place(key: Key, staged: Staged, fingerprint: Fingerprint): Promise<boolean>
+  remove(key: Key, fingerprint: Fingerprint): Promise<boolean>
 }
 
-export type Sides = Record<Side, SyncTarget>
+/** The two sides, and how a staged copy left over after a step goes. */
+export type Sides = Record<Side, SideIO> & { discard(staged: Staged): void }
 
 /** `failure`: why the run stopped; the steps after it did not run. */
 export type Execution = { done: Step[]; skipped: Step[]; failure: string | null }
 
 const other = (side: Side): Side => (side === 'local' ? 'target' : 'local')
-const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex') as Fingerprint
 
 export async function execute(plan: Plan, sides: Sides): Promise<Execution> {
   const out: Execution = { done: [], skipped: [], failure: null }
@@ -38,45 +39,27 @@ export async function execute(plan: Plan, sides: Sides): Promise<Execution> {
   return out
 }
 
-/** False when a file is not what the plan saw. */
+/** False when something is not what the plan saw. The local side is placed before the target, which takes the staged copy. */
 async function apply(step: Step, sides: Sides): Promise<boolean> {
-  if (step.kind === 'remove') {
-    if ((await current(sides[step.side], step.path)) !== step.fingerprint) return false
-    await sides[step.side].remove(step.path)
-    return true
-  }
-  const bytes = await sides[step.from].read(step.path)
-  if (sha256(bytes) !== step.fingerprint) return false
-  if (step.kind === 'copy') return place(sides[other(step.from)], step.path, bytes, step.fingerprint, step.over)
-  return (await place(sides.local, step.to, bytes, step.fingerprint, null)) && (await place(sides.target, step.to, bytes, step.fingerprint, null))
-}
-
-/** Writes `bytes` at `path` when the file there is `expected`; already holding them counts as done. */
-async function place(side: SyncTarget, path: LibraryPath, bytes: Uint8Array, fingerprint: Fingerprint, expected: Fingerprint | null): Promise<boolean> {
-  const now = await current(side, path)
-  if (now === fingerprint) return true
-  if (now !== expected) return false
-  await side.write(path, bytes)
-  return true
-}
-
-async function current(side: SyncTarget, path: LibraryPath): Promise<Fingerprint | null> {
+  if (step.kind === 'remove') return sides[step.side].remove(step.path, step.fingerprint)
+  const staged = await sides[step.from].stage(step.path, step.fingerprint)
+  if (staged === null) return false
   try {
-    return sha256(await side.read(path))
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw error
+    if (step.kind === 'copy') return await sides[other(step.from)].place(step.path, staged, step.fingerprint)
+    return (await sides.local.place(step.to, staged, step.fingerprint)) && (await sides.target.place(step.to, staged, step.fingerprint))
+  } finally {
+    sides.discard(staged)
   }
 }
 
 /** The paths of the plan's steps that are not in `done`. */
-function unrun(plan: Plan, done: readonly Step[]): Set<LibraryPath> {
+export function unrun(plan: Plan, done: readonly Step[]): Set<Key> {
   const ran = new Set(done.map(stepPath))
   return new Set(plan.steps.map(stepPath).filter((path) => !ran.has(path)))
 }
 
 /** What both sides hold after `done`: the plan's end state, except the paths whose step did not run, which keep their base. */
-export function baselineAfter(plan: Plan, base: Files, done: readonly Step[]): Map<LibraryPath, Fingerprint> {
+export function baselineAfter(plan: Plan, base: Files, done: readonly Step[]): Map<Key, Fingerprint> {
   const after = new Map(plan.end)
   for (const path of unrun(plan, done)) {
     const before = base.get(path)

@@ -1,11 +1,12 @@
 // The owner commands: sync target set, sync now, sync status. None makes content unrecoverable on
 // its own: sync now deletes on the other side only what the owner deleted with a destructive
 // command, already confirmed in person. So none is destructive and an agent may run them.
-import { mkdir, realpath } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { defineCommand, type OwnerAnswer, type OwnerCommand } from '@pneuma-base/kernel'
-import { currentTarget, envelope, readFacts, writeFact, type RunFact, type TargetFact } from './facts.js'
-import { countsText, notReadyText, overlaps, pendingOf, prepare, run, status, when } from './sync.js'
+import { envelope, writeFacts, type RunFact, type TargetFact } from './facts.js'
+import { machineTarget } from './rows.js'
+import { countsText, notReadyText, overlaps, pendingOf, prepare, run, status, targetOf, when } from './sync.js'
+import { makeTarget } from './target.js'
 
 const done = (text: string, data?: unknown): OwnerAnswer => ({ outcome: 'done', text, ...(data === undefined ? {} : { data }) })
 const refused = (reason: string, text: string, data?: unknown): OwnerAnswer => ({ outcome: 'refused', reason, text, ...(data === undefined ? {} : { data }) })
@@ -27,15 +28,15 @@ export const TARGET_SET = defineCommand({
     const wanted = resolve(ctx.session.cwd, to)
     if (overlaps(root, wanted)) return refused('target-overlaps', `${wanted} 和库的目录互相包含，不能当同步目标。换一个库外的目录。`)
     // A disk that is not mounted, or a folder this user cannot write, is the owner's to fix, not a crash.
-    const made = await mkdir(wanted, { recursive: true }).then(() => null, (error: unknown) => (error instanceof Error ? error.message : String(error)))
-    if (made !== null) return refused('target-unreachable', `建不了这个目录：${made}。盘没挂上就先挂上，或换一个能写的目录。`)
-    const path = await realpath(wanted)
+    const made = makeTarget(wanted)
+    if ('error' in made) return refused('target-unreachable', `建不了这个目录：${made.error}。盘没挂上就先挂上，或换一个能写的目录。`)
+    const { path } = made
     if (overlaps(root, path)) return refused('target-overlaps', `${path} 和库的目录互相包含，不能当同步目标。换一个库外的目录。`)
     const machine = ctx.session.machine
-    const mine = currentTarget((await readFacts(ctx)).filter((fact) => fact.machine === machine), machine)
-    if (mine?.target.path === path) return done(`同步目标本来就是目录 ${path}，没有变。`, { target: mine?.target })
+    const mine = await machineTarget((await targetOf(ctx)).rows, machine)
+    if (mine?.target.path === path) return done(`同步目标本来就是目录 ${path}，没有变。`, { target: mine.target })
     const fact: TargetFact = { ...envelope(ctx), kind: 'target.set', target: { kind: 'dir', path } }
-    await writeFact(ctx, fact)
+    await writeFacts(ctx, [fact])
     return done(`已把这台机器（${machine}）的同步目标设为目录 ${path}。用 sync now 同步。`, { target: fact.target })
   },
 })
@@ -64,7 +65,7 @@ const now = defineCommand({
   destructive: false,
   ownerOnly: false,
   async run(_values, ctx) {
-    const prepared = await prepare(ctx, currentTarget(await readFacts(ctx), ctx.session.machine))
+    const prepared = await prepare(ctx, (await targetOf(ctx)).record, 'run')
     if (prepared.kind !== 'ready') return refused(prepared.kind, `${notReadyText(prepared, ctx.session.machine)}什么都没动。`)
     const fact = await run(ctx, prepared)
     const text = runText(fact).join('\n')

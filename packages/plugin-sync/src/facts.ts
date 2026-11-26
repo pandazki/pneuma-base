@@ -1,12 +1,9 @@
-// The sync's records in the library: one write-once file per fact under facts/, synced like any
-// record. The baseline, what this machine saw at the end of its last sync, lives in the cache
-// directory outside the library, one per machine, never synced.
+// The sync's facts, appended to its record place through storage and carried like every record
+// place's facts: which target each machine set, each run, the owner's deliberate deletions, and the
+// registered things it heard of, so a library learns from the pulled facts what the others registered.
 import { randomBytes } from 'node:crypto'
-import { link, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
-import { join, relative, sep } from 'node:path'
-import type { Fingerprint, Instant, LibraryPath, PluginContext } from '@pneuma-base/kernel'
-import type { SyncTarget } from './execute.js'
-import { moment, type Conflict, type Deletion, type Files, type Step } from './rules.js'
+import type { Instant, LibraryPath, PluginContext } from '@pneuma-base/kernel'
+import { moment, type Conflict, type Deletion, type Step } from './rules.js'
 
 export type TargetSpec = { kind: 'dir'; path: string }
 
@@ -33,96 +30,42 @@ export type RunFact = Envelope & {
  * `command` was done, they were in this machine's baseline and gone from the library.
  */
 export type DeletedFact = Envelope & { kind: 'deleted'; command: string; deleted: Deletion[] }
-export type SyncFact = TargetFact | RunFact | DeletedFact
-
-const FACTS = 'facts'
-/** The plugin's temporary folder, declared as a cache so it is never synced. */
-export const SCRATCH = 'tmp'
+/** Things registered or placed here, or made on both sides by a sync (archived and restored copies). */
+export type ThingsFact = Envelope & { kind: 'things'; paths: LibraryPath[] }
+/** A thing moved, by a put or into or out of the archive. */
+export type MovedFact = Envelope & { kind: 'moved'; from: LibraryPath; to: LibraryPath }
+/** Things `archive purge` deleted. */
+export type GoneFact = Envelope & { kind: 'gone'; paths: LibraryPath[] }
+/** A conflict copy a sync made: the target's version of `original`, kept on both sides at `copy`. */
+export type ConflictFact = Envelope & { kind: 'conflict'; copy: LibraryPath; original: LibraryPath }
+export type SyncFact = TargetFact | RunFact | DeletedFact | ThingsFact | MovedFact | GoneFact | ConflictFact
 
 export function envelope(ctx: PluginContext): Envelope {
   const by = ctx.actor.kind === 'owner' ? 'owner' : ctx.actor.name
   return { id: `${moment(ctx.now)}-${randomBytes(4).toString('hex')}`, at: ctx.now, machine: ctx.session.machine, by }
 }
 
-/** Writes one fact as a new file: a temporary name first, then linked to a final name that must not exist. Returns its library path and bytes. */
-export async function writeFact(ctx: PluginContext, fact: SyncFact): Promise<{ path: LibraryPath; bytes: Buffer }> {
-  const folder = join(ctx.dir, FACTS)
-  await mkdir(folder, { recursive: true })
-  await mkdir(join(ctx.dir, SCRATCH), { recursive: true })
-  const bytes = Buffer.from(`${JSON.stringify(fact)}\n`)
-  const tmp = join(ctx.dir, SCRATCH, `fact-${randomBytes(6).toString('hex')}`)
-  await writeFile(tmp, bytes, { flag: 'wx' })
-  try {
-    for (;;) {
-      const file = join(folder, `${fact.id}-${randomBytes(2).toString('hex')}.jsonl`)
-      try {
-        await link(tmp, file)
-        return { path: relative(ctx.library.root, file).split(sep).join('/') as LibraryPath, bytes }
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-      }
-    }
-  } finally {
-    await unlink(tmp)
-  }
+/** Appends the facts as one write; they are never rewritten. */
+export async function writeFacts(ctx: PluginContext, facts: readonly SyncFact[]): Promise<void> {
+  if (facts.length > 0) await ctx.tools.storage.records.append(facts)
 }
 
-/** Every fact on disk, oldest first; lines that are not facts are skipped. */
-export async function readFacts(ctx: PluginContext): Promise<SyncFact[]> {
-  const folder = join(ctx.dir, FACTS)
-  const out: SyncFact[] = []
-  for (const name of await readdir(folder).catch(() => [] as string[])) {
-    if (name.startsWith('.') || !name.endsWith('.jsonl')) continue
-    out.push(...parseFacts(await readFile(join(folder, name), 'utf8')))
-  }
-  return out.sort((a, b) => (a.at === b.at ? (a.id < b.id ? -1 : 1) : a.at < b.at ? -1 : 1))
-}
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+const isPaths = (v: unknown): v is string[] => Array.isArray(v) && v.every((p) => typeof p === 'string')
+const isDeletion = (value: unknown): boolean => isObject(value) && typeof value.path === 'string' && typeof value.fingerprint === 'string'
 
-/**
- * The deletion records here and those in the target's facts that have not arrived yet: a record
- * made on another machine counts in the very sync that brings it.
- */
-export async function deletionRecords(ctx: PluginContext, target: SyncTarget, here: Files, there: Files): Promise<DeletedFact[]> {
-  const folder = `${relative(ctx.library.root, join(ctx.dir, FACTS)).split(sep).join('/')}/`
-  const arriving = [...there.keys()].filter((path) => path.startsWith(folder) && path.endsWith('.jsonl') && !here.has(path))
-  const out = await readFacts(ctx)
-  for (const path of arriving) out.push(...parseFacts(Buffer.from(await target.read(path)).toString('utf8')))
-  return out.filter((f): f is DeletedFact => f.kind === 'deleted')
-}
-
-type Raw = { id?: unknown; at?: unknown; machine?: unknown; kind?: unknown; target?: { kind?: unknown; path?: unknown }; counts?: unknown; deleted?: unknown }
-
-const isDeletion = (value: unknown): boolean => {
-  const { path, fingerprint } = (value ?? {}) as { path?: unknown; fingerprint?: unknown }
-  return typeof path === 'string' && typeof fingerprint === 'string'
-}
-
-function parseFacts(text: string): SyncFact[] {
-  return text.split('\n').flatMap((line) => {
-    try {
-      const value: unknown = JSON.parse(line)
-      const raw = (value ?? {}) as Raw
-      if (typeof raw.id !== 'string' || typeof raw.at !== 'string' || typeof raw.machine !== 'string') return []
-      const targeted = raw.target?.kind === 'dir' && typeof raw.target.path === 'string'
-      const ok =
-        raw.kind === 'deleted' ? Array.isArray(raw.deleted) && raw.deleted.every(isDeletion)
-        : raw.kind === 'run' ? targeted && typeof raw.counts === 'object'
-        : raw.kind === 'target.set' && targeted
-      return ok ? [value as SyncFact] : []
-    } catch {
-      return []
-    }
-  })
-}
-
-/** The target this machine set last; a machine that set none uses the one set last on any machine. */
-export function currentTarget(facts: readonly SyncFact[], machine: string): TargetFact | null {
-  const sets = facts.filter((f): f is TargetFact => f.kind === 'target.set')
-  return sets.filter((f) => f.machine === machine).at(-1) ?? sets.at(-1) ?? null
-}
-
-export function lastRun(facts: readonly SyncFact[], machine: string): RunFact | null {
-  return facts.filter((f): f is RunFact => f.kind === 'run' && f.machine === machine).at(-1) ?? null
+/** A stored object as one of the sync's facts; null for anything else, which the sync leaves as it is. */
+export function parseFact(raw: unknown): SyncFact | null {
+  if (!isObject(raw) || typeof raw.id !== 'string' || typeof raw.at !== 'string' || typeof raw.machine !== 'string') return null
+  const targeted = isObject(raw.target) && raw.target.kind === 'dir' && typeof raw.target.path === 'string'
+  const ok =
+    raw.kind === 'deleted' ? Array.isArray(raw.deleted) && raw.deleted.every(isDeletion)
+    : raw.kind === 'run' ? targeted && isObject(raw.counts)
+    : raw.kind === 'target.set' ? targeted
+    : raw.kind === 'things' || raw.kind === 'gone' ? isPaths(raw.paths)
+    : raw.kind === 'moved' ? typeof raw.from === 'string' && typeof raw.to === 'string'
+    : raw.kind === 'conflict' && typeof raw.copy === 'string' && typeof raw.original === 'string'
+  return ok ? (raw as SyncFact) : null
 }
 
 export function countsOf(steps: readonly Step[], conflicts: number, skipped: number): Counts {
@@ -136,36 +79,4 @@ export function countsOf(steps: readonly Step[], conflicts: number, skipped: num
     conflicts,
     skipped,
   }
-}
-
-// ---- the baseline ----
-
-/**
- * The files this machine saw at the end of its last sync with the target whose id is `target`,
- * and the ids of the deletion records already settled against it.
- */
-export type Baseline = { target: string; files: Files; settled: ReadonlySet<string> }
-
-type BaselineFile = { format: 1; target: string; files: Record<string, string>; settled?: string[] }
-const BASELINE = 'baseline.json'
-
-/** This machine's baseline, whatever its target; null when there is none or it cannot be read. */
-export async function readBaseline(cacheDir: string): Promise<Baseline | null> {
-  try {
-    const raw = JSON.parse(await readFile(join(cacheDir, BASELINE), 'utf8')) as Partial<BaselineFile>
-    if (raw.format !== 1 || typeof raw.target !== 'string' || typeof raw.files !== 'object' || raw.files === null) return null
-    const files = new Map(Object.entries(raw.files).flatMap(([path, print]) => (typeof print === 'string' ? [[path as LibraryPath, print as Fingerprint]] : [])))
-    const settled = new Set(Array.isArray(raw.settled) ? raw.settled.filter((id) => typeof id === 'string') : [])
-    return { target: raw.target, files, settled }
-  } catch {
-    return null
-  }
-}
-
-export async function writeBaseline(cacheDir: string, baseline: Baseline): Promise<void> {
-  await mkdir(cacheDir, { recursive: true })
-  const tmp = join(cacheDir, `.${BASELINE}.${randomBytes(4).toString('hex')}`)
-  const file: BaselineFile = { format: 1, target: baseline.target, files: Object.fromEntries(baseline.files), settled: [...baseline.settled] }
-  await writeFile(tmp, JSON.stringify(file))
-  await rename(tmp, join(cacheDir, BASELINE))
 }

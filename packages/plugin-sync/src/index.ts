@@ -1,24 +1,41 @@
 import { readFileSync } from 'node:fs'
-import { PNEUMA_BASE_VERSION, pluginName, type Plugin } from '@pneuma-base/kernel'
+import { CONTRACT, PNEUMA_BASE_VERSION, pluginName, type Plugin } from '@pneuma-base/kernel'
 import { syncCommands } from './commands.js'
-import { SCRATCH } from './facts.js'
+import { envelope, writeFacts } from './facts.js'
+import { carried } from './scope.js'
 import { recordDeletions } from './sync.js'
 import { checkSections, itemSection, STATUS_VIEW, statusView } from './views.js'
 
 /** 同步: a library and a target in two-way sync, without merging contents and without losing any. design.md 五. */
 export const sync: Plugin = {
-  contract: 1,
+  contract: CONTRACT,
   name: pluginName('sync'),
   version: PNEUMA_BASE_VERSION,
-  summary: '和主人设的目标双向同步，只整份地复制文件，不合并内容，也不丢内容。',
+  summary: '和主人设的目标双向同步，只整份地复制，不合并内容，也不丢内容。',
   cognition: { title: '同步', text: readFileSync(new URL('../cognition/2-sync-section.md', import.meta.url), 'utf8') },
-  storage: [
-    { dir: 'facts', kind: 'body' },
-    { dir: SCRATCH, kind: 'cache' },
-  ],
+  storage: [{ dir: 'facts', kind: 'body' }],
   statements: [],
   ownerCommands: syncCommands,
   views: [STATUS_VIEW],
+
+  // What it carries is what it heard registered: each put, archive and purge is one fact.
+  async onPut(req, ctx) {
+    if (req.kind === 'move') await writeFacts(ctx, [{ ...envelope(ctx), kind: 'moved', from: req.from, to: req.path }])
+    else {
+      const paths = (req.kind === 'register-files' ? req.files.map((f) => f.path) : [req.path]).filter(carried)
+      if (paths.length > 0) await writeFacts(ctx, [{ ...envelope(ctx), kind: 'things', paths }])
+    }
+    return null
+  },
+
+  async onArchive(req, ctx) {
+    if (req.moved) await writeFacts(ctx, [{ ...envelope(ctx), kind: 'moved', from: req.from, to: req.to }])
+    return null
+  },
+
+  async onPurged(paths, ctx) {
+    await writeFacts(ctx, [{ ...envelope(ctx), kind: 'gone', paths: [...paths] }])
+  },
 
   onCheck: (_req, ctx) => checkSections(ctx),
 
