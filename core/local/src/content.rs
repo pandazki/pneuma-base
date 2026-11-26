@@ -111,6 +111,8 @@ fn open_child(parent: RawFd, name: &str) -> Result<OwnedFd, Broken> {
     }
 }
 
+// `mode_t` is 16 bits on macOS and 32 on Linux, so the casts are needed on one and not the other.
+#[allow(clippy::unnecessary_cast)]
 fn is_link(stat: &Stat) -> bool {
     stat.mode & libc::S_IFMT as u32 == libc::S_IFLNK as u32
 }
