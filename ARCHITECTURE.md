@@ -415,6 +415,7 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable }): P
 - `GET /api/state`：是不是库、库的位置（另有一份把家目录写成 `~` 的，给人看）、视图清单和问题、可用的插件。`GET /api/view?view=&<参数>`。`POST /api/call`：一个 `Call` 加 `confirmed`，答复是结果和一行给人看的话；主人面 `Call` 的 `stdin` 是命令向主人要的值，比如密钥。`GET /api/file?path=`：内容区和归档区的文件原样给出；路径经内核解析，链接跟到底后还要在库里、不在内核的地方，否则 404；HTML 一律当文字给，带 `sandbox` 的 CSP，浏览器不会运行库里的文件。`GET /api/rev`：库里每个名字、大小、修改时间的摘要。`POST /api/init`：把目录建成库。
 - `GET /plugin-ui/<插件名>/<路径>`：这个库装了的插件的 `ui` 目录里的文件，只读。路径的段解码后是空、`.`、`..` 或含斜杠的，链接跟到底不在 `ui` 里面的，没装的插件、没有 `ui` 的插件，都是 404。不要令牌：框架拿着令牌就能绕过对话框直接调 `/api/call`，所以它的地址不带令牌，载入它时也不发 Referer（界面的地址里有令牌）。答复带 `Content-Security-Policy: sandbox allow-scripts; frame-ancestors 'self'`，单独打开也拿不到界面的源；带 `Referrer-Policy: no-referrer`；带 `Access-Control-Allow-Origin: *`，因为沙箱里的框架是不透明的源，模块脚本和字体要 CORS 才载得进来。
 - `GET /plugin-kit/frame.js`、`/plugin-kit/frame.css`：开发包，同样带 CORS。
+- 网页的地址带 `shell=mac` 时，它在 Mac 外壳（`app/`，试做）里：`<html>` 标上 `data-shell`，左边栏顶部给窗口的三个按钮留出位置，外框部分不能选中文字，只对浏览器有意义的提示换掉。`data-drag` 标出能拖动窗口的区域，外壳据此拖窗口；浏览器里这个标记什么都不做。
 - 服务不持有状态，每次请求重新建插件表（自带的加本机的，本机的插件文件变了就载入新的）、重新打开库。行动者是主人；会话按环境识别，同命令行。服务若跑在 agent 的会话里，破坏性命令照常被拒（K7），拒绝的话说出是哪个环境变量或授权让它这样判的。
 
 **授权**在内核里，只有最小的形状：编号、名字、给谁、哪个区域、读还是读写。没配任何授权时，谁都能用整个库。区域是库里的一个子文件夹。
