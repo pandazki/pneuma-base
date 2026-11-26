@@ -262,17 +262,42 @@ impl LocalFolder {
         ctx: &Ctx,
     ) -> Result<ContentAnswer, Failure> {
         let dir = self.open_level(walker, &req.place)?;
+        for _ in 0..TRIES {
+            if let Some(answer) = self.dir_content_once(dir, req, noise, ctx)? {
+                return Ok(answer);
+            }
+        }
+        Err(Failure::new(Reason::Busy))
+    }
+
+    /// One pass over the directory's content; `None` when something in it changed meanwhile.
+    fn dir_content_once(
+        &self,
+        dir: std::os::fd::RawFd,
+        req: &ContentRequest,
+        noise: &crate::noise::Noise,
+        ctx: &Ctx,
+    ) -> Result<Option<ContentAnswer>, Failure> {
         let before = sys::stat_fd(dir).map_err(unreadable)?;
-        let top = dup(dir)?;
         let matcher = Matcher::new(noise, req.place.clone(), &req.rule);
-        let walked = rule::walk(top, &matcher, req.limit, ctx)?;
+        let walked = rule::walk(dup(dir)?, &matcher, req.limit, ctx)?;
         let mut progress = Progress::of_dir(ctx, walked.files.len() as u64, walked.bytes);
         let top = dup(dir)?;
         let mut chain = Walker::new(&top);
         let mut fingerprints = Vec::with_capacity(walked.files.len());
         for found in &walked.files {
             let file_place = Place::parse(&found.path).ok_or_else(Failure::bad_request)?;
-            let mut opened = open_place_file(&mut chain, &file_place)?;
+            let mut opened = match open_place_file(&mut chain, &file_place) {
+                Ok(opened) => opened,
+                // Gone or replaced since the walk listed it.
+                Err(f) if matches!(f.reason, Reason::NoSuchPlace | Reason::NotAFile) => {
+                    return Ok(None);
+                }
+                Err(f) => return Err(f),
+            };
+            if !same_state(&found.stat, &opened.stat) {
+                return Ok(None);
+            }
             if opened.stat.dataless() && !req.fetch {
                 return Err(Failure::elsewhere(opened.stat.size));
             }
@@ -280,12 +305,16 @@ impl LocalFolder {
                 progress.bytes += n;
                 progress.tick();
             })?;
+            let after = sys::stat_fd(opened.file.as_raw_fd()).map_err(unreadable)?;
+            if !same_state(&opened.stat, &after) {
+                return Ok(None);
+            }
             progress.files += 1;
             fingerprints.push(fingerprint);
         }
         let after = sys::stat_fd(dir).map_err(unreadable)?;
         if !same_state(&before, &after) {
-            return Err(Failure::new(Reason::Busy));
+            return Ok(None);
         }
         let fingerprint = manifest_fingerprint(
             walked
@@ -299,12 +328,12 @@ impl LocalFolder {
             place: &req.place,
             stat: &after,
         };
-        Ok(ContentAnswer::Dir {
+        Ok(Some(ContentAnswer::Dir {
             fingerprint,
             files: walked.files.len() as u64,
             bytes: walked.bytes,
             token: facets::token(&at, None),
-        })
+        }))
     }
 
     pub fn read_bytes(&self, req: &ReadRequest, ctx: &Ctx) -> Result<ReadAnswer, Failure> {
