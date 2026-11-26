@@ -60,7 +60,8 @@ describe('placing an outside directory', () => {
       chmodSync(join(source, 'b.html'), 0o644)
     }
     expect(existsSync(join(f.root, 'sites'))).toBe(false)
-    expect(readdirSync(join(f.root, '.pneuma-base/tmp'))).toEqual([])
+    // The folder of the marks of puts in progress stays; the failed put's own mark is gone.
+    expect(readdirSync(join(f.root, '.pneuma-base/tmp'), { recursive: true })).toEqual(['putting'])
   })
 
   it('copies the tree without the left-out names and writes the marker', async () => {

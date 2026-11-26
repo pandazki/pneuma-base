@@ -1,11 +1,12 @@
 // What the ledger shows in the management UI: its pages, and its section of the kernel's item
 // panel. Pure: built from the same fold, reconcile and views that inspect and check answer from.
 import { formOf, originalPath, shortDir, withSuffix, type Action, type ActionInput, type Block, type Cell, type Instant, type ItemSection, type LibraryPath, type Link, type Tag, type TableRow, type ViewAnswer, type ViewDecl } from '@pneuma-base/kernel'
-import type { Fact, LedgerOrigin, SceneId } from './facts.js'
+import type { Conversation } from './conversation.js'
+import type { Fact, How, LedgerOrigin, SceneId } from './facts.js'
 import { HELD_DROP, HELD_RESTORE, type HeldCopy } from './held.js'
 import { isArchived, type ItemRecord, type Ledger, type SceneRecord } from './fold.js'
 import type { ItemState, Mark, Standing } from './reconcile.js'
-import { actorNames, doingAt, factLine, MARK_LABEL, originLabel, SAID_LABEL, scenesNamed, shortScene, standingData, STATE_LABEL, when, who, type ItemView } from './views.js'
+import { actorNames, doingAt, earlierText, factLine, MARK_LABEL, originLabel, SAID_LABEL, scenesNamed, shortScene, standingData, STATE_LABEL, when, whereConversation, who, type ItemView } from './views.js'
 
 const ORIGINS: { value: string; label: string }[] = [
   { value: '', label: '全部' },
@@ -138,7 +139,7 @@ const ORIGIN_TONE: Record<LedgerOrigin['kind'], Tag['tone']> = { made: 'info', b
 const STATE_TONE: Record<ItemState['kind'], Tag['tone']> = { consistent: 'good', changed: 'warn', moved: 'info', missing: 'bad', removed: 'neutral', absorbed: 'neutral' }
 const MARK_TONE: Record<Mark['kind'], Tag['tone']> = { stale: 'warn', 'source-gone': 'bad' }
 
-const originTag = (origin: LedgerOrigin): Tag => ({ text: originLabel(origin), tone: ORIGIN_TONE[origin.kind] })
+const originTag = (origin: LedgerOrigin, how: How): Tag => ({ text: originLabel(origin, how), tone: ORIGIN_TONE[origin.kind] })
 const stateTag = (state: ItemState): Tag => ({ text: state.kind === 'moved' ? `已搬到 ${state.to}` : STATE_LABEL[state.kind], tone: STATE_TONE[state.kind] })
 
 /** An item's state with the worst mark on its basis: the mark as the tag, the state as the text before it. */
@@ -185,7 +186,7 @@ export function itemsAnswer(ledger: Ledger, standing: Standing, params: Record<s
       key: item.id,
       cells: {
         path: pathCell(item),
-        origin: { text: '', tag: originTag(item.origin) },
+        origin: { text: '', tag: originTag(item.origin, item.entered.how) },
         who: { text: who(item.entered.actor) },
         doing: doing === null ? none : { text: doing },
         state: standingCell(stateOf(item), standing.marks.get(item.id) ?? []),
@@ -200,6 +201,9 @@ export function itemsAnswer(ledger: Ledger, standing: Standing, params: Record<s
   return { title: '条目', subtitle: `${rows.length} 样东西`, blocks: [table] }
 }
 
+/** A direct change as a tag: claimed, recorded for the owner, or only seen. */
+const claimTag = (ver: ItemView['versions'][number]) => (ver.how === 'observed' ? '直接改的（自动登记）' : ver.by === 'owner' ? '主人直接改的' : '认了直接改动')
+
 const counted = (title: string, count: number, blocks: Block[]): Block => ({ kind: 'section', title, note: null, count, blocks, actions: [] })
 
 /** The ledger's part of the item panel: provenance and scene, basis with each source's state, dependents, what was said, versions and held copies. */
@@ -208,8 +212,9 @@ export function itemSection(v: ItemView): ItemSection {
   const fields: Block = {
     kind: 'fields',
     fields: [
-      { label: '怎么来的', value: { text: '', tag: originTag(v.origin) } },
+      { label: '怎么来的', value: { text: '', tag: originTag(v.origin, v.entered.how) } },
       ...(v.origin.kind === 'brought' && v.origin.source ? [{ label: '出处', value: { text: v.origin.source } }] : []),
+      ...v.earlier.map((e) => ({ label: '先前', value: { text: earlierText(e), muted: true } })),
       { label: '谁', value: { text: who(entered.actor) } },
       { label: '何时', value: { text: when(entered.at), at: entered.at } },
       ...(entered.where?.cwd ? [{ label: '在哪', value: { text: shortDir(entered.where.cwd, 36), mono: true } }] : []),
@@ -254,12 +259,16 @@ export function itemSection(v: ItemView): ItemSection {
     blocks.push({ kind: 'section', title: '决定与备注', note: null, count: entries.length, blocks: entries.length > 0 ? [{ kind: 'timeline', entries }] : [], actions: said })
   }
 
-  // An edit the owner made and an agent recorded names both, also on the current version, whose tag says only 当前.
+  // An edit the owner made and an agent recorded names both, also on the current version, whose tag says only 当前; so does a change only seen.
   const versions = [...v.versions].reverse().map((ver, i) => ({
     at: ver.at,
     title: { text: ver.fingerprint.slice(0, 12), mono: true },
-    lines: [`${ver.by === 'owner' ? `主人，${who(ver.actor)} 代记` : who(ver.actor)} · 场景 ${shortScene(ver.scene)}`, ...(ver.note === null ? [] : [ver.note])],
-    tag: i === 0 ? { text: '当前', tone: 'good' as const } : ver.claimed ? { text: ver.by === 'owner' ? '主人直接改的' : '认了直接改动', tone: 'warn' as const } : ver.held ? { text: '换下的进了留存', tone: 'neutral' as const } : null,
+    lines: [
+      `${ver.by === 'owner' ? `主人，${who(ver.actor)} 代记` : who(ver.actor)} · 场景 ${shortScene(ver.scene)}${ver.claimed && ver.how === 'observed' ? ` · ${claimTag(ver)}` : ''}`,
+      ...(ver.seen === null ? [] : [`先是自动登记：${who(ver.seen.actor)} · ${when(ver.seen.at)}`]),
+      ...(ver.note === null ? [] : [ver.note]),
+    ],
+    tag: i === 0 ? { text: '当前', tone: 'good' as const } : ver.claimed ? { text: claimTag(ver), tone: 'warn' as const } : ver.held ? { text: '换下的进了留存', tone: 'neutral' as const } : null,
   }))
   blocks.push(counted('内容的变化', versions.length, [{ kind: 'timeline', entries: versions }]))
 
@@ -366,8 +375,17 @@ export function scenesAnswer(ledger: Ledger): ViewAnswer {
   return { title: '场景', subtitle: `${scenes.length} 次会话`, blocks: [{ kind: 'table', columns, rows, empty: '' }] }
 }
 
-/** One scene's card: who, when, where, what was said, the owner operations, and the things entered, changed or moved in it. */
-export function sceneAnswer(ledger: Ledger, params: Record<string, string>): ViewAnswer {
+const CONVERSATION_TONE = { here: 'good', gone: 'warn', elsewhere: 'neutral' } as const
+
+/** The conversation's file, to copy, with whether it is here; the command that resumes it, only when it is. */
+function conversationFields(c: Conversation | null): { label: string; value: Cell }[] {
+  if (c === null) return []
+  const file = { label: '对话', value: { text: c.path, mono: true, copy: true as const, tag: { text: whereConversation(c), tone: CONVERSATION_TONE[c.status] } } }
+  return c.status === 'here' && c.resume ? [file, { label: '接着聊', value: { text: c.resume, mono: true, copy: true } }] : [file]
+}
+
+/** One scene's card: who, when, where, its conversation, what was said, the owner operations, and the things entered, changed or moved in it. */
+export function sceneAnswer(ledger: Ledger, params: Record<string, string>, conversationOf: (scene: SceneRecord) => Conversation | null): ViewAnswer {
   const input = params.scene ?? ''
   const named = scenesNamed(ledger, input)
   const scene = named.length === 1 ? named[0] : undefined
@@ -383,6 +401,7 @@ export function sceneAnswer(ledger: Ledger, params: Record<string, string>): Vie
         { label: '开始', value: { text: when(scene.first), at: scene.first } },
         { label: '最后', value: { text: when(scene.last), at: scene.last } },
         ...(scene.cwds.length > 0 ? [{ label: '在哪', value: { text: scene.cwds.map((d) => shortDir(d, 36)).join('、'), mono: true } }] : []),
+        ...conversationFields(conversationOf(scene)),
         { label: '场景号', value: { text: scene.id, mono: true, muted: true } },
       ],
     },
@@ -407,7 +426,7 @@ export function sceneAnswer(ledger: Ledger, params: Record<string, string>): Vie
     // A list, as the panel is narrow: each path whole, what happened to it in this scene below.
     const entries: Entry[] = items.map((item) => ({
       cell: { ...pathCell(item), link: itemLink(item.path) },
-      note: item.entered.scene === scene.id ? `放入 · ${originLabel(item.origin)}` : '改过或挪过',
+      note: item.entered.scene === scene.id ? `放入 · ${originLabel(item.origin, item.entered.how)}` : '改过或挪过',
       actions: [],
     }))
     blocks.push(counted('条目', items.length, [{ kind: 'list', items: entries }]))
@@ -456,7 +475,7 @@ function kindTag(f: Fact): Tag {
       return { text: '放入', tone: 'neutral' }
     case 'item.revise':
       if (!f.claimed) return { text: '换内容', tone: 'neutral' }
-      return { text: f.by === 'owner' ? '主人直接改的' : '认改动', tone: 'warn' }
+      return { text: f.how === 'observed' ? '看到改动' : f.by === 'owner' ? '主人直接改的' : '认改动', tone: 'warn' }
     case 'item.move':
       return { text: f.archive === 'in' ? '归档' : f.archive === 'out' ? '取回' : '挪动', tone: 'neutral' }
     case 'item.basis':

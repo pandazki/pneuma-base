@@ -1,11 +1,25 @@
 // fold: facts in, the ledger out. Pure; reads no disk. ledger-design.md section 3.
-import { regionOf, type Fingerprint, type Instant, type LibraryPath } from '@pneuma-base/kernel'
+import { regionOf, type Fingerprint, type Instant, type LibraryPath, type Transcript } from '@pneuma-base/kernel'
 import type { Basis, Fact, FactActor, How, ItemId, LedgerOrigin, SceneId } from './facts.js'
 
 export type Said = Extract<Fact, { kind: 'said' }>
 export type OwnerOp = Extract<Fact, { kind: 'owner.op' }>
 
-export type Version = { fingerprint: Fingerprint; at: Instant; scene: SceneId; actor: FactActor; how: How; held: string | null; claimed: boolean; by: 'owner' | null; note: string | null }
+export type Enter = Extract<Fact, { kind: 'item.enter' }>
+
+/** `seen`: the claim was first only seen (how 'observed'), by this actor at this time, before somebody said who changed it. */
+export type Version = {
+  fingerprint: Fingerprint
+  at: Instant
+  scene: SceneId
+  actor: FactActor
+  how: How
+  held: string | null
+  claimed: boolean
+  by: 'owner' | null
+  note: string | null
+  seen: { at: Instant; actor: FactActor } | null
+}
 
 export type ItemRecord = {
   id: ItemId
@@ -13,7 +27,8 @@ export type ItemRecord = {
   fingerprint: Fingerprint // from the latest enter or revise
   size: number
   origin: LedgerOrigin
-  entered: Extract<Fact, { kind: 'item.enter' }>
+  entered: Enter // the enter that gave the current origin: the first one, or the one that replaced an origin nobody knew or that was only seen
+  earlier: Enter[] // the enters whose origin a later one replaced, oldest first
   basis: Basis // of the current snapshot
   unknownOrigin: boolean // adopted, and no origin or basis given since
   versions: Version[]
@@ -29,6 +44,7 @@ export type SceneRecord = {
   last: Instant
   actors: FactActor[]
   cwds: string[]
+  transcript: (Transcript & { machine: string }) | null // the last pointer the scene's facts carry
   said: Said[]
   items: ItemId[] // entered, revised, moved or given a basis here, in order
 }
@@ -92,8 +108,13 @@ function apply(ledger: Ledger, f: Fact): void {
   switch (f.kind) {
     case 'item.enter':
       if (item) {
-        // An alias that knows where the thing came from fills in an adopted item's origin.
-        if (item.unknownOrigin && f.origin.kind !== 'adopted') Object.assign(item, { origin: f.origin, basis: basisOf(f.origin), unknownOrigin: false })
+        // An alias that knows where the thing came from replaces an origin nobody knew, or one only
+        // seen when it was said; an origin somebody said stays.
+        const seen = item.entered.how === 'observed'
+        if (f.origin.kind !== 'adopted' && (item.unknownOrigin || (seen && f.how !== 'observed'))) {
+          item.earlier.push(item.entered)
+          Object.assign(item, { origin: f.origin, basis: basisOf(f.origin), unknownOrigin: false, entered: f })
+        }
         // Its note is about the content it registered, which an earlier fact recorded.
         const registered = item.versions.findLast((v) => v.fingerprint === f.fingerprint)
         if (f.note && registered && registered.note === null) registered.note = f.note
@@ -106,6 +127,7 @@ function apply(ledger: Ledger, f: Fact): void {
         size: f.size,
         origin: f.origin,
         entered: f,
+        earlier: [],
         basis: basisOf(f.origin),
         unknownOrigin: f.origin.kind === 'adopted',
         versions: [version(f)],
@@ -117,11 +139,18 @@ function apply(ledger: Ledger, f: Fact): void {
       ledger.pathIndex.set(f.path, f.item)
       if (f.bundle) absorb(ledger, f.item, f.path)
       return
-    case 'item.revise':
+    case 'item.revise': {
       if (!item) return
+      const last = item.versions.at(-1)
+      if (f.claimed && last?.fingerprint === f.fingerprint) {
+        // The content it has claimed again: a claim somebody makes replaces one only seen; a claim only seen changes nothing.
+        if (last.how === 'observed' && f.how !== 'observed') item.versions[item.versions.length - 1] = { ...version(f), seen: { at: last.at, actor: last.actor } }
+        return
+      }
       Object.assign(item, { fingerprint: f.fingerprint, size: f.size, basis: f.basis ? mergeBasis(item.basis, f.basis) : item.basis })
       item.versions.push(version(f))
       return
+    }
     case 'item.move':
       if (item) relocate(ledger, item, f.to)
       return
@@ -170,18 +199,19 @@ function remove(ledger: Ledger, item: ItemRecord): void {
 function touchScene(ledger: Ledger, f: Fact): void {
   let scene = ledger.scenes.get(f.scene)
   if (!scene) {
-    scene = { id: f.scene, first: f.at, last: f.at, actors: [], cwds: [], said: [], items: [] }
+    scene = { id: f.scene, first: f.at, last: f.at, actors: [], cwds: [], transcript: null, said: [], items: [] }
     ledger.scenes.set(f.scene, scene)
   }
   scene.last = f.at
   if (!scene.actors.some((a) => actorKey(a) === actorKey(f.actor))) scene.actors.push(f.actor)
   if (f.where?.cwd && !scene.cwds.includes(f.where.cwd)) scene.cwds.push(f.where.cwd)
+  if (f.where?.transcript) scene.transcript = { ...f.where.transcript, machine: f.where.machine }
   if ('item' in f && f.kind !== 'item.remove' && !scene.items.includes(f.item)) scene.items.push(f.item)
 }
 
 function version(f: Extract<Fact, { kind: 'item.enter' | 'item.revise' }>): Version {
   const revise = f.kind === 'item.revise' ? f : null
-  return { fingerprint: f.fingerprint, at: f.at, scene: f.scene, actor: f.actor, how: f.how, held: revise?.held ?? null, claimed: revise?.claimed ?? false, by: revise?.by ?? null, note: f.note ?? null }
+  return { fingerprint: f.fingerprint, at: f.at, scene: f.scene, actor: f.actor, how: f.how, held: revise?.held ?? null, claimed: revise?.claimed ?? false, by: revise?.by ?? null, note: f.note ?? null, seen: null }
 }
 
 const basisOf = (origin: LedgerOrigin): Basis => (origin.kind === 'made' ? origin.basis : NO_BASIS)

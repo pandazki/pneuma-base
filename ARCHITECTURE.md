@@ -86,8 +86,10 @@ type Session = {
   source: 'flag' | 'env' | 'minted'     // 会话标识是怎么拿到的
   cwd: string
   machine: string
-  transcript: string | null
+  transcript: Transcript | null         // 这次会话的对话在哪，见下
 }
+
+type Transcript = { path: string; resume: string | null }   // path 把家目录写成 ~；resume：接着这段对话的命令
 
 type Context = { library: Library; actor: Actor; session: Session; now: Instant; home: string }   // home：本机的 $PNEUMA_BASE_HOME
 
@@ -101,6 +103,16 @@ interface AgentFace {
 }
 ```
 
+**会话指回对话。** 会话号来自某个 agent 产品的环境变量时，内核按 `session.ts` 里的产品表找这次会话的对话文件，找到了就放进 `session.transcript`：只是一个指针，不复制、也不读里面的内容，只看文件在不在。表里每个产品一行：带会话号的变量、只表示它在跑的变量、怎么找对话：
+
+| 产品 | 会话号 | 对话文件 | 接着聊 |
+| --- | --- | --- | --- |
+| `claude-code` | `CLAUDE_CODE_SESSION_ID` | `~/.claude/projects/<目录>/<会话号>.jsonl`（设了 `CLAUDE_CONFIG_DIR` 就在它下面），`<目录>` 是会话开始时所在的目录，字母和数字以外的字符都换成 `-`；调用可能在它下面的目录里，所以往上逐级试。目录名超过 200 个字符时 Claude Code 在后面加一段内核不知道的散列，不给指针 | `cd <目录> && claude --resume <会话号>` |
+| `codex` | `CODEX_THREAD_ID` | `~/.codex/sessions/<年>/<月>/<日>/rollout-<时间>-<会话号>.jsonl`（设了 `CODEX_HOME` 就在它下面），日期是会话开始的那天，从新到旧找 | `codex resume <会话号>` |
+| `antigravity` | `ANTIGRAVITY_CONVERSATION_ID` | 没见过它的目录，不给规则 | 无 |
+
+两条规则都按这台机器上真的会话核过：按会话号找到了文件，也只看了名字；两个接着聊的命令都在各自的 `--help` 里。会话号要是一个干净的名字（字母、数字和 `-`），否则不找。会话号来自 `--session` 或 `PNEUMA_BASE_SESSION`、文件不在、产品没有规则时，`transcript` 是 `null`。经 MCP 的会话号是连接自己的，也是 `null`。路径在家目录下时写成 `~/…`，指针里不写家目录的绝对路径；在哪台机器上由 `session.machine` 记。Claude Code 里的子代理带的是主会话的号，指针指向主会话的对话。记账插件把它记在事实的 `where.transcript` 上，`inspect <场景号>` 和场景卡显示对话在哪、此刻在不在这台机器上，在的话给接着聊的命令（第 10 节）。
+
 ### 放
 
 ```ts
@@ -109,15 +121,17 @@ type Origin =
   | { kind: 'made'; from: string[]; outside: string[] }             // 做出来的：依据库里的哪些，库外的各写一句
 
 type PutRequest =   // note：一句话，说这次放入改了什么
-  | { kind: 'register'; path: LibraryPath; origin: Origin; note?: string | null }                 // 文件或目录已经在库里
+  | { kind: 'register'; path: LibraryPath; origin: Origin; note?: string | null; observed?: true } // 文件或目录已经在库里；observed：来历是看到的，不是谁说的
   | { kind: 'place'; from: string | 'stdin'; to: LibraryPath; origin: Origin; note?: string | null }   // 从库外的文件、目录或标准输入放进来
   | { kind: 'move'; from: LibraryPath; to: LibraryPath }                                               // 在库里挪位置
 
 type PutResult =
   | { outcome: 'accepted'; path: LibraryPath; fingerprint: Fingerprint; copied: boolean
       notes: Note[]; problems: PluginProblem[] }
-  | { outcome: 'refused'; reason: 'outside-library' | 'outside-grant' | 'no-such-file' | 'would-overwrite' | 'inside-bundle'; notes: Note[] }
+  | { outcome: 'refused'; reason: 'outside-library' | 'outside-grant' | 'no-such-file' | 'would-overwrite' | 'inside-bundle' | 'agent-session'; notes: Note[] }
 ```
+
+**看到的和说的。** 应用会把主人用 Finder 复制进库的文件自动登记成「主人带进来的」。这是看到的，不是谁说的，可能看错：比如 agent 违反说明直接写了文件。所以登记可以带 `observed`（命令行 `put <库内路径> --brought --by owner --observed`）：只有主人能这样放，行动者是 agent 时以 `agent-session` 拒绝，agent 只说来历，不替主人「看到」。`onPut` 收到的 `AcceptedPut` 带着它。记成什么、谁能更正，归记账插件（第 10 节）。
 
 内核自己能看到的是「东西」：一个普通文件，或一个带标记的目录（见下一小节「一个目录算一样东西」）。全化表里「同类」指和放进来的东西同一类：文件对文件，带标记的目录对带标记的目录；「另一类」是另一类的东西，或既不是文件也不是目录的东西。
 
@@ -129,6 +143,8 @@ type PutResult =
 | 挪 | 拒绝 | 拒绝 | 挪过去，整个目录一起，接受 | 拒绝 | 拒绝 | 拒绝 | 拒绝 |
 
 接受之后，内核把请求交给每个插件的 `onPut`，把它们的答复收进 `notes`。`onPut` 收到的 `note` 一定有，由内核规整过：去掉首尾空白，空白或没写就是 `null`，插件不再自己判。
+
+**正在放入的标记。** 一次放先把文件放到目标上，插件后才记下它；这中间看库的人（别的 agent 的 `check`、应用的监看）会看到一个没人登记的文件。所以内核在放动手之前，为它要放入、登记或挪的每个内容路径（挪是来去两个）在 `.pneuma-base/tmp/putting/` 下写一个标记，等放和所有插件的 `revise`、`onPut` 都做完、被拒绝或出错之后删掉（`putting.ts`）。标记写着库内路径，在内核的临时区里，不同步。放在进行时每 2 秒刷新一次标记的修改时间；超过 10 秒没刷新的标记算死了：进程被杀时标记删不掉。10 秒只要盖过一次刷新加事件循环的一次停顿，放多久都不会过期；它也是被杀的那次放留下的文件最多被藏多久，比应用的监看登记一个文件要等的（安静 3 秒、隔 3 秒再看一次）略长。下一次放写标记时顺手删掉死了的。插件用 `tools.putting()` 问此刻正在放的路径。`observe` 不在标记里面：它听的是做完了的事。
 
 「有插件留住旧内容」的分工：内核问配置里每一个提供了 `revise` 的插件，按配置的次序，一个答了之后照样问下一个。插件把当前内容留到自己名下（`held`）或拒绝（`declined`）。至少一个答 `held`，内核就把新内容先写临时名再改名放到目标上，每个答 `held` 的插件附的那句话都收进 `notes`。一个都没答 `held`，内核拒绝这次放入，目标不动，每个答 `declined` 的插件说的理由收进拒绝的 `notes`：只装了版本插件时，agent 从这里读到要先声明有版本。出错的插件列进 `problems`，算没留住。这样不管插件写得对不对，目标上都不会出现半截内容。
 
@@ -159,8 +175,8 @@ type FindRequest = { text: string | null; match: 'terms' | 'words'; filters: Rec
 type Hit = { path: LibraryPath | null; title: string; by: PluginName | 'kernel'; group: string | null; detail: string | null }
 type FindResult = { hits: Hit[]; problems: PluginProblem[] }
 
-type InspectRequest = { target: string }                    // 路径，或某个插件认得的标识
-type InspectResult = { file: FileFacts | null; sections: Section[]; problems: PluginProblem[] }
+type InspectRequest = { target: string; content?: { file: string | null } }   // 路径，或某个插件认得的标识；content：也要内容
+type InspectResult = { file: FileFacts | null; sections: Section[]; problems: PluginProblem[]; content?: Content }
 
 type SayRequest = { kind: string; about: string | null; text: string | null; args: Record<string, string[]> }
 type SayResult =
@@ -203,6 +219,8 @@ type PluginProblem = { plugin: PluginName; message: string }
 
 找和查默认跳过归档区，`includeArchived` 打开才带上。看一样已归档的东西照常给出，并标明它已归档。命令行里除了 `find` 和 `check`，库的目录树本身也把归档的东西隔开了，agent 用自己的工具翻目录时同样看不到它们混在里面。
 
+**看内容。** 命令行的 agent 自己读文件；经 MCP 的 agent 读不了，只能找和看。所以看可以带上内容：`inspect <库内路径> --content`。文件是 UTF-8 文字、不超过 256 KB 时给全文（`text`），一篇长文档、网站的一页放得下，一份导出的数据放不下；别的给大小和文件名说的媒体类型（`other`，`why` 是 `not-utf8` 或 `too-large`，超过上限的不读）；带标记的目录给它算进指纹的文件清单（`files`），`--content <内部路径>` 读其中一个，只认清单上的，爬不出去；写目录里的文件的库内路径也一样。内容在内核里读（`content.ts`），插件的 `onInspect` 照旧只给它们知道的。授权限在一个区域时，区域外的东西照样给事实（今天的看、找、查都不按区域限读，区域只限写），只是不给内容（`unavailable`，`outside-grant`）；归档的东西按它原来的路径算。只读的授权读得了区域里的内容。
+
 命令行另有一个 `start "<一句话>"`，是「说：在做什么」「查」「找」三个动词的组合，不是第七个动词。
 
 命令行另有一个 `show [<视图编号> [--<参数> <值>…]]`：管理界面的一页，只读，也不是动词（第 6 节「只读的一面：视图」）。不写编号列出这个库的页。
@@ -217,7 +235,7 @@ type PluginProblem = { plugin: PluginName; message: string }
 | --- | --- |
 | 放 | 按上面的全化表。接受时 `notes` 为空。放入遇到内容不同的同名文件：拒绝 |
 | 找 | 按名字列出库里的文件和带标记的目录 |
-| 看 | 这样东西本身的情况（文件或带标记的目录），`sections` 为空 |
+| 看 | 这样东西本身的情况（文件或带标记的目录），`sections` 为空；要内容时照样给 |
 | 说 | `not-heard`，`no-plugin-for-kind`，附一句「这个库没配能记下这句话的插件」 |
 | 查 | `sections` 为空 |
 | 归档 | 按上面的全化表 |
@@ -298,7 +316,7 @@ type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems: string
 | 东西 | `thing(路径)`（文件或目录条目，带大小和文件数）、`things()`、`files(目录条目)`、`copyOut(路径, 库外或自己名下的目录)` → 复制件的指纹 | `thingAt`、`libraryFiles`、`bundleFiles`、`copyBundle` |
 | 指纹 | `fingerprint(路径)`、`manifest(目录条目)`、`fingerprintOfManifest`、`fingerprintOfFile(绝对路径)` | `fingerprintOf`、`bundleManifest`、`fingerprintOfManifest`、`fingerprintOfFile` |
 | 找 | `searchTerms`、`rankHits`、`sentenceHits` | 同名的三样 |
-| 放 | `put(请求)`：经 agent 面放入，行动者和会话是这次操作的，所以每个插件都听到、它发自己的事件 | `agentFace.put` |
+| 放 | `put(请求)`：经 agent 面放入，行动者和会话是这次操作的，所以每个插件都听到、它发自己的事件；`putting()`：此刻正在放的库内路径（第 4 节「正在放入的标记」） | `agentFace.put` |
 
 `shortDir` 和 `withSuffix` 只是把字写给人看，不涉库的事实，不进 `tools`；`pluginName` 是 sdk 的构造。自带插件这一程照旧直接导入内核。
 
@@ -439,7 +457,7 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
 
 - **工具**都是生成的，没有为哪个工具手写的代码。每个动词和 `show` 一个，输入是那个动词的参数表；`put` 读标准输入的那个位置参数在这里可以不写，内容写在 `text`（文字）或 `base64`（字节）里，库外的文件或目录照旧写这台机器上的路径。每条既不破坏也不只给主人的命令一个，名字是命令名的词用 `_` 连起来（`space list` 是 `space_list`），输入由它的 `params` 生成：位置参数和开关是同名的属性，种类、必填、`pattern`、`options` 照搬，`hint` 是属性的说明。工具的说明是动词或命令的一句中文说明。管理的命令不列出；按名字调，它照样经主人面的门，以命令行同样的理由和话拒绝。没有这个名字的工具，是协议层的错。
 - **答复**和命令行的一样：命令行印的字是工具答的文字，`--json` 印的结果对象是结构化的内容。拒绝（退出码 2 的那些）标成出错，字和理由不变；用法错误是 `reason: 'usage'` 的拒绝，字是命令行在标准错误印的那句；插件的问题和命令行一样写在字里和 `problems` 里。退出码在这里没有意义，看 `outcome`。
-- **认知**随连接来：服务的 `instructions` 是库的说明（内核此刻拼出的 `PNEUMA-BASE.md`），前面加四句写给这一面的话：说明里的命令行就是同名的工具、参数相同，`put` 怎么给内容，管理由主人在界面上做。说明也是一个资源；管理界面导航里不只给主人的每一页也是一个资源，读它得到 `show <编号>` 印的字。
+- **认知**随连接来：服务的 `instructions` 是库的说明（内核此刻拼出的 `PNEUMA-BASE.md`），前面加五句写给这一面的话：说明里的命令行就是同名的工具、参数相同，`put` 怎么给内容，内容用 `inspect` 加 `content` 读，管理由主人在界面上做。说明也是一个资源；管理界面导航里不只给主人的每一页也是一个资源，读它得到 `show <编号>` 印的字。
 - **变化**：服务每两秒重读一次工具表、资源表和被订阅的资源，变了就发协议的通知（工具表变了、资源表变了、某个资源更新了）。插件在连着时装上或卸下，三样都会变。
 - **协议**：新旧两代都接。2026-07-28 版每个请求在 `_meta` 里带版本，有 `server/discover`，通知经 `subscriptions/listen` 来，可缓存的结果写 `ttlMs: 0` 和 `cacheScope: 'private'`（库随时在变，答复因授权而异）；更早的版本以 `initialize` 开头，`notifications/initialized` 之后的通知直接发。2026-07-28 版说一条连接不算会话，这里按上面定的仍把一次连接记成一个场景。
 - 协议是自己写的（`src/mcp/server.ts`，约两百五十行），没有用官方的 SDK：命令行的包文件里没有任何第三方依赖，SDK 的服务端连同它要的 zod 解开约 14 MB，工具的输入又是从参数表生成的 JSON Schema，用 SDK 也只剩它的低层接口。传输是参数（`Transport`：收到的每一行，和发一条的办法），HTTP 跟着应用来。仓库的测试用官方 SDK 的客户端（只是开发依赖）分别以两代协议连上它。
@@ -472,7 +490,7 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
   PNEUMA-BASE.md              说明（认知的载体，由内核拼）
   .pneuma-base/
     config.json               库标识、格式版本、插件表、授权
-    tmp/                      内核写到一半的临时名
+    tmp/                      内核写到一半的临时名；putting/ 下是正在放入的标记。不同步
     <插件名>/                  每个插件名下的目录
   _archive/                   归档区，里面保持原来的相对路径
   <某个目录>/.pneuma-item      带这个标记的目录是一样东西
@@ -518,7 +536,7 @@ $PNEUMA_BASE_HOME/
 | `onArchive` | 记下归档和取回；已归档的条目不出现在可能过期等清单里 |
 | `onCheck` | 自某时以来的变化；来历不明的；可能过期的；来源不在的；挪过的（已接回，记一条看到的挪动）；不在了的 |
 | `observe` | 把做成了的主人面操作记成事实；清归档时，被删的路径上的条目记为已除 |
-| `views`、`onView` | `ledger.items`（条目）：每个没除掉的条目的路径、来历、谁、当时在做什么（可让的列：面板里也有）、现状（对账后的状态，依据上有标记时显示标记）、时间；过滤来历、现状、是否带归档的，默认不带；行链到内核的 `item` 面板。`ledger.scenes`（场景）：每次会话，新的在前：开始的时间、谁、在哪（可让的列：场景卡里也有）、在做什么（没说过就是其中的主人面操作）、动了几样东西；行链到场景卡。`ledger.scene`（场景卡，不进导航，参数 `scene`）：谁、起止、在哪、说过的话、主人面的操作，和在其中放入或改过的条目，条目是一个列表，路径完整，下面一句在这个场景里怎样了。`ledger.standing`（状况）：`check` 的那几节，用同一份 `standingData`；每节是一个列表，路径链到那样东西的面板，挪过的链到新位置，只在比节名多说了什么时带一句。`ledger.activity`（动态）：最近 200 条事实，新的在前，含主人面的操作；可按 agent 或主人过滤 |
+| `views`、`onView` | `ledger.items`（条目）：每个没除掉的条目的路径、来历、谁、当时在做什么（可让的列：面板里也有）、现状（对账后的状态，依据上有标记时显示标记）、时间；过滤来历、现状、是否带归档的，默认不带；行链到内核的 `item` 面板。`ledger.scenes`（场景）：每次会话，新的在前：开始的时间、谁、在哪（可让的列：场景卡里也有）、在做什么（没说过就是其中的主人面操作）、动了几样东西；行链到场景卡。`ledger.scene`（场景卡，不进导航，参数 `scene`）：谁、起止、在哪、对话在哪（可复制，标着在这台机器上、这台机器上已经没有了或在别的机器上；在这台机器上时下一行是接着聊的命令，可复制）、说过的话、主人面的操作，和在其中放入或改过的条目，条目是一个列表，路径完整，下面一句在这个场景里怎样了。`ledger.standing`（状况）：`check` 的那几节，用同一份 `standingData`；每节是一个列表，路径链到那样东西的面板，挪过的链到新位置，只在比节名多说了什么时带一句。`ledger.activity`（动态）：最近 200 条事实，新的在前，含主人面的操作；可按 agent 或主人过滤 |
 | `onItemView` | 条目详情里「来历」一节：怎么来的与出处、谁、何时、在哪、场景、当时在做、现状、并入了哪个目录；依据（每个依据的现状，链到上游的 `item`）；被什么依据；决定与备注；内容的变化（每次换内容和那次放入带的一句话，标出哪一份在留存里）；留存，每份说是谁放进来的那份内容，不说它放在哪。数据就是 `inspect` 用的 `itemView`。没人登记过的文件说明来历不明；带标记的目录里面从没入册的文件说明它是谁的一部分。动作都经两个面：来历不明的给「记为带进来的」「记为做出来的」（`put` 登记）；被直接改过的给「认下这次改动」（`say revised`）；每份留存给「取回到新路径」（`ledger held restore`）。状况页的「没人登记过的」「被直接改过的」两节，每一项带同样的动作 |
 
 它给主人面加三条命令，名字和别的插件一样以它的名字开头：`ledger held list` 列出留存，只读；`ledger held restore <库内路径或条目号> [--fingerprint <指纹>] --to <新的库内路径>` 把一份留存复制到一个空着的新路径，目录条目整棵复制回去，并把它以「主人带进来的」入册，只给主人；`ledger held drop` 清掉全部留存，是破坏性的。两条都由内核的门拦。
@@ -531,11 +549,13 @@ $PNEUMA_BASE_HOME/
 - 用词：被新内容换下的旧内容进**留存**，是给主人的保险，只有主人取得回（`ledger held restore` 只给主人）。记账插件的说明、放的答复、`inspect`、界面都说留存、换了新内容，不说版本或一版：版本归版本插件。`inspect` 列出内容换过的每一次，「被换下，在留存里」标在被留存的那一份上，按留存目录里的指纹认。
 - `put --made --from` 写了被换掉的东西自己时，依据里不记它自己：换内容本身就是 `item.revise`，它不是自己的依据。
 - 给来历不明的条目补来历的那条 `item.enter` 是它的别名，不多一份内容；它带的 `note` 由 `fold` 放到它登记的那份内容上，那份已有一句时不盖掉。
+- 看到的来历和改动（第 4 节「看到的和说的」）：`put --observed` 写的 `item.enter`、`say revised --observed` 写的 `item.revise`，信封的 `how` 是 `observed`，事实本来就记着它是怎么来的。来历显示的每一处都带「（自动登记）」：「带进来的，主人给的（自动登记）」；看到的改动是「直接改的，自动登记」。之后谁再登记同一路径、内容没变、写明了来历，就换掉看到的来历，和今天给来历不明的条目补来历一样（「已更正来历」）；`fold` 把被换掉的那条 enter 留在 `earlier` 里，`inspect` 写成「先前：…」，条目的「谁」「何时」「场景」跟着说的那一条。之后谁再 `say revised`（带不带 `--by owner` 都行）同一份内容，就换掉看到的那条改动的归属，版本不多一个，那一版标「先是自动登记」。说的永远不被看到的换掉：内核和记账插件都不让看到的盖过说的，`fold` 里事实的次序反过来（同步带来的）也一样。`--observed` 只给主人；`say revised --observed` 不和 `--by` 一起写，看到的不知道是谁改的。
 - `say revised <库内路径>` 认下一个被直接改过的文件的现内容，记一条 `claimed` 的 `item.revise`。主人说是自己改的，agent 加 `--by owner`：事实体带 `by: 'owner'`，信封的 `actor` 仍是这个 agent，显示时两个人都出现；主人自己说时不带 `by`。信封的 `actor` 是库从授权和会话认出来的，调用方说什么都不改它。
 - 主人面操作的事实里，答复写成一行：几行连起来，绝对路径和 `file://` 地址只留最后的名字。它在 `check`、场景卡和动态里给人读，名字就够了。只读的命令（事件的 `readOnly`）照样记，但不算「自上次以来」的消息；只设插件、目标或嵌入器的命令（事件的 `setup`）在某个行动者第一次来之前发生的不算消息（说明里已是最新配置），在它来过之后再改才列出。
 - 「一次命令行调用写一个文件」落成「每个钩子写一个文件」：`start` 里「说」和「查」各写一个，`put` 盖掉无主文件时 `revise` 写入册、`onPut` 写改。每个文件照样是新文件、写完不动。
 - 发布事实文件用硬链接到最终名再删临时名，最终名已存在时失败重试，而不是覆盖。
 - `check` 比设计多一节「不在了的」，验收 C4 要求报告不在；「上游有标记」也单列一节，直接带标记的条目不重复列在里面。
+- 放先落文件后记账，所以对账先看一遍：读事实，列库里的东西，取指纹。看出了什么（没人登记过的、被直接改过的、挪过的、不在了的），再用内核的 `tools.putting()` 读正在放的路径，然后重读一次事实：看出的一样东西，路径正在放，或重读时新出现的事实提到了它的路径或条目，就不报，按记录算（`reconcile.ts` 的 `confirm`）。次序是要紧的：标记在看过文件之后读，正在放的路径不报；事实在读过标记之后读，在对账期间开始又做完的放已经记下了，单靠标记挡不住它。新事实只要提到就算，因为一个放记下之后可能紧接着被挪走，路径已经不在册上了。`check`、条目页和状况页都这样对账，`check` 也就不会把正在挪的东西当成看到的挪动记下来。事实文件写完不动，同一个进程里读过的不再读；各个场景的目录并发地列。600 个事实文件的库上，`check` 有要报的东西时也比改之前快（中位约 0.21 秒对 0.24 秒）。
 - `find` 什么都给，包括调用者自己这次会话的场景和条目；`start` 的找（`skipOwnSession`）不带调用者自己的场景和在其中放入的条目。找的结果按场景分组，`group` 是场景那一行。`inspect` 一个条目时只看它自己和它直接依据的文件，不找已搬；已搬只在 `check` 和 `start` 里认。
 - 界面的视图在 `ui.ts`，是纯函数：取自 `fold`、`reconcile`、`itemView`、`sceneView` 背后的同一份归并与 `standingData`，不另算一套来历；都不写事实，不收养没人登记过的文件，看到的挪动也不记，留给 `check`。面板里一样东西没有文件、或一个文件没人登记时，才做一次全量对账，认出挪到这里的条目。
 - 「自上次以来」只列改了内容或能力的事。不改两者的主人面操作（`init`、`grant issue`、`grant revoke`、`skill install`）照样记成事实，但不列出；名单是 `views.ts` 里的一个集合。

@@ -100,7 +100,9 @@ describe('the tool list', () => {
     })
     const put = (await client.listTools()).tools.find((t) => t.name === 'put')
     expect(put?.inputSchema.required).toBeUndefined()
-    expect(Object.keys(put?.inputSchema.properties ?? {})).toEqual(['what', 'to', 'brought', 'made', 'source', 'by', 'from', 'from-outside', 'note', 'text', 'base64'])
+    expect(Object.keys(put?.inputSchema.properties ?? {})).toEqual(['what', 'to', 'brought', 'made', 'source', 'by', 'from', 'from-outside', 'note', 'observed', 'text', 'base64'])
+    const inspect = (await client.listTools()).tools.find((t) => t.name === 'inspect')
+    expect(inspect?.inputSchema).toMatchObject({ properties: { target: { type: 'string' }, file: { type: 'string' }, content: { type: 'boolean' } }, required: ['target'] })
   })
 })
 
@@ -130,8 +132,12 @@ describe('a tool and the command line with the same arguments', () => {
     ['find', { text: 'notes', 'include-archived': true }, ['find', 'notes', '--include-archived']],
     ['find', { text: '乙', origin: 'made' }, ['find', '乙', '--origin', 'made']],
     ['inspect', { target: 'notes/b.md' }, ['inspect', 'notes/b.md']],
+    // An agent that cannot read files reads a thing through inspect: the tool gains it from the verbs table.
+    ['inspect', { target: 'notes/a.md', content: true }, ['inspect', 'notes/a.md', '--content']],
     ['put', { text: '# 甲\n下单流程\n', to: 'notes/a.md', brought: true }, ['put', '-', '--to', 'notes/a.md', '--brought'], '# 甲\n下单流程\n'],
     ['put', { what: 'notes/b.md', to: 'notes/a.md' }, ['put', 'notes/b.md', '--to', 'notes/a.md']],
+    // An agent declares; what the owner's side saw is the owner's to record.
+    ['put', { what: 'notes/a.md', brought: true, by: 'owner', observed: true }, ['put', 'notes/a.md', '--brought', '--by', 'owner', '--observed']],
     ['say', { kind: 'note', about: 'notes/a.md', text: '要再核对一遍' }, ['say', 'note', 'notes/a.md', '要再核对一遍']],
     ['say', { kind: 'from', text: 'notes/b.md', args: { from: ['notes/a.md'] } }, ['say', 'from', 'notes/b.md', '--from', 'notes/a.md']],
     ['say', { kind: 'nobody-hears' }, ['say', 'nobody-hears']],

@@ -2,8 +2,9 @@
 // text reads the home directory to show it as ~ (the kernel's shortDir). ledger-design.md section 7.
 import { posix } from 'node:path'
 import { originalPath, regionOf, shortDir, type Instant, type LibraryPath, type PluginHit, type PluginSection } from '@pneuma-base/kernel'
-import { ADHOC_SCENE, type Fact, type FactActor, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
-import { actorKey, isArchived, type ItemRecord, type Ledger, type Said, type SceneRecord, type Version } from './fold.js'
+import { ADHOC_SCENE, type Fact, type FactActor, type How, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
+import type { Conversation } from './conversation.js'
+import { actorKey, isArchived, type Enter, type ItemRecord, type Ledger, type Said, type SceneRecord, type Version } from './fold.js'
 import { marksOf, type ItemState, type Mark, type Standing } from './reconcile.js'
 
 export const when = (at: Instant) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`
@@ -40,10 +41,21 @@ export function ambiguousText(prefix: string, scenes: SceneRecord[]): string {
   return [`有 ${scenes.length} 个场景的编号以 ${prefix} 开头，写长一点再看：`, ...scenes.map((s) => `  ${[s.id, ...sceneParts(s)].join(' · ')}`)].join('\n')
 }
 
-export function originLabel(origin: LedgerOrigin): string {
-  if (origin.kind === 'made') return '做出来的'
-  if (origin.kind === 'adopted') return '来历不明'
-  return origin.by === 'owner' ? '带进来的，主人给的' : '带进来的'
+/** What an origin seen and not said carries wherever it is shown: the app registered it, and it may be wrong. */
+export const OBSERVED = '（自动登记）'
+
+/** An origin in words; one only seen (`how` 'observed') says so. */
+export function originLabel(origin: LedgerOrigin, how: How): string {
+  const label = origin.kind === 'made' ? '做出来的' : origin.kind === 'adopted' ? '来历不明' : origin.by === 'owner' ? '带进来的，主人给的' : '带进来的'
+  return how === 'observed' ? `${label}${OBSERVED}` : label
+}
+
+/** How a version's content came, when it was a direct change: claimed, recorded for the owner, or only seen; null for a put. */
+export function claimText(ver: Version): string | null {
+  if (!ver.claimed) return null
+  if (ver.how === 'observed') return '直接改的，自动登记'
+  const said = ver.by === 'owner' ? `主人直接改的，${who(ver.actor)} 代记` : '认了直接改动'
+  return ver.seen === null ? said : `${said}（先是自动登记）`
 }
 
 export const STATE_LABEL: Record<ItemState['kind'], string> = { consistent: '一致', changed: '已变', moved: '已搬', missing: '不在', removed: '已除', absorbed: '并入' }
@@ -62,12 +74,16 @@ export function doingAt(scene: SceneRecord | undefined, at: Instant): string | n
 export type BasisRow = { item: ItemId; path: LibraryPath | ItemId; fingerprint: string; state: ItemState['kind']; mark: Mark['kind'] | null }
 export type SaidRow = { flavor: Said['flavor']; text: string; at: Instant; scene: SceneId; actor: FactActor; about: LibraryPath | ItemId | null }
 
+/** How it became known where a thing came from: who said or saw which origin, when, in which scene. */
+export type OriginLine = { origin: LedgerOrigin; how: How; at: Instant; scene: SceneId; actor: FactActor; where: Fact['where'] }
+
 export type ItemView = {
   kind: 'item'
   item: ItemId
   path: LibraryPath
   origin: LedgerOrigin
-  entered: { at: Instant; scene: SceneId; actor: FactActor; where: Fact['where'] }
+  entered: OriginLine // the current origin's
+  earlier: OriginLine[] // the origins it replaced, oldest first
   doing: string | null
   basis: BasisRow[]
   outside: string[]
@@ -81,6 +97,8 @@ export type ItemView = {
   unknownOrigin: boolean // adopted, and nobody said where it came from since
   bundle: boolean
 }
+
+const originLine = (f: Enter): OriginLine => ({ origin: f.origin, how: f.how, at: f.at, scene: f.scene, actor: f.actor, where: f.where })
 
 const saidRow = (ledger: Ledger, s: Said): SaidRow => ({
   flavor: s.flavor,
@@ -103,7 +121,8 @@ export function itemView(ledger: Ledger, item: ItemRecord, states: ReadonlyMap<I
     item: item.id,
     path: item.path,
     origin: item.origin,
-    entered: { at: entered.at, scene: entered.scene, actor: entered.actor, where: entered.where },
+    entered: originLine(entered),
+    earlier: item.earlier.map(originLine),
     doing: doingAt(scene, entered.at),
     basis: item.basis.items.map((row) => ({
       item: row.item,
@@ -127,10 +146,14 @@ export function itemView(ledger: Ledger, item: ItemRecord, states: ReadonlyMap<I
 
 export const SAID_LABEL: Record<Said['flavor'], string> = { doing: '在做', decided: '决定', note: '备注' }
 
+/** An origin a later one replaced, in one line: what it was, who said or saw it, when, in which scene. */
+export const earlierText = (e: OriginLine) => `${originLabel(e.origin, e.how)} · ${who(e.actor)} · ${when(e.at)} · 场景 ${shortScene(e.scene)}`
+
 export function itemText(v: ItemView): string {
   const where = v.entered.where?.cwd ? ` · 在 ${shortDir(v.entered.where.cwd)}` : ''
-  const lines = [`${originLabel(v.origin)} · ${who(v.entered.actor)} · ${when(v.entered.at)}${where} · 场景 ${shortScene(v.entered.scene)}`]
+  const lines = [`${originLabel(v.origin, v.entered.how)} · ${who(v.entered.actor)} · ${when(v.entered.at)}${where} · 场景 ${shortScene(v.entered.scene)}`]
   if (v.origin.kind === 'brought' && v.origin.source) lines.push(`出处：${v.origin.source}`)
+  for (const e of v.earlier) lines.push(`先前：${earlierText(e)}`)
   if (v.doing) lines.push(`当时在做：${v.doing}`)
   if (v.basis.length > 0 || v.outside.length > 0) {
     lines.push('依据：')
@@ -146,8 +169,8 @@ export function itemText(v: ItemView): string {
     // A held copy lies at held/<item>/<fingerprint>/<name>, so the version it keeps is the one with that fingerprint.
     const kept = new Set(v.held.flatMap((path) => path.split('/').slice(-2, -1)))
     for (const ver of v.versions) {
-      const claimed = ver.by === 'owner' ? `主人直接改的，${who(ver.actor)} 代记` : '认了直接改动'
-      const how = [...(ver.claimed ? [claimed] : []), ...(kept.has(ver.fingerprint) ? ['被换下，在留存里'] : [])].join('，')
+      const claimed = claimText(ver)
+      const how = [...(claimed === null ? [] : [claimed]), ...(kept.has(ver.fingerprint) ? ['被换下，在留存里'] : [])].join('，')
       lines.push([`  ${ver.fingerprint.slice(0, 8)}`, when(ver.at), who(ver.actor), ...(how ? [how] : []), ...(ver.note === null ? [] : [`「${ver.note}」`])].join('  '))
     }
   }
@@ -163,11 +186,12 @@ export type SceneView = {
   last: Instant
   actors: FactActor[]
   cwds: string[]
+  conversation: Conversation | null
   said: SaidRow[]
-  items: { item: ItemId; path: LibraryPath; enteredHere: boolean; origin: LedgerOrigin }[]
+  items: { item: ItemId; path: LibraryPath; enteredHere: boolean; origin: LedgerOrigin; how: How }[]
 }
 
-export function sceneView(ledger: Ledger, scene: SceneRecord): SceneView {
+export function sceneView(ledger: Ledger, scene: SceneRecord, conversation: Conversation | null): SceneView {
   return {
     kind: 'scene',
     id: scene.id,
@@ -175,19 +199,28 @@ export function sceneView(ledger: Ledger, scene: SceneRecord): SceneView {
     last: scene.last,
     actors: scene.actors,
     cwds: scene.cwds,
+    conversation,
     said: scene.said.map((s) => saidRow(ledger, s)),
     items: scene.items.flatMap((id) => {
       const item = ledger.items.get(id)
-      return item ? [{ item: id, path: item.path, enteredHere: item.entered.scene === scene.id, origin: item.origin }] : []
+      return item ? [{ item: id, path: item.path, enteredHere: item.entered.scene === scene.id, origin: item.origin, how: item.entered.how }] : []
     }),
   }
 }
 
 export function sceneText(v: SceneView): string {
   const lines = [`场景 ${shortScene(v.id)}`, `${actorNames(v.actors)} · ${when(v.first)} 到 ${when(v.last)}${v.cwds.length ? ` · 在 ${v.cwds.map((d) => shortDir(d)).join('、')}` : ''}`]
+  if (v.conversation) {
+    lines.push(`对话：${v.conversation.path}（${whereConversation(v.conversation)}）`)
+    if (v.conversation.status === 'here' && v.conversation.resume) lines.push(`接着聊：${v.conversation.resume}`)
+  }
   for (const s of v.said) lines.push(`${SAID_LABEL[s.flavor]}：${s.text}${s.about !== null ? `（关于 ${s.about}）` : ''}`)
-  if (v.items.length > 0) lines.push('条目：', ...v.items.map((i) => `  ${i.path}  ${i.enteredHere ? `在这里放入，${originLabel(i.origin)}` : '在这里改过或挪过'}`))
+  if (v.items.length > 0) lines.push('条目：', ...v.items.map((i) => `  ${i.path}  ${i.enteredHere ? `在这里放入，${originLabel(i.origin, i.how)}` : '在这里改过或挪过'}`))
   return lines.join('\n')
+}
+
+export function whereConversation(c: Conversation): string {
+  return c.status === 'here' ? '在这台机器上' : c.status === 'gone' ? '这台机器上已经没有了' : `在 ${c.machine} 上，不是这台机器`
 }
 
 // ---- check: since last time ----
@@ -238,10 +271,16 @@ export function factLine(ledger: Ledger, f: Fact): string {
     case 'said':
       return `${SAID_LABEL[f.flavor]}：${f.text}${f.about !== null ? `（关于 ${pathOf(ledger, f.about)}）` : ''}`
     case 'item.enter':
-      return `放入 ${now(f.item, f.path)}（${originLabel(f.origin)}）${noteTail(f.note)}`
+      return `放入 ${now(f.item, f.path)}（${originLabel(f.origin, f.how)}）${noteTail(f.note)}`
     case 'item.revise': {
       const path = pathOf(ledger, f.item)
-      const what = !f.claimed ? `${path} 换了新内容` : f.by === 'owner' ? `记下 ${path} 是主人直接改的` : `认了 ${path} 的直接改动`
+      const what = !f.claimed
+        ? `${path} 换了新内容`
+        : f.how === 'observed'
+          ? `看到 ${path} 被直接改了${OBSERVED}`
+          : f.by === 'owner'
+            ? `记下 ${path} 是主人直接改的`
+            : `认了 ${path} 的直接改动`
       return `${what}${noteTail(f.note)}`
     }
     case 'item.move': {
@@ -339,7 +378,7 @@ export type Candidate = { hit: PluginHit; haystack: string }
 /** An item, under the heading of the scene it was entered in. */
 export function itemHit(ledger: Ledger, item: ItemRecord): PluginHit {
   const scene = ledger.scenes.get(item.entered.scene)
-  return { path: item.path, title: posix.basename(item.path), group: scene ? sceneLine(scene) : null, detail: originLabel(item.origin) }
+  return { path: item.path, title: posix.basename(item.path), group: scene ? sceneLine(scene) : null, detail: originLabel(item.origin, item.entered.how) }
 }
 
 /** The parts of a find request the ledger reads, and the scene to leave out: start's own, or null. */

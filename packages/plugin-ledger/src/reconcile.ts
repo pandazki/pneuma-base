@@ -74,7 +74,36 @@ export async function reconcile(ledger: Ledger, files: Files): Promise<Standing>
     if (to !== null) taken.add(to)
     states.set(item.id, classify(item, null, to))
   }
+  return withMarks(ledger, states, unowned.filter((path) => !taken.has(path)))
+}
 
+/** Whether a standing reports anything about the files: a stray, or an item changed, moved or gone. */
+export const findsAnything = (standing: Standing) =>
+  standing.unowned.length > 0 || [...standing.states.values()].some((s) => s.kind === 'changed' || s.kind === 'moved' || s.kind === 'missing')
+
+/**
+ * A standing confirmed against puts. A put lands its file before its record, so what `reconcile`
+ * found about a path or an item stays only when no put is at the path now (`putting`, read after the
+ * files were looked at) and no fact read after that (`later`) and missing from `ledger` names the
+ * path or the item: such a fact is a put that finished meanwhile, perhaps followed by another, and
+ * what was seen may be its doing. What is dropped is judged by its record.
+ */
+export function confirm(ledger: Ledger, standing: Standing, later: Ledger, putting: ReadonlySet<LibraryPath>): Standing {
+  const known = new Set(ledger.facts.map((f) => f.id))
+  const since = later.facts.filter((f) => !known.has(f.id))
+  const paths = new Set<LibraryPath>([...putting, ...since.flatMap((f) => (f.kind === 'item.enter' ? [f.path] : f.kind === 'item.move' ? [f.from, f.to] : []))])
+  const items = new Set(since.flatMap((f) => (f.kind === 'item.enter' || f.kind === 'item.revise' || f.kind === 'item.move' || f.kind === 'item.remove' ? [f.item] : [])))
+  const states = new Map(standing.states)
+  for (const [id, state] of standing.states) {
+    const item = ledger.items.get(id)
+    if (!item || !(state.kind === 'changed' || state.kind === 'moved' || state.kind === 'missing')) continue
+    if (items.has(id) || paths.has(item.path) || (state.kind === 'moved' && paths.has(state.to))) states.set(id, classify(item, item.fingerprint, null))
+  }
+  return withMarks(ledger, states, standing.unowned.filter((path) => !paths.has(path)))
+}
+
+/** The standing of these states and strays, with the marks they put on the items made from them. */
+function withMarks(ledger: Ledger, states: Map<ItemId, ItemState>, unowned: LibraryPath[]): Standing {
   const marks = new Map<ItemId, Mark[]>()
   for (const item of ledger.items.values()) {
     const found = item.removed ? [] : marksOf(item, ledger, (id) => states.get(id))
@@ -85,7 +114,7 @@ export async function reconcile(ledger: Ledger, files: Files): Promise<Standing>
     const flagged = item.removed ? [] : markedAncestors(ledger, item, marks)
     if (flagged.length > 0) upstream.set(item.id, flagged)
   }
-  return { states, unowned: unowned.filter((path) => !taken.has(path)), marks, upstream }
+  return { states, unowned, marks, upstream }
 }
 
 /** The things at any level above `item` in its basis that carry a mark. */

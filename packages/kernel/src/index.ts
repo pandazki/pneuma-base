@@ -1,5 +1,6 @@
 export * from '@pneuma-base/sdk'
 export { agentFace } from './agent.js'
+export { CONTENT_LIMIT } from './content.js'
 export { rankHits, searchTerms, SENTENCE_HITS } from './terms.js'
 export { ownerFace, initLibrary, type LibraryCall, type MachineContext, type OwnerCall, type OwnerCommandInfo } from './owner.js'
 export { viewerFace, type ViewerCall } from './viewer.js'

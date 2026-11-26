@@ -1,6 +1,7 @@
 // fold is a pure function of the facts: the ledger rows "each item has exactly one enter" and
 // "the view is decided by the files and the facts alone", and ledger-design.md section 3.
 import { describe, expect, it } from 'vitest'
+import { conversationOf } from '../src/conversation.js'
 import { fold } from '../src/fold.js'
 import { sceneText, sceneView } from '../src/views.js'
 import { basis, codex, enter, f, fp, id, p } from './support.js'
@@ -129,6 +130,44 @@ describe('a scene seen by one agent with and without a grant', () => {
     const scene = ledger.scenes.get('s1' as never)
     if (!scene) throw new Error('no scene')
     expect(scene.actors).toHaveLength(3)
-    expect(sceneText(sceneView(ledger, scene)).split('\n')[1]).toMatch(/^claude-code、codex · /)
+    expect(sceneText(sceneView(ledger, scene, null)).split('\n')[1]).toMatch(/^claude-code、codex · /)
+  })
+})
+
+describe('the conversation a scene came from', () => {
+  it('keeps the last pointer the scene’s facts carry, and resumes it only where it was recorded', () => {
+    const pointing = (fact: ReturnType<typeof f>, path: string, machine: string) => ({ ...fact, where: { ...fact.where, machine, transcript: { path, resume: 'claude --resume s1' } } })
+    const ledger = fold([f(1, enter('i_a', 'a.md', 'a')), pointing(f(2, enter('i_b', 'b.md', 'b')), '~/old.jsonl', 'mac-a'), pointing(f(3, enter('i_c', 'c.md', 'c')), '~/s1.jsonl', 'mac-a')])
+    const scene = ledger.scenes.get('s1' as never)
+    if (!scene) throw new Error('no scene')
+    expect(scene.transcript).toEqual({ path: '~/s1.jsonl', resume: 'claude --resume s1', machine: 'mac-a' })
+    const conversation = conversationOf(scene, 'mac-b')
+    expect(conversation).toEqual({ path: '~/s1.jsonl', resume: 'claude --resume s1', machine: 'mac-a', status: 'elsewhere' })
+    const text = sceneText(sceneView(ledger, scene, conversation))
+    expect(text).toContain('对话：~/s1.jsonl（在 mac-a 上，不是这台机器）')
+    expect(text).not.toContain('接着聊')
+  })
+})
+
+describe('what was seen and what was said', () => {
+  const owner = { kind: 'owner' as const, name: 'owner', grant: null }
+  const seen = (fact: ReturnType<typeof f>) => ({ ...fact, how: 'observed' as const })
+  const claim = (second: number, print: string, how: 'observed' | 'reported') => ({
+    ...f(second, { kind: 'item.revise', item: id('i_a'), base: fp('a'), fingerprint: fp(print), size: 1, held: null, claimed: true }, how === 'observed' ? { actor: owner } : {}),
+    how,
+  })
+
+  it('replaces an origin only seen with one said, keeping the seen one, and never the other way round', () => {
+    const said = fold([seen(f(1, enter('i_a', 'a.md', 'a', { kind: 'brought', source: null, by: 'owner' }), { actor: owner })), f(2, enter('i_x', 'a.md', 'a', { kind: 'made', basis: basis([]) }))])
+    expect(said.items.get(id('i_a'))).toMatchObject({ origin: { kind: 'made' }, entered: { id: 'f_0002' }, earlier: [{ id: 'f_0001', how: 'observed' }] })
+    const kept = fold([f(1, enter('i_a', 'a.md', 'a')), seen(f(2, enter('i_x', 'a.md', 'a', { kind: 'brought', source: null, by: 'owner' }), { actor: owner }))])
+    expect(kept.items.get(id('i_a'))).toMatchObject({ origin: { kind: 'brought', by: null }, entered: { id: 'f_0001' }, earlier: [] })
+  })
+
+  it('replaces a change only seen with the claim said for the same content, and keeps a claim said against a later sighting', () => {
+    const replaced = fold([f(1, enter('i_a', 'a.md', 'a')), claim(2, 'b', 'observed'), claim(3, 'b', 'reported')])
+    expect(replaced.items.get(id('i_a'))?.versions).toMatchObject([{ fingerprint: fp('a') }, { fingerprint: fp('b'), how: 'reported', seen: { actor: owner } }])
+    const kept = fold([f(1, enter('i_a', 'a.md', 'a')), claim(2, 'b', 'reported'), claim(3, 'b', 'observed')])
+    expect(kept.items.get(id('i_a'))?.versions).toMatchObject([{ fingerprint: fp('a') }, { fingerprint: fp('b'), how: 'reported', seen: null }])
   })
 })

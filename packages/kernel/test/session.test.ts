@@ -1,6 +1,9 @@
 // Session identity order (spec failure semantics, "未知"): flag, PNEUMA_BASE_SESSION,
 // CLAUDE_CODE_SESSION_ID, CODEX_THREAD_ID, otherwise minted and marked so.
-import { describe, expect, it } from 'vitest'
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { identifyActor, identifySession, looksLikeAgentSession, type GrantId } from '../src/index.js'
 
 const base = { cwd: '/w', machine: 'm' }
@@ -21,6 +24,56 @@ describe('identifySession', () => {
     expect(a.source).toBe('minted')
     expect(a.id).not.toBe(b.id)
     expect(a).toMatchObject({ cwd: '/w', machine: 'm', transcript: null })
+  })
+})
+
+// The products' folders are faked under a temp HOME, with empty files: only names are looked at.
+describe('the conversation a session points back to', () => {
+  const id = '11111111-2222-4333-8444-555555555555'
+  let home: string
+  beforeEach(() => {
+    home = realpathSync(mkdtempSync(join(tmpdir(), 'pb-home-')))
+  })
+  const touch = (path: string) => {
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, '')
+  }
+  const folderOf = (dir: string) => dir.replace(/[^a-zA-Z0-9]/g, '-')
+  const transcript = (env: Record<string, string>, cwd: string, flag: string | null = null) => identifySession({ flag, env: { HOME: home, ...env }, cwd, machine: 'm' }).transcript
+
+  it('finds a Claude Code conversation in the folder named after the directory it started in, from below that directory too', () => {
+    const project = join(home, 'work', 'my.site v2')
+    mkdirSync(join(project, 'src'), { recursive: true })
+    touch(join(home, '.claude/projects', folderOf(project), `${id}.jsonl`))
+    const expected = { path: `~/.claude/projects/${folderOf(project)}/${id}.jsonl`, resume: `cd ~/work/'my.site v2' && claude --resume ${id}` }
+    expect(transcript({ CLAUDE_CODE_SESSION_ID: id }, project)).toEqual(expected)
+    expect(transcript({ CLAUDE_CODE_SESSION_ID: id }, join(project, 'src'))).toEqual(expected)
+  })
+
+  it('looks under CLAUDE_CONFIG_DIR and CODEX_HOME when they are set', () => {
+    const project = join(home, 'w')
+    touch(join(home, 'cfg/projects', folderOf(project), `${id}.jsonl`))
+    expect(transcript({ CLAUDE_CODE_SESSION_ID: id, CLAUDE_CONFIG_DIR: join(home, 'cfg') }, project)?.path).toBe(`~/cfg/projects/${folderOf(project)}/${id}.jsonl`)
+    touch(join(home, 'cx/sessions/2026/11/25', `rollout-2026-11-25T04-42-24-${id}.jsonl`))
+    expect(transcript({ CODEX_THREAD_ID: id, CODEX_HOME: join(home, 'cx') }, project)?.path).toBe(`~/cx/sessions/2026/11/25/rollout-2026-11-25T04-42-24-${id}.jsonl`)
+  })
+
+  it('finds a Codex conversation by its thread id in the dated folders', () => {
+    touch(join(home, '.codex/sessions/2026/11/26', 'rollout-2026-11-26T01-00-00-01a2106d-fcb1-72c3-9aef-583c6bd555a2.jsonl'))
+    touch(join(home, '.codex/sessions/2026/10/31', `rollout-2026-10-31T23-59-01-${id}.jsonl`))
+    expect(transcript({ CODEX_THREAD_ID: id }, '/w')).toEqual({ path: `~/.codex/sessions/2026/10/31/rollout-2026-10-31T23-59-01-${id}.jsonl`, resume: `codex resume ${id}` })
+  })
+
+  it('points nowhere without the file, for a product with no rule, for an id that is no plain name, or for an id not from a product', () => {
+    const project = join(home, 'w')
+    expect(transcript({ CLAUDE_CODE_SESSION_ID: id }, project)).toBeNull()
+    expect(transcript({ CODEX_THREAD_ID: id }, project)).toBeNull()
+    touch(join(home, '.claude/projects', folderOf(project), `${id}.jsonl`))
+    expect(transcript({ ANTIGRAVITY_CONVERSATION_ID: id }, project)).toBeNull()
+    expect(transcript({ PNEUMA_BASE_SESSION: id }, project)).toBeNull()
+    expect(transcript({ CLAUDE_CODE_SESSION_ID: id }, project, id)).toBeNull()
+    touch(join(home, '.claude/projects', `${id}.jsonl`))
+    expect(transcript({ CLAUDE_CODE_SESSION_ID: `../${id}` }, project)).toBeNull()
   })
 })
 

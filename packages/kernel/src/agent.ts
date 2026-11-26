@@ -1,5 +1,6 @@
 import { posix } from 'node:path'
 import { archive } from './archive.js'
+import { contentOf } from './content.js'
 import { ARCHIVE_DIR, DESCRIPTION_FILE, KERNEL_DIR, abs, archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
 import { eachPlugin, messageOf, performVerb, pluginContext, type Collected } from './pipeline.js'
 import { put } from './put.js'
@@ -120,7 +121,9 @@ async function nameHits(req: FindRequest, root: string): Promise<Hit[]> {
 async function inspect(req: InspectRequest, ctx: Context): Promise<InspectResult> {
   const file = await fileFacts(ctx.library.root, req.target)
   const heard = await eachPlugin(ctx, (plugin, pctx) => plugin.onInspect?.(req, pctx))
-  return { file, sections: stamp(heard), problems: heard.problems }
+  const result: InspectResult = { file, sections: stamp(heard), problems: heard.problems }
+  if (req.content === undefined) return result
+  return { ...result, content: file === null ? { kind: 'unavailable', path: null, reason: 'no-such-file' } : await contentOf(ctx, file, req.content.file) }
 }
 
 /** The thing a target names: the main one, else its archived copy. `_archive/…` names the archived copy. */

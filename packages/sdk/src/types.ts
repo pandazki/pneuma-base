@@ -18,8 +18,16 @@ export type Session = {
   source: 'flag' | 'env' | 'minted'
   cwd: string
   machine: string
-  transcript: string | null
+  /** Null unless the id came from an agent product whose layout the kernel knows and the file is there. */
+  transcript: Transcript | null
 }
+
+/**
+ * Where the session's conversation is on `Session.machine`: a pointer, never a copy. `path` writes the
+ * home folder as `~`; `resume` is the command that continues the conversation there, null for a
+ * product that has none.
+ */
+export type Transcript = { path: string; resume: string | null }
 
 export type Grant = {
   id: GrantId
@@ -126,6 +134,11 @@ export interface PluginTools {
   readonly sentenceHits: number
   /** A put through the agent face, as the operation's actor and session, so every plugin hears it and it sends its event. */
   put(req: PutRequest): Promise<PutResult>
+  /**
+   * The paths a put is placing, registering or moving right now, sorted. A put lands its file before
+   * any plugin records it, so a file at one of these paths is no stray: its put has not finished.
+   */
+  putting(): Promise<LibraryPath[]>
 }
 
 export type Note = { plugin: PluginName; text: string; data?: unknown }
@@ -156,19 +169,21 @@ export type PlaceSource = { kind: 'file'; path: string } | { kind: 'directory'; 
 
 /**
  * Paths are as the caller wrote them: library-relative or absolute. The kernel parses them.
- * `note`: one sentence on what this put changed.
+ * `note`: one sentence on what this put changed. `observed`: the origin was seen, not said, as when
+ * the app registers a file the owner copied in; only the owner may put so, and a later origin
+ * somebody says replaces it.
  */
 export type PutRequest =
-  | { kind: 'register'; path: string; origin: Origin<string>; note?: string | null }
+  | { kind: 'register'; path: string; origin: Origin<string>; note?: string | null; observed?: true }
   | { kind: 'place'; from: PlaceSource; to: string; origin: Origin<string>; note?: string | null }
   | { kind: 'move'; from: string; to: string }
 
 /**
  * `inside-bundle`: the path lies inside a bundle, which changes only as a whole; `subject` is the
  * bundle. A put refused because no plugin held the replaced content carries, as `notes`, why each
- * plugin with `revise` declined.
+ * plugin with `revise` declined. `agent-session`: an agent put with `observed`, which is the owner's.
  */
-export type PutRefusal = 'outside-library' | 'outside-grant' | 'no-such-file' | 'would-overwrite' | 'inside-bundle'
+export type PutRefusal = 'outside-library' | 'outside-grant' | 'no-such-file' | 'would-overwrite' | 'inside-bundle' | 'agent-session'
 
 export type PutResult =
   | { outcome: 'accepted'; path: LibraryPath; fingerprint: Fingerprint; copied: boolean; notes: Note[]; problems: PluginProblem[] }
@@ -176,7 +191,7 @@ export type PutResult =
 
 /** What `onPut` receives after the kernel accepted a put. `note` is trimmed; blank or absent is null. */
 export type AcceptedPut =
-  | { kind: 'register'; path: LibraryPath; fingerprint: Fingerprint; origin: Origin; note: string | null }
+  | { kind: 'register'; path: LibraryPath; fingerprint: Fingerprint; origin: Origin; note: string | null; observed?: true }
   | {
       kind: 'place'
       path: LibraryPath
@@ -215,12 +230,25 @@ export type FindRequest = { text: string | null; match: 'terms' | 'words'; filte
 export type Hit = { path: LibraryPath | null; title: string; by: PluginName | 'kernel'; group: string | null; detail: string | null }
 export type FindResult = { hits: Hit[]; problems: PluginProblem[] }
 
-export type InspectRequest = { target: string }
+/** `content`: give the thing's content too, for a caller that cannot read files; `file` is one in a bundle, relative to it. */
+export type InspectRequest = { target: string; content?: { file: string | null } }
 /** One thing of the library: a regular file, or a directory with the marker `.pneuma-item`. */
 export type ThingKind = 'file' | 'bundle'
 /** A bundle's `size` and `files` count the files its fingerprint counts; `modifiedAt` is the latest of theirs. */
 export type FileFacts = { path: LibraryPath; kind: ThingKind; files: number; size: number; modifiedAt: Instant; fingerprint: Fingerprint; archived: boolean }
-export type InspectResult = { file: FileFacts | null; sections: Section[]; problems: PluginProblem[] }
+/**
+ * A thing's content, as inspect gives it when asked. `text`: a file of UTF-8 text within the kernel's
+ * limit (256 KB). `other`: any other file, with its size and the media type its name says, null when
+ * the name says none. `files`: a bundle's files. `unavailable`: outside the caller's grant, no such
+ * file in the bundle or nothing at the target, or a file asked of a thing that is no bundle.
+ */
+export type Content =
+  | { kind: 'text'; path: LibraryPath; size: number; text: string }
+  | { kind: 'other'; path: LibraryPath; size: number; type: string | null; why: 'not-utf8' | 'too-large' }
+  | { kind: 'files'; path: LibraryPath; files: BundleFile[] }
+  | { kind: 'unavailable'; path: LibraryPath | null; reason: 'outside-grant' | 'no-such-file' | 'not-a-bundle' }
+/** `content` is there only when the request asked for it. */
+export type InspectResult = { file: FileFacts | null; sections: Section[]; problems: PluginProblem[]; content?: Content }
 
 export type SayRequest = { kind: string; about: string | null; text: string | null; args: Record<string, string[]> }
 export type SayResult =

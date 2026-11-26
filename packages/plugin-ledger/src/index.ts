@@ -21,11 +21,12 @@ import {
   type SayAnswer,
   type SayRequest,
 } from '@pneuma-base/kernel'
+import { conversationOf } from './conversation.js'
 import { itemNamed, load, onDisk, snapshot, statesOf, textOf, type Disk } from './disk.js'
 import { fact, factActor, LEDGER_ACTOR, newItemId, sceneOf, writeFacts, type Basis, type Fact, type ItemId, type LedgerOrigin, type SceneId } from './facts.js'
 import type { ItemRecord, Ledger, SceneRecord } from './fold.js'
 import { heldCommands, heldCopies, heldPath, keep } from './held.js'
-import { reconcile } from './reconcile.js'
+import { confirm, findsAnything, reconcile, type Standing } from './reconcile.js'
 import {
   ACTIVITY_VIEW,
   activityAnswer,
@@ -140,27 +141,32 @@ async function recordPut(w: Writing, req: AcceptedPut): Promise<PluginNote> {
   } else origin = req.origin
   const noted = req.note === null ? {} : { note: req.note }
   const made = origin.kind === 'made' ? basisNote(origin.basis) : ''
+  // An origin the owner's side saw, not one somebody said: a later one said replaces it.
+  const how = req.kind === 'register' && req.observed ? 'observed' : 'tool'
   if (!item) {
     const id = newItemId()
-    w.facts.push(fact(ctx, 'tool', { kind: 'item.enter', item: id, path: req.path, fingerprint: req.fingerprint, size, origin, ...bundleFlag(disk), ...noted }))
-    return { text: `已记下：${originLabel(origin)}${made} · 条目 ${id}`, data: { item: id } }
+    w.facts.push(fact(ctx, how, { kind: 'item.enter', item: id, path: req.path, fingerprint: req.fingerprint, size, origin, ...bundleFlag(disk), ...noted }))
+    return { text: `已记下：${originLabel(origin, how)}${made} · 条目 ${id}`, data: { item: id } }
   }
   if (item.fingerprint === req.fingerprint) {
-    if (!item.unknownOrigin) {
+    const seen = item.entered.how === 'observed'
+    if (!item.unknownOrigin && !(seen && how !== 'observed')) {
       if (req.note === null) return { text: `已在册：条目 ${item.id}，内容和记录一致，没有新记`, data: { item: item.id } }
       // No fact is written for this put, so its sentence is a note about the thing.
       w.facts.push(fact(ctx, 'reported', { kind: 'said', flavor: 'note', text: req.note, about: item.id }))
       return { text: `已在册：条目 ${item.id}，内容和记录一致，已记下备注：${req.note}`, data: { item: item.id } }
     }
-    // An enter at a path an item holds is an alias of it; it gives the adopted item its origin.
-    w.facts.push(fact(ctx, 'tool', { kind: 'item.enter', item: newItemId(), path: req.path, fingerprint: req.fingerprint, size, origin, ...bundleFlag(disk), ...noted }))
-    return { text: `已补上来历：${originLabel(origin)}${made} · 条目 ${item.id}`, data: { item: item.id } }
+    // An enter at a path an item holds is an alias of it; it gives the item the origin it lacked, or replaces one only seen.
+    w.facts.push(fact(ctx, how, { kind: 'item.enter', item: newItemId(), path: req.path, fingerprint: req.fingerprint, size, origin, ...bundleFlag(disk), ...noted }))
+    const label = `${originLabel(origin, how)}${made}`
+    const text = item.unknownOrigin ? `已补上来历：${label}` : `已更正来历：${label}；先前是自动登记的：${originLabel(item.origin, 'observed')}`
+    return { text: `${text} · 条目 ${item.id}`, data: { item: item.id } }
   }
   const held = req.kind === 'place' && req.previous !== null ? heldPath(ctx, item.id, req.previous, req.path) : null
   const claimed = req.kind === 'register'
   const basis = origin.kind === 'made' ? { basis: origin.basis } : {}
-  w.facts.push(fact(ctx, claimed ? 'reported' : 'tool', { kind: 'item.revise', item: item.id, base: item.fingerprint, fingerprint: req.fingerprint, size, ...basis, held, claimed, ...noted }))
-  const text = held ? '已记下换了新内容，旧内容进了留存，主人取得回' : claimed ? '已认下这次直接改动' : '已记下换了新内容'
+  w.facts.push(fact(ctx, how === 'observed' ? how : claimed ? 'reported' : 'tool', { kind: 'item.revise', item: item.id, base: item.fingerprint, fingerprint: req.fingerprint, size, ...basis, held, claimed, ...noted }))
+  const text = held ? '已记下换了新内容，旧内容进了留存，主人取得回' : how === 'observed' ? '已记下这次直接改动，自动登记' : claimed ? '已认下这次直接改动' : '已记下换了新内容'
   return { text: `${text} · 条目 ${item.id}`, data: { item: item.id } }
 }
 
@@ -191,17 +197,26 @@ async function recordSay(w: Writing, req: SayRequest): Promise<SayAnswer> {
   if (req.kind === 'revised') {
     const input = req.about ?? req.text
     const by = req.args.by?.[0]?.trim() || null
+    const observed = req.args.observed !== undefined
     if (by !== null && by !== 'owner') return refused('say revised 的 --by 只能写 owner：say revised <库内路径> [--by owner]')
+    // What the owner's side saw is the owner's to record, and it cannot know who made the change.
+    if (observed && ctx.actor.kind !== 'owner') return refused('say revised 的 --observed 只给主人用，记的是主人这边自动看到的改动。是你改的，就不加 --observed。')
+    if (observed && by !== null) return refused('say revised 的 --observed 记的是看到的改动，不知道是谁改的，不和 --by 一起写。')
     const path = input === null ? null : await thingPath(ctx.library.root, input)
     const item = w.ledger.items.get((path !== null && w.ledger.pathIndex.get(path)) || ('' as ItemId))
     if (!item || path === null) return refused(`没人登记过这个文件：${input ?? '（没写）'}。要补来历，用 put <库内路径> --brought 或 --made。`)
     const disk = await onDisk(ctx.library.root, path)
     if (!disk) return refused(`文件不在：${input}`)
-    if (disk.fingerprint === item.fingerprint) return heard(`${input} 的内容和记录一致，没有要认的改动`)
+    // A change only seen is replaced by the claim somebody makes for the same content.
+    const seen = item.versions.at(-1)?.how === 'observed' && item.versions.at(-1)?.claimed === true
+    if (disk.fingerprint === item.fingerprint && (observed || !seen)) return heard(`${input} 的内容和记录一致，没有要认的改动`)
     // The envelope's actor is who the library recognised; what the caller says goes in the body.
     const forOwner = by === 'owner' && ctx.actor.kind !== 'owner'
-    w.facts.push(fact(ctx, 'reported', { kind: 'item.revise', item: item.id, base: item.fingerprint, fingerprint: disk.fingerprint, size: disk.size, held: null, claimed: true, ...(forOwner ? { by: 'owner' as const } : {}) }))
-    return heard(forOwner ? `已记下 ${input} 的这次直接改动是主人做的` : `已认下 ${input} 的直接改动`)
+    const base = disk.fingerprint === item.fingerprint ? (item.versions.at(-2)?.fingerprint ?? null) : item.fingerprint
+    w.facts.push(fact(ctx, observed ? 'observed' : 'reported', { kind: 'item.revise', item: item.id, base, fingerprint: disk.fingerprint, size: disk.size, held: null, claimed: true, ...(forOwner ? { by: 'owner' as const } : {}) }))
+    const replaced = disk.fingerprint === item.fingerprint ? '，替下了自动登记的那条' : ''
+    if (observed) return heard(`已记下 ${input} 被直接改了，自动登记，没说是谁改的`)
+    return heard(forOwner ? `已记下 ${input} 的这次直接改动是主人做的${replaced}` : `已认下 ${input} 的直接改动${replaced}`)
   }
   return refused(`记账插件不认识这个种类：${req.kind}`)
 }
@@ -236,6 +251,19 @@ async function viewOfItem(ctx: PluginContext, ledger: Ledger, item: ItemRecord):
   const states = await statesOf(ctx.library.root, ledger, [item.id, ...item.basis.items.map((row) => row.item)])
   const held = (await heldCopies(ctx, item.id)).map((c) => c.path)
   return itemView(ledger, item, states, held)
+}
+
+/**
+ * check's reconciliation. A put lands its file before its record, so whatever the first look finds is
+ * confirmed: against the paths being put, read after the files were looked at, and the facts read
+ * once more after that.
+ */
+async function standingNow(ctx: PluginContext): Promise<{ ledger: Ledger; standing: Standing }> {
+  const ledger = await load(ctx)
+  const standing = await reconcile(ledger, await snapshot(ctx.library.root))
+  if (!findsAnything(standing)) return { ledger, standing }
+  const putting = new Set(await ctx.tools.putting())
+  return { ledger, standing: confirm(ledger, standing, await load(ctx), putting) }
 }
 
 /** Whether a file is at a content or archive path, or at its archived copy. */
@@ -329,7 +357,7 @@ export const ledger: Plugin = {
     const ledger = await load(ctx)
     const { root } = ctx.library
     const card = (scene: SceneRecord) => {
-      const view = sceneView(ledger, scene)
+      const view = sceneView(ledger, scene, conversationOf(scene, ctx.session.machine))
       return [{ title: '场景', body: sceneText(view), data: view }]
     }
     const scene = ledger.scenes.get(req.target as SceneId)
@@ -357,8 +385,7 @@ export const ledger: Plugin = {
   },
 
   async onCheck(req, ctx) {
-    const ledger = await load(ctx)
-    const standing = await reconcile(ledger, await snapshot(ctx.library.root))
+    const { ledger, standing } = await standingNow(ctx)
     // A moved file is taken back: its new path is recorded, as seen by the ledger itself.
     const moves = [...standing.states].flatMap(([item, state]) => {
       const from = ledger.items.get(item)?.path
@@ -384,21 +411,23 @@ export const ledger: Plugin = {
 
   /** The ledger's pages, from the same fold and reconciliation check uses. Writes nothing: a move it sees stays for check to record. */
   async onView(req, ctx) {
-    const ledger = await load(ctx)
-    const standing = async () => reconcile(ledger, await snapshot(ctx.library.root))
     switch (req.view) {
-      case ITEMS_VIEW:
-        return itemsAnswer(ledger, await standing(), req.params)
-      case STANDING_VIEW:
-        return standingAnswer(ledger, await standing())
+      case ITEMS_VIEW: {
+        const { ledger, standing } = await standingNow(ctx)
+        return itemsAnswer(ledger, standing, req.params)
+      }
+      case STANDING_VIEW: {
+        const { ledger, standing } = await standingNow(ctx)
+        return standingAnswer(ledger, standing)
+      }
       case SCENES_VIEW:
-        return scenesAnswer(ledger)
+        return scenesAnswer(await load(ctx))
       case SCENE_VIEW:
-        return sceneAnswer(ledger, req.params)
+        return sceneAnswer(await load(ctx), req.params, (scene) => conversationOf(scene, ctx.session.machine))
       case ACTIVITY_VIEW:
-        return activityAnswer(ledger, req.params)
+        return activityAnswer(await load(ctx), req.params)
       case HELD_VIEW:
-        return heldAnswer(ledger, await heldCopies(ctx))
+        return heldAnswer(await load(ctx), await heldCopies(ctx))
       default:
         throw new Error(`the ledger has no view ${req.view}`)
     }
