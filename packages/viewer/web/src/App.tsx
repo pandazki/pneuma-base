@@ -5,7 +5,7 @@
 import type { Action, FilterOption, Link, PluginProblem, ViewDecl, ViewRequest, ViewResult } from '@pneuma-base/kernel'
 import { LoaderCircle, Unplug } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { api, ApiError, type State } from './api'
+import { api, ApiError, type State, type Tone } from './api'
 import { Blocks, sameLink } from './blocks'
 import { ActionDialog, fill } from './chrome'
 import { Choice, Resizer, TipLayer, usePresence } from './controls'
@@ -364,6 +364,21 @@ export function App() {
     [current, go],
   )
   const onPanelParam = useCallback((name: string, value: string) => top && go((r) => retop(r, { view: top.view, params: { ...top.params, [name]: value } })), [top, go])
+  // The app opens a link it was given, from the menu bar panel, and says what a drop or its watcher did.
+  const { push } = toasts
+  useEffect(() => {
+    if (!IN_SHELL) return
+    const heard = (e: Event) => {
+      const detail = (e as CustomEvent<{ link?: Link; notice?: { tone: Tone; text: string } }>).detail
+      if (detail?.link) onLink(detail.link)
+      if (detail?.notice) {
+        push(detail.notice.tone, detail.notice.text)
+        refresh()
+      }
+    }
+    window.addEventListener('pneuma-shell', heard)
+    return () => window.removeEventListener('pneuma-shell', heard)
+  }, [onLink, push, refresh])
   const env: BlockEnv = useMemo(() => ({ tick, onLink, onAction, onParam: onMainParam, selected }), [tick, onLink, onAction, onMainParam, selected])
   const panelEnv: BlockEnv = useMemo(() => ({ ...env, onParam: onPanelParam }), [env, onPanelParam])
   const dialog = usePresence(pending, 200)

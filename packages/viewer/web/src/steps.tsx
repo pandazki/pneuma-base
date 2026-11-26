@@ -11,10 +11,10 @@ import { IN_SHELL, tellShell } from './shell'
 
 type State = 'done' | 'current' | 'todo'
 
-function Mark({ state, n }: { state: State; n: number }) {
+function Mark({ state }: { state: State }) {
   return (
     <span className="step-mark" data-state={state} aria-hidden>
-      {state === 'done' ? <Check strokeWidth={2.5} /> : n}
+      {state === 'done' ? <Check strokeWidth={2.25} /> : null}
     </span>
   )
 }
@@ -27,15 +27,19 @@ function StepRow({ step, n, state }: { step: Step; n: number; state: State }) {
     <li className="step" data-state={state} aria-label={label}>
       {state === 'done' ? (
         <button type="button" className="step-head" aria-expanded={open} onClick={() => setOpen(!open)}>
-          <Mark state={state} n={n} />
-          <span className="step-title">{step.title}</span>
-          {step.summary ? <span className="step-summary">{step.summary}</span> : null}
+          <Mark state={state} />
+          <span className="step-text">
+            <span className="step-title">{step.title}</span>
+            {step.summary ? <span className="step-summary">{step.summary}</span> : null}
+          </span>
           <ChevronRight className={`step-chev ${open ? 'rotate-90' : ''}`} strokeWidth={2} aria-hidden />
         </button>
       ) : (
         <div className="step-head">
-          <Mark state={state} n={n} />
-          <span className="step-title">{step.title}</span>
+          <Mark state={state} />
+          <span className="step-text">
+            <span className="step-title">{step.title}</span>
+          </span>
         </div>
       )}
       {shown && step.blocks.length > 0 ? (

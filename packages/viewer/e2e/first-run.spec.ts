@@ -83,6 +83,18 @@ test('in the app the drop area chooses files for the app to put into inbox/; in 
   await shoot(page, 'home-start-0-app', SHOTS)
 })
 
+test('in the app, the page shows what the app says it did and opens the links the panel hands it', async ({ page, pb }) => {
+  const lib = newLibrary(pb)
+  const { url } = await pb.view(lib, { env: noAgentPath() })
+  await page.goto(`${url}&shell=mac`)
+  await expect(page.getByRole('main').getByRole('region', { name: '开始' })).toBeVisible()
+  const tell = (detail: unknown) => page.evaluate((d) => window.dispatchEvent(new CustomEvent('pneuma-shell', { detail: d })), detail)
+  await tell({ notice: { tone: 'good', text: '已放进 inbox/paper.pdf，记成你带进来的' } })
+  await expect(page.getByText('已放进 inbox/paper.pdf，记成你带进来的')).toBeVisible()
+  await tell({ link: { view: 'agents', params: {}, target: 'main' } })
+  await expect(page.getByRole('main').getByRole('region', { name: '接上的 agent', exact: true })).toBeVisible()
+})
+
 test('the agents page: a row per connected agent with its mark and reach, 断开 on it, and the products found here with 接上', async ({ page, pb }) => {
   const lib = newLibrary(pb)
   pb.run(['--library', lib, 'agent', 'connect', 'claude-code', '--area', 'notes'], { env: noAgentPath() })
@@ -128,7 +140,7 @@ test('the menu bar panel: the library, what waits for the owner decided right th
   const decide = panel.getByRole('region', { name: '等你决定' })
   await expect(decide.locator('.aui-asks-row')).toHaveCount(3)
   await expect(decide.getByRole('button', { name: '还有 1 件，在窗口里看' })).toBeVisible()
-  const latest = panel.getByRole('region', { name: '刚刚' })
+  const latest = panel.getByRole('region', { name: '自上次以来' })
   await expect(latest.getByRole('listitem')).toHaveCount(5)
   await expect(latest.getByRole('listitem').first()).toContainText('notes/b.md')
   await expect.poll(sent).toContainEqual({ type: 'waiting', count: 4 })

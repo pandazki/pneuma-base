@@ -1,6 +1,6 @@
 // The menu bar panel: the home page's content in the app's small window, compact. The library's
 // name; what waits for the owner, three at most, decided right here as on the home page; the latest
-// rows of what happened; then 打开窗口 and 退出. It draws the same blocks the home page answers and
+// rows of what agents did since the owner last looked; then 打开窗口 and 退出. It draws the same blocks the home page answers and
 // knows no view of any plugin: the asks are every asks block, the rows every feed block's, newest first.
 import type { Action, Ask, Block, FeedRow, Link, ViewResult } from '@pneuma-base/kernel'
 import { ChevronDown, ChevronRight } from 'lucide-react'
@@ -21,6 +21,8 @@ const ROWS = 5
 
 const everyBlock = (blocks: readonly Block[]): Block[] =>
   blocks.flatMap((b) => [b, ...(b.kind === 'section' ? everyBlock(b.blocks) : b.kind === 'steps' ? b.steps.flatMap((s) => everyBlock(s.blocks)) : [])])
+
+const HOME: Link = { view: 'home', params: {}, target: 'main' }
 
 const nameOf = (state: State | null) => state?.library?.root.split('/').filter(Boolean).at(-1) ?? 'Pneuma Base'
 
@@ -77,7 +79,9 @@ export function Tray() {
 
   const blocks = useMemo(() => everyBlock(home?.outcome === 'shown' ? home.blocks : []), [home])
   const asks: Ask[] = blocks.flatMap((b) => (b.kind === 'asks' ? b.asks : []))
-  const rows: FeedRow[] = blocks.flatMap((b) => (b.kind === 'feed' ? b.groups.flatMap((g) => g.rows) : [])).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+  const feeds = blocks.filter((b) => b.kind === 'feed')
+  const rows: FeedRow[] = feeds.flatMap((b) => b.groups.flatMap((g) => g.rows)).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+  const quiet = feeds.find((b) => b.empty !== '')?.empty ?? '还没有谁做过什么。'
   const left = blocks.flatMap((b) => (b.kind === 'steps' ? b.steps : [])).filter((s) => !s.done).length
 
   useEffect(() => {
@@ -125,6 +129,7 @@ export function Tray() {
   )
   const dialog = usePresence(pending, 200)
   const open = () => tellShell({ type: 'open' })
+  const openHome = () => tellShell({ type: 'open', link: HOME })
 
   return (
     <BlockEnvContext.Provider value={env}>
@@ -138,7 +143,7 @@ export function Tray() {
         </header>
         {down ? <p className="tray-note" role="alert">连不上服务，正在重新连接。</p> : null}
         {left > 0 ? (
-          <button type="button" className="tray-start" onClick={open}>
+          <button type="button" className="tray-start" onClick={openHome}>
             <span>开始：还有 {left} 步没做</span>
             <ChevronRight strokeWidth={2} aria-hidden />
           </button>
@@ -147,14 +152,14 @@ export function Tray() {
           <h2>等你决定</h2>
           <AsksView block={{ kind: 'asks', asks: asks.slice(0, ASKS), empty: '没有要你决定的事。' }} />
           {asks.length > ASKS ? (
-            <button type="button" className="tray-more" onClick={open}>
+            <button type="button" className="tray-more" onClick={openHome}>
               还有 {asks.length - ASKS} 件，在窗口里看
             </button>
           ) : null}
         </section>
-        <section className="tray-part" aria-label="刚刚">
-          <h2>刚刚</h2>
-          <FeedView block={{ kind: 'feed', groups: rows.length > 0 ? [{ title: '', count: null, rows: rows.slice(0, ROWS) }] : [], empty: '还没有谁做过什么。' }} />
+        <section className="tray-part" aria-label="自上次以来">
+          <h2>自上次以来</h2>
+          <FeedView block={{ kind: 'feed', groups: rows.length > 0 ? [{ title: '', count: null, rows: rows.slice(0, ROWS) }] : [], empty: quiet }} />
         </section>
         <footer className="tray-foot">
           <button type="button" className="btn btn-sm" onClick={open}>

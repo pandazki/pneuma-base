@@ -725,8 +725,7 @@ html[data-panel='tray'],
 html[data-panel='tray'] body {
   height: auto;
   min-height: 0;
-  overflow: hidden;
-  background: var(--panel);
+  background: transparent;
 }
 .tray {
   display: flex;
