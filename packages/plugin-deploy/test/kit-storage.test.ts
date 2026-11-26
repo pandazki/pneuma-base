@@ -24,6 +24,8 @@ beforeEach(async () => {
 })
 
 const ns = (records: readonly Body[]) => records.map((r) => r.n)
+/** The plugin's record place on disk, where the earlier kit wrote with node:fs. */
+const own = () => join(ctx.library.root, '.pneuma-base', 'notes')
 
 describe('the record store on storage', () => {
   it('keeps several stores in the one record place, each reading its own; a fact without a store’s name is the facts store’s', async () => {
@@ -39,10 +41,10 @@ describe('the record store on storage', () => {
   it('reads what the earlier kit wrote in the plugin’s directory with the first page only, and says which line is no record', async () => {
     // As the earlier kit wrote them: one file per write, one object per line, in a directory of the store's name.
     const line = (id: string, n: number) => `${JSON.stringify({ id, at: '2026-11-25T00:00:00.000Z', actor: { kind: 'owner', name: 'owner' }, session: 's', n })}\n`
-    mkdirSync(join(ctx.dir, 'activity'), { recursive: true })
-    writeFileSync(join(ctx.dir, 'activity', '20261125000000001-bb.jsonl'), line('f_2', 2))
-    writeFileSync(join(ctx.dir, 'activity', '20261125000000000-aa.jsonl'), line('f_1', 1))
-    writeFileSync(join(ctx.dir, 'activity', 'broken.jsonl'), '{half\n')
+    mkdirSync(join(own(), 'activity'), { recursive: true })
+    writeFileSync(join(own(), 'activity', '20261125000000001-bb.jsonl'), line('f_2', 2))
+    writeFileSync(join(own(), 'activity', '20261125000000000-aa.jsonl'), line('f_1', 1))
+    writeFileSync(join(own(), 'activity', 'broken.jsonl'), '{half\n')
     const store = recordStore(ctx, 'activity', parse)
     await store.append([store.stamp(ctx, { n: 3 })])
 
@@ -57,8 +59,8 @@ describe('the record store on storage', () => {
 
   it('reads the facts store’s files the earlier kit wrote directly in facts/, through storage', async () => {
     const line = (id: string, n: number) => JSON.stringify({ id, at: '2026-11-25T00:00:00.000Z', actor: { kind: 'owner', name: 'owner' }, session: 's', n })
-    mkdirSync(join(ctx.dir, 'facts'), { recursive: true })
-    writeFileSync(join(ctx.dir, 'facts', '20261125000000000-aa.jsonl'), `${line('f_2', 2)}\n${line('f_1', 1)}\n`)
+    mkdirSync(join(own(), 'facts'), { recursive: true })
+    writeFileSync(join(own(), 'facts', '20261125000000000-aa.jsonl'), `${line('f_2', 2)}\n${line('f_1', 1)}\n`)
     const store = recordStore(ctx, 'facts', parse)
     await store.append([store.stamp(ctx, { n: 3 })])
     expect(ns((await store.read()).records)).toEqual([1, 2, 3])
@@ -91,13 +93,13 @@ describe('the configuration file on storage', () => {
     if (typeof to !== 'string') throw new Error('没有 to')
     return { format: 1, to }
   }
-  const file = () => join(ctx.dir, 'config.json')
+  const file = () => join(own(), 'config.json')
 
   it('reads nothing until written, then what the earlier kit wrote; writes it whole in the same layout', async () => {
     const config = configFile(ctx, 'config.json', parseConfig)
     expect(await config.read()).toBeNull()
     // As the earlier kit wrote it; `config` read nothing, so its write meets this file and writes over it.
-    mkdirSync(ctx.dir, { recursive: true })
+    mkdirSync(own(), { recursive: true })
     writeFileSync(file(), `${JSON.stringify({ format: 1, to: 'old' }, null, 2)}\n`)
     expect(await configFile(ctx, 'config.json', parseConfig).read()).toEqual({ format: 1, to: 'old' })
     await config.write({ format: 1, to: 'new' })
