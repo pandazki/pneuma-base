@@ -357,6 +357,17 @@ pub fn open_file_at(dir: RawFd, name: &CStr) -> Result<std::fs::File, Errno> {
 }
 
 /// Makes a file below `dir` that must not exist yet, for writing.
+/// Hands a file's data to the drive with a plain `fsync(2)`. The standard library's `sync_data`
+/// is `F_FULLFSYNC` on macOS, which also waits for the drive's own cache: about 5 ms a file.
+pub fn fsync(file: &std::fs::File) -> std::io::Result<()> {
+    // SAFETY: `file` is an open descriptor.
+    if unsafe { libc::fsync(file.as_raw_fd()) } == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
 pub fn create_file_at(dir: RawFd, name: &CStr, mode: u32) -> Result<std::fs::File, Errno> {
     let flags = libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC;
     // SAFETY: `dir` is an open descriptor and `name` a valid C string.

@@ -170,7 +170,7 @@ impl LocalFolder {
         let mut file = sys::create_file_at(tmp.as_raw_fd(), &sys::c_name(name.as_bytes()), 0o600)
             .map_err(unreadable)?;
         std::io::Write::write_all(&mut file, note.to_string().as_bytes())
-            .and_then(|()| file.sync_data())
+            .and_then(|()| sys::fsync(&file))
             .map_err(|e| io_failure(&e))?;
         Ok(Intent { tmp, name })
     }
@@ -437,7 +437,7 @@ impl LocalFolder {
                         progress.bytes += n;
                         progress.tick();
                     })?;
-                    to.sync_data().map_err(|e| io_failure(&e))?;
+                    sys::fsync(&to).map_err(|e| io_failure(&e))?;
                     progress.files += 1;
                     bytes += n;
                     fingerprints.push(fingerprint);
@@ -482,7 +482,7 @@ impl LocalFolder {
         })?;
         // As facts are: handed to the drive before the rename (plain fsync; F_FULLFSYNC, which
         // waits for the drive's own cache, costs 5 ms a file).
-        to.sync_data().map_err(|e| io_failure(&e))?;
+        sys::fsync(&to).map_err(|e| io_failure(&e))?;
         Ok(Built {
             fingerprint,
             files: None,

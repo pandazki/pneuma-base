@@ -162,7 +162,7 @@ impl LocalFolder {
             let temp = dir.join(format!(".{name}.tmp"));
             let written = File::create_new(&temp).and_then(|mut file| {
                 file.write_all(&text)?;
-                file.sync_data()
+                crate::sys::fsync(&file)
             });
             if let Err(error) = written {
                 let _ = fs::remove_file(&temp);
