@@ -156,6 +156,8 @@ const MAY_TOUCH_FILES = {
   'packages/sdk/src/kit/deploy/content.ts': "the stage folder in the plugin's cache under $PNEUMA_BASE_HOME, where a thing's files are read out to before a target takes them",
   'packages/plugin-version/src/outside.ts': 'where a version is exported to: the destination the owner names, or the temporary folder a restore puts back from, outside the library',
   'packages/plugin-search/src/store.ts': "the search index, a sqlite file in the plugin's cache under $PNEUMA_BASE_HOME",
+  'packages/plugin-sync/src/target.ts': 'the sync target, a folder outside the library (sync refuses one that overlaps it), and the copies staged in its .pneuma-sync/tmp',
+  'packages/plugin-sync/src/baseline.ts': "what sync saw last on both sides, a file in the plugin's cache under $PNEUMA_BASE_HOME",
   'packages/plugin-deploy/src/targets.ts': 'the dir target writes the folder outside the library the owner names; the command target runs the commands the owner set',
   'plugins/space/src/cloudflare.ts': 'the credentials file the owner names, outside the library',
   'plugins/space/src/space.ts': "the staged site files the deploy kit read out into the plugin's cache",
