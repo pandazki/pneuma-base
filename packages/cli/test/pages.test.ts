@@ -53,6 +53,7 @@ async function cli(args: string[]): Promise<{ code: number; out: string; err: st
     out: (t) => void out.push(t),
     err: (t) => void err.push(t),
     readStdin: async () => new Uint8Array(),
+    readLines: async function* () {},
     readSecret: async () => null,
     confirm: async () => false,
     untilStopped: async () => undefined,
