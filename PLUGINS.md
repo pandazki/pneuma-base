@@ -80,7 +80,7 @@ export default definePlugin({
 | 3.3 听一种「说」 | `statements`、`onSay` |
 | 3.4 加主人命令 | `ownerCommands` |
 | 3.5 旁听和生命周期 | `observe`、`onPurged`、`onAdd`、`onRemove` |
-| 3.6 加页面和条目面板里的一节 | `views`、`onView`、`onItemView`、`ui` |
+| 3.6 加页面和条目面板里的一节，给首页添东西，问主人 | `views`、`onView`、`onItemView`、`ui`、`onAsks` |
 | 3.7 记自己的东西 | `storage`、`secrets` |
 
 ### 3.1 往说明里加一段：认知段
@@ -121,7 +121,7 @@ agent 手里有六个动词：放、找、看、说、查、归档。试插件�
 | 找 | `find [<文字>…] [--include-archived] [--scene <场景号>] [--origin brought\|made]` | 内核按名字列，插件加上它知道的 |
 | 看 | `inspect <库内路径\|条目号\|场景号> [--content [<内部路径>]]` | 一样东西的事实，和每个插件知道的。`--content` 再由内核给它的内容：不超过 256 KB 的 UTF-8 文字给全文，别的给大小和种类，带标记的目录给文件清单，写了内部路径给其中一个；授权限在区域时，区域外的不给内容 |
 | 说 | `say <种类> [<关于>] [<内容>] [--<开关> <值>…]` | 把一句话交给认领这个种类的插件（3.3） |
-| 查 | `check [--since <时间>\|last] [--include-archived]` | 每个插件说它知道的：发生了什么，现在要处理什么 |
+| 查 | `check [--since <时间>\|last] [--include-archived]` | 每个插件说它知道的：发生了什么，现在要处理什么；再列出只有主人能定的事（3.6 的 `onAsks`），每个回答写成主人在自己终端里跑的命令 |
 | 归档、取回 | `archive <库内路径>`、`unarchive <库内路径>` | 挪进 `_archive/`，或挪回原处 |
 | 开始 | `start "<一句话>"` | 说、查、找的组合：`say doing "<一句话>"`，`check --since last`，再按这句话里的词找，不带调用者这次会话做的 |
 | 看一页 | `show [<视图编号> [--<参数> <值>…]]` | 不是动词，是管理界面的一页，只读：不写编号列出这个库的页；写了打印那一页，每个按钮写成做同一件事的命令（3.6） |
@@ -153,7 +153,9 @@ agent 手里有六个动词：放、找、看、说、查、归档。试插件�
 - 取回：`from` 是 `_archive/<路径>`，`to` 是原来的路径。
 - 什么都没挪时 `moved` 为 `false`。归档一样只在归档区里的东西：`from` 是原来的路径，`to` 是 `_archive/<路径>`。取回一样已经在原处的东西：`from` 和 `to` 都是原来的路径。
 
-**`onCheck` 拿到的。** `since` 是调用者写的时刻（`--since <时间>`），或 `'last'`（`--since last`，`start` 也这样问），或 `null`（没写 `--since`，agent 平常这样问）。`'last'` 和 `null` 都指调用者上次来过之后；内核不记这个时刻，要用的插件自己记。说「发生了什么」的节按 `since` 截，只列那之后的事。说「现在怎样」的节不看 `since`：一个状况现在成立就报，比如还坏着的链接、超过上限的东西，不管它从什么时候开始。`includeArchived` 为 `false` 时，两种节都不带归档区里的东西；为 `true` 时都带。
+**`onCheck` 拿到的。** `since` 是调用者写的时刻（`--since <时间>`），或 `'last'`（`--since last`，`start` 也这样问），或 `null`（没写 `--since`，agent 平常这样问）。`'last'` 和 `null` 都指调用者上次来过之后；内核不记这个时刻，要用的插件自己记。记账插件把每次查记成一条「看过了」，「上次」就是上次查的时候，首页的「都看过了」也是一次查。说「发生了什么」的节按 `since` 截，只列那之后的事。说「现在怎样」的节不看 `since`：一个状况现在成立就报，比如还坏着的链接、超过上限的东西，不管它从什么时候开始。`includeArchived` 为 `false` 时，两种节都不带归档区里的东西；为 `true` 时都带。
+
+**查的答复。** `CheckResult` 是 `{ sections, asks, problems }`：`sections` 是各插件 `onCheck` 的节，`asks` 是各插件 `onAsks` 此刻的问题（3.6），每件由内核盖上插件名（`by`）。命令行把它们印在「要主人来做的」下面，一件一行，下面是每个回答的主人命令（`pneuma-base <命令> --library <库>`），推荐的那个标「（推荐）」，最后一句告诉 agent：这些只有主人能定，告诉主人。
 
 答复里不写插件名，内核盖上。`problems` 说插件那份做成了、库外的一步没成：说明照给，问题列成这个插件的，动词照旧答复。钩子抛错时只剩问题，别的插件照样被调；`onSay` 抛错时结果是 `not-heard`、理由 `plugin-failed`，`revise` 抛错算没留住。所以能答问题就不要抛错。下面的插件有新内容就通知主人设的网址，通知不到时放入照样成功：
 
@@ -351,12 +353,15 @@ export default definePlugin({
 })
 ```
 
-### 3.6 加页面和条目面板里的一节
+### 3.6 加页面和条目面板里的一节，给首页添东西，问主人
 
 管理界面是 `pneuma-base view <库>` 打开的网页。看用视图，改用两个面：一个视图答一页带类型的块，界面只渲染块，不知道块来自哪个插件。命令行是全部本事的准绳，界面是它的一面：每一页也是一条只读的命令，`pneuma-base show <视图编号> [--<参数> <值>…]` 把它印成字，`--json` 给出界面拿到的同一个答复；agent 带着授权或 `--as` 也能看，和 `inspect` 一样什么都不改、不发事件。插件有两处可以放块：
 
 - 自己的页：在 `views` 里声明，在 `onView` 里答 `{ title, subtitle, blocks, refresh? }`。`id` 必须以 `<插件名>.` 开头（检查：`names`）。`icon` 是 sdk 的 `IconName`（4.4），别的名字画成拼图。`nav: false` 的页只能经链接到达。没给的筛选取它的 `default`，界面和 `show` 一样。管理用的页声明 `ownerOnly: true`：在 agent 的会话里以 `agent-session` 拒绝，话和只给主人的命令被拒时一样；别的页两边一样。
-- 条目面板里的一节：一样东西在右侧面板打开时，内核按配置次序调每个插件的 `onItemView(路径)`，把答的 `{ title, blocks }` 盖上插件名，排在归档按钮之后、文件的事实之前；答 `null` 就没有这一节。路径上没有东西也调；只在归档区的东西，路径是 `_archive/…`；内核自己的文件不调。带标记的目录里的每个文件也有自己的面板：目录的面板列出里面的文件，点一个就打开它的面板。这时 `onItemView` 拿到那个文件的库内路径，比如 `site/index.html`，不是目录的；面板里没有归档按钮，因为目录只能整个归档。
+- 条目面板里的一节：一样东西在右侧面板打开时，内核按配置次序调每个插件的 `onItemView(路径)`，把答的 `{ title, blocks, actions? }` 盖上插件名，排在「它是什么」那一行之后、文件的事实之前；`actions` 是对这样东西的动作，不放在节里，并进面板底下那一行，排在归档和挪之后。答 `null` 就没有这一节。路径上没有东西也调；只在归档区的东西，路径是 `_archive/…`；内核自己的文件不调。带标记的目录里的每个文件也有自己的面板：目录的面板列出里面的文件，点一个就打开它的面板。这时 `onItemView` 拿到那个文件的库内路径，比如 `site/index.html`，不是目录的；面板里没有归档按钮，因为目录只能整个归档。
+
+- 首页：视图声明 `home: true`，它的块就放在首页上，在「等你决定」之后，按配置次序，用每个筛选的默认值。它可以同时 `nav: false`，只在首页出现。首页是界面打开时的那一页，所以只放主人一来就该看到的：发生了什么、哪里要留意，用 `feed`、`list`、`stats` 这些块。
+- 问主人：`onAsks(ctx)` 答此刻只有主人能定的事，`PluginAsk[]`，每件 `{ key, text, about, actions, suggested? }`：`key` 在这个插件里不重复，`text` 是一句问话，`about` 是关于的库内路径或 `null`，`actions` 是几个回答（只给主人的命令也行），`suggested` 是推荐的那个回答在 `actions` 里的位置。它们出现在首页最上面的「等你决定」里（署插件的认知段标题），也在 agent 的 `check` 里。`onAsks` 只读，首页每次显示、`check` 每次答都会问：插件按自己的记录答，主人回答之后记录变了，就不再问这一件。界面里回答之后，那一件在原处折成一行回执。不合的一件（不是一件、回答调不到、推荐的不在回答里）去掉，列进问题。
 
 钩子抛错或答得不对时，内核在那里放一块说明出错，把问题列进答复。
 
@@ -651,18 +656,24 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `empty` | `title`、`hint`（文字或 `null`） | | 空的状态 |
 | `embed` | `url`（http 或 https）、`title`、`height` | | 库外的一个页面，放在沙箱框架里，带「在新标签页打开」 |
 | `custom` | `entry`、`height`、`text`、`actions` | `data` | 插件自己画的页，见 4.5；`text` 是这一块用字说的同样的事 |
+| `feed` | `groups`（每组 `{ title, count, rows }`，`count` 可以是 `null`）、`empty` | 组的 `link`：打开组名说的东西 | 发生过的事，按日或按场景分组；没有行时只显示 `empty`，一句灰字。每行 `{ key, at, actor, text, meta, link }`：`actor` 是 `ActorMark` 或一个名字，`meta` 是灰的一行 `Cell`，`link` 可以是 `null`；可选 `whose`（`agent`、`owner`、`observed`：自己做的、主人做的、看到的）、`action`（一个安静的按钮，比如撤销）或 `settled`（一个灰词，说它后来怎样了），`action` 和 `settled` 不同时有 |
+| `stats` | `stats`（每个 `{ label, value, note }`，`value` 是字，`note` 可以是 `null`） | | 几个数，每个一张小卡 |
+| `tree` | `param`、`selected`、`nodes`（每个 `{ value, label, count, children }`，`count` 可以是 `null`） | | 一棵树，比如文件夹。选一个节点，就是把这一页的参数 `param` 设成它的 `value` 再取一次；排在一页最前面时画在左边一栏。`show` 把每个节点印成打开它的命令 |
+| `asks` | `asks`（每件 `{ key, by, text, about, actions }`，`by` 是名字或 `ActorMark`，`about` 可以是 `null`）、`empty` | 每件的 `suggested`：推荐的回答在 `actions` 里的位置 | 等主人定的事；回答后在原处折成一行回执。首页用它放 `onAsks` 的问题，插件自己的页也能用 |
 
 | 类型 | 字段 |
 | --- | --- |
-| `Cell` | `text`；可选 `mono`、`muted`、`tag`、`link`、`at`（这一格是一个时刻，界面按看的人的本地时间显示）、`icon`（`IconName`）、`href`（http 或 https 的地址，新标签页打开，放不下时从中间截短）、`copy: true`（复制 `href`，没有就复制 `text`） |
-| `Tag` | `{ text, tone }`，`tone` 是 `neutral`、`good`、`warn`、`bad`、`info` |
+| `Cell` | `text`；可选 `mono`、`muted`、`tag`、`link`、`actor`（`ActorMark`，谁做的：文字前画它的记号，`text` 空时显示名字）、`at`（这一格是一个时刻，界面按看的人的本地时间显示，近的写「N 分钟前」「今天 15:34」）、`icon`（`IconName`）、`href`（http 或 https 的地址，新标签页打开，放不下时从中间截短）、`copy: true`（复制 `href`，没有就复制 `text`） |
+| `Tag` | `{ text, tone }`，`tone` 是 `neutral`、`good`、`warn`、`bad`、`info`。正常的状态写成灰字（`muted` 的 `Cell`），不要给它标签；标签留给偏离正常的 |
+| `ActorMark` | `{ kind: 'agent' \| 'owner', name, grant? }`：agent 画成名字的首字，底色由名字定，同一个名字总是同一个颜色；主人画成一个灰圆。`grant` 是它凭的授权名 |
+| `FilterOption` | `{ value, label, count? }`：筛选的一个选项，`count` 是选它时有几条。视图答复可以带 `filters: { name, options }[]`，给它声明了的筛选这一次的选项和数目（比如出现过的 agent），界面和 `show` 用它代替声明里的选项；只有一个选项的筛选界面不画 |
 | `Link` | `{ view, params, target }`：打开一个视图，`target` 是 `main`（主区）或 `panel`（右侧面板）。条目面板是视图 `item`，参数 `path` |
 | `Action` | `{ label, tone, confirm, inputs, call }`：`tone` 是 `default` 或 `danger`。`confirm` 是点了之后先问的一句话，人点了确认就是破坏性命令要的当面确认。`confirm` 为 `null` 的动作不问：没有输入时点了就做，算没有当面确认，所以破坏性的命令以 `not-confirmed` 拒绝；有输入时先出表单 |
 | `ActionInput` | `{ name, label, placeholder, value, options }`；可选 `multiple`（一行一个值）、`pattern` 和 `hint`（不匹配时表单不提交，`hint` 变红）、`secret: true`（输入时不显示） |
 | `Call` | `{ face: 'agent', verb, request }`，`request` 是那个动词的请求；或 `{ face: 'owner', command, args: { positional, flags }, stdin? }`。字符串里的 `{输入名}` 换成那个输入的值；正好是 `{输入名}` 的列表元素，`multiple` 的输入一行换成一个元素。带参数的主人命令的表单用 sdk 的 `formOf(命令, { fixed, values, choices })` 生成：每个参数一个输入，`fixed` 里的不问，直接写进 `Call` |
 | `IconName` | `activity`、`archive`、`bookmark`、`box`、`clock`、`cloud`、`cloud-upload`、`code`、`corner-left-up`、`database`、`download`、`eye`、`file`、`file-text`、`flask-conical`、`folder`、`gauge`、`git-branch`、`globe`、`history`、`house`、`image`、`key`、`layers`、`layout-grid`、`link`、`list`、`package`、`refresh-cw`、`rocket`、`scroll-text`、`search`、`server`、`settings`、`shield`、`tag`、`terminal`、`triangle-alert`、`upload`、`users`（lucide 的图标名，sdk 的 `ICON_NAMES`）。界面把别的名字画成拼图 |
 
-内核核对每一块：种类不认识、缺了必需的字段、类型不对、`embed` 的地址不是 http 或 https、`custom` 的 `entry` 爬出 `ui` 目录或插件没有 `ui`、输入的 `pattern` 不是正则、动作调的不是一个动词或这个库里在的主人命令、参数不合那条命令的参数表、「说」的种类没有插件听、`call` 写了动作没有的输入，都算不合。
+内核核对每一块：种类不认识、缺了必需的字段、类型不对、`feed` 的一行同时有 `action` 和 `settled`、`asks` 的 `suggested` 不在回答里、`ActorMark` 的 `kind` 不是 `agent` 或 `owner`、`embed` 的地址不是 http 或 https、`custom` 的 `entry` 爬出 `ui` 目录或插件没有 `ui`、输入的 `pattern` 不是正则、动作调的不是一个动词或这个库里在的主人命令、参数不合那条命令的参数表、「说」的种类没有插件听、`call` 写了动作没有的输入，都算不合。
 
 ### 4.5 自己画的页
 
@@ -740,7 +751,9 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `<名字> sync` | 谁都能用 | 把全部声明过的东西对一遍 |
 | `<名字> list` | `readOnly` | 列出声明过的东西、状态和地址 |
 
-它的页是 `<名字>.sites`：目标一节，可部署的东西一张表，表里每行一个开关。它在自己目录下写 `config.json`（目标，整份替换）和 `facts/`（记录），都是本体；跑符合性检查时把 `config.json` 列进 `configuration`。
+它的页是 `<名字>.sites`：目标一节，可部署的东西一张表，表里每行一个开关。
+
+它问主人（`onAsks`）：声明了可以部署、主人从没动过开关、还在库里（不在归档区）的东西，每样一件「<谁> 说 <路径> 可以部署，还没上线。要上线吗？」，回答是「上线」（推荐，`<名字> on`）和「不上线」（`<名字> off`）。哪个回答都记一条开关，开关本来关着也记，之后不再问这一样。所以它们出现在首页的「等你决定」和 agent 的 `check` 里，agent 告诉主人，主人点一下或在终端里跑一条命令。它在自己目录下写 `config.json`（目标，整份替换）和 `facts/`（记录），都是本体；跑符合性检查时把 `config.json` 列进 `configuration`。
 
 一个库只装得上一个部署插件。所有部署插件都认领 `say deployable`，第二个在 `plugin add` 时以 `name-taken` 拒绝（3.3）。这是设计：一句「可以部署」只该有一个插件听，否则同一样东西会被两个插件各自发布。要发到几种地方，写一个部署插件带几种目标，主人用 `--kind` 选。
 
