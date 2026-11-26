@@ -1,0 +1,594 @@
+/*
+ * What the management UI lays over the page: dialogs, the command palette, menus, the tooltip and
+ * the notices. Not part of the frame kit.
+ */
+
+/* ---- overlays: dialog, palette, menu, tooltip ---- */
+
+.layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  isolation: isolate;
+}
+/* The scrim fades as its own layer, so a change of scheme recolours it at once. */
+.layer::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--scrim);
+  animation: fade-in 180ms ease both;
+}
+.layer[data-leaving] {
+  pointer-events: none;
+}
+.layer[data-leaving]::before {
+  animation: fade-out 200ms ease both;
+}
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+.dialog {
+  display: flex;
+  flex-direction: column;
+  width: 480px;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden auto;
+  border-radius: var(--radius-dialog);
+  background: var(--overlay);
+  box-shadow: var(--shadow-dialog);
+  animation: dialog-in 240ms var(--ease) both;
+}
+.layer[data-leaving] .dialog {
+  animation: dialog-out 150ms ease-in both;
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+}
+@keyframes dialog-out {
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+.dialog-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 12px 0 20px;
+}
+.dialog-head > div {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
+}
+.dialog-head h2 {
+  color: var(--ink-strong);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 22px;
+}
+.dialog-head p {
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+.dialog-head > .icon-btn {
+  margin-top: -3px;
+}
+.dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 20px 20px;
+}
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.form-label {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.form-hint {
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 18px;
+}
+.form-hint[data-wrong] {
+  color: var(--bad);
+  animation: hint-in 260ms var(--ease);
+}
+@keyframes hint-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+.dialog-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+.dialog-head + .dialog-foot {
+  padding-top: 20px;
+}
+/* A choice among many in a form looks like the field beside it. */
+.form-field .select,
+.form-field .select > select {
+  width: 100%;
+}
+.form-field .select > select {
+  height: 32px;
+  border-radius: var(--radius-field);
+  box-shadow: var(--ring-field);
+  font-weight: 400;
+}
+.form-field .select > select:hover:not(:disabled) {
+  box-shadow: var(--ring-field-hover);
+}
+
+.palette-layer {
+  align-items: flex-start;
+  padding-top: min(12vh, 96px);
+}
+.palette-layer::before {
+  background: rgba(0, 0, 0, 0.12);
+}
+@media (prefers-color-scheme: dark) {
+  .palette-layer::before {
+    background: rgba(0, 0, 0, 0.45);
+  }
+}
+.palette-layer[data-leaving] .palette {
+  animation: dialog-out 150ms ease-in both;
+}
+.palette {
+  display: flex;
+  flex-direction: column;
+  width: 600px;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-panel);
+  background: var(--overlay);
+  box-shadow: var(--shadow-popover);
+  animation: palette-in 200ms var(--ease) both;
+}
+@keyframes palette-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+}
+.palette-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 48px;
+  padding: 0 12px 0 14px;
+  box-shadow: inset 0 -0.5px 0 var(--line);
+}
+.palette-search > svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--ink-3);
+}
+.palette-search > .kbd {
+  color: var(--ink-3);
+}
+.palette-search input {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 20px;
+  outline: none;
+  caret-color: var(--focus);
+}
+.palette-search input::placeholder {
+  color: var(--ink-4);
+}
+.palette-list {
+  position: relative;
+  max-height: 360px;
+  padding: 0 4px 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  transition: height 320ms var(--ease);
+}
+.palette-label {
+  padding: 10px 8px 4px;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+.palette-about {
+  padding: 0 8px 4px;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+.palette-item {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: var(--radius-control);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+.palette-tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-tag);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  color: var(--ink-2);
+}
+.palette-tile > svg {
+  width: 12px;
+  height: 12px;
+}
+.palette-item > .name {
+  flex: none;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-item > .hint {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-item > .kbd {
+  margin-left: auto;
+  color: var(--ink-3);
+}
+.palette-pill {
+  position: absolute;
+  top: 0;
+  left: 4px;
+  right: 4px;
+  border-radius: var(--radius-control);
+  background: var(--select);
+  pointer-events: none;
+  transition:
+    transform 90ms ease-out,
+    height 90ms ease-out,
+    opacity 140ms ease;
+}
+.palette-none {
+  padding: 18px 12px;
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 20px;
+  text-align: center;
+}
+.palette-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 12px;
+  box-shadow: inset 0 0.5px 0 var(--line);
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 16px;
+}
+.palette-foot > .spacer {
+  flex: 1;
+}
+
+.menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 168px;
+  max-width: min(320px, 100vw - 16px);
+  padding: 4px;
+  border-radius: var(--radius-panel);
+  background: var(--overlay);
+  box-shadow: var(--shadow-popover);
+  transform-origin: top left;
+  animation: menu-in 220ms var(--ease) both;
+}
+/* The lit item shows where the keyboard is; the panel that holds the focus draws no ring of its own. */
+.menu:focus-visible {
+  outline: none;
+}
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+}
+.menu-list {
+  position: relative;
+  display: grid;
+  gap: 1px;
+}
+.menu-item {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius-item);
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 20px;
+  text-align: left;
+  white-space: nowrap;
+  outline: none;
+  transition: color 120ms ease;
+}
+.menu-item > svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  color: var(--ink-3);
+  transition: color 120ms ease;
+}
+.menu-item[data-lit] {
+  color: var(--ink);
+}
+.menu-item[data-lit] > svg {
+  color: var(--ink);
+}
+.menu-item:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.menu-item > .keys {
+  margin-left: auto;
+  padding-left: 16px;
+  color: var(--ink-4);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+.menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line);
+}
+.menu-glow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  border-radius: var(--radius-item);
+  background: var(--chip);
+  pointer-events: none;
+  transition:
+    transform 180ms var(--ease),
+    height 180ms var(--ease),
+    opacity 120ms ease;
+}
+
+.tip {
+  position: fixed;
+  z-index: 60;
+  max-width: min(240px, 100vw - 16px);
+  padding: 4px 8px;
+  border-radius: var(--radius-control);
+  background: var(--tip-bg);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 12px -4px rgba(0, 0, 0, 0.24);
+  color: var(--tip-ink);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  pointer-events: none;
+  animation: tip-in 140ms var(--ease) both;
+}
+.tip[data-instant] {
+  animation: none;
+}
+@keyframes tip-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+/* ---- toasts: a stack at the bottom right, the newest in front; hover or focus fans it out ---- */
+
+.toaster {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 70;
+  width: 356px;
+  max-width: calc(100vw - 48px);
+  pointer-events: none;
+}
+.toaster > ol {
+  position: relative;
+  transition: height 380ms var(--ease);
+}
+.toast {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: auto;
+  transform-origin: 50% 0;
+  transition:
+    transform 440ms var(--ease),
+    opacity 320ms ease,
+    height 380ms var(--ease);
+}
+.toast[data-leaving] {
+  pointer-events: none;
+  transition:
+    transform 380ms var(--ease),
+    opacity 260ms ease;
+}
+.toast-card {
+  position: relative;
+  height: 100%;
+  border-radius: var(--radius-card);
+  background: var(--overlay);
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.08),
+    0 1px 1px -1px rgba(0, 0, 0, 0.1),
+    0 1px 2px rgba(0, 0, 0, 0.05),
+    0 10px 24px -10px rgba(0, 0, 0, 0.14);
+}
+@media (prefers-color-scheme: dark) {
+  .toast-card {
+    box-shadow:
+      0 0 0 0.5px rgba(255, 255, 255, 0.1),
+      0 1px 2px rgba(0, 0, 0, 0.4),
+      0 12px 28px -10px rgba(0, 0, 0, 0.6);
+  }
+}
+.toast-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 14px 12px 12px;
+  overflow: hidden;
+  border-radius: inherit;
+  transition: opacity 260ms ease;
+}
+.toast[data-behind] .toast-content {
+  opacity: 0;
+}
+.toast-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 20px;
+}
+.toast-icon > svg {
+  width: 16px;
+  height: 16px;
+}
+.toast-icon[data-tone='good'] {
+  color: var(--good);
+}
+.toast-icon[data-tone='warn'] {
+  color: var(--warn);
+}
+.toast-icon[data-tone='bad'] {
+  color: var(--bad);
+}
+.toast-icon[data-tone='busy'] {
+  color: var(--ink-3);
+}
+.toast-icon[data-settled] > svg {
+  animation: toast-pop 460ms var(--ease-pop);
+}
+@keyframes toast-pop {
+  from {
+    transform: scale(0.82);
+  }
+  55% {
+    transform: scale(1.08);
+  }
+}
+.toast-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+  animation: toast-text-in 300ms var(--ease);
+}
+@keyframes toast-text-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.toast-text > strong {
+  display: block;
+  color: var(--ink-strong);
+  font-weight: 500;
+}
+.toast-text > span {
+  display: block;
+  color: var(--ink-2);
+}
+.toast-content > .btn {
+  margin: -4px 0;
+  max-width: 50%;
+}
+.toast-close {
+  position: absolute;
+  top: -7px;
+  left: -7px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--overlay);
+  box-shadow: var(--shadow-card);
+  color: var(--ink-3);
+  opacity: 0;
+  transform: scale(0.8);
+  transition:
+    opacity 160ms ease,
+    transform 200ms var(--ease),
+    color 140ms ease;
+}
+.toast-close > svg {
+  width: 10px;
+  height: 10px;
+}
+.toast-close::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+}
+.toast:is(:hover, :focus-within):not([data-behind]) .toast-close {
+  opacity: 1;
+  transform: none;
+}
+.toast-close:hover {
+  color: var(--ink);
+  box-shadow: var(--shadow-card-hover);
+}

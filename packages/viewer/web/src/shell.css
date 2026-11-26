@@ -1,0 +1,715 @@
+/*
+ * The management UI's frame, around the shared pieces of components.css: the inset shell (the
+ * sidebar on the page's ground, the main area and the detail as rounded panels), the page head, and
+ * the detail's tabs. Not part of the frame kit.
+ */
+
+/* ---- the shell: the sidebar on the ground, then the work area with the main panel and the detail ---- */
+
+.shell {
+  --gap: 8px;
+  --side-col: var(--side-w);
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--side-col) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  height: 100%;
+  overflow: hidden;
+  background: var(--page);
+  transition: grid-template-columns 420ms var(--ease);
+}
+.shell[data-side='rail'] {
+  --side-col: var(--rail);
+}
+.shell[data-resizing] {
+  transition: none;
+  cursor: col-resize;
+  user-select: none;
+}
+.shell[data-resizing] iframe {
+  pointer-events: none;
+}
+.work {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--gap) var(--gap) var(--gap) 0;
+}
+.main {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--panel);
+}
+
+/* The sidebar keeps its layout when it folds; the rail only clips it. */
+.side {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+  padding: 10px 8px 8px 10px;
+}
+.side-inner {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: calc(var(--side-w) - 18px);
+  min-height: 0;
+}
+html[data-shell] .side {
+  padding-top: 0;
+}
+.side-top {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  height: 44px;
+  margin-right: -2px;
+}
+.side-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+}
+.lib-btn {
+  display: flex;
+  min-width: 0;
+  height: 30px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px;
+  border-radius: var(--radius-item);
+  color: var(--ink-strong);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  transition:
+    background-color 140ms ease,
+    opacity 260ms ease;
+}
+.lib-btn:hover,
+.lib-btn[aria-expanded='true'] {
+  background: var(--wash);
+}
+.lib-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lib-logo {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-tag);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  color: var(--ink-strong);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+.lib-btn > .chev {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--ink-4);
+}
+/* Whether the page keeps up by itself: a quiet dot, its words in the tooltip and for screen readers. */
+.fresh {
+  position: relative;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin: 0 6px;
+  border-radius: 999px;
+  background: var(--good);
+  opacity: 0.75;
+  transition: opacity 260ms ease;
+}
+.fresh::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+.fresh[data-down] {
+  background: var(--bad);
+  opacity: 1;
+}
+.fresh[data-pulse]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
+  animation: fresh-pulse 1.6s var(--ease) 1 both;
+}
+@keyframes fresh-pulse {
+  from {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  to {
+    transform: scale(3);
+    opacity: 0;
+  }
+}
+.side-toggle {
+  margin-left: auto;
+}
+.side-search {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  margin-top: 10px;
+  padding: 0 6px 0 8px;
+  border-radius: var(--radius-item);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 20px;
+  text-align: left;
+  transition:
+    box-shadow 140ms ease,
+    color 140ms ease,
+    width 420ms var(--ease);
+}
+.side-search > svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+.side-search > span {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  transition: opacity 260ms ease;
+}
+.side-search:hover {
+  box-shadow: var(--shadow-card-hover);
+  color: var(--ink-2);
+}
+.side-search > .kbd {
+  color: var(--ink-4);
+  transition: opacity 260ms ease;
+}
+.side-nav {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  margin: 10px -4px 0;
+  padding: 0 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.nav-label {
+  position: relative;
+  margin: 16px 0 4px;
+  padding: 0 6px;
+  color: var(--ink-4);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  transition: color 260ms ease;
+}
+.nav-foot {
+  margin-top: auto;
+  padding-top: 16px;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  padding: 0 6px;
+  overflow: hidden;
+  border-radius: var(--radius-item);
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 20px;
+  text-align: left;
+  white-space: nowrap;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease,
+    width 420ms var(--ease);
+}
+.nav-item > svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--ink-3);
+  transition: color 140ms ease;
+}
+.nav-item > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity 260ms ease;
+}
+.nav-item:hover {
+  background: var(--wash);
+  color: var(--ink);
+}
+.nav-item[aria-current='page'] {
+  background: var(--select);
+  color: var(--ink);
+  font-weight: 500;
+}
+.nav-item[aria-current='page'] > svg {
+  color: var(--ink);
+}
+.nav-item:focus-visible {
+  outline-offset: -2px;
+}
+.shell[data-side='rail'] :is(.nav-item, .side-search) {
+  width: 28px;
+  padding: 0 6px;
+}
+.shell[data-side='rail'] :is(.nav-item > span, .lib-btn, .fresh) {
+  opacity: 0;
+}
+.shell[data-side='rail'] .lib-btn {
+  pointer-events: none;
+}
+.shell[data-side='rail'] .side-search {
+  background: transparent;
+  box-shadow: none;
+}
+.shell[data-side='rail'] .side-search:hover {
+  background: var(--wash);
+}
+.shell[data-side='rail'] :is(.side-search > span, .side-search > .kbd) {
+  display: none;
+}
+.shell[data-side='rail'] .nav-label {
+  color: transparent;
+}
+.shell[data-side='rail'] .nav-label::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  bottom: 7px;
+  width: 20px;
+  border-top: 1px solid var(--line-strong);
+}
+.shell[data-side='rail'] .side-head .side-toggle {
+  position: absolute;
+  left: 10px;
+}
+html[data-shell] .shell[data-side='rail'] .side-top {
+  justify-content: flex-start;
+  padding-left: 0;
+}
+/* The window behind another: the system dims its sidebar; so does the page. */
+html[data-window='inactive'] .side {
+  --ink-2: var(--ink-3);
+  --ink: var(--ink-2);
+}
+html[data-window='inactive'] :is(.nav-item > svg, .nav-item[aria-current='page'] > svg, .side-search) {
+  color: var(--ink-4);
+}
+html[data-window='inactive'] .nav-item[aria-current='page'] {
+  background: var(--chip);
+}
+html[data-window='inactive'] :is(.tab[aria-selected='true'], .page-head > h1, .detail-title h2) {
+  color: var(--ink-2);
+}
+html[data-window='inactive'] .fresh {
+  opacity: 0.35;
+}
+
+/* A resize handle: transparent, a soft line that fades in after a moment; keyboard and double click too. */
+.resizer {
+  position: absolute;
+  z-index: 15;
+  width: 12px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 5.5px;
+  width: 1px;
+  background: linear-gradient(transparent, var(--line-strong) 20%, var(--line-strong) 80%, transparent);
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+.resizer:hover::after {
+  opacity: 1;
+  transition-delay: 100ms;
+}
+.resizer:focus-visible {
+  outline: none;
+}
+.resizer:focus-visible::after,
+.resizer[data-active]::after {
+  opacity: 1;
+  transition-delay: 0ms;
+  background: linear-gradient(transparent, var(--focus) 20%, var(--focus) 80%, transparent);
+}
+.resizer-side {
+  top: var(--gap);
+  bottom: var(--gap);
+  left: calc(var(--side-col) - 10px);
+}
+.detail-col {
+  position: relative;
+  display: flex;
+  flex: none;
+  min-height: 0;
+}
+.resizer-panel {
+  top: 0;
+  bottom: 0;
+  left: -8px;
+}
+
+/* ---- the main panel's page: a sticky head with the title, what it holds and its filters ---- */
+
+.page-head {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-height: 48px;
+  padding: 9px 16px;
+  background: var(--panel);
+  transition: box-shadow 140ms ease;
+}
+.main[data-scrolled] .page-head {
+  box-shadow: 0 0.5px 0 var(--line);
+}
+.page-head > h1 {
+  flex: none;
+  color: var(--ink-strong);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 22px;
+}
+.page-head > p {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin-left: 6px;
+}
+.filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.filter > span {
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 20px;
+}
+.page-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 16px 16px 48px;
+}
+.down {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: color-mix(in srgb, var(--bad) 9%, var(--panel));
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 20px;
+}
+.down > svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--bad);
+}
+.problems {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border-radius: var(--radius-item);
+  background: var(--warn-soft);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* The page shown before a library exists. */
+.init {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 440px;
+  padding: 24px;
+}
+.init h1 {
+  color: var(--ink-strong);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 22px;
+}
+.init-dir {
+  margin-top: 2px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+.init-about {
+  margin-top: 12px;
+  color: var(--ink-2);
+}
+.init fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 16px;
+}
+.init legend {
+  margin-bottom: 6px;
+  color: var(--ink);
+  font-weight: 500;
+}
+.init label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+.init > .btn {
+  align-self: flex-start;
+  margin-top: 20px;
+}
+
+/* ---- the detail panel: a grey tray holding the tab strip, a paper below ---- */
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  width: var(--panel-w);
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: linear-gradient(rgba(0, 0, 0, 0.012), rgba(0, 0, 0, 0.012)), var(--panel);
+  animation: detail-in 200ms ease;
+}
+@media (prefers-color-scheme: dark) {
+  .detail {
+    background: linear-gradient(rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.12)), var(--panel);
+  }
+}
+@keyframes detail-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+.detail-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 48px;
+  padding: 0 6px 0 4px;
+}
+.tabs {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tab-wrap {
+  position: relative;
+  flex: 0 1 156px;
+  min-width: 92px;
+}
+.tab-wrap + .tab-wrap::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: -2px;
+  width: 1px;
+  background: var(--line-strong);
+  transition: opacity 140ms ease;
+}
+.tab-wrap:hover::before,
+.tab-wrap:hover + .tab-wrap::before,
+.tab-wrap[data-selected]::before,
+.tab-wrap[data-selected] + .tab-wrap::before {
+  opacity: 0;
+}
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 28px;
+  padding: 0 26px 0 8px;
+  border-radius: var(--radius-field);
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, #000 calc(100% - 30px), transparent calc(100% - 18px));
+  transition:
+    background-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease;
+}
+.tab > svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--ink-3);
+}
+.tab:hover {
+  background: var(--wash);
+  color: var(--ink);
+}
+.tab[aria-selected='true'] {
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  color: var(--ink);
+  mask-image: none;
+}
+.tab[aria-selected='true'] > span {
+  mask-image: linear-gradient(90deg, #000 calc(100% - 12px), transparent);
+  overflow: hidden;
+}
+.tab-close {
+  position: absolute;
+  top: 6px;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: var(--ink-3);
+  opacity: 0;
+  transition:
+    opacity 120ms ease,
+    background-color 120ms ease;
+}
+.tab-close > svg {
+  width: 12px;
+  height: 12px;
+}
+.tab-close:hover {
+  background: var(--select);
+  color: var(--ink);
+}
+.tab-wrap:hover .tab-close,
+.tab-wrap[data-selected] .tab-close,
+.tab-close:focus-visible {
+  opacity: 1;
+}
+.detail-body {
+  flex: 1;
+  min-height: 0;
+  padding: 16px 16px 20px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: none;
+  border-radius: 10px 10px 0 0;
+  background: var(--surface);
+  box-shadow:
+    0 -0.5px 0 var(--line),
+    0 -1px 2px rgba(0, 0, 0, 0.03);
+}
+.detail-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.detail-title > .icon-btn {
+  margin: 2px -4px 0 -6px;
+}
+.detail-tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-top: 4px;
+  border-radius: var(--radius-field);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  color: var(--ink-2);
+}
+.detail-tile > svg {
+  width: 16px;
+  height: 16px;
+}
+.detail-title h2 {
+  color: var(--ink-strong);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+.detail-title p {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+.detail .blocks {
+  gap: 22px;
+}

@@ -1,4 +1,4 @@
-// The parts around the blocks: icons, the action dialog, toasts.
+// The parts around the blocks: icons, the modal layer, the action dialog.
 import type { Action, ActionInput, Call } from '@pneuma-base/kernel'
 import type { IconName } from '@pneuma-base/sdk'
 import {
@@ -6,8 +6,6 @@ import {
   Archive,
   Bookmark,
   Box,
-  CircleAlert,
-  CircleCheck,
   Clock,
   Cloud,
   CloudUpload,
@@ -47,8 +45,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import type { Tone } from './api'
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Choice } from './controls'
 
 /** The icon of each name in the sdk's `ICON_NAMES`, every one and no other. */
@@ -138,184 +135,171 @@ function mismatched(input: ActionInput, value: string): boolean {
   return (input.multiple ? lines(value) : [value]).some((v) => !re.test(v))
 }
 
-const FOCUSABLE = 'button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])'
+const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])'
+
+/**
+ * A modal layer over the page: the scrim, Tab kept inside, Escape or a press on the scrim dismisses.
+ * Leaving, it gives the focus back at once and plays its way out, hidden from the keyboard and from
+ * assistive technology meanwhile.
+ */
+export function Layer({ leaving, onDismiss, className = '', children }: { leaving: boolean; onDismiss(): void; className?: string; children: ReactNode }) {
+  const layer = useRef<HTMLDivElement | null>(null)
+  const [before] = useState(() => (document.activeElement instanceof HTMLElement ? document.activeElement : null))
+  const returned = useRef(false)
+  const dismiss = useRef(onDismiss)
+  dismiss.current = onDismiss
+  useEffect(() => {
+    const giveBack = () => {
+      if (returned.current) return
+      returned.current = true
+      if (before?.isConnected) before.focus()
+    }
+    if (leaving) {
+      giveBack()
+      return
+    }
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      e.preventDefault()
+      dismiss.current()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [leaving, before])
+  useEffect(
+    () => () => {
+      if (!returned.current && before?.isConnected) before.focus()
+    },
+    [before],
+  )
+  const trap = (e: KeyboardEvent) => {
+    if (e.key !== 'Tab' || !layer.current) return
+    const all = [...layer.current.querySelectorAll<HTMLElement>(FOCUSABLE)]
+    const [first, last] = [all[0], all.at(-1)]
+    if (!first || !last) return e.preventDefault()
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault()
+      last.focus()
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault()
+      first.focus()
+    }
+  }
+  return (
+    <div
+      ref={layer}
+      className={`layer ${className}`}
+      data-leaving={leaving || undefined}
+      aria-hidden={leaving || undefined}
+      inert={leaving}
+      onKeyDown={trap}
+      onMouseDown={(e) => e.target === e.currentTarget && dismiss.current()}
+    >
+      {children}
+    </div>
+  )
+}
 
 /**
  * The form an action opens when it has inputs or asks for confirmation. Submitting it is the
- * in-person confirmation. While it is open, Tab stays inside it and Escape cancels; closing gives
- * focus back to what had it.
+ * in-person confirmation. A question with nothing to fill in starts on 取消, the choice that changes nothing.
  */
-export function ActionDialog({ action, preset = {}, onCancel, onSubmit }: { action: Action; preset?: Record<string, string>; onCancel(): void; onSubmit(values: Record<string, string>): void }) {
+export function ActionDialog({ action, preset = {}, leaving, onCancel, onSubmit }: { action: Action; preset?: Record<string, string>; leaving: boolean; onCancel(): void; onSubmit(values: Record<string, string>): void }) {
   const [values, setValues] = useState(() => ({ ...initial(action.inputs), ...preset }))
   const form = useRef<HTMLFormElement | null>(null)
   const danger = action.tone === 'danger'
   const wrong = new Set(action.inputs.filter((i) => mismatched(i, values[i.name] ?? '')).map((i) => i.name))
   useEffect(() => {
-    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    // A question with nothing to fill in starts on 取消, the choice that changes nothing.
     const start = action.inputs.length > 0 ? form.current?.querySelector<HTMLElement>('input, textarea, select, [role=radio][tabindex="0"]') : form.current?.querySelector<HTMLElement>('[data-cancel]')
     start?.focus()
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      e.stopPropagation()
-      onCancel()
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => {
-      window.removeEventListener('keydown', onKey, true)
-      before?.focus()
-    }
-  }, [action, onCancel])
-  const trap = (e: KeyboardEvent) => {
-    if (e.key !== 'Tab' || !form.current) return
-    const all = [...form.current.querySelectorAll<HTMLElement>(FOCUSABLE)]
-    const [first, last] = [all[0], all.at(-1)]
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault()
-      last?.focus()
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault()
-      first?.focus()
-    }
-  }
+  }, [action])
   const set = (name: string, value: string) => setValues((all) => ({ ...all, [name]: value }))
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-(--scrim) p-4" onMouseDown={onCancel}>
+    <Layer leaving={leaving} onDismiss={onCancel}>
       <form
         ref={form}
         role="dialog"
         aria-modal="true"
         aria-label={action.label}
-        className="dialog-in w-full max-w-[440px] rounded-window bg-surface p-5 shadow-(--shadow-overlay)"
-        onMouseDown={(e) => e.stopPropagation()}
-        onKeyDown={trap}
+        aria-describedby={action.confirm ? 'dialog-confirm' : undefined}
+        className="dialog"
         onSubmit={(e) => {
           e.preventDefault()
           if (wrong.size === 0) onSubmit(values)
         }}
       >
-        <h2 className="flex items-center gap-2 text-[15px] font-semibold">
-          {danger ? <TriangleAlert className="size-4 text-red" strokeWidth={2} aria-hidden /> : null}
-          {action.label}
-        </h2>
-        {action.confirm ? <p className="mt-2 text-[13px] text-ink-2">{action.confirm}</p> : null}
+        <div className="dialog-head">
+          <div>
+            <h2>{action.label}</h2>
+            {action.confirm ? (
+<p id="dialog-confirm">{action.confirm}</p>
+            ) : null}
+          </div>
+          <button type="button" className="icon-btn" aria-label="关闭" onClick={onCancel}>
+            <X strokeWidth={2} aria-hidden />
+          </button>
+        </div>
         {action.inputs.length > 0 ? (
-          <div className="mt-4 flex flex-col gap-3.5">
-            {action.inputs.map((input) =>
-              input.options ? (
-                <div key={input.name} className="flex flex-col gap-1.5">
-                  <span className="text-[12.5px] font-medium text-ink-2">{input.label}</span>
+          <div className="dialog-body">
+            {action.inputs.map((input) => {
+              const hint = wrong.has(input.name) && !input.hint ? '格式不对。' : input.hint
+              const hintId = hint ? `hint-${input.name}` : undefined
+              return input.options ? (
+                <div key={input.name} className="form-field">
+                  <span className="form-label">{input.label}</span>
                   <Choice label={input.label} options={input.options} value={values[input.name] ?? ''} onChange={(v) => set(input.name, v)} />
                 </div>
               ) : (
-                <div key={input.name} className="flex flex-col gap-1.5">
-                  <label className="flex flex-col gap-1.5 text-[12.5px] font-medium text-ink-2">
+                <div key={input.name} className="form-field">
+                  <label className="form-label" htmlFor={`input-${input.name}`}>
                     {input.label}
-                    {input.multiple ? (
-                      <textarea
-                        className="field field-area font-normal"
-                        name={input.name}
-                        rows={3}
-                        value={values[input.name] ?? ''}
-                        placeholder={input.placeholder ?? undefined}
-                        aria-invalid={wrong.has(input.name) || undefined}
-                        aria-describedby={input.hint ? `hint-${input.name}` : undefined}
-                        onChange={(e) => set(input.name, e.target.value)}
-                      />
-                    ) : (
-                      <input
-                        className="field font-normal"
-                        name={input.name}
-                        type={input.secret ? 'password' : 'text'}
-                        autoComplete={input.secret ? 'off' : undefined}
-                        value={values[input.name] ?? ''}
-                        placeholder={input.placeholder ?? undefined}
-                        aria-invalid={wrong.has(input.name) || undefined}
-                        aria-describedby={input.hint ? `hint-${input.name}` : undefined}
-                        onChange={(e) => set(input.name, e.target.value)}
-                      />
-                    )}
                   </label>
-                  {input.hint ? (
-                    <span id={`hint-${input.name}`} className={`text-[12px] ${wrong.has(input.name) ? 'text-red' : 'text-ink-3'}`}>
-                      {input.hint}
+                  {input.multiple ? (
+                    <textarea
+                      id={`input-${input.name}`}
+                      className="field field-area"
+                      name={input.name}
+                      rows={3}
+                      value={values[input.name] ?? ''}
+                      placeholder={input.placeholder ?? undefined}
+                      aria-invalid={wrong.has(input.name) || undefined}
+                      aria-describedby={hintId}
+                      onChange={(e) => set(input.name, e.target.value)}
+                    />
+                  ) : (
+                    <input
+                      id={`input-${input.name}`}
+                      className="field"
+                      name={input.name}
+                      type={input.secret ? 'password' : 'text'}
+                      autoComplete={input.secret ? 'off' : undefined}
+                      value={values[input.name] ?? ''}
+                      placeholder={input.placeholder ?? undefined}
+                      aria-invalid={wrong.has(input.name) || undefined}
+                      aria-describedby={hintId}
+                      onChange={(e) => set(input.name, e.target.value)}
+                    />
+                  )}
+                  {hint ? (
+                    <span id={hintId} className="form-hint" data-wrong={wrong.has(input.name) || undefined}>
+                      {hint}
                     </span>
-                  ) : wrong.has(input.name) ? (
-                    <span className="text-[12px] text-red">格式不对。</span>
                   ) : null}
                 </div>
-              ),
-            )}
+              )
+            })}
           </div>
         ) : null}
-        <div className="mt-5 flex justify-end gap-2">
+        <div className="dialog-foot">
           <button type="button" className="btn" data-cancel onClick={onCancel}>
             取消
           </button>
-          <button type="submit" className={`btn btn-primary ${danger ? 'btn-danger' : ''}`} disabled={wrong.size > 0}>
+          <button type="submit" className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`} disabled={wrong.size > 0}>
             {action.label}
           </button>
         </div>
       </form>
-    </div>
-  )
-}
-
-/** `offer`: what a refusal offers the person to do instead, shown as a button in the toast. */
-export type Toast = { id: number; tone: Tone; text: string; offer: Action | null }
-
-const TOAST_MS = 4500
-
-/** Toasts that go by themselves, except a refusal or an error, which stays until the person closes it. */
-export function useToasts(): [Toast[], (tone: Tone, text: string, offer?: Action | null) => void, (id: number) => void] {
-  const [toasts, setToasts] = useState<Toast[]>([])
-  const next = useRef(0)
-  const close = useCallback((id: number) => setToasts((all) => all.filter((t) => t.id !== id)), [])
-  const push = useCallback(
-    (tone: Tone, text: string, offer: Action | null = null) => {
-      const id = next.current++
-      setToasts((all) => [...all.slice(-3), { id, tone, text, offer }])
-      if (tone !== 'bad') window.setTimeout(() => close(id), TOAST_MS)
-    },
-    [close],
-  )
-  return [toasts, push, close]
-}
-
-const TOAST_ICON: Record<Tone, LucideIcon> = { good: CircleCheck, warn: TriangleAlert, bad: CircleAlert }
-const TOAST_COLOR: Record<Tone, string> = { good: 'text-green', warn: 'text-orange', bad: 'text-red' }
-
-/** `onAction` runs a toast's offer, as a button would; the toast closes when it is taken. */
-export function Toasts({ toasts, onClose, onAction }: { toasts: Toast[]; onClose(id: number): void; onAction?(action: Action): void }) {
-  return (
-    <div className="pointer-events-none fixed right-4 bottom-4 z-50 flex w-[380px] max-w-[calc(100vw-2rem)] flex-col gap-2" role="status" aria-live="polite">
-      {toasts.map((t) => {
-        const Icon = TOAST_ICON[t.tone]
-        const { offer } = t
-        return (
-          <div key={t.id} className="toast-in pointer-events-auto flex items-start gap-2 rounded-card bg-surface py-2.5 pr-2 pl-3 text-[13px] shadow-(--shadow-overlay)" data-tone={t.tone}>
-            <Icon className={`mt-0.5 size-4 shrink-0 ${TOAST_COLOR[t.tone]}`} strokeWidth={2} aria-hidden />
-            <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
-              <span className="break-words whitespace-pre-line">{t.text}</span>
-              {offer && onAction ? (
-                <button
-                  type="button"
-                  className={`btn !h-6 !px-2 !text-[12px] ${offer.tone === 'danger' ? 'btn-danger' : ''}`}
-                  onClick={() => {
-                    onClose(t.id)
-                    onAction(offer)
-                  }}
-                >
-                  {offer.label}
-                </button>
-              ) : null}
-            </div>
-            <button type="button" className="-my-0.5 flex size-6 shrink-0 items-center justify-center rounded-chip text-ink-3 hover:bg-hover hover:text-ink" aria-label="关闭" onClick={() => onClose(t.id)}>
-              <X className="size-3.5" strokeWidth={2} aria-hidden />
-            </button>
-          </div>
-        )
-      })}
-    </div>
+    </Layer>
   )
 }
