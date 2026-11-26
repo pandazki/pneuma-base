@@ -66,7 +66,7 @@ test('the palette finds a thing by its text and opens it, and with nothing typed
   await page.keyboard.press('ControlOrMeta+k')
   await expect(palette).toBeVisible()
   const pages = palette.getByRole('group', { name: '前往' })
-  await expect(pages.getByRole('option')).toHaveText(['条目', '场景', '状况', '动态', '留存', '文件', '归档区', '配置'].map((t) => new RegExp(`^${t}`)))
+  await expect(pages.getByRole('option')).toHaveText(['条目', '场景', '状况', '动态', '留存', '文件', '归档区', 'Agent', '配置'].map((t) => new RegExp(`^${t}`)))
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('ArrowDown')

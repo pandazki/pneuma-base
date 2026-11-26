@@ -20,12 +20,13 @@ const tableOf = (r: ViewResult) => {
 }
 
 describe('the views of a library with no plugin', () => {
-  it('are files, archive and config in the navigation, and the item panel outside it, each the kernel’s; config is the owner’s', async () => {
+  it('are files, archive, agents and config in the navigation, and the item panel outside it, each the kernel’s; agents and config are the owner’s', async () => {
     const f = await fixture()
     expect(viewerFace.views(f.library)).toEqual({
       views: [
         expect.objectContaining({ id: 'files', nav: true, by: 'kernel' }),
         expect.objectContaining({ id: 'archive', nav: true, by: 'kernel' }),
+        expect.objectContaining({ id: 'agents', nav: true, by: 'kernel', ownerOnly: true }),
         expect.objectContaining({ id: 'config', nav: true, by: 'kernel', ownerOnly: true }),
         expect.objectContaining({ id: 'item', nav: false, by: 'kernel' }),
       ],
@@ -253,7 +254,7 @@ describe('the view slot', () => {
     const stray = plugin('stray', { views: [{ id: 'files', title: '冒名的页', icon: 'triangle-alert', nav: true, filters: [] }] })
     const f = await fixture([pager, thrower, stray])
     const { views, problems } = viewerFace.views(f.library)
-    expect(views.map((v) => v.id)).toEqual(['pager.page', 'thrower.page', 'files', 'archive', 'config', 'item'])
+    expect(views.map((v) => v.id)).toEqual(['pager.page', 'thrower.page', 'files', 'archive', 'agents', 'config', 'item'])
     expect(problems).toEqual([{ plugin: 'stray', message: 'view files does not start with stray.' }])
   })
 
