@@ -7,9 +7,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use pneuma_base_storage::{
-    After, Expect, Failure, Reason, RecordPlace, Row, RowChange, RowsGetAnswer, RowsGetRequest,
-    RowsPage, RowsPutRequest, RowsUnderRequest, RowsWhereAnswer, RowsWhereRequest, StoredRow,
-    request::MAX_FIELDS,
+    After, CursorExpect, Failure, Reason, RecordPlace, Row, RowChange, RowsGetAnswer,
+    RowsGetRequest, RowsPage, RowsPutRequest, RowsUnderRequest, RowsWhereAnswer, RowsWhereRequest,
+    StoredRow, request::MAX_FIELDS,
 };
 use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionBehavior, params};
 use serde_json::Value;
@@ -134,7 +134,7 @@ impl LocalFolder {
             })
             .optional()
             .map_err(sql_failure)?;
-        if let Expect::Cursor(expected) = &req.expect
+        if let CursorExpect::Cursor(expected) = &req.expect
             && *expected != saved
         {
             return Err(Failure::refused(Some(

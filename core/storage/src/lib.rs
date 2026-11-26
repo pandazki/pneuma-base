@@ -2,6 +2,7 @@
 //! domain asks of wherever a library lives. It knows no file system.
 
 mod answer;
+pub mod base64;
 mod place;
 pub mod request;
 mod time;
@@ -17,25 +18,42 @@ pub use answer::*;
 pub use place::{Place, PlaceArg, RecordPlace};
 use request::Req;
 pub use request::{
-    Expect, FactsAppendRequest, FactsSinceRequest, LookItem, NoiseEdit, OverviewRequest,
-    ProbeRequest, RowChange, RowsGetRequest, RowsPutRequest, RowsUnderRequest, RowsWhereRequest,
+    ChangedRequest, ContentRequest, ContentRule, CursorExpect, Expect, FactsAppendRequest,
+    FactsSinceRequest, GlanceRequest, HoldRequest, LookItem, MoveRequest, NoiseEdit,
+    OverviewRequest, ProbeRequest, ReadRequest, RemoveRequest, RowChange, RowsGetRequest,
+    RowsPutRequest, RowsUnderRequest, RowsWhereRequest, Source, WriteRequest,
 };
 pub use time::Time;
-pub use token::Token;
+pub use token::{Token, Trust};
 
 pub const CONTRACT_VERSION: u32 = 1;
 
-/// A flag a running operation polls at its safe points; set by `serve`'s `cancel`.
-#[derive(Clone, Default)]
-pub struct Cancel(Arc<AtomicBool>);
+type ProgressSink = Arc<dyn Fn(&Value) + Send + Sync>;
 
-impl Cancel {
+/// What a running operation can reach besides its request: the flag `serve`'s `cancel` sets,
+/// which it polls at its safe points, and where its progress goes.
+#[derive(Clone, Default)]
+pub struct Ctx {
+    cancelled: Arc<AtomicBool>,
+    progress: Option<ProgressSink>,
+    /// Whether standard input is free to carry a write's bytes (one request per process).
+    pub stdin_free: bool,
+}
+
+impl Ctx {
+    pub fn with_progress(sink: impl Fn(&Value) + Send + Sync + 'static) -> Ctx {
+        Ctx {
+            progress: Some(Arc::new(sink)),
+            ..Ctx::default()
+        }
+    }
+
     pub fn cancel(&self) {
-        self.0.store(true, Ordering::SeqCst);
+        self.cancelled.store(true, Ordering::SeqCst);
     }
 
     pub fn is_cancelled(&self) -> bool {
-        self.0.load(Ordering::SeqCst)
+        self.cancelled.load(Ordering::SeqCst)
     }
 
     pub fn check(&self) -> Result<(), Failure> {
@@ -43,6 +61,12 @@ impl Cancel {
             Err(Failure::new(Reason::Cancelled))
         } else {
             Ok(())
+        }
+    }
+
+    pub fn progress(&self, value: Value) {
+        if let Some(sink) = &self.progress {
+            sink(&value);
         }
     }
 }
@@ -56,17 +80,19 @@ pub enum NoiseChange {
 /// One implementation of the contract. Every method answers data; a failure is a `Failure`
 /// with a fixed reason.
 pub trait Storage: Sync {
-    fn glance(&self, places: &[PlaceArg], cancel: &Cancel) -> Result<GlanceAnswer, Failure>;
-    fn overview(&self, req: &OverviewRequest, cancel: &Cancel) -> Result<OverviewAnswer, Failure>;
-    fn probe(&self, req: &ProbeRequest, cancel: &Cancel) -> Result<ProbeAnswer, Failure>;
-    fn look(&self, places: &[LookItem], cancel: &Cancel) -> Result<LookAnswer, Failure>;
+    fn glance(&self, req: &GlanceRequest, ctx: &Ctx) -> Result<GlanceAnswer, Failure>;
+    fn overview(&self, req: &OverviewRequest, ctx: &Ctx) -> Result<OverviewAnswer, Failure>;
+    fn probe(&self, req: &ProbeRequest, ctx: &Ctx) -> Result<ProbeAnswer, Failure>;
+    fn look(&self, places: &[LookItem], ctx: &Ctx) -> Result<LookAnswer, Failure>;
+    fn changed(&self, req: &ChangedRequest, ctx: &Ctx) -> Result<ChangedAnswer, Failure>;
+    fn content(&self, req: &ContentRequest, ctx: &Ctx) -> Result<ContentAnswer, Failure>;
+    fn read(&self, req: &ReadRequest, ctx: &Ctx) -> Result<ReadAnswer, Failure>;
+    fn write(&self, req: &WriteRequest, ctx: &Ctx) -> Result<WriteAnswer, Failure>;
+    fn move_place(&self, req: &MoveRequest, ctx: &Ctx) -> Result<MoveAnswer, Failure>;
+    fn remove(&self, req: &RemoveRequest, ctx: &Ctx) -> Result<RemoveAnswer, Failure>;
 
     fn facts_append(&self, req: &FactsAppendRequest) -> Result<FactsAppendAnswer, Failure>;
-    fn facts_since(
-        &self,
-        req: &FactsSinceRequest,
-        cancel: &Cancel,
-    ) -> Result<FactsSinceAnswer, Failure>;
+    fn facts_since(&self, req: &FactsSinceRequest, ctx: &Ctx) -> Result<FactsSinceAnswer, Failure>;
     fn rows_put(&self, req: &RowsPutRequest) -> Result<(), Failure>;
     fn rows_get(&self, req: &RowsGetRequest) -> Result<RowsGetAnswer, Failure>;
     fn rows_under(&self, req: &RowsUnderRequest) -> Result<RowsPage, Failure>;
@@ -77,15 +103,23 @@ pub trait Storage: Sync {
     fn info(&self) -> StorageInfo;
     fn noise_list(&self) -> Result<NoiseAnswer, Failure>;
     fn noise_edit(&self, edit: &NoiseEdit, change: NoiseChange) -> Result<NoiseAnswer, Failure>;
+    fn hold(&self, req: &HoldRequest) -> Result<HoldAnswer, Failure>;
+    fn release(&self, hold: &str) -> Result<(), Failure>;
 }
 
-/// The operations a request can name.
+/// The operations a request can name, in the order `describe` lists them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Op {
     Glance,
     Overview,
     Probe,
     Look,
+    Changed,
+    Content,
+    Read,
+    Write,
+    Move,
+    Remove,
     FactsAppend,
     FactsSince,
     RowsPut,
@@ -98,14 +132,22 @@ pub enum Op {
     NoiseList,
     NoiseAdd,
     NoiseRemove,
+    Hold,
+    Release,
 }
 
 impl Op {
-    pub const ALL: [Op; 16] = [
+    pub const ALL: [Op; 24] = [
         Op::Glance,
         Op::Overview,
         Op::Probe,
         Op::Look,
+        Op::Changed,
+        Op::Content,
+        Op::Read,
+        Op::Write,
+        Op::Move,
+        Op::Remove,
         Op::FactsAppend,
         Op::FactsSince,
         Op::RowsPut,
@@ -118,6 +160,8 @@ impl Op {
         Op::NoiseList,
         Op::NoiseAdd,
         Op::NoiseRemove,
+        Op::Hold,
+        Op::Release,
     ];
 
     pub fn name(self) -> &'static str {
@@ -126,6 +170,12 @@ impl Op {
             Op::Overview => "overview",
             Op::Probe => "probe",
             Op::Look => "look",
+            Op::Changed => "changed",
+            Op::Content => "content",
+            Op::Read => "read",
+            Op::Write => "write",
+            Op::Move => "move",
+            Op::Remove => "remove",
             Op::FactsAppend => "facts.append",
             Op::FactsSince => "facts.since",
             Op::RowsPut => "rows.put",
@@ -138,6 +188,8 @@ impl Op {
             Op::NoiseList => "noise.list",
             Op::NoiseAdd => "noise.add",
             Op::NoiseRemove => "noise.remove",
+            Op::Hold => "hold",
+            Op::Release => "release",
         }
     }
 
@@ -145,30 +197,31 @@ impl Op {
         Op::ALL.into_iter().find(|op| op.name() == name)
     }
 
-    /// Whether the operation changes what the storage holds. A write is cancellable only before
-    /// it starts; a read's answer can be dropped at any time.
+    /// Whether the operation changes what the storage holds. A write that is cancelled before it
+    /// takes effect answers `cancelled`; once it has taken effect it answers what happened. A
+    /// read's answer can be dropped at any time.
     pub fn writes(self) -> bool {
         matches!(
             self,
-            Op::FactsAppend
+            Op::Write
+                | Op::Move
+                | Op::Remove
+                | Op::FactsAppend
                 | Op::RowsPut
                 | Op::RowsReset
                 | Op::Init
                 | Op::NoiseAdd
                 | Op::NoiseRemove
+                | Op::Hold
+                | Op::Release
         )
     }
 }
 
 /// Runs one request against a storage and gives the whole answer object as JSON text, `outcome`
 /// first. The answer is written straight to text, so rows' stored values pass through unparsed.
-pub fn handle(
-    storage: &dyn Storage,
-    op: Op,
-    request: &Map<String, Value>,
-    cancel: &Cancel,
-) -> String {
-    match run(storage, op, &Req(request), cancel) {
+pub fn handle(storage: &dyn Storage, op: Op, request: &Map<String, Value>, ctx: &Ctx) -> String {
+    match run(storage, op, &Req(request), ctx) {
         Ok(answer) => answer,
         Err(failure) => failure_text(&failure),
     }
@@ -193,36 +246,42 @@ fn done<T: Serialize>(answer: T) -> Result<String, Failure> {
     Ok(with_first("\"outcome\":\"done\"", &body))
 }
 
-fn run(storage: &dyn Storage, op: Op, req: &Req, cancel: &Cancel) -> Result<String, Failure> {
-    cancel.check()?;
+fn run(storage: &dyn Storage, op: Op, req: &Req, ctx: &Ctx) -> Result<String, Failure> {
+    ctx.check()?;
+    let empty = |()| json!({});
     match op {
-        Op::Glance => done(storage.glance(&request::glance(req)?, cancel)?),
-        Op::Overview => done(storage.overview(&request::overview(req)?, cancel)?),
-        Op::Probe => done(storage.probe(&request::probe(req)?, cancel)?),
-        Op::Look => done(storage.look(&request::look(req)?, cancel)?),
+        Op::Glance => done(storage.glance(&request::glance(req)?, ctx)?),
+        Op::Overview => done(storage.overview(&request::overview(req)?, ctx)?),
+        Op::Probe => done(storage.probe(&request::probe(req)?, ctx)?),
+        Op::Look => done(storage.look(&request::look(req)?, ctx)?),
+        Op::Changed => done(storage.changed(&request::changed(req)?, ctx)?),
+        Op::Content => done(storage.content(&request::content(req)?, ctx)?),
+        Op::Read => done(storage.read(&request::read(req)?, ctx)?),
+        Op::Write => {
+            let write = request::write(req)?;
+            if matches!(write.from, Source::Stdin) && !ctx.stdin_free {
+                return Err(Failure::bad_request());
+            }
+            done(storage.write(&write, ctx)?)
+        }
+        Op::Move => done(storage.move_place(&request::move_place(req)?, ctx)?),
+        Op::Remove => done(storage.remove(&request::remove(req)?, ctx)?),
         Op::FactsAppend => done(storage.facts_append(&request::facts_append(req)?)?),
-        Op::FactsSince => done(storage.facts_since(&request::facts_since(req)?, cancel)?),
-        Op::RowsPut => done(
-            storage
-                .rows_put(&request::rows_put(req)?)
-                .map(|()| json!({}))?,
-        ),
+        Op::FactsSince => done(storage.facts_since(&request::facts_since(req)?, ctx)?),
+        Op::RowsPut => done(storage.rows_put(&request::rows_put(req)?).map(empty)?),
         Op::RowsGet => done(storage.rows_get(&request::rows_get(req)?)?),
         Op::RowsUnder => done(storage.rows_under(&request::rows_under(req)?)?),
         Op::RowsWhere => done(storage.rows_where(&request::rows_where(req)?)?),
-        Op::RowsReset => done(
-            storage
-                .rows_reset(&request::rows_reset(req)?)
-                .map(|()| json!({}))?,
-        ),
+        Op::RowsReset => done(storage.rows_reset(&request::rows_reset(req)?).map(empty)?),
         Op::Init => done(storage.init()?),
         Op::Describe => {
             let info = storage.info();
             let ops: Vec<&str> = Op::ALL.iter().map(|op| op.name()).collect();
             done(json!({
-                "implementation": info.implementation,
-                "contract": CONTRACT_VERSION,
+                "name": info.name,
                 "version": info.version,
+                "contract": CONTRACT_VERSION,
+                "addresses": info.addresses,
                 "cursor": info.cursor,
                 "facets": info.facets,
                 "ops": ops,
@@ -233,5 +292,7 @@ fn run(storage: &dyn Storage, op: Op, req: &Req, cancel: &Cancel) -> Result<Stri
         Op::NoiseRemove => {
             done(storage.noise_edit(&request::noise_edit(req)?, NoiseChange::Remove)?)
         }
+        Op::Hold => done(storage.hold(&request::hold(req)?)?),
+        Op::Release => done(storage.release(&request::release(req)?).map(empty)?),
     }
 }

@@ -1,6 +1,7 @@
 //! Requests as the operations take them, parsed once from the wire's JSON objects.
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use serde_json::{Map, Value};
 
@@ -10,14 +11,96 @@ pub const OVERVIEW_LIMIT: (u64, u64, u64) = (200, 1, 1_000);
 pub const PROBE_BUDGET: (u64, u64, u64) = (500, 1, 100_000);
 pub const SINCE_LIMIT: (u64, u64, u64) = (1_000, 0, 10_000);
 pub const ROWS_LIMIT: (u64, u64, u64) = (100, 1, 10_000);
+pub const CHANGED_LIMIT: (u64, u64, u64) = (1_000, 1, 10_000);
+/// The most files a directory's content may have before `content` or `write` answers `too_many`.
+pub const FILES_LIMIT: (u64, u64, u64) = (5_000, 1, 10_000_000);
+/// The most bytes one `read` answer carries in `data`; `to` has no such bound.
+pub const READ_DATA_MAX: u64 = 16 << 20;
+/// A hold's life in milliseconds.
+pub const HOLD_TTL_MS: (u64, u64, u64) = (30_000, 1, 600_000);
 /// The most a `rows.where` count goes to when the request gives no `limit`.
 pub const COUNT_CAP: u64 = 10_000;
 pub const MAX_FIELDS: usize = 4;
+
+/// Which of a directory's files are its content: never the library's noise, and also not the
+/// names given here nor what the named ignore file (`.gitignore`) of each directory excludes.
+#[derive(Clone, Debug, Default)]
+pub struct ContentRule {
+    pub noise: Vec<String>,
+    pub ignore_file: Option<String>,
+}
 
 pub struct OverviewRequest {
     pub place: Place,
     pub limit: usize,
     pub after: Option<String>,
+    pub facets: Vec<String>,
+}
+
+pub struct GlanceRequest {
+    pub places: Vec<PlaceArg>,
+    pub facets: Vec<String>,
+}
+
+pub struct ChangedRequest {
+    pub cursor: Option<String>,
+    pub limit: usize,
+}
+
+pub struct ContentRequest {
+    pub place: Place,
+    pub rule: ContentRule,
+    pub limit: u64,
+    pub fetch: bool,
+}
+
+pub struct ReadRequest {
+    pub place: Place,
+    pub offset: u64,
+    pub length: Option<u64>,
+    pub fetch: bool,
+    /// Write the bytes to this path outside the library instead of answering them.
+    pub to: Option<PathBuf>,
+}
+
+/// What a write expects to find where it writes.
+#[derive(Clone, Debug)]
+pub enum Expect {
+    Empty,
+    Token(Token),
+}
+
+pub enum Source {
+    Path(PathBuf),
+    Stdin,
+}
+
+pub struct WriteRequest {
+    pub place: Place,
+    pub from: Source,
+    pub expect: Expect,
+    pub rule: ContentRule,
+    pub limit: u64,
+    pub hold: Option<String>,
+}
+
+pub struct MoveRequest {
+    pub from: Place,
+    pub to: Place,
+    pub expect_from: Token,
+    pub expect_to: Expect,
+    pub hold: Option<String>,
+}
+
+pub struct RemoveRequest {
+    pub place: Place,
+    pub expect: Token,
+    pub hold: Option<String>,
+}
+
+pub struct HoldRequest {
+    pub place: Place,
+    pub ttl_ms: u64,
 }
 
 pub struct ProbeRequest {
@@ -56,7 +139,7 @@ impl RowChange {
 }
 
 /// `rows.put`'s precondition on the saved cursor.
-pub enum Expect {
+pub enum CursorExpect {
     Unchecked,
     Cursor(Option<String>),
 }
@@ -65,7 +148,7 @@ pub struct RowsPutRequest {
     pub place: RecordPlace,
     pub tables: Vec<(String, Vec<RowChange>)>,
     pub cursor: Option<String>,
-    pub expect: Expect,
+    pub expect: CursorExpect,
 }
 
 pub struct RowsGetRequest {
@@ -162,7 +245,58 @@ impl<'a> Req<'a> {
     }
 
     fn place(&self) -> Parsed<Place> {
-        Place::parse(&self.string("place")?).ok_or_else(Failure::bad_request)
+        self.place_at("place")
+    }
+
+    fn place_at(&self, key: &str) -> Parsed<Place> {
+        Place::parse(&self.string(key)?).ok_or_else(Failure::bad_request)
+    }
+
+    fn token(&self, key: &str) -> Parsed<Token> {
+        let token = Token::new(self.string(key)?);
+        token
+            .components()
+            .is_some()
+            .then_some(token)
+            .ok_or_else(Failure::bad_request)
+    }
+
+    /// `"empty"` or a token.
+    fn expect(&self, key: &str) -> Parsed<Expect> {
+        match self.string(key)?.as_str() {
+            "empty" => Ok(Expect::Empty),
+            _ => Ok(Expect::Token(self.token(key)?)),
+        }
+    }
+
+    fn absolute_path(&self, key: &str) -> Parsed<Option<PathBuf>> {
+        match self.opt_string(key)? {
+            None => Ok(None),
+            Some(text) if text.starts_with('/') && !text.contains('\0') => {
+                Ok(Some(PathBuf::from(text)))
+            }
+            Some(_) => Err(Failure::bad_request()),
+        }
+    }
+
+    fn rule(&self) -> Parsed<ContentRule> {
+        let Some(value) = self.get("rule") else {
+            return Ok(ContentRule::default());
+        };
+        let rule = Req(value.as_object().ok_or_else(Failure::bad_request)?);
+        let noise = rule.strings("noise")?;
+        if !noise.iter().all(valid_name) {
+            return Err(Failure::bad_request());
+        }
+        let ignore_file = rule.opt_string("ignore_file")?;
+        if ignore_file.as_ref().is_some_and(|name| !valid_name(name)) {
+            return Err(Failure::bad_request());
+        }
+        Ok(ContentRule { noise, ignore_file })
+    }
+
+    fn hold(&self) -> Parsed<Option<String>> {
+        self.opt_string("hold")
     }
 
     fn record_place(&self) -> Parsed<RecordPlace> {
@@ -186,12 +320,20 @@ fn usize_of(n: u64) -> usize {
     usize::try_from(n).unwrap_or(usize::MAX)
 }
 
-pub fn glance(req: &Req) -> Parsed<Vec<PlaceArg>> {
-    Ok(req
-        .strings("places")?
-        .iter()
-        .map(|text| PlaceArg::parse(text))
-        .collect())
+/// One segment of a path: not empty, not `.` or `..`, no `/` or NUL.
+fn valid_name(name: &String) -> bool {
+    !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\0'])
+}
+
+pub fn glance(req: &Req) -> Parsed<GlanceRequest> {
+    Ok(GlanceRequest {
+        places: req
+            .strings("places")?
+            .iter()
+            .map(|text| PlaceArg::parse(text))
+            .collect(),
+        facets: req.strings("facets")?,
+    })
 }
 
 pub fn overview(req: &Req) -> Parsed<OverviewRequest> {
@@ -199,7 +341,89 @@ pub fn overview(req: &Req) -> Parsed<OverviewRequest> {
         place: req.place()?,
         limit: usize_of(req.count("limit", OVERVIEW_LIMIT)?),
         after: req.opt_string("after")?,
+        facets: req.strings("facets")?,
     })
+}
+
+pub fn changed(req: &Req) -> Parsed<ChangedRequest> {
+    Ok(ChangedRequest {
+        cursor: req.opt_string("cursor")?,
+        limit: usize_of(req.count("limit", CHANGED_LIMIT)?),
+    })
+}
+
+pub fn content(req: &Req) -> Parsed<ContentRequest> {
+    Ok(ContentRequest {
+        place: req.place()?,
+        rule: req.rule()?,
+        limit: req.count("limit", FILES_LIMIT)?,
+        fetch: req.flag("fetch")?,
+    })
+}
+
+pub fn read(req: &Req) -> Parsed<ReadRequest> {
+    let length = match req.get("length") {
+        None => None,
+        Some(value) => Some(value.as_u64().ok_or_else(Failure::bad_request)?),
+    };
+    Ok(ReadRequest {
+        place: req.place()?,
+        offset: req.count("offset", (0, 0, u64::MAX))?,
+        length,
+        fetch: req.flag("fetch")?,
+        to: req.absolute_path("to")?,
+    })
+}
+
+pub fn write(req: &Req) -> Parsed<WriteRequest> {
+    let from = match req.string("from")?.as_str() {
+        "-" => Source::Stdin,
+        _ => Source::Path(
+            req.absolute_path("from")?
+                .ok_or_else(Failure::bad_request)?,
+        ),
+    };
+    Ok(WriteRequest {
+        place: req.place()?,
+        from,
+        expect: req.expect("expect")?,
+        rule: req.rule()?,
+        limit: req.count("limit", FILES_LIMIT)?,
+        hold: req.hold()?,
+    })
+}
+
+pub fn move_place(req: &Req) -> Parsed<MoveRequest> {
+    let expect = Req(req
+        .get("expect")
+        .and_then(Value::as_object)
+        .ok_or_else(Failure::bad_request)?);
+    Ok(MoveRequest {
+        from: req.place_at("from")?,
+        to: req.place_at("to")?,
+        expect_from: expect.token("from")?,
+        expect_to: expect.expect("to")?,
+        hold: req.hold()?,
+    })
+}
+
+pub fn remove(req: &Req) -> Parsed<RemoveRequest> {
+    Ok(RemoveRequest {
+        place: req.place()?,
+        expect: req.token("expect")?,
+        hold: req.hold()?,
+    })
+}
+
+pub fn hold(req: &Req) -> Parsed<HoldRequest> {
+    Ok(HoldRequest {
+        place: req.place()?,
+        ttl_ms: req.count("ttl", HOLD_TTL_MS)?,
+    })
+}
+
+pub fn release(req: &Req) -> Parsed<String> {
+    req.string("hold")
 }
 
 pub fn probe(req: &Req) -> Parsed<ProbeRequest> {
@@ -302,9 +526,9 @@ pub fn rows_put(req: &Req) -> Parsed<RowsPutRequest> {
         Some(_) => return Err(Failure::bad_request()),
     }
     let expect = match req.raw("expect") {
-        None => Expect::Unchecked,
-        Some(Value::Null) => Expect::Cursor(None),
-        Some(Value::String(cursor)) => Expect::Cursor(Some(cursor.clone())),
+        None => CursorExpect::Unchecked,
+        Some(Value::Null) => CursorExpect::Cursor(None),
+        Some(Value::String(cursor)) => CursorExpect::Cursor(Some(cursor.clone())),
         Some(_) => return Err(Failure::bad_request()),
     };
     Ok(RowsPutRequest {
@@ -361,9 +585,6 @@ pub fn rows_reset(req: &Req) -> Parsed<RecordPlace> {
 
 pub fn noise_edit(req: &Req) -> Parsed<NoiseEdit> {
     let names = req.strings("names")?;
-    let valid_name = |name: &String| {
-        !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\0'])
-    };
     if !names.iter().all(valid_name) {
         return Err(Failure::bad_request());
     }

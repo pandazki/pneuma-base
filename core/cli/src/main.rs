@@ -9,7 +9,7 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
 use pneuma_base_local::LocalFolder;
-use pneuma_base_storage::{Cancel, Failure, Op, Reason, Storage, failure_text, handle, with_first};
+use pneuma_base_storage::{Ctx, Failure, Op, Reason, Storage, failure_text, handle, with_first};
 use serde_json::{Map, Value};
 
 enum Mode {
@@ -85,6 +85,9 @@ fn main() -> ExitCode {
 }
 
 fn one(storage: &LocalFolder, op: Op, request: Option<String>) -> String {
+    // Standard input carries a write's bytes unless it carries the request.
+    let mut ctx = Ctx::default();
+    ctx.stdin_free = request.as_deref() != Some("-");
     let text = match request.as_deref() {
         None => "{}".to_owned(),
         Some("-") => {
@@ -97,7 +100,7 @@ fn one(storage: &LocalFolder, op: Op, request: Option<String>) -> String {
         Some(text) => text.to_owned(),
     };
     match serde_json::from_str::<Value>(&text) {
-        Ok(Value::Object(request)) => handle(storage, op, &request, &Cancel::default()),
+        Ok(Value::Object(request)) => handle(storage, op, &request, &ctx),
         _ => failure_text(&Failure::bad_request()),
     }
 }
@@ -106,11 +109,11 @@ struct Job {
     id: Value,
     op: Op,
     request: Map<String, Value>,
-    cancel: Cancel,
+    ctx: Ctx,
 }
 
 /// Requests not yet answered, by their id's JSON text, so `cancel` can reach them.
-type InFlight = Arc<Mutex<HashMap<String, Cancel>>>;
+type InFlight = Arc<Mutex<HashMap<String, Ctx>>>;
 
 fn id_key(id: &Value) -> String {
     id.to_string()
@@ -162,9 +165,9 @@ fn serve(storage: Arc<LocalFolder>) {
         if op_name == "cancel" {
             let target = request.get("target").map(id_key);
             if let (Some(target), Ok(in_flight)) = (target, in_flight.lock())
-                && let Some(cancel) = in_flight.get(&target)
+                && let Some(ctx) = in_flight.get(&target)
             {
-                cancel.cancel();
+                ctx.cancel();
             }
             print(&answer_line(&id, "{\"outcome\":\"done\"}"));
             continue;
@@ -173,16 +176,19 @@ fn serve(storage: Arc<LocalFolder>) {
             print(&answer_line(&id, &failure_text(&Failure::bad_request())));
             continue;
         };
-        let cancel = Cancel::default();
+        let progress_id = id.clone();
+        let ctx = Ctx::with_progress(move |progress| {
+            print(&format!("{{\"id\":{progress_id},\"progress\":{progress}}}"));
+        });
         if let Ok(mut in_flight) = in_flight.lock() {
-            in_flight.insert(id_key(&id), cancel.clone());
+            in_flight.insert(id_key(&id), ctx.clone());
         }
         if sender
             .send(Job {
                 id,
                 op,
                 request,
-                cancel,
+                ctx,
             })
             .is_err()
         {
@@ -196,14 +202,14 @@ fn serve(storage: Arc<LocalFolder>) {
 }
 
 fn run_job(storage: &dyn Storage, in_flight: &InFlight, job: Job) {
-    let mut answer = handle(storage, job.op, &job.request, &job.cancel);
+    let mut answer = handle(storage, job.op, &job.request, &job.ctx);
     // Once out of the in-flight table a cancel can no longer reach this request. A read's
     // answer is dropped if the cancel came first; a write that already happened is answered
     // as it happened.
     if let Ok(mut in_flight) = in_flight.lock() {
         in_flight.remove(&id_key(&job.id));
     }
-    if job.cancel.is_cancelled() && !job.op.writes() {
+    if job.ctx.is_cancelled() && !job.op.writes() {
         answer = failure_text(&Failure::new(Reason::Cancelled));
     }
     print(&answer_line(&job.id, &answer));

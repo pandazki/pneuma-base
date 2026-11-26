@@ -1130,6 +1130,12 @@ fn describe_lists_no_whole_library_operation() {
             "overview",
             "probe",
             "look",
+            "changed",
+            "content",
+            "read",
+            "write",
+            "move",
+            "remove",
             "facts.append",
             "facts.since",
             "rows.put",
@@ -1141,7 +1147,9 @@ fn describe_lists_no_whole_library_operation() {
             "describe",
             "noise.list",
             "noise.add",
-            "noise.remove"
+            "noise.remove",
+            "hold",
+            "release"
         ])
     );
 }
@@ -1221,7 +1229,7 @@ fn facts_since_gives_only_what_follows_the_cursor() {
 }
 
 #[test]
-fn facts_since_with_nothing_new_reads_no_old_day() {
+fn facts_since_with_nothing_new_survives_an_unreadable_old_day() {
     let lib = Lib::new();
     lib.write(
         ".pneuma-base/log/facts/2026-01-02/20260102030405006-old-000000.jsonl",
@@ -1470,7 +1478,7 @@ fn the_old_layout_is_still_read() {
         "facts.since",
         json!({ "place": "log", "cursor": since["cursor"] }),
     );
-    assert_eq!(facts_of(&later), Vec::<Value>::new());
+    assert_eq!(facts_of(&later), [json!({ "old": 4 })]);
 }
 
 #[test]
@@ -1749,9 +1757,12 @@ fn a_late_linked_file_is_still_given() {
         );
     };
     place_late(newest - 5_000, "latewriter", "{\"n\":\"late\"}");
-    place_late(newest - 60_000, "stalewriter", "{\"n\":\"stale\"}");
+    place_late(newest - 86_400_000, "stalewriter", "{\"n\":\"stale\"}");
     let later = lib.run("facts.since", json!({ "place": "log", "cursor": cursor }));
-    assert_eq!(facts_of(&later), [json!({ "n": "late" })]);
+    assert_eq!(
+        facts_of(&later),
+        [json!({ "n": "stale" }), json!({ "n": "late" })]
+    );
     let again = lib.run(
         "facts.since",
         json!({ "place": "log", "cursor": later["cursor"] }),
@@ -1781,10 +1792,16 @@ fn init_makes_the_areas_once() {
 fn describe_says_what_the_storage_is() {
     let lib = Lib::new();
     let answer = lib.run("describe", json!({}));
-    assert_eq!(answer["implementation"], "local-folder");
+    assert_eq!(answer["name"], "local-folder");
     assert_eq!(answer["contract"], 1);
-    assert_eq!(answer["cursor"], false);
-    assert_eq!(answer["facets"], json!(["fs"]));
+    assert_eq!(answer["addresses"], json!(["path"]));
+    if cfg!(target_os = "macos") {
+        assert_eq!(answer["cursor"], true);
+        assert_eq!(answer["facets"], json!(["fs", "macos", "placeholder"]));
+    } else {
+        assert_eq!(answer["cursor"], false);
+        assert_eq!(answer["facets"], json!(["fs"]));
+    }
     assert!(answer["version"].is_string());
 }
 
@@ -1849,7 +1866,7 @@ fn serve_echoes_ids() {
         .into_iter()
         .map(|a| (a["id"].to_string(), a))
         .collect();
-    assert_eq!(by_id["\"a\""]["implementation"], "local-folder");
+    assert_eq!(by_id["\"a\""]["name"], "local-folder");
     assert_eq!(by_id["2"]["entries"][0]["kind"], "dir");
     assert_eq!(
         by_id["null"],

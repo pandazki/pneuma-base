@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::{Place, Time, Token};
 
@@ -26,22 +26,27 @@ pub enum Reason {
     Busy,
 }
 
-/// A failed or refused answer. `detail` is the system's reason for `unreadable`; `actual` is
-/// the present state for a `refused` that has one.
+/// A failed or refused answer: the reason and the fields that reason carries (`detail` for
+/// `unreadable`, `actual` for `refused`, `at_least` for `too_many`, `size` for `elsewhere`,
+/// `until` for `held`, `cursor` for `cannot_say`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Failure {
     pub reason: Reason,
-    pub detail: Option<String>,
-    pub actual: Option<Value>,
+    pub fields: Map<String, Value>,
 }
 
 impl Failure {
     pub fn new(reason: Reason) -> Failure {
         Failure {
             reason,
-            detail: None,
-            actual: None,
+            fields: Map::new(),
         }
+    }
+
+    fn with(reason: Reason, key: &str, value: Value) -> Failure {
+        let mut failure = Failure::new(reason);
+        failure.fields.insert(key.to_owned(), value);
+        failure
     }
 
     pub fn bad_request() -> Failure {
@@ -49,17 +54,30 @@ impl Failure {
     }
 
     pub fn unreadable(detail: impl Into<String>) -> Failure {
-        Failure {
-            detail: Some(detail.into()),
-            ..Failure::new(Reason::Unreadable)
-        }
+        Failure::with(Reason::Unreadable, "detail", Value::String(detail.into()))
     }
 
     pub fn refused(actual: Option<Value>) -> Failure {
-        Failure {
-            actual,
-            ..Failure::new(Reason::Refused)
+        match actual {
+            Some(actual) => Failure::with(Reason::Refused, "actual", actual),
+            None => Failure::new(Reason::Refused),
         }
+    }
+
+    pub fn too_many(at_least: u64) -> Failure {
+        Failure::with(Reason::TooMany, "at_least", at_least.into())
+    }
+
+    pub fn elsewhere(size: u64) -> Failure {
+        Failure::with(Reason::Elsewhere, "size", size.into())
+    }
+
+    pub fn held(until: Time) -> Failure {
+        Failure::with(Reason::Held, "until", Value::String(until.iso()))
+    }
+
+    pub fn cannot_say(cursor: String) -> Failure {
+        Failure::with(Reason::CannotSay, "cursor", Value::String(cursor))
     }
 
     pub fn outcome(&self) -> &'static str {
@@ -70,13 +88,14 @@ impl Failure {
         }
     }
 
+    pub fn detail(&self) -> Option<&str> {
+        self.fields.get("detail").and_then(Value::as_str)
+    }
+
     fn write_fields<M: SerializeMap>(&self, map: &mut M) -> Result<(), M::Error> {
         map.serialize_entry("reason", &self.reason)?;
-        if let Some(detail) = &self.detail {
-            map.serialize_entry("detail", detail)?;
-        }
-        if let Some(actual) = &self.actual {
-            map.serialize_entry("actual", actual)?;
+        for (key, value) in &self.fields {
+            map.serialize_entry(key, value)?;
         }
         Ok(())
     }
@@ -100,18 +119,29 @@ pub enum Kind {
     Other,
 }
 
-#[derive(Clone, Debug, Serialize)]
-pub struct FsFacet {
-    pub inode: u64,
-    pub device: u64,
-    pub created: Option<Time>,
-    pub mode: u32,
+/// The facets of one place, by name, in the order their sources gave them. The abstraction does
+/// not know what any facet means; each implementation names its own.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Facets(Vec<(&'static str, Value)>);
+
+impl Facets {
+    pub fn push(&mut self, name: &'static str, value: Value) {
+        self.0.push((name, value));
+    }
+
+    pub fn get(&self, name: &str) -> Option<&Value> {
+        self.0.iter().find(|(n, _)| *n == name).map(|(_, v)| v)
+    }
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
-pub struct Facets {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fs: Option<FsFacet>,
+impl Serialize for Facets {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(self.0.len()))?;
+        for (name, value) in &self.0 {
+            map.serialize_entry(name, value)?;
+        }
+        map.end()
+    }
 }
 
 /// One place's description, as `glance`, `overview` and `look` give it.
@@ -123,6 +153,30 @@ pub struct Description {
     pub size: Option<u64>,
     pub modified: Time,
     pub facets: Facets,
+    /// Present, and true, when someone declared the place is being written (`hold`).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub held: bool,
+}
+
+/// What is at a place: a description, or nothing.
+#[derive(Clone, Debug)]
+pub enum Present {
+    Is(Description),
+    None(Place),
+}
+
+impl Serialize for Present {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Present::Is(description) => description.serialize(serializer),
+            Present::None(place) => {
+                let mut map = serializer.serialize_map(Some(2))?;
+                map.serialize_entry("place", place)?;
+                map.serialize_entry("kind", "none")?;
+                map.end()
+            }
+        }
+    }
 }
 
 /// What `glance` saw at one asked place.
@@ -210,6 +264,69 @@ pub struct LookAnswer {
     pub changed: Vec<Changed>,
     pub gone: Vec<Place>,
     pub failed: Vec<PlaceFailure>,
+    /// The asked places someone declared are being written, whatever else is said of them.
+    pub held: Vec<Place>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChangedAnswer {
+    pub places: Vec<Place>,
+    pub cursor: String,
+    pub more: bool,
+}
+
+/// A file's or a directory's content fingerprint, as `content` gives it.
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ContentAnswer {
+    File {
+        fingerprint: String,
+        token: Token,
+        size: u64,
+    },
+    Dir {
+        fingerprint: String,
+        files: u64,
+        bytes: u64,
+        token: Token,
+    },
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReadAnswer {
+    pub token: Token,
+    pub size: u64,
+    pub offset: u64,
+    pub length: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WriteAnswer {
+    pub entry: Description,
+    pub fingerprint: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub files: Option<u64>,
+    pub bytes: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MoveAnswer {
+    pub entry: Description,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RemoveAnswer {
+    pub removed: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct HoldAnswer {
+    pub hold: String,
+    pub until: Time,
 }
 
 #[derive(Debug, Serialize)]
@@ -278,12 +395,15 @@ pub struct InitAnswer {
     pub created: bool,
 }
 
-/// What an implementation says about itself; the dispatch adds the contract version and the
-/// operations.
+/// What an implementation says about itself (`describe`); the dispatch adds the contract version
+/// and the operations.
 #[derive(Debug, Serialize)]
 pub struct StorageInfo {
-    pub implementation: &'static str,
+    pub name: &'static str,
     pub version: &'static str,
+    /// The kinds of library address it answers.
+    pub addresses: Vec<&'static str>,
+    /// Whether `changed` can give a reliable cursor here.
     pub cursor: bool,
     pub facets: Vec<&'static str>,
 }

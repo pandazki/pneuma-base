@@ -16,6 +16,8 @@ serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 libc = "0.2"
 rusqlite = { version = "0.37", features = ["bundled"] }
 tempfile = "3"
+sha2 = "0.10"
+ignore = "0.4"
 
 [profile.release]
 lto = "thin"
