@@ -4,9 +4,9 @@
 // `.pneuma-base/requests/`, lines only appended, which several writers can share. ARCHITECTURE.md
 // section 4, 「请」.
 import { createHash, randomBytes } from 'node:crypto'
-import { appendFile, mkdir, open, readdir, readFile, rm, stat } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
-import { setTimeout as sleep } from 'node:timers/promises'
+import { appendFile, mkdir, open, readdir, readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { alone } from './files.js'
 import type { OwnerCommandInfo } from './owner.js'
 import { checkArgs } from './params.js'
 import { KERNEL_DIR, scratchDir } from './paths.js'
@@ -170,34 +170,11 @@ const append = (root: string, id: RequestId, line: Line) => appendFile(join(dirO
 export const recordDecision = (root: string, id: RequestId, at: Instant, decision: { decision: 'approved'; outcome: RequestOutcome } | { decision: 'declined'; reason: string | null }) =>
   append(root, id, { kind: 'decided', at, ...decision })
 
-/** A lock not touched for this long was left by a process that died. */
-const LOCK_STALE_MS = 10_000
-
 /**
- * Runs `body` alone among the asks of one agent on this machine, so two at once neither both add the
- * same request nor pass the cap together. The lock is a directory in the kernel's scratch area.
+ * The lock of one agent's asks on this machine, so two at once neither both add the same request nor
+ * pass the cap together: a directory in the kernel's scratch area.
  */
-async function alone<T>(root: string, asker: Asker, body: () => Promise<T>): Promise<T> {
-  const key = createHash('sha256').update(`${asker.name}\0${asker.grant ?? ''}`).digest('hex').slice(0, 16)
-  const lock = join(scratchDir(root), 'asking', key)
-  await mkdir(dirname(lock), { recursive: true })
-  for (;;) {
-    try {
-      await mkdir(lock)
-      break
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-      const held = await stat(lock).catch(() => null)
-      if (held !== null && Date.now() - held.mtimeMs > LOCK_STALE_MS) await rm(lock, { recursive: true, force: true })
-      else await sleep(20)
-    }
-  }
-  try {
-    return await body()
-  } finally {
-    await rm(lock, { recursive: true, force: true })
-  }
-}
+const askingLock = (root: string, asker: Asker) => join(scratchDir(root), 'asking', createHash('sha256').update(`${asker.name}\0${asker.grant ?? ''}`).digest('hex').slice(0, 16))
 
 // ---- in words ----
 
@@ -261,7 +238,7 @@ export async function ask(req: AskRequest, ctx: Context, commands: readonly Owne
   const checked = checkArgs(c.name, c.params, req.args)
   if ('usage' in checked) return refusal('usage', checked.usage)
   const line = commandLine(c.name, req.args)
-  return alone(root, by, async () => {
+  return alone(askingLock(root, by), async () => {
     const mine = (await readRequests(root)).filter((r) => isPending(r) && sameAsker(r.by, by))
     const same = mine.find((r) => r.line === line)
     if (same) return { outcome: 'asked', request: same, again: true, problems: [] }

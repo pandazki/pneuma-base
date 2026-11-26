@@ -5,15 +5,24 @@ import { homedir, hostname } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import {
+  endpointOf,
+  ensureLauncher,
+  GRANT_NAME,
+  guideText,
+  guideUrl,
   identifyActor,
   identifySession,
   initLibrary,
+  instant,
   loadPlugins,
   makeContext,
   openLibrary,
   ownerFace,
+  pairingAnswer,
   PNEUMA_BASE_VERSION,
+  requestPairing,
   resolveGrant,
+  sentenceFor,
   type Env,
   type Grant,
   type Instant,
@@ -126,6 +135,8 @@ const USAGE = `用法：
       archive <库内路径> | unarchive <库内路径>
 看管理界面的一页：show [<页的编号> [--<参数> <值>…]]（不写编号列出这个库的页；条目面板是 show item --path <库内路径>）
 给只能接 MCP 的 agent 应用：pneuma-base @<授权名> mcp（在标准输入输出上跑 MCP 服务，动词和能用的命令都是工具）
+让 agent 自己接上：guide [<产品>] [--library <库的目录>] [--url]（给 agent 读的说明，和本机地址 /guide 给的一样；--url 印出那个地址）
+      pair request <产品> "<为什么>" [--library <库的目录>]（请主人允许接入，答复里有配对码）| pair status <配对号>
 主人：view [<目录>] [--port <端口>] [--no-open]（在浏览器里打开管理界面；pneuma-base <目录> 也一样）
       init <目录> [--bare]
 插件作者：plugin new <目录> [--kind blank|deploy] [--name <插件名>] [--packages <两个包文件所在的目录>]（生成一个插件项目）
@@ -228,8 +239,74 @@ function specOf(verb: Verb): Spec {
   }
 }
 
+const NO_ENDPOINT = '现在没有开着的 Pneuma Base 地址：它在 Pneuma Base 应用开着时有，或者运行 pneuma-base view <库的目录>。'
+
+/** The library of a command for an agent not connected yet: `--library`, else the one the running endpoint serves. */
+async function servedLibrary({ parsed, io, table, home }: Invocation): Promise<Library | Answer> {
+  const dir = flagValue(parsed, 'library')
+  const root = dir === null ? ((await endpointOf(home, null))?.library ?? null) : resolve(io.cwd, dir)
+  if (root === null) throw new UsageError('没有开着的 Pneuma Base 地址，用 --library <库的目录> 指明是哪个库。')
+  return (await openLibrary(root, table)) ?? refusal('not-a-library', `${dir ?? root} 不是一个库。`)
+}
+
+const productArg = (name: string): string => {
+  if (!GRANT_NAME.test(name)) throw new UsageError(`不是一个产品名：${name}（小写字母或数字开头，只用小写字母、数字和连字符）`)
+  return name
+}
+
 const SPECS: Spec[] = [
   ...VERBS.map(specOf),
+  {
+    words: ['guide'],
+    flags: { url: 'boolean' },
+    arity: [0, 1],
+    library: false,
+    run: async (inv) => {
+      const { args, parsed, io, table, home } = inv
+      const product = args[0] === undefined ? null : productArg(args[0])
+      if (hasFlag(parsed, 'url')) {
+        const dir = flagValue(parsed, 'library')
+        const library = dir === null ? null : await openLibrary(resolve(io.cwd, dir), table)
+        if (dir !== null && library === null) return refusal('not-a-library', `${dir} 不是一个库。`)
+        const endpoint = await endpointOf(home, library?.root ?? null)
+        if (endpoint === null) return refusal('no-endpoint', NO_ENDPOINT)
+        const json = { url: guideUrl(endpoint.url), port: endpoint.port, library: endpoint.library, sentence: sentenceFor(endpoint.url) }
+        return { json, lines: [json.url], exit: 0 }
+      }
+      const library = await servedLibrary(inv)
+      if ('exit' in library) return library
+      // The guide names this machine's command; it runs only once it is there.
+      await ensureLauncher(home, io.env)
+      const url = (await endpointOf(home, library.root))?.url ?? null
+      const text = guideText({ root: library.root, home, env: io.env, url }, product)
+      return { json: { library: library.root, product, url, text }, lines: [text.trimEnd()], exit: 0 }
+    },
+  },
+  {
+    words: ['pair', 'request'],
+    flags: {},
+    arity: [2, Infinity],
+    library: false,
+    run: async (inv) => {
+      const [product, ...why] = inv.args as [string, ...string[]]
+      const library = await servedLibrary(inv)
+      if ('exit' in library) return library
+      const r = await requestPairing({ home: inv.home, library: library.root, product, why: why.join(' '), via: 'command-line', now: instant(Date.now()) })
+      if (r.outcome === 'refused' && r.reason === 'usage') throw new UsageError(r.text)
+      return { json: r, lines: [r.outcome === 'refused' ? `拒绝（${r.reason}）：${r.text}` : r.text], exit: r.outcome === 'refused' ? 2 : 0 }
+    },
+  },
+  {
+    words: ['pair', 'status'],
+    flags: {},
+    arity: [1, 1],
+    library: false,
+    run: async ({ args, home }) => {
+      const id = args[0] as string
+      const a = await pairingAnswer(home, id, instant(Date.now()))
+      return a === null ? refusal('no-such-pairing', `没有配对 ${id}。`) : { json: a, lines: [a.text], exit: 0 }
+    },
+  },
   {
     words: ['mcp'],
     flags: {},
@@ -297,7 +374,7 @@ const SPECS: Spec[] = [
       const port = flagValue(parsed, 'port')
       if (port !== null && !/^\d{1,5}$/.test(port)) throw new UsageError(`--port 要写一个端口号：${port}`)
       const dir = resolve(io.cwd, args[0] ?? '.')
-      const stopped = await view({ dir, builtins, home, io, port: port === null ? 0 : Number(port), open: !hasFlag(parsed, 'no-open') })
+      const stopped = await view({ dir, builtins, home, io, port: port === null ? undefined : Number(port), open: !hasFlag(parsed, 'no-open') })
       return { json: stopped, lines: ['界面已关闭。'], exit: 0 }
     },
   },

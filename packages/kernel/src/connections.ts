@@ -13,12 +13,14 @@ import type { Instant } from '@pneuma-base/sdk'
 /**
  * One thing written. `dirs`: the folders written into being, outermost first, each taken away again
  * once empty. A skill is its SKILL.md; a JSON entry is located by key and name; a TOML table is the
- * exact text appended. A fingerprint is of what was written: the file, or the entry's value in canonical form.
+ * exact text appended. A fingerprint is of what was written: the file, or the entry's value in canonical
+ * form. `none`: nothing was written, for a product reached only by the local endpoint's address.
  */
 export type Written =
   | { kind: 'skill'; file: string; fingerprint: string; dirs: string[] }
   | ({ kind: 'json'; file: string; key: string; name: string; fingerprint: string; dirs: string[] } & JsonAdded)
   | { kind: 'toml'; file: string; key: string; name: string; appended: string; createdFile: boolean; dirs: string[] }
+  | { kind: 'none' }
 
 export type Connection = {
   format: 1
@@ -135,6 +137,7 @@ async function removeEmpty(dirs: readonly string[]): Promise<void> {
 }
 
 export async function stateOf(w: Written): Promise<WrittenState> {
+  if (w.kind === 'none') return 'in-place'
   const text = await readText(w.file)
   if (text === null) return 'gone'
   switch (w.kind) {
@@ -158,7 +161,7 @@ export async function stateOf(w: Written): Promise<WrittenState> {
  */
 export async function undo(w: Written): Promise<WrittenState> {
   const state = await stateOf(w)
-  if (state !== 'in-place') return state
+  if (state !== 'in-place' || w.kind === 'none') return state
   const text = (await readText(w.file)) as string
   if (w.kind === 'skill') await unlink(w.file)
   else {

@@ -1,7 +1,8 @@
 // The names a plugin claims, which no one else may hold: its `say` kinds, owner command names and view ids.
 import type { KERNEL_COMMAND_NAMES, Plugin, PluginName, PluginProblem } from '@pneuma-base/sdk'
 
-export type KernelCommandName = (typeof KERNEL_COMMAND_NAMES)[number]
+/** With the kernel's commands newer than the contract package's KERNEL_COMMAND_NAMES, which takes them in its next version. */
+export type KernelCommandName = (typeof KERNEL_COMMAND_NAMES)[number] | 'pair list' | 'pair allow' | 'pair decline'
 
 type Claim = { kind: 'statement' | 'command' | 'view'; name: string }
 

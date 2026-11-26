@@ -61,6 +61,25 @@ const viewerBoundary = {
   },
 }
 
+// The agent routes are open to any program on this machine: they reach neither the owner's routes
+// (api.ts holds the calls and init) nor a face that acts in a library.
+const agentRoutesBoundary = {
+  files: ['packages/viewer/src/server/agent.ts'],
+  rules: {
+    'no-restricted-imports': ['error', {
+      paths: [{
+        name: '@pneuma-base/kernel',
+        importNames: ['ownerFace', 'initLibrary', 'agentFace', 'viewerFace'],
+        message: 'The agent routes never act in a library: the owner acts through /api, a connected agent through its grant.',
+      }],
+      patterns: [
+        ...viewerBoundary.rules['no-restricted-imports'][1].patterns,
+        { regex: '^\\./(api|index)(\\.js)?$', message: 'The agent routes never reach the owner\'s routes or the token.' },
+      ],
+    }],
+  },
+}
+
 const webBoundary = {
   files: ['packages/viewer/web/**/*.ts', 'packages/viewer/web/**/*.tsx'],
   rules: {
@@ -125,5 +144,6 @@ export default tseslint.config(
   kernelBoundary,
   pluginBoundary,
   viewerBoundary,
+  agentRoutesBoundary,
   webBoundary,
 )

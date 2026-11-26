@@ -6,7 +6,9 @@
 import { basename } from 'node:path'
 import { formOf, type Action, type Block, type Step } from '@pneuma-base/sdk'
 import { connectionFacts, WAY_WORD, whereOf } from './agent-commands.js'
+import { endpointOf } from './endpoint.js'
 import { KERNEL_COMMANDS } from './owner-commands.js'
+import { sentenceBlock } from './pairing.js'
 import { CONNECTABLE, lookedFor, signsOf, waysOf, type Way } from './products.js'
 import { libraryFiles } from './things.js'
 import type { ViewerCall } from './viewer.js'
@@ -24,7 +26,7 @@ function connectAction(product: string): Action {
   return { label: '接上', tone: 'default', confirm: null, inputs, call }
 }
 
-/** Connect your agent: each product found on this machine, with 接上, or 已接上 and how. */
+/** Connect your agent: each product found on this machine, with 接上, or 已接上 and how; while an endpoint runs for this library, the sentence any agent connects itself by. */
 async function connectStep({ ctx, table, env }: ViewerCall): Promise<Step> {
   const connections = await connectionFacts(ctx.home, env, table, ctx.library.root)
   const shown = CONNECTABLE.map((p) => ({ p, found: signsOf(p, env).length > 0, mine: connections.filter((c) => c.product === p.name) })).filter((x) => x.found || x.mine.length > 0)
@@ -42,6 +44,8 @@ async function connectStep({ ctx, table, env }: ViewerCall): Promise<Step> {
     items.length === 0
       ? [{ kind: 'text', tone: 'neutral', text: `这台机器上还没找到能接上的 agent（看了 ${missing.map((p) => `${p.title}：${lookedFor(p)}`).join('；')}）。装上一个、打开过一次之后，回到这里接上。` }]
       : [{ kind: 'list', items }]
+  const endpoint = await endpointOf(ctx.home, ctx.library.root)
+  if (endpoint !== null) blocks.push(sentenceBlock(endpoint.url, '首页的「等你决定」里'))
   const titles = [...new Set(connections.map((c) => c.title))]
   return { key: 'connect', title: '接上你的 agent', done: connections.length > 0, summary: connections.length > 0 ? `已接上 ${titles.join('、')}` : null, blocks }
 }

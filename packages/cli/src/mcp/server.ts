@@ -27,9 +27,9 @@ export interface Face {
 
 /** Revisions served with per-request metadata, and revisions served after an `initialize` handshake, newest first. */
 const MODERN_VERSIONS = ['2026-07-28']
-const LEGACY_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']
+export const LEGACY_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']
 
-const PROTOCOL_VERSION = 'io.modelcontextprotocol/protocolVersion'
+export const PROTOCOL_VERSION = 'io.modelcontextprotocol/protocolVersion'
 const CLIENT_CAPABILITIES = 'io.modelcontextprotocol/clientCapabilities'
 const SERVER_INFO = 'io.modelcontextprotocol/serverInfo'
 const SUBSCRIPTION_ID = 'io.modelcontextprotocol/subscriptionId'

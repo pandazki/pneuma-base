@@ -1,8 +1,9 @@
 import CoreServices
 import Foundation
 
-/// Watches the current library with FSEvents. Any change at all is told to `onActivity`, so the app
-/// can count again what waits for the owner. With 直接放进来的文件算主人的 on, it also records,
+/// Watches the current library with FSEvents, and the machine's pairings folder, where an agent's
+/// request to be connected arrives. Any change at all is told to `onActivity`, so the app can count
+/// again what waits for the owner. With 直接放进来的文件算主人的 on, it also records,
 /// through the command line, what the owner did to the library outside the tools: a file that
 /// appeared is registered as brought by the owner and seen (`put --brought --by owner --observed`), a
 /// file changed directly is recorded as a change seen (`say revised --observed`).
@@ -37,12 +38,22 @@ final class Watcher {
   init(library: URL, config: Config, recordsOwnerFiles: Bool) {
     self.library = library
     // FSEvents reports real paths; `resolvingSymlinksInPath` would turn /private/tmp into /tmp.
-    self.root = realpath(library.path, nil).map { p in defer { free(p) }; return String(cString: p) } ?? library.path
+    self.root = Self.real(library.path)
     self.config = config
     self.recordsOwnerFiles = recordsOwnerFiles
   }
 
+  private static func real(_ path: String) -> String {
+    realpath(path, nil).map { p in defer { free(p) }; return String(cString: p) } ?? path
+  }
+
+  /// Where agents' pairings wait, machine state: a new one is something more waiting for the owner.
+  private var pairings = ""
+
   func start() {
+    let folder = config.home.appendingPathComponent("pairings", isDirectory: true)
+    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    pairings = Self.real(folder.path)
     var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
     let callback: FSEventStreamCallback = { _, info, count, paths, _, _ in
       guard let info else { return }
@@ -51,7 +62,7 @@ final class Watcher {
       MainActor.assumeIsolated { watcher.heard(list.prefix(count)) }
     }
     let flags = UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer)
-    guard let stream = FSEventStreamCreate(nil, callback, &context, [root] as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.2, flags) else { return }
+    guard let stream = FSEventStreamCreate(nil, callback, &context, [root, pairings] as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.2, flags) else { return }
     FSEventStreamSetDispatchQueue(stream, .main)
     FSEventStreamStart(stream)
     self.stream = stream
@@ -70,6 +81,7 @@ final class Watcher {
 
   private func heard(_ paths: ArraySlice<String>) {
     for path in paths {
+      if path == pairings || path.hasPrefix(pairings + "/") { continue }
       guard path == root || path.hasPrefix(root + "/") else { continue }
       let rel = String(path.dropFirst(root.count + 1))
       lastEvent = Date()

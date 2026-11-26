@@ -28,6 +28,8 @@
 | 主人面 | 配置、装卸插件、发授权、生成技能、丢数据。破坏性的要人当面确认 |
 | 动词 | 放、找、看、说、查、归档、请 |
 | 请求 | agent 用「请」（`ask`）记下的一件要主人做的事：一句为什么，和一条照原样的主人命令。主人批准就以主人的身份跑它，或拒绝；agent 下次查时看到结果 |
+| endpoint | 界面的服务里给 agent 的那一部分：说明（`/guide`）、配对（`/pair`）、MCP over HTTP（`/mcp/<授权名>`）。它是命令行的又一个面 |
+| 配对 | 还没接上的 agent 请主人允许它接上。主人允许就是跑 `agent connect`，它以自己的名字接上，记录说得出是哪个 agent 做的 |
 | 归档 | 把一样东西挪进库里的归档区。不删；默认的找和查不带它，带上要开开关。agent 做得快、废弃得也快，归档是 agent 面上不破坏的「不要了」 |
 | 槽 | 一个动词背后插件可以接上的位置 |
 | 会话 | agent 产品的一次会话，或人对工具的一次使用 |
@@ -55,14 +57,14 @@ packages/cli ──▶ packages/viewer ──▶ packages/kernel ◀── packa
 | 包 | 职责 | 不许 |
 | --- | --- | --- |
 | `packages/sdk` | 插件契约（`@pneuma-base/sdk`）：全部类型、契约版本 `CONTRACT`、`definePlugin`、`defineCommand`，从命令的参数表生成用法和表单的 `usageOf`、`formOf`，和插件自己造带品牌的值用的 `pluginName`、`instant`、`PLUGIN_NAME`、`SECRET_NAME`，插件不能用的名字 `KERNEL_COMMAND_NAMES`、`RESERVED_PLUGIN_NAMES`，这一版的版本号 `PNEUMA_BASE_VERSION`。另一个入口 `@pneuma-base/sdk/kit` 是插件打进自己包里的库：只新增文件的记录库 `recordStore`、配置文件助手 `configFile`、部署库 `deployPlugin` 和写目标用的 `defineTarget`（第 13 节）。第三个入口 `@pneuma-base/sdk/testkit` 是测试工具和符合性检查（第 5 节「写一个库外的插件」）。库外的插件只依赖它 | 导入内核、命令行、界面或任何插件；含内核的逻辑（内核的工具经上下文的 `tools` 给，库也只用 `tools`） |
-| `packages/kernel` | 打开库、解析配置、识别行动者和会话、七个动词的管线、请求、授权的门、事件、认知的拼装、技能的生成、接上和断开 agent 产品（产品表）、装载和安装库外的插件、本机的密钥。依赖 sdk，并把它原样再导出 | 依赖 sdk 以外的任何包；认识任何插件的事实或目录 |
+| `packages/kernel` | 打开库、解析配置、识别行动者和会话、七个动词的管线、请求、授权的门、事件、认知的拼装、技能的生成、接上和断开 agent 产品（产品表）、给 agent 的说明和配对、装载和安装库外的插件、本机的密钥。依赖 sdk，并把它原样再导出 | 依赖 sdk 以外的任何包；认识任何插件的事实或目录 |
 | `packages/plugin-ledger` | 记账与对账：事实、场景、条目、对账、来历、过期、变化，留存（第 10 节） | 读写别的插件的目录；绕过内核的公开接口；导入别的插件 |
 | `packages/plugin-version` | 版本：声明了有版本的东西，每一版都留着（第 11 节） | 同上 |
 | `packages/plugin-sync` | 同步：库和一个目标双向同步，不合并、不丢内容（第 12 节） | 同上 |
 | `packages/plugin-deploy` | 部署：sdk 的部署库加「本地目录」「命令」两种目标（第 13 节）。只依赖 sdk | 同上 |
 | `packages/plugin-search` | 查找：正文和按意思，索引是缓存（第 14 节） | 同上 |
-| `packages/viewer` | 管理界面。`src/server/` 是只听本机的 HTTP 服务，用内核的三个面；`web/` 是网页，只渲染块。自带的插件表由调用方传进 `startServer`，服务每次请求再并上本机的插件 | 导入任何插件包或命令行；网页导入内核的代码（只取类型） |
-| `packages/cli` | 命令 `pneuma-base`：把命令行翻译成对内核的调用，把结果打印出来；动词的参数表（`verbs.ts`）；内置插件表（记账、版本、同步、部署、查找，`init` 缺省只装记账）；`view` 把内置插件表交给界面的服务；`show` 把一个视图印成字，每个按钮写成做同一件事的命令（`page.ts`）；`mcp` 把一个授权的库作为 MCP 服务给出（`src/mcp/`）；`plugin new` 从 `templates/` 生成插件项目 | 含领域逻辑 |
+| `packages/viewer` | 管理界面。`src/server/` 是只听本机的 HTTP 服务，用内核的三个面，也是给 agent 的 endpoint（说明、配对、MCP over HTTP，第 6 节）；`web/` 是网页，只渲染块。自带的插件表和 MCP 的 HTTP 传输由调用方传进 `startServer`，服务每次请求再并上本机的插件 | 导入任何插件包或命令行；网页导入内核的代码（只取类型） |
+| `packages/cli` | 命令 `pneuma-base`：把命令行翻译成对内核的调用，把结果打印出来；动词的参数表（`verbs.ts`）；内置插件表（记账、版本、同步、部署、查找，`init` 缺省只装记账）；`view` 把内置插件表交给界面的服务；`show` 把一个视图印成字，每个按钮写成做同一件事的命令（`page.ts`）；`mcp` 把一个授权的库作为 MCP 服务给出（`src/mcp/`），`src/mcp/http.ts` 是同一个服务在 HTTP 上的传输，交给 `view` 的服务；`guide` 印给 agent 的说明，`pair request`、`pair status` 是还没接上的 agent 的配对；`plugin new` 从 `templates/` 生成插件项目 | 含领域逻辑 |
 
 插件只经契约的类型和上下文对象接触内核：自带的插件从 `packages/kernel` 导入（它再导出 sdk），部署插件和库外的插件只依赖 `packages/sdk`，运行时不导入内核，要用内核的工具就用上下文的 `tools`。插件之间不直接调用，也不互相导入。内核不导入界面，界面不导入任何插件，sdk 不导入内核、命令行、界面和任何插件；lint 的导入规则守这几条，`packages/kernel/test/dependency-direction.test.ts` 在故意违反的例子上看它们变红。
 
@@ -227,7 +229,7 @@ type PluginProblem = { plugin: PluginName; message: string }
 
 命令行另有一个 `show [<视图编号> [--<参数> <值>…]]`：管理界面的一页，只读，也不是动词（第 6 节「只读的一面：视图」）。不写编号列出这个库的页。
 
-命令行是全部本事的准绳，管理界面和 MCP 服务是它的面，答复一一对应：界面上的每个按钮是一个动词或一条主人命令（`Call`），表单出自命令的参数表；界面上的每一页是一条只读的命令，`show` 把它印成字；MCP 的每个工具是一个动词或一条 agent 能用的命令，输入出自同一份参数表，答的是命令行印的字和 `--json` 的结果（第 6 节「MCP 服务」）。除了管理的那部分归主人，每样本事 agent 和人一样。两个方向都有测试守着（`packages/cli/test/pages.test.ts`、`mcp.test.ts`）：每一页印得出来，字里有每一格和每个按钮的命令，每个按钮调得到一个动词或一条在的命令；每个动词和命令在界面上有按钮，或是一页读的东西，没有的列在测试里，写明为什么；每个动词和 agent 能用的命令是一个工具，管理的命令都不是。
+命令行是全部本事的准绳，管理界面、MCP 服务和本机的 endpoint 是它的面，答复一一对应：界面上的每个按钮是一个动词或一条主人命令（`Call`），表单出自命令的参数表；界面上的每一页是一条只读的命令，`show` 把它印成字；MCP 的每个工具是一个动词或一条 agent 能用的命令，输入出自同一份参数表，答的是命令行印的字和 `--json` 的结果（第 6 节「MCP 服务」）。除了管理的那部分归主人，每样本事 agent 和人一样。两个方向都有测试守着（`packages/cli/test/pages.test.ts`、`mcp.test.ts`）：每一页印得出来，字里有每一格和每个按钮的命令，每个按钮调得到一个动词或一条在的命令；每个动词和命令在界面上有按钮，或是一页读的东西，没有的列在测试里，写明为什么；每个动词和 agent 能用的命令是一个工具，管理的命令都不是。
 
 动词的参数也是数据，和主人命令的参数表同形，只有一张表（`packages/cli/src/verbs.ts`）：每个动词的位置参数和开关各带名字、`hint`、种类，另有三样主人命令没有的：`words`（其余的词用空格连成一句，`start` 和 `find` 的文字），`more`（没声明的开关收在一个名字下：`say` 的归听这个种类的插件，`show` 的是页的参数），`stdin`（这个位置参数写 `-` 时读标准输入，`put` 的）。命令行按它读一个动词的词、定参数个数，MCP 服务按它生成工具的输入，两边都把读出的值交给同一个 `run`。`--help` 的用法那几行仍是写给人看的。
 
@@ -380,7 +382,7 @@ type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems: string
 
 ### 主人面的一个入口
 
-主人面的命令都是数据：名字、一句说明、参数表、是否破坏性、是否只给主人、是否只读（可选）、是否配置（可选）、能不能被请（`askable: false`，可选）、`run`。内核自己的二十条在 `owner-commands.ts`、`agent-commands.ts`、`launcher.ts` 和 `request-commands.ts`，都带参数表，和插件的 `OwnerCommand` 同形，只是 `run` 收到整个主人调用（上下文、插件表、环境、是否带授权、怎么问当面确认、怎么读主人另给的值；本机的家目录就是上下文的 `home`），并可交回重开的库。其中十条要一个库（`grant issue`、`grant revoke`、`plugin add`、`plugin remove`、`skill install`、`archive purge`、`agent connect`、`request list`、`request approve`、`request decline`）；十条只动这台机器，有没有库都能跑（`plugin install`、`plugin uninstall`、`plugin list`、`secret set`、`secret list`、`secret remove`、`agent detect`、`agent list`、`agent disconnect`、`launcher install`）：没有库时上下文的 `library` 是 null，没有插件可告诉，不发事件；带着库（比如从界面）时照常在单一出口发事件。
+主人面的命令都是数据：名字、一句说明、参数表、是否破坏性、是否只给主人、是否只读（可选）、是否配置（可选）、能不能被请（`askable: false`，可选）、`run`。内核自己的二十三条在 `owner-commands.ts`、`agent-commands.ts`、`launcher.ts`、`request-commands.ts` 和 `pair-commands.ts`，都带参数表，和插件的 `OwnerCommand` 同形，只是 `run` 收到整个主人调用（上下文、插件表、环境、是否带授权、怎么问当面确认、怎么读主人另给的值；本机的家目录就是上下文的 `home`），并可交回重开的库。其中十三条要一个库（`grant issue`、`grant revoke`、`plugin add`、`plugin remove`、`skill install`、`archive purge`、`agent connect`、`request list`、`request approve`、`request decline`、`pair list`、`pair allow`、`pair decline`）；十条只动这台机器，有没有库都能跑（`plugin install`、`plugin uninstall`、`plugin list`、`secret set`、`secret list`、`secret remove`、`agent detect`、`agent list`、`agent disconnect`、`launcher install`）：没有库时上下文的 `library` 是 null，没有插件可告诉，不发事件；带着库（比如从界面）时照常在单一出口发事件。
 
 - `ownerFace.commands(插件表)` 列出可用的命令：先内核的，后各插件的，按配置次序；名字已被占的不再列，插件盖不住内核的命令。命令行的 `--help` 用它列出主人命令：带 `--library` 或 `@<授权名>` 时是那个库的，否则是内核的。
 - 门：破坏性的和只给主人的，在 agent 的会话里都以 `agent-session` 拒绝；然后按参数表核对；破坏性的再要当面确认。终端里只有输入 `yes` 才算确认；别的回答、输入结束（Ctrl+D）、不在终端里，都以 `not-confirmed` 拒绝。内核自己的命令里，`archive purge` 是破坏性的，`skill install` 和 `plugin list` 谁都能跑，其余只给主人。能被请的命令在 agent 的会话里被拒时，话的最后一行是请主人做它的那条 `ask`（`ownerOnlyRefusal`）；破坏性的和 `askable: false` 的没有这一行。
@@ -408,10 +410,10 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
 
 | 视图 | 在导航里 | 内容 |
 | --- | --- | --- |
-| `home` | 是，第一个 | 首页，界面打开时的那一页。库还没用起来时，最上面是「开始」：一个 `steps` 块，三步，按库的状态算出来，不存任何标记（`start.ts`）。「接上你的 agent」：这台机器上找到的和接上的产品各一行，带记号，接上的标「已接上」，没接上的带「接上」，就是 `agent connect` 那条命令，一下就做，不出表单；一个都没找到时一句话说看了哪里。「放进第一样东西」：库里有没有内核文件以外的文件；一个 `drop` 块，放进 `inbox/`。这两步是内核的。第三步「对你的 agent 说一句」由记账插件给（见下面「插件给首页添东西」），做完的条件是有 agent 在库里留下过事实；内核不认识场景。做完的一步折成一行，写着做成了什么；三步都做完，「开始」就没了。然后是「等你决定」：agent 提的、还在等的请求，然后每个插件 `onAsks` 给的事（`asks` 块），插件的由认知段标题署名，没有就是一句灰字；然后按配置次序放每个插件标了 `home` 的视图的块，默认参数。一个都没有时，一句话说明（没装插件，或装着的插件没给首页添内容），下面是库里的文件。`show home` 印的是同一页，步骤写成 `[✓]` 或 `[ ]` 加标题，做完的跟着做成了什么，没做的下面是它的内容和命令 |
+| `home` | 是，第一个 | 首页，界面打开时的那一页。库还没用起来时，最上面是「开始」：一个 `steps` 块，三步，按库的状态算出来，不存任何标记（`start.ts`）。「接上你的 agent」：这台机器上找到的和接上的产品各一行，带记号，接上的标「已接上」，没接上的带「接上」，就是 `agent connect` 那条命令，一下就做，不出表单；一个都没找到时一句话说看了哪里；这个库的 endpoint 在跑时，下面还有那句可以复制的话（「本机的 endpoint」）。「放进第一样东西」：库里有没有内核文件以外的文件；一个 `drop` 块，放进 `inbox/`。这两步是内核的。第三步「对你的 agent 说一句」由记账插件给（见下面「插件给首页添东西」），做完的条件是有 agent 在库里留下过事实；内核不认识场景。做完的一步折成一行，写着做成了什么；三步都做完，「开始」就没了。然后是「等你决定」：还在等的配对（「<产品> 想接入这个库：允许吗？」，带配对码、为什么、允许会做什么，「允许」可选区域和只读，没有推荐的回答），agent 提的、还在等的请求，然后每个插件 `onAsks` 给的事（`asks` 块），插件的由认知段标题署名，没有就是一句灰字；然后按配置次序放每个插件标了 `home` 的视图的块，默认参数。一个都没有时，一句话说明（没装插件，或装着的插件没给首页添内容），下面是库里的文件。`show home` 印的是同一页，步骤写成 `[✓]` 或 `[ ]` 加标题，做完的跟着做成了什么，没做的下面是它的内容和命令 |
 | `files` | 是 | 库的一个文件夹，参数 `dir`。先文件夹，后东西；内核的文件和归档区不列。文件夹链到下一层；文件和带标记的目录各是一行，链到 `item` 面板，带标记的目录有自己的图标和文件数，不往里走。「从这台机器放进来」把一个文件以带进来的放入（页给不了标准输入，目录从命令行放） |
 | `archive` | 是 | 归档区里的每样东西和它原来的路径，带标记的目录是一行，各带「取回」；整区一个「清空归档区」，先问 |
-| `agents` | 是 | 只给主人。接上的 agent 各一行：记号和产品名；灰的一行写接法（技能或 MCP 服务）、区域（整个库或 `区域 x/`）、只读还是读写、授权名和产品名不同时凭哪份授权、接上时写的东西在不在原处（在时写「写在 …」，不在时是一个警示标签，说哪样不在了），然后是各插件对 `inspect @<授权>` 说的，记账插件说它最近一次来是什么时候、几次会话、放进几样；各带「断开」，先问。一个都没接上时是空状态，指向下面的「接上」。这台机器上找到、还没接上的产品各一行，带记号、接法、写到哪和找到它的迹象，各带「接上」，表单问区域和只读；没找到的产品和看了哪里；接上的 agent 能做什么，分三组，用和 MCP 服务同一条规则从命令表生成：自己能做的（动词，和既不破坏也不只给主人的命令，就是 MCP 服务的工具）、要你来做的（只给主人的命令，agent 用 `ask` 请；请不了的标出来）、红线（破坏性的命令）。`show agents` 印的是同一页 |
+| `agents` | 是 | 只给主人。接上的 agent 各一行：记号和产品名；灰的一行写接法（技能或 MCP 服务）、区域（整个库或 `区域 x/`）、只读还是读写、授权名和产品名不同时凭哪份授权、接上时写的东西在不在原处（在时写「写在 …」，不在时是一个警示标签，说哪样不在了），然后是各插件对 `inspect @<授权>` 说的，记账插件说它最近一次来是什么时候、几次会话、放进几样；各带「断开」，先问。一个都没接上时是空状态，指向下面的「接上」。「让 agent 自己接上」：endpoint 在跑时那句可以复制的话，和这个库最近 20 个配对，各带状态，在等的带「允许」「拒绝」；endpoint 没在跑、也没有过配对时没有这一节。这台机器上找到、还没接上的产品各一行，带记号、接法、写到哪和找到它的迹象，各带「接上」，表单问区域和只读；没找到的产品和看了哪里；接上的 agent 能做什么，分三组，用和 MCP 服务同一条规则从命令表生成：自己能做的（动词，和既不破坏也不只给主人的命令，就是 MCP 服务的工具）、要你来做的（只给主人的命令，agent 用 `ask` 请；请不了的标出来）、红线（破坏性的命令）。`show agents` 印的是同一页 |
 | `config` | 是 | 只给主人。库的位置；这个 pneuma-base 认识的每个插件和库里装了的每个插件，各带版本和一句说明（没有 `summary` 用认知段的标题，同 `plugin list`），装了的带「卸下」，没装的带「装上」，装到这台机器上来的另带「从这台机器卸掉」，插件不肯卸时提示里带「仍然卸下」；「从目录装一个插件到这台机器」；授权，各带为 Claude 或 Codex 生成技能（目录可以写 `~/…`）、撤回；发授权；Codex 要把库加进可写目录的提示；已装插件声明的密钥，各带设没设、「设」和「删掉」。这些按钮的表单都由内核命令的参数表生成 |
 | `item` | 否 | 一样东西，参数 `path`，开在右侧面板，次序固定：先一行说它是什么和一句状态（`文件 · 2.1 KB`，已归档的、是谁的一部分的跟在后面）；每个插件的 `onItemView` 给的一节；「文件」一节是它自己的事实（路径、种类、文件数、大小、改于、指纹）；带标记的目录接着列出里面的文件，各链到自己的 `item`，文件接着是可以折起来的预览。带标记的目录里面的文件说明它是谁的一部分，不给归档。路径上没有东西时说明不在，插件的节照常给。最后是一行动作：归档或取回，没归档的还能挪到别处，然后是各插件节的 `actions`。`_archive/…` 的东西被取回后，面板跟到它原来的路径 |
 
@@ -492,7 +494,7 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
 
 ### 界面的服务
 
-- 只听 127.0.0.1。启动时造一个随机令牌，打印的地址带着它。`/api/*` 每次请求核令牌（查询参数 `token` 或头 `x-pneuma-token`）和 Host（`127.0.0.1:<端口>` 或 `localhost:<端口>`）；`/plugin-ui/*` 只核 Host；网页本身和开发包不核。
+- 只听回环地址，127.0.0.1 和 ::1 的同一个端口，优先 7638（见下面「本机的 endpoint」）。启动时造一个随机令牌，打印的地址带着它。每个请求核 Host（`127.0.0.1:<端口>`、`localhost:<端口>` 或 `[::1]:<端口>`），除了 `/plugin-ui/*` 和开发包都核 Origin；`/api/*` 另核令牌（查询参数 `token` 或头 `x-pneuma-token`）。给 agent 的 `/guide`、`/pair`、`/mcp` 不要令牌，见「本机的 endpoint」。
 - `GET /api/state`：是不是库、库的位置（另有一份把家目录写成 `~` 的，给人看）、视图清单和问题、可用的插件。`GET /api/view?view=&<参数>`。`POST /api/call`：一个 `Call` 加 `confirmed`，答复是结果和一行给人看的话；主人面 `Call` 的 `stdin` 是命令向主人要的值，比如密钥。`GET /api/file?path=`：内容区和归档区的文件原样给出；路径经内核解析，链接跟到底后还要在库里、不在内核的地方，否则 404；HTML 一律当文字给，带 `sandbox` 的 CSP，浏览器不会运行库里的文件。`GET /api/rev`：库里每个名字、大小、修改时间的摘要。`POST /api/init`：把目录建成库。
 - `GET /plugin-ui/<插件名>/<路径>`：这个库装了的插件的 `ui` 目录里的文件，只读。路径的段解码后是空、`.`、`..` 或含斜杠的，链接跟到底不在 `ui` 里面的，没装的插件、没有 `ui` 的插件，都是 404。不要令牌：框架拿着令牌就能绕过对话框直接调 `/api/call`，所以它的地址不带令牌，载入它时也不发 Referer（界面的地址里有令牌）。答复带 `Content-Security-Policy: sandbox allow-scripts; frame-ancestors 'self'`，单独打开也拿不到界面的源；带 `Referrer-Policy: no-referrer`；带 `Access-Control-Allow-Origin: *`，因为沙箱里的框架是不透明的源，模块脚本和字体要 CORS 才载得进来。
 - `GET /plugin-kit/frame.js`、`/plugin-kit/frame.css`：开发包，同样带 CORS。
@@ -510,14 +512,14 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
 - **认知**随连接来：服务的 `instructions` 是库的说明（内核此刻拼出的 `PNEUMA-BASE.md`），前面加六句写给这一面的话：说明里的命令行就是同名的工具、参数相同，`put` 怎么给内容，内容用 `inspect` 加 `content` 读，管理由主人在界面上做，要主人做其中一件用 `ask`（`command` 是那条命令的词和参数）。说明也是一个资源；管理界面导航里不只给主人的每一页也是一个资源，读它得到 `show <编号>` 印的字。
 - **变化**：服务每两秒重读一次工具表、资源表和被订阅的资源，变了就发协议的通知（工具表变了、资源表变了、某个资源更新了）。插件在连着时装上或卸下，三样都会变。
 - **协议**：新旧两代都接。2026-07-28 版每个请求在 `_meta` 里带版本，有 `server/discover`，通知经 `subscriptions/listen` 来，可缓存的结果写 `ttlMs: 0` 和 `cacheScope: 'private'`（库随时在变，答复因授权而异）；更早的版本以 `initialize` 开头，`notifications/initialized` 之后的通知直接发。2026-07-28 版说一条连接不算会话，这里按上面定的仍把一次连接记成一个场景。
-- 协议是自己写的（`src/mcp/server.ts`，约两百五十行），没有用官方的 SDK：命令行的包文件里没有任何第三方依赖，SDK 的服务端连同它要的 zod 解开约 14 MB，工具的输入又是从参数表生成的 JSON Schema，用 SDK 也只剩它的低层接口。传输是参数（`Transport`：收到的每一行，和发一条的办法），HTTP 跟着应用来。仓库的测试用官方 SDK 的客户端（只是开发依赖）分别以两代协议连上它。
+- 协议是自己写的（`src/mcp/server.ts`，约两百五十行），没有用官方的 SDK：命令行的包文件里没有任何第三方依赖，SDK 的服务端连同它要的 zod 解开约 14 MB，工具的输入又是从参数表生成的 JSON Schema，用 SDK 也只剩它的低层接口。传输是参数（`Transport`：收到的每一行，和发一条的办法），HTTP 上的那一种见下面「本机的 endpoint」。仓库的测试用官方 SDK 的客户端（只是开发依赖）分别以两代协议、经标准输入输出和 HTTP 连上它。
 
 ### 接上一个 agent
 
 主人在应用里的主路是：选一个文件夹，把自己的 agent 一个一个接上，开始干活。接上是一条主人命令，断开是它的逆，界面的按钮就是这两条命令：
 
 - `agent detect`：这台机器上有哪些 agent 产品、各能怎么接上。只看程序和文件夹在不在。
-- `agent connect <产品> [--name <授权名>] [--area <子文件夹>] [--read-only] [--via skill|mcp]`：先发授权（缺省以产品命名；这个库里同名、给同一个产品、区域和权限也一样的授权接着用，撞名的拒绝，说用 `--name`），再按产品能用的方式写：读技能的，把技能装进它读技能的目录；不读的，把 MCP 服务 `<本机的命令> @<授权名> mcp` 登记进它的配置。两种都行时装技能，`--via` 改。先看能不能写、再发授权，所以拒绝时什么都没留下。答复说写了什么、写在哪、在那个产品里接着做什么（重启它，或对它说一句话），Codex 另有把库加进可写目录的提示。
+- `agent connect <产品> [--name <授权名>] [--area <子文件夹>] [--read-only] [--via skill|mcp|mcp-http]`：先发授权（缺省以产品命名；这个库里同名、给同一个产品、区域和权限也一样的授权接着用，撞名的拒绝，说用 `--name`），再按产品能用的方式写：读技能的，把技能装进它读技能的目录；不读的，把 MCP 服务 `<本机的命令> @<授权名> mcp` 登记进它的配置。两种都行时装技能，`--via` 改。`--via mcp-http` 登记的是 endpoint 上的地址，表里没有的产品只能这样接，什么都不写（见「本机的 endpoint」）。先看能不能写、再发授权，所以拒绝时什么都没留下。答复说写了什么、写在哪、在那个产品里接着做什么（重启它，或对它说一句话），Codex 另有把库加进可写目录的提示。
 - `agent disconnect <授权名> [--keep-grant]`：拿掉接上时写的，再撤回授权。它只动这台机器，不用指明库；授权在记录里的那个库里撤回，作为那个库的一次操作发事件。
 - `agent list`：接上的 agent，各自的产品、授权、方式、区域、只读与否，接上时写的还在不在，它运行的本机命令在不在、指向的 node 和命令行在不在。
 - `launcher install`：让本机的命令指向现在这个命令行（见下）。
@@ -526,13 +528,15 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
 
 **产品表**（`products.ts`）是关于每个 agent 产品知道的一切的唯一一处：怎么认出它的会话、找它的对话（第 4 节），怎么看出它装在这台机器上，从哪个目录读技能，MCP 服务登记在哪个文件、什么格式、哪个键下，还要告诉主人什么。一个产品一行；没在产品自己的文档或它自己的行为上核过的事实不写，这个产品就少一种接法：
 
-| 产品 | 看出装着 | 技能 | MCP 服务 | 核过的 |
-| --- | --- | --- | --- | --- |
-| `claude-code` | PATH 上的 `claude`；`~/.claude` | `~/.claude/skills/` | `~/.claude.json` 的 `mcpServers`，条目带 `"type": "stdio"` | 技能目录和「当前会话里就看得到」按 Claude Code 的文档；MCP 的文件、键和条目的样子按 `claude mcp add --scope user` 在临时家目录里写出的文件；`claude mcp list` 连得上接上写的条目 |
-| `codex` | PATH 上的 `codex`；`~/.codex` | `~/.agents/skills/` | `~/.codex/config.toml` 的 `[mcp_servers.<名字>]`，环境变量在 `[mcp_servers.<名字>.env]` | 技能目录按 Codex 的文档；表的写法按 `codex mcp add` 在临时家目录里写出的文件；`codex mcp get` 读得出接上写的表 |
-| `claude-desktop` | `~/Library/Application Support/Claude` | 不从目录读技能 | 那个目录里 `claude_desktop_config.json` 的 `mcpServers` | MCP 的文档（modelcontextprotocol.io）：位置、键、条目，要完全退出再打开 |
-| `cursor` | `~/.cursor` | `~/.cursor/skills/` | `~/.cursor/mcp.json` 的 `mcpServers`，条目带 `"type": "stdio"` | Cursor 的文档；文档没写它在 PATH 上的程序名，所以只看文件夹 |
-| `antigravity` | — | — | — | 只认会话 |
+| 产品 | 看出装着 | 技能 | MCP 服务 | 收 URL 的 MCP 条目 | 核过的 |
+| --- | --- | --- | --- | --- | --- |
+| `claude-code` | PATH 上的 `claude`；`~/.claude` | `~/.claude/skills/` | `~/.claude.json` 的 `mcpServers`，条目带 `"type": "stdio"` | 同一个键，条目 `{"type": "http", "url"}` | 技能目录和「当前会话里就看得到」按 Claude Code 的文档；MCP 的文件、键和条目的样子按 `claude mcp add --scope user`（URL 的加 `--transport http`）在临时家目录里写出的文件；`claude mcp list` 连得上接上写的条目 |
+| `codex` | PATH 上的 `codex`；`~/.codex` | `~/.agents/skills/` | `~/.codex/config.toml` 的 `[mcp_servers.<名字>]`，环境变量在 `[mcp_servers.<名字>.env]` | 同一张表，只一行 `url = "…"` | 技能目录按 Codex 的文档；表的写法按 `codex mcp add`（URL 的加 `--url`）在临时家目录里写出的文件；`codex mcp get` 读得出接上写的表，URL 的读成 `streamable_http` |
+| `claude-desktop` | `~/Library/Application Support/Claude` | 不从目录读技能 | 那个目录里 `claude_desktop_config.json` 的 `mcpServers` | 不收 | MCP 的文档（modelcontextprotocol.io）：位置、键、条目，要完全退出再打开 |
+| `cursor` | `~/.cursor` | `~/.cursor/skills/` | `~/.cursor/mcp.json` 的 `mcpServers`，条目带 `"type": "stdio"` | 同一个键，条目 `{"url"}` | Cursor 的文档；文档没写它在 PATH 上的程序名，所以只看文件夹 |
+| `antigravity` | — | — | — | — | 只认会话 |
+
+每个能接上的产品还有一份说明（「本机的 endpoint」），里面手写的「已知的」几句也在产品表里。
 
 **写别的程序的文件**是危险的部分，规矩是：
 
@@ -541,7 +545,7 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
 - 写回时在同一个目录里先写临时名，带原来的权限，再改名；文件是链接时写它指向的那个，链接还是链接。
 - 断开只拿掉自己写的，而且只在它还是写的时候的样子：主人改过的，断开说出来，原样留着。接上之后没人动过那个文件时，断开后的文件和接上前一个字节都不差；接上时造出来的文件和文件夹，空了就删。
 - 写进去的都按绝对路径指名本机的命令 `$PNEUMA_BASE_HOME/bin/pneuma-base`：MCP 条目的 `command` 是它，`args` 是 `@<授权名> mcp`，没有自己的环境变量；技能里的命令行也用它，并说明说明里写 `pneuma-base` 的地方都用这个路径（技能是这台机器的文件，说明是库的，跟着库走，仍写 `pneuma-base`）。所以没有 shell 配置、PATH 上只有系统工具的应用也启动得了。
-- **本机的命令**是一个小脚本：导出它所在的家目录作 `PNEUMA_BASE_HOME`，再 `exec` 一个写明的 node 和一个写明的命令行入口文件。路径从不变，内容由提供命令行的一方保持最新：Mac 应用每次启动时让它指向应用里自带的 node 和命令行；从包装的，`pneuma-base launcher install` 让它指向现在这个命令行（PATH 上的 `node` 就是这个 node 时写 PATH 上的那个：包管理器升级时它不变）。两种都只在内容不同时才写，先写临时名、带上可执行位再改名。`agent connect` 和 `skill install` 在它不在、读不懂、指向的东西不在了或家目录不对时写它，好好的就不动。应用挪了位置或升级了，接上的 agent 不受影响：下次启动应用，命令跟着改；在这之前 `agent list` 说出它指向的东西不在了，再接一次也修好。接上之前写的记录（条目里写 node 和入口文件的）照旧按那两个路径查。
+- **本机的命令**是一个小脚本：导出它所在的家目录作 `PNEUMA_BASE_HOME`，再 `exec` 一个写明的 node 和一个写明的命令行入口文件。路径从不变，内容由提供命令行的一方保持最新：Mac 应用每次启动时让它指向应用里自带的 node 和命令行；从包装的，`pneuma-base launcher install` 让它指向现在这个命令行（PATH 上的 `node` 就是这个 node 时写 PATH 上的那个：包管理器升级时它不变）。两种都只在内容不同时才写，先写临时名、带上可执行位再改名。`agent connect`、`skill install`、`guide` 和 `view`（说明里的命令行都用它）在它不在、读不懂、指向的东西不在了或家目录不对时写它，好好的就不动。应用挪了位置或升级了，接上的 agent 不受影响：下次启动应用，命令跟着改；在这之前 `agent list` 说出它指向的东西不在了，再接一次也修好。接上之前写的记录（条目里写 node 和入口文件的）照旧按那两个路径查。
 - 接两次，第二次什么都不改；断开两次，第二次安静地说没有这个连接。
 
 **授权**在内核里，只有最小的形状：编号、名字、给谁、哪个区域、读还是读写。没配任何授权时，谁都能用整个库。区域是库里的一个子文件夹。
@@ -549,6 +553,26 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
 授权有两处：库的配置里是权威的那份；发给 agent 的那份是它本机的一个小文件，放在 `~/.pneuma-base/grants/<名字>.json`，写着库的位置和授权编号。agent 用 `pneuma-base @<名字> <动词>` 调用，一个名字同时定下是哪个库、是谁。这个文件不是库的状态，丢了重新生成。
 
 **会话和行动者的识别**次序：命令行参数；环境变量；都没有就为这次调用造一个。
+
+### 本机的 endpoint
+
+主人对任何一个 agent 说一句话，它就自己接上：「读一下 http://127.0.0.1:7638/guide，接上我的 Pneuma Base 库。」endpoint 是界面的服务里给 agent 的那一部分，和管理界面同一个进程、同一个端口。它是命令行的又一个面：`/guide` 给的就是 `pneuma-base guide` 印的字，配对就是 `pneuma-base pair`，`/mcp/<授权名>` 就是 `pneuma-base @<授权名> mcp`。两边一样由测试守着：`packages/cli/test/endpoint-story.test.ts` 核对同一段说明、配对走到同一个状态，并把一个 agent 从读说明走到它的场景记在它名下；`mcp-http.test.ts` 核对 MCP 的两种传输列出同样的工具、对同一组调用给同样的答复（`mcp-cases.ts`）。
+
+- **说明**（`guide.ts`）。`pneuma-base guide [<产品>] [--library <库>]` 和 `GET /guide`、`/guide/<产品>`（或 `/guide?for=<产品>`）是同一段 Markdown。通用的一份：这个库是什么，怎么配对，各产品的说明在哪，接上之后读库的说明、用哪条命令，只能接 MCP 的应用用哪个地址。产品表里能接上的产品各一份：怎么接（技能还是 MCP、写在哪）由产品表生成，再加产品行里手写的几句「已知的」（Codex 的沙箱、Claude Code 的 WebFetch 不取本机地址这类）。表里没有的产品拿到通用的那份，名字填进去，接的方式是 MCP。不按 User-Agent 猜是哪个产品：agent 用 shell 里的 curl 来取，curl 的 User-Agent 说不出是谁，所以靠地址里的产品名。命令行没有在跑的服务时，说明里只有命令行的配对。
+- **配对**（`pairing.ts`）。还没接上的 agent 请主人允许：`POST /pair`（`{ "product", "why" }`）或 `pneuma-base pair request <产品> "<为什么>"`，得到配对号和配对码（`NNN-NNN`），把码给自己的用户看。主人在首页「等你决定」里看到「<产品> 想接入这个库：允许吗？」，带着同一个码、那句为什么、允许会做什么（发什么名字的授权：产品名，这台机器上这个名字已经给了别的产品、别的库时是 `<产品>-2`、`-3`……；写什么技能或 MCP 条目；表里没有的产品以 `mcp-http` 接上，什么都不写），点「允许」（可选区域、只读）或「拒绝」。允许就是以主人的身份跑 `agent connect`，接上只有这一个机制。码是把这次请求和主人面前那个 agent 对上的办法：码对不上就不该允许，所以「允许」不是推荐的回答。agent 每隔几秒问 `GET /pair/<号>`（或 `pneuma-base pair status <号>`）：在等、拒绝了、过期了，或接上了：带授权名、它运行的命令、MCP 的地址、接着读什么。主人面的 `pair list [--all]`、`pair allow <号>`、`pair decline <号>` 是同样的事，只给主人，不能被请。
+  - 配对是本机的状态，不是库的：没接上的 agent 在库里还没有身份。放在 `$PNEUMA_BASE_HOME/pairings/`，一个请求一个文件、一个决定一个文件，都以独占创建写一次，第二个决定以 `not-pending` 拒绝。文件都留着：允许的、拒绝的、过期的，`pair list --all` 和 Agent 页都列出来。10 分钟没人回答就过期；同一个产品对同一个库还在等时再请，得到同一个号和码；全机最多 5 个在等。产品名要合授权名的格式；为什么去掉控制字符，不超过 200 个字。允许和拒绝是那个库的操作，照常发事件；请求不是，还没有谁可记。
+  - 这台机器上授权是约定，不是秘密：知道授权名的本机进程都能用它，和命令行的 `@<授权名>` 一样。配对要的不是保密，是主人明确的一句「允许」，和每个 agent 一个自己的名字，记录因此说得出哪个 agent 做了什么。
+- **MCP over HTTP**。`/mcp/<授权名>` 是规范的 streamable HTTP，新旧两代都接，工具出自同一张表，协议是同一份代码：`src/mcp/http.ts` 把 HTTP 请求接到 `serve` 的传输上，界面的服务把它当参数收下（界面不导入命令行）。旧一代（2025-03-26 到 2025-11-25）以 `initialize` 开一条连接，答复带 `Mcp-Session-Id`，一条连接是一个场景，和标准输入输出上一样；`GET` 是这条连接的通知流，`DELETE` 结束它，闲 30 分钟自己结束，最多 32 条。2026-07-28 版没有连接：每个请求一个 POST，`MCP-Protocol-Version`、`Mcp-Method`、`Mcp-Name` 三个头要和正文一致，不一致是 400 和 `-32020`；通知经 `subscriptions/listen` 的 SSE 流来，关掉流就是取消。没有连接，就没有「一次连接」可记成场景，所以地址可以带 `?session=<名字>` 给场景起名，和 `--session` 一样；不带的，每个请求像一次没带会话的命令行调用，记账插件把它并进这个 agent 当天的零散场景。授权解析不了（没有、撤回了、库不在了）时照样经协议答：工具和调用以授权的理由拒绝，和标准输入输出上连着时一样，agent 能告诉用户为什么。
+  - `agent connect <产品> --via mcp-http` 把这个地址写进产品的配置，只给核过它的配置收 URL 的产品（产品表的 `mcpUrl`：Claude Code、Codex、Cursor）。表里没有的产品只能这样接：发授权，什么都不写，答复给地址和标准输入输出的命令，由它自己加进配置。地址里有端口，界面的服务不在跑时连不上；标准输入输出的条目没有这个限制，所以缺省仍是技能和标准输入输出。
+- **端口**。优先 7638，主人每天说的那句话不变；被占了用往后最近的空端口（最多试 20 个），都占了就任意一个。`--port` 写了就只用那一个。每个端口同时听 127.0.0.1 和 ::1，不听通配地址：只听 127.0.0.1 时，别的进程能占住 ::1 的同一个端口，接住解析成 ::1 的 `localhost`。用到的地址写进本机的 `$PNEUMA_BASE_HOME/endpoints/<端口>.json`（地址、进程、服务的库），关掉时删掉，进程不在了的记录不算。`pneuma-base guide --url` 印出它，`pneuma-base view` 在地址那一行下面印出那句话；首页「开始」的第一步和 Agent 页显示它，带复制按钮。`view` 启动时也确保本机的命令在，因为说明里的命令行都用它。
+- **安全**，每条都有测试（`packages/viewer/test/`）：
+  - 只听两个回环地址。
+  - 每个请求核 Host：`127.0.0.1:<端口>`、`localhost:<端口>` 或 `[::1]:<端口>`，别的是 403，挡 DNS 重绑定。页本身和开发包现在也核。
+  - 不许跨源：`Origin` 不是这个服务自己的（`null` 也算），或 `Sec-Fetch-Site` 是 `cross-site`、`same-site`，都是 403。只有 `/plugin-ui/` 和 `/plugin-kit/` 例外：它们给沙箱里的框架（不透明的源）用，本来就带 CORS，只给插件自己的文件。别的答复都不带 `Access-Control-Allow-Origin`。`POST /pair` 和 `POST /mcp` 还要 `content-type: application/json`，浏览器发这种请求先要预检，预检拿不到许可。
+  - 给 agent 的路由碰不到主人的路由。它们在自己的模块里（`agent.ts`），拿不到令牌，不调主人面，lint 守着它不导入 `api.ts` 和内核的几个面；`/mcp/<授权名>` 的行动者是那个授权的 agent，主人命令在主人面的门前以 `agent-session` 拒绝。主人的路由（`/api/*`）在 endpoint 之前就由每次启动造的随机令牌守着，这次没有改：页从自己的地址里拿到它，每次请求带上，按常量时间比较。本机别的进程拿不到它：它只印在服务的标准输出上，应用从管道里读，日志和 endpoint 的记录都不写它。别的网站的页也拿不到它，读不到 `/api` 的答复。
+  - 配对和说明限速，每个服务每分钟：`GET /guide*` 120 次，`POST /pair` 20 次，`GET /pair/*` 240 次，超了是 429，带 `Retry-After`。
+  - 请求体限大小：`POST /pair` 4 KiB，`POST /mcp` 8 MiB，`/api` 1 MiB，超了是 413。
+  - 留下的：这台机器上别的用户能先占住 7638，假冒 endpoint。应用显示的总是实际用到的地址，主人照着说就不会被接走。
 
 ## 7. 认知的拼装
 
@@ -586,6 +610,8 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
 $PNEUMA_BASE_HOME/
   bin/pneuma-base             本机的命令：接上的 agent 按这个路径运行，内容由提供命令行的一方保持最新（第 6 节）
   grants/<名字>.json          发给 agent 的授权副本
+  endpoints/<端口>.json       在跑的界面服务各一份：地址、进程、服务的库；不带令牌，关掉时删（第 6 节「本机的 endpoint」）
+  pairings/<号>.json          agent 的配对请求，<号>.decided.json 是主人的决定；各写一次，都留着
   connections/<授权名>/        agent connect 写进别的程序的东西的记录，和改之前那份文件的副本（before/）
   app/                        Mac 应用自己的小配置和日志（app/README.md）
   plugins/<名字>/              装到这台机器上的插件：index.js、它导入的文件、可选的 ui/
