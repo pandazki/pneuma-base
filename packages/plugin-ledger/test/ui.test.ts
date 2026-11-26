@@ -415,7 +415,8 @@ describe('things nobody registered', () => {
       ['都记为我带进来的', { face: 'owner', command: 'ledger register', args: { positional: [], flags: {} } }],
       ['不登记，不再问', { face: 'owner', command: 'ledger leave', args: { positional: [], flags: {} } }],
     ])
-    expect(sectionNamed(shown(await show('home')).blocks, '需要留意').blocks).toMatchObject([{ kind: 'text', tone: 'neutral' }])
+    // Nothing else to look at, said without claiming the unregistered things match a record.
+    expect(sectionNamed(shown(await show('home')).blocks, '需要留意').blocks).toEqual([{ kind: 'text', tone: 'neutral', text: '没有要留意的：登记过的东西都和记录的一样。' }])
   })
 
   it('registered all at once: each is the owner’s, brought in; the activity has one row for the act; nothing is asked any more', async () => {

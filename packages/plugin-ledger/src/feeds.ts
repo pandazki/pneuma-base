@@ -133,7 +133,7 @@ export function homeAnswer(ledger: Ledger, standing: Standing, me: FactActor, cu
     count: null,
     blocks:
       kinds.length === 0
-        ? [{ kind: 'text', tone: 'neutral', text: '没有要留意的：每样东西都和记录的一样。' }]
+        ? [{ kind: 'text', tone: 'neutral', text: '没有要留意的：登记过的东西都和记录的一样。' }]
         : [{ kind: 'list', items: kinds.map((k) => ({ cell: { text: `${k.count} 样${k.title}`, link: { view: STANDING_VIEW, params: { kind: k.kind }, target: 'main' } }, note: k.note, actions: [] })) }],
     actions: [],
   }
