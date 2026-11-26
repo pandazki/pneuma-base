@@ -76,7 +76,7 @@ describe('an owner-only command', () => {
 
   it('covers the kernel’s grant, plugin, secret, agent and request commands, but not skill install or plugin list', () => {
     const owners = ownerFace.commands([]).filter((c) => c.ownerOnly).map((c) => c.name)
-    expect(owners).toEqual(['grant issue', 'grant revoke', 'plugin add', 'plugin remove', 'archive purge', 'plugin install', 'plugin uninstall', 'secret set', 'secret list', 'secret remove', 'agent detect', 'agent connect', 'agent disconnect', 'agent list', 'request list', 'request approve', 'request decline'])
+    expect(owners).toEqual(['grant issue', 'grant revoke', 'plugin add', 'plugin remove', 'archive purge', 'plugin install', 'plugin uninstall', 'secret set', 'secret list', 'secret remove', 'agent detect', 'agent connect', 'agent disconnect', 'agent list', 'launcher install', 'request list', 'request approve', 'request decline'])
   })
 })
 
@@ -121,7 +121,7 @@ describe('the owner face’s one entry', () => {
     })
     const f = await fixture([shadow])
     const names = ownerFace.commands(f.library.plugins).map((c) => `${c.by}:${c.name}`)
-    const kernel = ['grant issue', 'grant revoke', 'plugin add', 'plugin remove', 'skill install', 'archive purge', 'plugin install', 'plugin uninstall', 'plugin list', 'secret set', 'secret list', 'secret remove', 'agent detect', 'agent connect', 'agent disconnect', 'agent list', 'request list', 'request approve', 'request decline']
+    const kernel = ['grant issue', 'grant revoke', 'plugin add', 'plugin remove', 'skill install', 'archive purge', 'plugin install', 'plugin uninstall', 'plugin list', 'secret set', 'secret list', 'secret remove', 'agent detect', 'agent connect', 'agent disconnect', 'agent list', 'launcher install', 'request list', 'request approve', 'request decline']
     expect(names).toEqual([...kernel.map((n) => `kernel:${n}`), 'shadow:shadow list'])
     expect(await ownerFace.dispatch(call(f), 'shadow list', NO_ARGS)).toMatchObject({ outcome: 'done', text: 'listed' })
     expect(await ownerFace.dispatch(call(f, { confirm: async () => false }), 'archive purge', NO_ARGS)).toMatchObject({ outcome: 'refused', reason: 'not-confirmed' })

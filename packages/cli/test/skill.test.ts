@@ -34,7 +34,7 @@ describe('skill install', () => {
       expect(meta.description?.length).toBeGreaterThan(0)
       expect([...(meta.description ?? '')].length).toBeLessThanOrEqual(1536)
       expect(skill).toContain(`${lib}/PNEUMA-BASE.md`)
-      expect(skill).toContain(`pneuma-base @${grant} start`)
+      expect(skill).toContain(`${join(sb.home, '.pneuma-base', 'bin', 'pneuma-base')} @${grant} start`)
       expect(skill).not.toContain('{{')
 
       const local = JSON.parse(readFileSync(join(sb.home, '.pneuma-base', 'grants', `${grant}.json`), 'utf8'))

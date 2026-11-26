@@ -2,9 +2,8 @@
 // skill in the folder the product loads skills from or an MCP server in its configuration, and a
 // record on this machine of exactly what was written. Built from `grant issue`, `grant revoke` and
 // `skill install`. ARCHITECTURE.md section 6.
-import { realpathSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
-import { delimiter, dirname, join, resolve } from 'node:path'
+import { dirname, join } from 'node:path'
 import { skillText } from './cognition.js'
 import { addJsonEntry, appendToml, canonical, removeToml, replaceJsonEntry, tomlBlock, type ServerCommand } from './config-edit.js'
 import {
@@ -19,13 +18,13 @@ import {
   stateOf,
   undo,
   writeBeside,
-  type CommandLine,
   type Connection,
   type Written,
 } from './connections.js'
 import { exists } from './files.js'
 import { GRANT_NAME } from './grants.js'
 import { command, done, refused, type KernelCommand, type Outcome } from './kernel-command.js'
+import { ensureLauncher, launcherPath, launcherProblems, ranText } from './launcher.js'
 import { openLibrary } from './library.js'
 import type { LibraryCall } from './owner.js'
 import { makeContext, performOwner } from './pipeline.js'
@@ -36,27 +35,10 @@ export const WAY_WORD: Record<Way, string> = { skill: '技能', mcp: 'MCP 服务
 
 const titleOf = (name: string) => productNamed(name)?.title ?? name
 
-/**
- * How this pneuma-base runs from a program that has no shell profile: the node program and the
- * command line's entry file, as they are now. A `node` on PATH that is this same program is written
- * instead of the program's own path, which a package manager may version and drop on the next upgrade.
- */
-function thisCommandLine(env: Env): CommandLine {
-  const real = (path: string) => {
-    try {
-      return realpathSync(path)
-    } catch {
-      return null
-    }
-  }
-  const self = real(process.execPath)
-  const linked = (env.PATH ?? '').split(delimiter).filter((dir) => dir !== '').map((dir) => join(dir, 'node')).find((path) => real(path) === self)
-  return { node: linked ?? process.execPath, entry: resolve(process.argv[1] ?? '') }
-}
-
 const entryName = (grant: string) => `pneuma-base-${grant}`
-const serverCommand = (grant: string, home: string, c: CommandLine): ServerCommand => ({ command: c.node, args: [c.entry, `@${grant}`, 'mcp'], env: { PNEUMA_BASE_HOME: home } })
-const jsonValue = (mcp: McpConfig, s: ServerCommand) => ({ ...(mcp.stdio ? { type: 'stdio' } : {}), command: s.command, args: s.args, env: s.env })
+/** The launcher exports the home it lives in, so the entry needs no environment of its own. */
+const serverCommand = (grant: string, launcher: string): ServerCommand => ({ command: launcher, args: [`@${grant}`, 'mcp'], env: {} })
+const jsonValue = (mcp: McpConfig, s: ServerCommand) => ({ ...(mcp.stdio ? { type: 'stdio' } : {}), command: s.command, args: s.args })
 
 /** Where a way of connecting a product writes, in words, for the grant named. */
 export function whereOf(p: AgentProduct, way: Way, grant: string, env: Env): string {
@@ -79,7 +61,7 @@ async function planSkill({ product, grant, root, call, mine, skillInstall }: Pla
   const skills = join(home, product.skills as string)
   const folder = join(skills, entryName(grant))
   const file = join(folder, 'SKILL.md')
-  const content = skillText(grant, root)
+  const content = skillText(grant, root, launcherPath(call.ctx.home))
   const own = mine?.wrote.kind === 'skill' ? mine.wrote : null
   const current = await readText(file)
   const written = (dirs: string[]): Written => ({ kind: 'skill', file, fingerprint: sha256(content), dirs })
@@ -115,13 +97,13 @@ function pasteInstead(where: string, why: string, snippet: string, grant: string
   return { kind: 'refused', outcome: refused('unreadable-config', `${where} ${why}，没有改它。\n要接上，先发授权：\n  ${issue}\n再把下面这段自己加进去：\n${snippet}`) }
 }
 
-async function planJson({ product, grant, root, call, mine }: Planning, line: CommandLine): Promise<Plan> {
+async function planJson({ product, grant, root, call, mine }: Planning): Promise<Plan> {
   const env = call.env
   const home = homeOf(env)
   const mcp = product.mcp as McpConfig
   const file = join(home, mcp.file)
   const name = entryName(grant)
-  const value = jsonValue(mcp, serverCommand(grant, call.ctx.home, line))
+  const value = jsonValue(mcp, serverCommand(grant, launcherPath(call.ctx.home)))
   const fingerprint = sha256(canonical(value))
   const own = mine?.wrote.kind === 'json' ? mine.wrote : null
   const text = await readText(file)
@@ -143,16 +125,16 @@ async function planJson({ product, grant, root, call, mine }: Planning, line: Co
   }
 }
 
-async function planToml({ product, grant, root, call, mine }: Planning, line: CommandLine): Promise<Plan> {
+async function planToml({ product, grant, root, call, mine }: Planning): Promise<Plan> {
   const home = homeOf(call.env)
   const mcp = product.mcp as McpConfig
   const file = join(home, mcp.file)
   const name = entryName(grant)
-  const block = tomlBlock(mcp.key, name, serverCommand(grant, call.ctx.home, line))
+  const block = tomlBlock(mcp.key, name, serverCommand(grant, launcherPath(call.ctx.home)))
   const own = mine?.wrote.kind === 'toml' ? mine.wrote : null
   const text = await readText(file)
   const where = tilde(file, home)
-  // Ours, unchanged, written with a command line that has moved since: take it out, then append it anew.
+  // Ours, unchanged, written with another command (before the launcher): take it out, then append it anew.
   const base = own !== null && text !== null && !text.includes(block) ? removeToml(text, own.appended) : null
   const added = appendToml(base ?? text, mcp.key, name, block)
   switch (added.outcome) {
@@ -191,6 +173,13 @@ export type ConnectionFacts = {
 
 const STATE_WORD = { changed: '被改过', gone: '不在了', unreadable: '所在的文件读不懂了' } as const
 
+/** What is wrong with what a connection runs: the launcher, or the node and entry file a record from before it names. */
+async function commandProblems(c: Connection['command']): Promise<string[]> {
+  if (c === null) return []
+  if ('launcher' in c) return launcherProblems(c.launcher)
+  return [...((await exists(c.node)) ? [] : [`node 不在了（${c.node}）`]), ...((await exists(c.entry)) ? [] : [`命令行不在了（${c.entry}）`])]
+}
+
 /** The connections recorded on this machine, those of the library at `root` when one is given, each checked against what is on disk now. */
 export async function connectionFacts(home: string, env: Env, table: PluginTable, root: string | null): Promise<ConnectionFacts[]> {
   const libraries = new Map<string, Library | null>()
@@ -204,8 +193,7 @@ export async function connectionFacts(home: string, env: Env, table: PluginTable
     const problems = [
       ...(state === 'in-place' ? [] : [`接上时写的${STATE_WORD[state]}`]),
       ...(library === null ? ['库不在了'] : grant === null ? ['授权已撤回'] : []),
-      ...(c.command !== null && !(await exists(c.command.node)) ? [`node 不在了（${c.command.node}）`] : []),
-      ...(c.command !== null && !(await exists(c.command.entry)) ? [`命令行不在了（${c.command.entry}）`] : []),
+      ...(await commandProblems(c.command)),
     ]
     out.push({ grant: c.grant, product: c.product, title: titleOf(c.product), library: c.library, way: c.way, area: grant?.area ?? null, readOnly: grant?.readOnly ?? null, where: wroteText(c.wrote, homeOf(env)), inPlace: problems.length === 0, problems })
   }
@@ -275,9 +263,8 @@ export function agentCommands({ grantIssue, grantRevoke, skillInstall }: Base): 
         if (mine !== null && (mine.product !== product.name || mine.library !== library.root || mine.way !== way)) {
           return refused('name-taken', `授权名 ${grant} 已经用来把 ${titleOf(mine.product)}（${WAY_WORD[mine.way]}）接到 ${mine.library}。先 pneuma-base agent disconnect ${grant}，或用 --name 另起一个授权名。`)
         }
-        const line = way === 'mcp' ? thisCommandLine(call.env) : null
         const planning: Planning = { product, grant, root: library.root, call, mine, skillInstall: install }
-        const plan = line === null ? await planSkill(planning) : product.mcp?.format === 'toml' ? await planToml(planning, line) : await planJson(planning, line)
+        const plan = way === 'skill' ? await planSkill(planning) : product.mcp?.format === 'toml' ? await planToml(planning) : await planJson(planning)
         if (plan.kind === 'refused') return plan.outcome
 
         const reused = library.config.grants.some((g) => g.name === grant)
@@ -288,19 +275,25 @@ export function agentCommands({ grantIssue, grantRevoke, skillInstall }: Base): 
         const bound: LibraryCall = { ...call, ctx: { ...call.ctx, library: updated } }
         const home = homeOf(call.env)
         const grantLine = `授权：${grant}（${reused ? '已有的，接着用' : '新发的'}），${accessText(given)}`
-        if (plan.kind === 'same' && mine !== null && mine.grantId === given.id) return done(`${product.title} 已经接上了，什么都没改。\n${grantLine}\n写着：${wroteText(plan.written, home)}`, { connection: mine }, updated)
+        const launcher = await ensureLauncher(call.ctx.home, call.env)
+        const launcherLine = launcher.changed ? [ranText(launcher)] : []
+        if (plan.kind === 'same' && mine !== null && mine.grantId === given.id) {
+          const head = launcher.changed ? `${product.title} 已经接上了，接上时写的没有改，命令修好了。` : `${product.title} 已经接上了，什么都没改。`
+          return done([head, grantLine, `写着：${wroteText(plan.written, home)}`, ...launcherLine].join('\n'), { connection: mine }, updated)
+        }
 
         const written = plan.kind === 'same' ? plan.written : await plan.write(bound)
-        const connection: Connection = { format: 1, grant, grantId: given.id, product: product.name, library: library.root, way, at: call.ctx.now, wrote: written, command: line }
+        const connection: Connection = { format: 1, grant, grantId: given.id, product: product.name, library: library.root, way, at: call.ctx.now, wrote: written, command: { launcher: launcher.launcher.path } }
         await saveConnection(call.ctx.home, connection)
         const before = plan.kind === 'write' && plan.changes !== null ? [`改之前的那份留在：${tilde(join(call.ctx.home, 'connections', grant, 'before'), home)}/`] : []
-        const command = line === null ? [] : [`它运行：${line.node} ${line.entry} @${grant} mcp`]
+        const command = way === 'mcp' ? [`它运行：${launcher.launcher.path} @${grant} mcp`] : []
         const notice = way === 'skill' && product.notice ? [product.notice(library.root)] : []
         const lines = [
           `已把 ${product.title} 接到这个库（${WAY_WORD[way]}）。`,
           grantLine,
           `${plan.kind === 'same' ? '写着' : '写了'}：${wroteText(written, home)}`,
           ...command,
+          ...launcherLine,
           ...before,
           `接着：${product.next?.[way] ?? ''}`,
           ...notice,

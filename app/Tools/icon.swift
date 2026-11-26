@@ -1,4 +1,4 @@
-// Draws the spike's app icon and writes it as an .icns file: swift Tools/icon.swift <out.icns>
+// Draws the app icon and writes it as an .icns file: swift Tools/icon.swift <out.icns>
 import AppKit
 
 let out = URL(fileURLWithPath: CommandLine.arguments[1])
