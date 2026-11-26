@@ -1,0 +1,22 @@
+{
+  "name": "pneuma-base-plugin-pulse",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pneuma Base 插件 pulse",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "tsc && node scripts/build.mjs",
+    "test": "npm run build && node --test --test-reporter=spec \"test/*.test.ts\"",
+    "install-local": "npm run build && pneuma-base plugin install dist"
+  },
+  "devDependencies": {
+    "@pneuma-base/sdk": "file:../../dist-packages/pneuma-base-sdk-0.9.0.tgz",
+    "pneuma-base": "file:../../dist-packages/pneuma-base-0.9.0.tgz",
+    "esbuild": "0.28.2",
+    "typescript": "6.0.3",
+    "@types/node": "26.6.10"
+  }
+}

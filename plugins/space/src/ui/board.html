@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <!--
+      The board: a card per switched-on site with a small live preview, then the switched-off ones.
+      Data comes from views.ts (BoardData); each switch runs the block's action of the same key, so
+      the management UI confirms and reports it as it does for any button. Colours are the UI's tokens.
+      pneuma.onData, run and open, the classes and the tokens are typed in @pneuma-base/sdk/frame.
+    -->
+    <link rel="stylesheet" href="/plugin-kit/frame.css" />
+    <script src="/plugin-kit/frame.js"></script>
+    <style>
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+        gap: 12px;
+      }
+      .site {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .shot {
+        position: relative;
+        aspect-ratio: 16 / 10;
+        overflow: hidden;
+        background: var(--field);
+        box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--ink-3) 20%, transparent);
+        cursor: pointer;
+      }
+      .shot iframe {
+        position: absolute;
+        inset: 0 auto auto 0;
+        width: 1200px;
+        height: 750px;
+        border: 0;
+        transform-origin: 0 0;
+        pointer-events: none;
+        background: white;
+      }
+      .shot .blank {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+      }
+      .body {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 10px 12px 12px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+      .grow {
+        flex: 1;
+        min-width: 0;
+      }
+      .name {
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .address {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 12px;
+      }
+      .stats {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--ink-2);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      .spark {
+        display: block;
+        flex: none;
+      }
+      .spark .line {
+        fill: none;
+        stroke: var(--ink-3);
+        stroke-width: 1.5;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+      }
+      .spark .now {
+        fill: var(--accent);
+      }
+      .spark rect {
+        fill: transparent;
+      }
+      .spark rect:hover {
+        fill: color-mix(in srgb, var(--ink-3) 18%, transparent);
+      }
+      h3 {
+        margin: 18px 0 8px;
+        color: var(--ink-2);
+        font-weight: 500;
+      }
+      .off {
+        display: flex;
+        flex-direction: column;
+      }
+      .off .row {
+        padding: 8px 12px;
+      }
+      .off .row + .row {
+        box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ink-3) 18%, transparent);
+      }
+      .empty {
+        padding: 18px 0 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="grid" id="cards"></div>
+    <p class="empty muted" id="none" hidden>还没有打开开关的站点。</p>
+    <section id="offs" hidden>
+      <h3>开关关着的</h3>
+      <div class="card off" id="off"></div>
+    </section>
+    <script>
+      const PREVIEW_WIDTH = 1200
+      const el = (tag, attrs = {}, ...children) => {
+        const node = document.createElement(tag)
+        for (const [k, v] of Object.entries(attrs)) if (v !== null && v !== undefined) node.setAttribute(k, v)
+        node.append(...children.filter((c) => c !== null && c !== undefined))
+        return node
+      }
+      const tag = (t) => el('span', { class: `tag tone-${t.tone}` }, t.text)
+      const clock = (ms) => new Date(ms).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+      const switchButton = (action, label) => {
+        const b = el('button', { class: 'btn', type: 'button' }, label)
+        b.addEventListener('click', () => pneuma.run(action))
+        return b
+      }
+
+      /** 24 hourly counts, oldest first: a line in the muted ink, this hour's point in the accent, each hour's count on hover. */
+      function sparkline(series) {
+        const w = 96
+        const h = 22
+        const max = Math.max(1, ...series)
+        const step = (w - 6) / (series.length - 1)
+        const x = (i) => (3 + i * step).toFixed(1)
+        const y = (v) => (h - 3 - (v / max) * (h - 6)).toFixed(1)
+        const ns = 'http://www.w3.org/2000/svg'
+        const svg = document.createElementNS(ns, 'svg')
+        svg.setAttribute('class', 'spark')
+        svg.setAttribute('width', w)
+        svg.setAttribute('height', h)
+        svg.setAttribute('viewBox', `0 0 ${w} ${h}`)
+        svg.setAttribute('role', 'img')
+        svg.setAttribute('aria-label', `过去 24 小时每小时的请求：${series.join('、')}`)
+        const line = document.createElementNS(ns, 'polyline')
+        line.setAttribute('class', 'line')
+        line.setAttribute('points', series.map((v, i) => `${x(i)},${y(v)}`).join(' '))
+        svg.append(line)
+        const hour = Math.floor(Date.now() / 3600000) * 3600000
+        series.forEach((v, i) => {
+          const r = document.createElementNS(ns, 'rect')
+          r.setAttribute('x', (3 + (i - 0.5) * step).toFixed(1))
+          r.setAttribute('width', step.toFixed(1))
+          r.setAttribute('height', h)
+          const t = document.createElementNS(ns, 'title')
+          t.textContent = `${new Date(hour - (series.length - 1 - i) * 3600000).getHours()} 点起：${v} 次`
+          r.append(t)
+          svg.append(r)
+        })
+        const dot = document.createElementNS(ns, 'circle')
+        dot.setAttribute('class', 'now')
+        dot.setAttribute('cx', x(series.length - 1))
+        dot.setAttribute('cy', y(series[series.length - 1]))
+        dot.setAttribute('r', 2.5)
+        svg.append(dot)
+        return svg
+      }
+
+      /** The preview keeps its frame across refreshes and reloads only when the address or the release changed. */
+      const previews = new Map()
+      function preview(card) {
+        const src = card.url && `${card.url}?release=${card.release ?? 0}`
+        let shot = previews.get(card.key)
+        if (!shot) {
+          shot = el('div', { class: 'shot' })
+          shot.addEventListener('click', () => shot.dataset.url && pneuma.open(shot.dataset.url))
+          new ResizeObserver(() => {
+            const frame = shot.querySelector('iframe')
+            if (frame) frame.style.transform = `scale(${shot.clientWidth / PREVIEW_WIDTH})`
+          }).observe(shot)
+          previews.set(card.key, shot)
+        }
+        if (shot.dataset.src !== (src ?? '')) {
+          shot.dataset.src = src ?? ''
+          shot.dataset.url = card.url ?? ''
+          const frame = src
+            ? el('iframe', { src, title: `${card.path} 的线上页面`, loading: 'lazy', sandbox: 'allow-scripts', tabindex: '-1', referrerpolicy: 'no-referrer' })
+            : el('div', { class: 'blank' }, tag(card.state))
+          if (src) frame.style.transform = `scale(${(shot.clientWidth || 232) / PREVIEW_WIDTH})`
+          shot.replaceChildren(frame)
+        }
+        return shot
+      }
+
+      function siteCard(card) {
+        const online = card.state.tone === 'good'
+        const address = card.url ? el('button', { class: 'link mono address', type: 'button', title: card.url }, card.url) : el('span', { class: 'mono address faint' }, card.site ?? '—')
+        if (card.url) address.addEventListener('click', () => pneuma.open(card.url))
+        const requests = card.requests === null ? null : el('span', {}, `${card.requests} 次请求${card.errors ? ` · 错 ${card.errors}` : ''}`)
+        const stats = el(
+          'div',
+          { class: 'stats' },
+          card.release === null ? null : el('span', {}, `第 ${card.release} 版`),
+          requests,
+          card.spark ? sparkline(card.spark) : null,
+        )
+        const seen = el('span', { class: 'faint grow' }, card.lastAccessAt === null ? (online ? '没人访问过' : '') : `最近访问 ${clock(card.lastAccessAt)}`)
+        return el(
+          'article',
+          { class: 'card site' },
+          preview(card),
+          el(
+            'div',
+            { class: 'body' },
+            el('div', { class: 'row' }, el('span', { class: 'name grow', title: card.path }, card.path), online ? null : tag(card.state)),
+            address,
+            stats,
+            el('div', { class: 'row' }, seen, switchButton(card.key, '关上')),
+          ),
+        )
+      }
+
+      pneuma.onData((data) => {
+        document.getElementById('cards').replaceChildren(...data.cards.map(siteCard))
+        document.getElementById('none').hidden = data.cards.length > 0
+        document.getElementById('offs').hidden = data.off.length === 0
+        document.getElementById('off').replaceChildren(
+          ...data.off.map((o) => el('div', { class: 'row' }, el('span', { class: 'mono grow name' }, o.path), tag(o.state), switchButton(o.key, '打开'))),
+        )
+        for (const key of [...previews.keys()]) if (!data.cards.some((c) => c.key === key)) previews.delete(key)
+      })
+    </script>
+  </body>
+</html>

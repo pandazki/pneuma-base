@@ -1,0 +1,24 @@
+{
+  "name": "pneuma-base-plugin-links",
+  "version": "0.1.0",
+  "description": "检查 Pneuma Base 库里的 Markdown 和 HTML 相对链接",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "tsc && node scripts/build.mjs",
+    "test": "npm run build && node scripts/test.mjs",
+    "install-local": "npm run build && pneuma-base plugin install dist"
+  },
+  "devDependencies": {
+    "@pneuma-base/sdk": "file:../../dist-packages/pneuma-base-sdk-0.9.0.tgz",
+    "pneuma-base": "file:../../dist-packages/pneuma-base-0.9.0.tgz",
+    "@types/node": "26.6.10",
+    "esbuild": "0.28.2",
+    "typescript": "6.0.3",
+    "mdast-util-from-markdown": "^2.0.0",
+    "parse5": "^7.0.0"
+  }
+}

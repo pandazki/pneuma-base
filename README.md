@@ -78,6 +78,8 @@ pnpm lint         # lint，含包之间的导入方向
 pnpm test         # 单元测试和命令行的端到端测试（vitest）
 pnpm test:e2e     # 界面的端到端测试（Playwright，用本机的 Chrome）
 pnpm test:slow    # 脚手架和 PLUGINS.md 的五分钟：生成插件项目，装依赖、构建、跑它们自己的测试、装进库（要联网装 esbuild、typescript）
+
+三个照这份规范在仓库外做出来的插件在 [`plugins/`](plugins/)：部署到 PneumaSpace 的 `space`，和两个由没有任何上下文的 agent 做的 `links`、`pulse`。它们也是契约的回归测试。
 ```
 
 测试都用临时目录和临时的 `PNEUMA_BASE_HOME`，不碰 `~/.pneuma-base`；除了 `pnpm test:slow` 从 npm 装生成项目的开发依赖，都不联网。`scripts/agent-relay/` 和 `scripts/agent-site/` 用真的 Claude 和 Codex 走一遍故事，会花主人的模型额度，不在 `pnpm test` 里。
