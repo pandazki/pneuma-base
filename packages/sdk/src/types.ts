@@ -58,10 +58,11 @@ export type Library = {
 export type Context = { library: Library; actor: Actor; session: Session; now: Instant; home: string }
 
 /**
- * The context a plugin's hook receives: the operation's context, the plugin's own directory in the
- * library, its cache directory outside the library (`<home>/cache/<library id>/<plugin>/`), the
- * kernel's helpers bound to the library, and its credentials on this machine. The own directory
- * exists whenever a hook runs. The kernel does not create the cache directory; deleting it must lose nothing.
+ * The context a plugin's hook receives: the operation's context, where the plugin's own area in the
+ * library is (`dir`, for contract 1, which writes there itself and makes it first; a plugin of
+ * contract 2 reaches it through `tools.storage.own`), its cache directory outside the library
+ * (`<home>/cache/<library id>/<plugin>/`), the kernel's helpers bound to the library, and its
+ * credentials on this machine. The kernel creates neither directory; deleting the cache must lose nothing.
  */
 export type PluginContext = Context & { dir: string; cacheDir: string; tools: PluginTools; secrets: PluginSecrets }
 

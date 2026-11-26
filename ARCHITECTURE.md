@@ -38,7 +38,9 @@
 | 块 | 视图的组成单位：分节、记录表、字段组、列表、时间线、文字、预览、动作、空状态、库外的页面、插件自己画的页。块上挂的动作是 agent 面的一个动词或一条主人面命令 |
 | 认知段 | 一个插件拼进说明的那一段话 |
 | 本体、缓存 | 插件对自己名下每个目录的声明。本体跟着文件夹走；缓存不同步，删了能重建 |
-| 存储 | 库最底下的一层，程序 `pneuma-base-core`（`core/`）：看库的文件夹，存每个记录处的事实和行。内核是它唯一的调用方，插件经 `tools.storage` 用它 |
+| 存储 | 库最底下的一层，程序 `pneuma-base-core`（`core/`）：看和写库的文件夹，存每个记录处的事实和行，读写库根的声明。内核是它唯一的调用方，插件经 `tools.storage` 用它 |
+| 令牌 | 存储对一个位置此刻状态的不透明标记。一样东西靠它认：令牌没变就是没变。内核和插件只存着、交回去，比较由存储做 |
+| 指纹 | 内容的 sha256，目录条目按内容规则算（第 4 节「一个目录算一样东西」）。只在内容经过内核、要判一处差别或有人要时才读，所以一样东西可以没有指纹 |
 | 噪音 | 库根的 `.pneuma-base/noise.json` 声明的名字和路径。存储从不报告、不进入它们 |
 | 打开的目录 | 任意深处有登记过的东西的目录，库根总是。另两种：整个登记成一样东西的目录；关着的目录，其余的，只算上一层的一项，从不打开。三种都由记录推出，不存 |
 | 留存 | 记账插件替主人留下的、被新内容换下的旧内容。给主人的保险，只有主人取回 |
@@ -60,8 +62,8 @@ packages/cli ──▶ packages/viewer ──▶ packages/kernel ◀── packa
 | 包 | 职责 | 不许 |
 | --- | --- | --- |
 | `packages/sdk` | 插件契约（`@pneuma-base/sdk`）：全部类型、契约版本 `CONTRACT`、`definePlugin`、`defineCommand`，从命令的参数表生成用法和表单的 `usageOf`、`formOf`，和插件自己造带品牌的值用的 `pluginName`、`instant`、`PLUGIN_NAME`、`SECRET_NAME`，插件不能用的名字 `KERNEL_COMMAND_NAMES`、`RESERVED_PLUGIN_NAMES`，这一版的版本号 `PNEUMA_BASE_VERSION`。另一个入口 `@pneuma-base/sdk/kit` 是插件打进自己包里的库：只新增文件的记录库 `recordStore`、配置文件助手 `configFile`、部署库 `deployPlugin` 和写目标用的 `defineTarget`（第 13 节）。第三个入口 `@pneuma-base/sdk/testkit` 是测试工具和符合性检查（第 5 节「写一个库外的插件」）。库外的插件只依赖它 | 导入内核、命令行、界面或任何插件；含内核的逻辑（内核的工具经上下文的 `tools` 给，库也只用 `tools`） |
-| `packages/kernel` | 打开库、解析配置、识别行动者和会话、七个动词的管线、请求、授权的门、事件、认知的拼装、技能的生成、接上和断开 agent 产品（产品表）、给 agent 的说明和配对、装载和安装库外的插件、本机的密钥、存储的门（`storage.ts`）、目录的三种（`places.ts`）、噪音的命令。依赖 sdk，并把它原样再导出 | 依赖 sdk 以外的任何包；认识任何插件的事实或目录 |
-| `core/` | 存储：Rust 的 cargo 工作区。`storage` 是抽象（`Storage` trait，不认识文件系统），`local` 是本地文件夹的实现，`cli` 是程序 `pneuma-base-core`（单次操作，或 `serve`：每行一个请求、一个答复），它的测试 `core/cli/tests/` 只经程序走，是契约的测试；`bench` 量存储的目标。线上的形式在 `core/README.md`：看内容的 `glance`、`overview`、`probe`、`look`，记录处的事实（`facts.append`、`facts.since`）和行（`rows.*`），噪音和 `init`。这一步只建了看内容和记录的操作，写内容的还没有 | 被内核以外的东西调用（内核唯一的门是 `packages/kernel/src/storage.ts`，插件经 `tools.storage`）；懂事实和行的意思；答复里写给人看的句子；跟着库里的链接走；报告或进入噪音 |
+| `packages/kernel` | 打开库、解析配置、识别行动者和会话、七个动词的管线、请求、授权的门、事件、认知的拼装、技能的生成、接上和断开 agent 产品（产品表）、给 agent 的说明和配对、装载和安装库外的插件、本机的密钥、存储的门（`storage.ts`）、目录的三种（`places.ts`）、变化的游标（`changes.ts`）、噪音的命令。依赖 sdk，并把它原样再导出 | 依赖 sdk 以外的任何包；认识任何插件的事实或目录；不经存储读写库的文件夹或记录区 |
+| `core/` | 存储：Rust 的 cargo 工作区。`storage` 是抽象（`Storage` trait，不认识文件系统），`local` 是本地文件夹的实现，`cli` 是程序 `pneuma-base-core`（单次操作，或 `serve`：每行一个请求、一个答复），它的测试 `core/cli/tests/` 只经程序走，是契约的测试；`bench` 量存储的目标。线上的形式在 `core/README.md`：看内容的 `glance`、`overview`、`probe`、`look`、`changed`，读写内容的 `content`、`read`、`write`（带预期；来源可以是库里的一个位置，那就是复制）、`move`、`remove`，占位的 `hold`、`release`，记录处的事实（`facts.append`、`facts.since`）、行（`rows.*`）和它自己的地方，库根的声明（`declaration.read`、`declaration.write`），噪音和 `init` | 被内核以外的东西调用（内核唯一的门是 `packages/kernel/src/storage.ts`，插件经 `tools.storage`）；懂事实和行的意思；答复里写给人看的句子；跟着库里的链接走；报告或进入噪音 |
 | `packages/plugin-ledger` | 记账与对账：事实、场景、条目、对账、来历、过期、变化，留存（第 10 节） | 读写别的插件的目录；绕过内核的公开接口；导入别的插件 |
 | `packages/plugin-version` | 版本：声明了有版本的东西，每一版都留着（第 11 节） | 同上 |
 | `packages/plugin-sync` | 同步：库和一个目标双向同步，不合并、不丢内容（第 12 节） | 同上 |
@@ -72,7 +74,7 @@ packages/cli ──▶ packages/viewer ──▶ packages/kernel ◀── packa
 
 插件只经契约的类型和上下文对象接触内核：自带的插件从 `packages/kernel` 导入（它再导出 sdk），部署插件和库外的插件只依赖 `packages/sdk`，运行时不导入内核，要用内核的工具就用上下文的 `tools`。插件之间不直接调用，也不互相导入。内核不导入界面，界面不导入任何插件，sdk 不导入内核、命令行、界面和任何插件；lint 的导入规则守这几条，`packages/kernel/test/dependency-direction.test.ts` 在故意违反的例子上看它们变红。
 
-重建在存储上的文件列在 `eslint.config.js` 的 `ON_STORAGE` 里（内核的、记账插件的、界面服务的 `api.ts`），它们只经存储的门读库的文件夹和记录区：不导入 `node:fs`，不用内核里直接读文件夹的助手（`thingAt`、`libraryFiles`、`fingerprintOf` 这些），不用 `tools` 的 `abs`、`thing`、`things`、`files`、`copyOut`、`manifest`。每一步把挪到存储上的文件加进去。`packages/kernel/test/storage-door.test.ts` 在故意违反的例子上看这条变红。
+内核和记账插件只经存储的门读写库的文件夹和记录区（K10）。lint 守着：`packages/kernel/src` 和 `packages/plugin-ledger/src` 下的文件不导入 `node:fs`、`node:child_process`；内核的文件不导入 `machine-files.ts`，不用 `paths.ts` 的 `abs`、`canonical`；记账插件不从内核取直接碰文件夹的助手（`abs`、`thingAt`、`fingerprintOf` 这些）；两边都不用 `tools` 的第 1 版工具（第 5 节「上下文里的工具」）。`eslint.config.js` 的 `OFF_STORAGE` 列出可以用文件系统的几个文件，各写着为什么，它们碰的都不是库的文件夹和记录区：门本身（`storage.ts`：起存储的程序，找它在哪）；存储能答之前的库的地址（`address.ts`：调用方写的文件夹的真实路径，`init` 建的文件夹）；调用方写的绝对路径经链接解析成库内路径（`paths.ts`）；放的来源在库外（`outside.ts`：它的种类、大小、sha256）；第 1 版的兼容层（`contract-v1.ts`：库外文件的 sha256，`copyOut` 写到的库外目录）；包自己的文字（`cognition.ts`）；本机 `$PNEUMA_BASE_HOME` 下的状态（授权、endpoint、配对、密钥、插件、启动器、连接的记录）；agent 产品的配置、技能目录和对话；主人命令写到主人指定处的技能文件；记账插件读 agent 的对话记录（`conversation.ts`）。`packages/kernel/test/storage-door.test.ts` 在故意违反的例子上看这条变红，也看这几个文件不被拦。
 
 运行时是 Node，语言是 TypeScript，包管理用 pnpm 的工作区，测试用 vitest。存储 `core/` 是 Rust：`pnpm build` 先构建它（`build:core`，`cargo build --release`）；CI 的 `ci.yml` 为此装 Rust 工具链，`core.yml` 在 `core/` 变了时跑它的格式检查、clippy 和测试。
 
@@ -135,48 +137,68 @@ type PutRequest =   // note：一句话，说这次放入改了什么
   | { kind: 'place'; from: string | 'stdin'; to: LibraryPath; origin: Origin; note?: string | null }   // 从库外的文件、目录或标准输入放进来
   | { kind: 'move'; from: LibraryPath; to: LibraryPath }                                               // 在库里挪位置
 
-type PutResult =
-  | { outcome: 'accepted'; path: LibraryPath; fingerprint: Fingerprint; copied: boolean
+type PutResult =   // fingerprint：内容经过内核时才有，登记和挪是 null
+  | { outcome: 'accepted'; path: LibraryPath; fingerprint: Fingerprint | null; copied: boolean
       notes: Note[]; problems: PluginProblem[] }
-  | { outcome: 'refused'; reason: 'outside-library' | 'outside-grant' | 'no-such-file' | 'would-overwrite' | 'inside-bundle' | 'agent-session'; notes: Note[] }
+  | { outcome: 'refused'; reason: 'outside-library' | 'outside-grant' | 'no-such-file' | 'would-overwrite' | 'inside-bundle' | 'agent-session' | 'noise' | 'busy' | 'too-many'
+      subject: string; notes: Note[]; problems: PluginProblem[] }
 ```
 
 **看到的和说的。** 应用会把主人用 Finder 复制进库的文件自动登记成「主人带进来的」。这是看到的，不是谁说的，可能看错：比如 agent 违反说明直接写了文件。所以登记可以带 `observed`（命令行 `put <库内路径> --brought --by owner --observed`）：只有主人能这样放，行动者是 agent 时以 `agent-session` 拒绝，agent 只说来历，不替主人「看到」。`onPut` 收到的 `AcceptedPut` 带着它。记成什么、谁能更正，归记账插件（第 10 节）。
 
-内核自己能看到的是「东西」：一个普通文件，或一个带标记的目录（见下一小节「一个目录算一样东西」）。全化表里「同类」指和放进来的东西同一类：文件对文件，带标记的目录对带标记的目录；「另一类」是另一类的东西，或既不是文件也不是目录的东西。
+内核自己能看到的是「东西」：一个普通文件，或一个带标记的目录（见下一小节「一个目录算一样东西」）。全化表里「同类」指和放进来的东西同一类：文件对文件，带标记的目录对带标记的目录；「另一类」是另一类的东西，或既不是文件也不是目录的东西。每次改动都是存储的一次带预期的写或挪（`put.ts`）：
 
-| 请求 ＼ 目标 | 在库外或授权区域外 | 在带标记的目录里面 | 不存在 | 同类，内容相同 | 同类，内容不同 | 没标记的目录 | 另一类 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 登记 | 拒绝 | 拒绝 | 拒绝：没有这个文件 | 接受（登记的是目标本身的当前内容） | 不适用 | 写标记，它从此是一样东西，接受 | 拒绝：没有这个文件 |
-| 放入文件或标准输入 | 拒绝 | 拒绝 | 复制，接受 | 不复制，接受 | 有插件留住旧内容：换上新的。没有：拒绝，目标不动 | 拒绝：那是个文件夹，里面可能有别的东西 | 拒绝 |
-| 放入库外的目录 | 拒绝 | 拒绝 | 复制整棵树，写标记，接受 | 不复制，接受 | 有插件留住旧内容：整棵换掉。没有：拒绝，目标不动 | 拒绝：那是个文件夹，里面可能有别的东西 | 拒绝 |
-| 挪 | 拒绝 | 拒绝 | 挪过去，整个目录一起，接受 | 拒绝 | 拒绝 | 拒绝 | 拒绝 |
+| 请求 ＼ 目标 | 在库外或授权区域外 | 在带标记的目录里面 | 噪音 | 不存在 | 同类，内容相同 | 同类，内容不同 | 没标记的目录 | 另一类 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 登记 | 拒绝 | 拒绝 | 拒绝 | 拒绝：没有这个文件 | 接受：看一眼它现在的样子，不读内容（登记的东西就是目标本身，所以同类只有这一格） | 不适用 | 关着的：写标记，整个登记成一样东西，接受，不读内容。打开的：它这一层的散文件各登记成文件，接受，不写标记，文件夹和更深处不碰 | 拒绝：没有这个文件 |
+| 放入文件或标准输入 | 拒绝 | 拒绝 | 拒绝 | 复制，预期那里是空的，接受 | 不复制，接受 | 有插件留住旧内容：换上新的，预期那里还是看到的令牌。没有：拒绝，目标不动 | 拒绝：那是个文件夹，里面可能有别的东西 | 拒绝 |
+| 放入库外的目录 | 拒绝 | 拒绝 | 拒绝 | 按内容规则复制整棵树，写标记，接受；超过 5000 个文件拒绝 | 不适用：目录对目录条目一律当作内容不同 | 同上一行，整棵换掉 | 拒绝：那是个文件夹，里面可能有别的东西 | 拒绝 |
+| 挪 | 拒绝 | 拒绝 | 拒绝 | 挪过去，预期来处还是看到的令牌、去处是空的，整个目录一起，接受 | 拒绝 | 拒绝 | 拒绝 | 拒绝 |
 
-接受之后，内核把请求交给每个插件的 `onPut`，把它们的答复收进 `notes`。`onPut` 收到的 `note` 一定有，由内核规整过：去掉首尾空白，空白或没写就是 `null`，插件不再自己判。
+- 「内容相同」只在可能相同时才读来判：文件对文件、大小一样，才读两边的指纹比；大小不同就是不同。判目录要读整棵树，所以不判。
+- 拒绝的理由：噪音是 `noise`；目录超过 5000 个文件是 `too-many`，`subject` 说至少几个；位置被别的写占着，或在这次放的中途变了（预期不成立），是 `busy`，什么都没改。
+- 「打开的」「关着的」由插件的记录推出（第 2 节「打开的目录」）。登记一个打开的目录时，内核按存储的一览一页一页地取它这一层的文件，每页最多 200 个，告诉插件的是一页一个 `register-files`；这一层没有文件时以「没有这个文件」拒绝。
 
-**正在放入的标记。** 一次放先把文件放到目标上，插件后才记下它；这中间看库的人（别的 agent 的 `check`、应用的监看）会看到一个没人登记的文件。所以内核在放动手之前，为它要放入、登记或挪的每个内容路径（挪是来去两个）在 `.pneuma-base/tmp/putting/` 下写一个标记，等放和所有插件的 `revise`、`onPut` 都做完、被拒绝或出错之后删掉（`putting.ts`）。标记写着库内路径，在内核的临时区里，不同步。放在进行时每 2 秒刷新一次标记的修改时间；超过 10 秒没刷新的标记算死了：进程被杀时标记删不掉。10 秒只要盖过一次刷新加事件循环的一次停顿，放多久都不会过期；它也是被杀的那次放留下的文件最多被藏多久，比应用的监看登记一个文件要等的（库里安静 3 秒）长。应用的监看只认对账的答复，不再自己隔一段时间看两次（`app/README.md`）。下一次放写标记时顺手删掉死了的。插件用 `tools.putting()` 问此刻正在放的路径。`observe` 不在标记里面：它听的是做完了的事。
+接受之后，内核把放交给每个插件的 `onPut`（`AcceptedPut`），把它们的答复收进 `notes`。`onPut` 收到的 `note` 一定有，由内核规整过：去掉首尾空白，空白或没写就是 `null`，插件不再自己判。
 
-「有插件留住旧内容」的分工：内核问配置里每一个提供了 `revise` 的插件，按配置的次序，一个答了之后照样问下一个。插件把当前内容留到自己名下（`held`）或拒绝（`declined`）。至少一个答 `held`，内核就把新内容先写临时名再改名放到目标上，每个答 `held` 的插件附的那句话都收进 `notes`。一个都没答 `held`，内核拒绝这次放入，目标不动，每个答 `declined` 的插件说的理由收进拒绝的 `notes`：只装了版本插件时，agent 从这里读到要先声明有版本。出错的插件列进 `problems`，算没留住。这样不管插件写得对不对，目标上都不会出现半截内容。
+```ts
+type ThingNow = { token: string; kind: 'file' | 'bundle'; size: number | null; files: number | null; modifiedAt: Instant }
+// 存储此刻说的它。令牌就是它的身份，直到有人读它的内容。目录条目的字节数和文件数只在它被复制进来时知道
+
+type AcceptedPut =
+  | { kind: 'register'; path; fingerprint: null; now: ThingNow; origin; note; observed? }
+  | { kind: 'place'; path; fingerprint: Fingerprint; now: ThingNow; origin; note; source; copied: boolean
+      previous: { token: string; fingerprint: Fingerprint | null } | null }   // 经 revise 换下的那份
+  | { kind: 'move'; from; path; fingerprint: null; now: ThingNow }
+  | { kind: 'register-files'; path; files: { path; now: ThingNow }[]; origin; note; observed? }   // 打开的目录这一层的一页文件
+```
+
+放入的指纹是复制的同一趟算的；登记和挪不读内容，指纹是 `null`，东西靠 `now.token` 认。`register-files` 里插件登记它不认识的，认识的照原样留着。按第 1 版契约写的插件收到的照第 1 版（第 5 节「上下文里的工具」）。
+
+**放的时候占住位置。** 一次放先把东西放到目标上，插件后才记下它；这中间看库的人（别的 agent 的 `check`、应用的监看）不该把它当成一个没人登记的文件，也不该把挪走的当成不在了。所以内核在写之前让存储占住这次要改的位置（`hold`：登记是那个位置，打开的目录是每页的那些文件，放入是目标，挪是来去两个），写带着这个占位，等所有插件的 `revise`、`onPut` 都做完、被拒绝或出错之后放开。被占着的位置，存储的 `look` 和 `overview` 标成 `held`，别的写以 `held` 拒绝，内核把它说成 `busy`。占位有存活时间：文件 2 分钟，目录 10 分钟，进程被杀时它最多占这么久；比这更久的写在占位过期之后照样做完，只是不再挡别人。`observe` 不在占位里面：它听的是做完了的事。
+
+「有插件留住旧内容」的分工：内核问配置里每一个提供了 `revise` 的插件，按配置的次序，一个答了之后照样问下一个。插件收到 `PlaceOverExisting`：路径，那里现在的令牌（内核的写就预期它），现在内容的指纹（读过才有，否则 `null`），新内容的指纹（目录还没复制进来时是 `null`）。插件把当前内容留到自己名下（`held`）或拒绝（`declined`）。至少一个答 `held`，内核就带着那个令牌把新内容写上去，每个答 `held` 的插件附的那句话都收进 `notes`；那里在这中间又变了，写不成，以 `busy` 拒绝。一个都没答 `held`，内核拒绝这次放入，目标不动，每个答 `declined` 的插件说的理由收进拒绝的 `notes`：只装了版本插件时，agent 从这里读到要先声明有版本。出错的插件列进 `problems`，算没留住。存储的写要么整个做成，要么什么都没改，所以不管插件写得对不对，目标上都不会出现半截内容。
 
 实现里的细化（形状在 `packages/sdk/src/types.ts`）：
 
 - 请求里的路径是调用方写的原样（相对库根，或库内的绝对路径），由内核在入口解析一次。「在库外」那一列就是解析不出库内路径的情形。`.pneuma-base/`、`PNEUMA-BASE.md` 和 `_archive/` 不算内容，放和挪到那里都按「在库外」拒绝；`_archive/` 只经归档和取回进出。
-- 放入的来源是 `{ kind: 'file'; path } | { kind: 'directory'; path } | { kind: 'stdin'; content }`。来源是目录时，它要在库外，也不能包含这个库，否则以 `outside-library` 拒绝：复制它会把库复制进库里。
+- 放入的来源是 `{ kind: 'file'; path } | { kind: 'directory'; path } | { kind: 'stdin'; content }`。库外的文件和目录由存储在复制时读；写成库内绝对路径的文件是库里的一个位置，存储在库里复制它；标准输入是请求里带的字节。来源是目录时，它要在库外，也不能包含这个库，否则以 `outside-library` 拒绝：复制它会把库复制进库里。
 - 每个结果都带 `problems`，拒绝的结果也带，并带 `subject`：拒绝针对的那个输入。`inside-bundle` 的 `subject` 是那个带标记的目录。
 - 来历里留空的字段等于没给，和主人面命令的表单一样：带进来的 `source`、`by` 是空白就当 `null`，做出来的 `from`、`outside` 里空白的行去掉。界面的表单留空时送来的是空字符串。
 - 做出来的来历里，`from` 的每个路径都要是库里在的东西（主区，或它在归档区的那份）。有一个不在，就以「没有这个文件」拒绝，`subject` 是那个路径，目标不动。写的是带标记的目录里面的文件，依据记为那个目录。
 
 ### 一个目录算一样东西
 
-- 标记：目录里有一个 `.pneuma-item` 文件（JSON，`{"format":1}`）的，是一样东西，代码里叫 bundle。没有标记的目录只是文件夹。
-- 内核列库里的东西时，遇到带标记的目录不往里走，把它当一项。库内路径是目录的路径，不带斜杠。
-- 指纹：目录里每个算进来的文件写成 `<相对路径>\0<内容的 sha256>\n`，按相对路径的 UTF-8 字节排好，连起来取 sha256。不算标记文件，不算任何一层的 `.git`、`node_modules`、`.DS_Store`，放进来时也不复制这三样。只认普通文件和目录，不跟符号链接，空目录不算。看到的 `size` 和 `files` 也只算这些文件。
-- 算法归内核。内核导出 `fingerprintOf(路径)`（文件和带标记的目录都给指纹）、`bundleManifest(目录)`（每个文件的相对路径和 sha256）、`fingerprintOfManifest(清单)`（不读文件，只从清单算指纹）、`bundleFiles`、`thingAt(路径)`（`kind` 是 `'file'` 或 `'bundle'`）、`enclosingBundle(库根, 库内路径)`（这个路径在哪个带标记的目录里面）、`copyBundle` 和 `BUNDLE_MARKER`。插件认目录条目靠 `thingAt` 的 `kind`，指纹一律用 `fingerprintOf`。
-- 放进来时先把整棵树复制到 `.pneuma-base/tmp/` 下的临时名，再改名到目标，中途出错或被杀，目标上不留半棵树，留下的临时名不算库的内容，重放一次得到同样的结果。换掉一个目录条目时，先把旧的改名到临时名，再把新的改名过去，最后删掉旧的；旧的内容这时已经由插件留住。
+- 标记：目录里有一个 `.pneuma-item` 文件（JSON，`{"format":1}`）的，是一样东西，代码里叫 bundle。没有标记的目录只是文件夹。库内路径是目录的路径，不带斜杠。
+- 认：一个位置上是什么，内核只看一眼那个位置和它的标记该在的位置（`things.ts` 的 `whatIs`，插件的 `tools.what`）：文件、目录条目、文件夹、别的（链接、设备）或没有。一个路径在哪个目录条目里面，也只看一眼它上面每一级的标记。都不走目录。
+- 内容规则（`THING_RULE`）：目录条目的内容是它下面的每个普通文件，除去库的噪音（任何一层）、标记文件，和它里面的 `.gitignore` 排除的（每一层的都读，最近的说了算）。链接和设备不是内容，空目录不算。规则由内核给，存储照做。放进来时按它复制；超过 5000 个文件不复制，以 `too-many` 拒绝。
+- 现状：一样东西此刻的样子是存储的描述（`ThingNow`）：令牌、修改时刻，文件的大小。目录条目另有它的第一层：存储的一览，最多 200 项，多的说至少还有几项（`Level`）。目录条目的字节数和文件数只在它被复制进来时知道，别的时候是 `null`：数它们要走整棵树。
+- 指纹：文件的是内容的 sha256；目录条目的是把每个算进来的文件写成 `<相对路径>\0<内容的 sha256>\n`，按相对路径的 UTF-8 字节排好，连起来取 sha256。指纹由存储算（`content`，或 `write` 复制的同一趟），内核的 `fingerprintOfManifest` 从清单算出同一个数。只在这几种时候读：内容本来就经过内核（复制放入）；要判一处差别（放到一个大小相同的文件上；归档区的那个位置已被占着）；有人要（`inspect --content`、插件的 `tools.storage.content`）；有名字的全量动作（`check --deep`）。登记和挪不读内容。
+- 写：存储先把整份写进它的临时区，同一趟算指纹，再一次改名或原子交换放到目标上；预期不成立就什么都不改。中途出错或被杀，目标上要么是原来的，要么是新的，不留半棵树（`STORAGE.md` 第 2 节第 9 条）。
 - 一个带标记的目录只能整体地变：它里面的路径不是 agent 面写的目标，放、挪、登记、归档到它里面都以 `inside-bundle` 拒绝。要改它，把整个目录重新放进来。
-- 找：一个带标记的目录是一个命中，`detail` 是「目录」。看：`FileFacts` 多 `kind: 'file' | 'bundle'` 和 `files`（文件数）。
+- 找：命中的路径是一个目录条目时，细节前面标「目录」。看：`FileFacts` 的 `kind` 是 `bundle`，带它的第一层 `level`。
 - 挪、归档、取回：整个目录一起动。取回时原路径上有任何东西，包括没标记的目录，都算原路径被占。
-- 符号链接不是东西：列东西、算指纹、同步都不进到链接里，所以一个路径本身是链接、或路径上有一段是链接时，内核当那里有「另一类」的东西（`kindAt`）。登记、挪、归档、看都不认它，往它上面或它里面放以 `would-overwrite` 拒绝，不会经过链接写到库外。解析调用方写的绝对路径时，只解析通到库根的那一段链接，库里的链接不跟（`parseLibraryPath`）。插件的工具用同样的判断，所以 `thing` 和 `things` 说的一样。
+- 符号链接不是东西：存储把链接本身答成 `other`，链接下面的位置答 `outside`，从不跟着链接走。所以一个路径本身是链接时，内核当那里有「另一类」的东西：登记、挪、归档、看都不认它，往它上面放以 `would-overwrite` 拒绝；路径上有一段是链接时，那里在库外，往那里放以 `outside-library` 拒绝，不会经过链接写到库外。解析调用方写的绝对路径时，只解析通到库根的那一段链接，库里的链接不跟（`parseLibraryPath`）。
 
 ### 找、看、说、查、归档
 
@@ -186,35 +208,45 @@ type Hit = { path: LibraryPath | null; title: string; by: PluginName | 'kernel';
 type FindResult = { hits: Hit[]; problems: PluginProblem[] }
 
 type InspectRequest = { target: string; content?: { file: string | null } }   // 路径，或某个插件认得的标识；content：也要内容
-type InspectResult = { file: FileFacts | null; sections: Section[]; problems: PluginProblem[]; content?: Content }
+type InspectResult = { file: FileFacts | null; place?: PlaceFacts; sections: Section[]; problems: PluginProblem[]; content?: Content; request?: OwnerRequest }
+type FileFacts = { path; kind: 'file' | 'bundle'; size: number | null; modifiedAt; token: string; fingerprint: Fingerprint | null; archived: boolean; level?: Level }
+type Level = { entries: { name; kind: 'file' | 'dir' | 'other'; size: number | null }[]; more: number }   // 一层的前 200 项；more：至少还有几项
+type PlaceFacts =   // 目标是一个不是东西的目录，或噪音
+  | { kind: 'open'; path; level: Level }
+  | { kind: 'closed'; path; files: number; exceeded: boolean; markers: string[] }
+  | { kind: 'noise'; path; by: { name: string } | { path: string } }
+type Content = { kind: 'text'; path; size; text } | { kind: 'other'; path; size; type; why: 'not-utf8' | 'too-large' }
+  | { kind: 'level'; path; level: Level } | { kind: 'unavailable'; path; reason: 'outside-grant' | 'no-such-file' | 'not-a-bundle' }
 
 type SayRequest = { kind: string; about: string | null; text: string | null; args: Record<string, string[]> }
 type SayResult =
   | { outcome: 'heard'; by: PluginName; note: string; problems: PluginProblem[] }
   | { outcome: 'not-heard'; reason: 'no-plugin-for-kind' | 'refused' | 'plugin-failed'; note: string; problems: PluginProblem[] }
 
-type CheckRequest = { since: Instant | 'last' | null; includeArchived: boolean }
-type CheckResult = { sections: Section[]; problems: PluginProblem[] }
+type CheckRequest = { since: Instant | 'last' | null; includeArchived: boolean; deep?: { dir: LibraryPath | null } }   // deep：深查，dir 为 null 是整个库
+type CheckResult = { sections: Section[]; asks: Ask[]; requests: { ended: OwnerRequest[]; pending: number }; problems: PluginProblem[] }
 
 type ArchiveRequest = { kind: 'archive' | 'unarchive'; path: string }
 type ArchiveResult =   // moved：false 时请求本来就已满足
   | { outcome: 'accepted'; from: LibraryPath; to: LibraryPath; moved: boolean; notes: Note[]; problems: PluginProblem[] }
-  | { outcome: 'refused'; reason: 'outside-library' | 'outside-grant' | 'no-such-file' | 'original-path-taken' | 'inside-bundle'; subject: string; problems: PluginProblem[] }
+  | { outcome: 'refused'; reason: 'outside-library' | 'outside-grant' | 'no-such-file' | 'original-path-taken' | 'inside-bundle' | 'noise' | 'busy'; subject: string; problems: PluginProblem[] }
 
 type Note    = { plugin: PluginName; text: string; data?: unknown }
 type Section = { plugin: PluginName; title: string; body: string; data?: unknown }
 type PluginProblem = { plugin: PluginName; message: string }
 ```
 
-找的两种匹配：`terms` 把文字按空白和常见标点切开，名字里含任一段就算；`words` 用 `Intl.Segmenter` 取一句话里两个字以上的词和拉丁词（它会把「下单」这类两个字的词切成单字，所以相邻的两个单个汉字也连成一个词），按命中的不同词数排，至少命中一个，每个答复者最多给 5 条。`start` 用 `words`，`find` 用 `terms`。切词和排序是内核导出的 `searchTerms` 与 `rankHits`，插件用同一套。`filters` 是插件的用语，内核不懂，所以带了过滤时内核不按名字列文件。
+找的两种匹配：`terms` 把文字按空白和常见标点切开，名字里含任一段就算；`words` 用 `Intl.Segmenter` 取一句话里两个字以上的词和拉丁词（它会把「下单」这类两个字的词切成单字，所以相邻的两个单个汉字也连成一个词），按命中的不同词数排，至少命中一个，每个答复者最多给 5 条。`start` 用 `words`，`find` 用 `terms`。切词和排序是内核导出的 `searchTerms` 与 `rankHits`，插件用同一套。`filters` 是插件的用语，内核不懂。
 
-`skipOwnSession` 让答复者不带调用者自己这次会话做的东西。`start` 打开它，因为它找的是库里本来就有的；`find` 不打开，什么都给。开关打开时内核不按名字列文件，`start` 的找只问插件（`agent.ts`）；`find` 照旧按名字列。
+**内核自己不找。** 按名字找要走一遍库，所以命中全来自插件的索引（各插件的 `onFind`）；没有会找的插件，什么都找不到。内核只为找到的路径看一眼，把它的标记（`目录`、`已归档`）放在那个路径第一条命中的细节前面（`agent.ts`）。
 
-几个答复者的结果合成一张表：同一个路径的结果排在一起，位置是任何一个答复者给它的最好名次（在自己那张表里的序号）；名次相同时内核在先，插件按配置次序。路径相同的，内核的那条不单列，它的标记（目录、已归档）放在第一个插件那条的细节前面；几个插件命中同一路径各给一条，因为各说各插件知道的。所以记账插件排在查找插件前面时，查找插件按相关度排在前面的文件也排得靠前，不被压在记账插件的位置上。
+`skipOwnSession` 让答复者不带调用者自己这次会话做的东西。`start` 打开它，因为它找的是库里本来就有的；`find` 不打开，什么都给。
 
-内核和各插件的 `onFind` 都答完后，内核按配置次序问每个有 `onFound` 的插件：找到的路径里它自己没给命中的那些，它知道什么。没有路径的命中不算；一个路径都不剩就不问。它答的每条命中并进那个路径的那一项，不改名次。一项里的命中按内核在先、插件按配置次序排，不论插件是找到了这个路径还是补了一条，所以只被查找插件找到的条目也带着记账插件给的场景和来历，和两个插件都匹配时一个样子。补的一条就是一条 `Hit`，没有标记说它是补的（K3）。`onFound` 抛错的插件列进 `problems`，命中照给；答了没问它的路径的那条（含没有路径的）不要，也列进 `problems`（K8）。
+几个答复者的结果合成一张表：同一个路径的结果排在一起，位置是任何一个答复者给它的最好名次（在自己那张表里的序号）；名次相同时按配置次序。几个插件命中同一路径各给一条，因为各说各插件知道的。所以记账插件排在查找插件前面时，查找插件按相关度排在前面的文件也排得靠前，不被压在记账插件的位置上。
 
-`group` 是答复者给一条结果定的标题：`group` 相同的结果在文字答复里合在这个标题下，出现在其中排得最前的那条的位置，每条一行；没有路径的那条说的是这个标题本身，排在标题下第一行。内核按名字列出的结果 `group` 为 `null`。
+各插件的 `onFind` 都答完后，内核按配置次序问每个有 `onFound` 的插件：找到的路径里它自己没给命中的那些，它知道什么。没有路径的命中不算；一个路径都不剩就不问。它答的每条命中并进那个路径的那一项，不改名次。一项里的命中按配置次序排，不论插件是找到了这个路径还是补了一条，所以只被查找插件找到的条目也带着记账插件给的场景和来历，和两个插件都匹配时一个样子。补的一条就是一条 `Hit`，没有标记说它是补的（K3）。`onFound` 抛错的插件列进 `problems`，命中照给；答了没问它的路径的那条（含没有路径的）不要，也列进 `problems`（K8）。
+
+`group` 是答复者给一条结果定的标题：`group` 相同的结果在文字答复里合在这个标题下，出现在其中排得最前的那条的位置，每条一行；没有路径的那条说的是这个标题本身，排在标题下第一行。
 
 `problems` 是失败语义的落点：某个插件出错时，动词照样给出答复，同时如实说明哪个插件没做成。「已放入，但没有记下」是和「已放入并记下」不同的结果，命令行以非零退出码区分。
 
@@ -222,14 +254,20 @@ type PluginProblem = { plugin: PluginName; message: string }
 
 | 请求 ＼ 目标 | 不存在 | 在主区 | 已在归档区 |
 | --- | --- | --- | --- |
-| 归档 | 拒绝：没有这个文件 | 挪进归档区，接受。归档区里同一路径已有别的东西时，新来的名字后加指纹的前八位 | 接受，什么都不动 |
+| 归档 | 拒绝：没有这个文件 | 挪进归档区，接受。归档区里同一路径已有别的东西时：内容相同就挪到它上面，不同就把新来的名字后加指纹的前八位 | 接受，什么都不动 |
 | 取回 | 拒绝 | 接受，什么都不动 | 原路径空着：挪回去，接受。原路径被占：拒绝 |
 
-这里的「东西」是文件或带标记的目录，目录整个一起动。实现按四种状态判：两处都没有；只在主区；只在归档区（原路径空着）；两处都有（原路径被占）。两处都有时，归档按「在主区」办，取回按「原路径被占」拒绝。取回时原路径上的任何东西都算占着。路径在一个带标记的目录里面时，归档和取回都以 `inside-bundle` 拒绝。路径写成 `a.md` 或 `_archive/a.md` 都指同一样东西。接受的结果带 `moved`，什么都没动时为 `false`。
+这里的「东西」是文件或带标记的目录，目录整个一起动；打开的和关着的目录都不是东西，以「没有这个文件」拒绝。实现按四种状态判：两处都没有；只在主区；只在归档区（原路径空着）；两处都有（原路径被占）。两处都有时，归档按「在主区」办，取回按「原路径被占」拒绝。取回时原路径上的任何东西都算占着。路径在一个带标记的目录里面时，归档和取回都以 `inside-bundle` 拒绝；路径是噪音时以 `noise` 拒绝。路径写成 `a.md` 或 `_archive/a.md` 都指同一样东西。接受的结果带 `moved`，什么都没动时为 `false`。
+
+每次挪是存储的一次带预期的 `move`（`archive.ts`）：来处预期是看到的令牌，去处预期是空的（或内容相同的那份的令牌）；来去两处在挪和所有插件的 `onArchive` 期间被占着。归档区的那个位置空着时不读任何内容；被占着时才读两边的指纹，判是不是同一份、加什么后缀。位置被别的写占着，或在这中间变了，以 `busy` 拒绝，什么都没动；取回时原路径在这中间被占了，是 `original-path-taken`。
 
 找和查默认跳过归档区，`includeArchived` 打开才带上。看一样已归档的东西照常给出，并标明它已归档。命令行里除了 `find` 和 `check`，库的目录树本身也把归档的东西隔开了，agent 用自己的工具翻目录时同样看不到它们混在里面。
 
-**看内容。** 命令行的 agent 自己读文件；经 MCP 的 agent 读不了，只能找和看。所以看可以带上内容：`inspect <库内路径> --content`。文件是 UTF-8 文字、不超过 256 KB 时给全文（`text`），一篇长文档、网站的一页放得下，一份导出的数据放不下；别的给大小和文件名说的媒体类型（`other`，`why` 是 `not-utf8` 或 `too-large`，超过上限的不读）；带标记的目录给它算进指纹的文件清单（`files`），`--content <内部路径>` 读其中一个，只认清单上的，爬不出去；写目录里的文件的库内路径也一样。内容在内核里读（`content.ts`），插件的 `onInspect` 照旧只给它们知道的。授权限在一个区域时，区域外的东西照样给事实（今天的看、找、查都不按区域限读，区域只限写），只是不给内容（`unavailable`，`outside-grant`）；归档的东西按它原来的路径算。只读的授权读得了区域里的内容。
+**看。** 目标是一样东西时（主区的先，再是它在归档区的那份；写成 `_archive/…` 就是归档区的），`file` 是存储此刻说的它：令牌、修改时刻、文件的大小、目录条目的第一层；`fingerprint` 只在要了内容时读，否则是 `null`。目标是一个不是东西的目录时，`place` 按它是哪一种答：打开的，给它的第一层；关着的，给一次预算 500 项的探查：至少几个文件、是否超出预算、顶上有哪些项目标记（`package.json`、`.git` 这类）；噪音，说是哪个名字或哪条路径让它是噪音。目标是一个请求号时给那个请求。插件的 `onInspect` 照旧只给它们知道的。
+
+**看内容。** 命令行的 agent 自己读文件；经 MCP 的 agent 读不了，只能找和看。所以看可以带上内容：`inspect <库内路径> --content`。文件是 UTF-8 文字、不超过 256 KB 时给全文（`text`），一篇长文档、网站的一页放得下，一份导出的数据放不下；别的给大小和文件名说的媒体类型（`other`，`why` 是 `not-utf8` 或 `too-large`，超过上限的不读，内容不在本机的也不下载）；带标记的目录给它的第一层（`level`），`--content <内部路径>` 给里面那个目录的一层或那个文件的内容，标记文件不给，爬不出去；写目录里的文件的库内路径也一样。内容经存储读（`content.ts`），只因为要了才读。授权限在一个区域时，区域外的东西照样给事实（今天的看、找、查都不按区域限读，区域只限写），只是不给内容（`unavailable`，`outside-grant`）；归档的东西按它原来的路径算。只读的授权读得了区域里的内容。
+
+**查和深查。** `check` 不读内容：插件拿存储的令牌比它记过的位置。`check --deep [<目录>]` 是有名字的全量动作：读登记过的每样东西的内容（写了目录就只读那下面的），比出真正改了的。内核把它原样交给插件（`CheckRequest.deep`，`dir` 为 `null` 是整个库，命令行写 `.` 也是），先说范围、报进度、可以打断，归做这一趟的插件。目录只和 `--deep` 一起写，否则是用法错误。命令行、界面的 `Call`（`parseCall`）和 MCP 的 `check` 工具收的是同一份请求。
 
 命令行另有一个 `start "<一句话>"`，是「说：在做什么」「查」「找」三个动词的组合，不是第八个动词。
 
@@ -255,21 +293,21 @@ type AskResult = { outcome: 'asked'; request; again: boolean } | { outcome: 'wit
 
 提的时候内核就核对，用法错误马上回给 agent：只有 agent 能提（`not-an-agent`）；命令要在（`unknown-command`）；参数按那条命令自己的 `params` 核对，为什么不能空（`usage`，命令行退出码 1）。能请的只有只给主人、不破坏、没标 `askable: false` 的命令：破坏性的以 `red-line` 拒绝，它要主人当面确认；`secret set`（值要主人亲手给）和三条请求命令标了 `askable: false`，以 `not-askable` 拒绝；agent 自己能跑的以 `run-it-yourself` 拒绝，话里带它自己跑的那一行。同一个 agent 还在等的、`line` 相同的是同一个请求，再提答同一个号（`again`）；一个 agent 最多 20 个在等的（`too-many`）。`ask --withdraw <号>` 只撤自己的、还在等的（`no-such-request`、`not-yours`、`not-pending`）。
 
-主人面三条命令，都只给主人，都不能被请：`request list [--all] [--older]` 印的和 `show home` 里请求的那几行一样，`--all` 再列最近 50 个了结的，并说更早的还有几个，`--older` 全列；请求的文件一个不删，它们就是记录；`request approve <号>` 经 `ownerFace.dispatch` 跑那条命令，主人调用带着 `request`（号和谁请的），所以那条命令自己的事件也带着它（第 5 节的 `Event`）；跑出什么就是结果，拒绝也算，参数后来不合了记成 `no-longer-fits`；那条命令后来成了破坏性的或不能被请的，批准不跑它，以 `no-longer-askable` 拒绝并记成结果，因为批准不是当面确认；`request decline <号> [<理由>]`。了结了的请求不能再决定（`not-pending`）。
+主人面三条命令，都只给主人，都不能被请：`request list [--all] [--older]` 印的和 `show home` 里请求的那几行一样，`--all` 再列最近 50 个了结的，并说更早的还有几个，`--older` 全列；请求的事实一条不删，它们就是记录；`request approve <号>` 经 `ownerFace.dispatch` 跑那条命令，主人调用带着 `request`（号和谁请的），所以那条命令自己的事件也带着它（第 5 节的 `Event`）；跑出什么就是结果，拒绝也算，参数后来不合了记成 `no-longer-fits`；那条命令后来成了破坏性的或不能被请的，批准不跑它，以 `no-longer-askable` 拒绝并记成结果，因为批准不是当面确认；`request decline <号> [<理由>]`。了结了的请求不能再决定（`not-pending`）。
 
 **一件事只问一次。** agent 请的那条命令连同参数，和某个插件 `onAsks` 的一个回答调的主人命令和参数一样时，请求代替那一问：请求在等时，首页和 `check` 只给请求，带着它的为什么；主人拒绝之后，两样都不再提；批准就跑了那条命令，插件之后还问的就是新的事。这是内核的通则（`asks.ts` 的 `standsIn`：同一条命令、同样的参数，参数里的旗子不论次序），不认识部署或任何插件。
 
 在 agent 的会话里被拒的只给主人的命令，能请的，拒绝的话最后一行就是那条 `ask`：`pneuma-base @<授权名> ask "<为什么>" <命令和参数>`。首页的「等你决定」先列请求：为什么是那一句，由提的 agent 署名，下面一行是照原样会跑的命令，按钮是「批准」（推荐）和「拒绝」（可填理由）；决定了的折成一行结果。`check` 多一节「你提的请求」：上次看过之后主人决定了的，各带结果，和还在等的个数；看过的下次不再说。`inspect <号>` 给一个请求的全部。
 
-存放在库的记录区 `.pneuma-base/requests/`，一个请求一个文件 `<号>.jsonl`，号是 `r-` 加 8 位十六进制。文件以独占创建开头，之后只追加行：`asked`（谁、哪次会话、为什么、命令和参数）、`withdrawn`、`decided`（批准带结果，拒绝带理由）、`seen`（提的 agent 看过结果）。读的时候按行归并：决定压过撤回，同步两边各写了一行时主人的决定算数；`seen` 只在了结之后算。同步插件留下的冲突副本（`<号>.conflict-<机器>-<时间>.jsonl`）按号并进同一个请求。去重和上限要看同一个 agent 的全部请求，所以提的时候内核在 `tmp/asking/` 下按 agent 加一把目录锁（10 秒算过期），两个进程同时提也不丢、不重。请求跟着文件夹走，不放在本机的目录里。
+请求是内核的记录处 `requests` 的事实（`requests.ts`），经存储写在 `.pneuma-base/requests/facts/` 下，只追加，跟着文件夹和同步走，不放在本机的目录里。号是 `r-` 加 8 位十六进制。每条事实带它说的请求号，是四种之一：`asked`（谁、哪次会话、为什么、命令和参数）、`withdrawn`、`decided`（批准带结果，拒绝带理由）、`seen`（提的 agent 看过结果）。一个请求的现状是从这些事实推出的一行，在记录处的行里（存储的缓存区），按提的人和在不在等可查；归并时决定压过撤回，有两条决定时早的那条算数，`seen` 只在了结之后算。去重和上限在折事实时定：一条 `asked` 折进来时，同一个 agent 已经在等同一行，它就记成那个请求的重复，答原来的号（`again`）；已经有 20 个在等，它就记成超了，答 `too-many`。两个进程同时提，各自按存储给的次序折同样的事实，定出的一样，不用锁。此前版本一个请求一个文件（`requests/<号>.jsonl`），新版不读它们：旧库除了事实文件不迁移。
 
 ### 没有任何插件时的答复
 
 | 动词 | 答复 |
 | --- | --- |
 | 放 | 按上面的全化表。接受时 `notes` 为空。放入遇到内容不同的同名文件：拒绝 |
-| 找 | 按名字列出库里的文件和带标记的目录 |
-| 看 | 这样东西本身的情况（文件或带标记的目录），`sections` 为空；要内容时照样给 |
+| 找 | 一条都没有：内核不按名字找，那要走一遍库 |
+| 看 | 这样东西此刻的样子（文件或带标记的目录），或这个目录、这处噪音是什么（`place`），`sections` 为空；要内容时照样给 |
 | 说 | `not-heard`，`no-plugin-for-kind`，附一句「这个库没配能记下这句话的插件」 |
 | 查 | `sections` 为空 |
 | 归档 | 按上面的全化表 |
@@ -281,7 +319,7 @@ type AskResult = { outcome: 'asked'; request; again: boolean } | { outcome: 'wit
 
 ```ts
 interface Plugin {
-  readonly contract: number                     // 按哪一版插件契约写的：sdk 的 CONTRACT（现在是 1）
+  readonly contract: number                     // 按哪一版插件契约写的：sdk 的 CONTRACT（现在是 2）；内核跑 1 和 2
   readonly name: PluginName
   readonly version?: string                     // 它自己的版本，给人看
   readonly summary?: string                     // 一句中文，说它带来什么，给人看
@@ -323,13 +361,13 @@ type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems: string
 内核这边的实现：
 
 - 每个钩子由 `eachPlugin` 按配置次序调，一个插件抛错记成它的问题，其余照样调（K8）；答复不写插件名，由内核盖上（`PluginNote`、`PluginSection`、`PluginHit`）。`onPut`、`onArchive` 的答复和 `onSay` 听到时的答复可以在说明旁边带 `problems`：部署插件这样说「放入成功了，上线没跟上」，不用再拿抛错表达一半成功。
-- 钩子收到的上下文另带 `dir`（打开库时内核为每个能运行的已装插件建好它，同步过来、这台机器后来才有这个插件的库也一样）、`cacheDir`、`tools`、`secrets`，由 `pluginContext` 在每次调钩子时造。
+- 钩子收到的上下文另带 `dir`、`cacheDir`、`tools`、`secrets`，由 `pluginContext` 在每次调钩子时造。`dir` 是插件记录处的路径 `.pneuma-base/<插件名>/`，内核不建它：第 2 版的插件经 `tools.storage.own` 读写那里，第一次写就建立它；`tools.storage.records` 是它的事实和行。
 - 跟着挪和归档的插件用 `onPut`、`onArchive`：只有这两个钩子收到内核解析过的路径，`observe` 里的请求是调用方写的原样。
 - 主人面命令的 `destructive`、`ownerOnly` 由内核在同一处拦（第 6 节），插件不看上下文；`readOnly`、`setup` 只是事件上的记号，记账插件据此决定它算不算给 agent 的消息。主人面的事件带这三个标志，插件不用自己认哪些命令会丢数据、哪些什么都不改。
 - `keeps` 定说明里同名时的那句话（第 7 节）：记账插件是 `every`，版本插件是 `some`。
 - `onPurged` 让插件不用比命令名、不用读 `archive purge` 的 `data.paths`；`onAdd`、`onRemove` 让插件听得到自己被装上和卸下。`onRemove` 可以拒绝，但主人总能 `--anyway`：插件提醒，主人决定。
 - 问主人（`onAsks`）：插件说出它此刻在等主人定的事，每件一句话、关于哪样东西、几个回答（动作）、推荐哪一个。它只读，不写东西：首页每次显示、`check` 每次答都问一遍，插件按自己记的状态答，主人定了，下次就不再问。内核按配置次序问（`asks.ts`），像核对块一样核对每一件（不是一件的、回答调不到的、推荐的不在回答里的，不要，列进问题），盖上插件名（`by`）。`check` 的答复带着它们（`CheckResult.asks`），命令行印在「要主人来做的」下面，每个回答印成主人在自己终端里跑的命令；首页把它们放在最上面。
-- 打开的目录（`openDirs`）：插件说它的记录让哪些目录打开，内核再加上库根（`places.ts` 的 `openDirectories`）。界面的变化轮询只看这些目录（第 6 节「界面的服务」）。
+- 打开的目录（`openDirs`）：插件说它的记录让哪些目录打开，内核再加上库根（`places.ts` 的 `openDirectories`）。界面的变化轮询看这些目录（第 6 节「界面的服务」）；登记一个打开的目录是登记它这一层的散文件（第 4 节「放」）；看一个打开的目录给它的第一层。
 - 视图槽（第 6 节）：编号不以插件名加点开头的视图不列出，记成问题；`onView`、`onItemView` 抛错或答的不是一页、一节，那里换成说明出错的块（K8）。视图不是操作，内核不为它们发事件。
 
 ### 命令的参数表
@@ -347,20 +385,23 @@ type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems: string
 
 ### 上下文里的工具
 
-`PluginContext.tools` 是插件正当需要的内核工具，绑在这次操作的库上，没有一个要传库根。类型在 sdk，代码是正在跑的内核的，所以目录条目算哪些文件、指纹怎么算、找怎么切词排序，插件和内核永远一致，库外的插件不再抄一份。这套是从五个自带插件运行时从内核导入的东西归出来的最小一组：
+`PluginContext.tools` 是插件正当需要的内核工具，绑在这次操作的库上，没有一个要传库根。类型在 sdk，代码是正在跑的内核的，所以目录条目算哪些文件、找怎么切词排序，插件和内核永远一致，库外的插件不再抄一份。第 2 版的工具用存储的词，只在插件的记录指到的地方问存储，没有一个工具走库，列出的都是一页：
 
-| 组 | 工具 | 覆盖原来的导入 |
-| --- | --- | --- |
-| 路径 | `resolve(输入)` → `{ path, region, bundle } \| null`；`regionOf`、`archivedPath`、`originalPath`、`abs` | `parseLibraryPath`、`regionOf`、`enclosingBundle`、`archivedPath`、`originalPath`、`abs` |
-| 东西 | `thing(路径)`（文件或目录条目，带大小和文件数）、`things()`、`files(目录条目)`、`copyOut(路径, 库外或自己名下的目录)` → 复制件的指纹 | `thingAt`、`libraryFiles`、`bundleFiles`、`copyBundle` |
-| 指纹 | `fingerprint(路径)`、`manifest(目录条目)`、`fingerprintOfManifest`、`fingerprintOfFile(绝对路径)` | `fingerprintOf`、`bundleManifest`、`fingerprintOfManifest`、`fingerprintOfFile` |
-| 找 | `searchTerms`、`rankHits`、`sentenceHits` | 同名的三样 |
-| 放 | `put(请求)`：经 agent 面放入，行动者和会话是这次操作的，所以每个插件都听到、它发自己的事件；`putting()`：此刻正在放的库内路径（第 4 节「正在放入的标记」） | `agentFace.put` |
-| 存储 | `storage`：`glance`（几个位置各是什么）、`overview`（一个目录的一层，一页）、`look`（拿存着的令牌比，答哪些变了、不在了）、`probe`（一个目录至少有多大，数到上限为止）、`noise()`（库根声明的噪音）；`records`，它自己的记录处：事实的 `append`、`since`，行的 `put`、`get`、`under`、`where`、`count`、`reset` | 记账插件自己读写事实文件、列库里的文件 |
+| 组 | 工具 |
+| --- | --- |
+| 路径 | `resolve(输入)` → `{ path, region, bundle } \| null`；`regionOf`、`archivedPath`、`originalPath` |
+| 东西 | `what(路径)`：每个路径上是文件、目录条目、文件夹、别的还是没有，带存储的描述；一次看一眼这些路径和它们的标记 |
+| 找 | `searchTerms`、`rankHits`、`sentenceHits` |
+| 放 | `put(请求)`：经 agent 面放入，行动者和会话是这次操作的，所以每个插件都听到、它发自己的事件 |
+| 存储 | `storage`：放东西的地方的 `glance`（几个位置各是什么）、`overview`（一个目录的一层的一页，缺省 200 项，最多 1000）、`look`（拿存着的令牌比，答哪些变了、不在了、被占着）、`content`（读内容取指纹；目录按内容规则，超过 5000 个文件答 `too_many`）、`read`（字节，或写到库外的一个文件）、`write`（带预期；来源是库外的路径、字节或库里的一个位置，后者就是复制，`own: true` 指它自己记录处里的位置）、`move`、`remove`（都带预期）；`probe`（一个目录至少有多大，数到预算为止）、`noise()`（库根声明的噪音）、`hold`、`release`、`changed(mark)`；`own`：它记录处自己的地方，同一组放东西的操作；`records`：它的事实（`append`、`since`）和行（`put`、`get`、`under`、`where`、`count`、`reset`） |
 
-**存储。** 库最底下的一层是存储，程序 `pneuma-base-core`，线上的形式在 `core/README.md`。内核唯一的门是 `packages/kernel/src/storage.ts`：每个库、每个进程起一个 `serve`，一次收发一行 JSON。找程序的次序是 `PNEUMA_BASE_CORE`、内核包的 `bin/`（包文件把它带在那里）、仓库里的 `core/target/release` 和 `core/target/debug`。插件拿到的 `tools.storage` 绑在它自己的记录处上，记录处的名字就是插件名：事实在 `.pneuma-base/<插件名>/facts/` 下，只追加；行从事实推出，在存储的缓存区（第 8 节），可以丢掉。令牌对内核和插件是不透明的，只存着、交回去；比较由存储在 `look` 里做。
+**存储。** 库最底下的一层是存储，程序 `pneuma-base-core`，契约在 `STORAGE.md`，线上的形式在 `core/README.md`。内核唯一的门是 `packages/kernel/src/storage.ts`：每个库、每个进程起一个 `serve`，一次收发一行 JSON，只在有请求等着时让这个进程开着。找程序的次序是 `PNEUMA_BASE_CORE`、内核包的 `bin/`（包文件把它带在那里）、仓库里的 `core/target/release` 和 `core/target/debug`。内核的动词、页、请求、声明和说明都经它。插件拿到的 `tools.storage` 绑在它自己的记录处上，记录处的名字就是插件名：事实在 `.pneuma-base/<插件名>/facts/` 下，只追加；它自己的地方是 `.pneuma-base/<插件名>/` 里事实以外的部分，留存、版本这类内容放在这里，从库里复制过去就是一次 `write`；行从事实推出，在存储的缓存区（第 8 节），可以丢掉。`content` 和 `write` 对目录总按内容规则。令牌对内核和插件是不透明的，只存着、交回去；比较由存储在 `look` 和每次写的预期里做。
 
-**目录的三种。** 每个目录是哪一种由记录推出，不存在任何地方（`places.ts`）：打开的，任意深处有登记过的东西，库根总是；是一样东西的，整个目录登记成一样东西；关着的，其余的，只算上一层的一项，从不打开。插件用 `openDirs` 说它的记录让哪些目录打开。内核和插件只在这三种说到的地方问存储：打开的目录列一层，关着的目录不进去，除非主人明说（`ledger register <目录> --inside`）。
+**变化。** 存储的 `changed` 答自一个游标以来动过的位置。内核为每个库留一个游标，在它自己的记录处 `kernel` 的行里（存储的缓存区，这台机器的；删了只多一次全比），连同一份编了号的日志：每次问学到了哪些位置（`changes.ts`）。每次问先看留着的游标：没有，或已超过 10 分钟，就不回放（回放要读这个卷自那以后的每个事件），换一个新的游标，这次问记成「说不出」；否则从它问起，一次学到超过两万个位置也记成「说不出」。什么都没变的一次问不多一个号；两个进程同时问，后存的那个重读再问（`rows.put` 的 `expect`）。插件的 `tools.storage.changed(mark)` 带着它上次拿到的号来问，答这之后动过的位置和新的号；中间有一次说不出、号不认识或已早于日志留着的 512 次时，位置是 `null`：读的一方拿令牌比它记过的位置，从不走库。游标靠用保持年轻：开着的页每次轮询、插件每次 `changed` 都会问。存储没有可靠的游标时（Linux 上就是），每次都说不出，读的一方每次都比令牌。
+
+**目录的三种。** 每个目录是哪一种由记录推出，不存在任何地方（`places.ts`）：打开的，任意深处有登记过的东西，库根总是；是一样东西的，整个目录登记成一样东西；关着的，其余的，只算上一层的一项，从不打开。插件用 `openDirs` 说它的记录让哪些目录打开。内核和插件只在这三种说到的地方问存储：打开的目录列一层，关着的目录只探查，不进去，除非主人明说（`ledger register <目录> --inside`）。
+
+**第 1 版。** `tools` 上还有第 1 版的工具（`abs`、`thing`、`things`、`files`、`copyOut`、`fingerprint`、`manifest`、`fingerprintOfManifest`、`fingerprintOfFile`、`putting`），给还没挪到第 2 版的插件用，sdk 的类型里标着弃用。它们写在存储的操作上（`contract-v1.ts`），不直接读库：`things` 和 `files` 经存储一层一层地走，`fingerprint` 和 `manifest` 经存储读内容，代价是第 1 版本来就有的；`putting()` 总是空的，正在写的位置在 `look` 和 `overview` 里标着被占。声明了第 1 版的插件听到的放也照第 1 版：`onPut` 的 `fingerprint` 总有，放没读内容时内核为它读；`register-files` 拆成每个文件一个 `register`；`previous` 是一个指纹；装着这样一个有 `revise` 或 `onPut` 的插件时，被换下的那份的指纹在写之前读好。这一层下一步随还没挪的插件一起删。
 
 `shortDir` 和 `withSuffix` 只是把字写给人看，不涉库的事实，不进 `tools`；`pluginName` 是 sdk 的构造。自带插件这一程照旧直接导入内核。
 
@@ -379,7 +420,7 @@ type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems: string
 
 - 两个包文件，`pnpm pack:dist` 打进 `dist-packages/`（不进 git，不发布）：`pneuma-base-<版本>.tgz` 是命令行，内核、五个自带插件、界面的服务和网页都作为捆绑的依赖在里面，内核的 `bin/` 里是这台机器上 `pnpm build` 构建的存储程序（所以包文件只在和打包的机器同一种系统和处理器上能用），另带插件规范 `PLUGINS.md`，`npm install` 它不用别的包，也不用联网；`pneuma-base-sdk-<版本>.tgz` 是 `@pneuma-base/sdk`，不依赖这个仓库的别的包，声明文件自成一体。两个的版本都是 sdk 的 `PNEUMA_BASE_VERSION`，自带的五个插件的 `version` 也是它，每个工作区包的 `package.json` 和它不一样时打包拒绝。实现在 `scripts/pack-dist.mjs`。
 - 测试工具 `@pneuma-base/sdk/testkit` 跑真的命令行，不另造一个假的内核：插件在测试里和在主人的机器上走同一条路。调用的环境从空的建起，所以没有任何 agent 产品的会话变量。`serve(handler)` 起一个库外 HTTP 服务的替身、交回地址，沙箱收尾时一起停，所以目标是网络服务的插件不连真的服务也能跑符合性检查和自己的测试；`viewer().item(路径, { plugin })` 只要一个插件的那一节。沙箱建在 `$PNEUMA_BASE_TEST_TMP` 下，没设时在系统的临时目录下。
-- `conformance` 把规范里行为上的规矩跑成检查（九项，见 `PLUGINS.md` 第 7 节），每项的规则文字在 `RULES` 里，报告原样引用，规范也原样引用（`plugins-doc.test.ts` 核对）。破坏性的主人命令经界面的服务跑，带着界面那样的当面确认，只许它改自己的目录。各项检查比较库里改了什么时都不看内核的临时区和存储的缓存区（`.pneuma-base/tmp`、`.pneuma-base/cache`）：缓存区里是存储为每个插件推出的行，随时可能改写。`custom` 页不在浏览器里跑：只读页和它直接载入的脚本，看它载入 `/plugin-kit/frame.js`、调用 `pneuma.onData`。仓库自己的测试拿它查自带的五个插件，也拿故意违规的插件看每条检查都会变红（`packages/cli/test/conformance.test.ts`）。
+- `conformance` 把规范里行为上的规矩跑成检查（九项，见 `PLUGINS.md` 第 7 节），每项的规则文字在 `RULES` 里，报告原样引用，规范也原样引用（`plugins-doc.test.ts` 核对）。破坏性的主人命令经界面的服务跑，带着界面那样的当面确认，只许它改自己的目录。各项检查比较库里改了什么时都不看存储的临时区和缓存区（`.pneuma-base/tmp`、`.pneuma-base/cache`）：缓存区里是存储为每个插件推出的行，随时可能改写。`custom` 页不在浏览器里跑：只读页和它直接载入的脚本，看它载入 `/plugin-kit/frame.js`、调用 `pneuma.onData`。仓库自己的测试拿它查自带的五个插件，也拿故意违规的插件看每条检查都会变红（`packages/cli/test/conformance.test.ts`）。
 - 脚手架 `pneuma-base plugin new` 是命令行的命令，不是内核的：它只从命令行包里的 `templates/` 写一个项目目录，不碰库，不碰 `$PNEUMA_BASE_HOME`，不发事件。生成的项目按绝对路径依赖两个包文件（`--packages` 给的目录；没给时按包名，发布之后才装得上），所以项目挪到哪里都装得上；`plugin new --help` 说它自己的用法；esbuild 打成一个 `dist/index.js`，旁边是 `cognition.md` 和 `ui/`；测试用 Node 自己的测试运行器，直接导入 `src/` 的源码。它的答复和生成的 `README.md` 指向插件规范。两种项目都不改一行就通过自己的测试：`packages/cli/test/scaffold.slow.test.ts`（`pnpm test:slow`，要联网）把生成的项目先挪到别处，再从安装一直走到装进库、调命令、开视图；`plugins-doc.slow.test.ts` 照原样跑规范里从安装开始的例子。
 
 插件的规矩写在 `PLUGINS.md` 第 3.7 和第 6 节：只往自己名下写，不改别的插件的东西，不认识的内容原样留着，agent 面上做的事主人撤得回。记录只新增；只有破坏性的主人命令删、改写插件自己名下的文件，主人总能丢掉数据，同步插件把这样删掉的文件在别的副本上也删掉（第 12 节）。插件可以做要模型、要联网、带判断的事；内核不做。
@@ -426,11 +467,11 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
 | 视图 | 在导航里 | 内容 |
 | --- | --- | --- |
 | `home` | 是，第一个 | 首页，界面打开时的那一页（`home.ts`）。库还没用起来时，最上面是「开始」：一个 `steps` 块，三步，按库的状态算出来，不存任何标记（`start.ts`）。「接上你的 agent」：这台机器上找到的和接上的产品各一行，带记号，接上的标「已接上」，没接上的带「接上」，就是 `agent connect` 那条命令，一下就做，不出表单；一个都没找到时一句话说看了哪里；这个库的 endpoint 在跑时，下面还有那句可以复制的话（「本机的 endpoint」）。「放进第一样东西」：库的根目录的一页（前 50 项）里有没有内核自己的和隐藏的名字以外的东西，做完写「库的根目录里有 N 样东西」，这一页没列完时写「至少 N 样」；一个 `drop` 块，放进 `inbox/`。这两步是内核的。第三步「对你的 agent 说一句」由记账插件给（见下面「插件给首页添东西」），做完的条件是有 agent 在库里留下过事实；内核不认识场景。做完的一步折成一行，写着做成了什么；三步都做完，「开始」就没了。然后是「等你决定」：还在等的配对（「<产品> 想接入这个库：允许吗？」，带配对码、为什么、允许会做什么，「允许」可选区域和只读，没有推荐的回答），agent 提的、还在等的请求，然后每个插件 `onAsks` 给的事（`asks` 块），插件的由认知段标题署名，没有就是一句灰字；然后按配置次序放每个插件标了 `home` 的视图的块，默认参数。一个都没有时，一句话说明（没装插件，或装着的插件没给首页添内容），下面是库里的文件。`show home` 印的是同一页，步骤写成 `[✓]` 或 `[ ]` 加标题，做完的跟着做成了什么，没做的下面是它的内容和命令 |
-| `files` | 是 | 库的一个文件夹，参数 `dir`。先文件夹，后东西；内核的文件和归档区不列。文件夹链到下一层；文件和带标记的目录各是一行，链到 `item` 面板，带标记的目录有自己的图标和文件数，不往里走。「从这台机器放进来」把一个文件以带进来的放入（页给不了标准输入，目录从命令行放） |
-| `archive` | 是 | 归档区里的每样东西和它原来的路径，带标记的目录是一行，各带「取回」；整区一个「清空归档区」，先问 |
+| `files` | 是 | 库的一个文件夹的一层，参数 `dir`，一页 50 项（存储的一览，参数 `after` 续页），按名字排，文件夹和东西混排；内核的文件和归档区不列。文件夹链到下一层；文件和带标记的目录各是一行，链到 `item` 面板，带标记的目录有自己的图标和它第一层的项数，不往里走。还有下一页时，最后一行是「下一页（至少还有 N 项）」。「从这台机器放进来」把一个文件以带进来的放入（页给不了标准输入，目录从命令行放） |
+| `archive` | 是 | 归档区的一个文件夹的一层，一页 50 项，同样有下一页的那一行：每样东西和它原来的路径，带标记的目录是一行，各带「取回」；文件夹链到下一层；整区一个「清空归档区」，先问 |
 | `agents` | 是 | 只给主人。接上的 agent 各一行：记号和产品名；灰的一行写接法（技能或 MCP 服务）、区域（整个库或 `区域 x/`）、只读还是读写、授权名和产品名不同时凭哪份授权、接上时写的东西在不在原处（在时写「写在 …」，不在时是一个警示标签，说哪样不在了），然后是各插件对 `inspect @<授权>` 说的，记账插件说它最近一次来是什么时候、几次会话、放进几样；各带「断开」，先问。一个都没接上时是空状态，指向下面的「接上」。「让 agent 自己接上」：endpoint 在跑时那句可以复制的话，和这个库最近 20 个配对，各带状态，在等的带「允许」「拒绝」；endpoint 没在跑、也没有过配对时没有这一节。这台机器上找到、还没接上的产品各一行，带记号、接法、写到哪和找到它的迹象，各带「接上」，表单问区域和只读；没找到的产品和看了哪里；接上的 agent 能做什么，分三组，用和 MCP 服务同一条规则从命令表生成：自己能做的（动词，和既不破坏也不只给主人的命令，就是 MCP 服务的工具）、要你来做的（只给主人的命令，agent 用 `ask` 请；请不了的标出来）、红线（破坏性的命令）。`show agents` 印的是同一页 |
 | `config` | 是 | 只给主人。库的位置；这个 pneuma-base 认识的每个插件和库里装了的每个插件，各带版本和一句说明（没有 `summary` 用认知段的标题，同 `plugin list`），装了的带「卸下」，没装的带「装上」，装到这台机器上来的另带「从这台机器卸掉」，插件不肯卸时提示里带「仍然卸下」；「从目录装一个插件到这台机器」；授权，各带为 Claude 或 Codex 生成技能（目录可以写 `~/…`）、撤回；发授权；Codex 要把库加进可写目录的提示；已装插件声明的密钥，各带设没设、「设」和「删掉」；「噪音」：库根上声明的每个名字和路径，各带「去掉」，和「加一条」。这些按钮的表单都由内核命令的参数表生成 |
-| `item` | 否 | 一样东西，参数 `path`，开在右侧面板，次序固定：先一行说它是什么和一句状态（`文件 · 2.1 KB`，已归档的、是谁的一部分的跟在后面）；每个插件的 `onItemView` 给的一节；「文件」一节是它自己的事实（路径、种类、文件数、大小、改于、指纹）；带标记的目录接着列出里面的文件，各链到自己的 `item`，文件接着是可以折起来的预览。带标记的目录里面的文件说明它是谁的一部分，不给归档。路径上没有东西时说明不在，插件的节照常给。最后是一行动作：归档或取回，没归档的还能挪到别处，然后是各插件节的 `actions`。`_archive/…` 的东西被取回后，面板跟到它原来的路径 |
+| `item` | 否 | 一样东西，参数 `path`，开在右侧面板，次序固定：先一行说它是什么和一句状态（`文件 · 2.1 KB`，已归档的、是谁的一部分的跟在后面）；每个插件的 `onItemView` 给的一节；「文件」一节是存储此刻说的它（路径、种类、文件的大小、改于）；带标记的目录接着是「第一层」一节，前 50 项各链到自己的 `item`，多的是一行，链到文件页的这个目录；文件接着是可以折起来的预览。带标记的目录里面的文件说明它是谁的一部分，不给归档。路径上没有东西时说明不在，插件的节照常给。最后是一行动作：归档或取回，没归档的还能挪到别处，然后是各插件节的 `actions`。`_archive/…` 的东西被取回后，面板跟到它原来的路径 |
 
 一样东西的详情是内核的视图，不是某个插件的：内核按配置次序把各插件用 `onItemView` 给的节拼在「它是什么」之后、文件的事实与预览之前，节名由插件给，节上盖着插件名（`plugin`），插件之间互不认识；节带的 `actions` 不留在节里，并进面板底下那一行动作。记账插件的来历、版本插件的版本时间线、部署插件的开关都落在同一个面板里。
 
@@ -510,7 +551,7 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
 ### 界面的服务
 
 - 只听回环地址，127.0.0.1 和 ::1 的同一个端口，优先 7638（见下面「本机的 endpoint」）。启动时造一个随机令牌，打印的地址带着它。每个请求核 Host（`127.0.0.1:<端口>`、`localhost:<端口>` 或 `[::1]:<端口>`），除了 `/plugin-ui/*` 和开发包都核 Origin；`/api/*` 另核令牌（查询参数 `token` 或头 `x-pneuma-token`）。给 agent 的 `/guide`、`/pair`、`/mcp` 不要令牌，见「本机的 endpoint」。
-- `GET /api/state`：是不是库、库的位置（另有一份把家目录写成 `~` 的，给人看）、视图清单和问题、可用的插件。`GET /api/view?view=&<参数>`。`POST /api/call`：一个 `Call` 加 `confirmed`，答复是结果和一行给人看的话；主人面 `Call` 的 `stdin` 是命令向主人要的值，比如密钥。`GET /api/file?path=`：内容区和归档区的文件原样给出；路径经内核解析，链接跟到底后还要在库里、不在内核的地方，否则 404；HTML 一律当文字给，带 `sandbox` 的 CSP，浏览器不会运行库里的文件。`GET /api/rev`：一个摘要，由每个插件的事实现在到哪、打开的目录的令牌（`places.ts` 的 `changeStamp`）和这台机器上的配对算出。它从不走一遍库的文件夹，所以库不知道的、在原处改了的文件不改摘要，等页因为别的原因重取时才显示出来。`POST /api/init`：把目录建成库。
+- `GET /api/state`：是不是库、库的位置（另有一份把家目录写成 `~` 的，给人看）、视图清单和问题、可用的插件。`GET /api/view?view=&<参数>`。`POST /api/call`：一个 `Call` 加 `confirmed`，答复是结果和一行给人看的话；主人面 `Call` 的 `stdin` 是命令向主人要的值，比如密钥。`GET /api/file?path=`：内容区和归档区的文件原样给出；路径经内核解析，链接跟到底后还要在库里、不在内核的地方，否则 404；HTML 一律当文字给，带 `sandbox` 的 CSP，浏览器不会运行库里的文件。`GET /api/rev`：一个摘要，由每个插件的事实现在到哪、打开的目录的令牌（一项来了或走了）、内核的游标最近学到的打开的目录那一层里的文件的改动（`places.ts` 的 `changeStamp`，第 5 节「上下文里的工具」里「变化」），和这台机器上的配对算出。它从不走一遍库的文件夹：没人看过的目录里、一样东西里面的改动，以及存储说不出变化时在原处改了的文件，不改摘要，等页因为别的原因重取时才显示出来。`POST /api/init`：把目录建成库。
 - `GET /plugin-ui/<插件名>/<路径>`：这个库装了的插件的 `ui` 目录里的文件，只读。路径的段解码后是空、`.`、`..` 或含斜杠的，链接跟到底不在 `ui` 里面的，没装的插件、没有 `ui` 的插件，都是 404。不要令牌：框架拿着令牌就能绕过对话框直接调 `/api/call`，所以它的地址不带令牌，载入它时也不发 Referer（界面的地址里有令牌）。答复带 `Content-Security-Policy: sandbox allow-scripts; frame-ancestors 'self'`，单独打开也拿不到界面的源；带 `Referrer-Policy: no-referrer`；带 `Access-Control-Allow-Origin: *`，因为沙箱里的框架是不透明的源，模块脚本和字体要 CORS 才载得进来。
 - `GET /plugin-kit/frame.js`、`/plugin-kit/frame.css`：开发包，同样带 CORS。
 - 网页的地址带 `shell=mac` 时，它在 Mac 外壳（`app/`）里：`<html>` 标上 `data-shell`，改用系统字体，左边栏顶部给窗口的三个按钮留出位置，外框部分不能选中文字，只对浏览器有意义的提示换掉。外壳在窗口成为或不再是前台窗口时发 `pneuma-shell` 事件，网页标上 `data-window`，窗口在后面时把外框调淡。`data-drag` 标出能拖动窗口的区域，外壳据此拖窗口；浏览器里这个标记什么都不做。
@@ -608,22 +649,26 @@ viewerFace.show(req: ViewRequest, call: { ctx: Context; table: PluginTable; env:
 
 ```
 <库>/
-  PNEUMA-BASE.md              说明（认知的载体，由内核拼）
+  PNEUMA-BASE.md              说明（认知的载体，由内核拼，经存储写）
   .pneuma-base/
-    config.json               库标识、格式版本、插件表、授权
+    config.json               库根的声明：库标识、格式版本、插件表、授权
     noise.json                噪音：存储不报告、不进入的名字和路径。跟着库走
-    tmp/                      内核写到一半的临时名；putting/ 下是正在放入的标记，asking/ 下是提请求时的锁。不同步
+    tmp/                      存储写到一半的东西：中断的写由下一次写清掉或补完。不同步
+    trash/                    存储删东西时先改名到这里再删。不同步
+    holds/                    存储的占位：正在写、记录随后就到的位置。不同步
     cache/                    存储的缓存区：每个记录处的行（rows/<名字>.sqlite）、大目录排好的名字（names/）。随时可删，不同步
-    requests/<号>.jsonl        agent 提的请求，一个一个文件，只追加（第 4 节「请主人做」）
-    <插件名>/                  每个插件名下的目录
+    requests/facts/           内核的记录处 requests 的事实：agent 提的请求（第 4 节「请主人做」）
+    <插件名>/                  每个插件的记录处：facts/ 下是它的事实，其余是它自己的地方
   _archive/                   归档区，里面保持原来的相对路径
   <某个目录>/.pneuma-item      带这个标记的目录是一样东西
   ……                          其余都是内容，随便怎么放
 ```
 
-`.pneuma-base/cache/` 删了，存储的答复不变，只变慢：行从事实重新推出，名字重新列。同步插件不同步它（第 12 节），符合性检查也不比较它（第 5 节）。
+内核的另一个记录处 `kernel` 只有行（变化的游标和日志，第 5 节「上下文里的工具」），没有事实。`.pneuma-base/cache/` 删了，存储的答复不变，只变慢：行从事实重新推出，名字重新列，内核的游标从头取一个。同步插件不同步它（第 12 节），符合性检查也不比较它（第 5 节）。
 
-**噪音。** `noise.json` 声明名字（任何一层叫这个名字的都算）和库内路径（它和它下面的一切）。存储从不报告、不进入噪音：列一层时不列，数的时候不进去，对噪音位置的操作答 `noise`。`init` 经存储写下缺省的名单（`core/README.md`：`.git`、`node_modules`、`.DS_Store` 这类）；没有这个文件的库按缺省的名单算。内核的三条命令在 `noise-commands.ts`：`noise list` 列出，agent 也能跑；`noise add <库内路径>`（或 `--name <名字>`）和 `noise remove`，只给主人。配置页有「噪音」一节；主人对一个关着的目录答「不用管」，就是 `noise add` 它（第 10 节）。`cache` 是存储的缓存区，`noise` 是这三条命令的头一个词，所以都不能做插件名（sdk 的 `RESERVED_PLUGIN_NAMES`）。
+**声明和说明。** 库的配置是库根的声明，经存储的 `declaration.read`、`declaration.write` 读写（`library.ts`）：写带预期，就是读到时的令牌，还没有声明时是空；别的写者插进来，就重读再写。内核不认识的字段原样留着。每次改配置都重拼说明 `PNEUMA-BASE.md`，经存储的 `write` 写，同样带预期（第 7 节）。`init` 先让存储建库（记录区、缓存区、缺省的噪音名单），再写声明和说明；文件夹里已有声明时，读得懂读不懂都一样，以 `already-a-library` 拒绝。
+
+**噪音。** `noise.json` 声明名字（任何一层叫这个名字的都算）和库内路径（它和它下面的一切）。存储从不报告、不进入噪音：列一层时不列，数的时候不进去，对噪音位置的操作答 `noise`。`init` 经存储写下缺省的名单（`core/README.md`：`.git`、`node_modules`、`.DS_Store` 这类）；没有这个文件的库按缺省的名单算。内核的三条命令在 `noise-commands.ts`：`noise list` 列出，agent 也能跑；`noise add <库内路径>`（或 `--name <名字>`）和 `noise remove`，只给主人。配置页有「噪音」一节；主人对一个关着的目录答「不用管」，就是 `noise add` 它（第 10 节）。插件名就是它记录处的名字，所以内核的记录处 `kernel`、`requests` 和存储自己占的 `tmp`、`trash`、`holds`、`cache` 都不能做插件名；`noise` 是这三条命令的头一个词，也不能（sdk 的 `RESERVED_PLUGIN_NAMES`）。
 
 本机还有一个目录，不是库的一部分，缺省是 `~/.pneuma-base`，可以用 `PNEUMA_BASE_HOME` 换：
 
@@ -644,7 +689,7 @@ $PNEUMA_BASE_HOME/
 
 | 编号 | 性质 | 由什么守 |
 | --- | --- | --- |
-| K1 | agent 面的任何调用，不让库里已有的内容或已有的记录变得找不回 | 放和归档的全化表；`revise` 的契约；测试 |
+| K1 | agent 面的任何调用，不让库里已有的内容或已有的记录变得找不回 | 放和归档的全化表；每次写都带预期；`revise` 的契约；测试 |
 | K2 | 没有任何插件时，七个动词都给出确定的答复，不报错 | 空配置的端到端测试 |
 | K3 | 换插件不改变七个动词的请求和结果的形状 | 类型 |
 | K4 | 内核不依赖任何插件；插件只经内核的公开接口接触内核 | 包的依赖；lint 的导入规则 |
@@ -653,6 +698,7 @@ $PNEUMA_BASE_HOME/
 | K7 | 破坏性的操作只在主人面，要人当面确认，在 agent 的会话里被拒绝 | 主人面命令的声明里带「破坏性」标志，由内核统一拦；只给主人的命令（`ownerOnly`）在同一道门被拒；`ask` 只记下要什么，`request approve` 让那条命令以主人的身份再过这道门；测试 |
 | K8 | 一个插件出错不让动词失败，也不被静默吞掉 | `problems`；测试 |
 | K9 | 归档的东西不被删除；默认的找和查不带它，开关打开才带 | 归档的全化表；测试 |
+| K10 | 内核和记账插件只经存储读写库的文件夹和记录区 | lint 的规则（`eslint.config.js`，第 3 节）；`storage-door.test.ts` 在故意违反的例子上看它变红 |
 
 ## 10. 记账与对账插件
 
