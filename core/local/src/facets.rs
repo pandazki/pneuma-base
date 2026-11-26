@@ -19,6 +19,7 @@ pub struct At<'a> {
 }
 
 impl At<'_> {
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     fn c_path(&self) -> CString {
         crate::sys::c_name(self.folder.path_of(self.place).as_os_str().as_bytes())
     }
@@ -187,6 +188,7 @@ const QUARANTINE: &str = "com.apple.quarantine";
 const TAGS: &str = "com.apple.metadata:_kMDItemUserTags";
 
 /// `flags;hex time;agent;uuid`: the agent is the program that brought the file in.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn quarantine_agent(bytes: &[u8]) -> Option<String> {
     let text = std::str::from_utf8(bytes).ok()?;
     let agent = text.split(';').nth(2)?.trim();
@@ -194,6 +196,7 @@ fn quarantine_agent(bytes: &[u8]) -> Option<String> {
 }
 
 /// A Finder tag is stored as `name\n<colour number>`.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn tag_name(stored: &str) -> String {
     match stored.rsplit_once('\n') {
         Some((name, colour)) if colour.bytes().all(|b| b.is_ascii_digit()) => name.to_owned(),
@@ -239,6 +242,7 @@ pub fn provider_of(path: &std::path::Path) -> Option<String> {
 }
 
 /// Just enough of Apple's binary property lists to read an array of strings.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod bplist {
     pub fn strings(bytes: &[u8]) -> Option<Vec<String>> {
         let list = Plist::parse(bytes)?;

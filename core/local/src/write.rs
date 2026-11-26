@@ -624,7 +624,6 @@ impl LocalFolder {
     }
 }
 
-
 /// The note of a move onto a directory, removed once the move is done.
 struct Intent {
     tmp: OwnedFd,

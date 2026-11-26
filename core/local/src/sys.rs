@@ -2,7 +2,7 @@
 
 use std::ffi::{CStr, CString};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
-use std::os::unix::ffi::{OsStrExt, OsStringExt};
+use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
 use pneuma_base_storage::{Kind, Time, Token};
@@ -535,7 +535,9 @@ pub fn path_of(fd: RawFd) -> Option<std::path::PathBuf> {
     }
     let len = buf.iter().position(|b| *b == 0)?;
     buf.truncate(len);
-    Some(std::path::PathBuf::from(std::ffi::OsString::from_vec(buf)))
+    Some(std::path::PathBuf::from(
+        <std::ffi::OsString as std::os::unix::ffi::OsStringExt>::from_vec(buf),
+    ))
 }
 
 /// The name of the file system the descriptor is on (`apfs`, `hfs`, `msdos`, `ext4`…).
