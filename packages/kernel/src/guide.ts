@@ -76,7 +76,7 @@ function generic(facts: GuideFacts, product: string): string[] {
 
 function productGuide(facts: GuideFacts, p: AgentProduct): string[] {
   const way = waysOf(p)[0] as Way
-  const how = ['## 在这里怎么接上', '', `主人允许之后，${p.title} 以「${WAY_WORD[way]}」接上：写在 ${whereOf(p, way, p.name, facts.env)}。接上之后：${p.next?.[way] ?? ''}`].join('\n')
+  const how = ['## 在这里怎么接上', '', `主人允许之后，${p.title} 以「${WAY_WORD[way]}」接上：写在 ${whereOf(p, way, p.name, facts.env)}。`].join('\n')
   const likely = `你的授权名多半是 ${p.name}（以产品命名；这台机器上已经有同名的，会是 ${p.name}-2 这样的，以配对的答复为准）。`
   const known = ['## 已知的', '', ...[...(p.guide ?? []), ...(p.notice ? [p.notice(facts.root)] : [])].map((l) => `- ${l}`)].join('\n')
   return [`# Pneuma Base：${basename(facts.root)}（给 ${p.title}）`, opening(facts.root), how, pairing(facts, p.name), afterwards(facts, p.name, likely), known]

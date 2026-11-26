@@ -64,8 +64,9 @@ export function agentRoutes({ dir, home, env, origin, mcp }: AgentFacts): (req: 
     if (limited(res, windows.guide)) return
     const product = segment ?? url.searchParams.get('for')
     if (product !== null && !GRANT_NAME.test(product)) return fail(res, 404, 'no such product')
-    if ((await openLibrary(dir, new Map())) === null) return sendText(res, 409, 'text/plain', NOT_A_LIBRARY)
-    sendText(res, 200, 'text/markdown', guideText({ root: dir, home, env, url: origin }, product))
+    const library = await openLibrary(dir, new Map())
+    if (library === null) return sendText(res, 409, 'text/plain', NOT_A_LIBRARY)
+    sendText(res, 200, 'text/markdown', guideText({ root: library.root, home, env, url: origin }, product))
   }
 
   const pair: Route = async (req, res) => {

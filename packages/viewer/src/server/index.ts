@@ -2,7 +2,7 @@
 // addresses only. ARCHITECTURE.md section 6.
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, realpath, stat } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { extname, isAbsolute, join, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -237,7 +237,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       ),
     )
   try {
-    await recordEndpoint(opts.home, { url: endpoint, port, pid: process.pid, library: opts.dir, at: new Date().toISOString() as Instant })
+    await recordEndpoint(opts.home, { url: endpoint, port, pid: process.pid, library: await realpath(opts.dir).catch(() => opts.dir), at: new Date().toISOString() as Instant })
   } catch (error) {
     await stop()
     throw error

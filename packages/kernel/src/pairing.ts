@@ -14,7 +14,7 @@ import { GRANT_NAME, readGrantFile } from './grants.js'
 import { launcherPath } from './launcher.js'
 import { openLibrary } from './library.js'
 import { DESCRIPTION_FILE } from './paths.js'
-import { CONNECTABLE, productNamed, waysOf, type Env, type Way } from './products.js'
+import { CONNECTABLE, waysOf, type Env, type Way } from './products.js'
 import { commandLine, quote, when } from './requests.js'
 import { formOf, type Action, type Ask, type Block, type Instant, type Library, type OwnerArgs } from '@pneuma-base/sdk'
 
@@ -214,14 +214,13 @@ export async function requestPairing(req: PairRequest): Promise<PairRequested> {
 
 function connectedFacts(home: string, p: Pairing, d: Extract<PairingDecision, { outcome: 'connected' }>, url: string | null): Connected {
   const reach = reachOf(launcherPath(home), d.grant, url === null ? null : { url })
-  const then = productNamed(p.product)?.next?.[d.way]
   return {
     grant: d.grant,
     way: d.way,
     command: reach.command,
     mcp: reach.mcp,
     read: join(p.library, DESCRIPTION_FILE),
-    next: `每件事开始时运行：${reach.command} start "<一句话>"。${then ?? ''}`,
+    next: `每件事开始时运行：${reach.command} start "<一句话>"。`,
   }
 }
 
