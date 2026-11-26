@@ -103,6 +103,12 @@ export class SearchIndex {
     }
   }
 
+  /** A new, empty index in `cacheDir`, whatever was there: the cache folder is removed first. */
+  static fresh(cacheDir: string, now: Instant): SearchIndex {
+    rmSync(cacheDir, { recursive: true, force: true })
+    return SearchIndex.open(cacheDir, now)
+  }
+
   /** The index as it is, without building one; null when there is none this version can read. */
   static peek(cacheDir: string): SearchIndex | null {
     const file = join(cacheDir, FILE)

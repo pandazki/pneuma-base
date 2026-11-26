@@ -1,6 +1,5 @@
 // The owner commands the search plugin adds. None can make content unrecoverable: the embedder
 // record is a new file each time, and the index and its rows are a cache.
-import { rm } from 'node:fs/promises'
 import { defineCommand, type OwnerAnswer, type OwnerCommand, type PluginContext } from '@pneuma-base/kernel'
 import { currentEmbedder, recordEmbedder } from './config.js'
 import { embedderFor, embedderLabel, KEY_SECRET, SET_KEY, type EmbedderConfig } from './embed.js'
@@ -25,8 +24,7 @@ function embedderOf(kind: string, url: string | null, model: string | null): Emb
 async function rebuild(ctx: PluginContext): Promise<OwnerAnswer> {
   const config = await currentEmbedder(ctx)
   const key = await ctx.secrets.get(KEY_SECRET)
-  await rm(ctx.cacheDir, { recursive: true, force: true })
-  const index = SearchIndex.open(ctx.cacheDir, ctx.now)
+  const index = SearchIndex.fresh(ctx.cacheDir, ctx.now)
   let failure: string | null = null
   try {
     await refresh(index, ctx, { files: Infinity })

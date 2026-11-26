@@ -155,6 +155,7 @@ const MAY_TOUCH_FILES = {
   'packages/sdk/src/testkit/conformance.ts': "the test kit: it looks at a sandbox library from outside, as a person's file manager does, to see what a plugin changed",
   'packages/sdk/src/kit/deploy/content.ts': "the stage folder in the plugin's cache under $PNEUMA_BASE_HOME, where a thing's files are read out to before a target takes them",
   'packages/plugin-version/src/outside.ts': 'where a version is exported to: the destination the owner names, or the temporary folder a restore puts back from, outside the library',
+  'packages/plugin-search/src/store.ts': "the search index, a sqlite file in the plugin's cache under $PNEUMA_BASE_HOME",
   'packages/plugin-deploy/src/targets.ts': 'the dir target writes the folder outside the library the owner names; the command target runs the commands the owner set',
   'plugins/space/src/cloudflare.ts': 'the credentials file the owner names, outside the library',
   'plugins/space/src/space.ts': "the staged site files the deploy kit read out into the plugin's cache",
