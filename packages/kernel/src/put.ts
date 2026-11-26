@@ -4,7 +4,6 @@
 import { createHash } from 'node:crypto'
 import { isAbsolute, relative, sep } from 'node:path'
 import { writableContent } from './access.js'
-import { putsFor, replacedFor } from './contract-v1.js'
 import { openDirectories } from './places.js'
 import { hashOutside, outsideDir, outsideFile } from './outside.js'
 import { archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
@@ -91,10 +90,8 @@ export async function put(req: PutRequest, ctx: Context): Promise<PutResult> {
         if (!plugin.onPut) return null
         const answers: PluginNoteAnswer[] = []
         for (const one of told) {
-          for (const p of await putsFor(plugin, one, store)) {
-            const answer = await plugin.onPut(p, pctx)
-            if (answer !== null) answers.push(answer)
-          }
+          const answer = await plugin.onPut(one, pctx)
+          if (answer !== null) answers.push(answer)
         }
         return answers.length <= 1 ? (answers[0] ?? null) : joined(answers)
       }),
@@ -270,15 +267,14 @@ async function place(req: Extract<PutRequest, { kind: 'place' }>, ctx: Context, 
   if (action === 'revise') {
     // Ask every plugin that keeps replaced content; replace when at least one kept it.
     const token = at.entry?.token ?? ''
-    const replaced = await replacedFor(ctx.library.plugins, current, store, target.path)
-    const over: PlaceOverExisting = { path: target.path, token, current: replaced, incoming: await incoming.fingerprint() }
+    const over: PlaceOverExisting = { path: target.path, token, current, incoming: await incoming.fingerprint() }
     const asked = await eachPlugin(ctx, (plugin, pctx) => plugin.revise?.(over, pctx))
     const held = asked.values.flatMap(({ plugin, value }) => (value.outcome === 'held' ? [{ plugin, note: value.note }] : []))
     const declined = asked.values.flatMap(({ plugin, value }) => (value.outcome === 'declined' ? [{ plugin, text: value.reason }] : []))
     if (held.length === 0) return refuse('would-overwrite', req.to, asked.problems, declined)
     notes = held.flatMap(({ plugin, note }) => (note === null ? [] : [{ plugin, text: note }]))
     problems = asked.problems
-    previous = { token, fingerprint: replaced }
+    previous = { token, fingerprint: current }
   }
   const expect = action === 'copy' ? 'empty' : (at.entry?.token ?? 'empty')
   const written = await store.write(target.path, incoming.source, expect, { hold, ...(incoming.kind === 'bundle' ? { rule: THING_RULE, limit: THING_FILES } : {}) })

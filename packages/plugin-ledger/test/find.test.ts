@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 import { ledger } from '../src/index.js'
 
 const finder: Plugin = {
-  contract: 1,
+  contract: 2,
   name: pluginName('finder'),
   cognition: null,
   storage: [],

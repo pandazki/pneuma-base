@@ -320,7 +320,7 @@ describe('a directory that is not a library (C7)', () => {
   it('says so, and init makes it a library with the chosen plugins', async () => {
     const dir = tempDir('pb-v-plain-')
     writeFileSync(join(dir, 'kept.md'), 'kept')
-    const pager: Plugin = { contract: 1, name: 'pager' as Plugin['name'], cognition: { title: '测试插件', text: '## 测试' }, storage: [], statements: [], ownerCommands: [] }
+    const pager: Plugin = { contract: 2, name: 'pager' as Plugin['name'], cognition: { title: '测试插件', text: '## 测试' }, storage: [], statements: [], ownerCommands: [] }
     const server = await serve(dir, { table: new Map([['pager', pager]]) })
     expect((await http(server, '/api/state')).json()).toMatchObject({ library: null, views: [], available: [{ name: 'pager', title: '测试插件' }] })
     expect((await http(server, '/api/view?view=files')).status).toBe(409)
@@ -337,7 +337,7 @@ describe('a directory that is not a library (C7)', () => {
 describe('the view slot over HTTP (C2)', () => {
   const name = (n: string) => n as Plugin['name']
   const page: Plugin = {
-    contract: 1,
+    contract: 2,
     name: name('page'),
     cognition: null,
     storage: [],
@@ -347,7 +347,7 @@ describe('the view slot over HTTP (C2)', () => {
     onView: async () => ({ title: '一页', subtitle: null, blocks: [{ kind: 'text', text: 'hello from page', tone: 'neutral' }] }),
   }
   const thrower: Plugin = {
-    contract: 1,
+    contract: 2,
     name: name('thrower'),
     cognition: null,
     storage: [],
@@ -394,7 +394,7 @@ describe('a plugin’s own pages and the kit they load (custom blocks)', () => {
     symlinkSync(join(dir, 'secret.txt'), join(dir, 'ui', 'out.txt'))
     return join(dir, 'ui')
   }
-  const drawn = (ui: string): Plugin => ({ contract: 1, name: name('drawn'), cognition: null, storage: [], statements: [], ownerCommands: [], ui })
+  const drawn = (ui: string): Plugin => ({ contract: 2, name: name('drawn'), cognition: null, storage: [], statements: [], ownerCommands: [], ui })
 
   it('serves an installed plugin’s ui files without the token, as pages that cannot reach the viewer’s origin', async () => {
     const plugin = drawn(uiDir())
@@ -416,7 +416,7 @@ describe('a plugin’s own pages and the kit they load (custom blocks)', () => {
 
   it('serves nothing for a plugin the library has not installed, or one without ui, and nothing outside the ui directory', async () => {
     const plugin = drawn(uiDir())
-    const bare: Plugin = { contract: 1, name: name('bare'), cognition: null, storage: [], statements: [], ownerCommands: [] }
+    const bare: Plugin = { contract: 2, name: name('bare'), cognition: null, storage: [], statements: [], ownerCommands: [] }
     const lib = await library([bare])
     const server = await serve(lib.root, { table: new Map([['drawn', plugin], ['bare', bare]]) })
     expect((await http(server, '/plugin-ui/drawn/page.html', { token: null })).status).toBe(404)
@@ -454,7 +454,7 @@ describe('a plugin’s own pages and the kit they load (custom blocks)', () => {
 
   it('a malformed block in a plugin’s view becomes a block saying so, and a problem; the rest of the page stands', async () => {
     const odd: Plugin = {
-      contract: 1,
+      contract: 2,
       name: name('odd'),
       cognition: null,
       storage: [],

@@ -1,7 +1,7 @@
 import { realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, normalize, posix, relative, sep } from 'node:path'
-import type { LibraryPath, PluginName, Region } from '@pneuma-base/sdk'
+import type { LibraryPath, Region } from '@pneuma-base/sdk'
 
 export const KERNEL_DIR = '.pneuma-base'
 export const ARCHIVE_DIR = '_archive'
@@ -66,18 +66,6 @@ export function shortDir(dir: string, max = 48, home = homedir()): string {
   const tilde = dir === home ? '~' : dir.startsWith(`${home}/`) ? `~${dir.slice(home.length)}` : dir
   const chars = [...tilde]
   return chars.length > max ? `…${chars.slice(-(max - 3)).join('')}` : tilde
-}
-
-export function abs(root: string, path: LibraryPath): string {
-  return join(root, ...path.split('/'))
-}
-
-export function pluginDir(root: string, name: PluginName): string {
-  return join(root, KERNEL_DIR, name)
-}
-
-export function scratchDir(root: string): string {
-  return join(root, KERNEL_DIR, 'tmp')
 }
 
 /**

@@ -2,7 +2,6 @@
 // storage in its own words, at the places a plugin's records point, through the one door.
 import { type Context, type LibraryPath, type PlaceStore, type PluginName, type PluginStorage, type PluginTools, type WriteSource } from '@pneuma-base/sdk'
 import { changesSince } from './changes.js'
-import { v1Tools } from './contract-v1.js'
 import { archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
 import { PLACE as REQUESTS } from './requests.js'
 import { storageOf, type Area, type Source, type Storage } from './storage.js'
@@ -74,6 +73,5 @@ export function pluginTools(ctx: Context, name: PluginName): PluginTools {
       return agentFace.put(req, ctx)
     },
     storage: loggedStorage(pluginStorage(store, name, ctx.library.config.plugins), name),
-    ...v1Tools(store, root, name),
   }
 }

@@ -194,7 +194,7 @@ beforeAll(async () => {
   // An agent asking to be connected, so the home page has 允许 and 拒绝.
   expect(sb.run(['pair', 'request', 'codex', '想接上这个库', '--library', lib], { cwd: work }).code).toBe(0)
   // A plugin on this machine the library has not installed, and a secret set, so their buttons are on the config page.
-  await write(join(work, 'extra/index.js'), "export default { contract: 1, name: 'extra', cognition: null, storage: [], statements: [], ownerCommands: [] }\n")
+  await write(join(work, 'extra/index.js'), "export default { contract: 2, name: 'extra', cognition: null, storage: [], statements: [], ownerCommands: [] }\n")
   expect(sb.run(['plugin', 'install', join(work, 'extra')], { cwd: work }).code).toBe(0)
   expect(sb.run(['secret', 'set', 'search', 'key'], { cwd: work, input: 'sk-test\n' }).code).toBe(0)
   await write(join(lib, 'notes/dropped.md'), '主人直接放进来的\n')

@@ -26,7 +26,7 @@ const install = (dir: string, env: Record<string, string> = {}) => sb.run(['plug
 describe('an outside plugin whose command declares no params', () => {
   const LOOSE = {
     'package.json': '{ "type": "module" }\n',
-    'index.js': `export default { contract: 1, name: 'loose', cognition: null, storage: [], statements: [], ownerCommands: [
+    'index.js': `export default { contract: 2, name: 'loose', cognition: null, storage: [], statements: [], ownerCommands: [
   { name: 'loose go', summary: '', destructive: false, ownerOnly: false, run: async () => ({ outcome: 'done', text: '' }) },
 ] }\n`,
   }
@@ -69,14 +69,14 @@ describe('plugin install', () => {
 
   it('refuses a name a built-in plugin holds, and a directory that is no plugin, leaving the installed one as it was', () => {
     install(source(pager('第一版', '0.1.0')))
-    const builtIn = install(source({ 'index.js': "export default { contract: 1, name: 'ledger', cognition: null, storage: [], statements: [], ownerCommands: [] }\n" }))
+    const builtIn = install(source({ 'index.js': "export default { contract: 2, name: 'ledger', cognition: null, storage: [], statements: [], ownerCommands: [] }\n" }))
     expect(builtIn.json()).toMatchObject({ outcome: 'refused', reason: 'built-in-name' })
     const bad = pager('坏的', '9.9.9')
-    const broken = install(source({ ...bad, 'index.js': (bad['index.js'] as string).replace('contract: 1', 'contract: 7') }))
+    const broken = install(source({ ...bad, 'index.js': (bad['index.js'] as string).replace('contract: 2', 'contract: 7') }))
     expect(broken.json()).toMatchObject({ outcome: 'refused', reason: 'plugin-failed-to-load' })
     expect(broken.json().text).toContain('contract 是 7')
     const badParams = source({
-      'index.js': `export default { contract: 1, name: 'odd', cognition: null, storage: [], statements: [], ownerCommands: [
+      'index.js': `export default { contract: 2, name: 'odd', cognition: null, storage: [], statements: [], ownerCommands: [
   { name: 'odd go', summary: '', destructive: false, ownerOnly: false, params: { flags: [{ name: 'quiet', hint: '安静', kind: 'boolean', required: true }] }, run: async () => ({ outcome: 'done', text: '' }) },
 ] }\n`,
     })
@@ -103,7 +103,7 @@ describe('plugin list', () => {
     expect(machine.stdout).not.toContain('这个库装了')
     sb.run(['plugin', 'add', 'pager', '--library', lib])
     const listed = sb.run(['plugin', 'list', '--library', lib, '--json']).json().data.plugins
-    expect(listed).toContainEqual({ name: 'pager', version: '0.1.0', contract: 1, summary: '一页字', origin: 'machine', installed: true, failed: null })
+    expect(listed).toContainEqual({ name: 'pager', version: '0.1.0', contract: 2, summary: '一页字', origin: 'machine', installed: true, failed: null })
     expect(listed).toContainEqual(expect.objectContaining({ name: 'ledger', origin: 'built-in', installed: true }))
     expect(listed).toContainEqual(expect.objectContaining({ name: 'deploy', origin: 'built-in', installed: false }))
     for (const name of ['ledger', 'version', 'sync', 'deploy', 'search']) {

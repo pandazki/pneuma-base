@@ -9,7 +9,7 @@ import { sandbox, tempDir, type Sandbox } from './helpers.js'
 const ECHO = `import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 export default {
-  contract: 1,
+  contract: 2,
   name: 'echo',
   cognition: { title: '回声', text: '## 回声\\n\\n用 say echo "<一句话>" 它就回一句。' },
   storage: [],
@@ -23,7 +23,7 @@ export default {
 }
 `
 const BROKEN = `throw new Error('broken on purpose')\n`
-const NO_CONTRACT = ECHO.replace('  contract: 1,\n', '')
+const NO_CONTRACT = ECHO.replace('  contract: 2,\n', '')
 
 let sb: Sandbox
 let lib: string
@@ -107,6 +107,15 @@ describe('a plugin that fails to load', () => {
     expect(JSON.parse(readFileSync(join(lib, '.pneuma-base/config.json'), 'utf8')).plugins).toEqual([])
   })
 
+  it('is refused by plugin add when it is written against contract 1, with the section of the standard to read', () => {
+    plugin('echo', ECHO.replace('  contract: 2,\n', '  contract: 1,\n'))
+    const r = run(['plugin', 'add', 'echo'])
+    expect(r.code).toBe(2)
+    expect(r.json()).toMatchObject({ outcome: 'refused', reason: 'plugin-failed-to-load' })
+    expect(r.json().text).toContain('contract 是 1：这个 pneuma-base 只跑第 2 版插件契约。要改的地方见插件规范 PLUGINS.md 的「从第 1 版到第 2 版」一节')
+    expect(JSON.parse(readFileSync(join(lib, '.pneuma-base/config.json'), 'utf8')).plugins).toEqual([])
+  })
+
   it('cannot shadow a built-in plugin', () => {
     plugin('ledger', BROKEN)
     expect(run(['plugin', 'add', 'ledger']).code).toBe(0)
@@ -116,7 +125,7 @@ describe('a plugin that fails to load', () => {
 
 describe('plugin add and plugin remove through the command line', () => {
   const SPACE = `export default {
-  contract: 1,
+  contract: 2,
   name: 'space',
   cognition: null,
   storage: [],

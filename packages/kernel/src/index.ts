@@ -12,9 +12,6 @@ export { assembleDescription } from './cognition.js'
 export { makeContext, pluginContext } from './pipeline.js'
 export { identifySession, identifyActor, looksLikeAgentSession, type Env } from './session.js'
 export { resolveGrant, GRANT_NAME, type ResolvedGrant } from './grants.js'
-// `abs` stays exported for the viewer's file serving and the contract-1 plugins, which move next step.
-// eslint-disable-next-line no-restricted-imports
-export { abs } from './paths.js'
 export { archivedPath, originalPath, parseLibraryPath, regionOf, shortDir, withSuffix } from './paths.js'
 export { listenTo, stopListening } from './changes.js'
 export { changeStamp, dirKind, dirsAbove, KERNEL_ENTRIES, openDirectories, openDirsOf, placeIn, type DirKind, type Registered } from './places.js'
