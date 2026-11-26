@@ -111,62 +111,99 @@ const pluginBoundary = {
   },
 }
 
-// tmp/run-7: the records say what is in the library, and storage is looked at only through one door,
-// the kernel's storage.ts, which a plugin reaches as `tools.storage`. Every file of the kernel and of
-// the ledger is on storage (step 3): none may read or write the library's folder or record area any
-// other way. The files below may still use the file system, each for files that are no library's
-// folder or record area, and so are not checked:
-const OFF_STORAGE = {
-  kernel: {
-    'storage.ts': 'the door itself: it starts the storage program and finds its binary',
-    'address.ts': "a library's address: the real path of the folder a caller names, and the folder init makes, before storage can answer for it",
-    'paths.ts': 'an absolute path a caller wrote, resolved through links to the library path it names; a path already under the root is taken as written',
-    'outside.ts': "a put's source outside the library: its kind, size and sha256",
-    'contract-v1.ts': 'contract 1, removed next step: an outside file\'s sha256 and the outside directory a copy-out writes into',
-    'cognition.ts': "the package's own texts",
-    'tool-log.ts': 'the log of what plugins ask storage, at a path outside every library a test harness names in PNEUMA_BASE_TOOL_LOG',
-    'machine-files.ts': 'machine state under $PNEUMA_BASE_HOME, and the files of other programs an owner command writes',
-    'grants.ts': 'grant files under $PNEUMA_BASE_HOME',
-    'endpoint.ts': 'the local endpoint files under $PNEUMA_BASE_HOME',
-    'pairing.ts': 'pairings under $PNEUMA_BASE_HOME',
-    'secrets.ts': "plugins' secrets under $PNEUMA_BASE_HOME",
-    'plugin-table.ts': 'plugins installed under $PNEUMA_BASE_HOME',
-    'launcher.ts': 'the launcher under $PNEUMA_BASE_HOME',
-    'connections.ts': "agents' configuration files and the connection records under $PNEUMA_BASE_HOME",
-    'products.ts': "where each agent product keeps its configuration and its conversations",
-    'agent-commands.ts': "agents' configuration files and skill folders",
-    'owner-commands.ts': 'the skill file an owner command writes where the owner says, and installed plugins',
-  },
-  ledger: {
-    'conversation.ts': "agents' conversation transcripts, outside the library",
-    'cognition.ts': "the package's own texts",
-    'export-file.ts': 'the audit export the owner names: one file outside the library, written page by page',
-  },
+// The storage door, over every package (tmp/run-7 architecture.md, sections 2 and 7): the records say
+// what is in the library, and nothing above storage reads or writes the library's folder or its record
+// area but through the kernel's one door, packages/kernel/src/storage.ts, which a plugin reaches as
+// `ctx.tools`. Checked in the runtime sources of every package: packages/*/src, plugins/*/src and the
+// scaffold's templates. There a file may not start a program (node:child_process), may use the file
+// system only to read its own package's files (`readFileSync(new URL(…, import.meta.url))`, such as a
+// cognition text), and may not use the kernel's helpers that touched the folder nor the tools of plugin
+// contract 1. Not checked, because they are no runtime of the library: tests (they stand for the world
+// outside, such as an agent's own tools writing into a library), and build, test and demonstration
+// scripts (`scripts/` of the repository and of each plugin).
+//
+// The files below may use the file system and start programs, each for what is no library's folder or
+// record area, and say what: machine state under $PNEUMA_BASE_HOME, paths outside the library that a
+// person or a plugin names, and the files of other programs.
+const MAY_TOUCH_FILES = {
+  'packages/kernel/src/storage.ts': 'the door itself: it starts the storage program and finds its binary',
+  'packages/kernel/src/address.ts': "a library's address: the real path of the folder a caller names, and the folder init makes, before storage can answer for it",
+  'packages/kernel/src/paths.ts': 'an absolute path a caller wrote, resolved through links to the library path it names; a path already under the root is taken as written',
+  'packages/kernel/src/outside.ts': "a put's source outside the library: its kind, size and sha256",
+  'packages/kernel/src/cognition.ts': "the package's own texts",
+  'packages/kernel/src/tool-log.ts': 'the log of what plugins ask storage, at a path outside every library a test harness names in PNEUMA_BASE_TOOL_LOG',
+  'packages/kernel/src/machine-files.ts': 'machine state under $PNEUMA_BASE_HOME, and the files of other programs an owner command writes',
+  'packages/kernel/src/grants.ts': 'grant files under $PNEUMA_BASE_HOME',
+  'packages/kernel/src/endpoint.ts': 'the local endpoint files under $PNEUMA_BASE_HOME',
+  'packages/kernel/src/pairing.ts': 'pairings under $PNEUMA_BASE_HOME',
+  'packages/kernel/src/secrets.ts': "plugins' secrets under $PNEUMA_BASE_HOME",
+  'packages/kernel/src/plugin-table.ts': 'plugins installed under $PNEUMA_BASE_HOME',
+  'packages/kernel/src/launcher.ts': 'the launcher under $PNEUMA_BASE_HOME',
+  'packages/kernel/src/connections.ts': "agents' configuration files and the connection records under $PNEUMA_BASE_HOME",
+  'packages/kernel/src/products.ts': 'where each agent product keeps its configuration and its conversations',
+  'packages/kernel/src/agent-commands.ts': "agents' configuration files and skill folders",
+  'packages/kernel/src/owner-commands.ts': 'the skill file an owner command writes where the owner says, and installed plugins',
+  'packages/plugin-ledger/src/conversation.ts': "agents' conversation transcripts, outside the library",
+  'packages/plugin-ledger/src/export-file.ts': 'the audit export the owner names: one file outside the library, written page by page',
+  'packages/viewer/src/server/index.ts': "the built pages and the files of a plugin's ui folder, outside every library",
+  'packages/viewer/src/server/files.ts': "the files of a plugin's ui folder, and a stamp of this machine's pairings under $PNEUMA_BASE_HOME",
+  'packages/cli/src/main.ts': 'whether the first word a person typed names a folder, to open the management UI on it',
+  'packages/cli/src/verbs.ts': "whether a path an agent typed names a file or a folder, before the kernel parses it",
+  'packages/cli/src/scaffold.ts': 'the plugin project plugin new writes where the person says, outside every library, and the standard it points to',
+  'packages/sdk/src/testkit/run.ts': 'the test kit: it starts the command line on sandbox libraries',
+  'packages/sdk/src/testkit/sandbox.ts': 'the test kit: it makes sandbox libraries in a temporary folder and starts the command line and the UI server on them',
+  'packages/sdk/src/testkit/conformance.ts': "the test kit: it looks at a sandbox library from outside, as a person's file manager does, to see what a plugin changed",
+  'packages/sdk/src/kit/deploy/content.ts': "the stage folder in the plugin's cache under $PNEUMA_BASE_HOME, where a thing's files are read out to before a target takes them",
+  'packages/plugin-deploy/src/targets.ts': 'the dir target writes the folder outside the library the owner names; the command target runs the commands the owner set',
+  'plugins/space/src/cloudflare.ts': 'the credentials file the owner names, outside the library',
+  'plugins/space/src/space.ts': "the staged site files the deploy kit read out into the plugin's cache",
+  'plugins/space/src/package.ts': "the staged site files the deploy kit read out into the plugin's cache",
+  'packages/cli/templates/deploy/src/target.ts': 'the folder outside the library the owner names as the target',
 }
-const DOOR = 'On storage: read and write the folder and the record area only through the storage door (the kernel\'s storage.ts; a plugin\'s tools.storage). tmp/run-7 architecture.md section 7; eslint.config.js lists the files that may use the file system and why.'
-const FS = ['node:fs', 'node:fs/promises', 'fs', 'fs/promises', 'node:child_process', 'child_process'].map((name) => ({ name, message: DOOR }))
+/** Projects of their own in this repository, which only the storage door covers. */
+const OWN_PROJECTS = ['plugins/**', 'packages/cli/templates/**']
+const DOOR = "The storage door: the library is read and written only through packages/kernel/src/storage.ts (a plugin: ctx.tools); other file access is listed in MAY_TOUCH_FILES with its reason."
+const FS = /^(node:)?fs(\/promises)?$/.source
+const CHILD = ['node:child_process', 'child_process'].map((name) => ({ name, message: DOOR }))
 const DIRECT = ['abs', 'canonical', 'thingAt', 'libraryFiles', 'listThings', 'bundleFiles', 'bundleManifest', 'fingerprintOf', 'fingerprintOfFile', 'enclosingBundle', 'copyBundle']
 const V1_TOOLS = 'abs|thing|things|files|copyOut|manifest|fingerprint|fingerprintOfFile|fingerprintOfManifest|putting'
-const TOOLS = { selector: `MemberExpression[property.name=/^(${V1_TOOLS})$/][object.type='MemberExpression'][object.property.name='tools']`, message: `${DOOR} The contract-1 tools are a layer for the plugins not moved yet.` }
-const door = (boundary, files, ignores, paths, patterns) => ({
+const SYNTAX = [
+  { selector: `ImportDeclaration[source.value=/${FS}/] > :matches(ImportSpecifier[imported.name!='readFileSync'], ImportDefaultSpecifier, ImportNamespaceSpecifier)`, message: `${DOOR} Of the file system, a package reads only its own files with readFileSync.` },
+  { selector: `CallExpression[callee.name='readFileSync']:not([arguments.0.type='NewExpression'][arguments.0.callee.name='URL'][arguments.0.arguments.1.object.type='MetaProperty'])`, message: `${DOOR} readFileSync reads only the package's own files: readFileSync(new URL(…, import.meta.url)).` },
+  { selector: `ImportExpression[source.value=/^(node:)?(fs|child_process)/]`, message: DOOR },
+  { selector: `CallExpression[callee.property.name='getBuiltinModule'][arguments.0.value=/^(node:)?(fs|child_process)/]`, message: DOOR },
+  { selector: `CallExpression[callee.name='require'][arguments.0.value=/^(node:)?(fs|child_process)/]`, message: DOOR },
+  { selector: `MemberExpression[property.name=/^(${V1_TOOLS})$/][object.type='MemberExpression'][object.property.name='tools']`, message: `${DOOR} The tools of plugin contract 1 are gone; PLUGINS.md says what replaces each.` },
+  { selector: `MemberExpression[property.name='dir'][object.name=/^(ctx|pctx)$/]`, message: `${DOOR} A plugin's context has no dir in contract 2: its record place is tools.storage.own and tools.storage.records.` },
+]
+const allowed = Object.keys(MAY_TOUCH_FILES)
+/** The door on `files`, keeping the import rules of the boundary those files already have. */
+const door = (files, patterns = [], paths = []) => ({
   files,
-  ignores,
+  ignores: allowed,
   rules: {
-    'no-restricted-imports': ['error', { paths: [...FS, ...paths], patterns: [...boundary.rules['no-restricted-imports'][1].patterns, ...patterns] }],
-    'no-restricted-syntax': ['error', TOOLS],
+    'no-restricted-imports': ['error', { paths: [...CHILD, ...paths], patterns }],
+    'no-restricted-syntax': ['error', ...SYNTAX],
   },
 })
-const off = (dir, names) => Object.keys(names).map((f) => `${dir}/${f}`)
+const patternsOf = (boundary) => boundary.rules['no-restricted-imports'][1].patterns
+const SOURCES = ['**/*.ts', '**/*.js', '**/*.mjs'].map((ext) => ext.replace('**', 'src/**'))
+const under = (...dirs) => dirs.flatMap((dir) => SOURCES.map((src) => `${dir}/${src}`))
 const storageDoor = [
-  door(kernelBoundary, ['packages/kernel/src/**/*.ts'], off('packages/kernel/src', OFF_STORAGE.kernel), [{ name: './paths.js', importNames: ['abs', 'canonical'], message: DOOR }], [{ regex: '^\\./machine-files(\\.js)?$', message: DOOR }]),
-  door(pluginBoundary, ['packages/plugin-ledger/src/**/*.ts'], off('packages/plugin-ledger/src', OFF_STORAGE.ledger), [{ name: '@pneuma-base/kernel', importNames: DIRECT, message: DOOR }], []),
+  door(under('packages/kernel'), [...patternsOf(kernelBoundary), { regex: '^\\./machine-files(\\.js)?$', message: DOOR }], [{ name: './paths.js', importNames: ['abs', 'canonical'], message: DOOR }]),
+  door(under('packages/sdk'), patternsOf(sdkBoundary)),
+  door(under('packages/plugin-*'), patternsOf(pluginBoundary), [{ name: '@pneuma-base/kernel', importNames: DIRECT, message: DOOR }]),
+  { ...door(under('packages/viewer'), patternsOf(viewerBoundary)), ignores: [...allowed, 'packages/viewer/src/server/agent.ts'] },
+  door(['packages/viewer/src/server/agent.ts'], agentRoutesBoundary.rules['no-restricted-imports'][1].patterns, agentRoutesBoundary.rules['no-restricted-imports'][1].paths),
+  door(under('packages/cli')),
+  door(under('plugins/*', 'packages/cli/templates/*')),
 ]
 
 export default tseslint.config(
-  // The plugin project templates are checked where they run: the scaffold's test builds and tests a generated project.
-  { ignores: ['**/dist/**', '**/node_modules/**', 'tmp/**', 'dist-packages/**', 'packages/cli/templates/**', 'plugins/**'] },
-  js.configs.recommended,
-  ...tseslint.configs.recommended,
+  { ignores: ['**/dist/**', '**/node_modules/**', 'tmp/**', 'dist-packages/**', '**/.local/**'] },
+  // The plugins under plugins/ and the scaffold's templates are projects of their own, built and tested
+  // where they run: only the storage door is checked here (and the parser for their TypeScript).
+  ...[js.configs.recommended, ...tseslint.configs.recommended].map((c, i) => (i === 1 ? c : { ...c, ignores: [...(c.ignores ?? []), ...OWN_PROJECTS] })),
   {
     languageOptions: {
       globals: { process: 'readonly', console: 'readonly', URL: 'readonly' },

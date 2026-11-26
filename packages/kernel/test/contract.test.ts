@@ -1,6 +1,6 @@
 // The plugin contract as a third party builds against it: the sdk's root export, re-exported by the kernel.
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as sdk from '@pneuma-base/sdk'
 import { describe, expect, it } from 'vitest'
@@ -182,7 +182,7 @@ describe('the tools on a plugin’s context', () => {
     expect('abs' in t).toBe(false)
   })
 
-  it('say what is at a path, and give a bundle's files and fingerprints from storage', async () => {
+  it('say what is at a path, and give a bundle’s files and fingerprints from storage', async () => {
     const { ctx } = await probe()
     const t = ctx.tools
     expect(await t.what(['site', 'notes/a.md', 'notes', 'gone.md'] as sdk.LibraryPath[])).toMatchObject([{ kind: 'bundle' }, { kind: 'file' }, { kind: 'folder' }, { kind: 'none', entry: null }])
