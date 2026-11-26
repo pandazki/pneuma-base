@@ -1,7 +1,7 @@
 // The statistics as a page and as the text of `ledger stats`: the four questions in order, each a
 // sentence with its numbers, then a chart where the shape over time says something. The command's
 // text is read off the page's own blocks, so the two say the same. Pure.
-import type { Block, Cell, ChartSeries, ViewAnswer } from '@pneuma-base/kernel'
+import { originalPath, regionOf, type Block, type Cell, type ChartSeries, type ViewAnswer } from '@pneuma-base/kernel'
 import { itemLink } from './ui.js'
 import { PERIODS, type AgentRow, type Open, type Stats } from './stats.js'
 
@@ -17,9 +17,9 @@ const sum = (list: readonly number[]) => list.reduce((a, b) => a + b, 0)
 const text = (t: string): Block => ({ kind: 'text', text: t, tone: 'neutral' })
 const section = (title: string, note: string | null, blocks: Block[]): Block => ({ kind: 'section', title, note, count: null, blocks, actions: [] })
 
-/** A chart when it has a shape to show, more than one bucket and some value; else its sentence alone. */
+/** A chart when it has a shape to show, more than one bucket and some bar, or a line that moves; else its sentence alone. */
 function chartOr(s: Stats, sentence: string, form: 'stacked' | 'line', unit: string, series: ChartSeries[]): Block {
-  const shape = s.buckets.length > 1 && series.some((x) => x.values.some((v) => v !== 0))
+  const shape = s.buckets.length > 1 && series.some((x) => x.values.some((v) => v !== (form === 'line' ? x.values[0] : 0)))
   return shape ? { kind: 'chart', form, text: sentence, unit, x: s.buckets, series } : text(sentence)
 }
 
@@ -62,7 +62,12 @@ function builtOn(s: Stats): Block {
           section('被接着用得最多的', null, [
             {
               kind: 'list',
-              items: r.top.map((t) => ({ cell: { text: t.path, mono: true, icon: 'file', link: itemLink(t.path) } satisfies Cell, note: `被 ${t.uses} 样新做的东西依据 · ${t.by.join('、')}`, actions: [] })),
+              items: r.top.map((t) => {
+                // An archived thing by the path people know it by, as the library page shows it.
+                const shown = regionOf(t.path) === 'archive' ? originalPath(t.path) : null
+                const cell: Cell = { text: shown ?? t.path, mono: true, icon: 'file', link: itemLink(t.path), ...(shown === null ? {} : { tag: { text: '已归档', tone: 'neutral' as const } }) }
+                return { cell, note: `被 ${t.uses} 样新做的东西依据 · ${t.by.join('、')}`, actions: [] }
+              }),
             },
           ]),
         ]

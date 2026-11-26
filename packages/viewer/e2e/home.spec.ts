@@ -22,7 +22,7 @@ test('the app opens on the home page: what waits on the owner, what agents did s
   writeFileSync(join(lib, 'payments/sources/stripe-pricing.html'), '<html>Stripe pricing: 3.4% now</html>')
   const { url } = await pb.view(lib)
   await page.goto(url)
-  expect((await navTitles(page)).slice(0, 4)).toEqual(['首页', '库', '活动', '场景'])
+  expect((await navTitles(page)).slice(0, 5)).toEqual(['首页', '库', '活动', '统计', '场景'])
   const main = page.getByRole('main')
   await expect(main.getByRole('heading', { level: 1, name: '首页' })).toBeVisible()
 

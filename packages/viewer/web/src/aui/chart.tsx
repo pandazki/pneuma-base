@@ -100,7 +100,7 @@ export function ChartView({ block }: { block: Chart }) {
   const value = (n: number) => `${figure(n)}${unit}`
 
   const slot = 100 / Math.max(1, count)
-  const width = `min(${slot * (count > 24 ? 0.66 : 0.56)}%, 24px)`
+  const width = `min(${slot * 0.5}%, 20px)`
   const each = bars && !stacked ? `calc(${width} / ${block.series.length})` : width
 
   return (
@@ -222,7 +222,8 @@ export function ChartView({ block }: { block: Chart }) {
           {[0, Math.round(count / 2 - 0.5), count - 1]
             .filter((v, i, a) => v >= 0 && a.indexOf(v) === i)
             .map((i) => (
-              <span key={i} style={{ left: `${x(i)}%` }} data-edge={!bars && count > 1 ? (i === 0 ? 'start' : i === count - 1 ? 'end' : undefined) : undefined}>
+              // The first and last labels keep inside the plot: a line's at its ends, a bar's at the plot's edges.
+              <span key={i} style={{ left: count > 1 && i === 0 ? '0%' : count > 1 && i === count - 1 ? '100%' : `${x(i)}%` }} data-edge={count > 1 ? (i === 0 ? 'start' : i === count - 1 ? 'end' : undefined) : undefined}>
                 {block.x[i]}
               </span>
             ))}
