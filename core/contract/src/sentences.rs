@@ -73,7 +73,7 @@ pub const SENTENCES: &[Sentence] = &[
     // 1. Words
     checked(
         "1.storage",
-        "存储 | 一个库所在的地方。分两半：放东西的地方，放记录的地方",
+        "存储 | 一个库所在的地方。分两半：放东西的地方，放记录的地方；根上还有一份库的声明",
     ),
     checked(
         "1.place",
@@ -127,7 +127,7 @@ pub const SENTENCES: &[Sentence] = &[
     checked("2.3", "**变化靠游标。** 没有哪个操作靠遍历去发现变化。"),
     checked(
         "2.4",
-        "**内容只在被要求时读。** 只有 `content`、`read`、`write`、`copy` 读写字节。",
+        "**内容只在被要求时读。** 只有 `content`、`read`、`write` 读写字节。",
     ),
     checked(
         "2.5",
@@ -232,7 +232,7 @@ pub const SENTENCES: &[Sentence] = &[
     outside("4.read.cost", "所读的大小", COST),
     checked(
         "4.write.input",
-        "位置、来源（库外的路径或标准输入）、预期（`empty` 或一个令牌）、来源是目录时的内容规则",
+        "位置、来源（库外的路径、标准输入、请求里带的字节，或库内的一个位置：那就是复制）、预期（`empty` 或一个令牌）、来源是目录时的内容规则",
     ),
     checked(
         "4.write.answer",
@@ -285,6 +285,35 @@ pub const SENTENCES: &[Sentence] = &[
         KERNEL,
     ),
     checked("4.s11", "存储不提供「对整个库做什么」的操作。"),
+    checked(
+        "4.s12",
+        "放东西的操作（`glance`、`overview`、`look`、`content`、`read`、`write`、`move`、`remove`）都可以带一个记录处的名字，这时位置指的是这个记录处自己的地方里的点，不是放东西的地方里的。",
+    ),
+    checked(
+        "4.s13",
+        "记录处自己的地方里没有噪音，`hold` 管不到，`changed` 从不报告；",
+    ),
+    checked("4.s14", "记录处放事实的那一处不在其中，答 `outside`。"),
+    checked(
+        "4.s15",
+        "还没写过的记录处自己的地方，读起来根上是一个空目录、下面什么都没有；第一次写就建立它。",
+    ),
+    checked("4.s16", "带记录处的 `move` 只在这一处里面移动。"),
+    checked(
+        "4.s17",
+        "`write` 的来源是库内的位置时，它可以在放东西的地方，也可以在任一记录处自己的地方，所以两边可以互相复制；",
+    ),
+    checked("4.s18", "目录照内容规则复制，指纹在同一趟算出。"),
+    checked(
+        "4.s19",
+        "来源和目标在同一处、一个在另一个之下，答 `bad_request`；",
+    ),
+    checked(
+        "4.s20",
+        "来源没有、是噪音、在库外或读不了，答相应的失败并带 `side: from`。",
+    ),
+    checked("4.s21", "请求里带的字节至多 16 MiB，多了答 `bad_request`；"),
+    checked("4.s22", "指纹、预期和原子性和别的来源一样。"),
     // 5. The record half: the table
     checked(
         "5.facts.append.input",
@@ -340,6 +369,14 @@ pub const SENTENCES: &[Sentence] = &[
     ),
     checked("5.s8", "不提供任意查询。"),
     outside("5.s9", "需要别的问法，就多维护一张表。", KERNEL),
+    checked(
+        "5.s10",
+        "记录处也能放东西：放东西的操作带上它的名字，就作用在它自己的地方（第 4 节）。",
+    ),
+    checked(
+        "5.s12",
+        "记录处的名字不能和存储自己在放记录的地方里占用的名字相同，用了，任何操作都答 `bad_request`。",
+    ),
     // 6. Other operations
     checked(
         "6.init.1",
@@ -352,12 +389,32 @@ pub const SENTENCES: &[Sentence] = &[
     ),
     outside("6.describe.2", "内核靠它决定用不用这个提供者", KERNEL),
     checked(
+        "6.declaration.1",
+        "`declaration.read`、`declaration.write` | 读和写库根上的声明：一个 JSON 对象，存储整份保存、整份交回，不解读。",
+    ),
+    checked(
+        "6.declaration.2",
+        "读答声明和它的令牌，还没有声明时两者都是 `null`，什么都不建立；",
+    ),
+    checked(
+        "6.declaration.3",
+        "写带预期（`empty` 或一个令牌），在锁下按 `look` 的规则比较，不成立时不改任何东西，答 `refused` 和现在的令牌（没有则 `null`）。",
+    ),
+    checked(
+        "6.declaration.4",
+        "噪音名单是声明里单独的一份，由下一行的操作管",
+    ),
+    checked(
         "6.noise",
         "`noise.list`、`noise.add`、`noise.remove` | 读和改库根上声明的噪音名字与路径",
     ),
     checked(
         "6.hold.1",
         "`hold`、`release` | 声明「这个位置正在被写入，记录随后就到」，带存活时间；",
+    ),
+    checked(
+        "6.hold.4",
+        "一次 `hold` 可以覆盖几个位置，得到一个标记：其中任何一个被别的 `hold` 挡住（同一处、在上或在下）就答 `held`；带着这个标记的写、移动、删除在其中每个位置上都通过；",
     ),
     checked(
         "6.hold.2",

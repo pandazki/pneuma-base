@@ -202,3 +202,29 @@ pub fn changed_cannot_say_for_another_folder(env: &Env) -> Outcome {
     });
     Ok(())
 }
+
+pub fn a_record_area_is_never_reported_by_changed(env: &Env) -> Outcome {
+    if !env.cursor() {
+        return not_exercised(UNRELIABLE);
+    }
+    let lib = env.lib();
+    let seen = reliably(|k| {
+        let cursor = cursor_of(&lib);
+        // The record place's own area first, then a change that must be seen: once it is, the
+        // other was delivered too.
+        let written = lib.run(
+            "write",
+            json!({ "records": "plug", "place": format!("only-in-records{k}.txt"), "from": data(b"r"), "expect": "empty" }),
+        );
+        assert_done(&written);
+        lib.write(&format!("marker{k}.md"), "m");
+        changes_until(&lib, &cursor, None, &[format!("marker{k}.md")])
+    });
+    for place in &seen {
+        assert!(
+            !place.contains("only-in-records") && !place.starts_with(".pneuma-base"),
+            "{place} is in a record place's area: {seen:?}"
+        );
+    }
+    Ok(())
+}

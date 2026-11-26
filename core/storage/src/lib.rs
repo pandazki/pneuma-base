@@ -15,13 +15,13 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 pub use answer::*;
-pub use place::{Place, PlaceArg, RecordPlace};
+pub use place::{Area, Place, PlaceArg, RecordPlace, STORAGE_NAMES};
 use request::Req;
 pub use request::{
-    ChangedRequest, ContentRequest, ContentRule, CursorExpect, Expect, FactsAppendRequest,
-    FactsSinceRequest, GlanceRequest, HoldRequest, LookItem, MoveRequest, NoiseEdit,
-    OverviewRequest, ProbeRequest, ReadRequest, RemoveRequest, RowChange, RowsGetRequest,
-    RowsPutRequest, RowsUnderRequest, RowsWhereRequest, Source, WriteRequest,
+    ChangedRequest, ContentRequest, ContentRule, CursorExpect, DeclarationWriteRequest, Expect,
+    FactsAppendRequest, FactsSinceRequest, GlanceRequest, HoldRequest, LookItem, LookRequest,
+    MoveRequest, NoiseEdit, OverviewRequest, ProbeRequest, ReadRequest, RemoveRequest, RowChange,
+    RowsGetRequest, RowsPutRequest, RowsUnderRequest, RowsWhereRequest, Source, WriteRequest,
 };
 pub use time::Time;
 pub use token::{Token, Trust};
@@ -78,12 +78,13 @@ pub enum NoiseChange {
 }
 
 /// One implementation of the contract. Every method answers data; a failure is a `Failure`
-/// with a fixed reason.
+/// with a fixed reason. The content operations act where their request's `area` says: the
+/// content, or a record place's own area.
 pub trait Storage: Sync {
     fn glance(&self, req: &GlanceRequest, ctx: &Ctx) -> Result<GlanceAnswer, Failure>;
     fn overview(&self, req: &OverviewRequest, ctx: &Ctx) -> Result<OverviewAnswer, Failure>;
     fn probe(&self, req: &ProbeRequest, ctx: &Ctx) -> Result<ProbeAnswer, Failure>;
-    fn look(&self, places: &[LookItem], ctx: &Ctx) -> Result<LookAnswer, Failure>;
+    fn look(&self, req: &LookRequest, ctx: &Ctx) -> Result<LookAnswer, Failure>;
     fn changed(&self, req: &ChangedRequest, ctx: &Ctx) -> Result<ChangedAnswer, Failure>;
     fn content(&self, req: &ContentRequest, ctx: &Ctx) -> Result<ContentAnswer, Failure>;
     fn read(&self, req: &ReadRequest, ctx: &Ctx) -> Result<ReadAnswer, Failure>;
@@ -101,6 +102,11 @@ pub trait Storage: Sync {
 
     fn init(&self) -> Result<InitAnswer, Failure>;
     fn info(&self) -> StorageInfo;
+    fn declaration_read(&self) -> Result<DeclarationAnswer, Failure>;
+    fn declaration_write(
+        &self,
+        req: &DeclarationWriteRequest,
+    ) -> Result<DeclarationWritten, Failure>;
     fn noise_list(&self) -> Result<NoiseAnswer, Failure>;
     fn noise_edit(&self, edit: &NoiseEdit, change: NoiseChange) -> Result<NoiseAnswer, Failure>;
     fn hold(&self, req: &HoldRequest) -> Result<HoldAnswer, Failure>;
@@ -129,6 +135,8 @@ pub enum Op {
     RowsReset,
     Init,
     Describe,
+    DeclarationRead,
+    DeclarationWrite,
     NoiseList,
     NoiseAdd,
     NoiseRemove,
@@ -137,7 +145,7 @@ pub enum Op {
 }
 
 impl Op {
-    pub const ALL: [Op; 24] = [
+    pub const ALL: [Op; 26] = [
         Op::Glance,
         Op::Overview,
         Op::Probe,
@@ -157,6 +165,8 @@ impl Op {
         Op::RowsReset,
         Op::Init,
         Op::Describe,
+        Op::DeclarationRead,
+        Op::DeclarationWrite,
         Op::NoiseList,
         Op::NoiseAdd,
         Op::NoiseRemove,
@@ -185,6 +195,8 @@ impl Op {
             Op::RowsReset => "rows.reset",
             Op::Init => "init",
             Op::Describe => "describe",
+            Op::DeclarationRead => "declaration.read",
+            Op::DeclarationWrite => "declaration.write",
             Op::NoiseList => "noise.list",
             Op::NoiseAdd => "noise.add",
             Op::NoiseRemove => "noise.remove",
@@ -210,6 +222,7 @@ impl Op {
                 | Op::RowsPut
                 | Op::RowsReset
                 | Op::Init
+                | Op::DeclarationWrite
                 | Op::NoiseAdd
                 | Op::NoiseRemove
                 | Op::Hold
@@ -287,6 +300,8 @@ fn run(storage: &dyn Storage, op: Op, req: &Req, ctx: &Ctx) -> Result<String, Fa
                 "ops": ops,
             }))
         }
+        Op::DeclarationRead => done(storage.declaration_read()?),
+        Op::DeclarationWrite => done(storage.declaration_write(&request::declaration_write(req)?)?),
         Op::NoiseList => done(storage.noise_list()?),
         Op::NoiseAdd => done(storage.noise_edit(&request::noise_edit(req)?, NoiseChange::Add)?),
         Op::NoiseRemove => {

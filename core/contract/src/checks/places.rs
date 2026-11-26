@@ -387,7 +387,7 @@ pub fn describe_lists_no_whole_library_operation(env: &Env) -> Outcome {
     }
     for op in &ops {
         assert!(
-            OPS.contains(&op.as_str()) || op == "copy",
+            OPS.contains(&op.as_str()),
             "{op} is not an operation of the contract"
         );
     }

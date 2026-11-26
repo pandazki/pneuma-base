@@ -12,14 +12,14 @@ use std::path::Path;
 
 use pneuma_base_storage::{
     ContentAnswer, ContentRequest, Ctx, Failure, Kind, Place, ReadAnswer, ReadRequest, Reason,
-    base64, request::READ_DATA_MAX,
+    base64, request::DATA_MAX,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use crate::facets::{self, At};
 use crate::metadata::{Broken, Walker};
-use crate::rule::{self, Matcher};
+use crate::rule::{self, Matcher, Side};
 use crate::sys::{self, Errno, Fetching, Stat};
 use crate::{LocalFolder, io_failure};
 
@@ -170,12 +170,12 @@ pub fn parent_of(
 }
 
 /// A file of the library opened for reading, with its state as of the open.
-struct Opened {
-    file: File,
-    stat: Stat,
+pub struct Opened {
+    pub file: File,
+    pub stat: Stat,
 }
 
-fn open_place_file(walker: &mut Walker, place: &Place) -> Result<Opened, Failure> {
+pub fn open_place_file(walker: &mut Walker, place: &Place) -> Result<Opened, Failure> {
     // The root is a directory like any other, not a malformed place.
     if place.is_root() {
         return Err(Failure::new(Reason::NotAFile));
@@ -195,7 +195,7 @@ fn open_place_file(walker: &mut Walker, place: &Place) -> Result<Opened, Failure
     Ok(Opened { file, stat })
 }
 
-fn same_state(a: &Stat, b: &Stat) -> bool {
+pub fn same_state(a: &Stat, b: &Stat) -> bool {
     a.components() == b.components()
 }
 
@@ -283,7 +283,12 @@ impl LocalFolder {
         ctx: &Ctx,
     ) -> Result<Option<ContentAnswer>, Failure> {
         let before = sys::stat_fd(dir).map_err(unreadable)?;
-        let matcher = Matcher::new(noise, req.place.clone(), &req.rule);
+        let sides = [Side {
+            noise,
+            base: req.place.clone(),
+            hidden: self.hidden(),
+        }];
+        let matcher = Matcher::new(&sides, &req.rule);
         let walked = rule::walk(dup(dir)?, &matcher, req.limit, ctx)?;
         let mut progress = Progress::of_dir(ctx, walked.files.len() as u64, walked.bytes);
         let top = dup(dir)?;
@@ -374,7 +379,7 @@ impl LocalFolder {
             let length = if req.to.is_some() {
                 wanted
             } else {
-                wanted.min(READ_DATA_MAX)
+                wanted.min(DATA_MAX)
             };
             opened
                 .file
@@ -418,7 +423,8 @@ impl LocalFolder {
         Err(Failure::new(Reason::Busy))
     }
 
-    /// A path given for bytes to come from or go to must lie outside the library.
+    /// A path given for bytes to come from or go to must lie outside the library (not only
+    /// outside this view of it).
     pub fn refuse_inside(&self, path: &Path) -> Result<(), Failure> {
         let parent = path.parent().ok_or_else(Failure::bad_request)?;
         let parent = parent
@@ -429,7 +435,7 @@ impl LocalFolder {
             None => return Err(Failure::bad_request()),
         };
         let full = full.canonicalize().unwrap_or(full);
-        if full.starts_with(&self.root) || self.root.starts_with(&full) {
+        if full.starts_with(&self.library) || self.library.starts_with(&full) {
             return Err(Failure::bad_request());
         }
         Ok(())

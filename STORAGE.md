@@ -10,7 +10,7 @@
 
 | 词 | 意思 |
 | --- | --- |
-| 存储 | 一个库所在的地方。分两半：放东西的地方，放记录的地方 |
+| 存储 | 一个库所在的地方。分两半：放东西的地方，放记录的地方；根上还有一份库的声明 |
 | 位置 | 放东西的地方里的一个点，用 `/` 分隔的相对路径写，不以 `/` 开头，不含 `.` 和 `..` 段 |
 | 种类 | `file`、`dir`、`other`（链接、设备等，库不把它们当东西）、`none`（没有） |
 | 一层 | 一个 `dir` 位置直接含有的那些位置 |
@@ -74,7 +74,7 @@
 | `changed` | 自这个游标以来哪些位置动过 | 游标（没有则只取当前游标） | `places`（位置，粒度可以是它所在的目录）和新游标；或 `cannot_say`（这段时间的日志不可靠）和新游标 | 变化的个数 | 变更通知（至少送一次、不保序，晚到几秒到几分钟），存档后可重放，提供者按存档的位置记游标；清单每天或每周才生成一次，只说得到上次生成为止，不能单独当游标；没有通知就一律 `cannot_say` |
 | `content` | 它的内容的指纹是什么 | 位置；目录另带内容规则和文件数上限 | 文件：指纹、令牌、大小。目录：清单的指纹、文件数、令牌；超过上限答 `too_many` 和至少的个数。过程中发进度 | 内容的大小；有标识内容的分量时为零 | 用存储保存的整个对象的 SHA-256：只有单段上传时带上的才是；分段上传的 SHA-256 由各段组合而成，不是内容的指纹；没有就读对象 |
 | `read` | 给我它的字节 | 位置、可选的范围 | 字节和令牌；内容不在本机时先答 `elsewhere` 和大小，带 `fetch: true` 再要才取 | 所读的大小 | 取对象，只支持一个范围；归档层的对象答 `elsewhere`，`fetch: true` 只是发起恢复，恢复是异步的（几分钟到 48 小时），恢复好之前仍答 `elsewhere` |
-| `write` | 把这些字节放到这里 | 位置、来源（库外的路径、标准输入，或库内的一个位置：那就是复制）、预期（`empty` 或一个令牌）、来源是目录时的内容规则 | 新描述和指纹（同一趟算出）；预期不成立答 `refused` 和现状 | 内容的大小 | 带条件的上传：`empty` 是「键不存在才写」，令牌是「实体标签相同才写」，不成立即 `refused`。目录要逐个对象上传，存储没有跨键的原子更新：要守规则 9，提供者先传到暂存处，最后带条件地写一个提交对象，读时只认有提交对象的目录 |
+| `write` | 把这些字节放到这里 | 位置、来源（库外的路径、标准输入、请求里带的字节，或库内的一个位置：那就是复制）、预期（`empty` 或一个令牌）、来源是目录时的内容规则 | 新描述和指纹（同一趟算出）；预期不成立答 `refused` 和现状 | 内容的大小 | 带条件的上传：`empty` 是「键不存在才写」，令牌是「实体标签相同才写」，不成立即 `refused`。目录要逐个对象上传，存储没有跨键的原子更新：要守规则 9，提供者先传到暂存处，最后带条件地写一个提交对象，读时只认有提交对象的目录。请求里带的字节就是上传的请求体；来源是库内的位置时在存储里复制，不经调用方，写入同样带条件 |
 | `move` | 把它移到那里 | 两个位置、对两头的预期 | 新描述；不成立答 `refused` 和现状 | 常数（同一存储内能原子改名时）；否则随大小 | 带条件的复制（对源和目标各带条件）再带条件的删除，没有改名；两步之间中断会两头都在，提供者在下一次写时补完；单次复制有大小上限，目录逐个对象做 |
 | `remove` | 把它拿掉 | 位置、预期的令牌 | `removed`；不成立答 `refused` | 常数；目录按其大小，发进度 | 带条件的删除（只能以实体标签为条件）；目录逐个对象删，没有跨键原子性，处理同 `write` |
 
@@ -85,6 +85,9 @@
 - `changed` 的粒度由存储定。答的是目录时，内核对那个目录做一次 `overview` 或对其中登记过的位置做 `look`，不往下走。
 - 内容规则：除去噪音名字，以及目录自带的忽略文件（`.gitignore`）排除的。规则由调用方作为参数给出，存储照做，不自己决定。
 - 有名字的全量动作在存储里就是对一组位置依次 `content`；存储不提供「对整个库做什么」的操作。
+- 放东西的操作（`glance`、`overview`、`look`、`content`、`read`、`write`、`move`、`remove`）都可以带一个记录处的名字，这时位置指的是这个记录处自己的地方里的点，不是放东西的地方里的。记录处自己的地方里没有噪音，`hold` 管不到，`changed` 从不报告；记录处放事实的那一处不在其中，答 `outside`。还没写过的记录处自己的地方，读起来根上是一个空目录、下面什么都没有；第一次写就建立它。带记录处的 `move` 只在这一处里面移动。
+- `write` 的来源是库内的位置时，它可以在放东西的地方，也可以在任一记录处自己的地方，所以两边可以互相复制；目录照内容规则复制，指纹在同一趟算出。来源和目标在同一处、一个在另一个之下，答 `bad_request`；来源没有、是噪音、在库外或读不了，答相应的失败并带 `side: from`。
+- 请求里带的字节至多 16 MiB，多了答 `bad_request`；指纹、预期和原子性和别的来源一样。
 - 「在对象存储上」一列对照的是 Amazon S3 的文档：[HeadObject](https://docs.aws.amazon.com/AmazonS3/latest/API/API_HeadObject.html)、[ListObjectsV2](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html)、[GetObject](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html)、[RestoreObject](https://docs.aws.amazon.com/AmazonS3/latest/API/API_RestoreObject.html)、[带条件的写](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html)、[CopyObject](https://docs.aws.amazon.com/AmazonS3/latest/API/API_CopyObject.html)、[DeleteObject](https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObject.html)、[校验和](https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity-upload.html)、[一致性与跨键原子性](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html)、[事件通知](https://docs.aws.amazon.com/AmazonS3/latest/userguide/notification-how-to-event-types-and-destinations.html)、[事件存档与重放](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-archive.html)、[清单](https://docs.aws.amazon.com/AmazonS3/latest/userguide/storage-inventory.html)。
 
 ## 5. 放记录的地方：操作
@@ -105,6 +108,8 @@
 - 行是缓存：不同步，可以整个删掉。记录处的主人的做法固定是「读游标之后的事实，折进行里，存下新游标」。游标和行在同一次提交里更新。
 - 可查的字段在 `rows.put` 时随行给出，每张表最多 4 个，值是字符串。存储不理解它们。
 - 不提供任意查询。需要别的问法，就多维护一张表。
+- 记录处也能放东西：放东西的操作带上它的名字，就作用在它自己的地方（第 4 节）。在对象存储上，那就是记录处前缀下的对象。
+- 记录处的名字不能和存储自己在放记录的地方里占用的名字相同，用了，任何操作都答 `bad_request`。
 
 ## 6. 其余操作
 
@@ -112,9 +117,14 @@
 | --- | --- |
 | `init` | 在一个位置上建立库的记录区和缓存区，写下默认的噪音名单。已是库则什么都不改 |
 | `describe` | 这个提供者是什么：名字、版本、契约版本、它答哪种写法的地址、能不能给出可靠的游标、能给哪些面。内核靠它决定用不用这个提供者 |
+| `declaration.read`、`declaration.write` | 读和写库根上的声明：一个 JSON 对象，存储整份保存、整份交回，不解读。读答声明和它的令牌，还没有声明时两者都是 `null`，什么都不建立；写带预期（`empty` 或一个令牌），在锁下按 `look` 的规则比较，不成立时不改任何东西，答 `refused` 和现在的令牌（没有则 `null`）。噪音名单是声明里单独的一份，由下一行的操作管 |
 | `noise.list`、`noise.add`、`noise.remove` | 读和改库根上声明的噪音名字与路径 |
-| `hold`、`release` | 声明「这个位置正在被写入，记录随后就到」，带存活时间；`look` 和 `overview` 把被声明的位置标成 `held`。给内核在「东西已放好、事实还没写」之间用 |
+| `hold`、`release` | 声明「这个位置正在被写入，记录随后就到」，带存活时间；一次 `hold` 可以覆盖几个位置，得到一个标记：其中任何一个被别的 `hold` 挡住（同一处、在上或在下）就答 `held`；带着这个标记的写、移动、删除在其中每个位置上都通过；`look` 和 `overview` 把被声明的位置标成 `held`。给内核在「东西已放好、事实还没写」之间用 |
 | `serve` | 常驻模式：每行一个带 `id` 的请求，答复带同一个 `id`；长操作先发若干条进度再发结果；可按 `id` 取消 |
+
+补充：
+
+- 在对象存储上，声明是一个对象，写时带条件，同 `write`。
 
 ## 7. 本机文件夹这个实现给的面
 

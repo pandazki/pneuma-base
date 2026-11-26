@@ -39,16 +39,10 @@ const DEFAULT_NOISE: [&str; 26] = [
     ".TemporaryItems",
 ];
 
-fn path_addressed(env: &Env) -> bool {
-    env.describe["addresses"]
-        .as_array()
-        .is_some_and(|a| a.iter().any(|x| x == "path"))
-}
-
 pub fn init_makes_the_areas_once(env: &Env) -> Outcome {
     let lib = env.bare();
     assert_eq!(lib.run("init", json!({}))["created"], true);
-    if path_addressed(env) {
+    if env.path_addressed() {
         // A folder provider keeps the record area and the cache area where the wire says.
         assert!(lib.at(".pneuma-base").is_dir());
         assert!(lib.at(".pneuma-base/cache").is_dir());
@@ -200,6 +194,227 @@ pub fn holds_block_other_writers(env: &Env) -> Outcome {
         json!({ "place": "later/new.txt", "from": source, "expect": "empty", "hold": ahead["hold"] }),
     );
     assert_done(&with);
+    Ok(())
+}
+
+pub fn one_hold_covers_several_places(env: &Env) -> Outcome {
+    let lib = env.lib();
+    lib.write("a.txt", "a");
+    lib.write("d/b.txt", "b");
+    lib.write("d/c.txt", "c");
+    let src = scratch();
+    let source = src.path().join("s.txt");
+    fs::write(&source, "new").unwrap();
+    let held = lib.run(
+        "hold",
+        json!({ "places": ["a.txt", "e.txt", "d/b.txt"], "ttl": 60_000 }),
+    );
+    assert_done(&held);
+    let id = held["hold"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{held}"))
+        .to_owned();
+    let (a, b) = (lib.token("a.txt"), lib.token("d/b.txt"));
+    let move_a = |hold: Option<&str>| {
+        let mut request =
+            json!({ "from": "a.txt", "to": "e.txt", "expect": { "from": a, "to": "empty" } });
+        if let Some(hold) = hold {
+            request["hold"] = json!(hold);
+        }
+        lib.run("move", request)
+    };
+    // Without its mark every one of its places is held; with it, each passes.
+    assert_failed(&move_a(None), "held");
+    assert_failed(
+        &lib.run(
+            "write",
+            json!({ "place": "d/b.txt", "from": source, "expect": b }),
+        ),
+        "held",
+    );
+    assert_failed(
+        &lib.run("remove", json!({ "place": "d/b.txt", "expect": b })),
+        "held",
+    );
+    assert_done(&move_a(Some(&id)));
+    assert_eq!(fs::read_to_string(lib.at("e.txt")).unwrap(), "a");
+    assert_done(&lib.run(
+        "write",
+        json!({ "place": "d/b.txt", "from": source, "expect": b, "hold": id }),
+    ));
+    let (e, b, c) = (
+        lib.token("e.txt"),
+        lib.token("d/b.txt"),
+        lib.token("d/c.txt"),
+    );
+    let looked = lib.run(
+        "look",
+        json!({ "places": [{ "place": "e.txt", "token": e }, { "place": "d/b.txt", "token": b }, { "place": "d/c.txt", "token": c }] }),
+    );
+    assert_eq!(looked["held"], json!(["e.txt", "d/b.txt"]), "{looked}");
+    // A hold any one of whose places another hold blocks is refused whole.
+    let blocked = lib.run("hold", json!({ "places": ["x.txt", "d"] }));
+    assert_failed(&blocked, "held");
+    assert!(blocked["until"].is_string(), "{blocked}");
+    assert_done(&lib.run(
+        "write",
+        json!({ "place": "x.txt", "from": source, "expect": "empty" }),
+    ));
+    for request in [
+        json!({ "places": [] }),
+        json!({ "place": "a.txt", "places": ["b.txt"] }),
+        json!({ "places": ["/a"] }),
+        json!({ "places": "a.txt" }),
+    ] {
+        assert_failed(&lib.run("hold", request), "bad_request");
+    }
+    assert_done(&lib.run("release", json!({ "hold": id })));
+    assert_done(&lib.run(
+        "remove",
+        json!({ "place": "d/b.txt", "expect": lib.token("d/b.txt") }),
+    ));
+    Ok(())
+}
+
+pub fn the_declaration_is_kept_whole(env: &Env) -> Outcome {
+    let lib = env.lib();
+    let declaration = json!({
+        "zeta": 1,
+        "alpha": { "list": [1, "two", null, true, -2.5], "empty": {} },
+        "middle": "m\u{e9}\n",
+        "none": [],
+    });
+    let written = lib.run(
+        "declaration.write",
+        json!({ "declaration": declaration, "expect": "empty" }),
+    );
+    assert_done(&written);
+    assert!(
+        written["token"].as_str().is_some_and(|t| !t.is_empty()),
+        "{written}"
+    );
+    let read = lib.run("declaration.read", json!({}));
+    assert_done(&read);
+    assert_eq!(read["declaration"], declaration, "{read}");
+    let keys: Vec<&String> = read["declaration"].as_object().unwrap().keys().collect();
+    assert_eq!(
+        keys,
+        ["zeta", "alpha", "middle", "none"],
+        "keys in the order given"
+    );
+    assert!(read["token"].is_string(), "{read}");
+    if env.path_addressed() {
+        // Written as `JSON.stringify(declaration, null, 2) + "\n"` writes it.
+        let text = fs::read_to_string(lib.at(".pneuma-base/config.json")).unwrap();
+        let expected = "{\n  \"zeta\": 1,\n  \"alpha\": {\n    \"list\": [\n      1,\n      \"two\",\n      null,\n      true,\n      -2.5\n    ],\n    \"empty\": {}\n  },\n  \"middle\": \"m\u{e9}\\n\",\n  \"none\": []\n}\n";
+        assert_eq!(text, expected);
+        // What another program wrote there is read as it wrote it.
+        fs::write(lib.at(".pneuma-base/config.json"), "{\"b\":2,\"a\":1}").unwrap();
+        let read = lib.run("declaration.read", json!({}));
+        let keys: Vec<&String> = read["declaration"].as_object().unwrap().keys().collect();
+        assert_eq!(keys, ["b", "a"], "{read}");
+    }
+    // It is not content.
+    let root = lib.run("overview", json!({ "place": "" }));
+    assert_eq!(root["entries"], json!([]), "{root}");
+    for request in [
+        json!({ "declaration": [1], "expect": "empty" }),
+        json!({ "declaration": "x", "expect": "empty" }),
+        json!({ "expect": "empty" }),
+        json!({ "declaration": {} }),
+        json!({ "declaration": {}, "expect": "not a token" }),
+    ] {
+        assert_failed(&lib.run("declaration.write", request), "bad_request");
+    }
+    Ok(())
+}
+
+pub fn no_declaration_reads_null(env: &Env) -> Outcome {
+    let none = json!({ "outcome": "done", "declaration": null, "token": null });
+    let bare = env.bare();
+    assert_eq!(bare.run("declaration.read", json!({})), none);
+    if env.path_addressed() {
+        assert!(!bare.at(".pneuma-base").exists(), "reading made nothing");
+    }
+    assert_eq!(env.lib().run("declaration.read", json!({})), none);
+    // The first write makes what it needs.
+    let written = bare.run(
+        "declaration.write",
+        json!({ "declaration": { "a": 1 }, "expect": "empty" }),
+    );
+    assert_done(&written);
+    assert_eq!(
+        bare.run("declaration.read", json!({}))["declaration"],
+        json!({ "a": 1 })
+    );
+    Ok(())
+}
+
+pub fn a_declaration_write_holds_to_its_expectation(env: &Env) -> Outcome {
+    let lib = env.lib();
+    let write = |value: i64, expect: &Value| {
+        lib.run(
+            "declaration.write",
+            json!({ "declaration": { "v": value }, "expect": expect }),
+        )
+    };
+    let value_now = || lib.run("declaration.read", json!({}))["declaration"]["v"].clone();
+    let first = write(1, &json!("empty"));
+    assert_done(&first);
+    let first_token = first["token"].clone();
+    let occupied = write(2, &json!("empty"));
+    assert_refused(&occupied);
+    assert!(occupied["actual"].is_string(), "{occupied}");
+    assert_eq!(value_now(), 1);
+    assert_done(&write(2, &first_token));
+    assert_eq!(value_now(), 2);
+    let stale = write(3, &first_token);
+    assert_refused(&stale);
+    assert_eq!(value_now(), 2, "a refused write changes nothing");
+    // What a refusal reports is what is there now: a write expecting it holds.
+    assert_done(&write(3, &stale["actual"]));
+    // A token read is good for the next write.
+    let read = lib.run("declaration.read", json!({}));
+    assert_done(&write(4, &read["token"]));
+    assert_eq!(value_now(), 4);
+    let other = env.lib();
+    let nothing = other.run(
+        "declaration.write",
+        json!({ "declaration": { "v": 1 }, "expect": first_token }),
+    );
+    assert_refused(&nothing);
+    assert_eq!(nothing["actual"], Value::Null, "{nothing}");
+    // Two writers expecting the same: one is refused.
+    let token = lib.run("declaration.read", json!({}))["token"].clone();
+    let answers = at_once(2, |i| write(10 + i as i64, &token));
+    let done = answers.iter().filter(|a| a["outcome"] == "done").count();
+    assert_eq!(done, 1, "{answers:?}");
+    for answer in answers.iter().filter(|a| a["outcome"] != "done") {
+        assert_refused(answer);
+    }
+    Ok(())
+}
+
+pub fn the_noise_list_is_apart_from_the_declaration(env: &Env) -> Outcome {
+    let lib = env.lib();
+    let written = lib.run(
+        "declaration.write",
+        json!({ "declaration": { "a": 1 }, "expect": "empty" }),
+    );
+    assert_done(&written);
+    lib.run("noise.add", json!({ "names": ["build"] }));
+    let read = lib.run("declaration.read", json!({}));
+    assert_eq!(read["declaration"], json!({ "a": 1 }), "{read}");
+    assert_done(&lib.run(
+        "declaration.write",
+        json!({ "declaration": { "a": 2 }, "expect": written["token"] }),
+    ));
+    let noise = lib.run("noise.list", json!({}));
+    assert!(
+        strings_of(&noise["names"]).contains(&"build".to_owned()),
+        "{noise}"
+    );
+    assert_eq!(noise["declared"], true, "{noise}");
     Ok(())
 }
 

@@ -12,16 +12,17 @@ use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::path::PathBuf;
 
 use pneuma_base_storage::{
-    Ctx, Description, Expect, Failure, Kind, MoveAnswer, MoveRequest, Place, Present, Reason,
-    RemoveAnswer, RemoveRequest, Source, WriteAnswer, WriteRequest,
+    Area, Ctx, Description, Expect, Failure, Kind, MoveAnswer, MoveRequest, Place, Present, Reason,
+    RecordPlace, RemoveAnswer, RemoveRequest, Source, WriteAnswer, WriteRequest,
 };
 use serde_json::{Value, json};
 
+use crate::area::FACTS;
 use crate::facets::{self, At};
-use crate::fingerprint::{Progress, copy_hashing, dup, manifest_fingerprint};
+use crate::fingerprint::{Progress, copy_hashing, dup, manifest_fingerprint, open_place_file};
 use crate::metadata::{Broken, Located, Walker, locate_at};
 use crate::noise::Noise;
-use crate::rule::{self, Matcher};
+use crate::rule::{self, Matcher, Side};
 use crate::sys::{self, Errno, Placing};
 use crate::{LocalFolder, io_failure, unique_name};
 
@@ -39,16 +40,20 @@ fn present(place: &Place, found: Option<Description>) -> Value {
 }
 
 /// A directory, open and locked against other writers of the library until dropped.
-struct Locked(OwnedFd);
+pub(crate) struct Locked(OwnedFd);
 
 impl Locked {
-    fn take(dir: RawFd) -> Result<Locked, Failure> {
-        let fd = dup(dir)?;
+    /// Locks the directory open at `dir` through an open file description of its own. A lock
+    /// taken through a `dup` belongs to the description `dir` shares, so it would last as long as
+    /// `dir` does (the library root's, for the life of `serve`) and would not keep out another
+    /// thread of the same process.
+    pub(crate) fn take(dir: RawFd) -> Result<Locked, Failure> {
+        let fd = sys::open_dir_at(dir, &sys::c_name(b".")).map_err(unreadable)?;
         sys::lock(fd.as_raw_fd()).map_err(unreadable)?;
         Ok(Locked(fd))
     }
 
-    fn fd(&self) -> RawFd {
+    pub(crate) fn fd(&self) -> RawFd {
         self.0.as_raw_fd()
     }
 }
@@ -163,6 +168,7 @@ impl LocalFolder {
         let tmp = self.area_dir("tmp")?;
         let name = unique_name("i");
         let note = json!({
+            "records": self.records.as_ref().map(RecordPlace::as_str),
             "place": place.as_str(),
             "device": old.stat.device,
             "inode": old.stat.inode,
@@ -185,7 +191,18 @@ impl LocalFolder {
         let Some(place) = note["place"].as_str().and_then(Place::parse) else {
             return;
         };
-        let mut walker = Walker::new(&self.root_fd);
+        // The place is in the area the move was in, whichever view finds the note.
+        let area = match note["records"].as_str() {
+            None => Area::Content,
+            Some(name) => match RecordPlace::parse(name) {
+                Some(records) => Area::Records(records),
+                None => return,
+            },
+        };
+        let Ok(Some(view)) = self.view(&area, false) else {
+            return;
+        };
+        let mut walker = Walker::new(&view.root_fd);
         let Ok((dir, name)) = crate::fingerprint::parent_of(&mut walker, &place) else {
             return;
         };
@@ -196,7 +213,7 @@ impl LocalFolder {
             && Some(found.stat.device) == note["device"].as_u64()
             && Some(found.stat.inode) == note["inode"].as_u64()
         {
-            self.discard(lock.fd(), &sys::c_name(name.as_bytes()), &Ctx::default());
+            view.discard(lock.fd(), &sys::c_name(name.as_bytes()), &Ctx::default());
         }
     }
 
@@ -261,7 +278,7 @@ impl LocalFolder {
     }
 
     /// Whether the place still holds what `expected` says, by the same rule `look` uses.
-    fn expectation_holds(
+    pub(crate) fn expectation_holds(
         &self,
         parent: RawFd,
         place: &Place,
@@ -292,7 +309,7 @@ impl LocalFolder {
     }
 
     /// What is at `name` once this write's own change has settled.
-    fn settled(&self, parent: RawFd, name: &str) -> Result<Option<Located>, Failure> {
+    pub(crate) fn settled(&self, parent: RawFd, name: &str) -> Result<Option<Located>, Failure> {
         match locate_at(parent, name).map_err(unreadable)? {
             Some(found) => self.once_settled(found, || locate_at(parent, name).map_err(unreadable)),
             None => Ok(None),
@@ -389,7 +406,8 @@ impl LocalFolder {
         })
     }
 
-    /// Builds the thing to place in `tmp/`, fingerprinting it as it is copied.
+    /// Builds the thing to place in `tmp/`, fingerprinting it as it is copied. A failure the
+    /// source causes says so (`side: from`).
     fn stage(
         &self,
         req: &WriteRequest,
@@ -397,70 +415,148 @@ impl LocalFolder {
         staged: &Staged,
         ctx: &Ctx,
     ) -> Result<Built, Failure> {
-        let tmp = staged.dir.as_raw_fd();
-        let source = match &req.from {
-            Source::Stdin => None,
-            Source::Path(path) => {
-                self.refuse_inside(path)?;
-                let meta = std::fs::symlink_metadata(path)
-                    .map_err(|_| Failure::new(Reason::NoSuchPlace))?;
-                Some((path, meta.is_dir()))
-            }
+        let target = Side {
+            noise,
+            base: req.place.clone(),
+            hidden: self.hidden(),
         };
-        match source {
-            Some((path, true)) => {
-                let top = sys::open_root(path).map_err(unreadable)?;
-                let matcher = Matcher::new(noise, req.place.clone(), &req.rule);
-                let walked = rule::walk(top, &matcher, req.limit, ctx)?;
-                sys::mkdir_at(tmp, &staged.c_name(), 0o755).map_err(unreadable)?;
-                let into = sys::open_dir_at(tmp, &staged.c_name()).map_err(unreadable)?;
-                for dir in &walked.dirs {
-                    sys::mkdir_at(into.as_raw_fd(), &sys::c_name(dir.path.as_bytes()), 0o755)
-                        .map_err(unreadable)?;
+        match &req.from {
+            Source::Stdin => self.stage_file(&mut std::io::stdin().lock(), 0o644, staged, ctx),
+            Source::Data(bytes) => self.stage_file(&mut bytes.as_slice(), 0o644, staged, ctx),
+            Source::Path(path) => {
+                self.refuse_inside(path).map_err(Failure::of_source)?;
+                let meta = std::fs::symlink_metadata(path)
+                    .map_err(|_| Failure::new(Reason::NoSuchPlace).of_source())?;
+                if meta.is_dir() {
+                    let top = sys::open_root(path).map_err(|e| unreadable(e).of_source())?;
+                    return self.stage_dir(top, &[target], req, staged, ctx);
                 }
-                let mut progress = Progress::of_dir(ctx, walked.files.len() as u64, walked.bytes);
-                let mut fingerprints = Vec::with_capacity(walked.files.len());
-                let mut bytes = 0;
-                for found in &walked.files {
-                    let mut from =
-                        File::open(path.join(&found.path)).map_err(|e| io_failure(&e))?;
-                    let mut to = sys::create_file_at(
-                        into.as_raw_fd(),
-                        &sys::c_name(found.path.as_bytes()),
-                        found.stat.mode & 0o777,
-                    )
-                    .map_err(unreadable)?;
-                    let (fingerprint, n) = copy_hashing(&mut from, &mut to, ctx, |n| {
-                        progress.bytes += n;
-                        progress.tick();
-                    })?;
-                    sys::fsync(&to).map_err(|e| io_failure(&e))?;
-                    progress.files += 1;
-                    bytes += n;
-                    fingerprints.push(fingerprint);
-                }
-                let fingerprint = manifest_fingerprint(
-                    walked
-                        .files
-                        .iter()
-                        .zip(&fingerprints)
-                        .map(|(f, fp)| (f.path.as_str(), fp.as_str())),
-                );
-                Ok(Built {
-                    fingerprint,
-                    files: Some(walked.files.len() as u64),
-                    bytes,
-                })
-            }
-            Some((path, false)) => {
-                let mut from = File::open(path).map_err(|e| io_failure(&e))?;
+                let mut from = File::open(path).map_err(|e| io_failure(&e).of_source())?;
                 let mode = std::os::unix::fs::PermissionsExt::mode(
                     &from.metadata().map_err(|e| io_failure(&e))?.permissions(),
                 );
                 self.stage_file(&mut from, mode & 0o777, staged, ctx)
             }
-            None => self.stage_file(&mut std::io::stdin().lock(), 0o644, staged, ctx),
+            Source::Place(area, place) => self.stage_copy(area, place, target, req, staged, ctx),
         }
+    }
+
+    /// A copy of a place in the store, in this view's area or another.
+    fn stage_copy(
+        &self,
+        area: &Area,
+        place: &Place,
+        target: Side,
+        req: &WriteRequest,
+        staged: &Staged,
+        ctx: &Ctx,
+    ) -> Result<Built, Failure> {
+        let Some(source) = self.view(area, false).map_err(Failure::of_source)? else {
+            // A record place's own area not made yet: an empty directory at its root.
+            return if place.is_root() {
+                sys::mkdir_at(staged.dir.as_raw_fd(), &staged.c_name(), 0o755)
+                    .map_err(unreadable)?;
+                Ok(Built {
+                    fingerprint: manifest_fingerprint(std::iter::empty()),
+                    files: Some(0),
+                    bytes: 0,
+                })
+            } else if place.segments().first() == Some(&FACTS) {
+                Err(Failure::new(Reason::Outside).of_source())
+            } else {
+                Err(Failure::new(Reason::NoSuchPlace).of_source())
+            };
+        };
+        let noise = source.noise();
+        source.admit(place, &noise).map_err(Failure::of_source)?;
+        let mut walker = Walker::new(&source.root_fd);
+        let found = source
+            .locate(&mut walker, place)
+            .map_err(Failure::of_source)?
+            .ok_or_else(|| Failure::new(Reason::NoSuchPlace).of_source())?;
+        match found.stat.kind {
+            Kind::File => {
+                let mut opened = open_place_file(&mut walker, place).map_err(Failure::of_source)?;
+                if opened.stat.dataless() {
+                    return Err(Failure::elsewhere(opened.stat.size).of_source());
+                }
+                self.stage_file(&mut opened.file, opened.stat.mode & 0o777, staged, ctx)
+            }
+            Kind::Dir => {
+                let top = source
+                    .open_level(&mut walker, place)
+                    .map_err(Failure::of_source)?;
+                let sides = [
+                    Side {
+                        noise: &noise,
+                        base: place.clone(),
+                        hidden: source.hidden(),
+                    },
+                    target,
+                ];
+                self.stage_dir(dup(top)?, &sides, req, staged, ctx)
+            }
+            Kind::Other => Err(Failure::new(Reason::NotAFile).of_source()),
+        }
+    }
+
+    /// Copies the content of the directory open at `top`, by the request's content rule applied
+    /// at every side, into a directory in `tmp/`.
+    fn stage_dir(
+        &self,
+        top: OwnedFd,
+        sides: &[Side],
+        req: &WriteRequest,
+        staged: &Staged,
+        ctx: &Ctx,
+    ) -> Result<Built, Failure> {
+        let matcher = Matcher::new(sides, &req.rule);
+        let walked = rule::walk(dup(top.as_raw_fd())?, &matcher, req.limit, ctx)
+            .map_err(Failure::of_source)?;
+        let tmp = staged.dir.as_raw_fd();
+        sys::mkdir_at(tmp, &staged.c_name(), 0o755).map_err(unreadable)?;
+        let into = sys::open_dir_at(tmp, &staged.c_name()).map_err(unreadable)?;
+        for dir in &walked.dirs {
+            sys::mkdir_at(into.as_raw_fd(), &sys::c_name(dir.path.as_bytes()), 0o755)
+                .map_err(unreadable)?;
+        }
+        let mut progress = Progress::of_dir(ctx, walked.files.len() as u64, walked.bytes);
+        let mut chain = Walker::new(&top);
+        let mut fingerprints = Vec::with_capacity(walked.files.len());
+        let mut bytes = 0;
+        for found in &walked.files {
+            let file_place = Place::parse(&found.path).ok_or_else(Failure::bad_request)?;
+            let mut from = open_place_file(&mut chain, &file_place).map_err(Failure::of_source)?;
+            if from.stat.dataless() {
+                return Err(Failure::elsewhere(from.stat.size).of_source());
+            }
+            let mut to = sys::create_file_at(
+                into.as_raw_fd(),
+                &sys::c_name(found.path.as_bytes()),
+                found.stat.mode & 0o777,
+            )
+            .map_err(unreadable)?;
+            let (fingerprint, n) = copy_hashing(&mut from.file, &mut to, ctx, |n| {
+                progress.bytes += n;
+                progress.tick();
+            })?;
+            sys::fsync(&to).map_err(|e| io_failure(&e))?;
+            progress.files += 1;
+            bytes += n;
+            fingerprints.push(fingerprint);
+        }
+        let fingerprint = manifest_fingerprint(
+            walked
+                .files
+                .iter()
+                .zip(&fingerprints)
+                .map(|(f, fp)| (f.path.as_str(), fp.as_str())),
+        );
+        Ok(Built {
+            fingerprint,
+            files: Some(walked.files.len() as u64),
+            bytes,
+        })
     }
 
     fn stage_file(

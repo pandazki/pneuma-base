@@ -85,7 +85,12 @@ impl PlaceArg {
     }
 }
 
-/// A namespace in the record half, named by the kernel: `[a-z0-9][a-z0-9-]*`.
+/// The names the storage keeps for its own directories in the record half. A record place with
+/// one of them would put its facts and content among the storage's caches, holds and leftovers.
+pub const STORAGE_NAMES: [&str; 4] = ["cache", "holds", "tmp", "trash"];
+
+/// A namespace in the record half, named by the kernel: `[a-z0-9][a-z0-9-]*`, none of the
+/// storage's own names.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecordPlace(String);
 
@@ -96,13 +101,20 @@ impl RecordPlace {
             .next()
             .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit());
         let rest_ok = bytes.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
-        // `cache` would put the record place's facts inside the deletable cache area.
-        (first_ok && rest_ok && text != "cache").then(|| RecordPlace(text.to_owned()))
+        (first_ok && rest_ok && !STORAGE_NAMES.contains(&text))
+            .then(|| RecordPlace(text.to_owned()))
     }
 
     pub fn as_str(&self) -> &str {
         &self.0
     }
+}
+
+/// Where a content operation's places are: the content, or a record place's own area.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Area {
+    Content,
+    Records(RecordPlace),
 }
 
 #[cfg(test)]
@@ -131,7 +143,9 @@ mod tests {
     #[test]
     fn record_places_follow_the_pattern() {
         assert!(RecordPlace::parse("scenes-2").is_some());
-        for bad in ["", "-a", "A", "a_b", "a/b", "cache"] {
+        for bad in [
+            "", "-a", "A", "a_b", "a/b", "cache", "holds", "tmp", "trash",
+        ] {
             assert!(RecordPlace::parse(bad).is_none(), "{bad:?}");
         }
     }
