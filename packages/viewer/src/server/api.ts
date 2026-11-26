@@ -5,6 +5,7 @@ import {
   changeStamp,
   identifySession,
   initLibrary,
+  listenTo,
   loadPlugins,
   makeContext,
   openLibrary,
@@ -21,8 +22,11 @@ import {
 } from '@pneuma-base/kernel'
 import { archiveSummary, askSummary, ownerSummary, putSummary, readSummary, saySummary, type Summary } from './summary.js'
 
-/** What the server was started with. `builtins` are the caller's plugins; this machine's own join them on each request, as their files are then. */
-export type Served = { dir: string; builtins: PluginTable; home: string; env: Env }
+/**
+ * What the server was started with. `builtins` are the caller's plugins; this machine's own join them
+ * on each request, as their files are then. `listened`: the libraries this server listens to.
+ */
+export type Served = { dir: string; builtins: PluginTable; home: string; env: Env; listened: Set<string> }
 
 /** Every plugin this machine has, as their files are now: a plugin changed since the last request is loaded afresh. */
 export const tableOf = (served: Served): Promise<PluginTable> => loadPlugins(served.home, served.builtins)
@@ -52,10 +56,19 @@ export async function state(served: Served): Promise<Reply> {
   return reply({ dir: served.dir, library: { root: library.root, shown, id: library.config.id }, views, problems, available: available(table) })
 }
 
+/** The server stays, so it listens to the library's changes: its polls and views, and any command meanwhile, read what it heard. */
+function listened(served: Served, library: Library): Library {
+  if (!served.listened.has(library.root)) {
+    listenTo(library.root)
+    served.listened.add(library.root)
+  }
+  return library
+}
+
 /** What the page polls: a stamp that changes when it has something new to show. */
 export async function changes(served: Served): Promise<string> {
   const library = await openLibrary(served.dir, await tableOf(served))
-  return library ? changeStamp(ownerContext(library, served)) : 'not-a-library'
+  return library ? changeStamp(ownerContext(listened(served, library), served)) : 'not-a-library'
 }
 
 /** `query` holds the view's id under `view`; every other entry is a parameter of the view. */
@@ -66,7 +79,7 @@ export async function view(served: Served, query: URLSearchParams): Promise<Repl
   const id = query.get('view')
   if (id === null) return failure(400, 'view is missing')
   const params = Object.fromEntries([...query].filter(([name]) => name !== 'view' && name !== 'token'))
-  return reply(await viewerFace.show({ view: id, params }, { ctx: ownerContext(library, served), table, env: served.env, viaGrant: false }))
+  return reply(await viewerFace.show({ view: id, params }, { ctx: ownerContext(listened(served, library), served), table, env: served.env, viaGrant: false }))
 }
 
 /**

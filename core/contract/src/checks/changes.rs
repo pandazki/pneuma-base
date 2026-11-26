@@ -12,17 +12,17 @@ use serde_json::{Value, json};
 use crate::harness::*;
 use crate::{Outcome, not_exercised};
 
-const DEADLINE: Duration = Duration::from_secs(10);
-const UNRELIABLE: &str = "describe says cursor: false";
-const RELIABLE: &str = "describe says cursor: true";
+pub(super) const DEADLINE: Duration = Duration::from_secs(10);
+pub(super) const UNRELIABLE: &str = "describe says cursor: false";
+pub(super) const RELIABLE: &str = "describe says cursor: true";
 
-fn cursor_of(lib: &Lib) -> String {
+pub(super) fn cursor_of(lib: &Lib) -> String {
     let answer = lib.run("changed", json!({}));
     assert_done(&answer);
     answer["cursor"].as_str().unwrap().to_owned()
 }
 
-fn assert_cannot_say(answer: &Value) {
+pub(super) fn assert_cannot_say(answer: &Value) {
     assert_failed(answer, "cannot_say");
     assert!(
         answer["cursor"].as_str().is_some_and(|c| !c.is_empty()),
@@ -31,14 +31,14 @@ fn assert_cannot_say(answer: &Value) {
 }
 
 /// Whether `place` was reported, itself or as the directory it is in (4.s6).
-fn reported(places: &BTreeSet<String>, place: &str) -> bool {
+pub(super) fn reported(places: &BTreeSet<String>, place: &str) -> bool {
     let parent = place.rsplit_once('/').map_or("", |(dir, _)| dir);
     places.contains(place) || places.contains(parent)
 }
 
 /// Asks from `cursor`, following `more`, until `want` is reported or the deadline passes; gives
 /// every place reported on the way, or `None` when the provider answers `cannot_say`.
-fn changes_until(
+pub(super) fn changes_until(
     lib: &Lib,
     cursor: &str,
     limit: Option<u64>,

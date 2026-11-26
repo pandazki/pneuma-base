@@ -150,8 +150,10 @@ export interface PluginStorage extends PlaceStore {
   release(hold: string): Promise<void>
   /**
    * What changed in the content since `mark`, a mark this plugin kept from an earlier answer (null:
-   * none yet, and then the places are null). The kernel learns change from storage's cursor; a mark
-   * costs nothing to keep and is only good for this library.
+   * none yet, and then the places are null). Storage can say while a long-lived process listens to
+   * the library (the management UI's server does), at a cost that follows what changed; otherwise
+   * the places are null and the plugin compares what it recorded. A mark costs nothing to keep and is
+   * only good for this library.
    */
   changed(mark: string | null): Promise<Changes>
   /** The plugin's own record place's content: places under `.pneuma-base/<plugin>/`, `facts` aside. */

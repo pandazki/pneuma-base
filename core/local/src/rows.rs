@@ -1,9 +1,11 @@
 //! Rows: a cache the record place's owner derives from its facts, one SQLite file per record
 //! place in the cache area. The saved cursor and the rows change in one transaction.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use pneuma_base_storage::{
@@ -15,7 +17,7 @@ use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionB
 use serde_json::Value;
 use serde_json::value::RawValue;
 
-use crate::{LocalFolder, io_failure};
+use crate::{LocalFolder, io_failure, sys};
 
 const SCHEMA: &str = "
     CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL) WITHOUT ROWID;
@@ -30,7 +32,7 @@ const SCHEMA: &str = "
     PRAGMA user_version = 1;
 ";
 
-fn sql_failure(error: rusqlite::Error) -> Failure {
+pub(crate) fn sql_failure(error: rusqlite::Error) -> Failure {
     match error.sqlite_error_code() {
         Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked) => Failure::new(Reason::Busy),
         // The file was removed under an open connection by `rows.reset`; trying again opens
@@ -44,7 +46,7 @@ fn sql_failure(error: rusqlite::Error) -> Failure {
 /// Makes the database whole under a private name, then links it into place, which never
 /// replaces a file. Two processes setting up one file at once can deadlock in SQLite (switching
 /// to WAL needs the lock the other holds), so no file is ever set up in place.
-fn create_db(path: &Path) -> Result<(), Failure> {
+pub(crate) fn create_db(path: &Path, schema: &str) -> Result<(), Failure> {
     static SEQ: AtomicU64 = AtomicU64::new(0);
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| io_failure(&e))?;
@@ -59,7 +61,7 @@ fn create_db(path: &Path) -> Result<(), Failure> {
         conn.query_row("PRAGMA journal_mode = WAL", [], |row| {
             row.get::<_, String>(0)
         })?;
-        conn.execute_batch(SCHEMA)?;
+        conn.execute_batch(schema)?;
         conn.close().map_err(|(_, error)| error)
     });
     let linked = built
@@ -87,6 +89,68 @@ fn row_from(key: String, fields: Option<String>, value: String) -> StoredRow {
     StoredRow { key, fields, value }
 }
 
+/// Which file a connection was opened on: its inode and birth (or, where there is none, change)
+/// time. A file removed and made again at the same path is another file.
+type FileId = (u64, i128);
+
+fn file_id(path: &Path) -> Option<FileId> {
+    sys::stat_path(path)
+        .ok()
+        .map(|s| (s.inode, s.btime_ns.unwrap_or(s.ctime_ns)))
+}
+
+type Pool = Mutex<HashMap<PathBuf, Vec<(FileId, Connection)>>>;
+
+/// Connections a `serve` process opened, kept for its next requests: opening one costs more than
+/// most requests do. One is used again only while the file at its path is the one it was opened on.
+fn pool() -> &'static Pool {
+    static POOL: OnceLock<Pool> = OnceLock::new();
+    POOL.get_or_init(Pool::default)
+}
+
+/// A connection taken from the pool, or newly opened, that goes back to it when dropped.
+pub(crate) struct Pooled {
+    path: PathBuf,
+    id: FileId,
+    conn: Option<Connection>,
+}
+
+impl Deref for Pooled {
+    type Target = Connection;
+    fn deref(&self) -> &Connection {
+        self.conn.as_ref().expect("held until dropped")
+    }
+}
+
+impl DerefMut for Pooled {
+    fn deref_mut(&mut self) -> &mut Connection {
+        self.conn.as_mut().expect("held until dropped")
+    }
+}
+
+impl Drop for Pooled {
+    fn drop(&mut self) {
+        if let (Some(conn), Ok(mut pool)) = (self.conn.take(), pool().lock()) {
+            pool.entry(std::mem::take(&mut self.path))
+                .or_default()
+                .push((self.id, conn));
+        }
+    }
+}
+
+/// A pooled connection to the file at `path` when it is still `id`; the stale ones go.
+fn pooled(path: &Path, id: FileId) -> Option<Pooled> {
+    let mut pool = pool().lock().ok()?;
+    let kept = pool.get_mut(path)?;
+    kept.retain(|(at, _)| *at == id);
+    let (_, conn) = kept.pop()?;
+    Some(Pooled {
+        path: path.to_owned(),
+        id,
+        conn: Some(conn),
+    })
+}
+
 impl LocalFolder {
     fn rows_file(&self, place: &RecordPlace) -> PathBuf {
         self.cache_area()
@@ -95,13 +159,18 @@ impl LocalFolder {
     }
 
     /// The place's database; `None` when reading and there is none yet.
-    fn rows_db(&self, place: &RecordPlace, create: bool) -> Result<Option<Connection>, Failure> {
+    fn rows_db(&self, place: &RecordPlace, create: bool) -> Result<Option<Pooled>, Failure> {
         let path = self.rows_file(place);
-        if !path.exists() {
-            if !create {
-                return Ok(None);
+        let id = match file_id(&path) {
+            Some(id) => id,
+            None if !create => return Ok(None),
+            None => {
+                create_db(&path, SCHEMA)?;
+                file_id(&path).ok_or_else(|| Failure::new(Reason::Busy))?
             }
-            create_db(&path)?;
+        };
+        if let Some(conn) = pooled(&path, id) {
+            return Ok(Some(conn));
         }
         let flags = OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX;
         let conn = Connection::open_with_flags(&path, flags).map_err(sql_failure)?;
@@ -113,11 +182,13 @@ impl LocalFolder {
         if version == 0 {
             return Ok(None);
         }
-        if create {
-            conn.pragma_update(None, "synchronous", "NORMAL")
-                .map_err(sql_failure)?;
-        }
-        Ok(Some(conn))
+        conn.pragma_update(None, "synchronous", "NORMAL")
+            .map_err(sql_failure)?;
+        Ok(Some(Pooled {
+            path,
+            id,
+            conn: Some(conn),
+        }))
     }
 
     pub fn put_rows(&self, req: &RowsPutRequest) -> Result<(), Failure> {

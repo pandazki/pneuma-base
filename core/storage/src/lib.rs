@@ -21,7 +21,8 @@ pub use request::{
     ChangedRequest, ContentRequest, ContentRule, CursorExpect, DeclarationWriteRequest, Expect,
     FactsAppendRequest, FactsSinceRequest, GlanceRequest, HoldRequest, LookItem, LookRequest,
     MoveRequest, NoiseEdit, OverviewRequest, ProbeRequest, ReadRequest, RemoveRequest, RowChange,
-    RowsGetRequest, RowsPutRequest, RowsUnderRequest, RowsWhereRequest, Source, WriteRequest,
+    RowsGetRequest, RowsPutRequest, RowsUnderRequest, RowsWhereRequest, Source, SubscribeRequest,
+    WriteRequest,
 };
 pub use time::Time;
 pub use token::{Token, Trust};
@@ -86,6 +87,9 @@ pub trait Storage: Sync {
     fn probe(&self, req: &ProbeRequest, ctx: &Ctx) -> Result<ProbeAnswer, Failure>;
     fn look(&self, req: &LookRequest, ctx: &Ctx) -> Result<LookAnswer, Failure>;
     fn changed(&self, req: &ChangedRequest, ctx: &Ctx) -> Result<ChangedAnswer, Failure>;
+    /// Listens to the library's changes until cancelled, sending what it hears as progress.
+    /// Only in `serve`; it never answers `done`.
+    fn subscribe(&self, req: &SubscribeRequest, ctx: &Ctx) -> Result<(), Failure>;
     fn content(&self, req: &ContentRequest, ctx: &Ctx) -> Result<ContentAnswer, Failure>;
     fn read(&self, req: &ReadRequest, ctx: &Ctx) -> Result<ReadAnswer, Failure>;
     fn write(&self, req: &WriteRequest, ctx: &Ctx) -> Result<WriteAnswer, Failure>;
@@ -142,10 +146,11 @@ pub enum Op {
     NoiseRemove,
     Hold,
     Release,
+    Subscribe,
 }
 
 impl Op {
-    pub const ALL: [Op; 26] = [
+    pub const ALL: [Op; 27] = [
         Op::Glance,
         Op::Overview,
         Op::Probe,
@@ -172,6 +177,7 @@ impl Op {
         Op::NoiseRemove,
         Op::Hold,
         Op::Release,
+        Op::Subscribe,
     ];
 
     pub fn name(self) -> &'static str {
@@ -202,6 +208,7 @@ impl Op {
             Op::NoiseRemove => "noise.remove",
             Op::Hold => "hold",
             Op::Release => "release",
+            Op::Subscribe => "subscribe",
         }
     }
 
@@ -309,5 +316,10 @@ fn run(storage: &dyn Storage, op: Op, req: &Req, ctx: &Ctx) -> Result<String, Fa
         }
         Op::Hold => done(storage.hold(&request::hold(req)?)?),
         Op::Release => done(storage.release(&request::release(req)?).map(empty)?),
+        Op::Subscribe => done(
+            storage
+                .subscribe(&request::subscribe(req)?, ctx)
+                .map(empty)?,
+        ),
     }
 }

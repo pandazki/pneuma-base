@@ -42,7 +42,7 @@ pub const REASONS: [&str; 14] = [
 ];
 
 /// The operations the contract names, in its order (sections 4, 5 and 6).
-pub const OPS: [&str; 26] = [
+pub const OPS: [&str; 27] = [
     "glance",
     "overview",
     "probe",
@@ -69,6 +69,7 @@ pub const OPS: [&str; 26] = [
     "noise.remove",
     "hold",
     "release",
+    "subscribe",
 ];
 
 /// The provider under test and what it says of itself.
@@ -428,8 +429,8 @@ pub fn check_answer(op: &str, answer: &Value) {
                 "{op}: outcome refused goes with reason refused (8): {answer}"
             );
             assert!(
-                reason != "cannot_say" || op == "changed",
-                "{op}: cannot_say is only for changed (8): {answer}"
+                reason != "cannot_say" || op == "changed" || op == "subscribe",
+                "{op}: cannot_say is only for changed and subscribe (8): {answer}"
             );
             no_sentences(op, answer);
         }
@@ -456,6 +457,8 @@ pub struct Serve {
     lines: Receiver<String>,
     /// The operation each id asked for, to judge its answer.
     ops: HashMap<String, String>,
+    /// A line taken by `receive_within`, judged by the `receive` that follows.
+    queued: std::collections::VecDeque<String>,
     _home: tempfile::TempDir,
 }
 
@@ -482,6 +485,7 @@ impl Serve {
             stdin,
             lines,
             ops: HashMap::new(),
+            queued: std::collections::VecDeque::new(),
             _home: home,
         }
     }
@@ -503,10 +507,12 @@ impl Serve {
 
     /// The next line, answer or progress, held to the rules.
     pub fn receive(&mut self) -> Value {
-        let line = self
-            .lines
-            .recv_timeout(TIMEOUT)
-            .unwrap_or_else(|_| panic!("serve gave no line within {}s (2.9)", TIMEOUT.as_secs()));
+        let line = match self.queued.pop_front() {
+            Some(line) => line,
+            None => self.lines.recv_timeout(TIMEOUT).unwrap_or_else(|_| {
+                panic!("serve gave no line within {}s (2.9)", TIMEOUT.as_secs())
+            }),
+        };
         let value: Value = serde_json::from_str(&line)
             .unwrap_or_else(|_| panic!("serve line is not JSON (2.10): {line:?}"));
         if value.get("progress").is_some() {
@@ -524,6 +530,13 @@ impl Serve {
             check_answer(&op, &value);
         }
         value
+    }
+
+    /// The next line within `timeout`, held to the rules; `None` when none came.
+    pub fn receive_within(&mut self, timeout: Duration) -> Option<Value> {
+        let line = self.lines.recv_timeout(timeout).ok()?;
+        self.queued.push_back(line);
+        Some(self.receive())
     }
 
     /// Lines up to and including the answer for `id`: its progress lines, and the answer.

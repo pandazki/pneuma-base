@@ -156,6 +156,43 @@ pub const CHECKS: &[Check] = &[
         ["4.changed.answer", "8.cannot_say"]
     ),
     check!(
+        serial subscribe::changed_answers_within_its_budget,
+        ["4.changed.input", "4.changed.answer", "4.budget"]
+    ),
+    check!(
+        serial subscribe::subscribe_is_cannot_say_without_a_reliable_cursor,
+        ["6.subscribe.7", "8.cannot_say"]
+    ),
+    check!(
+        serial subscribe::subscribe_sends_what_changes_until_cancelled,
+        ["6.subscribe.1", "6.serve.2", "6.serve.3"]
+    ),
+    check!(
+        serial subscribe::subscribe_covers_the_gap_from_its_cursor,
+        ["6.subscribe.2"]
+    ),
+    check!(
+        serial subscribe::a_subscribers_record_answers_changed_as_a_replay_would,
+        ["4.heard.1", "4.heard.3"]
+    ),
+    check!(
+        serial subscribe::a_subscriber_that_stops_without_warning_is_noticed,
+        ["6.subscribe.5"]
+    ),
+    check!(serial subscribe::two_subscribers_keep_one_log, ["6.subscribe.6"]),
+    check!(
+        serial subscribe::the_record_is_bounded_and_overflow_is_cannot_say,
+        ["6.subscribe.4"]
+    ),
+    check!(
+        serial subscribe::a_burst_within_the_bound_is_answered_whole,
+        ["4.heard.3", "6.subscribe.4"]
+    ),
+    check!(
+        serial subscribe::deleting_the_record_changes_only_time,
+        ["6.subscribe.3", "2.8"]
+    ),
+    check!(
         reads::file_content_is_fingerprint_token_size,
         ["4.content.file", "4.content.input", "1.content"]
     ),

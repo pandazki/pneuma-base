@@ -6,7 +6,7 @@ import { readFile, realpath, stat } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { extname, isAbsolute, join, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { dropEndpoint, openLibrary, PREFERRED_PORT, recordEndpoint, type Env, type Instant, type PluginTable } from '@pneuma-base/kernel'
+import { dropEndpoint, openLibrary, PREFERRED_PORT, recordEndpoint, stopListening, type Env, type Instant, type PluginTable } from '@pneuma-base/kernel'
 import { agentRoutes, type McpEndpoint } from './agent.js'
 import { call, changes, init, state, tableOf, view, type Served } from './api.js'
 import { libraryFile, pluginUiFile, revision } from './files.js'
@@ -194,7 +194,7 @@ async function pluginUi(res: ServerResponse, served: Served, pathname: string): 
  */
 export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const token = randomBytes(16).toString('hex')
-  const served: Served = { dir: opts.dir, builtins: opts.builtins, home: opts.home, env: opts.env }
+  const served: Served = { dir: opts.dir, builtins: opts.builtins, home: opts.home, env: opts.env, listened: new Set() }
   const webRoot = opts.webRoot ?? WEB_ROOT
   let own: Own = { hosts: new Set(), origins: new Set() }
   let agent: ReturnType<typeof agentRoutes> = () => null
@@ -248,6 +248,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     port,
     token,
     close: async () => {
+      for (const root of served.listened) stopListening(root)
       await dropEndpoint(opts.home, port, process.pid)
       await opts.mcp?.close()
       await stop()

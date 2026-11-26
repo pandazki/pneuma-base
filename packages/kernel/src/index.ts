@@ -16,6 +16,7 @@ export { resolveGrant, GRANT_NAME, type ResolvedGrant } from './grants.js'
 // eslint-disable-next-line no-restricted-imports
 export { abs } from './paths.js'
 export { archivedPath, originalPath, parseLibraryPath, regionOf, shortDir, withSuffix } from './paths.js'
+export { listenTo, stopListening } from './changes.js'
 export { changeStamp, dirKind, dirsAbove, KERNEL_ENTRIES, openDirectories, openDirsOf, placeIn, type DirKind, type Registered } from './places.js'
 export { BUNDLE_MARKER, fingerprintOfManifest } from './things.js'
 export { loadPlugins, whyNotLoaded } from './plugin-table.js'

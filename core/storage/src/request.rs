@@ -12,6 +12,8 @@ pub const PROBE_BUDGET: (u64, u64, u64) = (500, 1, 100_000);
 pub const SINCE_LIMIT: (u64, u64, u64) = (1_000, 0, 10_000);
 pub const ROWS_LIMIT: (u64, u64, u64) = (100, 1, 10_000);
 pub const CHANGED_LIMIT: (u64, u64, u64) = (1_000, 1, 10_000);
+/// How long, in milliseconds, a `changed` caller waits for an answer before `cannot_say`.
+pub const CHANGED_BUDGET_MS: (u64, u64, u64) = (5_000, 0, 600_000);
 /// The most files a directory's content may have before `content` or `write` answers `too_many`.
 pub const FILES_LIMIT: (u64, u64, u64) = (5_000, 1, 10_000_000);
 /// The most bytes one `read` answer or `write` request carries in `data`; `read`'s `to` has no
@@ -48,6 +50,11 @@ pub struct GlanceRequest {
 pub struct ChangedRequest {
     pub cursor: Option<String>,
     pub limit: usize,
+    pub budget_ms: u64,
+}
+
+pub struct SubscribeRequest {
+    pub cursor: Option<String>,
 }
 
 pub struct ContentRequest {
@@ -386,6 +393,13 @@ pub fn changed(req: &Req) -> Parsed<ChangedRequest> {
     Ok(ChangedRequest {
         cursor: req.opt_string("cursor")?,
         limit: usize_of(req.count("limit", CHANGED_LIMIT)?),
+        budget_ms: req.count("budget", CHANGED_BUDGET_MS)?,
+    })
+}
+
+pub fn subscribe(req: &Req) -> Parsed<SubscribeRequest> {
+    Ok(SubscribeRequest {
+        cursor: req.opt_string("cursor")?,
     })
 }
 
