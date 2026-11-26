@@ -66,3 +66,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:slow
         timeout-minutes: 15
+      - name: Plugins written outside the repository still pass
+        run: pnpm pack:dist && sh scripts/test-example-plugins.sh
+        timeout-minutes: 10
