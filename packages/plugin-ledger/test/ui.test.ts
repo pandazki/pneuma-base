@@ -358,7 +358,7 @@ describe('the ledger’s part of the home page', () => {
     await agentFace.check({ since: 'last', includeArchived: false }, codex())
     // Nothing since: when that look was, and the way to all that ever happened.
     const seen = sectionNamed(shown(await asCodex()).blocks, '自上次以来')
-    expect(seen).toMatchObject({ actions: [], note: expect.stringMatching(/^你上次看是 2026-11-25 02:00Z$/), blocks: [{ kind: 'feed', groups: [], empty: '那之后还没有谁做过什么。' }, { kind: 'list' }] })
+    expect(seen).toMatchObject({ actions: [], note: '上次看过：2026-11-25 02:00Z', blocks: [{ kind: 'feed', groups: [], empty: '那之后还没有谁做过什么。' }, { kind: 'list' }] })
     expect(listIn(seen).map((i) => [i.cell.text, i.cell.link])).toEqual([['看全部活动', { view: 'ledger.activity', params: {}, target: 'main' }]])
 
     writeFileSync(join(root, 'src/stripe.html'), 'stripe, new prices')

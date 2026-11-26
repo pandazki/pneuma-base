@@ -5,7 +5,7 @@ import { join, posix } from 'node:path'
 import { fileFacts } from './agent.js'
 import { agentsPage } from './agents-page.js'
 import { asksOf } from './asks.js'
-import { callableIn, checkBlocks, checkFilters, checkRefresh, type Callable } from './blocks.js'
+import { callableIn, checkBlocks, checkFilters, checkOpen, checkRefresh, type Callable } from './blocks.js'
 import { exists } from './files.js'
 import { bundleFiles, enclosingBundle, kindAt, listThings, thingAt } from './things.js'
 import { KERNEL_COMMANDS } from './owner-commands.js'
@@ -542,10 +542,12 @@ async function pluginPage(plugin: Plugin, decl: ViewDecl, req: ViewRequest, ctx:
     const { blocks, problems } = checkBlocks(answer.blocks, plugin, callableIn(ctx.library))
     const { refresh, problems: refreshProblems } = checkRefresh((answer as ViewAnswer).refresh, plugin)
     const { filters, problems: filterProblems } = checkFilters((answer as ViewAnswer).filters, decl, plugin)
+    const { open, problems: openProblems } = checkOpen((answer as ViewAnswer).open, plugin)
     return {
-      ...shown(answer.title, answer.subtitle ?? null, blocks, [...problems, ...refreshProblems, ...filterProblems]),
+      ...shown(answer.title, answer.subtitle ?? null, blocks, [...problems, ...refreshProblems, ...filterProblems, ...openProblems]),
       ...(refresh === undefined ? {} : { refresh }),
       ...(filters === undefined ? {} : { filters }),
+      ...(open === undefined ? {} : { open }),
     }
   } catch (error) {
     const message = messageOf(error)

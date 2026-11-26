@@ -438,6 +438,18 @@ describe('what a plugin’s view answers is checked (D7)', () => {
     expect('refresh' in shown(await show(f, 'quiet.page'))).toBe(false)
   })
 
+  it('keeps an open that links to a panel, and drops one that does not as a problem', async () => {
+    const panel = { view: 'item', params: { path: 'a.md' }, target: 'panel' }
+    const f = await fixture([
+      answering('opener', { title: '开', subtitle: null, blocks: [], open: panel }),
+      answering('wrong', { title: '错', subtitle: null, blocks: [], open: { ...panel, target: 'main' } }),
+    ])
+    expect(shown(await show(f, 'opener.page')).open).toEqual(panel)
+    const wrong = shown(await show(f, 'wrong.page'))
+    expect(wrong.open).toBeUndefined()
+    expect(wrong.problems).toMatchObject([{ plugin: 'wrong', message: expect.stringContaining('open') }])
+  })
+
   it('lets the new fields through: link cells, embeds, timeline actions, patterned inputs', async () => {
     const act = { label: '放回', tone: 'default', confirm: '放回这一版？', inputs: [{ name: 'p', label: '前缀', placeholder: null, value: null, options: null, pattern: '[a-z]+', hint: '小写字母' }], call: { face: 'owner', command: 'grant revoke', args: { positional: ['{p}'], flags: {} } } }
     const blocks = [

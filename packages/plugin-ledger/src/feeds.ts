@@ -116,7 +116,7 @@ export function homeAnswer(ledger: Ledger, standing: Standing, me: FactActor, cu
   const sinceSection: Block = {
     kind: 'section',
     title: '自上次以来',
-    note: done > 0 ? `${since === null ? '你还没看过，这是最近的：' : ''}${actors} 做了 ${done} 件事` : looked ? `你上次看是 ${when(since)}` : null,
+    note: done > 0 ? `${since === null ? '你还没看过，这是最近的：' : ''}${actors} 做了 ${done} 件事` : looked ? `上次看过：${when(since)}` : null,
     count: null,
     blocks: [
       { kind: 'feed', groups, empty: looked ? '那之后还没有谁做过什么。' : '还没有谁做过什么。' },
@@ -207,7 +207,8 @@ export function scenesAnswer(ledger: Ledger, grants: readonly Grant[], now: Inst
     return { key: scene.id, at: scene.first, actor: actorMark(lead, grants), text: doing ?? `场景 ${shortScene(scene.id)}`, meta, link: sceneLink(scene.id) }
   }
   const groups = grouped(scenes, (s) => dayTitle(s.first, now)).map(({ title, members }) => ({ title, count: members.length, rows: members.map(row) }))
-  return { title: '场景', subtitle: `${scenes.length} 次会话`, blocks: [{ kind: 'feed', groups, empty: '' }] }
+  // The newest scene opens in the panel when the window has room for both, as a click on its row would open it.
+  return { title: '场景', subtitle: `${scenes.length} 次会话`, blocks: [{ kind: 'feed', groups, empty: '' }], open: sceneLink((scenes[0] as SceneRecord).id) }
 }
 
 /** A length of time in words: 不到 1 分钟, 12 分钟, 2 小时 5 分, 3 天. */

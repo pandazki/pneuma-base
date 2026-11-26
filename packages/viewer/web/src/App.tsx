@@ -293,6 +293,21 @@ export function App() {
   useEffect(() => {
     if (top && detail.data?.outcome === 'shown') titles.current.set(keyOf(top) as string, detail.data.title)
   }, [top, detail.data])
+
+  // A page that names what its panel shows opens it, once each time the page is opened, when no panel
+  // is open and the window has room for both without folding the sidebar.
+  const arrival = useRef<{ key: string | null; settled: boolean }>({ key: null, settled: false })
+  const mainKey = keyOf(request)
+  const opens = shown.data?.outcome === 'shown' ? shown.data.open : undefined
+  const panelRoom = (prefs.rail ? RAIL : prefs.side) + prefs.panel + MAIN_MIN + 24
+  useEffect(() => {
+    if (arrival.current.key !== mainKey) arrival.current = { key: mainKey, settled: false }
+    if (arrival.current.settled || mainKey === null || shown.data === null) return
+    arrival.current.settled = true
+    // The window as it is now: a resize may not have reached the page's state yet.
+    if (opens === undefined || hasTabs || window.innerWidth < panelRoom) return
+    go((r) => follow(r, { view: opens.view, params: opens.params }, false), { replace: true })
+  }, [mainKey, shown.data, opens, hasTabs, panelRoom, go])
   useEffect(() => setKeepSide(false), [hasTabs])
 
   // The sidebar steps aside to a rail when it would leave the main panel too narrow, unless asked to stay.

@@ -7,7 +7,7 @@ import { isAbsolute } from 'node:path'
 import { parseCall } from './call.js'
 import { ownerFace } from './owner.js'
 import { checkArgs } from './params.js'
-import type { Action, Block, Library, OwnerParams, Plugin, PluginProblem, ViewAnswer, ViewDecl } from '@pneuma-base/sdk'
+import type { Action, Block, Library, Link, OwnerParams, Plugin, PluginProblem, ViewAnswer, ViewDecl } from '@pneuma-base/sdk'
 
 /** What is wrong with `value` at `at`, or null when it fits. */
 type Check = (value: unknown, at: string) => string | null
@@ -291,6 +291,13 @@ export function checkFilters(filters: unknown, decl: ViewDecl, plugin: Plugin): 
 
 /** The shortest time, in seconds, after which a view is asked again on its own. */
 const MIN_REFRESH = 5
+
+/** A view's `open`: a link to a panel, or left out as the plugin's problem. */
+export function checkOpen(open: unknown, plugin: Plugin): { open?: Link; problems: PluginProblem[] } {
+  if (open === undefined) return { problems: [] }
+  const wrong = link(open, 'open') ?? ((open as Link).target === 'panel' ? null : 'open 应是开在详情里的链接（target: panel）')
+  return wrong === null ? { open: open as Link, problems: [] } : { problems: [{ plugin: plugin.name, message: wrong }] }
+}
 
 /** A view's `refresh`: at least five seconds; one that is not a number is dropped as a problem. */
 export function checkRefresh(refresh: unknown, plugin: Plugin): { refresh?: number; problems: PluginProblem[] } {
