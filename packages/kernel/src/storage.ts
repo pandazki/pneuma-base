@@ -41,13 +41,19 @@ export function corePath(env: NodeJS.ProcessEnv = process.env): string {
 type Answer = { outcome: 'done' | 'failed' | 'refused'; [field: string]: unknown }
 type Waiting = { resolve(answer: Answer): void; reject(error: Error): void }
 
-/** One `serve` process for one library. It holds this process open only while a request is waiting. */
+/**
+ * One `serve` process for one library. It holds this process open only while a request is waiting;
+ * a subscription (`listen`) never does, and is made again whenever the program is started again.
+ */
 class Served {
   private child: ChildProcessWithoutNullStreams | null = null
   private readonly waiting = new Map<number, Waiting>()
   private next = 0
   private chunks: Buffer[] = []
   private stderr = ''
+  /** Whether this process subscribes to the library's changes, and the id of the subscription on the running program. */
+  private listening = false
+  private subscription: number | null = null
 
   constructor(private readonly root: string) {}
 
@@ -62,6 +68,24 @@ class Served {
     })
   }
 
+  listen(): void {
+    this.listening = true
+    if (this.subscription !== null) return
+    if (this.child) this.subscribe(this.child)
+    else this.start()
+  }
+
+  unlisten(): void {
+    this.listening = false
+    if (this.subscription !== null && this.child) this.child.stdin.write(`${JSON.stringify({ id: this.next++, op: 'cancel', target: this.subscription })}\n`)
+    this.subscription = null
+  }
+
+  private subscribe(child: ChildProcessWithoutNullStreams): void {
+    this.subscription = this.next++
+    child.stdin.write(`${JSON.stringify({ id: this.subscription, op: 'subscribe' })}\n`)
+  }
+
   private start(): ChildProcessWithoutNullStreams {
     const child = spawn(corePath(), ['serve', '--root', this.root], { stdio: ['pipe', 'pipe', 'pipe'] })
     this.child = child
@@ -72,6 +96,7 @@ class Served {
     const fail = (why: string) => {
       if (this.child !== child) return
       this.child = null
+      this.subscription = null
       const error = new Error(`存储的程序停了（${why}）${this.stderr ? `：${this.stderr.trim()}` : ''}`)
       for (const w of this.waiting.values()) w.reject(error)
       this.waiting.clear()
@@ -80,6 +105,7 @@ class Served {
     child.on('exit', (code, signal) => fail(signal ?? `退出码 ${code}`))
     child.stdin.on('error', () => undefined)
     this.hold(false)
+    if (this.listening) this.subscribe(child)
     return child
   }
 
@@ -99,6 +125,12 @@ class Served {
   private answer(line: string): void {
     const answer = JSON.parse(line) as Answer & { id: number | null; progress?: unknown }
     if (answer.progress !== undefined || answer.id === null) return
+    // The subscription ended: storage has nothing to listen to here, or it was cancelled.
+    if (answer.id === this.subscription) {
+      this.subscription = null
+      this.listening = false
+      return
+    }
     const w = this.waiting.get(answer.id)
     if (!w) return
     this.waiting.delete(answer.id)
@@ -218,15 +250,22 @@ export function storageOf(root: string) {
     /** A record place's own content: places under `.pneuma-base/<name>/`, its facts aside. */
     own: (name: string) => areaOf(s, name),
     probe: (place: Place, budget?: number) => doneOrFailure<Probe>(s.request('probe', { place, ...(budget === undefined ? {} : { budget }) })),
-    /** The places changed since `cursor`, or `cannot_say`; without a cursor only the current one. Each answer carries the cursor to keep. */
-    async changed(cursor: string | null, limit?: number): Promise<{ places: Place[]; cursor: string; more: boolean } | { places: null; cursor: string }> {
-      const a = await s.request('changed', { ...(cursor === null ? {} : { cursor }), ...(limit === undefined ? {} : { limit }) })
+    /**
+     * The places changed since `cursor`, or `cannot_say` (places null); without a cursor only the
+     * current one. Each answer carries the cursor to keep. `budget`: how many milliseconds storage
+     * may take before it says it cannot say.
+     */
+    async changed(cursor: string | null, opts: { limit?: number; budget?: number } = {}): Promise<{ places: Place[]; cursor: string; more: boolean } | { places: null; cursor: string }> {
+      const a = await s.request('changed', { ...(cursor === null ? {} : { cursor }), ...opts })
       if (isFailure(a)) {
         if (a.reason === 'cannot_say' && typeof a.cursor === 'string') return { places: null, cursor: a.cursor }
         throw new StorageError('changed', a)
       }
       return a as unknown as { places: Place[]; cursor: string; more: boolean }
     },
+    /** Subscribes this process to the library's changes, so storage keeps a log any process's `changed` is answered from. Lasts until `unlisten` or the process ends. */
+    listen: () => s.listen(),
+    unlisten: () => s.unlisten(),
     hold: (places: readonly Place[], ttl?: number) => doneOrFailure<{ hold: string; until: string }>(s.request('hold', { places, ...(ttl === undefined ? {} : { ttl }) })),
     release: async (hold: string) => void (await done('release', s.request('release', { hold }))),
     records,

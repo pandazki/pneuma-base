@@ -638,7 +638,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CODEX_THREAD_ID -u ANTIGRAVITY_CO
 | `noise()`，异步 | `{ names, paths }` | 库根上声明的噪音：哪里都算的名字，和库内的路径 |
 | `hold(位置列表, 毫秒)`，异步 | `{ hold, until }` 或失败 | 说这些位置正在被写、记录随后就来，管 `毫秒`（缺省 30000）。期间别人的 `look` 把它们列进 `held`，`overview` 和 `glance` 标 `held`，别的写以 `held` 拒绝；带着这个 `hold` 的写照常 |
 | `release(hold)`，异步 | 无 | 放开 |
-| `changed(mark)`，异步 | `{ places, mark }` | 从插件存下的上一个 `mark` 起内容里变了什么。`places` 是变了的位置（一个位置可以代表它的目录）；`null` 是存储说不出，这时插件要把记过的每个位置都比一遍；`mark` 是 `null` 时（还没有过）`places` 也是 `null`。存下新的 `mark`，下次接着问；它不花什么，只对这个库有用 |
+| `changed(mark)`，异步 | `{ places, mark }` | 从插件存下的上一个 `mark` 起内容里变了什么。`places` 是变了的位置（一个位置可以代表它的目录）；`null` 是存储说不出，这时插件要把记过的每个位置都比一遍；`mark` 是 `null` 时（还没有过）`places` 也是 `null`。有常驻的进程（界面的服务）在听这个库时答得出，代价跟着变了的东西走；没有时说不出。存下新的 `mark`，下次接着问；它不花什么，只对这个库有用 |
 | `own` | 上面 `glance` 到 `remove` 这八个 | 插件记录处里事实以外的地方：留存的副本、配置这类内容，位置相对 `.pneuma-base/<插件名>/`。还没写过时根是一个空目录；第一次写就建立它。这里没有噪音，`hold` 管不到，`changed` 从不报告；放事实的 `facts` 不在其中，答 `outside` |
 | `records` | 见下 | 插件的记录处：只追加的事实，和从事实推出的行 |
 

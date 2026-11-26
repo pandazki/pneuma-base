@@ -4,7 +4,9 @@
 // synthetic one (about 20,000 registered things and 100,000 facts as two years of use, plus a closed
 // directory of 60,000 files made unreadable), and on any library given with --real. For each: the
 // median wall time, the output's size, and the peak memory of the process. Run after `pnpm build`:
-//   node scripts/bench-line.mjs [--real <library folder>] [--no-synthetic] [--runs 5] [--keep] [--bin <bin.js>]
+//   node scripts/bench-line.mjs [--real <library folder>] [--no-synthetic] [--runs 5] [--keep] [--bin <bin.js>] [--listener]
+// --listener keeps a process listening to each library while its commands run, as the management UI's
+// server does; the page's server listens to its library in any case.
 // A --real library is used in place: the commands write their facts into it, so give it a copy.
 // --bin measures another build, such as the code before a change, on the same libraries.
 // A read that fails is shown as failed with what it answered, the others still measured.
@@ -14,6 +16,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { writeHistory } from '../packages/viewer/e2e/month.ts'
 
@@ -22,6 +25,7 @@ const flag = (name) => argv.includes(name)
 const value = (name, fallback) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : fallback)
 const runs = Number(value('--runs', '5'))
 const bin = value('--bin', fileURLToPath(new URL('../packages/cli/dist/bin.js', import.meta.url)))
+const core = process.env.PNEUMA_BASE_CORE ?? fileURLToPath(new URL('../core/target/release/pneuma-base-core', import.meta.url))
 const scratch = mkdtempSync(join(tmpdir(), 'pb-line-'))
 const median = (list) => [...list].sort((a, b) => a - b)[Math.floor(list.length / 2)]
 
@@ -96,7 +100,25 @@ async function homeRequest(env, lib) {
   }
 }
 
+/** A process listening to the library, as the management UI's server does, once storage says it answers from what it heard. */
+async function listener(lib) {
+  const child = spawn(core, ['serve', '--root', lib], { stdio: ['pipe', 'ignore', 'ignore'] })
+  child.stdin.write(`${JSON.stringify({ id: 'sub', op: 'subscribe' })}\n`)
+  const ask = (request) => JSON.parse(spawnSync(core, ['changed', '--root', lib, JSON.stringify(request)], { encoding: 'utf8' }).stdout)
+  for (let i = 0; i < 500 && ask({ cursor: ask({}).cursor, budget: 0 }).outcome !== 'done'; i++) await sleep(20)
+  return child
+}
+
 async function bench(name, lib) {
+  const listening = flag('--listener') ? await listener(lib) : null
+  try {
+    return await benchCommands(name, lib)
+  } finally {
+    listening?.kill()
+  }
+}
+
+async function benchCommands(name, lib) {
   const env = machine(name)
   const agent = (i, tag) => ({ env: { ...env, CLAUDE_CODE_SESSION_ID: `bench-${tag}-${i}` }, args: ['--library', lib, ...(tag === 'start' ? ['start', '看看库里有什么'] : ['check'])] })
   const as = (i, tag, args) => ({ env: { ...env, CLAUDE_CODE_SESSION_ID: `bench-${tag}-${i}` }, args: ['--library', lib, ...args] })
@@ -167,7 +189,7 @@ for (const [name, lib] of libraries) {
 console.log('| library | read | time | output | peak memory |\n| --- | --- | --- | --- | --- |')
 for (const r of results) {
   if (r.error) console.log(`| ${r.name} | failed | ${r.error.slice(0, 120)} | | |`)
-  else for (const [read, m] of Object.entries(r.rows)) console.log(`| ${r.name} | ${read} | ${m.ms.toFixed(0)} ms | ${kb(m.bytes)} | ${mb(m.rss)} |${m.failed ? ` failed: ${m.failed.replaceAll('|', '/')} |` : ''}`)
+  else for (const [read, m] of Object.entries(r.rows)) console.log(`| ${r.name} | ${read} | ${m.ms.toFixed(1)} ms | ${kb(m.bytes)} | ${mb(m.rss)} |${m.failed ? ` failed: ${m.failed.replaceAll('|', '/')} |` : ''}`)
 }
 if (closed) chmodSync(closed, 0o755)
 if (flag('--keep')) console.log(`kept: ${scratch}`)

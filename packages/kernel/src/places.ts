@@ -4,7 +4,7 @@
 // nothing goes into. Storage is looked at only where these say.
 import { createHash } from 'node:crypto'
 import { eachPlugin } from './pipeline.js'
-import { learn, recentChanges } from './changes.js'
+import { changesSince } from './changes.js'
 import { storageOf, type Storage } from './storage.js'
 import { DESCRIPTION_FILE, KERNEL_DIR, ARCHIVE_DIR } from './paths.js'
 import { isDescribed, type Context, type LibraryPath, type Place } from '@pneuma-base/sdk'
@@ -46,38 +46,42 @@ export async function openDirectories(ctx: Context): Promise<Place[]> {
   return [...new Set<Place>(['', ...heard.values.flatMap(({ value }) => value)])].sort()
 }
 
-/** How many of the newest asks the page's stamp looks back over for a change it shows, and how many changed places it glances at. */
-const STAMP_WINDOW = 64
+/** How many changed places in open directories' levels the page's stamp glances at before it just says something changed. */
 const STAMP_GLANCES = 200
+
+/**
+ * Per library, the cursor the stamp last asked storage from, and the cursor of the newest change it
+ * saw to a file in an open directory's level. Kept by the long-lived process that polls, which is
+ * the one that listens, so its asks are answered from what the subscription recorded.
+ */
+const stamps = new Map<string, { mark: string; shown: string }>()
 
 /**
  * A short stamp that changes when the management UI's page has something new to show: where each
  * plugin's facts end now, the tokens of the open directories (an entry come or gone), and the newest
- * change the kernel's cursor learned to a file in an open directory's level. A change in a directory
- * nobody looked into, or inside a thing, does not move it. Never a walk.
+ * change storage reported to a file in an open directory's level. A change in a directory nobody
+ * looked into, or inside a thing, does not move it. Never a walk.
  */
 export async function changeStamp(ctx: Context): Promise<string> {
   const store = storageOf(ctx.library.root)
   const ends = await Promise.all(ctx.library.plugins.map(async (p) => (await store.records(p.name).since(null, 0))?.cursor ?? ''))
   const open = await openDirectories(ctx)
   const tokens = (await store.glance(open)).map((g) => `${g.place}\0${isDescribed(g) ? (g.token ?? g.kind) : g.reason}`)
-  const { seq, sure } = await learn(store)
-  const newest = sure ? await newestShown(store, seq, new Set(open)) : null
-  return createHash('sha1').update([...ends, ...tokens, ...(newest === null ? [] : [`changes ${newest}`])].join('\n')).digest('hex').slice(0, 16)
+  const shown = await newestShown(store, ctx.library.root, new Set(open))
+  return createHash('sha1').update([...ends, ...tokens, shown].join('\n')).digest('hex').slice(0, 16)
 }
 
-/** The newest ask that learned of a file in an open directory's level changing; null when none of the recent ones did. */
-async function newestShown(store: Storage, seq: number, open: ReadonlySet<Place>): Promise<number | null> {
-  let glances = 0
-  for (const { seq: s, places } of await recentChanges(store, seq, STAMP_WINDOW)) {
-    if (places === null) continue
+/** The cursor of the newest change to a file in an open directory's level the stamp has seen; when storage cannot say, the last one seen. */
+async function newestShown(store: Storage, root: string, open: ReadonlySet<Place>): Promise<string> {
+  const known = stamps.get(root)
+  const { places, mark } = await changesSince(store, known?.mark ?? null)
+  let shown = known?.shown ?? ''
+  if (places !== null) {
     const near = places.filter((p) => open.has(parentOf(p)) && !open.has(p))
-    if (near.length === 0) continue
-    glances += near.length
-    if (glances > STAMP_GLANCES) return s
-    if ((await store.glance(near)).some((g) => !isDescribed(g) || g.kind !== 'dir')) return s
+    if (near.length > STAMP_GLANCES || (near.length > 0 && (await store.glance(near)).some((g) => !isDescribed(g) || g.kind !== 'dir'))) shown = mark
   }
-  return null
+  stamps.set(root, { mark, shown })
+  return shown
 }
 
 const parentOf = (place: Place): Place => (place.includes('/') ? place.slice(0, place.lastIndexOf('/')) : '')
