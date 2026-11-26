@@ -1,18 +1,20 @@
 import CoreServices
 import Foundation
 
-/// Watches the current library with FSEvents and records, through the command line, what the owner
-/// did to it outside the command line: a file that appeared is registered as brought by the owner,
-/// a file changed directly is claimed as the owner's change.
+/// Watches the current library with FSEvents. Any change at all is told to `onActivity`, so the app
+/// can count again what waits for the owner. With 直接放进来的文件算主人的 on, it also records,
+/// through the command line, what the owner did to the library outside the tools: a file that
+/// appeared is registered as brought by the owner and seen (`put --brought --by owner --observed`), a
+/// file changed directly is recorded as a change seen (`say revised --observed`).
 ///
-/// An agent's put moves its file into place before the ledger records it, so for a moment the file
-/// is in the library and nobody registered it. The rule that keeps such a file from being taken for
-/// the owner's: only paths that had an event while watching count; a check runs only after the whole
-/// library, `.pneuma-base/` included, has been quiet for `quiet` seconds and no put of the app's own
-/// is in flight; and a path is acted on only when two such checks, at least `quiet` seconds apart,
-/// both list it, with the same size and modification time. Its weakness: it goes by time. An agent
-/// that writes into the library with its own tools and registers more than that later has its file
-/// taken for the owner's.
+/// Whether a file is anybody's is the ledger's to say, and it says so with a put in progress taken
+/// into account: a put marks its paths before it places anything, and the ledger's standing page
+/// leaves a marked path out, and any path a record arrived for while it looked. So the watcher only
+/// waits for the library to be quiet, so a copy still being written is not taken half-way, reads the
+/// standing page once, and acts on the paths it lists that had an event since it last looked. A
+/// put that starts after the look and lands first makes the watcher's own put only a note (已在册).
+/// A file an agent wrote in place against its instructions and registers later is taken for the
+/// owner's first; the agent's own put then corrects the origin, as an origin seen gives way to one said.
 @MainActor
 final class Watcher {
   static let quiet: TimeInterval = 3
@@ -22,26 +24,22 @@ final class Watcher {
   private let config: Config
   private var stream: FSEventStreamRef?
   private var lastEvent = Date.distantPast
-  /// Library paths that had an event since watching began and are not settled yet.
+  /// Library paths that had an event since the watcher last looked.
   private var touched: Set<String> = []
-  private var sightings: [String: Sighting] = [:]
   private var timer: Timer?
+  private var activityTimer: Timer?
   private var passing = false
-  private var holds = 0
-  var onRecorded: ((_ registered: [String], _ claimed: [String]) -> Void)?
+  /// 直接放进来的文件算主人的.
+  var recordsOwnerFiles: Bool
+  var onRecorded: ((_ registered: [String], _ seen: [String]) -> Void)?
+  var onActivity: (() -> Void)?
 
-  private struct Sighting {
-    let size: Int
-    let modified: Date
-    let at: Date
-    func same(as other: Sighting) -> Bool { size == other.size && modified == other.modified }
-  }
-
-  init(library: URL, config: Config) {
+  init(library: URL, config: Config, recordsOwnerFiles: Bool) {
     self.library = library
     // FSEvents reports real paths; `resolvingSymlinksInPath` would turn /private/tmp into /tmp.
     self.root = realpath(library.path, nil).map { p in defer { free(p) }; return String(cString: p) } ?? library.path
     self.config = config
+    self.recordsOwnerFiles = recordsOwnerFiles
   }
 
   func start() {
@@ -57,24 +55,17 @@ final class Watcher {
     FSEventStreamSetDispatchQueue(stream, .main)
     FSEventStreamStart(stream)
     self.stream = stream
-    Log.line("watcher: watching \(library.lastPathComponent)")
+    Log.line("watcher: watching \(library.lastPathComponent), owner files \(recordsOwnerFiles ? "on" : "off")")
   }
 
   func stop() {
     timer?.invalidate()
+    activityTimer?.invalidate()
     guard let stream else { return }
     FSEventStreamStop(stream)
     FSEventStreamInvalidate(stream)
     FSEventStreamRelease(stream)
     self.stream = nil
-  }
-
-  /// Around a put of the app's own: no check runs while one is in flight.
-  func hold() { holds += 1 }
-  func release() {
-    holds -= 1
-    lastEvent = Date()
-    schedule(after: Self.quiet)
   }
 
   private func heard(_ paths: ArraySlice<String>) {
@@ -86,7 +77,11 @@ final class Watcher {
       if (rel as NSString).lastPathComponent == ".DS_Store" { continue }
       touched.insert(rel)
     }
-    if !touched.isEmpty || !sightings.isEmpty { schedule(after: Self.quiet) }
+    activityTimer?.invalidate()
+    activityTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { [weak self] _ in
+      MainActor.assumeIsolated { self?.onActivity?() }
+    }
+    if recordsOwnerFiles && !touched.isEmpty { schedule(after: Self.quiet) }
   }
 
   private func schedule(after seconds: TimeInterval) {
@@ -100,7 +95,7 @@ final class Watcher {
   }
 
   /// A path counts when it, or a folder it is in, had an event.
-  private func eligible(_ path: String) -> Bool {
+  private static func covered(_ path: String, by touched: Set<String>) -> Bool {
     var p = path
     while !p.isEmpty {
       if touched.contains(p) { return true }
@@ -109,67 +104,55 @@ final class Watcher {
     return false
   }
 
-  private func sighting(_ path: String) -> Sighting? {
-    guard let a = try? FileManager.default.attributesOfItem(atPath: root + "/" + path) else { return nil }
-    return Sighting(size: (a[.size] as? NSNumber)?.intValue ?? 0, modified: a[.modificationDate] as? Date ?? .distantPast, at: Date())
-  }
-
   private func pass() async {
-    guard !passing, !touched.isEmpty || !sightings.isEmpty else { return }
+    guard recordsOwnerFiles, !passing, !touched.isEmpty else { return }
     let sinceEvent = Date().timeIntervalSince(lastEvent)
-    if holds > 0 || sinceEvent < Self.quiet { return schedule(after: max(0.2, Self.quiet - sinceEvent)) }
+    if sinceEvent < Self.quiet { return schedule(after: max(0.2, Self.quiet - sinceEvent)) }
     passing = true
     defer { passing = false }
-    let checkedAt = Date()
-    let result = await runCli(["--library", library.path, "check", "--json"], in: library, config: config)
-    guard let sections = result.json?["sections"] as? [[String: Any]] else {
-      Log.line("watcher: check failed: \(result.err.prefix(200))")
-      return schedule(after: Self.quiet)
+    let looking = touched
+    touched = []
+    Log.line("watcher: looking")
+    let result = await runCli(["--library", library.path, "show", "ledger.standing", "--json"], in: library, config: config)
+    guard result.json?["outcome"] as? String == "shown", let blocks = result.json?["blocks"] as? [[String: Any]] else {
+      Log.line("watcher: no standing page: \(result.err.prefix(200)) \(String(decoding: result.out.prefix(200), as: UTF8.self))")
+      touched.formUnion(looking)
+      return
     }
-    // Something moved while the check ran: its answer may already be stale.
-    if lastEvent > checkedAt || holds > 0 { return schedule(after: Self.quiet) }
-    let unowned = Self.paths(sections, titled: "没人登记过的").filter(eligible)
-    let changed = Self.paths(sections, titled: "被直接改过的").filter(eligible)
-    let listed = Set(unowned + changed)
+    let eligible = { (path: String) in Self.covered(path, by: looking) }
+    let unowned = Self.paths(blocks, titled: "没人登记过的").filter(eligible)
+    let changed = Self.paths(blocks, titled: "被直接改过的").filter(eligible)
+    Log.line("watcher: looked, \(unowned.count) nobody's, \(changed.count) changed directly")
 
-    var register: [String] = [], claim: [String] = []
-    for path in listed {
-      guard let now = sighting(path) else { continue }
-      if let first = sightings[path], first.same(as: now), now.at.timeIntervalSince(first.at) >= Self.quiet {
-        if unowned.contains(path) { register.append(path) } else { claim.append(path) }
-        sightings[path] = nil
-      } else if sightings[path].map({ !$0.same(as: now) }) ?? true {
-        sightings[path] = now
-      }
-    }
-    sightings = sightings.filter { listed.contains($0.key) }
-    touched = touched.filter { t in sightings.keys.contains { $0 == t || $0.hasPrefix(t + "/") } }
-    if !sightings.isEmpty { schedule(after: Self.quiet) }
-    guard !register.isEmpty || !claim.isEmpty else { return }
-
-    var registered: [String] = [], claimed: [String] = []
-    for path in register.sorted() {
-      var args = ["--library", library.path, "--session", config.session, "put", path, "--brought", "--by", "owner", "--note", "自动登记", "--json"]
+    var registered: [String] = [], seen: [String] = []
+    for path in unowned.sorted() {
+      var args = ["--library", library.path, "--session", config.session, "put", path, "--brought", "--by", "owner", "--observed", "--note", "自动登记", "--json"]
       if let from = downloadAddress(of: URL(fileURLWithPath: root + "/" + path)) { args += ["--source", from] }
       let r = await runCli(args, in: library, config: config)
-      // Someone registered it between the check and this put: the ledger keeps their record and only notes ours.
+      // Someone registered it between the look and this put: the ledger keeps their record and only notes ours.
       let notes = (r.json?["notes"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }
-      if r.json?["outcome"] as? String != "accepted" { Log.line("watcher: could not register \(path): \(r.err.prefix(200))") }
+      if r.json?["outcome"] as? String != "accepted" { Log.line("watcher: could not register \(path): \(r.err.prefix(200)) \(String(decoding: r.out.prefix(200), as: UTF8.self))") }
       else if notes.contains(where: { $0.hasPrefix("已在册") }) { Log.line("watcher: \(path) was registered meanwhile; only noted") }
       else { registered.append(path) }
     }
-    for path in claim.sorted() {
-      let r = await runCli(["--library", library.path, "--session", config.session, "say", "revised", path, "--json"], in: library, config: config)
-      if r.json?["outcome"] as? String == "heard" { claimed.append(path) } else { Log.line("watcher: could not claim \(path): \(r.err.prefix(200))") }
+    for path in changed.sorted() {
+      let r = await runCli(["--library", library.path, "--session", config.session, "say", "revised", path, "--observed", "--json"], in: library, config: config)
+      if r.json?["outcome"] as? String == "heard" { seen.append(path) } else { Log.line("watcher: could not record the change to \(path): \(r.err.prefix(200))") }
     }
-    Log.line("watcher: registered \(registered) claimed \(claimed)")
-    onRecorded?(registered, claimed)
+    Log.line("watcher: registered \(registered) seen \(seen)")
+    if !registered.isEmpty || !seen.isEmpty { onRecorded?(registered, seen) }
+    if !touched.isEmpty { schedule(after: Self.quiet) }
   }
 
-  private static func paths(_ sections: [[String: Any]], titled title: String) -> [String] {
-    sections.filter { $0["title"] as? String == title && $0["plugin"] as? String == "ledger" }
-      .flatMap { ($0["data"] as? [[String: Any]]) ?? [] }
-      .compactMap { $0["path"] as? String }
+  /// The paths a section of the ledger's standing page lists: each entry opens the thing's panel.
+  private static func paths(_ blocks: [[String: Any]], titled title: String) -> [String] {
+    blocks.filter { $0["kind"] as? String == "section" && $0["title"] as? String == title }
+      .flatMap { ($0["blocks"] as? [[String: Any]]) ?? [] }
+      .flatMap { ($0["items"] as? [[String: Any]]) ?? [] }
+      .compactMap { item in
+        let cell = item["cell"] as? [String: Any]
+        return ((cell?["link"] as? [String: Any])?["params"] as? [String: Any])?["path"] as? String ?? cell?["text"] as? String
+      }
   }
 }
 
