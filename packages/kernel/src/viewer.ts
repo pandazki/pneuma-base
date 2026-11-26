@@ -10,6 +10,7 @@ import { exists } from './files.js'
 import { bundleFiles, enclosingBundle, kindAt, listThings, thingAt } from './things.js'
 import { KERNEL_COMMANDS } from './owner-commands.js'
 import { codexHint } from './products.js'
+import { kernelSteps, startPart } from './start.js'
 import { requestAsks } from './requests.js'
 import { agentSign, ownerOnlyRefusal, OWNER_DECIDES, type Env } from './session.js'
 import type { KernelCommandName } from './claims.js'
@@ -470,10 +471,11 @@ async function thingSections(root: string, facts: FileFacts, bundle: LibraryPath
 // ---- home ----
 
 /**
- * The page the owner opens on: what waits on the owner, the agents' pending requests first, oldest
- * first, then every plugin's `onAsks`; then each plugin view declared `home`, its blocks as they are,
- * in configuration order. With no such view the page says so and shows the library's top folder, so
- * a library without plugins has a home too.
+ * The page the owner opens on: 「开始」 while a step of getting started is left (start.ts); what waits
+ * on the owner, the agents' pending requests first, oldest first, then every plugin's `onAsks`; then
+ * each plugin view declared `home`, its blocks as they are, in configuration order, but for the steps
+ * they give, which join 「开始」. With no such view the page says so and shows the library's top
+ * folder, so a library without plugins has a home too.
  */
 async function homePage(_params: Record<string, string>, call: ViewerCall): Promise<Shown> {
   const { ctx } = call
@@ -490,12 +492,14 @@ async function homePage(_params: Record<string, string>, call: ViewerCall): Prom
   }
   const parts = pluginViews(ctx.library).views.filter((v) => v.decl.home === true)
   const problems = [...asked.problems]
-  const blocks: Block[] = [decide]
+  const given: Block[] = []
   for (const { plugin, decl } of parts) {
     const part = await pluginPage(plugin, decl, { view: decl.id, params: Object.fromEntries(decl.filters.map((f) => [f.name, f.default])) }, ctx)
-    blocks.push(...part.blocks)
+    given.push(...part.blocks)
     problems.push(...part.problems)
   }
+  const { start, rest } = startPart(await kernelSteps(call), given)
+  const blocks: Block[] = [...(start === null ? [] : [start]), decide, ...rest]
   if (parts.length === 0) {
     const files = await filesPage({}, call)
     const why = ctx.library.plugins.length === 0 ? '这个库没装插件：首页只有要你决定的事和库里的文件。装上插件，这里会有 agent 做了什么、哪些东西要留意。' : '装着的插件没有给首页添内容，下面是库里的文件。'

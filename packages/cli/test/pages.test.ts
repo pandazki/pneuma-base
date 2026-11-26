@@ -69,7 +69,7 @@ async function cli(args: string[]): Promise<{ code: number; out: string; err: st
 const flagsOf = (params: Record<string, string>) => Object.entries(params).flatMap(([k, v]) => [`--${k}`, v])
 
 function allBlocks(blocks: readonly Block[]): Block[] {
-  return blocks.flatMap((b) => [b, ...(b.kind === 'section' ? allBlocks(b.blocks) : [])])
+  return blocks.flatMap((b) => [b, ...(b.kind === 'section' ? allBlocks(b.blocks) : b.kind === 'steps' ? b.steps.flatMap((s) => allBlocks(s.blocks)) : [])])
 }
 
 function actionsOf(b: Block): Action[] {
@@ -242,6 +242,8 @@ describe('every page of a library with every built-in plugin', () => {
         if (block.kind === 'asks') for (const ask of block.asks) expect(text, `${where}: ${ask.text}`).toContain(`${ask.text}${ask.command === undefined ? '' : `（${typeof ask.by === 'string' ? ask.by : ask.by.name}）\n    ${ask.command}`}`)
         if (block.kind === 'stats') for (const stat of block.stats) expect(text, `${where}: ${stat.label}`).toContain(`${stat.label}：${stat.value}`)
         if (block.kind === 'tree') for (const node of block.nodes) expect(text, `${where}: ${node.label}`).toContain(node.label)
+        if (block.kind === 'steps') for (const step of block.steps) expect(text, `${where}: ${step.title}`).toContain(`] ${step.title}`)
+        if (block.kind === 'drop') expect(text, where).toContain(`$ ${block.command}`)
         for (const action of actionsOf(block)) expect(text, `${where}: ${action.label}`).toContain(`$ ${commandOf(action, commands)}  # ${action.label}`)
       }
     }

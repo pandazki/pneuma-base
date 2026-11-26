@@ -13,7 +13,12 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
   /// When the window was asked for and is not drawn yet.
   private var requestedAt: Date?
   private var showTimer: Timer?
+  /// Whether the page has its content, and what to run in it once it has.
+  private var ready = false
+  private var pendingScript: String?
   var onFiles: (([URL]) -> Void)?
+  /// A message of the page's own for the app: choose files, open, the libraries' menu, quit.
+  var onPageMessage: (([String: Any]) -> Void)?
 
   var isOpen: Bool { window?.isVisible ?? false }
 
@@ -53,13 +58,39 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
   func back() { webView?.goBack() }
   func forward() { webView?.goForward() }
 
-  /// After a drop, the files view at the inbox, through the page's own route.
-  func showInbox() {
-    webView?.evaluateJavaScript("location.hash = 'view=files&view.dir=inbox'")
+  /// The library folder the page is showing, from its route's `view.dir`, as the library page and
+  /// the files page keep it; nil on any other page, or with the window closed.
+  var currentFolder: String? {
+    guard isOpen, let fragment = webView?.url?.fragment ?? route else { return nil }
+    // The page writes its route with URLSearchParams, which writes a space as `+`.
+    let query = fragment.replacingOccurrences(of: "+", with: "%20")
+    let dir = URLComponents(string: "x:/?\(query)")?.queryItems?.first { $0.name == "view.dir" }?.value
+    return dir.flatMap { $0.isEmpty ? nil : $0 }
+  }
+
+  /// Opens a link of a block in the page, as a click on it would: given to the page once it is ready.
+  func follow(link: [String: Any]) {
+    guard let data = try? JSONSerialization.data(withJSONObject: ["link": link]) else { return }
+    let js = "window.dispatchEvent(new CustomEvent('pneuma-shell', { detail: \(String(decoding: data, as: UTF8.self)) }))"
+    if ready { webView?.evaluateJavaScript(js) } else { pendingScript = js }
+  }
+
+  /// A new library: the page opens on its first page, the home page.
+  func forgetRoute() { route = nil }
+
+  /// A line the page shows as its notice: what a drop or the watcher did.
+  func notice(tone: String, text: String) {
+    webView?.evaluateJavaScript("window.dispatchEvent(new CustomEvent('pneuma-shell', { detail: { notice: { tone: \(Self.jsString(tone)), text: \(Self.jsString(text)) } } }))")
+  }
+
+  static func jsString(_ s: String) -> String {
+    let data = (try? JSONSerialization.data(withJSONObject: [s])) ?? Data("[\"\"]".utf8)
+    return String(String(decoding: data, as: UTF8.self).dropFirst().dropLast())
   }
 
   private func load(_ address: URL) {
     self.address = address
+    ready = false
     let web = webView ?? makeWebView()
     guard var components = URLComponents(url: address, resolvingAgainstBaseURL: false) else { return }
     components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "shell", value: "mac")]
@@ -122,6 +153,7 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
     web.navigationDelegate = self
     web.uiDelegate = self
     web.onFiles = { [weak self] urls in self?.onFiles?(urls) }
+    web.dropTarget = { [weak self] in "\(self?.currentFolder ?? "inbox")/" }
     window?.contentView = web
     // Made first responder now, while the window is not key: becoming key with no first responder
     // selects the first key view as Tab would, and WebKit then puts a focus ring on the first row.
@@ -136,6 +168,7 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
     webView?.configuration.userContentController.removeScriptMessageHandler(forName: "shell")
     webView?.removeFromSuperview()
     webView = nil
+    ready = false
     window?.contentView = nil
     requestedAt = nil
     NSApp.setActivationPolicy(.accessory)
@@ -155,15 +188,20 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
     guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
     switch type {
     case "ready":
+      ready = true
       show(reason: "ready")
       tellWindowState()
+      if let js = pendingScript {
+        pendingScript = nil
+        webView?.evaluateJavaScript(js)
+      }
     case "painted":
       if let requestedAt { Log.line(String(format: "window: page drawn %.0f ms after open", Date().timeIntervalSince(requestedAt) * 1000)) }
       requestedAt = nil
     case "regions":
       webView?.setRegions(drag: rects(body["drag"]), noDrag: rects(body["nodrag"]))
     default:
-      break
+      onPageMessage?(body)
     }
   }
 
@@ -267,7 +305,7 @@ private let pageColor = NSColor(name: nil) { appearance in
 }
 
 /// The content controller keeps its handlers strongly; this breaks the cycle with the window.
-private final class WeakHandler: NSObject, WKScriptMessageHandler {
+final class WeakHandler: NSObject, WKScriptMessageHandler {
   weak var target: (any WKScriptMessageHandler)?
   init(_ target: any WKScriptMessageHandler) { self.target = target }
   func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) { target?.userContentController(c, didReceive: m) }
@@ -280,6 +318,8 @@ final class ShellWebView: WKWebView {
   private var noDrag: [CGRect] = []
   private var overlay: DropOverlay?
   var onFiles: (([URL]) -> Void)?
+  /// Where files dropped now would go, as the overlay says it.
+  var dropTarget: (() -> String)?
 
   func setRegions(drag: [CGRect], noDrag: [CGRect]) {
     self.drag = drag
@@ -361,7 +401,7 @@ final class ShellWebView: WKWebView {
 
   private func showOverlay(_ on: Bool) {
     if on, overlay == nil {
-      let view = DropOverlay(frame: bounds)
+      let view = DropOverlay(frame: bounds, target: dropTarget?() ?? "inbox/")
       view.autoresizingMask = [.width, .height]
       addSubview(view)
       overlay = view
@@ -374,10 +414,10 @@ final class ShellWebView: WKWebView {
 
 /// What the window shows while files are dragged over it.
 private final class DropOverlay: NSView {
-  override init(frame: NSRect) {
+  init(frame: NSRect, target: String) {
     super.init(frame: frame)
     wantsLayer = true
-    let label = NSTextField(labelWithString: "松开，放进库的 inbox/")
+    let label = NSTextField(labelWithString: "松开，放进库的 \(target)，记成你带进来的")
     label.font = .systemFont(ofSize: 15, weight: .semibold)
     label.textColor = .controlAccentColor
     label.translatesAutoresizingMaskIntoConstraints = false
@@ -421,6 +461,59 @@ extension MainWindow {
       self?.webView?.evaluateJavaScript("String(window.getSelection())") { sel, _ in
         MainActor.assumeIsolated { Log.line("find: \(text) matched \(result.matchFound), selection \(String(describing: sel))") }
       }
+    }
+  }
+}
+
+extension MainWindow {
+  /// The page's text as it shows now, written to `url`: verify.sh reads what the owner would see.
+  func textForTest(to url: URL) {
+    pageText(webView, to: url)
+  }
+
+  func snapshotForTest(to url: URL) {
+    snapshot(webView, to: url)
+  }
+
+  func routeForTest(_ fragment: String) {
+    webView?.evaluateJavaScript("location.hash = \(Self.jsString(fragment))")
+  }
+}
+
+/// What a test hook writes of a web view: the page's visible text, or a picture of it.
+@MainActor
+func pageText(_ web: WKWebView?, to url: URL) {
+  guard let web else { return Log.line("text: no page") }
+  web.evaluateJavaScript("document.body.innerText") { text, error in
+    MainActor.assumeIsolated {
+      try? ((text as? String) ?? "").write(to: url, atomically: true, encoding: .utf8)
+      Log.line("text: wrote \(url.lastPathComponent)\(error.map { " (\($0.localizedDescription))" } ?? "")")
+    }
+  }
+}
+
+/// A page that draws no ground of its own, as the panel's, is laid on `ground`, as the window behind it shows it.
+@MainActor
+func snapshot(_ web: WKWebView?, to url: URL, ground: NSColor? = nil) {
+  guard let web else { return Log.line("snap: no page") }
+  var fill: NSColor?
+  web.effectiveAppearance.performAsCurrentDrawingAppearance { fill = ground?.usingColorSpace(.sRGB) }
+  web.takeSnapshot(with: nil) { shot, error in
+    MainActor.assumeIsolated {
+      let image = shot.map { shot in
+        guard let fill else { return shot }
+        return NSImage(size: shot.size, flipped: false) { rect in
+          fill.setFill()
+          rect.fill()
+          shot.draw(in: rect)
+          return true
+        }
+      }
+      guard let image, let tiff = image.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else {
+        return Log.line("snap: failed \(error?.localizedDescription ?? "")")
+      }
+      try? png.write(to: url)
+      Log.line("snap: wrote \(url.lastPathComponent)")
     }
   }
 }

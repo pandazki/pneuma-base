@@ -38,7 +38,7 @@ export type AgentProduct = {
 }
 
 /** One sentence the owner says to the agent once it is connected. */
-const FIRST_WORDS = '看看我的 Pneuma Base 库里有什么。'
+export const FIRST_WORDS = '看看我的 Pneuma Base 库里有什么。'
 
 /** What Codex needs before it can write the library from its sandbox. */
 export function codexHint(root: string): string {

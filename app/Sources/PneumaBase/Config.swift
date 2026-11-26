@@ -24,6 +24,10 @@ struct Config: Sendable {
       session: UUID().uuidString.lowercased())
   }
 
+  /// The name of the distributed notification the test hooks listen on; `--hooks <name>` gives a run
+  /// its own, so a check never drives another copy of the app.
+  static var hooksName: String { "dev.pneumabase.spike" + (argument("--hooks").map { ".\($0)" } ?? "") }
+
   static func argument(_ name: String) -> String? {
     let args = CommandLine.arguments
     guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
@@ -87,10 +91,16 @@ private final class Drained: @unchecked Sendable {
   var data = Data()
 }
 
-/// The app's own small preferences file: the libraries it knows and the current one. Not in any library.
+/// The app's own small preferences file: the libraries it knows, the current one, and this machine's
+/// settings. Not in any library.
 struct Prefs: Codable {
   var libraries: [String] = []
   var current: String?
+  /// 直接放进来的文件算主人的: the watcher registers a file that appeared outside the tools as the
+  /// owner's, seen rather than said, and records a direct change as seen. Unset means on.
+  var ownerFiles: Bool?
+
+  var watchesOwnerFiles: Bool { ownerFiles ?? true }
 
   static func url(_ config: Config) -> URL { config.appDir.appendingPathComponent("libraries.json") }
 

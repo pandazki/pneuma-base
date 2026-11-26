@@ -13,6 +13,7 @@ import { ViewIcon } from './chrome'
 import { useEnv } from './env'
 import { CustomView } from './frame'
 import { fitColumns, naturalColumns, textRoom } from './measure'
+import { DropView, StepsView } from './steps'
 import { localMoments } from './time'
 
 export const sameLink = (a: Link | null, b: { view: string; params: Record<string, string> } | null) =>
@@ -391,6 +392,10 @@ export function BlockView({ block }: { block: Block }) {
       return <TreeView block={block} />
     case 'asks':
       return <AsksView block={block} />
+    case 'steps':
+      return <StepsView block={block} />
+    case 'drop':
+      return <DropView block={block} />
     case 'empty':
       return <EmptyView block={block} />
     case 'embed':
