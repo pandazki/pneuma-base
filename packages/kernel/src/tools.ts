@@ -6,7 +6,7 @@ import { v1Tools } from './contract-v1.js'
 import { archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
 import { storageOf, type Area, type Source, type Storage } from './storage.js'
 import { rankHits, searchTerms, SENTENCE_HITS } from './terms.js'
-import { enclosingBundle, THING_FILES, THING_RULE, whatIs } from './things.js'
+import { enclosingBundle, markBundle, THING_FILES, THING_RULE, whatIs } from './things.js'
 
 /** One area as a plugin sees it: a directory's content always counted by the rule things follow. */
 function placeStore(area: Area, own: PluginName): PlaceStore {
@@ -15,7 +15,8 @@ function placeStore(area: Area, own: PluginName): PlaceStore {
     glance: (places) => area.glance(places),
     overview: (place, opts) => area.overview(place, opts),
     look: (places) => area.look(places),
-    content: (place, opts = {}) => area.content(place, { rule: THING_RULE, limit: opts.limit ?? THING_FILES }),
+    lookRows: (table, field, opts) => area.lookRows({ place: own, table, field }, opts),
+    content: (place, opts = {}) => area.content(place, { rule: THING_RULE, limit: opts.limit ?? THING_FILES, ...(opts.manifest === undefined ? {} : { manifest: opts.manifest }) }),
     read: (place, opts) => area.read(place, opts),
     write: (place, from, expect, opts = {}) => area.write(place, source(from), expect, { rule: THING_RULE, limit: opts.limit ?? THING_FILES, ...(opts.hold === undefined ? {} : { hold: opts.hold }) }),
     move: (from, to, expect, opts) => area.move(from, to, expect, opts),
@@ -53,6 +54,7 @@ export function pluginTools(ctx: Context, name: PluginName): PluginTools {
     archivedPath,
     originalPath,
     what: async (paths) => (await whatIs(store, paths as LibraryPath[])).map(({ path, kind, entry }) => ({ path, kind, entry })),
+    markBundle: (dir, opts = {}) => markBundle(store, dir, opts.hold),
     searchTerms,
     rankHits,
     sentenceHits: SENTENCE_HITS,

@@ -1,19 +1,20 @@
 // How the library stands, on the sparse rules (tmp/run-7 architecture.md section 5, 「开工和查」): what
 // changed is learned from storage's cursor, and only the registered things at or in those places and
-// those open directories are looked at; when storage cannot say, every registered place's token and
-// every open directory's token are compared, page by page, never a walk. A token that differs is
-// decided by content only where the thing has a fingerprint to compare with; a directory nobody looked
-// into stays one entry of the level above; noise is never mentioned, since storage leaves it out.
+// those open directories are looked at; when storage cannot say, storage compares every registered
+// place and every open directory with what the rows expect there (`lookRows` over `tokens` and `seen`)
+// and answers what differs, never a walk. A token that differs is decided by content only where the
+// thing has a fingerprint to compare with; a directory nobody looked into stays one entry of the level
+// above; noise is never mentioned, since storage leaves it out.
 import { isDescribed, isFailure, regionOf, type ContentAnswer, type Description, type Glanced, type LibraryPath, type Looked, type Place, type PluginContext } from '@pneuma-base/kernel'
 import { FACT_PAGE, isFact, type ItemId } from './facts.js'
 import { foldFacts, foldOut, type FoldOut } from './fold.js'
-import { ancestors, live, nameOf, parentOf, putItem, putSeen, ROWS_VERSION, type Entry, type ItemRow, type MarkRow, type SeenRow } from './model.js'
+import { ancestors, expectations, live, nameOf, parentOf, putItem, putSeen, ROWS_VERSION, unlisted, type Entry, type ItemRow, type MarkRow, type SeenRow } from './model.js'
 import { pagesOf, Tx, wherePages } from './rows.js'
 import { settle, settling, type Settling } from './settle.js'
 
 /** How many entries of a directory one look lists. */
 export const OVERVIEW = 200
-/** How many registered places one look of the full comparison takes. */
+/** How many registered things one look asks storage about when it names them. */
 const LOOK_PAGE = 500
 /** More changed places than this are not worth following one by one: every registered place is compared. */
 const PLACES_MAX = 1000
@@ -23,6 +24,15 @@ const AT_ONCE = 8
 const described = (g: Glanced | undefined): Description | null => (g === undefined || !isDescribed(g) || g.kind === 'none' ? null : g)
 const entryOf = (d: Description): Entry => ({ name: nameOf(d.place), kind: d.kind, size: d.size ?? null, modified: d.modified ?? null, token: d.token ?? null, ...(d.held ? { held: true as const } : {}) })
 const NOTHING_LOOKED: Looked = { same: 0, changed: [], gone: [], failed: [], held: [] }
+
+/** What storage said differs among the places a look compared: what is there instead, gone, not readable, being written. */
+type Differences = { changed: Map<Place, Description>; gone: Set<Place>; failed: Set<Place>; held: Set<Place> }
+const differencesOf = (looked: Looked): Differences => ({
+  changed: new Map(looked.changed.map((c) => [c.place, c.entry])),
+  gone: new Set(looked.gone),
+  failed: new Set(looked.failed.map((f) => f.place)),
+  held: new Set(looked.held),
+})
 
 export async function eachAtMost<T>(list: readonly T[], limit: number, f: (t: T) => Promise<void>): Promise<void> {
   let next = 0
@@ -52,7 +62,10 @@ export async function foldAll(ctx: PluginContext, out: FoldOut = foldOut()): Pro
     const facts = page.facts.flatMap(({ fact }) => (isFact(fact) ? [fact] : []))
     if (facts.length === 0 && page.cursor === cursor) return cursor
     const tx = new Tx(records)
-    if (cursor === null) tx.set('meta', 'version', ROWS_VERSION)
+    if (cursor === null) {
+      tx.set('meta', 'version', ROWS_VERSION)
+      putSeen(tx, '', unlisted())
+    }
     await foldFacts(tx, facts, out)
     await settle(tx, out)
     if (await tx.commit(page.cursor, cursor)) {
@@ -149,11 +162,10 @@ async function judge(store: Store, tx: Tx, settling: Settling, item: ItemRow, d:
 }
 
 /**
- * Looks at these registered things: each one's token, a directory-thing's first level with it; a
- * thing whose token is unknown (recorded before tokens) is glanced at. A thing being written now is
- * judged by its record.
+ * What storage says of these things against their records, asked with the tokens on record (a
+ * directory-thing's first level with it): a thing whose token is unknown is glanced at, and differs.
  */
-export async function lookItems(store: Store, tx: Tx, settling: Settling, items: readonly ItemRow[]): Promise<void> {
+async function compareItems(store: Store, items: readonly ItemRow[]): Promise<Differences> {
   const looks: { place: Place; token: string }[] = []
   const glances: Place[] = []
   for (const item of items) {
@@ -161,27 +173,45 @@ export async function lookItems(store: Store, tx: Tx, settling: Settling, items:
     else looks.push({ place: item.path, token: item.token }, ...(item.entries ?? []).map((e) => ({ place: `${item.path}/${e.name}`, token: e.token })))
   }
   const [looked, glanced] = await Promise.all([looks.length > 0 ? store.look(looks) : NOTHING_LOOKED, glances.length > 0 ? store.glance(glances) : ([] as Glanced[])])
-  const changed = new Map(looked.changed.map((c) => [c.place, c.entry]))
-  const gone = new Set([...looked.gone, ...looked.failed.map((f) => f.place)])
-  const held = new Set(looked.held)
-  const glance = new Map(glanced.map((g) => [g.place, g]))
+  const out = differencesOf(looked)
+  for (const g of glanced) {
+    const d = described(g)
+    if (!isDescribed(g)) out.failed.add(g.place)
+    else if (d === null) out.gone.add(g.place)
+    else {
+      if (d.held) out.held.add(g.place)
+      out.changed.set(g.place, d)
+    }
+  }
+  return out
+}
+
+/**
+ * Looks at these registered things: what storage said differs among their places (asked here with their
+ * records when not given), a directory-thing's first level with it. A thing named in none of the
+ * differences is as recorded; a thing being written now is judged by its record.
+ */
+export async function lookItems(store: Store, tx: Tx, settling: Settling, items: readonly ItemRow[], given?: Differences): Promise<void> {
+  const diff = given ?? (await compareItems(store, items))
+  const gone = (place: Place) => diff.gone.has(place) || diff.failed.has(place)
   const decide: { item: ItemRow; d: Description }[] = []
   for (const item of items) {
-    if (held.has(item.path) || described(glance.get(item.path))?.held) continue
-    if (item.token === null) {
-      const d = described(glance.get(item.path))
-      if (d === null) setState(tx, settling, item, 'missing')
-      else if (!item.bundle && d.kind === 'file' && item.fingerprint !== null && d.size !== item.size) setState(tx, settling, item, 'changed', { token: d.token ?? null, fingerprint: null })
-      else decide.push({ item, d })
-      continue
-    }
-    if (gone.has(item.path)) {
+    if (diff.held.has(item.path)) continue
+    if (gone(item.path)) {
       setState(tx, settling, item, 'missing')
       continue
     }
-    const own = changed.get(item.path)
-    const inner = (item.entries ?? []).some((e) => changed.has(`${item.path}/${e.name}`) || gone.has(`${item.path}/${e.name}`))
-    if (own === undefined && !inner) {
+    const own = diff.changed.get(item.path)
+    if (item.token === null) {
+      // No token on record: storage described what is there.
+      if (own === undefined) continue
+      if (!item.bundle && own.kind === 'file' && item.fingerprint !== null && own.size !== item.size) setState(tx, settling, item, 'changed', { token: own.token ?? null, fingerprint: null })
+      else decide.push({ item, d: own })
+      continue
+    }
+    const inner = (item.entries ?? []).some((e) => diff.changed.has(`${item.path}/${e.name}`) || gone(`${item.path}/${e.name}`))
+    // A place whose row expected nothing in particular is always answered; its token on record says it is as recorded.
+    if ((own === undefined || own.token === item.token) && !inner) {
       if (item.bundle && item.entries === null) item.entries = await levelOf(store, item.path)
       if (item.state !== 'consistent' || item.bundle) setState(tx, settling, item, 'consistent')
       continue
@@ -195,24 +225,45 @@ export async function lookItems(store: Store, tx: Tx, settling: Settling, items:
   await eachAtMost(decide, AT_ONCE, ({ item, d }) => judge(store, tx, settling, item, d))
 }
 
-/** Looks at these open directories' own tokens; one whose token changed, or never listed, is listed again, one level, its first page. */
-export async function lookDirs(store: Store, tx: Tx, settling: Settling, dirs: readonly Place[]): Promise<void> {
-  if (dirs.length === 0) return
-  const seen = await tx.getMany<SeenRow>('seen', dirs)
-  const looks = dirs.flatMap((d) => (seen.has(d) ? [{ place: d, token: (seen.get(d) as SeenRow).token }] : []))
-  const glances = dirs.filter((d) => !seen.has(d))
+/** What storage says of these open directories' own levels against their listings; one never listed is glanced at, and differs. */
+async function compareDirs(store: Store, dirs: readonly Place[], seen: ReadonlyMap<string, SeenRow>): Promise<Differences> {
+  const looks = dirs.flatMap((d) => {
+    const token = seen.get(d)?.token ?? ''
+    return token === '' ? [] : [{ place: d, token }]
+  })
+  const glances = dirs.filter((d) => (seen.get(d)?.token ?? '') === '')
   const [looked, glanced] = await Promise.all([looks.length > 0 ? store.look(looks) : NOTHING_LOOKED, glances.length > 0 ? store.glance(glances) : ([] as Glanced[])])
-  const relist: { dir: Place; token: string }[] = []
-  for (const c of looked.changed) if (c.entry.kind === 'dir') relist.push({ dir: c.place, token: c.entry.token ?? '' })
+  const out = differencesOf(looked)
   for (const g of glanced) {
     const d = described(g)
-    if (d?.kind === 'dir') relist.push({ dir: g.place, token: d.token ?? '' })
+    if (!isDescribed(g)) out.failed.add(g.place)
+    else if (d === null) out.gone.add(g.place)
+    else out.changed.set(g.place, d)
   }
-  for (const dir of [...looked.gone, ...looked.failed.map((f) => f.place), ...looked.changed.filter((c) => c.entry.kind !== 'dir').map((c) => c.place)]) {
+  return out
+}
+
+/**
+ * Looks at these open directories: what storage said differs among their own levels (asked here when not
+ * given). One whose level changed, or never listed, is listed again, one level, its first page; one gone
+ * or no directory any more lists nothing.
+ */
+export async function lookDirs(store: Store, tx: Tx, settling: Settling, dirs: readonly Place[], given?: Differences): Promise<void> {
+  if (dirs.length === 0) return
+  const seen = await tx.getMany<SeenRow>('seen', dirs)
+  const diff = given ?? (await compareDirs(store, dirs, seen))
+  const relist: { dir: Place; token: string }[] = []
+  for (const dir of dirs) {
+    const now = diff.changed.get(dir)
+    if (now?.kind === 'dir') {
+      relist.push({ dir, token: now.token ?? '' })
+      continue
+    }
+    if (now === undefined && !diff.gone.has(dir) && !diff.failed.has(dir)) continue
     // The directory is not there any more: nothing of it is listed; what was registered in it is missing.
     const was = seen.get(dir)
     if (!was) continue
-    putSeen(tx, dir, { ...was, entries: [], more: 0, token: '' })
+    putSeen(tx, dir, { ...was, entries: [], more: 0, token: diff.gone.has(dir) ? 'empty' : '' })
     settling.restray.add(dir)
   }
   for (const { dir, token } of relist) {
@@ -253,18 +304,50 @@ async function lookSome(store: Store, tx: Tx, settling: Settling, places: readon
   for (let i = 0; i < items.length; i += LOOK_PAGE) await lookItems(store, tx, settling, items.slice(i, i + LOOK_PAGE))
 }
 
-/** The look when storage could not say: every open directory's token, then every registered place's, a page at a time, each page saved. */
+/**
+ * Every row of `table` compared by storage with what is there, a page at a time inside storage: what
+ * differs. The rows are the look's own expectations (`tokens` for the registered places, `seen` for the
+ * open directories' levels), so only the differences cross over.
+ */
+async function differing(store: Store, table: 'tokens' | 'seen'): Promise<Differences> {
+  const out: Differences = { changed: new Map(), gone: new Set(), failed: new Set(), held: new Set() }
+  for (let after: string | undefined; ; ) {
+    const page = await store.lookRows(table, 'token', after === undefined ? {} : { after })
+    const d = differencesOf(page)
+    for (const [place, entry] of d.changed) out.changed.set(place, entry)
+    for (const set of ['gone', 'failed', 'held'] as const) for (const place of d[set]) out[set].add(place)
+    if (page.more === null) return out
+    after = page.more.after
+  }
+}
+
+/** The things whose places storage said differ, by the row of `tokens` that expected each; a row no thing expects any more is dropped. */
+async function thingsDiffering(tx: Tx, diff: Differences): Promise<ItemRow[]> {
+  const places = [...new Set([...diff.changed.keys(), ...diff.gone, ...diff.failed])]
+  const owners = await tx.getMany<ItemId>('tokens', places)
+  const items = await tx.getMany<ItemRow>('items', new Set(owners.values()))
+  const out = new Map<ItemId, ItemRow>()
+  for (const place of places) {
+    const item = items.get(owners.get(place) ?? '')
+    if (item && expectations(item).some(([p]) => p === place)) out.set(item.id, item)
+    else tx.set('tokens', place, null)
+  }
+  return [...out.values()]
+}
+
+/** The look when storage could not say what changed: storage compares every open directory's level and every registered place with what the rows expect, and only what differs is looked at. */
 async function lookAll(ctx: PluginContext, mark: string): Promise<void> {
   const store = ctx.tools.storage
-  await inTx(ctx, (tx, settling) => lookDirs(store, tx, settling, ['']))
-  for await (const page of pagesOf<number>(store.records, 'dirs', '', LOOK_PAGE)) await inTx(ctx, (tx, settling) => lookDirs(store, tx, settling, page.map((r) => r.key)))
-  for await (const page of pagesOf<{ id: ItemId }>(store.records, 'paths', '', LOOK_PAGE)) {
-    await inTx(ctx, async (tx, settling) => {
-      const items = [...(await tx.getMany<ItemRow>('items', page.map((r) => r.value.id))).values()].filter(live)
-      await lookItems(store, tx, settling, items)
-    })
-  }
-  await inTx(ctx, async () => undefined, mark)
+  await inTx(
+    ctx,
+    async (tx, settling) => {
+      const dirs = await differing(store, 'seen')
+      await lookDirs(store, tx, settling, [...new Set([...dirs.changed.keys(), ...dirs.gone, ...dirs.failed])], dirs)
+      const things = await differing(store, 'tokens')
+      await lookItems(store, tx, settling, await thingsDiffering(tx, things), things)
+    },
+    mark,
+  )
 }
 
 /** The look of the operation under way, by library and moment: check and its asks, or the home page and its parts, look once. */

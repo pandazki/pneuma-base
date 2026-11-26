@@ -33,11 +33,12 @@ use pneuma_base_storage::{
     ChangedAnswer, ChangedRequest, ContentAnswer, ContentRequest, Ctx, DeclarationAnswer,
     DeclarationWriteRequest, DeclarationWritten, FactsAppendAnswer, FactsAppendRequest,
     FactsSinceAnswer, FactsSinceRequest, Failure, GlanceAnswer, GlanceRequest, HoldAnswer,
-    HoldRequest, InitAnswer, LookAnswer, LookRequest, MoveAnswer, MoveRequest, NoiseAnswer,
-    NoiseChange, NoiseEdit, OverviewAnswer, OverviewRequest, Place, ProbeAnswer, ProbeRequest,
-    ReadAnswer, ReadRequest, Reason, RecordPlace, RemoveAnswer, RemoveRequest, RowsGetAnswer,
-    RowsGetRequest, RowsPage, RowsPutRequest, RowsUnderRequest, RowsWhereAnswer, RowsWhereRequest,
-    Storage, StorageInfo, SubscribeRequest, Time, WriteAnswer, WriteRequest,
+    HoldRequest, InitAnswer, LookAnswer, LookFrom, LookItem, LookPage, LookRequest, MoveAnswer,
+    MoveRequest, NoiseAnswer, NoiseChange, NoiseEdit, OverviewAnswer, OverviewRequest, Place,
+    ProbeAnswer, ProbeRequest, ReadAnswer, ReadRequest, Reason, RecordPlace, RemoveAnswer,
+    RemoveRequest, RowsGetAnswer, RowsGetRequest, RowsPage, RowsPutRequest, RowsUnderRequest,
+    RowsWhereAnswer, RowsWhereRequest, Storage, StorageInfo, SubscribeRequest, Time, WriteAnswer,
+    WriteRequest,
 };
 
 use area::absent;
@@ -180,6 +181,21 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), Failure> {
     Ok(())
 }
 
+/// A look's expectations: the request's own, or those read from a table's rows.
+enum Items<'a> {
+    Given(&'a [LookItem]),
+    Read(Vec<LookItem>),
+}
+
+impl Items<'_> {
+    fn as_slice(&self) -> &[LookItem] {
+        match self {
+            Items::Given(items) => items,
+            Items::Read(items) => items,
+        }
+    }
+}
+
 /// FNV-1a: stable across builds, unlike the standard hasher, so cache file names survive
 /// upgrades.
 fn fnv64(bytes: &[u8]) -> u64 {
@@ -219,10 +235,20 @@ impl Storage for LocalFolder {
     }
 
     fn look(&self, req: &LookRequest, ctx: &Ctx) -> Result<LookAnswer, Failure> {
-        match self.view(&req.area, false)? {
-            Some(view) => view.look_places(&req.places, ctx),
-            None => Ok(absent::look(req)),
-        }
+        let (items, page) = match &req.from {
+            LookFrom::Places(items) => (Items::Given(items), None),
+            LookFrom::Rows(rows) => {
+                let (items, more) = self.expectations(rows)?;
+                let compared = items.len() as u64;
+                (Items::Read(items), Some(LookPage { compared, more }))
+            }
+        };
+        let mut answer = match self.view(&req.area, false)? {
+            Some(view) => view.look_places(items.as_slice(), ctx)?,
+            None => absent::look(items.as_slice()),
+        };
+        answer.page = page;
+        Ok(answer)
     }
 
     fn changed(&self, req: &ChangedRequest, ctx: &Ctx) -> Result<ChangedAnswer, Failure> {

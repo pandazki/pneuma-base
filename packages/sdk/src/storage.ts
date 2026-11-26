@@ -57,13 +57,19 @@ export type Overview = { entries: Description[]; more: { at_least: number; after
 
 export type Probe = { files: number; dirs: number; bytes: number; exceeded: boolean; markers: string[] }
 
-/** Places not named in `changed`, `gone`, `failed` or `held` are as the token said. */
+/** Places not named in `changed`, `gone`, `failed` or `held` are as expected. */
 export type Looked = { same: number; changed: { place: Place; entry: Description }[]; gone: Place[]; failed: { place: Place; reason: StorageReason }[]; held: Place[] }
 
-/** The fingerprint of a file, or of a directory by the content rule, with the token of the version read. */
+/** A page of a look whose expectations a table holds: what differs among `compared` rows, and the key the next page starts after. */
+export type LookedPage = Looked & { compared: number; more: { after: string } | null }
+
+/** A page of a directory's manifest: each file its content rule counts, by the bytes of its path relative to the directory. */
+export type Manifest = { entries: { path: string; fingerprint: Fingerprint; size: number }[]; more: { after: string } | null }
+
+/** The fingerprint of a file, or of a directory by the content rule, with the token of the version read; a directory's manifest page when asked for. */
 export type ContentAnswer =
   | { kind: 'file'; fingerprint: Fingerprint; token: string; size: number }
-  | { kind: 'dir'; fingerprint: Fingerprint; token: string; files: number; bytes: number }
+  | { kind: 'dir'; fingerprint: Fingerprint; token: string; files: number; bytes: number; manifest?: Manifest }
 
 /** Bytes of a file and the token of the version they are of. With `to`, the bytes went to that file instead. */
 export type ReadAnswer = { token: string; size: number; offset: number; length: number; data: Uint8Array | null }
@@ -127,10 +133,21 @@ export interface PlaceStore {
   glance(places: readonly Place[]): Promise<Glanced[]>
   /** One level of a directory, one page of at most `limit` (200, at most 1000) after `after`. */
   overview(place: Place, opts?: { limit?: number; after?: string }): Promise<Overview | StorageFailure>
-  /** Which of these places are not as their tokens say any more. */
-  look(places: readonly { place: Place; token: string }[]): Promise<Looked>
-  /** The fingerprint of the content: read only now, because asked. A directory over `limit` files (5000) answers `too_many`. */
-  content(place: Place, opts?: { limit?: number }): Promise<ContentAnswer | StorageFailure>
+  /** Which of these places are not as expected any more: a token, or `empty` for nothing there. */
+  look(places: readonly { place: Place; token: Expect }[]): Promise<Looked>
+  /**
+   * Which places are not as the rows of a table of the plugin's own record place expect: each row's key
+   * is a place and its field `field` a token or `empty` (a row without it expects nothing in particular,
+   * and whatever is there differs). A page of at most `limit` rows (10000, at most 100000) after `after`,
+   * compared inside storage; only the differences come back.
+   */
+  lookRows(table: string, field: string, opts?: { limit?: number; after?: string }): Promise<LookedPage>
+  /**
+   * The fingerprint of the content: read only now, because asked. A directory over `limit` files (5000)
+   * answers `too_many`. `manifest`: a directory's answer also lists the files the rule counts, a page of
+   * `limit` (1000, at most 10000) after `after`, each with its fingerprint and size.
+   */
+  content(place: Place, opts?: { limit?: number; manifest?: true | { limit?: number; after?: string } }): Promise<ContentAnswer | StorageFailure>
   /** The bytes of a file, or a range of them; with `to`, written to that absolute path outside the library. */
   read(place: Place, opts?: { offset?: number; length?: number; to?: string }): Promise<ReadAnswer | StorageFailure>
   /** Puts content at a place where the expectation holds, all of it or none; refused with what is there. */

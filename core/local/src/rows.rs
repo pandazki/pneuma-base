@@ -9,9 +9,9 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use pneuma_base_storage::{
-    After, CursorExpect, Failure, Reason, RecordPlace, Row, RowChange, RowsGetAnswer,
-    RowsGetRequest, RowsPage, RowsPutRequest, RowsUnderRequest, RowsWhereAnswer, RowsWhereRequest,
-    StoredRow, request::MAX_FIELDS,
+    After, CursorExpect, Failure, LookItem, LookRows, Reason, RecordPlace, Row, RowChange,
+    RowsGetAnswer, RowsGetRequest, RowsPage, RowsPutRequest, RowsUnderRequest, RowsWhereAnswer,
+    RowsWhereRequest, StoredRow, request::MAX_FIELDS,
 };
 use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionBehavior, params};
 use serde_json::Value;
@@ -378,6 +378,47 @@ impl LocalFolder {
             .collect::<Result<Vec<_>, _>>()
             .map_err(sql_failure)?;
         Ok(RowsWhereAnswer::Page(page(rows, req.limit)))
+    }
+
+    /// What a look expects, read from a table: a page of rows after `after` in key order, each
+    /// row's key the place and its field `field` the expectation, absent when the row has none.
+    pub fn expectations(&self, rows: &LookRows) -> Result<(Vec<LookItem>, Option<After>), Failure> {
+        let Some(conn) = self.rows_db(&rows.place, false)? else {
+            return Ok((Vec::new(), None));
+        };
+        let (sql, from) = match &rows.after {
+            Some(after) => (
+                "SELECT key, fields FROM rows WHERE tbl = ?1 AND key > ?2 ORDER BY key LIMIT ?3",
+                after.as_str(),
+            ),
+            None => (
+                "SELECT key, fields FROM rows WHERE tbl = ?1 AND key >= ?2 ORDER BY key LIMIT ?3",
+                "",
+            ),
+        };
+        let mut select = conn.prepare_cached(sql).map_err(sql_failure)?;
+        let found = select
+            .query_map(params![rows.table, from, rows.limit as i64 + 1], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
+            })
+            .map_err(sql_failure)?;
+        let mut items = Vec::new();
+        let mut last = None;
+        for row in found {
+            let (key, fields) = row.map_err(sql_failure)?;
+            if items.len() == rows.limit {
+                return Ok((items, last.map(|after| After { after })));
+            }
+            let fields = fields
+                .and_then(|text| serde_json::from_str::<BTreeMap<String, String>>(&text).ok())
+                .unwrap_or_default();
+            items.push(LookItem::new(
+                &key,
+                fields.get(&rows.field).map(String::as_str),
+            ));
+            last = Some(key);
+        }
+        Ok((items, None))
     }
 
     /// Drops the rows and the cursor in constant time by removing the place's database file.
