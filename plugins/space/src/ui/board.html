@@ -27,7 +27,7 @@
         position: relative;
         aspect-ratio: 16 / 10;
         overflow: hidden;
-        background: var(--field);
+        background: var(--tray);
         box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--ink-3) 20%, transparent);
         cursor: pointer;
       }
@@ -76,7 +76,7 @@
         min-width: 0;
       }
       .name {
-        font-weight: 600;
+        font-weight: 500;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -102,13 +102,13 @@
       }
       .spark .line {
         fill: none;
-        stroke: var(--ink-3);
+        stroke: var(--chart);
         stroke-width: 1.5;
         stroke-linejoin: round;
         stroke-linecap: round;
       }
       .spark .now {
-        fill: var(--accent);
+        fill: var(--chart);
       }
       .spark rect {
         fill: transparent;
@@ -159,7 +159,7 @@
         return b
       }
 
-      /** 24 hourly counts, oldest first: a line in the muted ink, this hour's point in the accent, each hour's count on hover. */
+      /** 24 hourly counts, oldest first: a line and this hour's point in the chart colour, each hour's count on hover. */
       function sparkline(series) {
         const w = 96
         const h = 22

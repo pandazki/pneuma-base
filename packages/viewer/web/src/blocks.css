@@ -1,0 +1,496 @@
+/*
+ * The blocks as the management UI draws them, and what stands in for one while it loads or when it
+ * holds nothing. Not part of the frame kit.
+ */
+
+/* ---- loading: a skeleton that shows only when loading takes longer than 150ms ---- */
+
+.loading {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: fade-in 300ms ease 150ms both;
+}
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-control);
+  background: var(--select);
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.7), transparent);
+  transform: translateX(-100%);
+  animation: sheen 1.6s var(--ease) infinite;
+}
+@media (prefers-color-scheme: dark) {
+  .skeleton {
+    background: rgba(255, 255, 255, 0.09);
+  }
+  .skeleton::after {
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+  }
+}
+.spinner {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  animation: spin 800ms linear infinite;
+}
+
+/* ---- empty states and centred notices ---- */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 24px 44px;
+  border-radius: var(--radius-panel);
+  background: var(--tray);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+  text-align: center;
+}
+.empty-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
+  background: var(--chip);
+  color: var(--ink-3);
+}
+.empty-icon > svg {
+  width: 18px;
+  height: 18px;
+}
+.empty-title {
+  margin-top: 16px;
+  color: var(--ink-strong);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.empty-hint {
+  max-width: 430px;
+  margin-top: 4px;
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 20px;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.detail .empty {
+  padding: 28px 16px 32px;
+}
+.screen {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+/* ---- blocks ---- */
+
+.blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-height: 28px;
+}
+.section-head h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-strong);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.detail .section-head {
+  min-height: 24px;
+}
+.detail .section-head h3 {
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 18px;
+}
+.section-head h3 > button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: -4px;
+  padding: 0 4px;
+  border-radius: var(--radius-control);
+  transition: background-color 140ms ease;
+}
+.section-head h3 > button:hover {
+  background: var(--wash);
+}
+.section-head h3 svg {
+  width: 14px;
+  height: 14px;
+  color: var(--ink-4);
+  transition: transform 200ms var(--ease);
+}
+.section-head .count {
+  color: var(--ink-3);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.section-head .actions {
+  margin-left: auto;
+}
+.section-note {
+  margin-top: -4px;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 18px;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The table: a card, rows split by hairlines only, a faint hover, the open row on a grey wash. */
+.table-card {
+  overflow-x: auto;
+}
+.table-card table {
+  border-collapse: separate;
+  border-spacing: 0;
+  text-align: left;
+}
+.table-card th {
+  height: 36px;
+  padding: 0 12px;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.table-card td {
+  height: 40px;
+  max-width: 0;
+  padding: 0 12px;
+  border-top: 0.5px solid var(--line);
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 20px;
+  vertical-align: middle;
+  white-space: nowrap;
+  transition: background-color 120ms ease;
+}
+.table-card :is(th, td):first-child {
+  padding-left: 16px;
+}
+.table-card td:first-child {
+  color: var(--ink);
+  font-weight: 500;
+}
+.table-card tr[data-link] {
+  cursor: pointer;
+}
+.table-card tr[data-link]:hover td {
+  background: var(--row-hover);
+}
+.table-card tr[aria-selected='true'] td {
+  background: var(--chip);
+}
+.table-card tr:focus-visible {
+  outline-offset: -2px;
+  border-radius: var(--radius-control);
+}
+
+/* Fields: a label column and the values, each row at least 28px. */
+.fields {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  column-gap: 12px;
+  font-size: 13px;
+  line-height: 20px;
+}
+.fields dt {
+  min-height: 28px;
+  padding: 4px 0;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 20px;
+}
+.fields dd {
+  min-width: 0;
+  min-height: 28px;
+  padding: 4px 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* A list: a card of rows split by hairlines; a row that opens something answers to a click or the keyboard. */
+.list {
+  display: flex;
+  flex-direction: column;
+}
+.list > li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 8px 12px 8px 16px;
+  font-size: 13px;
+  line-height: 20px;
+  transition: background-color 120ms ease;
+}
+.list > li + li {
+  box-shadow: inset 0 0.5px 0 var(--line);
+}
+.list > li[data-link] {
+  cursor: pointer;
+}
+.list > li[data-link]:hover {
+  background: var(--row-hover);
+}
+.list > li:first-child {
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+.list > li:last-child {
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+}
+.list > li:only-child {
+  border-radius: var(--radius-card);
+}
+.list-note {
+  margin-top: 2px;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+/* A timeline: a dot and a thin line per entry, the moment small and grey above what happened. */
+.timeline {
+  display: flex;
+  flex-direction: column;
+}
+.timeline > li {
+  position: relative;
+  padding: 0 0 14px 20px;
+}
+.timeline > li:last-child {
+  padding-bottom: 0;
+}
+.timeline > li::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  left: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--ink-4);
+}
+.timeline > li:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 17px;
+  bottom: 1px;
+  left: 5.5px;
+  width: 1px;
+  background: var(--line);
+}
+.timeline-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+}
+.timeline-line {
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+/* Text with a tone: its tinted ground and its icon; plain text is the second ink. */
+.note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 20px;
+}
+.note[data-tone] {
+  padding: 8px 12px;
+  border-radius: var(--radius-item);
+  color: var(--ink);
+}
+.note > svg {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  flex: none;
+}
+.note > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+.note:not([data-tone]) {
+  color: var(--ink-2);
+}
+.note[data-tone='info'] {
+  background: var(--info-soft);
+}
+.note[data-tone='info'] > svg {
+  color: var(--info);
+}
+.note[data-tone='good'] {
+  background: var(--good-soft);
+}
+.note[data-tone='good'] > svg {
+  color: var(--good);
+}
+.note[data-tone='warn'] {
+  background: var(--warn-soft);
+}
+.note[data-tone='warn'] > svg {
+  color: var(--warn);
+}
+.note[data-tone='bad'] {
+  background: var(--bad-soft);
+}
+.note[data-tone='bad'] > svg {
+  color: var(--bad);
+}
+.unknown {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 18px;
+}
+.unknown > svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Previews: an image on a card, text in a grey tray. */
+.preview-image {
+  padding: 8px;
+}
+.preview-image img {
+  display: block;
+  max-width: 100%;
+  max-height: 420px;
+  margin: 0 auto;
+  border-radius: var(--radius-control);
+  object-fit: contain;
+}
+.preview-text {
+  max-height: 320px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: var(--radius-card);
+  background: var(--tray);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.caption {
+  margin-top: 6px;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* An outside page in a frame, under a caption bar. */
+.embed {
+  overflow: hidden;
+}
+.embed-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 8px 0 12px;
+  box-shadow: inset 0 -0.5px 0 var(--line);
+  font-size: 13px;
+  line-height: 20px;
+}
+.embed-bar > svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  color: var(--ink-3);
+}
+.embed-bar a.btn {
+  margin-left: auto;
+}
+
+/* A cell: one line in a table, wrapped elsewhere. */
+.cell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  max-width: 100%;
+  vertical-align: middle;
+}
+.cell[data-line] {
+  display: flex;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+.cell > svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--ink-3);
+}
+.copy {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-tag);
+  color: var(--ink-3);
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+.copy > svg {
+  width: 13px;
+  height: 13px;
+}
+.copy:hover {
+  background: var(--chip);
+  color: var(--ink);
+}
+.copy[data-done] {
+  color: var(--good);
+}

@@ -2,126 +2,181 @@
 @import '@fontsource-variable/jetbrains-mono';
 @import 'tailwindcss';
 @import './components.css' layer(components);
+@import './shell.css' layer(components);
+@import './blocks.css' layer(components);
+@import './overlays.css' layer(components);
 
 /*
- * The visual tokens, once. Values from research_notes/UI 风格参考/beautifului_dev.md section 3:
- * near-neutral cool greys, one blue accent, green, orange and red for states, borders drawn as
- * 1px box-shadow rings. Light by default; the system's dark scheme swaps every token.
+ * The visual tokens, once (ARCHITECTURE section 6). Ink and washes are black or white at an opacity,
+ * so they read the same on every surface; edges are rings drawn with box-shadow, never borders,
+ * except the 1px line around the shell's two panels. Light follows the system's light scheme, dark
+ * its dark scheme; the frame kit gets these same names (the sdk's FRAME_TOKENS).
  */
 :root {
   color-scheme: light dark;
 
-  --page: oklch(98.5% 0.001 286.376);
-  --canvas: oklch(96.1% 0.002 247.84);
-  --surface: oklch(100% 0 0);
-  --inset: oklch(97.9% 0.002 247.839);
-  --hover: oklch(97% 0.002 247.839);
-  --hover-2: oklch(93.3% 0.003 247.86);
-  --ink: oklch(24.7% 0.006 258.361);
-  --ink-2: oklch(50.6% 0.01 264.477);
-  --ink-3: oklch(69.5% 0.009 264.505);
-  --line: oklch(94.6% 0.003 264.542);
-  --line-strong: oklch(91.2% 0.005 258.326);
-  --line-soft: oklch(96.6% 0.002 264.542);
-  --field: oklch(96.1% 0.001 286.375);
-  --accent: oklch(62.6% 0.205 254.947);
-  --accent-ink: oklch(55.6% 0.187 255.617);
-  --accent-tint: oklch(96% 0.019 252.878);
-  --green: oklch(60.3% 0.155 150.883);
-  --green-tint: oklch(95.8% 0.017 159.118);
-  --orange: oklch(68.9% 0.179 49.902);
-  --orange-tint: oklch(96.4% 0.021 67.581);
-  --red: oklch(62.1% 0.192 23.042);
-  --red-tint: oklch(95.6% 0.017 17.462);
-  --tooltip-bg: oklch(27.2% 0.008 264.435);
-  --tooltip-fg: oklch(97.6% 0.002 247.839);
-  /* What dims the page behind a dialog. */
-  --scrim: oklch(20% 0.01 264 / 0.32);
-  /* How much of a tag's colour goes into its background and its ring. */
-  --tag-fill: 14%;
-  --tag-ring: 32%;
+  /* Ink, four levels and the strongest for titles. --ink-3 is for meta and icons, not for prose. */
+  --ink-strong: #000;
+  --ink: rgba(0, 0, 0, 0.88);
+  --ink-2: rgba(0, 0, 0, 0.61);
+  --ink-3: rgba(0, 0, 0, 0.45);
+  --ink-4: rgba(0, 0, 0, 0.27);
 
-  --shadow-xs: 0 0 4px 0 #0000000a;
-  --shadow-sm: 0 18px 47px 0 #00000008, 0 7.5px 19.6px 0 #00000005, 0 4px 10.5px 0 #00000005, 0 2.25px 5.9px 0 #00000003, 0 1.2px 3.1px 0 #00000003, 0 0.5px 1.3px 0 #00000003;
-  --shadow-lg: 0 25px 50px 0 #0000000d, 0 10px 20px 0 #00000008;
-  --shadow-hairline: 0 0 0 1px var(--line);
-  --shadow-btn: 0 0 0 1px var(--line-strong), var(--shadow-xs);
-  --shadow-card: 0 0 0 1px var(--line), var(--shadow-sm);
-  --shadow-overlay: 0 0 0 1px var(--line), var(--shadow-lg);
-  --shadow-inset-field: inset 0 1px 2px oklch(0% 0 0 / 0.12);
+  /* Surfaces from the back: the ground the sidebar sits on, the shell's panels, cards and fields, overlays. */
+  --page: #f8f8f8;
+  --panel: #fff;
+  --surface: #fff;
+  --overlay: #fff;
+  /* A grey layer inside a surface: an empty state's ground, a read-only field. */
+  --tray: rgba(0, 0, 0, 0.02);
+
+  /* Washes: hover, a chosen row or chip, the selected pill; and the table's own lighter pair. */
+  --wash: rgba(0, 0, 0, 0.03);
+  --chip: rgba(0, 0, 0, 0.04);
+  --select: rgba(0, 0, 0, 0.06);
+  --row-hover: rgba(0, 0, 0, 0.015);
+
+  /* Lines: hairlines between rows and around the panels, and a stronger one for key caps and handles. */
+  --line: rgba(0, 0, 0, 0.06);
+  --line-strong: rgba(0, 0, 0, 0.12);
+
+  /* Rings and shadows, three levels: cards, popovers, dialogs; fields have their own rings. */
+  --shadow-card: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 1px -1px rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-card-hover: 0 0 0 0.5px rgba(0, 0, 0, 0.1), 0 1px 1px -1px rgba(0, 0, 0, 0.12), 0 1px 3px 0 rgba(0, 0, 0, 0.07);
+  --shadow-popover: 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 8px 24px -6px rgba(0, 0, 0, 0.14), 0 2px 6px -2px rgba(0, 0, 0, 0.06);
+  --shadow-dialog: 0 0 0 0.5px rgba(0, 0, 0, 0.1), 0 24px 48px -12px rgba(0, 0, 0, 0.22), 0 4px 12px -4px rgba(0, 0, 0, 0.06);
+  --ring-field: 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 1px 1px -1px rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --ring-field-hover: 0 0 0 0.5px rgba(0, 0, 0, 0.13), 0 1px 1px -1px rgba(0, 0, 0, 0.12), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  --ring-field-focus: 0 0 0 1px rgba(0, 0, 0, 0.28), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  --ring-field-error: 0 0 0 1px rgba(240, 68, 56, 0.55), 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+
+  /* The main action is near-black; blue is only the keyboard focus and what is in progress. */
+  --primary: rgba(0, 0, 0, 0.88);
+  --primary-hover: rgba(0, 0, 0, 0.8);
+  --on-primary: #fcfcfc;
+  --focus: rgba(0, 96, 226, 0.7);
+  --scrim: rgba(0, 0, 0, 0.16);
+
+  /* States: the word's colour and its tinted ground. */
+  --good: #1e8a4f;
+  --good-soft: rgba(95, 200, 138, 0.14);
+  --warn: #b25e00;
+  --warn-soft: rgba(242, 138, 46, 0.12);
+  --bad: #c4320a;
+  --bad-soft: rgba(240, 68, 56, 0.08);
+  --bad-soft-hover: rgba(240, 68, 56, 0.12);
+  --info: #0070d6;
+  --info-soft: rgba(1, 144, 254, 0.1);
+  /* A chart's line or a heat map's shade. */
+  --chart: #0190fe;
+
+  --tip-bg: rgba(24, 24, 27, 0.92);
+  --tip-ink: #fcfcfc;
+
+  /* Seven radii, each with its use. */
+  --radius-tag: 5px;
+  --radius-control: 6px;
+  --radius-field: 7px;
+  --radius-item: 8px;
+  --radius-card: 10px;
+  --radius-panel: 12px;
+  --radius-dialog: 14px;
+
+  /* Motion: one curve for entering, sliding and morphing; one for gliding highlights; a small overshoot for a settled icon. */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-glide: cubic-bezier(0.25, 0.9, 0.3, 1);
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --page: oklch(20.9% 0.004 264.477);
-    --canvas: oklch(23.1% 0.004 264.487);
-    --surface: oklch(26% 0.006 271.191);
-    --inset: oklch(24.3% 0.004 264.492);
-    --hover: oklch(28.9% 0.006 271.22);
-    --hover-2: oklch(31.8% 0.007 274.747);
-    --ink: oklch(96.4% 0.002 247.839);
-    --ink-2: oklch(73.1% 0.008 260.731);
-    --ink-3: oklch(54.1% 0.01 264.484);
-    --line: oklch(30.8% 0.006 258.354);
-    --line-strong: oklch(35.6% 0.007 264.474);
-    --line-soft: oklch(27.8% 0.006 258.354);
-    --field: oklch(29.3% 0.006 271.223);
-    --accent: oklch(68% 0.173 253.301);
-    --accent-ink: oklch(78.8% 0.113 248.33);
-    --accent-tint: oklch(68% 0.173 253.301 / 0.16);
-    --green: oklch(70.5% 0.154 153.814);
-    --green-tint: oklch(70.5% 0.154 153.814 / 0.14);
-    --orange: oklch(74.6% 0.156 55.642);
-    --orange-tint: oklch(74.6% 0.156 55.642 / 0.14);
-    --red: oklch(66.6% 0.18 21.433);
-    --red-tint: oklch(66.6% 0.18 21.433 / 0.14);
-    --tooltip-bg: oklch(18.2% 0.004 264.459);
-    --tooltip-fg: oklch(96.4% 0.002 247.839);
-    --scrim: oklch(0% 0 0 / 0.55);
-    --tag-fill: 22%;
-    --tag-ring: 34%;
+    --ink-strong: #fff;
+    --ink: rgba(255, 255, 255, 0.9);
+    --ink-2: rgba(255, 255, 255, 0.62);
+    --ink-3: rgba(255, 255, 255, 0.46);
+    --ink-4: rgba(255, 255, 255, 0.28);
 
-    --shadow-btn: 0 0 0 1px oklch(100% 0 0 / 0.11), 0 1px 2px oklch(0% 0 0 / 0.2);
-    --shadow-card: 0 0 0 1px oklch(100% 0 0 / 0.11), 0 1px 2px oklch(0% 0 0 / 0.2), 0 2px 6px oklch(0% 0 0 / 0.2);
-    --shadow-overlay: 0 0 0 1px oklch(100% 0 0 / 0.15), 0 8px 28px oklch(0% 0 0 / 0.34);
-    --shadow-inset-field: inset 0 1px 2px oklch(0% 0 0 / 0.4);
+    --page: #0e0e10;
+    --panel: #141416;
+    --surface: #1b1b1e;
+    --overlay: #1c1c1e;
+    --tray: rgba(255, 255, 255, 0.03);
+
+    --wash: rgba(255, 255, 255, 0.05);
+    --chip: rgba(255, 255, 255, 0.06);
+    --select: rgba(255, 255, 255, 0.08);
+    --row-hover: rgba(255, 255, 255, 0.025);
+
+    --line: rgba(255, 255, 255, 0.08);
+    --line-strong: rgba(255, 255, 255, 0.16);
+
+    --shadow-card: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+    --shadow-card-hover: 0 0 0 0.5px rgba(255, 255, 255, 0.16), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+    --shadow-popover: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 12px 32px -8px rgba(0, 0, 0, 0.6);
+    --shadow-dialog: 0 0 0 0.5px rgba(255, 255, 255, 0.14), 0 24px 48px -12px rgba(0, 0, 0, 0.6);
+    --ring-field: 0 0 0 0.5px rgba(255, 255, 255, 0.14), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+    --ring-field-hover: 0 0 0 0.5px rgba(255, 255, 255, 0.2), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+    --ring-field-focus: 0 0 0 1px rgba(255, 255, 255, 0.3), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+    --ring-field-error: 0 0 0 1px rgba(255, 107, 95, 0.5), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+
+    --primary: rgba(255, 255, 255, 0.9);
+    --primary-hover: rgba(255, 255, 255, 0.82);
+    --on-primary: #161618;
+    --focus: rgba(77, 141, 255, 0.8);
+    --scrim: rgba(0, 0, 0, 0.5);
+
+    --good: #7dcf9f;
+    --good-soft: rgba(125, 207, 159, 0.14);
+    --warn: #ffb35c;
+    --warn-soft: rgba(242, 161, 92, 0.14);
+    --bad: #ff8a7a;
+    --bad-soft: rgba(255, 107, 95, 0.14);
+    --bad-soft-hover: rgba(255, 107, 95, 0.2);
+    --info: #4fb0fe;
+    --info-soft: rgba(79, 176, 254, 0.14);
+    --chart: #4fb0fe;
+
+    --tip-bg: rgba(250, 250, 250, 0.94);
+    --tip-ink: #111113;
   }
 }
 
+/* Inside the Mac app the page uses the system's faces, as the windows around it do. */
+html[data-shell] {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
 @theme inline {
-  --color-page: var(--page);
-  --color-canvas: var(--canvas);
-  --color-surface: var(--surface);
-  --color-inset: var(--inset);
-  --color-hover: var(--hover);
-  --color-hover-2: var(--hover-2);
+  --color-ink-strong: var(--ink-strong);
   --color-ink: var(--ink);
   --color-ink-2: var(--ink-2);
   --color-ink-3: var(--ink-3);
+  --color-ink-4: var(--ink-4);
+  --color-page: var(--page);
+  --color-panel: var(--panel);
+  --color-surface: var(--surface);
+  --color-overlay: var(--overlay);
+  --color-tray: var(--tray);
+  --color-wash: var(--wash);
+  --color-chip: var(--chip);
+  --color-select: var(--select);
   --color-line: var(--line);
   --color-line-strong: var(--line-strong);
-  --color-line-soft: var(--line-soft);
-  --color-field: var(--field);
-  --color-accent: var(--accent);
-  --color-accent-ink: var(--accent-ink);
-  --color-accent-tint: var(--accent-tint);
-  --color-green: var(--green);
-  --color-green-tint: var(--green-tint);
-  --color-orange: var(--orange);
-  --color-orange-tint: var(--orange-tint);
-  --color-red: var(--red);
-  --color-red-tint: var(--red-tint);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
 
-  --radius-chip: 6px;
-  --radius-control: 8px;
-  --radius-card: 10px;
-  --radius-window: 14px;
-
-  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace;
-
-  --default-transition-duration: 0.15s;
-  --default-transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  --default-transition-duration: 140ms;
+  --default-transition-timing-function: ease;
 }
 
 @layer base {
@@ -134,74 +189,78 @@
     background: var(--page);
     color: var(--ink);
     font-family: var(--font-sans);
-    font-size: 14px;
-    line-height: 1.5;
-    letter-spacing: -0.01em;
+    font-size: 13px;
+    line-height: 20px;
     font-feature-settings: 'cv11', 'ss01';
     -webkit-font-smoothing: antialiased;
   }
   button {
     cursor: pointer;
   }
-  /* Keyboard focus is always visible; a field shows it with its own ring. */
+  /* One focus ring, for the keyboard only: outside a control, inside a row or an option. */
   :focus-visible {
-    outline: 2px solid color-mix(in oklch, var(--accent) 75%, transparent);
+    outline: 2px solid var(--focus);
     outline-offset: 2px;
   }
-  .field:focus-visible,
-  tr:focus-visible {
+  :is(tr, li, [role='option'], [role='tab'], [role='menuitem'], [role='radio'])[tabindex]:focus-visible {
     outline-offset: -2px;
   }
-  .field:focus-visible {
-    outline: none;
+  ::selection {
+    background: color-mix(in srgb, var(--focus) 24%, transparent);
   }
 }
 
-@keyframes fresh {
-  from {
-    box-shadow: 0 0 0 4px color-mix(in oklch, var(--green) 35%, transparent);
-  }
-  to {
-    box-shadow: 0 0 0 0 transparent;
-  }
-}
-
-@keyframes pop-in {
+@keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(4px) scale(0.98);
+    transform: translateY(4px);
   }
+}
+@keyframes sheen {
+  from {
+    transform: translateX(-100%);
+  }
+  60%,
   to {
-    opacity: 1;
-    transform: none;
+    transform: translateX(100%);
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
   }
 }
 
-@layer components {
-  .dialog-in,
-  .toast-in {
-    animation: pop-in 0.15s cubic-bezier(0.23, 1, 0.32, 1);
-  }
-  /* The dot glows once when the page picked up a change. */
-  .fresh-dot {
-    animation: fresh 1.2s ease-out;
-  }
-}
-
+/* Reduced motion: nothing moves, every state still changes; a spinner slows instead of stopping. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+  .spinner {
+    animation-duration: 2400ms !important;
+    animation-iteration-count: infinite !important;
+  }
+  .skeleton::after {
+    display: none;
   }
 }
 
 /*
  * Inside the Mac app (`html[data-shell]`, see shell.ts) the page is the window's content, not a web
  * page: the chrome is not text to select or drag out, the arrow stays the arrow, and the page as a
- * whole does not bounce. Content stays selectable, so Find can show its matches. Unlayered, so it
- * wins over the components' and utilities' cursors.
+ * whole does not bounce. Content stays selectable, so Find can show its matches. When the window is
+ * not in front (`data-window="inactive"`, set by the app) the chrome dims, as the system's does.
+ * Unlayered, so it wins over the components' and utilities' cursors.
  */
 html[data-shell],
 html[data-shell] body {
@@ -210,11 +269,15 @@ html[data-shell] body {
 html[data-shell] body {
   cursor: default;
 }
-html[data-shell] :is(nav, header, [data-drag], button, th, label, [role='radio'], [role='toolbar']) {
+html[data-shell] :is([data-chrome], [data-drag], button, th, label, [role='radio'], [role='tab'], [role='toolbar'], [role='option']) {
   -webkit-user-select: none;
   user-select: none;
 }
-html[data-shell] :is(button, [role='radio'], tr) {
+html[data-shell] :is(input, textarea) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+html[data-shell] :is(button, [role='radio'], [role='tab'], [role='option'], tr) {
   cursor: default;
 }
 html[data-shell] :is(a, img) {

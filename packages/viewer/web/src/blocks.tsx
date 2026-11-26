@@ -1,12 +1,12 @@
 // The block renderer: one component per kind of block. It knows the kernel's block types and no plugin.
 import type { Action, Block, Cell, Link, Tag, TableRow, Tone } from '@pneuma-base/kernel'
-import { Check, ChevronRight, CircleAlert, CircleCheck, Copy, ExternalLink, Info, TriangleAlert } from 'lucide-react'
-import { useEffect, useLayoutEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
+import { Check, ChevronRight, CircleAlert, CircleCheck, CircleHelp, Copy, ExternalLink, Inbox, Info, TriangleAlert, type LucideIcon } from 'lucide-react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { api, outsideUrl } from './api'
 import { ViewIcon } from './chrome'
 import { useEnv } from './env'
 import { CustomView } from './frame'
-import { FONT, fitColumns, fitMiddle, naturalColumns, textRoom } from './measure'
+import { cellFont, fitColumns, fitMiddle, naturalColumns, textRoom } from './measure'
 import { fullTime, shortTime } from './time'
 
 export const sameLink = (a: Link | null, b: { view: string; params: Record<string, string> } | null) =>
@@ -28,6 +28,8 @@ export function TagView({ tag }: { tag: Tag }) {
 }
 
 const stop = (e: MouseEvent) => e.stopPropagation()
+/** Whether a click asks for a tab of its own: ⌘ or Ctrl held, or the middle button. */
+const wantsTab = (e: MouseEvent | KeyboardEvent) => e.metaKey || e.ctrlKey || ('button' in e && e.button === 1)
 
 /** Copies `value`, and says so for a moment. */
 function CopyButton({ value }: { value: string }) {
@@ -41,15 +43,16 @@ function CopyButton({ value }: { value: string }) {
   return (
     <button
       type="button"
-      className="flex size-5 shrink-0 items-center justify-center rounded-chip text-ink-3 transition-colors hover:bg-hover hover:text-ink"
+      className="copy"
+      data-done={copied || undefined}
       aria-label={copied ? '已复制' : '复制'}
-      title={copied ? '已复制' : '复制'}
+      data-tip={copied ? '已复制' : '复制'}
       onClick={(e) => {
         e.stopPropagation()
         navigator.clipboard.writeText(value).then(() => setCopied(true), () => undefined)
       }}
     >
-      <Icon className={`size-3.5 ${copied ? 'text-green' : ''}`} strokeWidth={2} aria-hidden />
+      <Icon strokeWidth={2} aria-hidden />
     </button>
   )
 }
@@ -57,12 +60,13 @@ function CopyButton({ value }: { value: string }) {
 /**
  * One cell. In a table it stays on one line, its text cut short with the whole of it on hover; elsewhere
  * it wraps. An outside address is a link to a new tab; given `room`, it is cut in the middle to fit.
+ * Muted text is one step quieter than the text around it.
  */
-export function CellView({ cell, line = false, room }: { cell: Cell; line?: boolean; room?: number }) {
+export function CellView({ cell, line = false, first = false, room }: { cell: Cell; line?: boolean; first?: boolean; room?: number }) {
   const { onLink } = useEnv()
-  const style = `${cell.mono ? 'font-mono text-[12.5px]' : ''} ${cell.muted ? 'text-ink-2' : ''}`
+  const style = `${cell.mono ? 'font-mono text-[12.5px]' : ''} ${cell.muted ? (line ? 'text-ink-3' : 'text-ink-2') : ''}`
   const href = outsideUrl(cell.href)
-  const fitted = href && line && room !== undefined ? fitMiddle(cell.text, cell.mono ? FONT.mono : FONT.cell, room) : cell.text
+  const fitted = href && line && room !== undefined ? fitMiddle(cell.text, cellFont(cell, first), room) : cell.text
   // On one line, a path-like text is cut in its folders, so its last part stays readable.
   const cut = line && cell.mono ? cell.text.lastIndexOf('/') : -1
   const text = cell.at ? (
@@ -82,21 +86,21 @@ export function CellView({ cell, line = false, room }: { cell: Cell; line?: bool
       {fitted}
     </a>
   ) : cut > 0 && cut < cell.text.length - 1 ? (
-      <span className={`flex min-w-0 ${style}`}>
-        <span className="sr-only">{cell.text}</span>
-        <span className="min-w-0 truncate" aria-hidden>
-          {cell.text.slice(0, cut + 1)}
-        </span>
-        <span className="max-w-full shrink-0 truncate" aria-hidden>
-          {cell.text.slice(cut + 1)}
-        </span>
+    <span className={`flex min-w-0 ${style}`}>
+      <span className="sr-only">{cell.text}</span>
+      <span className="min-w-0 truncate" aria-hidden>
+        {cell.text.slice(0, cut + 1)}
       </span>
-    ) : (
-      <span className={`${style} min-w-0 ${line ? 'truncate' : '[overflow-wrap:anywhere]'}`}>{cell.text}</span>
-    )
+      <span className="max-w-full shrink-0 truncate" aria-hidden>
+        {cell.text.slice(cut + 1)}
+      </span>
+    </span>
+  ) : (
+    <span className={`${style} min-w-0 ${line ? 'truncate' : '[overflow-wrap:anywhere]'}`}>{cell.text}</span>
+  )
   const content = (
-    <span className={`items-center gap-x-2 align-middle ${line ? 'flex max-w-full min-w-0' : 'inline-flex max-w-full flex-wrap gap-y-1'}`} title={line && cell.text !== '' && !cell.at ? cell.text : undefined}>
-      {cell.icon ? <ViewIcon name={cell.icon} className="size-4 shrink-0 text-ink-3" /> : null}
+    <span className="cell" data-line={line || undefined} title={line && cell.text !== '' && !cell.at ? cell.text : undefined}>
+      {cell.icon ? <ViewIcon name={cell.icon} /> : null}
       {text}
       {cell.copy ? <CopyButton value={href ?? cell.text} /> : null}
       {cell.tag ? <TagView tag={cell.tag} /> : null}
@@ -110,7 +114,12 @@ export function CellView({ cell, line = false, room }: { cell: Cell; line?: bool
       className={`link ${line ? 'block max-w-full' : ''}`}
       onClick={(e) => {
         e.stopPropagation()
-        onLink(link)
+        onLink(link, wantsTab(e))
+      }}
+      onAuxClick={(e) => {
+        if (e.button !== 1) return
+        e.stopPropagation()
+        onLink(link, true)
       }}
     >
       {content}
@@ -123,7 +132,7 @@ export function ActionButton({ action, small = false }: { action: Action; small?
   return (
     <button
       type="button"
-      className={`btn ${action.tone === 'danger' ? 'btn-danger' : ''} ${small ? '!h-6 !px-2 !text-[12px]' : ''}`}
+      className={`btn ${small ? 'btn-sm' : ''} ${action.tone === 'danger' ? 'btn-danger' : ''}`}
       onClick={(e) => {
         e.stopPropagation()
         onAction(action)
@@ -137,7 +146,7 @@ export function ActionButton({ action, small = false }: { action: Action; small?
 function ActionRow({ actions, small = false }: { actions: Action[]; small?: boolean }) {
   if (actions.length === 0) return null
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="actions">
       {actions.map((a, i) => (
         <ActionButton key={`${a.label}-${i}`} action={a} small={small} />
       ))}
@@ -147,27 +156,27 @@ function ActionRow({ actions, small = false }: { actions: Action[]; small?: bool
 
 function SectionView({ block }: { block: Extract<Block, { kind: 'section' }> }) {
   const [open, setOpen] = useState(block.collapse !== 'closed')
-  const count = block.count !== null ? <span className="rounded-chip bg-inset px-1.5 text-[11.5px] font-medium tabular-nums text-ink-2 shadow-(--shadow-hairline)">{block.count}</span> : null
-  const heading = block.collapse ? (
-    <h3>
-      <button type="button" className="-ml-1 flex items-center gap-1 rounded-chip px-1 text-[13px] font-semibold text-ink hover:bg-hover" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <ChevronRight className={`size-3.5 text-ink-3 transition-transform ${open ? 'rotate-90' : ''}`} strokeWidth={2} aria-hidden />
-        {block.title}
-      </button>
-    </h3>
-  ) : (
-    <h3 className="text-[13px] font-semibold text-ink">{block.title}</h3>
-  )
+  const count = block.count !== null ? <span className="count">{block.count}</span> : null
   return (
-    <section className="flex flex-col gap-2.5" aria-label={block.title}>
-      <div className="flex min-h-7 flex-wrap items-center gap-x-2 gap-y-1">
-        {heading}
-        {count}
-        <div className="ml-auto">
-          <ActionRow actions={block.actions} />
-        </div>
+    <section className="section" aria-label={block.title}>
+      <div className="section-head">
+        {block.collapse ? (
+          <h3>
+            <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
+              <ChevronRight className={open ? 'rotate-90' : ''} strokeWidth={2} aria-hidden />
+              {block.title}
+            </button>
+            {count}
+          </h3>
+        ) : (
+          <h3>
+            {block.title}
+            {count}
+          </h3>
+        )}
+        <ActionRow actions={block.actions} small />
       </div>
-      {open && block.note ? <p className="-mt-1 text-[12.5px] text-ink-2">{block.note}</p> : null}
+      {open && block.note ? <p className="section-note">{block.note}</p> : null}
       {open ? <Blocks blocks={block.blocks} /> : null}
     </section>
   )
@@ -198,13 +207,15 @@ function useFontsReady(): boolean {
 
 /**
  * A table whose columns take their natural width when it fits, so nothing is cut while there is
- * room; when the card is narrower, prose is cut before paths. A row with a link opens it on click,
- * Enter or Space.
+ * room; when the card is narrower, optional columns step aside and prose is cut before paths. A row
+ * with a link opens it on click, Enter or Space, in a tab of its own with ⌘. ↑ ↓ Home End move
+ * between those rows; only one of them is in the Tab order, the open one when it is here.
  */
 function TableView({ block }: { block: Extract<Block, { kind: 'table' }> }) {
   const { onLink, selected } = useEnv()
   const [measure, available] = useWidth()
   const fonts = useFontsReady()
+  const [cursor, setCursor] = useState<string | null>(null)
   const withActions = block.rows.some((r) => r.actions.length > 0)
   // `fonts` is a dependency so the columns are measured again once the fonts are in.
   const columns = useMemo(() => naturalColumns(block, withActions), [block, withActions, fonts])
@@ -212,12 +223,25 @@ function TableView({ block }: { block: Extract<Block, { kind: 'table' }> }) {
   // The data columns shown, and every column's width in the same order, actions last.
   const shownColumns = block.columns.filter((_, i) => fitted?.[i] !== null)
   const widths = fitted?.filter((w) => w !== null) ?? null
-  const open = (row: TableRow) => row.link && onLink(row.link)
+  const linked = block.rows.filter((r) => r.link)
+  const roving = linked.find((r) => r.key === cursor)?.key ?? linked.find((r) => selected(r.link))?.key ?? linked[0]?.key
+  const open = (row: TableRow, newTab: boolean) => row.link && onLink(row.link, newTab)
+  const onKeyDown = (e: KeyboardEvent<HTMLTableSectionElement>) => {
+    const rows = [...e.currentTarget.querySelectorAll<HTMLTableRowElement>('tr[data-link]')]
+    const at = rows.indexOf(e.target as HTMLTableRowElement)
+    if (at < 0) return
+    const to = e.key === 'ArrowDown' ? Math.min(rows.length - 1, at + 1) : e.key === 'ArrowUp' ? Math.max(0, at - 1) : e.key === 'Home' ? 0 : e.key === 'End' ? rows.length - 1 : null
+    if (to === null) return
+    e.preventDefault()
+    const row = rows[to]
+    setCursor(row?.dataset.key ?? null)
+    row?.focus()
+  }
   // An empty table is its message alone: headers over nothing say less than the message does.
-  if (block.rows.length === 0) return <p className="card px-3 py-6 text-center text-[13px] text-ink-2">{block.empty}</p>
+  if (block.rows.length === 0) return <EmptyMessage text={block.empty} />
   return (
-    <div ref={measure} className="card overflow-x-auto">
-      <table className="border-collapse text-left text-[13px] font-medium" style={widths ? { tableLayout: 'fixed', width: widths.reduce((a, b) => a + b, 0) } : { width: '100%' }}>
+    <div ref={measure} className="card table-card">
+      <table style={widths ? { tableLayout: 'fixed', width: widths.reduce((a, b) => a + b, 0) } : { width: '100%' }}>
         {widths ? (
           <colgroup>
             {widths.map((w, i) => (
@@ -226,29 +250,42 @@ function TableView({ block }: { block: Extract<Block, { kind: 'table' }> }) {
           </colgroup>
         ) : null}
         <thead>
-          <tr className="bg-inset">
+          <tr>
             {shownColumns.map((c) => (
-              <th key={c.key} scope="col" className="h-[35px] border-b border-line px-2 text-[12.5px] font-medium whitespace-nowrap text-ink-2 first:pl-3">
+              <th key={c.key} scope="col">
                 {c.label}
               </th>
             ))}
-            {withActions ? <th scope="col" className="h-[35px] border-b border-line px-2" aria-label="动作" /> : null}
+            {withActions ? <th scope="col" aria-label="动作" /> : null}
           </tr>
         </thead>
-        <tbody>
+        <tbody onKeyDown={onKeyDown}>
           {block.rows.map((row) => (
             <tr
               key={row.key}
-              className={`transition-colors duration-[120ms] ease-out ${row.link ? 'cursor-pointer hover:bg-hover' : ''} ${selected(row.link) ? '!bg-accent-tint' : ''}`}
+              data-key={row.key}
+              data-link={row.link ? '' : undefined}
               aria-selected={selected(row.link) || undefined}
-              tabIndex={row.link ? 0 : undefined}
-              onClick={row.link ? () => open(row) : undefined}
+              tabIndex={row.link ? (row.key === roving ? 0 : -1) : undefined}
+              onFocus={row.link ? () => setCursor(row.key) : undefined}
+              onMouseDown={
+                row.link
+                  ? (e) => {
+                      // A press focuses the row where it is; the card does not scroll sideways to it.
+                      if ((e.target as Element).closest('button, a')) return
+                      e.preventDefault()
+                      e.currentTarget.focus({ preventScroll: true })
+                    }
+                  : undefined
+              }
+              onClick={row.link ? (e) => open(row, wantsTab(e)) : undefined}
+              onAuxClick={row.link ? (e) => e.button === 1 && open(row, true) : undefined}
               onKeyDown={
                 row.link
                   ? (e) => {
                       if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return
                       e.preventDefault()
-                      open(row)
+                      open(row, wantsTab(e))
                     }
                   : undefined
               }
@@ -256,14 +293,10 @@ function TableView({ block }: { block: Extract<Block, { kind: 'table' }> }) {
               {shownColumns.map((c, i) => {
                 const cell = row.cells[c.key]
                 const width = widths?.[i]
-                return (
-                  <td key={c.key} className="h-[35px] max-w-0 border-b border-line-soft px-2 align-middle whitespace-nowrap first:pl-3">
-                    {cell ? <CellView cell={cell} line room={cell.href && width !== undefined ? textRoom(cell, width, i === 0) : undefined} /> : null}
-                  </td>
-                )
+                return <td key={c.key}>{cell ? <CellView cell={cell} line first={i === 0} room={cell.href && width !== undefined ? textRoom(cell, width, i === 0) : undefined} /> : null}</td>
               })}
               {withActions ? (
-                <td className="h-[35px] border-b border-line-soft px-2 align-middle">
+                <td>
                   <div className="flex flex-nowrap justify-end gap-2">
                     {row.actions.map((a, i) => (
                       <ActionButton key={`${a.label}-${i}`} action={a} small />
@@ -281,11 +314,11 @@ function TableView({ block }: { block: Extract<Block, { kind: 'table' }> }) {
 
 function FieldsView({ block }: { block: Extract<Block, { kind: 'fields' }> }) {
   return (
-    <dl className="grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-2 text-[13px]">
+    <dl className="fields">
       {block.fields.map((f, i) => (
         <div key={`${f.label}-${i}`} className="contents">
-          <dt className="text-ink-2">{f.label}</dt>
-          <dd className="min-w-0 break-words">
+          <dt>{f.label}</dt>
+          <dd>
             <CellView cell={f.value} />
           </dd>
         </div>
@@ -296,12 +329,12 @@ function FieldsView({ block }: { block: Extract<Block, { kind: 'fields' }> }) {
 
 function ListView({ block }: { block: Extract<Block, { kind: 'list' }> }) {
   return (
-    <ul className="card divide-y divide-line-soft">
+    <ul className="card list">
       {block.items.map((item, i) => (
-        <li key={`${item.cell.text}-${i}`} className="flex min-h-[35px] items-center gap-3 px-3 py-1.5 text-[13px]">
+        <li key={`${item.cell.text}-${i}`}>
           <div className="min-w-0 flex-1">
             <CellView cell={item.cell} />
-            {item.note ? <p className="mt-0.5 text-[12px] [overflow-wrap:anywhere] text-ink-2">{item.note}</p> : null}
+            {item.note ? <p className="list-note">{item.note}</p> : null}
           </div>
           <ActionRow actions={item.actions} small />
         </li>
@@ -312,24 +345,23 @@ function ListView({ block }: { block: Extract<Block, { kind: 'list' }> }) {
 
 function TimelineView({ block }: { block: Extract<Block, { kind: 'timeline' }> }) {
   return (
-    <ol className="ml-1.5 border-l border-line-strong">
+    <ol className="timeline">
       {block.entries.map((e, i) => (
-        <li key={`${e.at}-${i}`} className="relative pb-3 pl-4 last:pb-0">
-          <span className="absolute top-[7px] -left-[4.5px] size-2 rounded-full bg-ink-3 ring-2 ring-[var(--surface)]" aria-hidden />
-          <div className="flex flex-wrap items-center gap-2 text-[12px] text-ink-3 tabular-nums">
+        <li key={`${e.at}-${i}`}>
+          <div className="timeline-meta">
             <Moment at={e.at} />
             {e.tag ? <TagView tag={e.tag} /> : null}
           </div>
-          <div className="text-[13px]">
+          <div>
             <CellView cell={e.title} />
           </div>
           {e.lines.map((line, j) => (
-            <p key={j} className="text-[12.5px] text-ink-2">
+            <p key={j} className="timeline-line">
               {line}
             </p>
           ))}
           {e.actions && e.actions.length > 0 ? (
-            <div className="mt-1.5">
+            <div className="mt-2">
               <ActionRow actions={e.actions} small />
             </div>
           ) : null}
@@ -339,20 +371,14 @@ function TimelineView({ block }: { block: Extract<Block, { kind: 'timeline' }> }
   )
 }
 
-const TEXT_TONE: Record<Tone, { box: string; icon: ReactNode }> = {
-  neutral: { box: 'text-ink-2', icon: null },
-  info: { box: 'bg-accent-tint text-ink', icon: <Info className="mt-0.5 size-4 shrink-0 text-accent" strokeWidth={2} /> },
-  good: { box: 'bg-green-tint text-ink', icon: <CircleCheck className="mt-0.5 size-4 shrink-0 text-green" strokeWidth={2} /> },
-  warn: { box: 'bg-orange-tint text-ink', icon: <TriangleAlert className="mt-0.5 size-4 shrink-0 text-orange" strokeWidth={2} /> },
-  bad: { box: 'bg-red-tint text-ink', icon: <CircleAlert className="mt-0.5 size-4 shrink-0 text-red" strokeWidth={2} /> },
-}
+const TONE_ICON: Record<Tone, LucideIcon | null> = { neutral: null, info: Info, good: CircleCheck, warn: TriangleAlert, bad: CircleAlert }
 
 function TextView({ block }: { block: Extract<Block, { kind: 'text' }> }) {
-  const tone = TEXT_TONE[block.tone]
+  const Icon = TONE_ICON[block.tone]
   return (
-    <p className={`flex items-start gap-2 rounded-control text-[13px] ${block.tone === 'neutral' ? '' : 'px-3 py-2'} ${tone.box}`}>
-      {tone.icon}
-      <span className="min-w-0 break-words whitespace-pre-line">{block.text}</span>
+    <p className="note" data-tone={block.tone === 'neutral' ? undefined : block.tone}>
+      {Icon ? <Icon strokeWidth={2} aria-hidden /> : null}
+      <span>{block.text}</span>
     </p>
   )
 }
@@ -364,20 +390,23 @@ type Loaded = { kind: 'image'; url: string } | { kind: 'text'; text: string; cut
 function PreviewView({ block }: { block: Extract<Block, { kind: 'preview' }> }) {
   const { tick } = useEnv()
   const [loaded, setLoaded] = useState<Loaded | null>(null)
+  const shownUrl = useRef<string | null>(null)
+  // A new answer replaces the old one in place, so a refresh never empties the preview.
   useEffect(() => {
     let live = true
-    let url: string | null = null
     const show = (l: Loaded) => {
-      if (live) setLoaded(l)
-      else if (l.kind === 'image') URL.revokeObjectURL(l.url)
+      if (!live) return l.kind === 'image' && URL.revokeObjectURL(l.url)
+      const before = shownUrl.current
+      shownUrl.current = l.kind === 'image' ? l.url : null
+      setLoaded(l)
+      if (before) window.setTimeout(() => URL.revokeObjectURL(before), 0)
     }
     fetch(api.fileUrl(block.path))
       .then(async (res) => {
         if (!res.ok) return show({ kind: 'missing' })
         const type = res.headers.get('content-type') ?? ''
         if (type.startsWith('image/')) {
-          url = URL.createObjectURL(await res.blob())
-          return show({ kind: 'image', url })
+          return show({ kind: 'image', url: URL.createObjectURL(await res.blob()) })
         }
         if (type.startsWith('text/')) {
           const text = await res.text()
@@ -388,28 +417,31 @@ function PreviewView({ block }: { block: Extract<Block, { kind: 'preview' }> }) 
       .catch(() => show({ kind: 'missing' }))
     return () => {
       live = false
-      if (url) URL.revokeObjectURL(url)
     }
   }, [block.path, tick])
+  useEffect(
+    () => () => {
+      if (shownUrl.current) URL.revokeObjectURL(shownUrl.current)
+    },
+    [],
+  )
 
-  if (loaded === null) return <div className="h-24 animate-pulse rounded-card bg-inset" aria-label="预览加载中" />
+  if (loaded === null) return <div className="loading skeleton h-24" aria-label="预览加载中" />
   if (loaded.kind === 'image')
     return (
-      <figure className="card overflow-hidden p-2" aria-label="预览">
-        <img src={loaded.url} alt={block.path} className="mx-auto max-h-[420px] max-w-full rounded-chip object-contain" />
+      <figure className="card preview-image" aria-label="预览">
+        <img src={loaded.url} alt={block.path} />
       </figure>
     )
   if (loaded.kind === 'text')
     return (
       <figure aria-label="预览">
-        <pre className="max-h-[320px] overflow-auto rounded-card bg-inset p-3 font-mono text-[12px] leading-[1.6] break-words whitespace-pre-wrap text-ink shadow-(--shadow-hairline)">
-          {loaded.text}
-        </pre>
-        {loaded.cut ? <figcaption className="mt-1 text-[12px] text-ink-3">只显示了前 {TEXT_LIMIT.toLocaleString()} 个字符。</figcaption> : null}
+        <pre className="preview-text">{loaded.text}</pre>
+        {loaded.cut ? <figcaption className="caption">只显示了前 {TEXT_LIMIT.toLocaleString()} 个字符。</figcaption> : null}
       </figure>
     )
-  if (loaded.kind === 'binary') return <p className="text-[12.5px] text-ink-2">这个文件不是文字或图片，不能预览。</p>
-  return <p className="text-[12.5px] text-ink-2">没能读到这个文件。</p>
+  if (loaded.kind === 'binary') return <p className="note">这个文件不是文字或图片，不能预览。</p>
+  return <p className="note">没能读到这个文件。</p>
 }
 
 /**
@@ -418,19 +450,19 @@ function PreviewView({ block }: { block: Extract<Block, { kind: 'preview' }> }) 
  */
 function EmbedView({ block }: { block: Extract<Block, { kind: 'embed' }> }) {
   const href = outsideUrl(block.url)
-  if (href === null) return <p className="text-[12.5px] text-ink-2">这一块要显示的不是 http 或 https 的地址：{block.url}</p>
+  if (href === null) return <p className="note">这一块要显示的不是 http 或 https 的地址：{block.url}</p>
   const sandbox = new URL(href).origin === window.location.origin ? 'allow-scripts' : 'allow-scripts allow-same-origin'
   return (
-    <figure className="card overflow-hidden" aria-label={block.title}>
-      <figcaption className="flex h-9 items-center gap-2 border-b border-line px-3 text-[12.5px]">
-        <ViewIcon name="globe" className="size-3.5 shrink-0 text-ink-3" />
+    <figure className="card embed" aria-label={block.title}>
+      <figcaption className="embed-bar">
+        <ViewIcon name="globe" />
         <span className="min-w-0 truncate font-medium">{block.title}</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-ink-3" title={href}>
+        <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-ink-3" title={href}>
           {href}
         </span>
-        <a href={href} target="_blank" rel="noopener noreferrer" className="link flex shrink-0 items-center gap-1">
+        <a href={href} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-quiet">
           在新标签页打开
-          <ExternalLink className="size-3.5" strokeWidth={2} aria-hidden />
+          <ExternalLink strokeWidth={2} aria-hidden />
         </a>
       </figcaption>
       <iframe src={href} title={block.title} sandbox={sandbox} referrerPolicy="no-referrer" className="block w-full border-0 bg-white" style={{ height: block.height }} />
@@ -438,11 +470,21 @@ function EmbedView({ block }: { block: Extract<Block, { kind: 'embed' }> }) {
   )
 }
 
+/** A table's message when it has no rows, as an empty state: its first sentence the title, the rest the hint. */
+function EmptyMessage({ text }: { text: string }) {
+  const end = text.indexOf('。')
+  const [title, hint] = end > 0 && end < text.length - 1 ? [text.slice(0, end + 1), text.slice(end + 1)] : [text, null]
+  return <EmptyView block={{ kind: 'empty', title, hint }} />
+}
+
 function EmptyView({ block }: { block: Extract<Block, { kind: 'empty' }> }) {
   return (
-    <div className="card flex flex-col items-center justify-center px-6 py-10 text-center">
-      <p className="text-[14px] font-medium text-ink">{block.title}</p>
-      {block.hint ? <p className="mt-1 max-w-[36rem] text-[12.5px] break-words text-ink-2">{block.hint}</p> : null}
+    <div className="empty">
+      <span className="empty-icon">
+        <Inbox strokeWidth={1.75} aria-hidden />
+      </span>
+      <p className="empty-title">{block.title}</p>
+      {block.hint ? <p className="empty-hint">{block.hint}</p> : null}
     </div>
   )
 }
@@ -473,13 +515,18 @@ export function BlockView({ block }: { block: Block }) {
     case 'custom':
       return <CustomView block={block} />
     default:
-      return <p className="text-[12.5px] text-ink-3">这一块界面还不认识：{String((block as { kind?: unknown }).kind)}</p>
+      return (
+        <p className="unknown">
+          <CircleHelp strokeWidth={2} aria-hidden />
+          这一块界面还不认识：{String((block as { kind?: unknown }).kind)}
+        </p>
+      )
   }
 }
 
 export function Blocks({ blocks }: { blocks: Block[] }) {
   return (
-    <div className="flex flex-col gap-5">
+    <div className="blocks">
       {blocks.map((b, i) => (
         <BlockView key={i} block={b} />
       ))}

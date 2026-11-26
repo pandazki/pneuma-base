@@ -4,6 +4,7 @@
 // typed in @pneuma-base/sdk/frame.
 import type { Action, Block, Link } from '@pneuma-base/kernel'
 import { FRAME_TOKENS } from '@pneuma-base/sdk/frame'
+import { PanelTop } from 'lucide-react'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { api, outsideUrl } from './api'
 import { useEnv } from './env'
@@ -120,17 +121,20 @@ function Frame({ block, plugin, src }: { block: Custom; plugin: string; src: str
 
   if (phase === 'failed') {
     return (
-      <div className="card flex flex-col items-center justify-center px-6 py-8 text-center" role="alert">
-        <p className="text-[14px] font-medium text-ink">插件 {plugin} 的页没能打开</p>
-        <p className="mt-1 max-w-[36rem] text-[12.5px] break-words text-ink-2">
-          <span className="font-mono">{block.entry}</span> 没有加载，或者 {READY_MS / 1000} 秒内没有说它准备好了。页面的其余部分不受影响。
+      <div className="empty" role="alert">
+        <span className="empty-icon">
+          <PanelTop strokeWidth={1.75} aria-hidden />
+        </span>
+        <p className="empty-title">插件 {plugin} 的页没能打开</p>
+        <p className="empty-hint">
+          <span className="font-mono text-[12px]">{block.entry}</span> 没有加载，或者 {READY_MS / 1000} 秒内没有说它准备好了。页面的其余部分不受影响。
         </p>
-        <p className="mt-2 max-w-[36rem] text-[12.5px] break-words whitespace-pre-line text-ink">{block.text}</p>
+        <p className="empty-hint whitespace-pre-line text-ink-2">{block.text}</p>
       </div>
     )
   }
   return (
-    <div className={phase === 'loading' ? 'animate-pulse rounded-card bg-inset' : ''}>
+    <div className={phase === 'loading' ? 'loading skeleton' : undefined}>
       <iframe
         ref={frame}
         src={src}
