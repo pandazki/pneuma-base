@@ -164,6 +164,8 @@ function bplist(strings: string[]): string {
 }
 
 test('a thing’s panel says its state in words, whether its content was read, and where it was downloaded from', async ({ page, pb }) => {
+  // The where-from, quarantine and tag attributes exist only on macOS, and so does the `macos` facet.
+  test.skip(process.platform !== 'darwin', 'needs macOS file attributes')
   const lib = join(tempDir(), 'lib')
   const outside = tempDir('pb-e2e-out-')
   write(lib, 'report.pdf', '%PDF-1.4 report\n')
