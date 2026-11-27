@@ -643,7 +643,7 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 
 ## 8. 自带的插件
 
-命令行自带五个插件：记账与对账（`ledger`）、版本（`version`）、同步（`sync`）、部署（`deploy`）、查找（`search`），名单在 `packages/cli/src/plugins.ts`。每个都按插件契约第 2 版写，碰库只经 `ctx.tools`：存储的词（看一眼、一览、比令牌、内容），自己的记录处和行；`node:fs` 只用在库外。`pneuma-base init <地址>` 只装记账，`--bare` 什么都不装，别的由主人 `plugin add <名字>` 装上。契约在 `PLUGINS.md`，机制在 第 5 节「插件机制」。
+命令行自带五个插件：记账与对账（`ledger`）、版本（`version`）、同步（`sync`）、部署（`deploy`）、查找（`search`），名单在 `packages/cli/src/plugins.ts`。每个都按插件契约第 2 版写，碰库只经 `ctx.tools`：存储的词（看一眼、一览、比令牌、内容），自己的记录处和行；`node:fs` 只用在库外。`pneuma-base init <地址>` 只装记账，`--bare` 什么都不装，别的由主人 `plugin add <名字>` 装上。契约在 `PLUGINS.md`，机制在第 5 节「插件机制」。
 
 ### 记账与对账
 
@@ -817,7 +817,7 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 - `path`（入册和挪动写事实记的路径，别的写那样东西现在的路径）、`text`（活动页上的那句话）；
 - `whose`（`agent`、`owner`、`approved`、`observed`）、`request`（这条涉及的请求号）。
 
-有进程在听时，`check` 和首页的代价跟着变了的东西走；没人在听时存储拿行全比，跟着登记过的东西个数线性长；从头推行跟着事实文件个数走。量它的脚本是 `scripts/bench-line.mjs`、`bench-changes.mjs`、`bench-register.mjs`、`bench-ledger.mjs`，数在 第 13 节「性能目标和基准」。
+有进程在听时，`check` 和首页的代价跟着变了的东西走；没人在听时存储拿行全比，跟着登记过的东西个数线性长；从头推行跟着事实文件个数走。量它的脚本是 `scripts/bench-line.mjs`、`bench-changes.mjs`、`bench-register.mjs`、`bench-ledger.mjs`，数在第 13 节「性能目标和基准」。
 
 ### 版本
 
