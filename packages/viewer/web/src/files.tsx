@@ -29,7 +29,9 @@ type Handle = { command(c: ShellCommand): void; arrow(key: string, shift: boolea
 let active: Handle | null = null
 const picks = new Map<string, () => void>()
 
+/** The art the app made, by place and token, the latest kept: a window open all day sees many folders. */
 const thumbs = new Map<string, string>()
+const THUMBS_KEPT = 400
 const thumbSubs = new Set<() => void>()
 const thumbKey = (path: string, token: string | null) => `${path}\u0000${token ?? ''}`
 
@@ -43,6 +45,10 @@ if (IN_SHELL) {
     else if ('menu' in d) picks.get(d.menu)?.()
     else if ('thumbnail' in d) {
       thumbs.set(thumbKey(d.thumbnail.path, d.thumbnail.token), d.thumbnail.src)
+      for (const old of [...thumbs.keys()].slice(0, Math.max(0, thumbs.size - THUMBS_KEPT))) {
+        thumbs.delete(old)
+        asked.delete(old)
+      }
       for (const f of thumbSubs) f()
     }
   })
@@ -105,7 +111,7 @@ const KINDS: [RegExp, typeof File][] = [
 
 /** The icon a page draws for a place by its kind and name, where no thumbnail is. */
 function TypeIcon({ place }: { place: RowPlace }) {
-  const Icon = place.kind === 'bundle' ? Package : isFolder({ place } as Placed) ? Folder : (KINDS.find(([re]) => re.test(place.path))?.[1] ?? File)
+  const Icon = place.kind === 'bundle' ? Package : place.kind === 'open' || place.kind === 'closed' ? Folder : (KINDS.find(([re]) => re.test(place.path))?.[1] ?? File)
   return <Icon className="tile-icon" strokeWidth={1.25} aria-hidden />
 }
 
