@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="edge" x1="260" y1="917" x2="990" y2="338" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#d6ed94"/>
+      <stop offset=".35" stop-color="#f2f998"/>
+      <stop offset=".77" stop-color="#ffffaf"/>
+      <stop offset="1" stop-color="#e6fa90"/>
+    </linearGradient>
+    <linearGradient id="face" x1="568" y1="412" x2="880" y2="708" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#c3f0d3"/>
+      <stop offset=".28" stop-color="#9fd8ab"/>
+      <stop offset=".62" stop-color="#cbec96"/>
+      <stop offset="1" stop-color="#e8f67e"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(-13 -6) scale(.845)">
+    <path fill="url(#edge)" d="
+      M 123,910 C 154,855 182,820 250,819 C 315,818 366,831 418,797
+      C 449,692 454,560 519,440 C 588,313 693,251 814,262
+      C 944,271 1044,372 1082,477 C 1034,387 940,354 850,388
+      C 755,414 681,487 612,583 C 548,673 504,758 459,816
+      C 391,910 305,955 212,956 C 151,957 110,947 123,910 Z"/>
+    <path fill="url(#face)" d="
+      M 123,910 C 154,855 182,820 250,819 C 315,818 366,831 418,797
+      C 449,692 454,560 519,440 C 588,313 693,251 814,262
+      C 929,270 1025,349 1074,457 C 1025,373 936,337 846,372
+      C 744,402 670,482 601,577 C 539,665 492,750 446,810
+      C 380,901 298,948 212,951 C 159,952 116,943 123,910 Z"/>
+  </g>
+</svg>

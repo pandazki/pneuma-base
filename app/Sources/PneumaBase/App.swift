@@ -467,22 +467,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
   /// The icon, with a dot when something waits for the owner. A template, so it follows the menu bar.
   private static func icon(dot: Bool) -> NSImage? {
-    guard let symbol = NSImage(systemSymbolName: "archivebox", accessibilityDescription: dot ? "Pneuma Base：有事等你" : "Pneuma Base") else { return nil }
-    guard dot else { return symbol }
-    let size = NSSize(width: 20, height: 18)
-    let image = NSImage(size: size, flipped: false) { rect in
-      let s = symbol.size
-      symbol.draw(in: NSRect(x: (rect.width - s.width) / 2 - 1, y: (rect.height - s.height) / 2, width: s.width, height: s.height))
-      let spot = NSRect(x: rect.width - 7, y: rect.height - 7, width: 6, height: 6)
-      NSGraphicsContext.current?.compositingOperation = .destinationOut
-      NSBezierPath(ovalIn: spot.insetBy(dx: -1.5, dy: -1.5)).fill()
-      NSGraphicsContext.current?.compositingOperation = .sourceOver
-      NSColor.black.setFill()
-      NSBezierPath(ovalIn: spot).fill()
-      return true
-    }
-    image.isTemplate = true
-    image.accessibilityDescription = symbol.accessibilityDescription
+    let image = NSImage(named: dot ? "TrayWaiting" : "Tray")
+    image?.accessibilityDescription = dot ? "Pneuma Base：有事等你" : "Pneuma Base"
     return image
   }
 

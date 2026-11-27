@@ -1,0 +1,78 @@
+{
+  "fill-specializations": [
+    {
+      "value": {
+        "linear-gradient": [
+          "srgb:0.19216,0.5098,0.47451,1",
+          "srgb:0.03922,0.27843,0.31373,1"
+        ]
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "linear-gradient": [
+          "srgb:0.0902,0.27843,0.26275,1",
+          "srgb:0.02745,0.11373,0.13333,1"
+        ]
+      }
+    },
+    {
+      "appearance": "tinted",
+      "value": {
+        "linear-gradient": [
+          "srgb:0.26667,0.26667,0.26667,1",
+          "srgb:0.14902,0.14902,0.14902,1"
+        ]
+      }
+    }
+  ],
+  "groups": [
+    {
+      "name": "Ribbon",
+      "lighting": "individual",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0
+      },
+      "specular": true,
+      "translucency": {
+        "enabled": false,
+        "value": 0.14
+      },
+      "layers": [
+        {
+          "name": "Return",
+          "image-name": "Return.svg",
+          "glass": true,
+          "fill-specializations": [
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "srgb:0.53333,0.53333,0.53333,1"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Fold",
+          "image-name": "Fold.svg",
+          "glass": true,
+          "fill-specializations": [
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "srgb:0.93333,0.93333,0.93333,1"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}

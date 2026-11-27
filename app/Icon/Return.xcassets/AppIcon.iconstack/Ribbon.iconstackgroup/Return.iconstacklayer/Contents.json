@@ -1,0 +1,110 @@
+{
+  "info": {
+    "author": "xcode",
+    "version": 1
+  },
+  "properties": {
+    "image": [
+      {
+        "icon-studio-idiom": "macOS",
+        "icon-studio-appearance": "light",
+        "icon-studio-localization": "unspecified",
+        "value": {
+          "type": "image-set",
+          "name": "Return",
+          "matching-style": "fully-qualified-name"
+        }
+      },
+      {
+        "icon-studio-idiom": "macOS",
+        "icon-studio-appearance": "dark",
+        "icon-studio-localization": "unspecified",
+        "value": {
+          "type": "image-set",
+          "name": "Return",
+          "matching-style": "fully-qualified-name"
+        }
+      },
+      {
+        "icon-studio-idiom": "macOS",
+        "icon-studio-appearance": "tinted",
+        "icon-studio-localization": "unspecified",
+        "value": {
+          "type": "image-set",
+          "name": "Return",
+          "matching-style": "fully-qualified-name"
+        }
+      }
+    ],
+    "frame": [
+      {
+        "icon-studio-idiom": "macOS",
+        "icon-studio-appearance": "light",
+        "icon-studio-localization": "unspecified",
+        "value": {
+          "origin.x": 0,
+          "origin.y": 0,
+          "size.width": 1024,
+          "size.height": 1024
+        }
+      },
+      {
+        "icon-studio-idiom": "macOS",
+        "icon-studio-appearance": "dark",
+        "icon-studio-localization": "unspecified",
+        "value": {
+          "origin.x": 0,
+          "origin.y": 0,
+          "size.width": 1024,
+          "size.height": 1024
+        }
+      },
+      {
+        "icon-studio-idiom": "macOS",
+        "icon-studio-appearance": "tinted",
+        "icon-studio-localization": "unspecified",
+        "value": {
+          "origin.x": 0,
+          "origin.y": 0,
+          "size.width": 1024,
+          "size.height": 1024
+        }
+      }
+    ],
+    "fill": [
+      {
+        "icon-studio-idiom": "macOS",
+        "icon-studio-appearance": "tinted",
+        "icon-studio-localization": "unspecified",
+        "value": {
+          "type": "solid",
+          "color": {
+            "type": "color",
+            "name": "ReturnMono",
+            "matching-style": "fully-qualified-name"
+          }
+        }
+      }
+    ],
+    "is-glass": [
+      {
+        "icon-studio-idiom": "macOS",
+        "icon-studio-appearance": "light",
+        "icon-studio-localization": "unspecified",
+        "value": true
+      },
+      {
+        "icon-studio-idiom": "macOS",
+        "icon-studio-appearance": "dark",
+        "icon-studio-localization": "unspecified",
+        "value": true
+      },
+      {
+        "icon-studio-idiom": "macOS",
+        "icon-studio-appearance": "tinted",
+        "icon-studio-localization": "unspecified",
+        "value": true
+      }
+    ]
+  }
+}
