@@ -255,6 +255,178 @@ pub fn entry_count_at(dir: RawFd, name: Option<&CStr>) -> Option<u64> {
     }
 }
 
+/// An entry of a directory as its listing gives it.
+pub enum Listed {
+    /// A regular file, with the state `stat_at` gives.
+    File(Stat),
+    Dir,
+    /// A link, a device, a socket: never content.
+    Other,
+    /// What the listing could not say: `stat_at` tells.
+    Unknown,
+}
+
+/// Every entry of the directory open at `dir` but `.` and `..`, in no order. macOS gives each
+/// entry's attributes with its name, a batch of entries per call (`getattrlistbulk`); a file
+/// whose attributes it cannot give whole, or whose size it may give otherwise than `stat`
+/// (a compressed file), is `Unknown`.
+#[cfg(target_os = "macos")]
+pub fn list(dir: RawFd) -> Result<Vec<(Vec<u8>, Listed)>, Errno> {
+    const ATTR_CMN_ERROR: u32 = 0x2000_0000;
+    const NEEDED: u32 = libc::ATTR_CMN_DEVID
+        | libc::ATTR_CMN_OBJTYPE
+        | libc::ATTR_CMN_CRTIME
+        | libc::ATTR_CMN_MODTIME
+        | libc::ATTR_CMN_CHGTIME
+        | libc::ATTR_CMN_ACCESSMASK
+        | libc::ATTR_CMN_FLAGS
+        | libc::ATTR_CMN_FILEID;
+    let mut list = libc::attrlist {
+        bitmapcount: libc::ATTR_BIT_MAP_COUNT,
+        reserved: 0,
+        commonattr: libc::ATTR_CMN_RETURNED_ATTRS | ATTR_CMN_ERROR | libc::ATTR_CMN_NAME | NEEDED,
+        volattr: 0,
+        dirattr: 0,
+        fileattr: libc::ATTR_FILE_DATALENGTH,
+        forkattr: 0,
+    };
+    // The listing goes on from the descriptor's offset, which an earlier listing moved.
+    // SAFETY: a valid descriptor.
+    if unsafe { libc::lseek(dir, 0, libc::SEEK_SET) } < 0 {
+        return Err(last_errno());
+    }
+    // Each entry starts 8-byte aligned in the buffer.
+    let mut buffer = vec![0u64; 8 * 1024];
+    let mut listed = Vec::new();
+    loop {
+        // SAFETY: the attribute list and the buffer are valid for the sizes given.
+        let n = unsafe {
+            libc::getattrlistbulk(
+                dir,
+                (&raw mut list).cast(),
+                buffer.as_mut_ptr().cast(),
+                buffer.len() * 8,
+                u64::from(libc::FSOPT_PACK_INVAL_ATTRS),
+            )
+        };
+        if n < 0 {
+            match last_errno() {
+                libc::EINTR => continue,
+                errno => return Err(errno),
+            }
+        }
+        if n == 0 {
+            return Ok(listed);
+        }
+        // SAFETY: the buffer's bytes, as many as it holds.
+        let bytes =
+            unsafe { std::slice::from_raw_parts(buffer.as_ptr().cast::<u8>(), buffer.len() * 8) };
+        let mut at = 0;
+        for _ in 0..n {
+            let mut packed = Packed { bytes, at };
+            let length = packed.u32().ok_or(libc::EIO)? as usize;
+            let entry = bulk_entry(&mut packed, NEEDED).ok_or(libc::EIO)?;
+            listed.push(entry);
+            at += length;
+        }
+    }
+}
+
+/// One entry of a `getattrlistbulk` buffer, after its length: the attributes `list` asks for,
+/// packed in the order of their bits, each 4-byte aligned.
+#[cfg(target_os = "macos")]
+fn bulk_entry(packed: &mut Packed, needed: u32) -> Option<(Vec<u8>, Listed)> {
+    const VREG: u32 = 1;
+    const VDIR: u32 = 2;
+    let common = packed.u32()?;
+    let _ = (packed.u32()?, packed.u32()?);
+    let file = packed.u32()?;
+    let _ = packed.u32()?;
+    let error = packed.u32()?;
+    let name_at = packed.at;
+    let (offset, length) = (packed.u32()? as usize, packed.u32()? as usize);
+    let start = name_at.checked_add(offset)?;
+    let name = packed.bytes.get(start..start.checked_add(length)?)?;
+    let name = name.strip_suffix(&[0]).unwrap_or(name).to_vec();
+    let device = packed.u32()?;
+    let kind = packed.u32()?;
+    let btime_ns = packed.time()?;
+    let mtime_ns = packed.time()?;
+    let ctime_ns = packed.time()?;
+    let access = packed.u32()?;
+    let flags = packed.u32()?;
+    let inode = packed.u64()?;
+    let size = packed.u64()?;
+    let whole = error == 0 && common & needed == needed;
+    let listed = match kind {
+        _ if !whole => Listed::Unknown,
+        VREG if file & libc::ATTR_FILE_DATALENGTH == 0 || flags & libc::UF_COMPRESSED != 0 => {
+            Listed::Unknown
+        }
+        VREG => Listed::File(Stat {
+            kind: Kind::File,
+            size,
+            mtime_ns,
+            ctime_ns,
+            btime_ns: Some(btime_ns),
+            inode,
+            device: u64::from(device),
+            mode: access & 0o7777 | libc::S_IFREG as u32,
+            flags,
+        }),
+        VDIR => Listed::Dir,
+        _ => Listed::Other,
+    };
+    Some((name, listed))
+}
+
+/// Reads the packed attributes of one `getattrlistbulk` entry in order.
+#[cfg(target_os = "macos")]
+struct Packed<'a> {
+    bytes: &'a [u8],
+    at: usize,
+}
+
+#[cfg(target_os = "macos")]
+impl Packed<'_> {
+    fn take<const N: usize>(&mut self) -> Option<[u8; N]> {
+        let taken = self.bytes.get(self.at..self.at.checked_add(N)?)?;
+        self.at += N;
+        taken.try_into().ok()
+    }
+
+    fn u32(&mut self) -> Option<u32> {
+        self.take().map(u32::from_ne_bytes)
+    }
+
+    fn u64(&mut self) -> Option<u64> {
+        self.take().map(u64::from_ne_bytes)
+    }
+
+    /// A `timespec`, in nanoseconds.
+    fn time(&mut self) -> Option<i128> {
+        let secs = i64::from_ne_bytes(self.take()?);
+        let nanos = i64::from_ne_bytes(self.take()?);
+        Some(ns(secs, nanos))
+    }
+}
+
+/// Every entry of the directory open at `dir` but `.` and `..`, by what `readdir` says it is.
+#[cfg(not(target_os = "macos"))]
+pub fn list(dir: RawFd) -> Result<Vec<(Vec<u8>, Listed)>, Errno> {
+    let mut stream = DirStream::open(&dir)?;
+    let mut listed = Vec::new();
+    while let Some(entry) = stream.next_entry() {
+        let (name, kind) = entry?;
+        let kind = match kind {
+            EntryType::Other => Listed::Other,
+            _ => Listed::Unknown,
+        };
+        listed.push((name.to_vec(), kind));
+    }
+    Ok(listed)
+}
+
 /// What readdir says an entry is, without a stat.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EntryType {
@@ -671,3 +843,56 @@ mod fetch {
 }
 
 pub use fetch::{Fetching, forbid_for_process as forbid_fetching};
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+
+    /// A listing gives files the state `stat_at` gives, over several batches and again from the
+    /// same descriptor; a compressed file is left to `stat_at`; directories and links are told
+    /// apart without one.
+    #[test]
+    fn a_listing_gives_the_states_stat_gives() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path();
+        for i in 0..1_000 {
+            std::fs::write(path.join(format!("file-{i:04}.txt")), vec![b'x'; i]).unwrap();
+        }
+        std::fs::write(path.join("plain.txt"), "plain ".repeat(10_000)).unwrap();
+        std::fs::hard_link(path.join("plain.txt"), path.join("hard")).unwrap();
+        std::fs::create_dir(path.join("sub")).unwrap();
+        std::os::unix::fs::symlink("plain.txt", path.join("link")).unwrap();
+        // A file the file system keeps compressed, where `ditto` can make one.
+        let _ = std::process::Command::new("ditto")
+            .arg("--hfsCompression")
+            .args([path.join("plain.txt"), path.join("packed.txt")])
+            .status();
+        let fd = open_root(path).unwrap();
+        for _ in 0..2 {
+            let listed = list(fd.as_raw_fd()).unwrap();
+            let expected = 1_004 + usize::from(path.join("packed.txt").exists());
+            assert_eq!(listed.len(), expected);
+            for (name, entry) in &listed {
+                let stat = stat_at(fd.as_raw_fd(), &c_name(name)).unwrap();
+                let shown = String::from_utf8_lossy(name);
+                match entry {
+                    Listed::File(got) => {
+                        assert_eq!(got.components(), stat.components(), "{shown}");
+                        assert_eq!(got.btime_ns, stat.btime_ns, "{shown}");
+                        assert_eq!(
+                            (got.device, got.mode, got.flags),
+                            (stat.device, stat.mode, stat.flags),
+                            "{shown}"
+                        );
+                    }
+                    Listed::Dir => assert_eq!(stat.kind, Kind::Dir, "{shown}"),
+                    Listed::Other => assert_eq!(stat.kind, Kind::Other, "{shown}"),
+                    Listed::Unknown => assert!(
+                        stat.flags & libc::UF_COMPRESSED != 0,
+                        "{shown} has every attribute"
+                    ),
+                }
+            }
+        }
+    }
+}
