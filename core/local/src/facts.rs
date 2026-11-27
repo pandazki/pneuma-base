@@ -16,7 +16,7 @@
 
 use std::cmp::Ordering;
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -35,6 +35,13 @@ use crate::{LocalFolder, fnv64, io_failure};
 /// A file that arrived this close before a read began may not yet have been visible to it, and
 /// clocks step back a little: such files are named in the cursor rather than put under its floor.
 const WINDOW_NS: i64 = 10_000_000_000;
+/// How many threads read a page's files, and how many neighbouring files each takes at a time.
+/// Opening a file is most of reading a small one; on an Apple-silicon Mac more than four threads
+/// opening files in the same folders wait on each other.
+const READERS: usize = 4;
+const READ_RUN: usize = 64;
+/// A facts file no longer than this from where a page starts in it is read in one call.
+const WHOLE_READ: u64 = 1 << 20;
 /// The most files the cursor names; past it the floor rises over the oldest.
 const WIN_MAX: usize = 32;
 /// A directory's change time and the arrival time of an entry added to it are taken a moment
@@ -94,6 +101,10 @@ struct Mark {
 struct Pass {
     hi: i64,
     at: Mark,
+    /// The newest files the pass gave so far, as `window` keeps them: all its end needs to name
+    /// above the new floor, so no page lists what earlier pages gave.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    top: Vec<(String, i64)>,
 }
 
 /// The cursor, serialized as the opaque string the kernel keeps.
@@ -118,18 +129,11 @@ struct Cursor {
 struct Arrived {
     key: Key,
     at: i64,
-    path: PathBuf,
-}
-
-struct Collected {
-    facts: Vec<Fact>,
-    limit: usize,
-}
-
-struct Progress {
-    line: u64,
-    byte: u64,
-    whole: bool,
+    /// Its directory, open: a file is opened by its name in it, not by its whole path.
+    dir: std::sync::Arc<std::os::fd::OwnedFd>,
+    name: std::ffi::CString,
+    /// Its size as listed: a facts file is written whole once, so one read of that much reads it.
+    size: u64,
 }
 
 fn refused() -> Failure {
@@ -219,24 +223,48 @@ impl LocalFolder {
             .pass
             .as_ref()
             .map_or_else(|| Time::now().nanos() as i64, |pass| pass.hi);
-        let mut arrived = Vec::new();
+        let resume = cursor.pass.as_ref().map(|pass| &pass.at);
+        // Directories in the order of the keys of their files, so a page lists only from where
+        // the pass got to, and only until it is full: its cost follows the page.
+        let mut dirs = subdirs(&facts_dir)?;
+        dirs.retain(|dir| {
+            cursor
+                .floor
+                .is_none_or(|floor| dir.changed >= floor - SLACK_NS)
+        });
+        dirs.sort_by(|a, b| (a.layout, &a.name).cmp(&(b.layout, &b.name)));
+        // Listed now, though a floor raised to this read would let it be skipped.
+        let stale = dirs
+            .iter()
+            .any(|dir| dir.changed < hi - WINDOW_NS - SLACK_NS);
+        let files = match req.cursor {
+            None => Some(count_files(&dirs)?),
+            Some(_) => None,
+        };
+        // The files the cursor names are looked for on a pass's first page, in every directory
+        // they can be in; the pages after it only read on.
+        let find_named = resume.is_none() && !cursor.win.is_empty();
         let mut named = 0;
         let mut blind = false;
-        // Listed now, though a floor raised to this read would let it be skipped.
-        let mut stale = false;
-        for dir in subdirs(&facts_dir)? {
+        let mut arrived_any = false;
+        // The files to read, in key order from where the pass got to: no more than the page has
+        // room for facts, since each file holds at least one.
+        let mut todo: Vec<(Arrived, u64, u64)> = Vec::new();
+        let mut cut = false;
+        for dir in &dirs {
             ctx.check()?;
-            if cursor
-                .floor
-                .is_some_and(|floor| dir.changed < floor - SLACK_NS)
-            {
+            let room = todo.len() < req.limit;
+            let reading = room
+                && resume.is_none_or(|at| (dir.layout, dir.name.as_str()) >= (at.k.l, &*at.k.d));
+            cut |= !room;
+            if !reading && !find_named {
                 continue;
             }
-            stale |= dir.changed < hi - WINDOW_NS - SLACK_NS;
-            let Some(files) = files_of(&dir)? else {
+            let Some(files) = files_of(dir)? else {
                 blind = true;
                 continue;
             };
+            let mut arrived = Vec::new();
             for file in files {
                 let id = file.key.id();
                 if cursor.win.iter().any(|(known, _)| *known == id) {
@@ -245,17 +273,69 @@ impl LocalFolder {
                     arrived.push(file);
                 }
             }
+            if !reading {
+                continue;
+            }
+            arrived_any |= !arrived.is_empty();
+            arrived.sort_by(|a, b| a.key.cmp(&b.key));
+            for file in arrived {
+                let (line, byte) = match resume.map(|at| file.key.cmp(&at.k)) {
+                    Some(Ordering::Less) => continue,
+                    Some(Ordering::Equal) => match resume {
+                        Some(at) if !at.whole => (at.line, at.byte),
+                        _ => continue,
+                    },
+                    _ => (0, 0),
+                };
+                if todo.len() == req.limit {
+                    cut = true;
+                    break;
+                }
+                todo.push((file, line, byte));
+            }
+        }
+        let mut given = Vec::new();
+        let mut stopped = None;
+        let mut last_whole = None;
+        let mut collected = Vec::new();
+        'files: for ((file, ..), read) in todo.iter().zip(read_files(&todo, req.limit + 1)) {
+            let read = read?;
+            for (line, byte, fact) in read.facts {
+                if collected.len() == req.limit {
+                    stopped = Some(Mark {
+                        k: file.key.clone(),
+                        line,
+                        byte,
+                        whole: false,
+                    });
+                    break 'files;
+                }
+                collected.push(Fact {
+                    order: file.key.order(line + 1),
+                    fact: Value::Object(fact),
+                });
+            }
+            given.push((file.key.id(), file.at));
+            last_whole = Some(Mark {
+                k: file.key.clone(),
+                line: read.end.0,
+                byte: read.end.1,
+                whole: true,
+            });
+        }
+        // Listing stopped with the page full of files: the next page goes on after the last one read.
+        if stopped.is_none() && cut {
+            stopped = last_whole;
         }
         // A file the cursor names is gone: the facts were rewritten under it. (A directory that
         // cannot be read hides its files without removing them.)
-        if named < cursor.win.len() && !blind {
+        if find_named && named < cursor.win.len() && !blind {
             return Err(refused());
         }
-        arrived.sort_by(|a, b| a.key.cmp(&b.key));
         // Nothing new: the same cursor, unless it makes every read list directories long settled
         // (after many arrived at once, as when a whole library is synced in); then it moves up.
-        if arrived.is_empty()
-            && cursor.pass.is_none()
+        if !arrived_any
+            && resume.is_none()
             && !stale
             && let Some(text) = &req.cursor
         {
@@ -263,59 +343,36 @@ impl LocalFolder {
                 facts: Vec::new(),
                 cursor: text.clone(),
                 more: false,
+                files,
             });
         }
-        let mut collected = Collected {
-            facts: Vec::new(),
-            limit: req.limit,
-        };
-        let resume = cursor.pass.as_ref().map(|pass| &pass.at);
-        for file in &arrived {
-            let (line, byte) = match resume.map(|at| file.key.cmp(&at.k)) {
-                Some(Ordering::Less) => continue,
-                Some(Ordering::Equal) => match resume {
-                    Some(at) if !at.whole => (at.line, at.byte),
-                    _ => continue,
-                },
-                _ => (0, 0),
+        let earlier = cursor
+            .pass
+            .as_ref()
+            .map(|pass| pass.top.clone())
+            .unwrap_or_default();
+        if let Some(at) = stopped {
+            let (_, top) = window(hi - WINDOW_NS, earlier.into_iter().chain(given));
+            let cursor = Cursor {
+                pass: Some(Pass { hi, at, top }),
+                fi,
+                ..cursor
             };
-            let read = read_facts(&file.path, line, byte, &mut collected, |n| {
-                file.key.order(n)
-            })?;
-            if !read.whole {
-                let pass = Pass {
-                    hi,
-                    at: Mark {
-                        k: file.key.clone(),
-                        line: read.line,
-                        byte: read.byte,
-                        whole: false,
-                    },
-                };
-                let cursor = Cursor {
-                    pass: Some(pass),
-                    fi,
-                    ..cursor
-                };
-                return Ok(FactsSinceAnswer {
-                    facts: collected.facts,
-                    cursor: encode(&cursor),
-                    more: true,
-                });
-            }
+            return Ok(FactsSinceAnswer {
+                facts: collected,
+                cursor: encode(&cursor),
+                more: true,
+                files,
+            });
         }
         // The pass is complete: everything that arrived before `hi` has been given.
         let floor = cursor
             .floor
             .map_or(hi - WINDOW_NS, |f| f.max(hi - WINDOW_NS));
-        let given = cursor
-            .win
-            .iter()
-            .cloned()
-            .chain(arrived.iter().map(|f| (f.key.id(), f.at)));
+        let given = cursor.win.iter().cloned().chain(earlier).chain(given);
         let (floor, win) = window(floor, given);
         Ok(FactsSinceAnswer {
-            facts: collected.facts,
+            facts: collected,
             cursor: encode(&Cursor {
                 v: 2,
                 fi,
@@ -324,6 +381,7 @@ impl LocalFolder {
                 pass: None,
             }),
             more: false,
+            files,
         })
     }
 }
@@ -380,7 +438,29 @@ fn end_of_facts(facts_dir: &Path, fi: Option<u64>) -> Result<FactsSinceAnswer, F
             pass: None,
         }),
         more: false,
+        files: None,
     })
+}
+
+/// How many facts files the directories hold, by their names: no file is opened or stat'ed.
+fn count_files(dirs: &[Subdir]) -> Result<u64, Failure> {
+    let mut n = 0;
+    for dir in dirs {
+        let fd = match sys::open_root(&dir.path) {
+            Ok(fd) => fd,
+            Err(libc::ENOENT | libc::ENOTDIR | libc::EACCES | libc::EPERM) => continue,
+            Err(errno) => return Err(Failure::unreadable(sys::errno_name(errno))),
+        };
+        let mut stream =
+            DirStream::open(&fd).map_err(|e| Failure::unreadable(sys::errno_name(e)))?;
+        while let Some(entry) = stream.next_entry() {
+            let (name, kind) = entry.map_err(|e| Failure::unreadable(sys::errno_name(e)))?;
+            if kind != sys::EntryType::Dir && !name.starts_with(b".") && name.ends_with(b".jsonl") {
+                n += 1;
+            }
+        }
+    }
+    Ok(n)
 }
 
 /// A directory of facts files: a day, a scene of the old layout, or `facts/` itself (the flat old layout, named `""`).
@@ -435,86 +515,216 @@ fn files_of(dir: &Subdir) -> Result<Option<Vec<Arrived>>, Failure> {
         Err(libc::EACCES | libc::EPERM) => return Ok(None),
         Err(errno) => return Err(Failure::unreadable(sys::errno_name(errno))),
     };
-    let mut names = Vec::new();
-    let mut stream = DirStream::open(&fd).map_err(|e| Failure::unreadable(sys::errno_name(e)))?;
-    while let Some(entry) = stream.next_entry() {
-        let (name, _) = entry.map_err(|e| Failure::unreadable(sys::errno_name(e)))?;
-        if let Ok(name) = std::str::from_utf8(name)
-            && !name.starts_with('.')
-            && name.ends_with(".jsonl")
-        {
-            names.push(name.to_owned());
+    let unreadable = |e| Failure::unreadable(sys::errno_name(e));
+    let is_facts = |name: &str| !name.starts_with('.') && name.ends_with(".jsonl");
+    // (name, arrival, size) of each regular file.
+    let mut found = Vec::new();
+    match sys::listed(fd.as_raw_fd()) {
+        Some(entries) => {
+            for e in entries.map_err(unreadable)? {
+                if let Ok(name) = String::from_utf8(e.name)
+                    && e.file
+                    && is_facts(&name)
+                {
+                    let at = match e.added_ns {
+                        Some(added) => added.max(e.btime_ns.unwrap_or(added)),
+                        None => e.ctime_ns,
+                    };
+                    found.push((name, at as i64, e.size));
+                }
+            }
+        }
+        None => {
+            let mut names = Vec::new();
+            let mut stream = DirStream::open(&fd).map_err(unreadable)?;
+            while let Some(entry) = stream.next_entry() {
+                let (name, _) = entry.map_err(unreadable)?;
+                if let Ok(name) = std::str::from_utf8(name)
+                    && is_facts(name)
+                {
+                    names.push(name.to_owned());
+                }
+            }
+            for name in names {
+                let c_name = sys::c_name(name.as_bytes());
+                if let Ok(stat) = sys::stat_at(fd.as_raw_fd(), &c_name)
+                    && stat.kind == pneuma_base_storage::Kind::File
+                {
+                    let at = arrival(fd.as_raw_fd(), &c_name, &stat);
+                    found.push((name, at, stat.size));
+                }
+            }
         }
     }
-    let mut files = Vec::with_capacity(names.len());
-    for name in names {
-        let c_name = sys::c_name(name.as_bytes());
-        let stat = match sys::stat_at(fd.as_raw_fd(), &c_name) {
-            Ok(stat) if stat.kind == pneuma_base_storage::Kind::File => stat,
-            _ => continue,
-        };
-        files.push(Arrived {
-            at: arrival(fd.as_raw_fd(), &c_name, &stat),
-            path: dir.path.join(&name),
-            key: Key {
-                l: dir.layout,
-                d: dir.name.clone(),
-                f: name,
-            },
-        });
-    }
-    Ok(Some(files))
+    let fd = std::sync::Arc::new(fd);
+    Ok(Some(
+        found
+            .into_iter()
+            .map(|(name, at, size)| Arrived {
+                at,
+                size,
+                dir: fd.clone(),
+                name: sys::c_name(name.as_bytes()),
+                key: Key {
+                    l: dir.layout,
+                    d: dir.name.clone(),
+                    f: name,
+                },
+            })
+            .collect(),
+    ))
 }
 
-/// Gives the facts of one file from a position on, until the limit; stops before the first
-/// fact that does not fit, so `whole: false` means at least one more fact follows.
-fn read_facts(
-    path: &Path,
+/// The facts of one file from a position on, at most as many as asked: each with its line and the
+/// byte it starts at, and where the file ends when they all fit.
+struct FileFacts {
+    facts: Vec<(u64, u64, serde_json::Map<String, Value>)>,
+    end: (u64, u64),
+}
+
+fn facts_in(file: &Arrived, line: u64, byte: u64, most: usize) -> Result<FileFacts, Failure> {
+    let file_size = file.size;
+    let mut file =
+        sys::open_file_at(file.dir.as_raw_fd(), &file.name).map_err(|errno| match errno {
+            libc::ENOENT => refused(),
+            _ => Failure::unreadable(sys::errno_name(errno)),
+        })?;
+    if byte > 0 {
+        file.seek(SeekFrom::Start(byte))
+            .map_err(|e| io_failure(&e))?;
+    }
+    // A long file (one of the old layout) is read a line at a time, only as far as the page needs.
+    if file_size.saturating_sub(byte) > WHOLE_READ {
+        let mut reader = std::io::BufReader::with_capacity(1 << 16, file);
+        let mut facts = Lines::new(line, byte, most);
+        let mut one = Vec::new();
+        while !facts.full() {
+            one.clear();
+            if std::io::BufRead::read_until(&mut reader, b'\n', &mut one)
+                .map_err(|e| io_failure(&e))?
+                == 0
+            {
+                break;
+            }
+            facts.take(&one);
+        }
+        return Ok(facts.done());
+    }
+    // One read of the size listed, into a buffer kept for the next file: a short read is the
+    // end. A file longer than listed is read on.
+    thread_local! {
+        static TEXT: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+    let want = usize::try_from(file_size.saturating_sub(byte)).unwrap_or(usize::MAX - 1) + 1;
+    TEXT.with_borrow_mut(|text| {
+        if text.len() < want {
+            text.resize(want.next_power_of_two(), 0);
+        }
+        let mut len = 0;
+        loop {
+            match file.read(&mut text[len..]) {
+                Ok(0) => break,
+                Ok(n) => {
+                    len += n;
+                    if len < want {
+                        break;
+                    }
+                    if len == text.len() {
+                        text.resize(len * 2, 0);
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(io_failure(&e)),
+            }
+        }
+        let mut facts = Lines::new(line, byte, most);
+        for one in text[..len].split_inclusive(|b| *b == b'\n') {
+            if facts.full() {
+                break;
+            }
+            facts.take(one);
+        }
+        Ok(facts.done())
+    })
+}
+
+/// The facts of a file taken line by line from a position on, until `most`.
+struct Lines {
     line: u64,
     byte: u64,
-    collected: &mut Collected,
-    order: impl Fn(u64) -> String,
-) -> Result<Progress, Failure> {
-    let file = File::open(path).map_err(|e| match e.kind() {
-        std::io::ErrorKind::NotFound => refused(),
-        _ => io_failure(&e),
-    })?;
-    let mut reader = BufReader::with_capacity(1 << 16, file);
-    if byte > 0 {
-        reader
-            .seek(SeekFrom::Start(byte))
-            .map_err(|e| io_failure(&e))?;
+    most: usize,
+    facts: Vec<(u64, u64, serde_json::Map<String, Value>)>,
+}
+
+impl Lines {
+    fn new(line: u64, byte: u64, most: usize) -> Self {
+        Lines {
+            line,
+            byte,
+            most,
+            facts: Vec::new(),
+        }
     }
-    let (mut line, mut byte) = (line, byte);
-    let mut buffer = Vec::new();
-    loop {
-        buffer.clear();
-        let read = reader
-            .read_until(b'\n', &mut buffer)
-            .map_err(|e| io_failure(&e))?;
-        if read == 0 {
-            return Ok(Progress {
-                line,
-                byte,
-                whole: true,
+
+    fn full(&self) -> bool {
+        self.facts.len() >= self.most
+    }
+
+    fn take(&mut self, one: &[u8]) {
+        if let Ok(Value::Object(fact)) = serde_json::from_slice::<Value>(one) {
+            self.facts.push((self.line, self.byte, fact));
+        }
+        self.line += 1;
+        self.byte += one.len() as u64;
+    }
+
+    fn done(self) -> FileFacts {
+        FileFacts {
+            facts: self.facts,
+            end: (self.line, self.byte),
+        }
+    }
+}
+
+/// Reads the files of a page, in order, several at once, at most `most` facts of each (one more than
+/// the page holds, so a file that does not fit is seen not to): a file not in memory yet costs a wait
+/// on the disk, which reading one file at a time pays once per file.
+fn read_files(todo: &[(Arrived, u64, u64)], most: usize) -> Vec<Result<FileFacts, Failure>> {
+    let read = |part: &[(Arrived, u64, u64)]| {
+        part.iter()
+            .map(|(file, line, byte)| facts_in(file, *line, *byte, most))
+            .collect::<Vec<_>>()
+    };
+    let threads = std::thread::available_parallelism().map_or(1, |n| n.get().min(READERS));
+    if threads < 2 || todo.len() < 2 * READ_RUN {
+        return read(todo);
+    }
+    // Runs of neighbouring files handed out in turn, so every reader keeps busy to the end.
+    let runs: Vec<_> = todo.chunks(READ_RUN).collect();
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let mut done: Vec<Option<Vec<Result<FileFacts, Failure>>>> = Vec::new();
+    done.resize_with(runs.len(), || None);
+    let done = std::sync::Mutex::new(done);
+    std::thread::scope(|scope| {
+        for _ in 0..threads {
+            scope.spawn(|| {
+                loop {
+                    let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some(run) = runs.get(i) else { break };
+                    let facts = read(run);
+                    done.lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)[i] = Some(facts);
+                }
             });
         }
-        if let Ok(Value::Object(fact)) = serde_json::from_slice::<Value>(&buffer) {
-            if collected.facts.len() >= collected.limit {
-                return Ok(Progress {
-                    line,
-                    byte,
-                    whole: false,
-                });
-            }
-            collected.facts.push(Fact {
-                order: order(line + 1),
-                fact: Value::Object(fact),
-            });
-        }
-        line += 1;
-        byte += read as u64;
-    }
+    });
+    let done = done
+        .into_inner()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    done.into_iter()
+        .zip(&runs)
+        .flat_map(|(facts, run)| facts.unwrap_or_else(|| read(run)))
+        .collect()
 }
 
 fn stat_dir(path: &Path) -> Result<Option<Stat>, Failure> {

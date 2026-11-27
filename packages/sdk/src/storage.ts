@@ -99,7 +99,8 @@ export type Written = { entry: Description; fingerprint: Fingerprint; files?: nu
 export type Changes = { places: Place[] | null; mark: string; within: Place[] }
 
 export type StoredFact = { order: string; fact: unknown }
-export type FactsSince = { facts: StoredFact[]; cursor: string; more: boolean }
+/** A page of facts; read from no cursor, also how many facts files there are (each holds one fact or more). */
+export type FactsSince = { facts: StoredFact[]; cursor: string; more: boolean; files?: number }
 
 /** A row of a table in a record place: up to 4 fields one can ask by, all strings, and any value; a null value deletes it in `put`. */
 export type Row<V = unknown> = { key: string; fields?: Record<string, string>; value: V }

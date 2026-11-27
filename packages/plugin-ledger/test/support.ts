@@ -44,6 +44,8 @@ const byKey = (a: Row, b: Row) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)
 /** A record place in memory: facts appended in order, rows by table and key, the cursor saved with them. */
 export function memoryRecords(): RecordPlace & { tables: Map<string, Map<string, Row>>; puts: number } {
   const facts: unknown[] = []
+  // Each append is one facts file, as in storage.
+  let files = 0
   const tables = new Map<string, Map<string, Row>>()
   let saved: string | null = null
   const table = (name: string) => tables.get(name) ?? tables.set(name, new Map()).get(name)!
@@ -58,13 +60,14 @@ export function memoryRecords(): RecordPlace & { tables: Map<string, Map<string,
     puts: 0,
     async append(list: readonly unknown[]) {
       facts.push(...list)
+      files++
       return list.map((_, i) => String(facts.length - list.length + i))
     },
     async since(cursor: string | null, limit = 2000) {
       const from = cursor === null ? 0 : Number(cursor)
       if (from > facts.length) return null
       const shown = facts.slice(from, from + limit)
-      return { facts: shown.map((fact, i) => ({ order: String(from + i), fact })), cursor: String(from + shown.length), more: from + shown.length < facts.length }
+      return { facts: shown.map((fact, i) => ({ order: String(from + i), fact })), cursor: String(from + shown.length), more: from + shown.length < facts.length, ...(cursor === null ? { files } : {}) }
     },
     async put(tablesIn: Readonly<Record<string, readonly Row[]>>, opts: { cursor?: string; expect?: string | null } = {}) {
       if ('expect' in opts && opts.expect !== saved) return { written: false as const, actual: saved }

@@ -379,6 +379,14 @@ pub const CHECKS: &[Check] = &[
         records::facts_since_gives_only_what_follows_the_cursor,
         ["5.facts.since.input", "5.facts.since.answer", "2.3", "2.2"]
     ),
+    check!(
+        records::a_long_read_gives_every_fact_once_in_order,
+        ["5.facts.since.input", "5.facts.since.answer"]
+    ),
+    check!(
+        records::a_read_from_no_cursor_counts_the_facts_files,
+        ["5.facts.since.answer"]
+    ),
     check!(records::facts_are_only_appended, ["5.s1", "1.fact"]),
     check!(records::facts_travel_with_the_folder, ["5.s1"]),
     check!(
@@ -402,6 +410,10 @@ pub const CHECKS: &[Check] = &[
         ["5.s1", "5.s2"]
     ),
     check!(records::the_old_layout_is_still_read, ["5.s2"]),
+    check!(
+        records::a_long_file_of_the_old_layout_is_read_page_by_page,
+        ["5.s2", "5.facts.since.input"]
+    ),
     check!(records::a_late_linked_file_is_still_given, ["5.s1", "5.s2"]),
     check!(
         records::rows_put_then_get_round_trips,

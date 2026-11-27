@@ -421,7 +421,10 @@ pub const SENTENCES: &[Sentence] = &[
     checked("5.facts.append.answer", "每条事实得到的次序标记"),
     outside("5.facts.append.cost", "条数", COST),
     checked("5.facts.since.input", "记录处、游标、`limit`"),
-    checked("5.facts.since.answer", "事实（按次序）和新游标"),
+    checked(
+        "5.facts.since.answer",
+        "事实（按次序）和新游标；没有游标时还可带 `files`：事实文件的个数",
+    ),
     checked("5.facts.since.cost", "新事实的条数，与已有总数无关"),
     checked("5.rows.put.input", "记录处、表名、行（键、可查的字段、值）"),
     checked("5.rows.put.answer", "完成"),

@@ -317,9 +317,11 @@ dependencies = [
 name = "pneuma-base-core"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "pneuma-base-contract",
  "pneuma-base-local",
  "pneuma-base-storage",
+ "serde",
  "serde_json",
 ]
 

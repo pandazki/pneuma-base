@@ -5,11 +5,13 @@
 // and answers what differs, never a walk. A token that differs is decided by content only where the
 // thing has a fingerprint to compare with; a directory nobody looked into stays one entry of the level
 // above; noise is never mentioned, since storage leaves it out.
+import { randomUUID } from 'node:crypto'
+import { hostname } from 'node:os'
 import { isDescribed, isFailure, regionOf, type ContentAnswer, type Description, type Glanced, type LibraryPath, type Looked, type Place, type PluginContext } from '@pneuma-base/kernel'
 import { FACT_PAGE, isFact, type ItemId } from './facts.js'
 import { foldFacts, foldOut, type FoldOut } from './fold.js'
 import { ancestors, expectations, live, nameOf, parentOf, putItem, putSeen, ROWS_VERSION, unlisted, type Entry, type ItemRow, type MarkRow, type SeenRow } from './model.js'
-import { pagesOf, Tx, wherePages } from './rows.js'
+import { pagesOf, PUT_ROWS, Tx, wherePages } from './rows.js'
 import { settle, settling, type Settling } from './settle.js'
 import type { LastLook } from './views.js'
 
@@ -45,12 +47,29 @@ export async function eachAtMost<T>(list: readonly T[], limit: number, f: (t: T)
 
 // ---- the rows brought up to the facts ----
 
-/** Folds every fact after the rows' cursor, a page at a time, each page settled and saved with its cursor. Answers the cursor the rows stand at. */
+/**
+ * Folds every fact after the rows' cursor, a page at a time, each page settled and saved with its
+ * cursor; with no rows, rebuilds them (`rebuild`), or waits for the process that does. Answers the
+ * cursor the rows stand at.
+ */
 export async function foldAll(ctx: PluginContext, out: FoldOut = foldOut()): Promise<string | null> {
   const records = ctx.tools.storage.records
   for (let tries = 0; ; tries++) {
-    const { rows, cursor } = await records.get<number>('meta', ['version'])
-    if (cursor !== null && rows[0]?.value !== ROWS_VERSION) {
+    const { rows, cursor } = await records.get<unknown>('meta', ['version', 'build'])
+    const meta = new Map(rows.map((r) => [r.key, r.value]))
+    const build = meta.get('build') as Build | undefined
+    if (build !== undefined) {
+      // Another rebuild holds the rows: wait for it; one that stopped part way is started again.
+      if (running(build)) await awaitBuild(ctx)
+      else await records.reset()
+      continue
+    }
+    if (cursor === null) {
+      const built = await rebuild(ctx, out)
+      if (built !== null) return built
+      continue
+    }
+    if (meta.get('version') !== ROWS_VERSION) {
       await records.reset()
       continue
     }
@@ -63,16 +82,138 @@ export async function foldAll(ctx: PluginContext, out: FoldOut = foldOut()): Pro
     const facts = page.facts.flatMap(({ fact }) => (isFact(fact) ? [fact] : []))
     if (facts.length === 0 && page.cursor === cursor) return cursor
     const tx = new Tx(records)
-    if (cursor === null) {
-      tx.set('meta', 'version', ROWS_VERSION)
-      putSeen(tx, '', unlisted())
-    }
     await foldFacts(tx, facts, out)
     await settle(tx, out)
     if (await tx.commit(page.cursor, cursor)) {
       if (!page.more) return page.cursor
     } else if (tries > 20) throw new Error('记账插件的行一直在被别的进程改写，没能读到一致的状态')
   }
+}
+
+// ---- the rows derived again from nothing ----
+
+/** A rebuild under way, as its row `meta/build` says: its claim, which process on which machine, its last sign of life, how far. */
+type Build = { claim: string; machine: string; pid: number; at: string; facts: number | null; done: number }
+
+/** A rebuild that has given no sign of life for this long stopped. */
+const BUILD_SILENT_MS = 60_000
+/** How often a rebuild gives a sign of life, and how often a process waiting for one looks. */
+const HEARTBEAT_MS = 2_000
+const AWAIT_MS = 200
+/** How many rows a rebuild keeps in memory; past that it saves them and reads them back from storage. */
+const REBUILD_ROWS = 1_000_000
+/** Rebuilds of fewer facts files than this pass without a word. */
+const SAY_FROM = 5_000
+/** How often a rebuild says how far it is. */
+const SAY_EVERY_MS = 1_000
+/** Tables the fold writes and never reads: a rebuild saves them while it reads on (they hold almost half the bytes). */
+const WRITTEN_ONLY = ['log', 'find', 'bytime', 'sceneOrder', 'hrev']
+
+/** Whether the process holding a rebuild is still at it: a sign of life lately, and on this machine, the process is there. */
+function running(build: Build): boolean {
+  if (Date.now() - Date.parse(build.at) > BUILD_SILENT_MS) return false
+  if (build.machine !== hostname()) return true
+  try {
+    process.kill(build.pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+/** What a rebuild says while it runs, on standard error; the one place a progress channel would take it from. */
+const say = (text: string) => void process.stderr.write(`${text}\n`)
+const howMany = (facts: number | null) => (facts === null ? '' : `：至少 ${facts} 条`)
+const progressLine = (done: number, facts: number | null) => (facts !== null && done < facts ? `已推出 ${done} / ${facts}` : `已推出 ${done}`)
+
+/** Waits while another process rebuilds the rows, saying what it says. */
+async function awaitBuild(ctx: PluginContext): Promise<void> {
+  const records = ctx.tools.storage.records
+  let said = false
+  let told = 0
+  for (;;) {
+    const { rows } = await records.get<Build>('meta', ['build'])
+    const build = rows[0]?.value
+    if (build === undefined || !running(build)) {
+      if (said && build === undefined) say('记账的行已重建。')
+      return
+    }
+    if (!said && (build.facts ?? 0) >= SAY_FROM) {
+      say(`另一个进程正在从事实重建记账的行${howMany(build.facts)}。`)
+      said = true
+    } else if (said && build.done > told) {
+      told = build.done
+      say(progressLine(build.done, build.facts))
+    }
+    await new Promise((resolve) => setTimeout(resolve, AWAIT_MS))
+  }
+}
+
+/**
+ * Derives the rows from every fact, with none to start from (another machine's library just synced
+ * in, rows of another shape, the cache deleted). It first claims the rows: `meta/build`, saved over no
+ * cursor, so of two processes one rebuilds and the other waits for it. Storage holds nothing else, so
+ * the fold reads no row from it: every row is in memory until the end (or `REBUILD_ROWS`), and the
+ * facts' next page is read while this one folds. The rows are saved in parts under the claim, the
+ * last with the cursor and without the claim. Answers that cursor, or null when the claim was lost
+ * or the facts changed under it: the caller looks again.
+ */
+async function rebuild(ctx: PluginContext, out: FoldOut): Promise<string | null> {
+  const records = ctx.tools.storage.records
+  const claim = `rebuild:${randomUUID()}`
+  const lease = (done: number, facts: number | null): Build => ({ claim, machine: hostname(), pid: process.pid, at: new Date().toISOString(), facts, done })
+  if (!(await records.put({ meta: [{ key: 'build', value: lease(0, null) }] }, { cursor: claim, expect: null })).written) return null
+  const started = performance.now()
+  let tx = new Tx(records, true)
+  tx.set('meta', 'version', ROWS_VERSION)
+  putSeen(tx, '', unlisted())
+  let page = await records.since(null, FACT_PAGE)
+  const facts = page?.files ?? null
+  const telling = (facts ?? 0) >= SAY_FROM
+  if (telling) {
+    say(`正在从事实重建记账的行${howMany(facts)}。`)
+    // A process that waits says the same at once.
+    if (!(await records.put({ meta: [{ key: 'build', value: lease(0, facts) }] }, { cursor: claim, expect: claim })).written) return null
+  }
+  let done = 0
+  let [beat, told] = [started, started]
+  // Saving what the fold only writes, a put at a time, beside the reading and folding.
+  let saving = Promise.resolve(true)
+  const saveWrittenOnly = () => {
+    const rows = tx.takeOut(WRITTEN_ONLY)
+    saving = saving.then(async (ok) => ok && (await records.put(rows, { expect: claim })).written)
+  }
+  for (;;) {
+    if (page === null) {
+      // The facts changed under the read: start again from nothing.
+      await records.reset()
+      return null
+    }
+    const next = page.more ? records.since(page.cursor, FACT_PAGE) : null
+    await foldFacts(tx, page.facts.flatMap(({ fact }) => (isFact(fact) ? [fact] : [])), out)
+    await settle(tx, out)
+    done += page.facts.length
+    if (next === null) break
+    if (tx.writtenTo(WRITTEN_ONLY) >= PUT_ROWS) saveWrittenOnly()
+    if (tx.size > REBUILD_ROWS) {
+      if (!(await saving) || !(await tx.commitInParts(claim, claim))) return null
+      tx = new Tx(records)
+    }
+    const now = performance.now()
+    if (now - beat >= HEARTBEAT_MS) {
+      beat = now
+      if (!(await records.put({ meta: [{ key: 'build', value: lease(done, facts) }] }, { cursor: claim, expect: claim })).written) return null
+    }
+    if (telling && now - told >= SAY_EVERY_MS) {
+      told = now
+      say(progressLine(done, facts))
+    }
+    page = await next
+  }
+  tx.set('meta', 'build', null)
+  if (!(await saving) || !(await tx.commitInParts(page.cursor, claim))) return null
+  if (telling) say(`记账的行已重建：${done} 条事实，${((performance.now() - started) / 1000).toFixed(1)} 秒。`)
+  return page.cursor
 }
 
 /** The rows brought up to the facts, nothing looked at. */
