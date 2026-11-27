@@ -2,7 +2,7 @@
 // names a file: one JSON line per call that lists, reads, probes or looks, with the place asked and how
 // many entries came back. The file is the test harness's, outside every library; unset, nothing is written.
 import { appendFileSync } from 'node:fs'
-import { isFailure, type PlaceStore, type PluginStorage, type RecordPlace } from '@pneuma-base/sdk'
+import { isFailure, type PlaceReader, type PluginStorage, type RecordPlace } from '@pneuma-base/sdk'
 
 /** One call: the plugin, the area (`content`, `own`, or the record place it named), the tool, the place, how many entries it answered, and whether a look went deep. */
 export type ToolCall = { plugin: string; area: string; tool: string; place?: string; entries?: number; reason?: string; deep?: true }
@@ -12,7 +12,7 @@ const write = (file: string, call: ToolCall) => appendFileSync(file, `${JSON.str
 const answered = (answer: unknown, entries: (a: never) => number): Pick<ToolCall, 'entries' | 'reason'> =>
   isFailure(answer) ? { reason: answer.reason } : { entries: entries(answer as never) }
 
-function placeStore(file: string, plugin: string, area: string, store: PlaceStore): PlaceStore {
+function placeStore<S extends PlaceReader>(file: string, plugin: string, area: string, store: S): S {
   const log = (call: Omit<ToolCall, 'plugin' | 'area'>) => write(file, { plugin, area, ...call })
   return {
     ...store,
@@ -41,7 +41,7 @@ function placeStore(file: string, plugin: string, area: string, store: PlaceStor
       log({ tool: 'read', place, ...answered(a, () => 1) })
       return a
     },
-  }
+  } as S
 }
 
 function records(file: string, plugin: string, area: string, place: RecordPlace): RecordPlace {

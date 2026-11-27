@@ -1,6 +1,6 @@
 // The kernel's helpers on a plugin's context, `PluginContext.tools`, bound to the operation's library:
 // storage in its own words, at the places a plugin's records point, through the one door.
-import { type Context, type LibraryPath, type Pass, type Place, type PlaceStore, type PluginName, type PluginStorage, type PluginTools, type WriteSource } from '@pneuma-base/sdk'
+import { type Context, type LibraryPath, type Pass, type Place, type PlaceReader, type PlaceStore, type PluginName, type PluginStorage, type PluginTools, type WriteSource } from '@pneuma-base/sdk'
 import { registerPage } from './catch-up.js'
 import { changesWithin } from './changes.js'
 import { archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
@@ -57,10 +57,14 @@ function placeStore(area: Area, own: PluginName, heard?: StorageHeard): PlaceSto
   }
 }
 
+/** The questions of a place store that change nothing. */
+const reader = ({ glance, overview, look, lookRows, content, read }: PlaceStore): PlaceReader => ({ glance, overview, look, lookRows, content, read })
+
 /**
  * What a plugin gets of storage: the content, its own record place and its content, holds, change
  * learned from the kernel's cursor, and the library's other record places by name (`places`, the
- * installed plugins). `heard` carries storage's progress on a content read or write to a pass.
+ * installed plugins), to read, and to copy in as bytes. `heard` carries storage's progress on a
+ * content read or write to a pass.
  */
 export function pluginStorage(store: Storage, name: PluginName, places: readonly string[], heard?: StorageHeard): PluginStorage {
   return {
@@ -76,9 +80,14 @@ export function pluginStorage(store: Storage, name: PluginName, places: readonly
     own: placeStore(store.own(name), name),
     records: store.records(name),
     recordPlaces: async () => [REQUESTS, ...places],
-    recordPlace(place) {
-      const { append, since } = store.records(place)
-      return { own: placeStore(store.own(place), name), facts: { append, since } }
+    recordPlace: (place) => ({ own: reader(placeStore(store.own(place), name)), facts: { since: store.records(place).since } }),
+    carry(place) {
+      const own = placeStore(store.own(place), name)
+      return {
+        copy: (at, from, expect) => own.write(at, { path: from }, expect),
+        remove: (at, expect) => own.remove(at, expect),
+        facts: (file, from) => store.carryFacts(place, file, from),
+      }
     },
   }
 }

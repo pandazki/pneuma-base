@@ -15,7 +15,7 @@ const MANIFEST_PAGE = 10_000
 const PENDING_PAGE = 100
 const GLANCE_PAGE = 1000
 
-/** What a hook call may still read; `Infinity` for the named whole action. */
+/** What a hook call may still read; `Infinity` for the named whole pass. */
 export type Budget = { files: number }
 
 type Store = PluginContext['tools']['storage']
@@ -132,20 +132,23 @@ class Reader {
 /**
  * Reads pending things while the budget lasts: those of `only` when given (the things of a put), else
  * every pending thing a page at a time. What it read is saved in the rows after the index has it.
+ * `afterPage` hears how many things it has read after each page, and stops it by answering true.
  */
-export async function readPending(ctx: PluginContext, index: SearchIndex, budget: Budget, only?: readonly LibraryPath[]): Promise<void> {
+export async function readPending(ctx: PluginContext, index: SearchIndex, budget: Budget, only?: readonly LibraryPath[], afterPage?: (things: number) => boolean): Promise<void> {
   const store = ctx.tools.storage
   const pages = async function* () {
     if (only !== undefined) yield [...(await rowsOf<Thing>(store.records, PENDING, only)).values()]
     else yield* pagesUnder<Thing>(store.records, PENDING, '', PENDING_PAGE)
   }
+  let things = 0
   for await (const page of pages()) {
     const reader = new Reader(store, index, budget)
     for (const { key, value } of page) {
       if (budget.files <= 0) break
       await reader.read(key as LibraryPath, value)
+      things++
     }
     if (reader.writes.size > 0) await store.records.put(reader.writes.rows())
-    if (budget.files <= 0) return
+    if (budget.files <= 0 || afterPage?.(things) === true) return
   }
 }

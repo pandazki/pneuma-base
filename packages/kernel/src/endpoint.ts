@@ -1,7 +1,7 @@
 // The local endpoint: the part of the management UI's server that agents talk to (the guide, pairing,
 // MCP over HTTP). It prefers one fixed port, so the sentence the owner says to an agent stays the
 // same from day to day, and writes the address it got to machine state, one file per running server:
-// `$PNEUMA_BASE_HOME/endpoints/<port>.json`. ARCHITECTURE.md section 6.
+// `$PNEUMA_BASE_HOME/endpoints/<port>.json`. ARCHITECTURE.md「端口和地址的记录」.
 import { readdir, readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { writeAtomic } from './machine-files.js'

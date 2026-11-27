@@ -2,7 +2,7 @@
 // a walk. Whoever needs change (a plugin's check, the home page's poll) keeps a mark, the cursor its
 // last answer carried, and asks storage what changed since it.
 //
-// Whoever stays listens; whoever runs once asks with a small budget (ARCHITECTURE.md, 「变化」).
+// Whoever stays listens; whoever runs once asks with a small budget (ARCHITECTURE.md「变化由谁来学」).
 // A long-lived process (the management UI's server) subscribes through storage, which then keeps a
 // log of what it hears; while it does, any process's ask is answered from that log at a cost that
 // follows what changed. Otherwise storage cannot say within the budget, and the asker compares the

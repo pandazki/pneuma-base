@@ -1,4 +1,4 @@
-// Storage providers on this machine (tmp/run-7 architecture.md, 「存储的实现是可以安装的」; PROVIDERS.md).
+// Storage providers on this machine (ARCHITECTURE.md「存储」; PROVIDERS.md).
 // A provider is any program that speaks STORAGE.md and answers `describe`. A library's address has a
 // form, a local path or a scheme, and the provider that answers it here is the one the door starts.
 //

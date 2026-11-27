@@ -6,7 +6,8 @@ import type { IconName } from '../../icons.js'
 import { formOf } from '../../params.js'
 import type { Action, Plugin, PluginAsk, PluginNoteAnswer, SayAnswer, SecretDecl } from '../../types.js'
 import { commands, switchName, SWITCH_PARAMS } from './commands.js'
-import { fold, newThingId } from './facts.js'
+import { newThingId } from './facts.js'
+import { foldedRecords } from './folded.js'
 import { declaredAt, factsOf, look, looks, record, settle, thingPath, thingsAt, withRun, type Kit } from './reconcile.js'
 import type { TargetAdapter } from './target.js'
 import { cognitionText, followed, lookText, skippedText, staysOnline, unsettledText } from './words.js'
@@ -141,8 +142,8 @@ export function deployPlugin(name: string, targets: TargetAdapter | readonly Tar
 
     /** Each thing declared deployable whose switch the owner never set, while it is in the library: put it online, or keep it off. */
     async onAsks(ctx) {
-      const { records } = await factsOf(ctx).read()
-      const waiting = [...fold(records).things.values()].filter((t) => !t.decided && ctx.tools.regionOf(t.path) === 'content')
+      const { d } = await foldedRecords(ctx, factsOf(ctx))
+      const waiting = [...d.things.values()].filter((t) => !t.decided && ctx.tools.regionOf(t.path) === 'content')
       const present = await thingsAt(ctx.tools, waiting.map((t) => t.path))
       const asks: PluginAsk[] = []
       for (const [i, thing] of waiting.entries()) {

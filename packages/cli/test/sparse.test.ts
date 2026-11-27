@@ -1,11 +1,13 @@
-// tmp/run-7: the records say what is in the library, and storage is looked at only where they point.
-// A directory no record points into is one line, never opened, even when nobody can read it; noise is
-// never mentioned; the rows are a cache that may be thrown away; an agent's start and check are bounded.
+// The records say what is in the library, and storage is looked at only where they point (ARCHITECTURE.md,
+// 「领域怎样建在存储上」). A directory no record points into is one line, never opened, even when nobody
+// can read it; noise is never mentioned; the rows are a cache that may be thrown away; an agent's start
+// and check are bounded, as text and as JSON.
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { AGENT_TEXT_LIMIT, bounded } from '../src/format.js'
+import { AGENT_JSON_LIMIT, AGENT_TEXT_LIMIT } from '../src/format.js'
 import { sandbox, tempDir, type Run, type Sandbox } from './helpers.js'
+import { call, connect } from './mcp-cases.js'
 
 let sb: Sandbox
 let lib: string
@@ -83,10 +85,41 @@ describe('an agent’s start and check', () => {
     expect(data.shown).toHaveLength(20)
   })
 
-  it('print at most 8 KB, the last line saying where the rest is', () => {
-    const lines = bounded(Array.from({ length: 5000 }, (_, i) => `  第 ${i} 行，一个很长的库内路径/它在这里/file-${i}.md`))
-    expect(Buffer.byteLength(lines.join('\n'))).toBeLessThanOrEqual(AGENT_TEXT_LIMIT)
-    expect(lines.at(-1)).toContain('后面的没有印出')
-    expect(bounded(['短的一行'])).toEqual(['短的一行'])
+  it('answer within 8 KB of text and 32 KB of JSON on every face, the JSON naming what the text names', async () => {
+    setUp()
+    // Thousands of registered things changed by hand, of files nobody registered, and hundreds of directories nobody registered.
+    for (let i = 0; i < 1000; i++) writeFileSync(join(lib, 'notes', `n${i}.md`), `${i}`)
+    for (let i = 0; i < 6; i++) agent(['put', 'notes', '--made'])
+    for (let i = 0; i < 1000; i++) writeFileSync(join(lib, 'notes', `n${i}.md`), `${i} changed by hand`)
+    for (let i = 0; i < 2000; i++) writeFileSync(join(lib, `loose-${i}.md`), `${i}`)
+    for (let i = 0; i < 300; i++) {
+      mkdirSync(join(lib, `dir-${i}`))
+      writeFileSync(join(lib, `dir-${i}`, 'x.md'), 'x')
+    }
+    const since = ['--since', '2000-01-01T00:00:00Z']
+    const text = agent(['check', ...since]).stdout
+    const json = agent(['check', '--json', ...since])
+    const check = json.json()
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(AGENT_TEXT_LIMIT)
+    expect(Buffer.byteLength(json.stdout)).toBeLessThanOrEqual(AGENT_JSON_LIMIT)
+    // Both forms stop at the same place and say where the rest is.
+    expect(text.match(/^- .*（ledger）$/gm)).toHaveLength(check.asks.length)
+    expect(check.cut.where).toContain('show ledger.standing')
+    for (const s of check.sections.filter((s: any) => s.data?.count > 20)) expect(s.data).toMatchObject({ more: expect.stringMatching(/^show ledger\.standing --kind /) })
+    expect(Buffer.byteLength(agent(['start', '--json', '看看库里有什么']).stdout)).toBeLessThanOrEqual(AGENT_JSON_LIMIT)
+    // find gives a page of 20 and the command for the next; the last page names no next.
+    const first = agent(['find', '--json', 'notes']).json()
+    expect(new Set(first.hits.map((h: { path: string }) => h.path)).size).toBe(20)
+    expect(first.more.next).toContain('--page 2')
+    const last = agent(['find', '--json', 'notes', '--page', String(Math.ceil(first.more.count / 20))]).json()
+    expect(last.more.next).toBeNull()
+    owner(['grant', 'issue', 'g', '--agent', 'claude-code'])
+    const client = await connect(sb, 'g', 'legacy')
+    try {
+      const r = await call(client, 'check', { since: '2000-01-01T00:00:00Z' })
+      expect(Buffer.byteLength(JSON.stringify(r.structuredContent))).toBeLessThanOrEqual(AGENT_JSON_LIMIT)
+    } finally {
+      await client.close()
+    }
   })
 })

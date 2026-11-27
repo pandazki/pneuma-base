@@ -1,6 +1,6 @@
 // What the sync shows: the sync.status page, its part of the item panel, and its section of check.
 // Each is a function of the files, the records and the baseline; showing changes nothing.
-import { formOf, type Action, type Block, type ItemSection, type LibraryPath, type PluginContext, type PluginSection, type ViewAnswer, type ViewDecl } from '@pneuma-base/kernel'
+import { formOf, TEXT_ROWS, type Action, type Block, type ItemSection, type LibraryPath, type PluginContext, type PluginSection, type ViewAnswer, type ViewDecl } from '@pneuma-base/kernel'
 import { TARGET_SET } from './commands.js'
 import { conflictCopies, countsText, notReadyText, pendingOf, status, when, type Prepared } from './sync.js'
 
@@ -113,7 +113,9 @@ export async function itemSection(path: LibraryPath, ctx: PluginContext): Promis
 export async function checkSections(ctx: PluginContext): Promise<PluginSection[]> {
   const copies = await conflictCopies(ctx)
   if (copies.length === 0) return []
-  const lines = copies.map((c) => `  ${c.copy}（${c.original} 的另一份）`)
-  const body = [`还有 ${copies.length} 份冲突副本：同步时两边都改过同一个文件，另一边的那份放在旁边。${RESOLVE}`, ...lines].join('\n')
-  return [{ title: '同步冲突', body, data: { conflicts: copies } }]
+  const shown = copies.slice(0, TEXT_ROWS)
+  const lines = shown.map((c) => `  ${c.copy}（${c.original} 的另一份）`)
+  const rest = copies.length > shown.length ? [`  ……看全部：show ${STATUS_VIEW.id}`] : []
+  const body = [`还有 ${copies.length} 份冲突副本：同步时两边都改过同一个文件，另一边的那份放在旁边。${RESOLVE}`, ...lines, ...rest].join('\n')
+  return [{ title: '同步冲突', body, data: { conflicts: shown, count: copies.length, ...(rest.length > 0 ? { more: `show ${STATUS_VIEW.id}` } : {}) } }]
 }

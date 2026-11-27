@@ -211,6 +211,20 @@ describe('the page of versioned things', () => {
     ])
     expect(await rows('show')).toContainEqual(['_archive/c.md', '1 版', '已归档'])
   })
+
+  it('lists the versioned things a page at a time, with the way to the next page', async () => {
+    const { put, declare, plugin } = await library()
+    for (const name of ['a.md', 'b.md', 'c.md']) {
+      await put(name, name)
+      await declare(name)
+    }
+    const first = await version.onView?.({ view: 'version.things', params: {}, size: 2 }, plugin())
+    const table = only(first?.blocks ?? [], 'table')
+    expect(table?.rows).toHaveLength(2)
+    expect(table?.page).toMatchObject({ first: 1, shown: 2, total: 3 })
+    const rest = await version.onView?.({ view: 'version.things', params: table?.page?.next?.params ?? {}, size: 2 }, plugin())
+    expect(only(rest?.blocks ?? [], 'table')?.rows).toHaveLength(1)
+  })
 })
 
 /** The plugin's context, with every call that reads a thing's content counted: a copy from a place, a fingerprint, a read. */
@@ -249,7 +263,7 @@ describe('check over many declared things', () => {
 
     writeFileSync(join(root, 'notes/n07.md'), 'by hand')
     const changed = await check()
-    expect(changed.sections.map((s) => s.data)).toEqual([{ recorded: [{ path: 'notes/n07.md', version: 2 }], missing: [] }])
+    expect(changed.sections.map((s) => s.data)).toEqual([{ recorded: [{ path: 'notes/n07.md', version: 2 }], missing: [], count: { recorded: 1, missing: 0 } }])
     expect(changed.reads).toHaveLength(1)
     expect(await check()).toEqual({ sections: [], reads: [] })
     const counts = await Promise.all(names.map(async (name) => ((await owned('version list', [name])) as any).data.versions.length))

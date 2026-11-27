@@ -1,6 +1,6 @@
 // What the management UI shows, in the kernel's block types only: a thing's section of the item
 // panel, and the page of every versioned thing. Pure.
-import { formOf, type Action, type Block, type ItemSection, type LibraryPath, type Link, type Tag, type TableRow, type ViewAnswer, type ViewDecl } from '@pneuma-base/kernel'
+import { formOf, type Action, type Block, type ItemSection, type LibraryPath, type Link, type Paging, type Tag, type TableRow, type ViewAnswer, type ViewDecl } from '@pneuma-base/kernel'
 import { VERSION_EXPORT, VERSION_PRUNE, VERSION_RESTORE } from './commands.js'
 import { latest, type Thing, type Version } from './model.js'
 import { aboutVersion, archived, minute, whoText } from './text.js'
@@ -98,10 +98,9 @@ function stateTag(thing: Thing, state: DiskState): Tag {
   return state === 'changed' ? { text: '有没记下的改动', tone: 'warn' } : { text: '已记下', tone: 'good' }
 }
 
-/** Every thing declared versioned that is in the library, archived ones only when asked. */
-export function thingsPage(things: { thing: Thing; state: DiskState }[], showArchived: boolean): ViewAnswer {
-  const listed = things.filter(({ thing }) => showArchived || !archived(thing))
-  const rows: TableRow[] = listed.map(({ thing, state }) => {
+/** A page of the things declared versioned that are in the library. */
+export function thingsPage(things: { thing: Thing; state: DiskState }[], page: Paging): ViewAnswer {
+  const rows: TableRow[] = things.map(({ thing, state }) => {
     const last = latest(thing)
     return {
       key: thing.id,
@@ -124,5 +123,5 @@ export function thingsPage(things: { thing: Thing; state: DiskState }[], showArc
     { key: 'state', label: '状态' },
   ]
   const empty = '还没有声明有版本的东西。agent 用 say versioned <库内路径> 声明。'
-  return { title: THINGS_VIEW.title, subtitle: `${listed.length} 样`, blocks: [{ kind: 'table', columns, rows, empty }] }
+  return { title: THINGS_VIEW.title, subtitle: `${page.total} 样`, blocks: [{ kind: 'table', columns, rows, empty, page }] }
 }

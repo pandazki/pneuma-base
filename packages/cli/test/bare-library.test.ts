@@ -83,7 +83,7 @@ describe('a library with no plugin', () => {
     const out = r.json()
     expect(out.say).toMatchObject({ outcome: 'not-heard', reason: 'no-plugin-for-kind' })
     expect(out.check).toEqual({ sections: [], asks: [], requests: { ended: [], pending: 0 }, problems: [] })
-    // Finding asks the plugins' records (tmp/run-7), and a library with no plugin keeps none.
+    // Finding asks the plugins' records (ARCHITECTURE.md「找、看、说、查、归档」), and a library with no plugin keeps none.
     expect(out.find.hits).toEqual([])
     expect(agent(['find', 'payments']).json().hits).toEqual([])
   })

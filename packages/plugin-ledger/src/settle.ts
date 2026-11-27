@@ -2,7 +2,7 @@
 // (loose files and directories nobody looked into), each thing's state and the marks on what was made
 // from it (stale, source gone, marked upstream), things nobody knows the origin of, and a missing thing
 // found again where exactly one stray of its kind, size and moment is. Only the things a change touched
-// and what was made from them are worked out again. tmp/run-7 architecture.md section 5.
+// and what was made from them are worked out again. ARCHITECTURE.md「怎么看库」.
 import { KERNEL_ENTRIES, placeIn, type LibraryPath, type Place } from '@pneuma-base/kernel'
 import type { Basis, ItemId } from './facts.js'
 import { live, markKey, putItem, putMark, putSeen, sigOf, versionNow, type ItemRow, type MarkKind, type MarkRow, type Ref, type SeenRow } from './model.js'

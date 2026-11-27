@@ -1,7 +1,6 @@
 // What the server reads from disk itself, none of it a library's: a plugin's page files, and a cheap
 // stamp of what changed in a folder of this machine's state.
-import { createHash } from 'node:crypto'
-import { lstat, readdir, realpath, stat } from 'node:fs/promises'
+import { realpath, stat } from 'node:fs/promises'
 import { join, sep } from 'node:path'
 
 /**
@@ -25,22 +24,11 @@ export async function pluginUiFile(ui: string, rest: string): Promise<string | n
   return (await stat(real)).isFile() ? real : null
 }
 
-/** A short stamp of every name, size and modification time under `dir`. It changes when anything there changes. */
-export async function revision(dir: string): Promise<string> {
-  const hash = createHash('sha1')
-  const walk = async (folder: string, rel: string): Promise<void> => {
-    const entries = await readdir(folder, { withFileTypes: true }).catch(() => [])
-    for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : 1))) {
-      const name = rel === '' ? entry.name : `${rel}/${entry.name}`
-      if (entry.isDirectory()) {
-        hash.update(`${name}/\n`)
-        await walk(join(folder, entry.name), name)
-      } else {
-        const s = await lstat(join(folder, entry.name)).catch(() => null)
-        if (s) hash.update(`${name}\0${s.size}\0${s.mtimeMs}\n`)
-      }
-    }
-  }
-  await walk(dir, '')
-  return hash.digest('hex').slice(0, 16)
+/**
+ * A stamp of a folder whose files are only added, each written once: the folder's own modification
+ * time, which moves whenever an entry is added or removed. One look, however many files it holds.
+ */
+export async function addedStamp(dir: string): Promise<string> {
+  const s = await stat(dir, { bigint: true }).catch(() => null)
+  return s === null ? 'none' : String(s.mtimeNs)
 }

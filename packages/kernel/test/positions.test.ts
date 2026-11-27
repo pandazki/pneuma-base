@@ -1,4 +1,4 @@
-// tmp/run-7 architecture.md section 5: what each action does at each kind of place, the kernel's cells.
+// ARCHITECTURE.md「每个动作在每种位置上做什么」: what each action does at each kind of place, the kernel's cells.
 // A place is a registered file, a directory registered as one thing, an open directory (one with
 // registered things in it), a directory nobody looked into (closed), or noise. "Registered" is a
 // plugin's word: here a contract-2 watcher plugin says which directories are open. The cells of

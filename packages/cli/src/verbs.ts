@@ -1,12 +1,13 @@
 // The agent face as its faces offer it: each verb's arguments as data, and what it runs and answers.
 // The command line reads a verb's words by this table, the MCP server makes a tool's input schema
-// from it, and both call the same `run`, so the two faces answer the same. ARCHITECTURE.md section 4.
+// from it, and both call the same `run`, so the two faces answer the same. ARCHITECTURE.md「一张命令表生成各个面」.
 import { existsSync, statSync } from 'node:fs'
 import { isAbsolute, resolve } from 'node:path'
 import {
   agentFace,
   ownerFace,
   parseLibraryPath,
+  quote,
   TEXT_ROWS,
   viewerFace,
   type Context,
@@ -24,7 +25,7 @@ import {
   type OwnerArgs,
 } from '@pneuma-base/kernel'
 import { UsageError, argsOf, leadingWords, matchCommand, type Line } from './args.js'
-import { archiveText, askText, checkText, findText, inspectText, putText, sayText, startText } from './format.js'
+import { archiveText, askText, checkAnswer, FIND_ROWS, findAnswer, inspectText, putText, sayText, startAnswer } from './format.js'
 import { pageText, viewListText } from './page.js'
 
 /** 0 answered; 2 refused; 3 accepted but a plugin reported a problem. Usage errors are 1. */
@@ -176,7 +177,7 @@ export const VERBS: readonly Verb[] = [
       const say = await agentFace.say({ kind: 'doing', about: null, text: sentence, args: {} }, ctx)
       const check = await agentFace.check({ since: 'last', includeArchived: false }, ctx)
       const find = await agentFace.find({ text: sentence, match: 'words', filters: {}, includeArchived: false, skipOwnSession: true }, ctx)
-      return { json: { say, check, find }, lines: startText(say, check, find, ownerFace.commands(library.plugins), library.root), exit: exitOf(say, check, find) }
+      return { ...startAnswer(say, check, find, sentence, ownerFace.commands(library.plugins), library.root), exit: exitOf(say, check, find) }
     },
   }),
   verb({
@@ -185,12 +186,18 @@ export const VERBS: readonly Verb[] = [
     readOnly: true,
     params: {
       positional: [{ name: 'text', hint: '文字', words: true }],
-      flags: [INCLUDE_ARCHIVED, { name: 'scene', hint: '场景号：只要这个场景的', kind: 'value' }, { name: 'origin', hint: 'brought 或 made：只要带进来的或做出来的', kind: 'value' }],
+      flags: [
+        INCLUDE_ARCHIVED,
+        { name: 'scene', hint: '场景号：只要这个场景的', kind: 'value' },
+        { name: 'origin', hint: 'brought 或 made：只要带进来的或做出来的', kind: 'value' },
+        { name: 'page', hint: `第几页，每页 ${FIND_ROWS} 样；不写是第 1 页`, kind: 'value', pattern: '[1-9][0-9]{0,5}' },
+      ],
     },
-    run: async ({ text, scene, origin, 'include-archived': includeArchived }, { bound: { ctx } }) => {
+    run: async ({ text, scene, origin, 'include-archived': includeArchived, page }, { bound: { ctx } }) => {
       const filters = Object.fromEntries(Object.entries({ scene, origin }).filter((e): e is [string, string] => e[1] !== null))
       const r = await agentFace.find({ text, match: 'terms', filters, includeArchived, skipOwnSession: false }, ctx)
-      return { json: r, lines: findText(r), exit: exitOf(r) }
+      const words = [...(text === null ? [] : [quote(text)]), ...Object.entries(filters).flatMap(([k, v]) => [`--${k}`, quote(v)]), ...(includeArchived ? ['--include-archived'] : [])]
+      return { ...findAnswer(r, page === null ? 1 : Number(page), (n) => ['find', ...words, '--page', String(n)].join(' ')), exit: exitOf(r) }
     },
   }),
   verb({
@@ -274,7 +281,7 @@ export const VERBS: readonly Verb[] = [
       const scope = dir === null || dir === '.' ? null : parseLibraryPath(library.root, dir)
       if (dir !== null && dir !== '.' && scope === null) throw new UsageError(`这不是库里的目录：${dir}`)
       const r = await agentFace.check({ since: sinceOf(since), includeArchived, ...(deep ? { deep: { dir: scope } } : {}) }, ctx)
-      return { json: r, lines: checkText(r, ownerFace.commands(library.plugins), library.root), exit: exitOf(r) }
+      return { ...checkAnswer(r, ownerFace.commands(library.plugins), library.root), exit: exitOf(r) }
     },
   }),
   archiving('archive', '不用了，把一样东西归档：不删，默认的找和查不再带它'),

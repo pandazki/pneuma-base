@@ -95,7 +95,7 @@ describe('a bundle with the ledger', () => {
     expect(ledgerData(restored)).toMatchObject({ origin: { kind: 'brought', by: 'owner' } })
   })
 
-  // tmp/run-7 section 5: the ledger finds by its records (the path, what was said), not by the text
+  // ARCHITECTURE.md「找、看、说、查、归档」: the ledger finds by its records (the path, what was said), not by the text
   // inside a bundle. The kernel marks a bundle's hit 目录.
   it('find matches a bundle by its record with the ledger, under its scene with its origin, and not by the text inside', () => {
     ok(l.agent(['start', '做早鸟预订页'], 's3'))
@@ -107,7 +107,7 @@ describe('a bundle with the ledger', () => {
     expect(found).toMatch(/sites\/landing\s+目录，做出来的/)
   })
 
-  // tmp/run-7 section 5: check compares a directory-thing's token and its first level; an edit
+  // ARCHITECTURE.md「每个动作在每种位置上做什么」: check compares a directory-thing's token and its first level; an edit
   // deeper inside is for the named deep look, which reads content.
   it('is consistent in check, and an edit in its first level shows the bundle as changed', () => {
     // Only what was made from a file of the replaced tree may be stale; the bundle itself is in order.
@@ -120,7 +120,7 @@ describe('a bundle with the ledger', () => {
   })
 })
 
-// tmp/run-7 section 5: registering a directory that holds registered things registers its loose
+// ARCHITECTURE.md「放」: registering a directory that holds registered things registers its loose
 // files and leaves it open; the marker is what makes such a directory one thing.
 describe('registering a folder whose files are on record, with the marker written', () => {
   let l: ReturnType<typeof library>

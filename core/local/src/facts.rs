@@ -23,8 +23,8 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 use pneuma_base_storage::{
-    Ctx, Fact, FactsAppendAnswer, FactsAppendRequest, FactsSinceAnswer, FactsSinceRequest, Failure,
-    RecordPlace, Time,
+    Ctx, Fact, FactsAppendAnswer, FactsAppendRequest, FactsCarryAnswer, FactsCarryRequest,
+    FactsSinceAnswer, FactsSinceRequest, Failure, Reason, RecordPlace, Time,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -184,6 +184,41 @@ impl LocalFolder {
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
                 Err(error) => return Err(io_failure(&error)),
             }
+        }
+    }
+
+    /// Puts a facts file written elsewhere in whole, under its own name in its day: as a sync of
+    /// the folder would, never replacing a file of that name.
+    pub fn carry_facts(&self, req: &FactsCarryRequest) -> Result<FactsCarryAnswer, Failure> {
+        self.refuse_inside(&req.from).map_err(Failure::of_source)?;
+        let meta =
+            fs::metadata(&req.from).map_err(|_| Failure::new(Reason::NoSuchPlace).of_source())?;
+        if !meta.is_file() {
+            return Err(Failure::new(Reason::NotAFile).of_source());
+        }
+        let dir = self.facts_dir(&req.place).join(&req.day);
+        let target = dir.join(&req.name);
+        if fs::symlink_metadata(&target).is_ok() {
+            return Ok(FactsCarryAnswer { carried: false });
+        }
+        fs::create_dir_all(&dir).map_err(|e| io_failure(&e))?;
+        let seq = SEQ.fetch_add(1, AtomicOrdering::Relaxed);
+        let temp = dir.join(format!(".{}.{}-{seq}.tmp", req.name, writer()));
+        let written = fs::copy(&req.from, &temp)
+            .and_then(|_| File::open(&temp))
+            .and_then(|file| crate::sys::fsync(&file));
+        if let Err(error) = written {
+            let _ = fs::remove_file(&temp);
+            return Err(io_failure(&error));
+        }
+        let linked = fs::hard_link(&temp, &target);
+        let _ = fs::remove_file(&temp);
+        match linked {
+            Ok(()) => Ok(FactsCarryAnswer { carried: true }),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                Ok(FactsCarryAnswer { carried: false })
+            }
+            Err(error) => Err(io_failure(&error)),
         }
     }
 

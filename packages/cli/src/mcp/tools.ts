@@ -1,7 +1,7 @@
 // The API face of one library: the verbs and the business owner commands as MCP tools, generated from
 // the table the command line reads, answering what the command line answers; the description and the
 // pages as resources. Management is not listed, and a call to it by name meets the owner face's gate.
-// ARCHITECTURE.md section 6.
+// ARCHITECTURE.md「MCP 服务」.
 import {
   assembleDescription,
   identifyActor,

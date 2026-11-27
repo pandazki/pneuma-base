@@ -1,5 +1,5 @@
 // What the ledger answers: data for --json and short Chinese text for agents. Pure, except that
-// text reads the home directory to show it as ~ (the kernel's shortDir). ledger-design.md section 7.
+// text reads the home directory to show it as ~ (the kernel's shortDir). ARCHITECTURE.md「找和看」.
 import { regionOf, shortDir, type Fingerprint, type Instant, type LibraryPath, type PluginSection } from '@pneuma-base/kernel'
 import { ADHOC_SCENE, type Fact, type FactActor, type How, type ItemId, type SceneId } from './facts.js'
 import type { Conversation } from './conversation.js'
@@ -340,8 +340,8 @@ function rowData(kind: StandingKind, m: MarkRow) {
 
 /**
  * check's sections, empty ones left out. Each names at most `limit` things, then how many there are and
- * the page that lists them all; `data` carries the same first ones and the count. `partial`: open
- * directories with more entries than one look lists.
+ * the page that lists them all; `data` carries the same first ones, the count, and that page's command
+ * when it names fewer than all. `partial`: open directories with more entries than one look lists.
  */
 export function standingSections(lists: readonly StandingList[], partial: readonly { dir: string; atLeast: number }[], limit = LIST_LIMIT): PluginSection[] {
   const more = partial.map((m) => `${m.dir === '' ? '库的根目录' : `${m.dir}/`}的条目多，只看了前面的，至少还有 ${m.atLeast} 个没看。`)
@@ -350,9 +350,11 @@ export function standingSections(lists: readonly StandingList[], partial: readon
     .map((l) => {
       const shown = l.rows.slice(0, limit)
       const total = `${l.atLeast ? '至少 ' : ''}${l.count}`
-      const rest = l.count > shown.length ? [`  ……共 ${total} 样，看全部：show ledger.standing --kind ${l.kind}`] : []
+      const all = `show ledger.standing --kind ${l.kind}`
+      const rest = l.count > shown.length ? [`  ……共 ${total} 样，看全部：${all}`] : []
       const after = [...(l.kind === 'unowned' ? more : []), ...(AFTER[l.kind] ? [AFTER[l.kind] as string] : [])]
-      return { title: TITLES[l.kind], body: [...shown.map((m) => standingLine(l.kind, m)), ...rest, ...after].join('\n'), data: { count: l.count, shown: shown.map((m) => rowData(l.kind, m)) } }
+      const data = { count: l.count, shown: shown.map((m) => rowData(l.kind, m)), ...(rest.length > 0 ? { more: all } : {}) }
+      return { title: TITLES[l.kind], body: [...shown.map((m) => standingLine(l.kind, m)), ...rest, ...after].join('\n'), data }
     })
 }
 

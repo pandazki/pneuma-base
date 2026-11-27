@@ -1,4 +1,4 @@
-// Installing storage providers for real (tmp/run-7 architecture.md, 「存储的实现是可以安装的」): each
+// Installing storage providers for real (ARCHITECTURE.md「存储」; PROVIDERS.md): each
 // install runs the whole contract suite against the program, about half a minute. A good provider
 // installs once the owner accepts it; a library created at an address it answers is served by it, the
 // door choosing by address, while a folder stays the local folder's; updating is vetted again; one that

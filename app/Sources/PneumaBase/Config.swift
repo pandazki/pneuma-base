@@ -65,11 +65,16 @@ struct CliResult: Sendable {
 
 /// Runs `pneuma-base <args>` to the end and collects what it printed.
 func runCli(_ args: [String], in dir: URL, config: Config) async -> CliResult {
+  await runProgram(config.node, [config.cli] + args, in: dir, config: config)
+}
+
+/// Runs a program to the end and collects what it printed.
+func runProgram(_ program: String, _ args: [String], in dir: URL, config: Config) async -> CliResult {
   await withCheckedContinuation { done in
     DispatchQueue.global(qos: .userInitiated).async {
       let p = Process()
-      p.executableURL = URL(fileURLWithPath: config.node)
-      p.arguments = [config.cli] + args
+      p.executableURL = URL(fileURLWithPath: program)
+      p.arguments = args
       p.environment = config.childEnvironment
       p.currentDirectoryURL = dir
       let out = Pipe(), err = Pipe()
@@ -152,6 +157,36 @@ enum Log {
   }
 }
 
-func isLibrary(_ dir: URL) -> Bool {
-  FileManager.default.fileExists(atPath: dir.appendingPathComponent(".pneuma-base/config.json").path)
+/// The program of the storage provider that answers for a library's address, as `storage list` names it.
+@MainActor
+func providerProgram(for library: URL, config: Config) async -> String? {
+  let r = await runCli(["storage", "list", "--library", library.path, "--json"], in: FileManager.default.temporaryDirectory, config: config)
+  let data = r.json?["data"] as? [String: Any]
+  let used = (data?["library"] as? [String: Any])?["provider"] as? String
+  let providers = data?["providers"] as? [[String: Any]] ?? []
+  guard let program = providers.first(where: { $0["name"] as? String == used })?["executable"] as? String else {
+    Log.line("storage: no provider answers for \(library.lastPathComponent): \(r.json?["reason"] as? String ?? "\(r.err.prefix(200)) \(String(decoding: r.out.prefix(200), as: UTF8.self))")")
+    return nil
+  }
+  return program
+}
+
+/// The real path of a folder: the kernel speaks to storage at it, so the app does too.
+func realPath(_ url: URL) -> String {
+  realpath(url.path, nil).map { p in defer { free(p) }; return String(cString: p) } ?? url.path
+}
+
+/// One of storage's read-only operations on a library, answered by a run of its provider's program.
+/// The app looks at a library only through storage.
+@MainActor
+func askStorage(_ op: String, _ body: [String: Any], of library: URL, config: Config) async -> [String: Any]? {
+  guard let program = await providerProgram(for: library, config: config), let request = try? JSONSerialization.data(withJSONObject: body) else { return nil }
+  return await runProgram(program, [op, "--root", realPath(library), String(decoding: request, as: UTF8.self)], in: FileManager.default.temporaryDirectory, config: config).json
+}
+
+/// Whether a folder holds a library: storage has a declaration at its root, as the kernel asks it
+/// (`declaration.read`, which only reads and makes nothing).
+@MainActor
+func isLibrary(_ dir: URL, config: Config) async -> Bool {
+  await askStorage("declaration.read", [:], of: dir, config: config)?["declaration"] is [String: Any]
 }

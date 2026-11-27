@@ -30,6 +30,8 @@ export type Deployments = {
   sites: Map<TargetKey, Map<SiteName, OnTarget>>
   /** A path declared twice, as two machines may before they sync, is one thing: the later id points at the first. */
   alias: Map<ThingId, ThingId>
+  /** The id of the fact that declared each thing: things are listed in that order. */
+  declaration: Map<ThingId, string>
 }
 
 export const newThingId = () => `d_${randomBytes(5).toString('hex')}` as ThingId
@@ -58,6 +60,7 @@ export function apply(d: Deployments, f: Fact): void {
       }
       d.things.set(f.thing, { id: f.thing, path: f.path, on: false, decided: false, declaredAt: f.at, declaredBy: f.actor.name, note: f.note })
       d.byPath.set(f.path, f.thing)
+      d.declaration.set(f.thing, f.id)
       return
     }
     case 'switch':
@@ -66,7 +69,10 @@ export function apply(d: Deployments, f: Fact): void {
     case 'move': {
       if (!thing) return
       const displaced = d.byPath.get(f.to)
-      if (displaced !== undefined && displaced !== id) d.things.delete(displaced)
+      if (displaced !== undefined && displaced !== id) {
+        d.things.delete(displaced)
+        d.declaration.delete(displaced)
+      }
       if (d.byPath.get(thing.path) === id) d.byPath.delete(thing.path)
       thing.path = f.to
       d.byPath.set(f.to, id)
@@ -75,6 +81,7 @@ export function apply(d: Deployments, f: Fact): void {
     case 'remove':
       if (!thing) return
       d.things.delete(id)
+      d.declaration.delete(id)
       if (d.byPath.get(thing.path) === id) d.byPath.delete(thing.path)
       return
     case 'publish':
@@ -87,7 +94,7 @@ export function apply(d: Deployments, f: Fact): void {
 
 /** Applies the facts in the order given, which is the store's id order: by time, then by writer and order within it. */
 export function fold(facts: readonly Fact[]): Deployments {
-  const d: Deployments = { things: new Map(), byPath: new Map(), sites: new Map(), alias: new Map() }
+  const d: Deployments = { things: new Map(), byPath: new Map(), sites: new Map(), alias: new Map(), declaration: new Map() }
   for (const f of facts) apply(d, f)
   return d
 }

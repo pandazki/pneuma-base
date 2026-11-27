@@ -1,4 +1,4 @@
-// Whoever stays listens; whoever runs once asks with a small budget (tmp/run-7 step 3b).
+// Whoever stays listens; whoever runs once asks with a small budget (ARCHITECTURE.md「变化由谁来学」).
 import { describe, expect, it } from 'vitest'
 import { changesSince } from '../src/changes.js'
 import { storageOf } from '../src/storage.js'

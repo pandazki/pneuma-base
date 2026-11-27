@@ -33,13 +33,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use pneuma_base_storage::{
     ChangedAnswer, ChangedRequest, ContentAnswer, ContentRequest, Ctx, DeclarationAnswer,
     DeclarationWriteRequest, DeclarationWritten, FactsAppendAnswer, FactsAppendRequest,
-    FactsSinceAnswer, FactsSinceRequest, Failure, GlanceAnswer, GlanceRequest, HoldAnswer,
-    HoldRequest, InitAnswer, LookAnswer, LookFrom, LookItem, LookPage, LookRequest, MoveAnswer,
-    MoveRequest, NoiseAnswer, NoiseChange, NoiseEdit, OverviewAnswer, OverviewRequest, Place,
-    ProbeAnswer, ProbeRequest, ReadAnswer, ReadRequest, Reason, RecordPlace, RemoveAnswer,
-    RemoveRequest, RowsGetAnswer, RowsGetRequest, RowsPage, RowsPutRequest, RowsUnderRequest,
-    RowsWhereAnswer, RowsWhereRequest, Storage, StorageInfo, SubscribeRequest, Time, WriteAnswer,
-    WriteRequest,
+    FactsCarryAnswer, FactsCarryRequest, FactsSinceAnswer, FactsSinceRequest, Failure,
+    GlanceAnswer, GlanceRequest, HoldAnswer, HoldRequest, InitAnswer, LookAnswer, LookFrom,
+    LookItem, LookPage, LookRequest, MoveAnswer, MoveRequest, NoiseAnswer, NoiseChange, NoiseEdit,
+    OverviewAnswer, OverviewRequest, Place, ProbeAnswer, ProbeRequest, ReadAnswer, ReadRequest,
+    Reason, RecordPlace, RemoveAnswer, RemoveRequest, RowsGetAnswer, RowsGetRequest, RowsPage,
+    RowsPutRequest, RowsUnderRequest, RowsWhereAnswer, RowsWhereRequest, Storage, StorageInfo,
+    SubscribeRequest, Time, WriteAnswer, WriteRequest,
 };
 
 use area::absent;
@@ -313,6 +313,10 @@ impl Storage for LocalFolder {
 
     fn facts_since(&self, req: &FactsSinceRequest, ctx: &Ctx) -> Result<FactsSinceAnswer, Failure> {
         self.facts_after(req, ctx)
+    }
+
+    fn facts_carry(&self, req: &FactsCarryRequest) -> Result<FactsCarryAnswer, Failure> {
+        self.carry_facts(req)
     }
 
     fn rows_put(&self, req: &RowsPutRequest) -> Result<(), Failure> {

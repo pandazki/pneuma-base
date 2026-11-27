@@ -1,4 +1,4 @@
-// The kernel's own owner commands, as data shaped like a plugin's OwnerCommand. ARCHITECTURE.md section 6.
+// The kernel's own owner commands, as data shaped like a plugin's OwnerCommand. ARCHITECTURE.md「命令表」.
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'

@@ -212,7 +212,7 @@ I wanted my state ("在线") and PneumaSpace's own status ("registered" / "remov
 The UI keeps no route in the URL. It opens the first navigation view, which is the first installed plugin's. A CLI answer cannot say "open the PneumaSpace page", and to screenshot my page I had to make a library where `space` was the first plugin installed. Wanted: `…/?token=…#view=space.sites`, plus a way for an owner command's answer to carry a link to a view.
 
 **P8. A network-backed page is polled every two seconds.**
-The UI re-requests the page every two seconds (ARCHITECTURE §6). Each request makes my page call `GET /api/apps`, then `GET /api/apps/<name>` for each site, and rebuild every switched-on site's tar to get its bundle id. A view cannot say "refresh every 30 s" or "this is as of 12:03". Wanted:
+The UI re-requests the page every two seconds (ARCHITECTURE.md「什么时候重取」). Each request makes my page call `GET /api/apps`, then `GET /api/apps/<name>` for each site, and rebuild every switched-on site's tar to get its bundle id. A view cannot say "refresh every 30 s" or "this is as of 12:03". Wanted:
 ```ts
 { title, subtitle, blocks, refresh: 30, asOf: '2026-11-26T03:12:00Z' }
 ```
@@ -232,7 +232,7 @@ These are things I could learn only from kernel or built-in plugin source. Each 
 
 **D2. Owner-event payloads.** `archive purge` answers `data.paths`, a list of `_archive/…` paths (`kernel/src/owner-commands.ts:188`). Question: *Which owner commands' events carry data plugins may rely on, and in what shape?*
 
-**D3. Which hook follows moves and archives.** ARCHITECTURE §13 says in passing that the deploy plugin uses `onPut`/`onArchive`, not `observe`, because only they get resolved paths. I confirmed it in `plugin-deploy/src/index.ts`. Question: *For each agent verb, which hook sees resolved paths, and in which order are `onPut`, `onArchive` and `observe` called?*
+**D3. Which hook follows moves and archives.** ARCHITECTURE.md「插件机制」 says in passing that the deploy plugin uses `onPut`/`onArchive`, not `observe`, because only they get resolved paths. I confirmed it in `plugin-deploy/src/index.ts`. Question: *For each agent verb, which hook sees resolved paths, and in which order are `onPut`, `onArchive` and `observe` called?*
 
 **D4. Exit codes.** A plugin's problem turns a successful verb into exit 3 (`cli/src/main.ts:126`). A refusal is 2, and a refusal with reason `usage` is 1 (deploy's `commands.ts` comment). Question: *Which outcomes map to which exit codes, and how does a plugin choose one?*
 
@@ -242,33 +242,33 @@ These are things I could learn only from kernel or built-in plugin source. Each 
 
 **D7. Validation of view answers.** The kernel checks only that an answer has a string `title` and an array `blocks` (`kernel/src/viewer.ts:288`). A malformed block reaches the web page unchecked. Question: *Which block fields are required, and what does the viewer do with a block it cannot render?*
 
-**D8. What a view may do.** "视图不是操作，不改东西" (§5) forbids writes. Nothing says whether a view may call the network, how long it may take, or how often it runs. Question: *May a view do I/O beyond the library, under what time limit, and at what call rate?* (see P8)
+**D8. What a view may do.** "视图不是操作，不改东西" (ARCHITECTURE.md「视图是只读的命令」) forbids writes. Nothing says whether a view may call the network, how long it may take, or how often it runs. Question: *May a view do I/O beyond the library, under what time limit, and at what call rate?* (see P8)
 
 **D9. Plugin directory and module loading.** The loader imports `index.js` (`kernel/src/plugin-table.ts:31-43`). Nothing says what else may be in the directory, or when a changed file is picked up. Question: *What is the layout of `plugins/<name>/`, and when is a changed plugin reloaded?* (see B3, B4)
 
 **D10. What makes a default export a plugin.** The exact checks are in `parsePlugin` (`kernel/src/plugin-table.ts:46-56`): the name equals the directory name, three lists, and the cognition shape. Question: *What does the loader check, and what does it leave to call time?*
 
-**D11. Whether the kernel creates `ctx.dir`.** §5 says the kernel does not create `cacheDir`. It says nothing about `dir`. The kernel creates `.pneuma-base/<name>/` whenever the configuration is saved (`kernel/src/library.ts:59`). Question: *Does `ctx.dir` exist when a hook runs, also in a library that arrived by sync before this machine added the plugin?*
+**D11. Whether the kernel creates `ctx.dir`.** ARCHITECTURE.md「库外的插件与缓存」 says the kernel does not create `cacheDir`. It says nothing about `dir`. The kernel creates `.pneuma-base/<name>/` whenever the configuration is saved (`kernel/src/library.ts:59`). Question: *Does `ctx.dir` exist when a hook runs, also in a library that arrived by sync before this machine added the plugin?*
 
 ## conventions
 
 These are rules the built-in plugins follow and nothing told me in one place. I followed every one.
 
-**V1. Where to write.** Only under `.pneuma-base/<name>/`, each directory declared `body` or `cache`, temporary name then rename. Never touch the content or another plugin's directory. Source: §5 rules 2–4, plus deploy's code for the temporary-name pattern.
+**V1. Where to write.** Only under `.pneuma-base/<name>/`, each directory declared `body` or `cache`, temporary name then rename. Never touch the content or another plugin's directory. Source: ARCHITECTURE.md「库外的插件与缓存」, plus deploy's code for the temporary-name pattern.
 
-**V2. Records are append-only.** One new file per write. It is published with `link` so that it never replaces an existing file. Ids sort by time, then writer, then sequence. Configuration is replaced whole. Source: ledger and deploy code. §10 states this for the ledger alone.
+**V2. Records are append-only.** One new file per write. It is published with `link` so that it never replaces an existing file. Ids sort by time, then writer, then sequence. Configuration is replaced whole. Source: ledger and deploy code. ARCHITECTURE.md「存放和行」 states this for the ledger alone.
 
-**V3. Views and item sections write nothing.** My `withRun` writes facts in `finally`. A view records no facts, so the write is a no-op, but nothing enforces that. Source: §5.
+**V3. Views and item sections write nothing.** My `withRun` writes facts in `finally`. A view records no facts, so the write is a no-op, but nothing enforces that. Source: ARCHITECTURE.md「视图是只读的命令」.
 
-**V4. How to word a cognition section.** The title says what the plugin brings. The first sentence is "这个库装了**X**插件。". Do not repeat kernel rules (archive, `--include-archived`, "write outside, then put"). Use `pneuma-base @{{授权的名字}} …` in examples. Promise nothing the plugin does not do (K6). `cognition.title` (shown in the configuration list) and the section's `##` heading are different strings in deploy (`部署` against `上线：主人开关`). Source: §7 and `deploy-section.md`.
+**V4. How to word a cognition section.** The title says what the plugin brings. The first sentence is "这个库装了**X**插件。". Do not repeat kernel rules (archive, `--include-archived`, "write outside, then put"). Use `pneuma-base @{{授权的名字}} …` in examples. Promise nothing the plugin does not do (K6). `cognition.title` (shown in the configuration list) and the section's `##` heading are different strings in deploy (`部署` against `上线：主人开关`). Source: ARCHITECTURE.md「说明和技能」 and `deploy-section.md`.
 
 **V5. Language.** The description, every message, the view labels and the cognition text are in Chinese. Refusal reasons are English slugs. Nothing states this. I followed it: owner and agent texts are Chinese, and code and records are English.
 
-**V6. Outward actions are owner-only.** Publishing faces outward, so `on`, `off` and `target set` are `ownerOnly`, and `sync` is open to agents because it only follows the owner's switches. Source: §6 and the deploy README.
+**V6. Outward actions are owner-only.** Publishing faces outward, so `on`, `off` and `target set` are `ownerOnly`, and `sync` is open to agents because it only follows the owner's switches. Source: ARCHITECTURE.md「主人和 agent 的门」 and the deploy README.
 
 **V7. Agent-facing failures say whose problem it is.** "It is not your put that failed; do not redo it; tell the owner." Source: deploy `index.ts`.
 
-**V8. Anything a plugin does on the agent face must be undoable by the owner.** Source: §5 rule 6. This decided a design point: the plugin only ever *removes* an app on PneumaSpace (the address answers 404, releases stay, publishing again restores it). It never *purges*. Purging stays the owner's call on PneumaSpace.
+**V8. Anything a plugin does on the agent face must be undoable by the owner.** Source: ARCHITECTURE.md「库外的插件与缓存」. This decided a design point: the plugin only ever *removes* an app on PneumaSpace (the address answers 404, releases stay, publishing again restores it). It never *purges*. Purging stays the owner's call on PneumaSpace.
 
 **V9. Command names start with the plugin name.** View ids must start with `<name>.`; the kernel enforces it (`viewer.ts:389-398`). Command names are not checked, but every built-in follows `<name> …`, and the kernel drops a command whose name is already taken. I named mine `space on`, `space off`, `space sync` and `space target set`.
 
@@ -286,7 +286,7 @@ These are rules the built-in plugins follow and nothing told me in one place. I 
 
 **E6.** The `Plugin` shape is small: a name plus three lists is valid, and every hook is optional.
 
-**E7.** The behaviour was fully specified by ARCHITECTURE §13 and the state × operation table in `plugin-deploy/README.md`. I never had to guess what on, off, put, move and archive should do. That same clarity is why copying was the cheapest path (see the kit group).
+**E7.** The behaviour was fully specified by ARCHITECTURE.md「部署」 and the state × operation table in `plugin-deploy/README.md`. I never had to guess what on, off, put, move and archive should do. That same clarity is why copying was the cheapest path (see the kit group).
 
 **E8.** `onPut` and `onArchive` receive resolved library paths and a `moved` flag, so following a move or an archive is a lookup.
 

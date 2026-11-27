@@ -1,7 +1,7 @@
 // 记账与对账: the ledger plugin, on storage (plugin contract 2). Facts are appended through
 // `tools.storage.records`; every answer is read from the rows derived from them, a page at a time; a
 // thing is known by its state token, and its content is read only where a fingerprint decides
-// something or the owner names a whole pass. ledger-design.md; tmp/run-7 architecture.md section 5.
+// something or the owner names a whole pass. ARCHITECTURE.md「记账与对账」.
 import {
   CONTRACT,
   PNEUMA_BASE_VERSION,
@@ -426,7 +426,7 @@ async function deepCheck(ctx: PluginContext, dir: LibraryPath | null): Promise<D
   return deepPass(ctx, dir, progress, () => ctx.pass?.stopped() ?? false)
 }
 
-/** 记账与对账. ledger-design.md. */
+/** 记账与对账. */
 export const ledger: Plugin = {
   contract: CONTRACT,
   name: pluginName('ledger'),

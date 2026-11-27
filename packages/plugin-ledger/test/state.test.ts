@@ -1,5 +1,5 @@
 // The rows the ledger keeps are the same however the facts arrive: all at once, a few at a time, or
-// each one alone, and with a batch seen twice. tmp/run-7 architecture.md section 7: state is rows
+// each one alone, and with a batch seen twice. ARCHITECTURE.md「存放和行」: state is rows
 // derived incrementally from the facts, saved with the cursor they were derived up to.
 import { describe, expect, it } from 'vitest'
 import { mayBeNews, newsKey, type Fact } from '../src/facts.js'

@@ -1,5 +1,5 @@
 // The storage commands, owner-only and of this machine: which providers it has, installing one from a
-// repository's releases, removing one, updating one (tmp/run-7 architecture.md, 「存储的实现是可以安装的」;
+// repository's releases, removing one, updating one (ARCHITECTURE.md「存储」;
 // PROVIDERS.md). And the section of the configuration page that shows them, with their forms.
 import { formOf, type Action, type Block, type Call, type Context, type Instant, type OwnerParams, type TableRow } from '@pneuma-base/sdk'
 import { command, done, refused, type KernelCommand, type Outcome } from './kernel-command.js'

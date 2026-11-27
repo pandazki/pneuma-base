@@ -313,7 +313,7 @@ describe('the standing view', () => {
     expect(panel?.kind === 'fields' && panel.fields.find((f) => f.label === '现状')?.value).toMatchObject({ text: 'src/here.md', tag: { text: '挪到了' } })
   })
 
-  // tmp/run-7: nothing below a directory no record points into is opened, so a thing moved there is
+  // ARCHITECTURE.md「怎么看库」: nothing below a directory no record points into is opened, so a thing moved there is
   // not followed: it is not where it was, and the directory is one line to answer.
   it('does not follow a thing into a directory nobody looked into', async () => {
     const { root, show, codex } = await relayed()
@@ -417,7 +417,7 @@ describe('things nobody registered', () => {
     return { root, show, run, asks }
   }
 
-  // tmp/run-7 section 7: asked per place. The loose files of an open directory are one question; a
+  // ARCHITECTURE.md「问主人」: asked per place. The loose files of an open directory are one question; a
   // directory nothing registered is in is another, with its three answers, and is never opened.
   it('are one question per place on the home page, not something to look at; registered place by place, each is the owner’s, brought in, the activity has one row for each act, and nothing is asked any more', async () => {
     const { show, run, asks } = await folderWithFiles(3)

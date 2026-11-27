@@ -24,8 +24,11 @@ export async function refresh(index: SearchIndex, ctx: PluginContext, budget: Bu
   await readPending(ctx, index, budget)
 }
 
-/** Gives every piece a vector of this embedder, in batches; what one batch stored stays when a later one fails. */
-export async function embedMissing(index: SearchIndex, embedder: Embedder): Promise<void> {
+/**
+ * Gives every piece a vector of this embedder, in batches; what one batch stored stays when a later one
+ * fails. `afterBatch` hears how many of how many have one after each batch, and stops it by answering true.
+ */
+export async function embedMissing(index: SearchIndex, embedder: Embedder, afterBatch?: (done: number, total: number) => boolean): Promise<void> {
   index.keepVectorsOf(embedder.id)
   const missing = index.unembedded(embedder.id)
   for (let i = 0; i < missing.length; i += EMBED_BATCH) {
@@ -35,6 +38,7 @@ export async function embedMissing(index: SearchIndex, embedder: Embedder): Prom
       embedder.id,
       batch.map((m, j) => ({ hash: m.hash, vector: vectors[j] as Float32Array })),
     )
+    if (afterBatch?.(i + batch.length, missing.length) === true) return
   }
 }
 

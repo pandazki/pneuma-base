@@ -1,5 +1,5 @@
 // The management UI's server and the local endpoint agents talk to: Node's http, on the loopback
-// addresses only. ARCHITECTURE.md section 6.
+// addresses only. ARCHITECTURE.md「界面的服务」.
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { readFile, realpath, stat } from 'node:fs/promises'
@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { dropEndpoint, libraryFile, openLibrary, PREFERRED_PORT, recordEndpoint, stopListening, type Env, type Instant, type PluginTable } from '@pneuma-base/kernel'
 import { agentRoutes, type McpEndpoint } from './agent.js'
 import { call, changes, init, passOf, state, stop, tableOf, view, type Served } from './api.js'
-import { pluginUiFile, revision } from './files.js'
+import { addedStamp, pluginUiFile } from './files.js'
 import { readBody, sendJson, TooLarge } from './http.js'
 import { listenLoopback } from './listen.js'
 
@@ -194,8 +194,8 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, served: 
     case 'GET /api/file':
       return sendLibraryFile(req, res, served, url.searchParams)
     case 'GET /api/rev':
-      // Pairings are machine state, not the library's: the home page hears of one through the same stamp.
-      return sendJson(res, { status: 200, json: { rev: `${await changes(served)}-${await revision(join(served.home, 'pairings'))}` } })
+      // Pairings are machine state, not the library's: the home page hears of one, and of the owner's decision, through the same stamp.
+      return sendJson(res, { status: 200, json: { rev: `${await changes(served)}-${await addedStamp(join(served.home, 'pairings'))}` } })
     case 'POST /api/init':
       return sendJson(res, await init(served, await readJson(req)))
     default:

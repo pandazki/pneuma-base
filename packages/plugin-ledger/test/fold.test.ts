@@ -1,5 +1,5 @@
 // The fold into rows is a function of the facts: the ledger rows "each item has exactly one enter" and
-// "the view is decided by the files and the facts alone", and ledger-design.md section 3, on rows.
+// "the view is decided by the files and the facts alone", and ARCHITECTURE.md「存放和行」.
 import { describe, expect, it } from 'vitest'
 import { conversationOf } from '../src/conversation.js'
 import type { SceneRow } from '../src/model.js'

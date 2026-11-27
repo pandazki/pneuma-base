@@ -1,6 +1,6 @@
 // The ledger's rows: what each table keeps, the fields it is asked by, and the small rules the fold,
 // the look and the views share. Rows are a cache derived from the facts and from what storage said;
-// deleting them costs a fold and one full look. tmp/run-7 architecture.md sections 4 and 7.
+// deleting them costs a fold and one full look. ARCHITECTURE.md「存放和行」.
 import { createHash } from 'node:crypto'
 import { regionOf, type Fingerprint, type Instant, type LibraryPath, type Place, type Transcript } from '@pneuma-base/kernel'
 import type { Basis, Envelope, FactActor, How, ItemId, LedgerOrigin, SceneId } from './facts.js'

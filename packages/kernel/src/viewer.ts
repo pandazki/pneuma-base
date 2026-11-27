@@ -1,4 +1,4 @@
-// The viewer face: the read-only side the management UI uses. ARCHITECTURE.md section 6.
+// The viewer face: the read-only side the management UI uses. ARCHITECTURE.md「视图是只读的命令」.
 // Views are not operations: they change nothing and send no event.
 import { join } from 'node:path'
 import { agentsPage } from './agents-page.js'

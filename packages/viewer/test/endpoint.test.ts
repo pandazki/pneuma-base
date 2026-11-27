@@ -247,14 +247,17 @@ describe('pairing over HTTP', () => {
     for (const id of ['x', 'p-123', '..%2F..%2Fsecret', 'p-0000ABCD']) expect((await http(server, `/pair/${id}`)).status, id).toBe(404)
   })
 
-  it('a pairing written to machine state changes /api/rev, so the open home page fetches again', async () => {
+  it('a pairing written to machine state, and the decision on it, change /api/rev, so the open home page fetches again', async () => {
     const { root, home } = await library()
     const server = await serve(root, home)
     const rev = async () => (await http(server, `/api/rev?token=${server.token}`)).json().rev as string
     const before = await rev()
     mkdirSync(join(home, 'pairings'), { recursive: true })
     writeFileSync(join(home, 'pairings', 'p-0000abcd.json'), '{}')
-    expect(await rev()).not.toBe(before)
+    const asked = await rev()
+    expect(asked).not.toBe(before)
+    writeFileSync(join(home, 'pairings', 'p-0000abcd.decided.json'), '{}')
+    expect(await rev()).not.toBe(asked)
   })
 })
 

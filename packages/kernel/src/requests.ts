@@ -1,14 +1,15 @@
 // Requests: an agent asks the owner to run one of the owner's commands, saying why, and the owner
 // approves or declines with one act. They are the kernel's, so they work with no plugin, and travel with
 // the folder and with sync: facts of the kernel's record place `requests`, only appended, which several
-// writers share without conflict; each request's state is a row derived from them. ARCHITECTURE.md
-// section 4, 「请」.
+// writers share without conflict; each request's state is a row derived from them.
+// ARCHITECTURE.md「请主人做」.
 import { randomBytes } from 'node:crypto'
 import type { OwnerCommandInfo } from './owner.js'
 import { checkArgs } from './params.js'
 import { storageOf } from './storage.js'
 import {
   formOf,
+  TEXT_ROWS,
   type Action,
   type Actor,
   type Ask,
@@ -313,9 +314,11 @@ export async function requestsFor(ctx: Context): Promise<CheckResult['requests']
   await caughtUp(ctx.library.root)
   const rows = (await storageOf(ctx.library.root).records(PLACE).where<RequestRow>('requests', 'asker', askerKey(by), { limit: 10_000 })).rows
   const mine = rows.flatMap(({ value }) => requestOf(value) ?? []).filter((r) => sameAsker(r.by, by))
-  const ended = mine.filter((r) => (r.status.kind === 'approved' || r.status.kind === 'declined') && !r.seen)
+  const decided = mine.filter((r) => (r.status.kind === 'approved' || r.status.kind === 'declined') && !r.seen)
+  // Only the ones told are seen; the rest wait for the next check.
+  const ended = decided.slice(0, TEXT_ROWS)
   if (ended.length > 0) await storageOf(ctx.library.root).records(PLACE).append(ended.map((r) => ({ request: r.id, kind: 'seen', at: ctx.now })))
-  return { ended, pending: mine.filter(isPending).length }
+  return { ended, pending: mine.filter(isPending).length, ...(decided.length > ended.length ? { more: decided.length - ended.length } : {}) }
 }
 
 // ---- the owner's side ----

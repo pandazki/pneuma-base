@@ -2,7 +2,7 @@
 // connected under its own name by `agent connect`. Pairings are machine state (an agent not yet
 // connected has no identity in a library): `$PNEUMA_BASE_HOME/pairings/`, a file `<id>.json` for the
 // request and `<id>.decided.json` for the owner's decision, each written once and never rewritten,
-// every pairing kept as the record. ARCHITECTURE.md section 6.
+// every pairing kept as the record. ARCHITECTURE.md「配对」.
 import { randomBytes, randomInt } from 'node:crypto'
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'

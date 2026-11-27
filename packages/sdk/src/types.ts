@@ -1,4 +1,4 @@
-// The plugin contract's shapes, which a plugin and the kernel exchange. ARCHITECTURE.md sections 4 and 5.
+// The plugin contract's shapes, which a plugin and the kernel exchange. ARCHITECTURE.md「动词」 and 「插件机制」.
 import type { IconName } from './icons.js'
 import type { Description, PluginStorage, StorageFailure, Written } from './storage.js'
 
@@ -349,10 +349,10 @@ export type SayAnswer =
 export type CheckRequest = { since: Instant | 'last' | null; includeArchived: boolean; deep?: { dir: LibraryPath | null } }
 /**
  * `asks`: what only the owner can settle now, from every plugin's `onAsks`; an agent tells the owner.
- * `requests`: the caller's own requests (`ask`) the owner decided since it last saw them, and how many
- * still wait.
+ * `requests`: the caller's own requests (`ask`) the owner decided since it last saw them, the first
+ * `TEXT_ROWS` of them, `more` decided ones the next check tells, and how many still wait.
  */
-export type CheckResult = { sections: Section[]; asks: Ask[]; requests: { ended: OwnerRequest[]; pending: number }; problems: PluginProblem[] }
+export type CheckResult = { sections: Section[]; asks: Ask[]; requests: { ended: OwnerRequest[]; pending: number; more?: number }; problems: PluginProblem[] }
 
 // ---- ask ----
 

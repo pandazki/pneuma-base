@@ -3,7 +3,7 @@
 // is read only where a token differs or nothing was read yet. It writes with expectations, holding the
 // places it writes, and never through a put: the facts carried with the content say who registered it.
 import { join } from 'node:path'
-import { isDescribed, isFailure, type Expect, type Fingerprint, type Place, type PlaceStore, type PluginContext, type Row } from '@pneuma-base/kernel'
+import { isDescribed, isFailure, type Expect, type Fingerprint, type Place, type PlaceReader, type PluginContext, type Row, type StorageFailure, type Written } from '@pneuma-base/kernel'
 import type { SideIO } from './execute.js'
 import { ownTable, THINGS, type Change, type OwnRow, type ThingRow } from './rows.js'
 import { carried, inCache, ownKey, ownOf, type Key } from './scope.js'
@@ -38,7 +38,7 @@ async function eachAtMost<T>(list: readonly T[], f: (t: T) => Promise<void>): Pr
  * `deep`, a directory's every file's state is compared, and a changed one comes with its deep token; one
  * with more files than storage counts is changed, without one.
  */
-async function differences(store: PlaceStore, table: string, deep = false) {
+async function differences(store: PlaceReader, table: string, deep = false) {
   const changed = new Map<Place, string | undefined>()
   const gone = new Set<Place>()
   const skip = new Set<Place>()
@@ -188,9 +188,22 @@ export async function localOwn(ctx: PluginContext, place: string, caches: readon
  */
 export function localSide(ctx: PluginContext, target: TargetDir, map: LocalMap, out: Change): SideIO {
   const storage = ctx.tools.storage
-  const at = (key: Key): { store: PlaceStore; place: Place; own: { place: string; own: Place } | null } => {
+  type Where = {
+    store: PlaceReader
+    place: Place
+    own: { place: string; own: Place } | null
+    write(from: string, expect: Expect, hold: string | undefined): Promise<Written | StorageFailure>
+    remove(expect: string, hold: string | undefined): Promise<{ removed: true } | StorageFailure>
+  }
+  // A thing is written as sync's own write in the content; a record place's own file is copied in through the carrier.
+  const at = (key: Key): Where => {
     const own = ownOf(key)
-    return own === null ? { store: storage, place: key, own } : { store: storage.recordPlace(own.place).own, place: own.own, own }
+    const opts = (hold: string | undefined) => (hold === undefined ? {} : { hold })
+    if (own === null) {
+      return { store: storage, place: key, own, write: (from, expect, hold) => storage.write(key, { path: from }, expect, opts(hold)), remove: (expect, hold) => storage.remove(key, expect, opts(hold)) }
+    }
+    const carrier = storage.carry(own.place)
+    return { store: storage.recordPlace(own.place).own, place: own.own, own, write: (from, expect) => carrier.copy(own.own, from, expect), remove: (expect) => carrier.remove(own.own, expect) }
   }
   const settle = (key: Key, token: string | undefined, fp: Fingerprint | null) => {
     const own = ownOf(key)
@@ -242,8 +255,9 @@ export function localSide(ctx: PluginContext, target: TargetDir, map: LocalMap, 
 
     place: (key, staged, fp) =>
       holding(key, async (hold) => {
-        const { store, place, own } = at(key)
-        const written = await store.write(place, { path: staged.path }, map.expects.get(key) ?? 'empty', hold === undefined ? {} : { hold })
+        const where = at(key)
+        const { store, place, own } = where
+        const written = await where.write(staged.path, map.expects.get(key) ?? 'empty', hold)
         if (isFailure(written)) {
           if (written.reason !== 'refused') return false
           const c = await store.content(place)
@@ -263,8 +277,7 @@ export function localSide(ctx: PluginContext, target: TargetDir, map: LocalMap, 
       holding(key, async (hold) => {
         const expect = map.expects.get(key)
         if (expect === undefined || expect === 'empty') return false
-        const { store, place } = at(key)
-        if (isFailure(await store.remove(place, expect, hold === undefined ? {} : { hold }))) return false
+        if (isFailure(await at(key).remove(expect, hold))) return false
         return settle(key, 'empty', null)
       }),
   }

@@ -1,4 +1,4 @@
-// Find, asked of the rows (tmp/run-7 architecture.md section 5, 「找」): the registered things and the
+// Find, asked of the rows (ARCHITECTURE.md「找和看」): the registered things and the
 // scenes, matched by what the records hold (the path, what was said, the notes of the puts, where a
 // thing came from); no file is read and nothing unregistered is among the hits. The `find` table is
 // read a page at a time and only the rows that match are kept. A scene that matches brings the things

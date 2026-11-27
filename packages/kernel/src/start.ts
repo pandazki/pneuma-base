@@ -2,7 +2,7 @@
 // each time the page is shown, so nothing keeps a flag. The kernel knows two: whether an agent is
 // connected to this library, and whether anything is in it. A part of the home page adds its own
 // steps by answering a `steps` block, as the ledger does for whether an agent has worked here yet;
-// they join the kernel's in one part, which is gone once every step is done. ARCHITECTURE.md section 6.
+// they join the kernel's in one part, which is gone once every step is done. ARCHITECTURE.md「首页（`home`）」.
 import { formOf, isFailure, type Action, type Block, type Step } from '@pneuma-base/sdk'
 import { connectionFacts, WAY_WORD, whereOf } from './agent-commands.js'
 import { endpointOf } from './endpoint.js'

@@ -1,5 +1,5 @@
-// The three kinds of directory, derived from the records and stored nowhere (tmp/run-7 architecture.md
-// section 4): open, when it holds something registered at some depth (the root always is); a thing,
+// The three kinds of directory, derived from the records and stored nowhere (ARCHITECTURE.md「目录的三种」):
+// open, when it holds something registered at some depth (the root always is); a thing,
 // when the whole directory is registered as one; closed otherwise, one entry of the level above that
 // nothing goes into. Storage is looked at only where these say.
 import { createHash } from 'node:crypto'

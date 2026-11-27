@@ -6,7 +6,8 @@ import type { LibraryPath, PluginContext, PluginName, PluginTools } from '../../
 import { configFile } from '../config-file.js'
 import { recordStore, type RecordStore, type Skipped } from '../records.js'
 import { changing, fingerprintOf, NotStaged, withStaged, type ThingKind } from './content.js'
-import { apply, fold, parseFact, type Declared, type Deployments, type Fact, type FactBody, type OnTarget, type TargetKey, type ThingId } from './facts.js'
+import { foldedRecords } from './folded.js'
+import { apply, parseFact, type Declared, type Deployments, type Fact, type FactBody, type OnTarget, type TargetKey, type ThingId } from './facts.js'
 import { plan, siteName, statusOf, want, type ContentId, type SiteName } from './model.js'
 import type { Look, Served, Target, TargetAdapter, TargetConfig, TargetEnv } from './target.js'
 
@@ -74,7 +75,7 @@ export async function closeTarget(target: Target | null): Promise<void> {
   }
 }
 
-/** The plugin's records: the store `facts` of its record place, where the kit always kept them. */
+/** The plugin's records: the store `facts` of its record place, where the kit always kept them, folded into rows (folded.ts). */
 export const factsOf = (ctx: PluginContext): RecordStore<FactBody> => recordStore(ctx, 'facts', parseFact)
 
 /** Loads the records and the target, runs `body`, writes the facts it added and closes the target, also when it throws. `view`: it draws a page or the item panel. */
@@ -82,8 +83,8 @@ export async function withRun<T>(kit: Kit, ctx: PluginContext, body: (run: Run) 
   const target = await configured(kit, ctx)
   try {
     const store = factsOf(ctx)
-    const { records, skipped } = await store.read()
-    const run: Run = { kit, ctx, store, d: fold(records), skipped, target, facts: [], view }
+    const { d, skipped } = await foldedRecords(ctx, store)
+    const run: Run = { kit, ctx, store, d, skipped, target, facts: [], view }
     try {
       return await body(run)
     } finally {

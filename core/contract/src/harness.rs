@@ -42,7 +42,7 @@ pub const REASONS: [&str; 14] = [
 ];
 
 /// The operations the contract names, in its order (sections 4, 5 and 6).
-pub const OPS: [&str; 27] = [
+pub const OPS: [&str; 28] = [
     "glance",
     "overview",
     "probe",
@@ -55,6 +55,7 @@ pub const OPS: [&str; 27] = [
     "remove",
     "facts.append",
     "facts.since",
+    "facts.carry",
     "rows.put",
     "rows.get",
     "rows.under",

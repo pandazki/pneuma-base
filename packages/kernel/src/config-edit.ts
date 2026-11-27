@@ -1,6 +1,6 @@
 // Another program's configuration, edited as text: one entry goes in, every other byte stays where it
 // was, and taking the entry out gives back the text as it was. No parser rewrites the file, so numbers,
-// key order, comments and formatting the owner chose survive. ARCHITECTURE.md section 6.
+// key order, comments and formatting the owner chose survive. ARCHITECTURE.md「接上一个 agent」.
 
 // ---- JSON ----
 

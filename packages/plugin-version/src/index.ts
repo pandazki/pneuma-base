@@ -1,8 +1,12 @@
 import { readFileSync } from 'node:fs'
 import {
   CONTRACT,
+  pageOfList,
+  pagingOf,
   PNEUMA_BASE_VERSION,
   pluginName,
+  rowsOf,
+  TEXT_ROWS,
   type Event,
   type LibraryPath,
   type Plugin,
@@ -109,6 +113,29 @@ async function inScope(ctx: PluginContext, dir: LibraryPath | null): Promise<Thi
   return out
 }
 
+const DEEP_PAGE = 100
+
+/**
+ * The named whole pass of `check --deep`: each declared thing in scope not `looked` at already, read by
+ * content with `check`, a page at a time, each page kept; how many first, then how far, on the
+ * operation's pass. Stops after the page under way when asked.
+ */
+async function deepRead(ctx: PluginContext, w: Writing, dir: LibraryPath | null, looked: ReadonlySet<string>, check: (thing: Thing) => Promise<void>): Promise<{ scope: number; done: number; stopped: boolean }> {
+  const scope = (await inScope(ctx, dir)).filter((t) => !looked.has(t.id)).map((t) => adopt(w, t))
+  const where = dir === null ? '整个库' : ` ${dir} 下`
+  ctx.pass?.report({ done: 0, total: scope.length, text: `要按内容读${where}有版本的东西：${scope.length} 样。` })
+  let done = 0
+  for (let i = 0; i < scope.length; i += DEEP_PAGE) {
+    if (ctx.pass?.stopped()) return { scope: scope.length, done, stopped: true }
+    const page = scope.slice(i, i + DEEP_PAGE)
+    await eachAtMost(page, check)
+    await commit(w)
+    done += page.length
+    ctx.pass?.report({ done, total: scope.length, text: `有版本的东西已按内容查 ${done} / ${scope.length} 样` })
+  }
+  return { scope: scope.length, done, stopped: false }
+}
+
 /** The library paths an archive purge deleted, from its answer. */
 function purged(event: Event): LibraryPath[] {
   if (event.face !== 'owner' || event.command !== 'archive purge' || event.result.outcome !== 'done') return []
@@ -168,32 +195,38 @@ export const version: Plugin = {
 
   /**
    * Changed outside the tool: recorded as a version and reported once. Gone from its path: reported
-   * every time. Storage compares every thing's token with the one on record; only what differs is read,
-   * and with `--deep` every thing in its scope.
+   * every time. Storage compares every thing's token with the one on record; only what differs is read.
+   * `--deep` is a named whole pass over the rest of its scope: it says how many first, reads them by
+   * content a page at a time, keeping each page, and stops after the page under way when asked.
    */
   async onCheck(req, ctx) {
     const w = await writing(ctx)
     const diffs = await differing(ctx)
     const at = await thingsAt(ctx.tools.storage.records, [...diffs.keys()])
     const looked = at.map((t) => adopt(w, t)).filter((t) => req.includeArchived || ctx.tools.regionOf(t.path) !== 'archive')
-    const deep = req.deep ? await inScope(ctx, req.deep.dir) : []
-    const already = new Set(looked.map((t) => t.id))
-    for (const thing of deep) if (!already.has(thing.id)) looked.push(adopt(w, thing))
-    const read = new Set(deep.map((t) => t.id))
     const recorded: { path: LibraryPath; version: number }[] = []
     const missing: LibraryPath[] = []
-    await eachAtMost(looked, async (thing) => {
-      const r = diffs.get(thing.path) === 'gone' ? null : await record(w, thing, 'outside', null, read.has(thing.id) ? 'content' : 'token')
+    const check = (how: 'token' | 'content') => async (thing: Thing) => {
+      const r = diffs.get(thing.path) === 'gone' ? null : await record(w, thing, 'outside', null, how)
       if (r === null) missing.push(thing.path)
       else if (r !== 'moved' && r.added) recorded.push({ path: thing.path, version: r.version.n })
-    })
+    }
+    await eachAtMost(looked, check('token'))
     await commit(w)
-    if (recorded.length === 0 && missing.length === 0) return []
+    const deep = req.deep ? await deepRead(ctx, w, req.deep.dir, new Set(looked.map((t) => t.id)), check('content')) : null
+    if (recorded.length === 0 && missing.length === 0 && !deep?.stopped) return []
+    // Each list names its first TEXT_ROWS, then how many and the page that lists every versioned thing.
+    const rest = (n: number, shown: number) => (n > shown ? [`  ……共 ${n} 样，看全部：show ${THINGS_VIEW.id}`] : [])
     const lines = [
-      ...recorded.map((r) => `${r.path} 在工具之外被改过，已记为第 ${r.version} 版`),
-      ...missing.map((path) => `${path} 不在了；它的每一版都还在，version restore ${path} --version <n> 能放回来`),
+      ...(deep?.stopped ? [`停下了：有版本的东西按内容查了 ${deep.done} / ${deep.scope} 样。`] : []),
+      ...recorded.slice(0, TEXT_ROWS).map((r) => `${r.path} 在工具之外被改过，已记为第 ${r.version} 版`),
+      ...rest(recorded.length, TEXT_ROWS),
+      ...missing.slice(0, TEXT_ROWS).map((path) => `${path} 不在了；它的每一版都还在，version restore ${path} --version <n> 能放回来`),
+      ...rest(missing.length, TEXT_ROWS),
     ]
-    return [{ title: '有版本的东西', body: lines.join('\n'), data: { recorded, missing } }]
+    const more = recorded.length > TEXT_ROWS || missing.length > TEXT_ROWS ? { more: `show ${THINGS_VIEW.id}` } : {}
+    const data = { recorded: recorded.slice(0, TEXT_ROWS), missing: missing.slice(0, TEXT_ROWS), count: { recorded: recorded.length, missing: missing.length }, ...more, ...(deep ? { deep } : {}) }
+    return [{ title: '有版本的东西', body: lines.join('\n'), data }]
   },
 
   async onInspect(req, ctx) {
@@ -217,20 +250,23 @@ export const version: Plugin = {
     await commit(w)
   },
 
-  /** Every thing in the library, from the rows a page at a time; storage compares their tokens, and only what differs is read. */
+  /** Every thing in the library, from the rows, a page of them at a time; storage compares their tokens, and only what differs on the page is read. */
   async onView(req, ctx) {
     await load(ctx)
     const diffs = await differing(ctx)
     const showArchived = req.params.archived === 'show'
-    const rows: { thing: Thing; state: DiskState }[] = []
+    const listed: Thing[] = []
     for await (const page of thingPages(ctx.tools.storage.records)) {
-      for (const thing of page) if (!thing.gone && (showArchived || ctx.tools.regionOf(thing.path) !== 'archive')) rows.push({ thing, state: 'current' })
+      for (const thing of page) if (!thing.gone && (showArchived || ctx.tools.regionOf(thing.path) !== 'archive')) listed.push(thing)
     }
+    const size = rowsOf(req)
+    const { rows: shown, next } = pageOfList(listed, req.params, size)
+    const rows = shown.map((thing): { thing: Thing; state: DiskState } => ({ thing, state: 'current' }))
     await eachAtMost(rows, async (row) => {
       const look = diffs.get(row.thing.path)
       if (look !== undefined) row.state = await diskState(ctx, row.thing, look)
     })
-    return thingsPage(rows, showArchived)
+    return thingsPage(rows, pagingOf({ view: THINGS_VIEW.id, params: req.params, rows: size, shown: rows.length, next, total: listed.length }))
   },
 
   async onItemView(path, ctx) {

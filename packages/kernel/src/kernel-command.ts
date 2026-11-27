@@ -1,4 +1,4 @@
-// The shape of the kernel's own owner commands, and the answers they give. ARCHITECTURE.md section 6.
+// The shape of the kernel's own owner commands, and the answers they give. ARCHITECTURE.md「命令表」.
 import type { KernelCommandName } from './claims.js'
 import type { LibraryCall, OwnerCall } from './owner.js'
 import type { Library, OwnerAnswer, OwnerParams, OwnerValues, ParamValues, PluginProblem } from '@pneuma-base/sdk'

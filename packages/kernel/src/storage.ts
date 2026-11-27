@@ -289,6 +289,8 @@ export function storageOf(root: string) {
     hold: (places: readonly Place[], ttl?: number) => doneOrFailure<{ hold: string; until: string }>(s.request('hold', { places, ...(ttl === undefined ? {} : { ttl }) })),
     release: async (hold: string) => void (await done('release', s.request('release', { hold }))),
     records,
+    /** A facts file written elsewhere, put in whole under its name (`<YYYY-MM-DD>/<name>.jsonl`) from a file outside the library. */
+    carryFacts: (place: string, file: string, from: string) => doneOrFailure<{ carried: boolean }>(s.request('facts.carry', { place, file, from })),
     noise: {
       list: () => done<{ names: string[]; paths: Place[]; declared: boolean }>('noise.list', s.request('noise.list', {})),
       add: (add: { names?: string[]; paths?: Place[] }) => done<{ names: string[]; paths: Place[] }>('noise.add', s.request('noise.add', add)),

@@ -8,8 +8,9 @@
 # provider, a folder; choosing a folder (the same code, by a test hook) makes it a library and opens
 # the window on home with 「开始」; the watcher is the provider's own subscription, a child of the app;
 # a file dropped on the window (the drop code, by a test hook) is put as brought by the owner, into
-# inbox/ or the folder the library page shows; a file written straight into the library is heard
-# through the subscription and registered as the owner's and seen, a direct change recorded as seen; a
+# inbox/ or the folder the library page shows, named as Finder names a copy when the name is taken; a
+# file written straight into the library is heard through the subscription and registered as the
+# owner's and seen, a direct change recorded as seen; a
 # small plain folder written in is registered as one thing, a project folder of 80,000 files is the
 # ledger's question and nothing in it is registered; an agent's puts stay the
 # agent's; connecting the fake Claude Code folds the first step; with env -i and system tools only,
@@ -102,6 +103,8 @@ sleep 1
 echo "into the folder shown" > "$work/Downloads/shown.txt"
 hook "drop-window:$work/Downloads/shown.txt"
 wait_for 'drop (窗口): placed \["docs/shown.txt"\]' 10 && ok "with the library page on docs/, a drop goes into docs/" || fail "a drop goes into the folder shown: $(grep 'drop (窗口)' "$log" | tail -1)"
+hook "drop-window:$work/Downloads/shown.txt"
+wait_for 'drop (窗口): placed \["docs/shown 2.txt"\]' 10 && ok "the name taken there: the drop is named as Finder names a copy, storage saying what is free" || fail "a drop onto a taken name: $(grep 'drop (窗口)' "$log" | tail -1)"
 hook "route:"
 sleep 1
 echo "dropped on the icon" > "$work/Downloads/on-icon.txt"

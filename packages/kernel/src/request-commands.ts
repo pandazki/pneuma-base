@@ -1,4 +1,4 @@
-// The owner's side of requests: list them, approve one, decline one. ARCHITECTURE.md section 4, 「请」.
+// The owner's side of requests: list them, approve one, decline one. ARCHITECTURE.md「请主人做」.
 // `ownerFace` is read only inside `run`, so this module and the owner face may import each other.
 import { command, done, refused, type KernelCommand } from './kernel-command.js'
 import { ownerFace } from './owner.js'

@@ -35,7 +35,7 @@ export function Tray() {
   const asked = useRef(0)
   const root = useRef<HTMLDivElement | null>(null)
   const toasts = useToasts()
-  const { busy, settle } = toasts
+  const { busy, settle, report } = toasts
   const refresh = useCallback(() => setTick((t) => t + 1), [])
 
   // The library changed, or the panel was shown again: ask anew. Asked only while the panel is on screen.
@@ -104,7 +104,7 @@ export function Tray() {
       const id = busy(action.label)
       let done: Done
       try {
-        const reply = await api.call(fill(action.call, values, action.inputs), confirmed)
+        const reply = await api.pass(fill(action.call, values, action.inputs), confirmed, (progress, pass) => report(id, progress, () => void api.stop(pass).catch(() => undefined)))
         settle(id, reply.tone, reply.text)
         done = { tone: reply.tone, text: reply.text }
       } catch (error) {
@@ -115,7 +115,7 @@ export function Tray() {
       refresh()
       return done
     },
-    [busy, settle, refresh],
+    [busy, settle, report, refresh],
   )
   const env: BlockEnv = useMemo(
     () => ({

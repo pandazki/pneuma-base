@@ -182,7 +182,9 @@ export type AcceptedPut =
 
 **`onCheck` 拿到的。** `since` 是调用者写的时刻（`--since <时间>`），或 `'last'`（`--since last`，`start` 也这样问），或 `null`（没写 `--since`，agent 平常这样问）。`'last'` 和 `null` 都指调用者上次来过之后；内核不记这个时刻，要用的插件自己记。记账插件把每次查记成一条「看过了」，「上次」就是上次查的时候，首页的「都看过了」也是一次查。说「发生了什么」的节按 `since` 截，只列那之后的事。说「现在怎样」的节不看 `since`：一个状况现在成立就报，比如还坏着的链接、超过上限的东西，不管它从什么时候开始。`includeArchived` 为 `false` 时，两种节都不带归档区里的东西；为 `true` 时都带。平常的查只拿存储的令牌比自己记过的位置，不读内容（`storage.look`，变了什么用 `storage.changed`）。带 `deep` 时是深查：主人或 agent 明说要读内容，插件读 `deep.dir` 下（`null` 是整个库）它记过的每样东西的内容，比出真正改了的；没有要比内容的插件照平常答。
 
-**查的答复。** `CheckResult` 是 `{ sections, asks, requests, problems }`：`sections` 是各插件 `onCheck` 的节，`asks` 是各插件 `onAsks` 此刻的问题（3.6），每件由内核盖上插件名（`by`），`requests` 是调用者自己提的请求（内核的，3.4）：主人新决定了的（`ended`）和还在等的个数（`pending`）。命令行把它们印在「要主人来做的」下面，一件一行，下面是每个回答的主人命令（`pneuma-base <命令> --library <库>`），推荐的那个标「（推荐）」，最后一句告诉 agent：这些只有主人能定，告诉主人。
+**查的答复。** `CheckResult` 是 `{ sections, asks, requests, problems }`：`sections` 是各插件 `onCheck` 的节，`asks` 是各插件 `onAsks` 此刻的问题（3.6），每件由内核盖上插件名（`by`），`requests` 是调用者自己提的请求（内核的，3.4）：主人新决定了的前 20 个（`ended`；更多的有 `more` 个，下次查再说）和还在等的个数（`pending`）。命令行把它们印在「要主人来做的」下面，一件一行，下面是每个回答的主人命令（`pneuma-base <命令> --library <库>`），推荐的那个标「（推荐）」，最后一句告诉 agent：这些只有主人能定，告诉主人。
+
+**节要有界。** 一节里的清单只列前 20 条（sdk 的 `TEXT_ROWS`），再写一共几条和看全部的命令（通常是自己的一页，`show <页的编号>`）；`data` 里同样只带这 20 条、总数和那条命令。agent 的整份答复有上限：字 8 KB，JSON 32 KB。面按字印的次序放各节和各个问题，放不下的那一节、那个问题和它后面的，字里和 JSON 里都不带，答复的 `cut` 说少了什么、在哪看。所以一节越短，越不会被挤掉。
 
 答复里不写插件名，内核盖上。`problems` 说插件那份做成了、库外的一步没成：说明照给，问题列成这个插件的，动词照旧答复。钩子抛错时只剩问题，别的插件照样被调；`onSay` 抛错时结果是 `not-heard`、理由 `plugin-failed`，`revise` 抛错算没留住。所以能答问题就不要抛错。下面的插件有新内容就通知主人设的网址，通知不到时放入照样成功：
 
@@ -663,7 +665,7 @@ pneuma-base secret remove search key
 | --- | --- |
 | `library` | 这次操作的库：`root`（绝对的真实路径）、`config`（`id`、插件名的列表、授权）、`plugins`（装了、这台机器载得了的插件，按配置次序）、`unavailable`（装了、载不了的名字）、`clashes`（撞名没接上的） |
 | `actor` | 谁在做：`{ kind: 'agent', name, grant }`，或 `{ kind: 'owner' }`，主人没有名字（`recordStore` 盖的记录里写 `name: 'owner'`，见第 5 节）。带授权时是授权给的 agent；写了 `--as <名字>` 时是那个名字；环境里有 `CLAUDE_CODE_SESSION_ID` 或 `CLAUDECODE` 时是 `claude-code`，有 `CODEX_THREAD_ID` 时是 `codex`，有 `ANTIGRAVITY_CONVERSATION_ID` 或 `ANTIGRAVITY_AGENT` 时是 `antigravity`；都没有是主人。只有 `PNEUMA_BASE_SESSION` 时行动者是主人，但主人命令的门照样拒绝（3.4）。界面里总是主人。类型里还有 `{ kind: 'plugin', name }`，今天的内核不给 |
-| `session` | 这次会话：`id` 依次取 `--session`、环境变量 `PNEUMA_BASE_SESSION`、`CLAUDE_CODE_SESSION_ID`、`CODEX_THREAD_ID`、`ANTIGRAVITY_CONVERSATION_ID`，都没有就为这次调用造一个，`source` 相应是 `flag`、`env`、`minted`；`cwd` 是调用方的工作目录，界面里是服务进程的，主人命令里写的相对路径按它解析；`machine` 是主机名；`transcript` 是这次会话的对话在这台机器上的哪个文件：`{ path, resume }`，`path` 把家目录写成 `~`，`resume` 是接着这段对话的命令，产品没有时为 `null`。只在会话号来自 `CLAUDE_CODE_SESSION_ID` 或 `CODEX_THREAD_ID`、文件也在时才有，别的时候是 `null`（规则见 `ARCHITECTURE.md` 第 5 节「接上一个 agent」）。它是指针：插件别读它指的文件 |
+| `session` | 这次会话：`id` 依次取 `--session`、环境变量 `PNEUMA_BASE_SESSION`、`CLAUDE_CODE_SESSION_ID`、`CODEX_THREAD_ID`、`ANTIGRAVITY_CONVERSATION_ID`，都没有就为这次调用造一个，`source` 相应是 `flag`、`env`、`minted`；`cwd` 是调用方的工作目录，界面里是服务进程的，主人命令里写的相对路径按它解析；`machine` 是主机名；`transcript` 是这次会话的对话在这台机器上的哪个文件：`{ path, resume }`，`path` 把家目录写成 `~`，`resume` 是接着这段对话的命令，产品没有时为 `null`。只在会话号来自 `CLAUDE_CODE_SESSION_ID` 或 `CODEX_THREAD_ID`、文件也在时才有，别的时候是 `null`（规则见 `ARCHITECTURE.md`「接上一个 agent」）。它是指针：插件别读它指的文件 |
 | `now` | 这次操作的时刻，ISO 8601 |
 | `home` | 本机的 `$PNEUMA_BASE_HOME`，缺省 `~/.pneuma-base` |
 | `pass` | 可选：这次操作是一趟有名字的全量动作、有人看着时才有。`report({ done, total, atLeast?, text })` 报进度，`total` 不知道时是 `null`；`stopped()` 为真时做完手上这一步就停（3.4）。插件经 `tools.storage` 读写目录时，存储的进度也接在它最后一次报告后面 |
@@ -708,7 +710,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CODEX_THREAD_ID -u ANTIGRAVITY_CO
 
 | 词 | 在插件这里是什么 |
 | --- | --- |
-| 位置 | 一个以 `/` 分隔的相对路径，`''` 是库根。库内路径都是位置；在 `own` 和 `recordPlace(名字).own` 上，位置相对那个记录处 |
+| 位置 | 一个以 `/` 分隔的相对路径，`''` 是库根。库内路径都是位置；在 `own`、`recordPlace(名字).own` 和 `carry(名字)` 上，位置相对那个记录处 |
 | 一层 | 一个目录直接含有的那些位置。存储列出的只是一层（`overview`），从不往下走 |
 | 看一眼、一览、探查 | 不读内容地问一个位置的三种办法：看一眼（`glance`）只取存储已经知道的；一览（`overview`）列一个目录的一层，一页缺省 200 项；探查（`probe`）在一个目录里带预算地数，说它至少多大 |
 | 状态令牌 | 存储对一个位置此刻状态的标记，`token`。不透明：插件只存下、交回去；比较由存储在 `look`、`lookRows` 和写的预期里做。目录的令牌只说它自己这一层；深看时另有深令牌，说它里面每个文件 |
@@ -738,7 +740,8 @@ env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CODEX_THREAD_ID -u ANTIGRAVITY_CO
 | `own` | 上面 `glance` 到 `remove` 这九个 | 插件记录处里事实以外的地方：留存的副本、配置这类内容，位置相对 `.pneuma-base/<插件名>/`。还没写过时根是一个空目录；第一次写就建立它。这里没有噪音，`hold` 管不到，`changed` 从不报告；放事实的 `facts` 不在其中，答 `outside` |
 | `records` | 见下 | 插件的记录处：只追加的事实，和从事实推出的行 |
 | `recordPlaces()`，异步 | 名字的列表 | 内核在这个库里认得的记录处：内核自己的 `requests`，和这个库装着的每个插件的 |
-| `recordPlace(名字)` | `{ own, facts }` | 另一个记录处：`facts` 是它的事实（`append`、`since`，同下），`own` 是它事实以外的地方（同上面的九个）。名字可以不在 `recordPlaces()` 里，比如别的机器上装着的插件写的。只给工作就是把整个库带到别处的插件用，比如同步；别的插件只读写自己的记录处（检查：`writes`） |
+| `recordPlace(名字)` | `{ own, facts }` | 读另一个记录处：`facts` 只有 `since`（同下），`own` 是它事实以外的地方，只有不改东西的那几个：`glance`、`overview`、`look`、`lookRows`、`content`、`read`。名字可以不在 `recordPlaces()` 里，比如别的机器上装着的插件写的。插件只写自己的记录处（检查：`writes`） |
+| `carry(名字)` | `{ copy, remove, facts }` | 一个记录处要同步的部分，按字节复制进来，只给工作就是把整个库带到别处的插件用，比如同步。`copy(位置, 库外的路径, 预期)` 把库外的文件或目录复制到它自己的地方的那个位置上，`remove(位置, 预期)` 拿掉；`facts(名字, 库外的路径)` 把在别处写下的一个事实文件整个放进它的事实里，名字写成 `<YYYY-MM-DD>/<名字>.jsonl`，答 `{ carried }`：那里已经有这个名字时什么都不改，答 `false`，所以带两次和带一次一样。它不能追加事实、写行，也不能改已有的事实文件 |
 
 `records` 的：
 
@@ -861,7 +864,7 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 
 一个名字在一条命令里只出现一次。`run` 收到的值：必填的是文字，可省的可能是 `null`，`list` 和 `many` 是列表，`boolean` 是 `true` 或 `false`。值去掉两头空白，空的算没给，所以表单里留空的一项等于没写。少了、多了、不认识、格式不对、不在可选的值里，内核都以 `usage` 拒绝。
 
-内核自己的命令 `KERNEL_COMMAND_NAMES` 是 `grant issue`、`grant revoke`、`plugin add`、`plugin remove`、`plugin catch-up`、`skill install`、`archive purge`、`plugin install`、`plugin uninstall`、`plugin list`、`secret set`、`secret list`、`secret remove`、`agent detect`、`agent connect`、`agent disconnect`、`agent list`、`launcher install`、`request list`、`request approve`、`request decline`、`noise list`、`noise add`、`noise remove`、`storage list`、`storage install`、`storage remove`、`storage update`。
+内核自己的命令 `KERNEL_COMMAND_NAMES` 是 `grant issue`、`grant revoke`、`plugin add`、`plugin remove`、`plugin catch-up`、`skill install`、`archive purge`、`plugin install`、`plugin uninstall`、`plugin list`、`secret set`、`secret list`、`secret remove`、`agent detect`、`agent connect`、`agent disconnect`、`agent list`、`launcher install`、`request list`、`request approve`、`request decline`、`noise list`、`noise add`、`noise remove`、`storage list`、`storage install`、`storage remove`、`storage update`、`pair list`、`pair allow`、`pair decline`。
 
 ### 4.4 块
 
@@ -1382,7 +1385,7 @@ pneuma-base plugin uninstall marks
 | --- | --- |
 | `index.js` | 在目录里，载入不抛错，缺省导出一个对象 |
 | `contract` | 写了，是 `CONTRACT`，即 `2`。写 `1` 的，原因指向第 10 节「从第 1 版到第 2 版」 |
-| `name` | 合 `PLUGIN_NAME`：小写字母开头，只用小写字母、数字、连字符，最长 41 个字符；装到本机之后和目录名相同；不是 `RESERVED_PLUGIN_NAMES` 里的词：`tmp`、`requests`、`kernel`、`trash`、`holds`、`ask`、`request`、`start`、`show`、`find`、`inspect`、`put`、`say`、`check`、`archive`、`unarchive`、`init`、`view`、`help`、`grant`、`plugin`、`skill`、`secret`、`agent`、`launcher`、`noise`、`storage`、`cache`（命令行的词、内核命令的头一个词、和插件记录处并排的内核的记录处与存储自己的几处） |
+| `name` | 合 `PLUGIN_NAME`：小写字母开头，只用小写字母、数字、连字符，最长 41 个字符；装到本机之后和目录名相同；不是 `RESERVED_PLUGIN_NAMES` 里的词：`tmp`、`requests`、`kernel`、`trash`、`holds`、`ask`、`request`、`start`、`show`、`find`、`inspect`、`put`、`say`、`check`、`archive`、`unarchive`、`init`、`view`、`help`、`grant`、`plugin`、`skill`、`secret`、`agent`、`launcher`、`noise`、`storage`、`cache`、`pair`、`guide`、`mcp`（命令行的词、内核命令的头一个词、和插件记录处并排的内核的记录处与存储自己的几处） |
 | `version`、`summary` | 没有，或是文字 |
 | `keeps` | 没有，或是 `every`、`some` |
 | `cognition` | `null`，或 `{ title, text }`，两样都是文字 |

@@ -3,12 +3,14 @@ import {
   elsewhereWords,
   endText,
   quote,
+  TEXT_ROWS,
   type ArchiveResult,
   type Ask,
   type AskResult,
   type CheckResult,
   type Content,
   type FindResult,
+  type Hit,
   type InspectResult,
   type Level,
   type PlaceFacts,
@@ -59,7 +61,7 @@ type Entry = { key: string; path: string | null; marks: string[]; details: strin
  * each plugin's detail after it. Entries that share a group print under it at the place of the
  * first, one indented line each; an entry without a path describes the group, so it comes first.
  */
-export function findText(r: FindResult, none = '没有找到。'): string[] {
+function findText(r: FindResult, none = '没有找到。'): string[] {
   const entries = new Map<string, Entry>()
   for (const h of r.hits) {
     const key = h.path ?? h.title
@@ -145,10 +147,11 @@ export function askText(r: AskResult): string[] {
 }
 
 /** The caller's own requests in check: those the owner decided since it last looked, each with how it ended, and how many still wait. */
-function requestsText({ ended, pending }: CheckResult['requests']): string[] {
-  if (ended.length === 0 && pending === 0) return []
+function requestsText({ ended, pending, more = 0 }: CheckResult['requests']): string[] {
+  if (ended.length === 0 && pending === 0 && more === 0) return []
+  const later = more === 0 ? [] : [`另有 ${more} 个也有了结果，下次 check 接着说。`]
   const waiting = pending === 0 ? [] : [`${ended.length > 0 ? '还有' : '有'} ${pending} 个在等主人决定。`]
-  return ['## 你提的请求', ...ended.map((q) => `- ${q.id} ${q.line}：${endText(q)}`), ...waiting]
+  return ['## 你提的请求', ...ended.map((q) => `- ${q.id} ${q.line}：${endText(q)}`), ...later, ...waiting]
 }
 
 function contentText(target: string, c: Content, inner: string | null): string[] {
@@ -192,34 +195,143 @@ function asksText(asks: readonly Ask[], commands: readonly OwnerCommandInfo[], r
 
 /** The most an agent's start or check prints, in bytes: the answer fits its context however much the library holds. */
 export const AGENT_TEXT_LIMIT = 8 * 1024
+/**
+ * The most an agent's start or check answers as JSON (`--json`, MCP's structured content), in bytes as
+ * `--json` prints it: four times the text, which names in one line what the JSON gives as fields, an
+ * ask with the forms of its answers.
+ */
+export const AGENT_JSON_LIMIT = 32 * 1024
 
-/** The lines, one per line of text, up to AGENT_TEXT_LIMIT bytes; past that, one line saying so and where the rest is. */
-export function bounded(lines: readonly string[]): string[] {
-  const tail = `……到 ${AGENT_TEXT_LIMIT / 1024} KB 为止，后面的没有印出。状况的全部：show ledger.standing；要主人做的：首页上的「等你决定」。`
-  const budget = AGENT_TEXT_LIMIT - Buffer.byteLength(tail) - 1
-  const out: string[] = []
-  let size = 0
-  for (const line of lines.flatMap((l) => l.split('\n'))) {
-    size += Buffer.byteLength(line) + 1
-    if (size > budget) return [...out, tail]
-    out.push(line)
+/** What a bounded answer left out, by kind, and where all of it is. */
+export type Cut = { sections?: number; requests?: number; asks?: number; hits?: number; where: string }
+type PartKind = Exclude<keyof Cut, 'where'>
+type Part<T> = { kind: PartKind; value: T }
+type Shaped<J> = { json: J; lines: string[] }
+
+const PART_WORDS: Record<PartKind, (n: number) => string> = {
+  sections: (n) => `${n} 节状况`,
+  requests: (n) => `${n} 个你提的请求的结果`,
+  asks: (n) => `${n} 件要主人做的`,
+  hits: (n) => `${n} 样可能相关的`,
+}
+
+const decidedIn = (r: CheckResult['requests']) => r.ended.length + (r.more ?? 0)
+
+function cutOf(left: readonly Part<unknown>[], where: string): Cut | null {
+  if (left.length === 0) return null
+  const cut: Cut = { where }
+  for (const p of left) {
+    const n = p.kind === 'requests' ? decidedIn(p.value as CheckResult['requests']) : 1
+    if (n > 0) cut[p.kind] = (cut[p.kind] ?? 0) + n
   }
-  return out
+  return cut
 }
 
-export function checkText(r: CheckResult, commands: readonly OwnerCommandInfo[], root: string): string[] {
-  const own = [...requestsText(r.requests), ...asksText(r.asks, commands, root)]
-  return bounded([...(r.sections.length === 0 && own.length === 0 ? ['没有可报告的。'] : [...sectionsText(r.sections), ...own]), ...tail([], r.problems)])
+const cutLine = (cut: Cut) =>
+  `……还有 ${(Object.keys(PART_WORDS) as PartKind[]).flatMap((k) => (cut[k] === undefined ? [] : [PART_WORDS[k](cut[k])])).join('、')}没有给出。${cut.where}`
+
+/**
+ * The answer with as many of its parts as fit, in the order the text prints them: the first part that
+ * would take the text past AGENT_TEXT_LIMIT or the JSON past AGENT_JSON_LIMIT, and every part after it,
+ * are left out of both forms, so the two name the same things, and `cut` says what is missing and where.
+ */
+function fitted<J>(parts: number, shape: (kept: number) => Shaped<J>): Shaped<J> {
+  const fits = (a: Shaped<J>) => Buffer.byteLength(a.lines.join('\n')) <= AGENT_TEXT_LIMIT && Buffer.byteLength(JSON.stringify(a.json, null, 2)) <= AGENT_JSON_LIMIT
+  const whole = shape(parts)
+  if (fits(whole)) return whole
+  let best = shape(0)
+  for (let kept = 1; kept < parts; kept++) {
+    const next = shape(kept)
+    if (!fits(next)) break
+    best = next
+  }
+  return best
 }
 
-/** start's three parts under their headings. A part with nothing prints nothing; the related part says when nothing is related. */
-export function startText(say: SayResult, check: CheckResult, find: FindResult, commands: readonly OwnerCommandInfo[], root: string): string[] {
-  const part = (heading: string, lines: string[]) => (lines.length > 0 ? [heading, ...lines] : [])
-  return bounded([
-    ...part('【记下】', sayText(say)),
-    ...part('【库的变化与状况】', [...sectionsText(check.sections), ...requestsText(check.requests), ...asksText(check.asks, commands, root), ...tail([], check.problems)]),
-    ...part('【库里可能相关的】', findText(find, '库里没有和这件事相关的东西。')),
-  ])
+const STANDING_REST = '状况的全部：show ledger.standing；要主人做的：首页上的「等你决定」。'
+
+/** check's parts in the order its text prints them: each section, the caller's requests, each ask. */
+function checkParts(r: CheckResult): Part<unknown>[] {
+  const { ended, pending, more = 0 } = r.requests
+  return [
+    ...r.sections.map((value) => ({ kind: 'sections' as const, value })),
+    ...(ended.length > 0 || pending > 0 || more > 0 ? [{ kind: 'requests' as const, value: r.requests }] : []),
+    ...r.asks.map((value) => ({ kind: 'asks' as const, value })),
+  ]
+}
+
+/** The check answer holding only the kept parts. */
+function keptCheck(r: CheckResult, kept: readonly Part<unknown>[]): CheckResult {
+  const of = <T>(kind: PartKind) => kept.filter((p) => p.kind === kind).map((p) => p.value as T)
+  return { ...r, sections: of<Section>('sections'), asks: of<Ask>('asks'), requests: of<CheckResult['requests']>('requests')[0] ?? { ended: [], pending: r.requests.pending } }
+}
+
+const checkLines = (r: CheckResult, commands: readonly OwnerCommandInfo[], root: string) => [...sectionsText(r.sections), ...requestsText(r.requests), ...asksText(r.asks, commands, root)]
+
+/** check as both forms, bounded together. */
+export function checkAnswer(r: CheckResult, commands: readonly OwnerCommandInfo[], root: string): Shaped<CheckResult & { cut?: Cut }> {
+  const parts = checkParts(r)
+  return fitted(parts.length, (n) => {
+    const kept = keptCheck(r, parts.slice(0, n))
+    const cut = cutOf(parts.slice(n), STANDING_REST)
+    const own = checkLines(kept, commands, root)
+    const lines = [...(own.length === 0 && cut === null ? ['没有可报告的。'] : own), ...tail([], r.problems), ...(cut === null ? [] : [cutLine(cut)])]
+    return { json: { ...kept, ...(cut === null ? {} : { cut }) }, lines }
+  })
+}
+
+/** The hits of each entry find's text prints, by the path or the title they share, in rank order. */
+function entriesOf(hits: readonly Hit[]): Hit[][] {
+  const entries = new Map<string, Hit[]>()
+  for (const h of hits) entries.set(h.path ?? h.title, [...(entries.get(h.path ?? h.title) ?? []), h])
+  return [...entries.values()]
+}
+
+/** start's three parts under their headings, bounded together. A part with nothing prints nothing; the related part says when nothing is related. */
+export function startAnswer(
+  say: SayResult,
+  check: CheckResult,
+  find: FindResult,
+  sentence: string,
+  commands: readonly OwnerCommandInfo[],
+  root: string,
+): Shaped<{ say: SayResult; check: CheckResult; find: FindResult; cut?: Cut }> {
+  const heading = (title: string, lines: string[]) => (lines.length > 0 ? [title, ...lines] : [])
+  const entries = entriesOf(find.hits)
+  const parts: Part<unknown>[] = [...checkParts(check), ...entries.map((value) => ({ kind: 'hits' as const, value }))]
+  const where = `${STANDING_REST}可能相关的全部：find ${quote(sentence)}`
+  return fitted(parts.length, (n) => {
+    const kept = parts.slice(0, n)
+    const c = keptCheck(check, kept)
+    const f: FindResult = { ...find, hits: kept.flatMap((p) => (p.kind === 'hits' ? (p.value as Hit[]) : [])) }
+    const cut = cutOf(parts.slice(n), where)
+    const related = f.hits.length === 0 && entries.length > 0 ? tail([], f.problems) : findText(f, '库里没有和这件事相关的东西。')
+    const lines = [
+      ...heading('【记下】', sayText(say)),
+      ...heading('【库的变化与状况】', [...checkLines(c, commands, root), ...tail([], check.problems)]),
+      ...heading('【库里可能相关的】', related),
+      ...(cut === null ? [] : [cutLine(cut)]),
+    ]
+    return { json: { say, check: c, find: f, ...(cut === null ? {} : { cut }) }, lines }
+  })
+}
+
+/** How many entries one page of find holds. */
+export const FIND_ROWS = TEXT_ROWS
+
+/**
+ * One page of find, as both forms: the hits of its entries (FIND_ROWS of them, by the path or the
+ * title they share), and when there are more entries than one page, how many and the command for the
+ * next page.
+ */
+export function findAnswer(r: FindResult, page: number, next: (page: number) => string): Shaped<FindResult & { more?: { count: number; next: string | null } }> {
+  const entries = entriesOf(r.hits)
+  const shown: FindResult = { ...r, hits: entries.slice((page - 1) * FIND_ROWS, page * FIND_ROWS).flat() }
+  if (entries.length <= FIND_ROWS && page === 1) return { json: shown, lines: findText(shown) }
+  const last = page * FIND_ROWS >= entries.length
+  const more = { count: entries.length, next: last ? null : next(page + 1) }
+  const line = `……共 ${entries.length} 样，这是第 ${page} 页${more.next === null ? '，最后一页。' : `；下一页：${more.next}`}`
+  return { json: { ...shown, more }, lines: [...findText(shown, `第 ${page} 页上没有了。`), line] }
 }
 
 export function archiveText(kind: 'archive' | 'unarchive', r: ArchiveResult): string[] {

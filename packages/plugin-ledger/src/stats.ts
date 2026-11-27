@@ -1,7 +1,7 @@
 // The figures of the statistics page and `ledger stats`: four questions about the library. The fold
 // counts each fact into the row of its hour (UTC), so a period's figures are the sum of its hours' rows,
 // asked for and nothing else; what needed looking at is kept as it stood at the end of each hour. Days
-// are this machine's, as the view runs. ARCHITECTURE.md section 10 says how each figure is defined.
+// are this machine's, as the view runs. ARCHITECTURE.md「统计与导出」 says how each figure is defined.
 import type { Instant, LibraryPath } from '@pneuma-base/kernel'
 import { turned, type FactActor, type ItemId } from './facts.js'
 import { pagesOf, type Records, type Tx } from './rows.js'

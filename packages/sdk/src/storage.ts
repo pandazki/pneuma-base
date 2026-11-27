@@ -168,14 +168,35 @@ export interface PlaceStore {
   remove(place: Place, expect: string, opts?: { hold?: string }): Promise<{ removed: true } | StorageFailure>
 }
 
+/** The questions of a place store that change nothing: what is there, a level, comparisons, content, bytes. */
+export type PlaceReader = Pick<PlaceStore, 'glance' | 'overview' | 'look' | 'lookRows' | 'content' | 'read'>
+
 /**
- * Another record place of the library: its facts, read in storage's order and appended to, and its own
- * content. Only a plugin whose work is to carry the whole library elsewhere (sync) reaches one; any
- * other keeps to its own record place (the conformance check `writes`).
+ * Another record place of the library, to read: its facts in storage's order, and its own content.
+ * A plugin writes only its own record place; one whose work is to carry the whole library elsewhere
+ * (sync) copies another's synced part through `carry`.
  */
 export interface OtherRecordPlace {
-  readonly own: PlaceStore
-  readonly facts: Pick<RecordPlace, 'append' | 'since'>
+  readonly own: PlaceReader
+  readonly facts: Pick<RecordPlace, 'since'>
+}
+
+/**
+ * A record place's synced part as a plugin that carries the library elsewhere (sync) copies it in, as
+ * bytes from outside the library: a file or directory of its own content copied over a place or
+ * removed, each where the expectation holds, and a facts file written elsewhere put in whole under its
+ * name. It cannot append a fact, write a row, or change a facts file that is there.
+ */
+export interface Carrier {
+  /** Copies the file or directory at `from`, an absolute path outside the library, to `place` of the record place's own content. */
+  copy(place: Place, from: string, expect: Expect): Promise<Written | StorageFailure>
+  remove(place: Place, expect: string): Promise<{ removed: true } | StorageFailure>
+  /**
+   * Puts the facts file at `from`, an absolute path outside the library, in whole as `file`
+   * (`<YYYY-MM-DD>/<name>.jsonl`). `carried` is false when a file of that name is there, which stays
+   * as it is: carrying a file twice is carrying it once.
+   */
+  facts(file: string, from: string): Promise<{ carried: boolean } | StorageFailure>
 }
 
 /** What a plugin may ask of storage: the content where its records point, its own record place, and its own content beside it. */
@@ -200,8 +221,10 @@ export interface PluginStorage extends PlaceStore {
   readonly records: RecordPlace
   /** The record places the kernel knows in this library, by name: its own (`requests`) and each installed plugin's. */
   recordPlaces(): Promise<string[]>
-  /** The record place `name`, which need not be one `recordPlaces` names: one a plugin of another machine wrote. */
+  /** The record place `name` to read, which need not be one `recordPlaces` names: one a plugin of another machine wrote. */
   recordPlace(name: string): OtherRecordPlace
+  /** The record place `name`'s synced part, to copy in as bytes: for a plugin that carries the whole library elsewhere. */
+  carry(name: string): Carrier
 }
 
 /** Whether a glance found the place described, of whatever kind, rather than failing on it. */

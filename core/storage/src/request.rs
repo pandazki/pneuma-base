@@ -206,6 +206,15 @@ pub struct FactsSinceRequest {
     pub limit: usize,
 }
 
+/// A facts file written elsewhere, to be put in whole under its name: `day` (`YYYY-MM-DD`) and
+/// `name` (`<name>.jsonl`), from a file outside the library.
+pub struct FactsCarryRequest {
+    pub place: RecordPlace,
+    pub day: String,
+    pub name: String,
+    pub from: PathBuf,
+}
+
 pub enum RowChange {
     Put(Row),
     Delete(String),
@@ -655,6 +664,41 @@ pub fn facts_append(req: &Req) -> Parsed<FactsAppendRequest> {
     Ok(FactsAppendRequest {
         place: req.record_place()?,
         facts,
+    })
+}
+
+/// A facts file's name as `facts.carry` takes it: `<YYYY-MM-DD>/<name>.jsonl`, the name starting
+/// with a letter or a digit and made of letters, digits, `.`, `_` and `-`.
+fn facts_file(file: &str) -> Option<(String, String)> {
+    let (day, name) = file.split_once('/')?;
+    let digits = |s: &str| s.bytes().all(|b| b.is_ascii_digit());
+    let dated = day.len() == 10
+        && digits(&day[0..4])
+        && &day[4..5] == "-"
+        && digits(&day[5..7])
+        && &day[7..8] == "-"
+        && digits(&day[8..10]);
+    let stem = name.strip_suffix(".jsonl")?;
+    let named = name.len() <= 200
+        && stem
+            .bytes()
+            .next()
+            .is_some_and(|b| b.is_ascii_alphanumeric())
+        && stem
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
+    (dated && named).then(|| (day.to_owned(), name.to_owned()))
+}
+
+pub fn facts_carry(req: &Req) -> Parsed<FactsCarryRequest> {
+    let (day, name) = facts_file(&req.string("file")?).ok_or_else(Failure::bad_request)?;
+    Ok(FactsCarryRequest {
+        place: req.record_place()?,
+        day,
+        name,
+        from: req
+            .absolute_path("from")?
+            .ok_or_else(Failure::bad_request)?,
     })
 }
 

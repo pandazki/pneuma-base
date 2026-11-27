@@ -99,6 +99,17 @@ describe('ten sites, four switched on, to a dir target', () => {
     expect(section.body).toContain('file://')
   })
 
+  it('reads only the facts after those its rows were folded from: none when nothing happened since', () => {
+    ok(agent(['check']))
+    const log = join(tempDir(), 'tools.jsonl')
+    writeFileSync(log, '')
+    ok(owner(['check'], { PNEUMA_BASE_TOOL_LOG: log }))
+    const calls = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l) as { plugin: string; tool: string; entries?: number })
+    const read = calls.filter((c) => c.plugin === 'deploy' && c.tool === 'since')
+    expect(read.length).toBeGreaterThan(0)
+    expect(read.reduce((n, c) => n + (c.entries ?? 0), 0)).toBe(0)
+  })
+
   it('the switch is refused for an agent, by name, by grant, or by its session variable, and nothing goes online; an agent may still run deploy sync and deploy list', () => {
     ok(owner(['grant', 'issue', 'claude', '--agent', 'claude-code']))
     const attempts = [

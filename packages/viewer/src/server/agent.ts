@@ -1,6 +1,6 @@
 // The agent routes: what an agent that is not connected yet reads and asks for (the guide, pairing),
 // and MCP over HTTP for a connected one. They never see the token and never reach the owner's face;
-// the lint keeps the owner's routes and the owner face out of this module. ARCHITECTURE.md section 6.
+// the lint keeps the owner's routes and the owner face out of this module. ARCHITECTURE.md「本机的 endpoint」.
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http'
 import { GRANT_NAME, guideText, openLibrary, pairingAnswer, requestPairing, type Env, type Instant, type PairRequested } from '@pneuma-base/kernel'
 import { mediaType, readBody, sendJson } from './http.js'

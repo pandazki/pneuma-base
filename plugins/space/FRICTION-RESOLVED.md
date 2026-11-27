@@ -172,7 +172,7 @@ The plugin is the kit's `deployPlugin` with one target adapter (`src/target.ts`)
 - Would remove it: N1's `detail` passed per thing.
 
 **N12. A library holds one deploy plugin.**
-- **Still there, by design.** ARCHITECTURE.md section 13 now says so: one deploy plugin per library, and several kinds of target in one plugin when sites go to several places.
+- **Still there, by design.** ARCHITECTURE.md「部署」 now says so: one deploy plugin per library, and several kinds of target in one plugin when sites go to several places.
 - Needed: nothing yet, but `space` and the built-in `deploy` both claim `deployable`, so a library cannot use both (C5).
 - Did instead: nothing. The kit's way is one plugin with several adapters, and a third party cannot add an adapter to the built-in `deploy`.
 - Would remove it: say this in the standard, or let a library choose the deploy plugin that hears `deployable`.

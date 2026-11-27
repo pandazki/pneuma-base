@@ -1,5 +1,5 @@
-// The ledger's body: immutable facts, appended through storage, one write per hook. ledger-design.md
-// sections 1 and 2; where storage puts them is storage's (core/README.md). A thing is known by its
+// The ledger's body: immutable facts, appended through storage, one write per hook. ARCHITECTURE.md
+// 「记什么」; where storage puts them is storage's (core/README.md). A thing is known by its
 // state token, which storage gave when the fact was written; its fingerprint is there only when its
 // content passed through the kernel or somebody read it. Facts written before tokens existed have none.
 import { randomBytes } from 'node:crypto'

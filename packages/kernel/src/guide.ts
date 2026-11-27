@@ -1,6 +1,6 @@
 // The guide an agent reads to connect itself: a generic one, and one per product of the products
 // table. The command line prints it (`pneuma-base guide`) and the endpoint serves the same text
-// (`/guide`, `/guide/<product>`). ARCHITECTURE.md section 6.
+// (`/guide`, `/guide/<product>`). ARCHITECTURE.md「本机的 endpoint」.
 import { basename, join } from 'node:path'
 import { WAY_WORD, whereOf } from './agent-commands.js'
 import { guideUrl, mcpUrl } from './endpoint.js'

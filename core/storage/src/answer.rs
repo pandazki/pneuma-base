@@ -377,6 +377,12 @@ pub struct FactsAppendAnswer {
     pub orders: Vec<String>,
 }
 
+/// `carried`: false when a facts file of that name was there already, which is left as it was.
+#[derive(Debug, Serialize)]
+pub struct FactsCarryAnswer {
+    pub carried: bool,
+}
+
 #[derive(Debug, Serialize)]
 pub struct Fact {
     pub order: String,
