@@ -10,7 +10,13 @@
 # a file dropped on the window (the drop code, by a test hook) is put as brought by the owner, into
 # inbox/ or the folder the library page shows, named as Finder names a copy when the name is taken; a
 # file written straight into the library is heard through the subscription and registered as the
-# owner's and seen, a direct change recorded as seen; a
+# owner's and seen, a direct change recorded as seen; files of the library behave as in Finder,
+# driven by the page's messages to the shell (posted by a test hook; the shell's acts outside the app
+# only logged, so nothing launches): Quick Look is asked for the right files and closes, open, reveal
+# and copy-path name the right files, thumbnails stop at 50, draw a placeholder as its type's icon
+# and come from the cache the second time, a drag offers the file as a copy, the context menu has the
+# system's entries then the page's, and a conversation is opened again by its URL, by a .command file
+# that resumes it in its directory, or by revealing its transcript; a
 # small plain folder written in is registered as one thing, a project folder of 80,000 files is the
 # ledger's question and nothing in it is registered; an agent's puts stay the
 # agent's; connecting the fake Claude Code folds the first step; with env -i and system tools only,
@@ -64,6 +70,23 @@ page_text() { rm -f "$work/$1"; hook "${2:-text}:$work/$1"; i=0; while [ ! -f "$
 # Polls the page text until it matches $2, for up to $3 seconds; $4 = text-tray for the panel's.
 page_shows() { i=0; while [ $i -lt "$3" ]; do page_text "$1" "${4:-text}" | grep -q "$2" && return 0; sleep 1; i=$((i+1)); done; return 1; }
 snap() { [ -z "$shots" ] && return 0; mkdir -p "$shots"; for look in light dark; do hook "$look"; sleep 1; hook "$1:$shots/$2-$look.png"; wait_for "snap: wrote $2-$look.png" 5 || echo "     (no picture $2-$look)"; done; hook system; }
+# The log from here on: `logged <text> [seconds]` waits (default 5 s) for a line holding the text after the last `mark`.
+mark() { mark=$(wc -l < "$log" | tr -d ' '); }
+since_mark() { tail -n +$((mark + 1)) "$log"; }
+logged() { i=0; while ! since_mark | grep -qF -- "$1" && [ $i -lt $((${2:-5} * 10)) ]; do sleep 0.1; i=$((i+1)); done; since_mark | grep -qF -- "$1"; }
+# Runs the JavaScript $1 in the window's page and prints what it evaluated to, as the eval: hook logs
+# it. The hook carries $1 in a quoted string: no single quotes or backslashes in it.
+page_eval() {
+  n=$(grep -c " eval: " "$log" || true)
+  hook "eval:$1"
+  i=0; while [ "$(grep -c " eval: " "$log" || true)" -le "$n" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done
+  grep " eval: " "$log" | tail -1 | sed 's/^.* eval: //'
+}
+# Posts the page message $1, a JavaScript object, to the shell as the page does.
+shell_post() { page_eval "window.webkit.messageHandlers.shell.postMessage($1), \"posted\"" >/dev/null; }
+# From now on the page keeps the pneuma-shell events it hears in window.__heard, emptied here; `heard <js>` evaluates an expression over them.
+listen() { page_eval 'window.__heard = []; if (!window.__listening) { window.__listening = true; window.addEventListener("pneuma-shell", (e) => window.__heard.push(e.detail)) }; "listening"' >/dev/null; }
+heard() { page_eval "$1"; }
 ok() { echo "ok   $1"; }
 fail() { echo "FAIL $1"; status=1; }
 status=0
@@ -124,6 +147,70 @@ pb --library "$lib" inspect report.pdf | grep -q "出处：https://example.com/f
 echo "changed in place" >> "$lib/inbox/dropped.txt"
 wait_for "watcher: registered \[\] seen \[\"inbox/dropped.txt\"\]" 20 && ok "a direct change: recorded" || fail "a direct change: recorded"
 pb --library "$lib" inspect inbox/dropped.txt | grep -q "直接改的，自动登记" && ok "it is recorded as seen: 直接改的，自动登记" || fail "the change is recorded as seen"
+
+# Files of the library as in Finder, driven by the page's messages to the shell (posted with eval:);
+# with hooks the shell's acts outside the app are only logged (opener: …), so nothing launches.
+/usr/bin/python3 -c "
+import struct, sys, zlib
+w, h = 96, 64
+rows = b''.join(b'\x00' + bytes(v for x in range(w) for v in (x * 255 // w, y * 255 // h, 160)) for y in range(h))
+chunk = lambda t, d: struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
+open(sys.argv[1], 'wb').write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(rows)) + chunk(b'IEND', b''))
+" "$work/pic.png"
+sips -s format pdf "$work/pic.png" --out "$work/doc.pdf" >/dev/null
+mkdir -p "$work/many" && for i in $(seq -w 1 53); do echo "note $i" > "$work/many/n$i.txt"; done
+for f in pic.png doc.pdf many; do pb --library "$lib" put "$work/$f" --to "$f" --brought --by owner >/dev/null; done
+listen
+mark; shell_post '{ type: "preview", paths: ["inbox/dropped.txt"], at: 0 }'
+logged "preview: $lib/inbox/dropped.txt at 0" && ok "preview: Quick Look on the file at its path on this machine" || fail "preview of one: $(since_mark | grep 'preview:\|files:')"
+mark; shell_post '{ type: "preview", paths: ["pic.png", "doc.pdf"], at: 1 }'
+logged "preview: $lib/pic.png | $lib/doc.pdf at 1" && ok "preview of two: both, showing the second" || fail "preview of two: $(since_mark | grep 'preview:\|files:')"
+mark; shell_post '{ type: "preview", paths: [], at: 0 }'
+logged "preview: close" && [ "$(heard 'JSON.stringify(window.__heard.filter((d) => "previewing" in d))')" = '[{"previewing":true},{"previewing":false}]' ] \
+  && ok "an empty preview closes the panel; the page heard previewing true, then false" || fail "closing the preview: heard $(heard 'JSON.stringify(window.__heard.filter((d) => "previewing" in d))'), $(since_mark | grep 'preview:')"
+mark; shell_post '{ type: "launch", paths: ["inbox/dropped.txt", "docs"] }'
+logged "opener: open $lib/inbox/dropped.txt | $lib/docs" && ok "launch: each opened with its default application, a directory as itself (stubbed)" || fail "launch: $(since_mark | grep 'opener:\|files:')"
+mark; shell_post '{ type: "reveal", paths: ["report.pdf"] }'
+logged "opener: reveal $lib/report.pdf" && ok "reveal: shown in Finder (stubbed)" || fail "reveal: $(since_mark | grep 'opener:\|files:')"
+mark; shell_post '{ type: "copy-path", paths: ["pic.png", "doc.pdf"] }'
+logged "opener: copy $lib/pic.png" && since_mark | grep -qxF "$lib/doc.pdf" && ok "copy-path: the absolute paths, one per line (stubbed)" || fail "copy-path: $(since_mark | tail -3)"
+
+hook "fake-placeholder:inbox/on-icon.txt"
+thumbs='{ type: "thumbnails", px: 128, items: ["pic.png", "doc.pdf", "report.pdf", "docs", "inbox/on-icon.txt", "inbox/dropped.txt", "docs/shown.txt"].concat(Array.from({ length: 53 }, (_, i) => "many/n" + String(i + 1).padStart(2, "0") + ".txt")).map((path, i) => ({ path, token: "t" + i })) }'
+mark; shell_post "$thumbs"
+logged "thumbnails: asked 60, kept 50, " 60 && since_mark | grep -qF 'placeholders ["inbox/on-icon.txt"]' \
+  && ok "thumbnails: 60 asked, 50 kept; the placeholder gets the icon of its type, its content untouched: $(since_mark | sed -n 's/.*thumbnails: \(asked\)/\1/p')" || fail "thumbnails: $(since_mark | grep 'thumbnails:\|files:' | head -5)"
+answers=$(heard 'new Set(window.__heard.filter((d) => d.thumbnail && d.thumbnail.src.startsWith("data:image/png;base64,")).map((d) => d.thumbnail.token)).size')
+[ "$answers" = 50 ] && ok "the page heard 50 thumbnails, each by itself with its token, as data:image/png" || fail "thumbnails heard: $answers"
+mark; shell_post "$thumbs"
+logged "thumbnails: asked 60, kept 50, cached 48, made 0, icons 2, " 30 && ok "asked again: from the cache, the folder and the placeholder drawn as icons" || fail "thumbnails again: $(since_mark | grep 'thumbnails:')"
+cached=$(ls "$pb_home/app/cache/thumbnails/"*/*.png 2>/dev/null | wc -l | tr -d ' ')
+[ "$cached" = 48 ] && ok "kept in the app's cache: $cached files" || fail "thumbnails in $pb_home/app/cache/thumbnails: $cached"
+# An entry not touched for 30 days, removed at the next launch.
+stale="$(dirname "$(ls "$pb_home/app/cache/thumbnails/"*/*.png | head -1)")/stale.png"
+cp "$(ls "$pb_home/app/cache/thumbnails/"*/*.png | head -1)" "$stale" && touch -t "$(date -v-31d +%Y%m%d%H%M)" "$stale"
+
+mark; shell_post '{ type: "drag", paths: ["report.pdf"] }'
+logged "drag: offers $(/usr/bin/python3 -c 'import pathlib, sys; print(pathlib.Path(sys.argv[1]).as_uri())' "$lib/report.pdf") as copy" && ok "drag: the file offered as a copy" || fail "drag: $(since_mark | grep 'drag:\|files:')"
+
+menu='{ type: "menu", paths: ["report.pdf"], x: 240, y: 180, items: [{ id: "move", label: "挪到…" }, { id: "archive", label: "归档" }, { id: "remove", label: "丢掉", danger: true }] }'
+mark; shell_post "$menu"
+logged "menu: 打开 | 打开方式 | — | 快速查看 | 在访达中显示 | 拷贝路径 | — | 挪到… | 归档 | — | 丢掉" && ok "menu: the system's entries, then the page's, the destructive one last after a separator" || fail "menu: $(since_mark | grep 'menu:')"
+mark; hook "menu-pick:在访达中显示"
+logged "opener: reveal $lib/report.pdf" && ok "menu: 在访达中显示 reveals (stubbed)" || fail "menu-pick 在访达中显示: $(since_mark | tail -2)"
+mark; shell_post "$menu"; logged "menu: 打开 |"; hook "menu-pick:归档"
+i=0; while [ "$(heard 'window.__heard.some((d) => d.menu === "archive")')" != true ] && [ $i -lt 20 ]; do sleep 0.1; i=$((i+1)); done
+[ "$(heard 'window.__heard.some((d) => d.menu === "archive")')" = true ] && ok "menu: the page's entry comes back to the page as { menu: id }" || fail "menu-pick 归档: heard $(heard 'JSON.stringify(window.__heard.filter((d) => "menu" in d))')"
+
+mark; shell_post '{ type: "reopen", url: "https://example.com/session/1", run: null, reveal: "" }'
+logged "opener: url https://example.com/session/1" && ok "reopen: a URL an application handles is opened (stubbed)" || fail "reopen by URL: $(since_mark | grep 'reopen:\|opener:')"
+mark; shell_post "{ type: \"reopen\", url: \"pneuma-verify-nothing://session/1\", run: { command: \"echo resumed\", cwd: \"$work\" }, reveal: \"$lib/report.pdf\" }"
+logged "reopen: run echo resumed in $work" && command_file=$(since_mark | sed -n 's/.* opener: run //p' | head -1) && [ -x "$command_file" ] \
+  && [ "$(cat "$command_file")" = "$(printf '#!/bin/sh\ncd '"'"'%s'"'"' || exit 1\nexec echo resumed' "$work")" ] \
+  && ok "reopen: no handler for the URL, so a .command file that cds into the directory and execs the command (not opened)" || fail "reopen by command: $(since_mark | tail -4)"
+mark; shell_post "{ type: \"reopen\", url: null, run: null, reveal: \"$lib/report.pdf\" }"
+logged "reopen: reveal $lib/report.pdf" && logged "opener: reveal $lib/report.pdf" && ok "reopen: with neither, the transcript is revealed (stubbed)" || fail "reopen by reveal: $(since_mark | grep 'reopen:\|opener:')"
+hook owner-files:off; wait_for "app: owner files off" 5 && hook owner-files:on && wait_for "app: owner files on" 5 && ok "owner-files:off and :on switch 直接放进来的文件算主人的" || fail "owner-files hooks: $(grep 'owner files' "$log")"
 
 # A small plain folder written in is registered as one thing; a project folder of 80,000 files is the ledger's question.
 mkdir -p "$lib/photos" && for i in 1 2 3; do echo "photo $i" > "$lib/photos/p$i.jpg"; done
@@ -248,6 +335,7 @@ desktop_before=$(cat "$desktop"); skill_before=$(cat "$skill")
 : > "$log"
 start "$work/moved/Pneuma Base.app"
 wait_for "launcher: written" 10 && grep -q "exec '$work/moved/Pneuma Base.app/Contents/MacOS/node'" "$launcher" && ok "moved: the launcher now runs the moved app's Node" || fail "moved: $(grep 'launcher:' "$log") $(tail -1 "$launcher")"
+wait_for "thumbnails: removed 1 not used for 30 days" 10 && [ ! -e "$stale" ] && [ "$(ls "$pb_home/app/cache/thumbnails/"*/*.png | wc -l | tr -d ' ')" = 48 ] && ok "launched again: the thumbnail not used for 30 days is removed, the others stay" || fail "thumbnail cache at launch: $(grep 'thumbnails:' "$log") $(ls -l "$stale" 2>&1)"
 [ "$(cat "$desktop")" = "$desktop_before" ] && [ "$(cat "$skill")" = "$skill_before" ] && bare "$find_line" | grep -q "notes/books.md" && ok "moved: the skill and the MCP entry are unchanged and still work" || fail "moved: the entries"
 stop
 mv "$work/moved/Pneuma Base.app" "$work/moved/gone.app"

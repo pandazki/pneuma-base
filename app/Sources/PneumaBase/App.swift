@@ -26,6 +26,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   private var revTimer: Timer?
   private var revAsking = false
   private var cursorSave: Timer?
+  /// What the window's page asks of the shell about files of the library.
+  private lazy var files = FileActions(window: window, config: config, hooks: Config.hooksName != nil, resolve: { [weak self] places in
+    guard let self, let library = self.current, self.hasLibrary else { return [] }
+    return LocalFile.from(await self.glance(places, facets: ["fs.path"], in: library), places: places)
+  }, library: { [weak self] in self?.current })
+  /// Library places whose glance answers carry a `placeholder` facet (`fake-placeholder:`): a real placeholder cannot be made in a check.
+  private var fakePlaceholders: Set<String> = []
 
   private var current: URL? { prefs.current.map { URL(fileURLWithPath: $0, isDirectory: true) } }
 
@@ -44,7 +51,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
       DispatchQueue.main.async { MainActor.assumeIsolated { Log.line("app: notifications \(granted ? "allowed" : "not allowed")\(why)") } }
     }
     window.onFiles = { [weak self] urls in self?.bring(urls, into: self?.window.currentFolder, from: "窗口") }
-    window.onPageMessage = { [weak self] body in self?.pageSaid(body) }
+    window.quickLook = files.quickLook
+    window.onPageMessage = { [weak self] body in
+      guard let self, !self.files.handle(body) else { return }
+      self.pageSaid(body)
+    }
     tray.onMessage = { [weak self] body in self?.pageSaid(body) }
     welcome.onChoose = { [weak self] choice in self?.chooseFolder(in: choice) }
     welcome.onInstallOther = { [weak self] in self?.installOther() }
@@ -380,10 +391,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   /// How many names one look at a dropped file's place asks storage about.
   private static let namesAsked = 50
 
-  /// Storage's `glance` of these places: through the watcher's provider when it runs, else a run of the provider's program.
-  private func glance(_ places: [String], in library: URL) async -> [String: Any]? {
-    if watcher?.library == library, let answer = await watcher?.ask("glance", ["places": places]) { return answer }
-    return await askStorage("glance", ["places": places], of: library, config: config)
+  /// Storage's `glance` of these places, with these facets: through the watcher's provider when it
+  /// runs, else a run of the provider's program.
+  private func glance(_ places: [String], facets: [String] = [], in library: URL) async -> [String: Any]? {
+    let body: [String: Any] = facets.isEmpty ? ["places": places] : ["places": places, "facets": facets]
+    var answer: [String: Any]? = nil
+    if watcher?.library == library { answer = await watcher?.ask("glance", body) }
+    if answer == nil { answer = await askStorage("glance", body, of: library, config: config) }
+    guard !fakePlaceholders.isEmpty, var entries = answer?["entries"] as? [[String: Any]] else { return answer }
+    for i in entries.indices where fakePlaceholders.contains(entries[i]["place"] as? String ?? "") {
+      var facets = entries[i]["facets"] as? [String: Any] ?? [:]
+      facets["placeholder"] = [String: Any]()
+      entries[i]["facets"] = facets
+    }
+    answer?["entries"] = entries
+    return answer
   }
 
   /// Files or folders the owner picks after the page's 选择….
@@ -551,8 +573,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   @objc private func toggleOwnerFiles() { settings?.model.ownerFiles.toggle() }
 
   func validateMenuItem(_ item: NSMenuItem) -> Bool {
-    if item.action == #selector(toggleOwnerFiles) { item.state = prefs.watchesOwnerFiles ? .on : .off }
-    return true
+    switch item.action {
+    case #selector(toggleOwnerFiles):
+      item.state = prefs.watchesOwnerFiles ? .on : .off
+      return true
+    case #selector(selectionCommand(_:)): return window.isOpen && files.selection > 0
+    case #selector(viewCommand(_:)): return window.isOpen
+    default: return true
+    }
   }
 
   // MARK: Notifications
@@ -621,8 +649,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
       .separator(),
       item("退出 Pneuma Base", #selector(NSApplication.terminate(_:)), "q"),
     ])
+    // A command for the page, named by the item's identifier.
+    func command(_ title: String, _ name: String, _ action: Selector, _ key: String = "", _ mods: NSEvent.ModifierFlags = .command) -> NSMenuItem {
+      let i = item(title, action, key, mods, target: self)
+      i.identifier = NSUserInterfaceItemIdentifier(name)
+      return i
+    }
+    let up = String(Character(UnicodeScalar(NSUpArrowFunctionKey)!))
     submenu("文件", [
-      item("新建或打开一个库…", #selector(chooseLibrary), "o", target: self),
+      item("新建或打开一个库…", #selector(chooseLibrary), "o", [.command, .shift], target: self),
+      .separator(),
+      command("打开", "open", #selector(selectionCommand(_:)), "o"),
+      command("快速查看", "preview", #selector(selectionCommand(_:)), "y"),
+      command("在访达中显示", "reveal", #selector(selectionCommand(_:)), "r"),
+      command("拷贝路径", "copy-path", #selector(selectionCommand(_:)), "c", [.command, .option]),
+      command("重新命名", "rename", #selector(selectionCommand(_:))),
       .separator(),
       item("关闭窗口", #selector(NSWindow.performClose(_:)), "w"),
     ])
@@ -640,10 +681,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
       item("查找上一个", #selector(findPrevious), "g", [.command, .shift], target: self),
     ])
     submenu("显示", [
+      command("列表", "list", #selector(viewCommand(_:)), "1"),
+      command("图标", "icons", #selector(viewCommand(_:)), "2"),
+      .separator(),
       item("后退", #selector(goBack), "[", target: self),
       item("前进", #selector(goForward), "]", target: self),
+      command("上一级", "up", #selector(viewCommand(_:)), up),
       .separator(),
-      item("重新载入", #selector(reloadPage), "r", target: self),
+      item("重新载入", #selector(reloadPage), "r", [.command, .option], target: self),
       .separator(),
       item("进入全屏幕", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
     ])
@@ -664,6 +709,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   @objc private func goBack() { window.back() }
   @objc private func goForward() { window.forward() }
   @objc private func reloadPage() { window.reload() }
+  /// 打开, 快速查看, 在访达中显示, 拷贝路径, 重新命名: for the page's selection.
+  @objc private func selectionCommand(_ item: NSMenuItem) { item.identifier.map { files.command($0.rawValue) } }
+  /// 列表, 图标, 上一级: for the page the window shows.
+  @objc private func viewCommand(_ item: NSMenuItem) { item.identifier.map { files.command($0.rawValue) } }
 
   // MARK: Test hooks
 
@@ -676,7 +725,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   /// window), `route:<fragment>` (the page's address fragment), `tray` (a click on the icon), `text:<file>` and `text-tray:<file>` (the page's text),
   /// `snap:<file>`, `snap-tray:<file>`, `snap-welcome:<file>` and `snap-settings:<file>` (a picture of it), `text-welcome:<file>` (what the first-launch window offers),
   /// `settings` (the settings window), `path-link:<folder>` and `path-unlink` (as the 在终端里用
-  /// pneuma-base switch does), `text-settings:<file>` (the settings in words).
+  /// pneuma-base switch does), `text-settings:<file>` (the settings in words), `eval:<js>` (runs it in the
+  /// window's page and logs `eval: <the result as text>`; the checks post the page's messages with it),
+  /// `menu-pick:<title>` (with hooks the context menu is not popped up, being modal: its entries are
+  /// logged and kept, and this performs the one with that title, a page entry by its label),
+  /// `fake-placeholder:<library path>` (from now on the app's glance answers for that place carry a
+  /// `placeholder` facet), `owner-files:on` and `owner-files:off` (as the 直接放进来的文件算主人的 item does).
+  /// With hooks, acts that reach outside the app (opening, revealing, the pasteboard, a terminal) are
+  /// only logged, as `opener: …`.
   private func listenForTestCommands() {
     guard let name = Config.hooksName else { return }
     DistributedNotificationCenter.default().addObserver(forName: Notification.Name(name), object: nil, queue: .main) { [weak self] note in
@@ -713,6 +769,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
           let xy = rest.split(separator: ",").compactMap { Double($0) }
           if xy.count == 2 { self.window.hitForTest(x: xy[0], y: xy[1]) }
         case "find": self.window.findForTest(rest)
+        case "eval": self.window.evalForTest(rest)
+        case "menu-pick": self.files.pick(rest)
+        case "fake-placeholder": self.fakePlaceholders.insert(rest)
+        case "owner-files": self.settings?.model.ownerFiles = rest == "on"
         case "pids": Log.line("pids: app \(getpid()) server \(self.server?.pid ?? 0) web \(self.window.webContentPid ?? 0) storage \(self.watcher?.pid ?? 0)")
         default: break
         }
