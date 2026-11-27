@@ -137,7 +137,7 @@ async function inspect(req: InspectRequest, ctx: Context): Promise<InspectResult
   const request = named.file === null && named.place === undefined ? await requestNamed(ctx.library.root, req.target) : null
   const result: InspectResult = { file: named.file, ...(named.place ? { place: named.place } : {}), sections: stamp(heard), problems: heard.problems, ...(request === null ? {} : { request }) }
   if (req.content === undefined) return result
-  return { ...result, content: named.file === null ? { kind: 'unavailable', path: null, reason: 'no-such-file' } : await contentOf(ctx, store, named.file, req.content.file) }
+  return { ...result, content: named.file === null ? { kind: 'unavailable', path: null, reason: 'no-such-file' } : await contentOf(ctx, store, named.file, req.content.file, req.content.fetch === true) }
 }
 
 /** The thing a target names, as storage says it is now: the main one, else its archived copy; `_archive/…` names the archived copy. */

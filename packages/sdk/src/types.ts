@@ -276,8 +276,11 @@ export type FindRequest = { text: string | null; match: 'terms' | 'words'; filte
 export type Hit = { path: LibraryPath | null; title: string; by: PluginName | 'kernel'; group: string | null; detail: string | null }
 export type FindResult = { hits: Hit[]; problems: PluginProblem[] }
 
-/** `content`: give the thing's content too, for a caller that cannot read files; `file` is one in a bundle, relative to it. */
-export type InspectRequest = { target: string; content?: { file: string | null } }
+/**
+ * `content`: give the thing's content too, for a caller that cannot read files; `file` is one in a
+ * bundle, relative to it; `fetch`: a file whose content is elsewhere (a placeholder) is fetched first.
+ */
+export type InspectRequest = { target: string; content?: { file: string | null; fetch?: boolean } }
 /** One thing of the library: a regular file, or a directory with the marker `.pneuma-item`. */
 export type ThingKind = 'file' | 'bundle'
 /**
@@ -309,14 +312,17 @@ export type PlaceFacts =
 /**
  * A thing's content, as inspect gives it when asked. `text`: a file of UTF-8 text within the kernel's
  * limit (256 KB). `other`: any other file, with its size and the media type its name says, null when
- * the name says none. `level`: one level of a bundle, or of a directory in it. `unavailable`: outside
- * the caller's grant, no such file in the bundle or nothing at the target, or a file asked of a thing
- * that is no bundle.
+ * the name says none. `level`: one level of a bundle, or of a directory in it. `elsewhere`: only a
+ * placeholder is on this machine; the content is with `provider` (the placeholder facet's, null when
+ * not known), `size` bytes there, and is given when asked with `fetch`. `unavailable`: outside the
+ * caller's grant, no such file in the bundle or nothing at the target, or a file asked of a thing that
+ * is no bundle.
  */
 export type Content =
   | { kind: 'text'; path: LibraryPath; size: number; text: string }
   | { kind: 'other'; path: LibraryPath; size: number; type: string | null; why: 'not-utf8' | 'too-large' }
   | { kind: 'level'; path: LibraryPath; level: Level }
+  | { kind: 'elsewhere'; path: LibraryPath; size: number | null; provider: string | null }
   | { kind: 'unavailable'; path: LibraryPath | null; reason: 'outside-grant' | 'no-such-file' | 'not-a-bundle' }
 /**
  * `file`: the thing the target names. `place`: a directory that is no thing, or noise, when that is

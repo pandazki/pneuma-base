@@ -22,7 +22,7 @@ import {
   type PassProgress,
   type PluginTable,
 } from '@pneuma-base/kernel'
-import { archiveSummary, askSummary, ownerSummary, passSummary, putSummary, readSummary, saySummary, type Summary } from './summary.js'
+import { archiveSummary, askSummary, inspectSummary, ownerSummary, passSummary, putSummary, readSummary, saySummary, type Summary } from './summary.js'
 
 /**
  * What the server was started with. `builtins` are the caller's plugins; this machine's own join them
@@ -118,7 +118,7 @@ async function perform(call: Call, confirmed: boolean, library: Library, table: 
     }
     case 'inspect': {
       const r = await agentFace.inspect(call.request, ctx)
-      return { result: r, summary: readSummary(r.problems) }
+      return { result: r, summary: inspectSummary(r) }
     }
     case 'check': {
       const r = await agentFace.check(call.request, ctx)

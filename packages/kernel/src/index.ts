@@ -18,6 +18,7 @@ export { archivedPath, originalPath, parseLibraryPath, regionOf, shortDir, withS
 export { listenTo, stopListening } from './changes.js'
 export { changeStamp, dirKind, dirsAbove, KERNEL_ENTRIES, openDirectories, openDirsOf, placeIn, probeWords, type DirKind, type Registered } from './places.js'
 export { BUNDLE_MARKER, fingerprintOfManifest } from './things.js'
+export { elsewhereWords } from './view-parts.js'
 export { loadPlugins, whyNotLoaded } from './plugin-table.js'
 export { FIRST_WORDS } from './products.js'
 export { ensureLauncher } from './launcher.js'
