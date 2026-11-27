@@ -209,7 +209,8 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
   }
 
   func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-    guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
+    // Only the app's own page speaks to the shell: a plugin's view runs in a frame of it, and must not open files or run a terminal.
+    guard message.frameInfo.isMainFrame, let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
     switch type {
     case "ready":
       ready = true

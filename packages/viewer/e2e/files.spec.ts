@@ -5,7 +5,7 @@
 // actions: archive, move, rename in place.
 import { utimesSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, png, tempDir, test, write, type Cli } from './support.ts'
+import { cutTexts, expect, png, tempDir, test, write, type Cli } from './support.ts'
 
 /** A library with the ledger: three files and two folders in `inbox/`, an image among them, the files changed a day apart. */
 async function library(pb: Cli): Promise<{ url: string; lib: string }> {
@@ -57,6 +57,8 @@ test('a folder as a list or as icons, chosen in the head or with ⌘1 and ⌘2, 
   await expect(main.getByRole('row', { name: /b-notes\.md/ })).toBeVisible()
   await page.keyboard.press('Meta+2')
   await expect(icons.getByRole('option')).toHaveCount(4)
+  await expect(looks.getByRole('radio', { name: '图标' })).toHaveAttribute('aria-checked', 'true')
+  await expect(looks.getByRole('radio', { name: '列表' })).toHaveAttribute('aria-checked', 'false')
 })
 
 test('selection as in a file manager: click, ⌘-click, Shift-click, ⌘A, arrows, typed letters; a double-click opens a folder; Space previews', async ({ page, pb }) => {
@@ -203,4 +205,18 @@ test('the context menu: the page’s preview and a path to copy, then the librar
   await row(/c-picture\.png/).click({ button: 'right' })
   await menu.getByRole('menuitem', { name: '挪到…' }).click()
   await expect(page.getByRole('dialog').getByRole('textbox', { name: '新的库内路径' })).toHaveValue('inbox/c-picture.png')
+})
+
+test('a time from today keeps its whole width as the page’s clock moves it on: 刚刚 becomes 1 分钟前 and stays whole', async ({ page, pb }) => {
+  const lib = join(tempDir(), 'lib')
+  write(lib, 'fresh.md', 'x\n')
+  pb.run(['init', lib, '--bare'])
+  const { url } = await pb.view(lib)
+  await page.clock.install()
+  await page.goto(`${url}#view=files`)
+  const row = page.getByRole('main').getByRole('row', { name: /fresh\.md/ })
+  await expect(row).toContainText('刚刚')
+  await page.clock.runFor(70_000)
+  await expect(row).toContainText('1 分钟前')
+  expect(await cutTexts(page.getByRole('main').getByRole('table'))).toEqual([])
 })

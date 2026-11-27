@@ -54,16 +54,15 @@ if (IN_SHELL) {
 const THUMB_PX = Math.round(96 * Math.min(2, window.devicePixelRatio || 1))
 const asked = new Set<string>()
 const queue: { path: string; token: string | null }[] = []
-let flush = 0
 
+/** Asks for one tile's art; the tiles that came into view together go in one message, 50 at most to a message. */
 function askThumbnail(path: string, token: string | null) {
   const key = thumbKey(path, token)
   if (asked.has(key) || thumbs.has(key)) return
   asked.add(key)
   queue.push({ path, token })
-  if (flush === 0)
-    flush = requestAnimationFrame(() => {
-      flush = 0
+  if (queue.length === 1)
+    queueMicrotask(() => {
       while (queue.length > 0) tellShell({ type: 'thumbnails', items: queue.splice(0, 50), px: THUMB_PX })
     })
 }
@@ -73,13 +72,20 @@ const subscribe = (f: () => void) => {
   return () => thumbSubs.delete(f)
 }
 
-/** Whether the element is in view, kept up to date. */
+const NEAR = 120
+
+/**
+ * Whether the element has come within `NEAR` pixels of the view. Measured at once as well as watched:
+ * a window the system counts as hidden behind others gets no intersection callbacks until it shows.
+ */
 function useVisible(): [(el: Element | null) => void, boolean] {
   const [el, setEl] = useState<Element | null>(null)
   const [seen, setSeen] = useState(false)
   useEffect(() => {
     if (!el || seen) return
-    const observer = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && setSeen(true), { rootMargin: '120px' })
+    const box = el.getBoundingClientRect()
+    if (box.bottom > -NEAR && box.top < window.innerHeight + NEAR && box.right > -NEAR && box.left < window.innerWidth + NEAR) return setSeen(true)
+    const observer = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && setSeen(true), { rootMargin: `${NEAR}px` })
     observer.observe(el)
     return () => observer.disconnect()
   }, [el, seen])
@@ -557,9 +563,9 @@ export function useFiles(block: Table): Files | null {
 
 // ---- the icons ----
 
-/** A badge for a state that is not the usual one: the row's first tag, and a cloud for content kept elsewhere. */
+/** A badge for a state that is not the usual one: the row's first tag with a tone (a neutral one, such as a count, is no state), and a cloud for content kept elsewhere. */
 function Badges({ row }: { row: Placed }) {
-  const tag = Object.values(row.cells).find((c) => c.tag !== undefined && c.normal !== true)?.tag
+  const tag = Object.values(row.cells).find((c) => c.tag !== undefined && c.tag.tone !== 'neutral' && c.normal !== true)?.tag
   return (
     <>
       {tag ? <span className="tile-badge" data-tone={tag.tone} aria-label={tag.text} data-tip={tag.text} role="img" /> : null}

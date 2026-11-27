@@ -463,8 +463,8 @@ export function App() {
   }, [prefs.rail, crowded, tight, setPrefs])
 
   // A page of files: list or icons, and up to the folder above, from the app's menus or, in a browser, ⌘1, ⌘2 and ⌘↑.
-  const shownResult = shown.data?.outcome === 'shown' ? shown.data : null
-  const trail = shownResult?.trail
+  const trail = shown.data?.outcome === 'shown' ? shown.data.trail : undefined
+  const onLinkRef = useRef<((link: Link) => void) | null>(null)
   const lookCommand = useCallback(
     (c: ShellCommand) => {
       if (c === 'list' || c === 'icons') setFileLook({ look: c })
@@ -472,7 +472,6 @@ export function App() {
     },
     [setFileLook, trail],
   )
-  const onLinkRef = useRef<((link: Link) => void) | null>(null)
   useEffect(() => {
     if (!IN_SHELL) return
     const heard = (e: Event) => {
@@ -600,6 +599,7 @@ export function App() {
 
   const data = state.data
   const result = shown.data?.outcome === 'shown' ? shown.data : null
+  const placedTable = result ? filesTable(result.blocks) : null
   const groupOf = (v: (typeof views)[number]) => {
     const root = entryOf(views, v.id)[0]
     return root !== undefined && root.id !== v.id ? root.title : null
@@ -642,7 +642,7 @@ export function App() {
               )}
               <Filters decl={decl} answered={result?.filters} params={request?.params ?? {}} onChange={onMainParam} />
               <div className="page-tools">
-                {result && filesTable(result.blocks) ? <LookTools look={fileLook.look} sorted={filesTable(result.blocks)?.sorted} onLook={(look) => setFileLook({ look })} onSort={(sort) => onMainParam('sort', sort)} /> : null}
+                {placedTable ? <LookTools look={fileLook.look} sorted={placedTable.sorted} onLook={(look) => setFileLook({ look })} onSort={(sort) => onMainParam('sort', sort)} /> : null}
                 {result ? <HeadActions actions={headActions(result.blocks)} /> : null}
                 <ViewSwitch entry={entry} current={current?.view ?? ''} onSelect={(view) => go((r) => ({ ...r, main: { view, params: {} } }))} />
               </div>

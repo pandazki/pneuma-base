@@ -524,6 +524,35 @@ describe('what a plugin’s view answers is checked (D7)', () => {
   })
 })
 
+describe('what a plugin says of files is checked too (D7)', () => {
+  const answering = (name: string, answer: unknown) => plugin(name, { views: [{ id: `${name}.page`, title: '一页', icon: 'triangle-alert', nav: true, filters: [] }], onView: async () => answer as never })
+  const archive = (path: string) => ({ label: '归档', tone: 'default', confirm: null, inputs: [], call: { face: 'agent', verb: 'archive', request: { kind: 'archive', path } } })
+  const table = (extra: object) => ({ kind: 'table', columns: [{ key: 'name', label: '名字' }], rows: [{ key: 'a.md', cells: { name: { text: 'a.md' } }, link: null, actions: [], place: { path: 'a.md', kind: 'file', token: null } }], empty: '', ...extra })
+
+  it('lets a table’s each actions take {path} and {in} and no other input it does not ask for; a row’s place and a cell’s reopen must have their shape', async () => {
+    const f = await fixture([
+      answering('fine', { title: '一页', subtitle: null, blocks: [table({ each: { actions: [archive('{path}')], rename: { ...archive('{in}{name}'), inputs: [{ name: 'name', label: '名字', placeholder: null, value: null, options: null }] } } })] }),
+      answering('stray', { title: '一页', subtitle: null, blocks: [table({ each: { actions: [archive('{where}')], rename: null } })] }),
+      answering('placeless', { title: '一页', subtitle: null, blocks: [{ ...table({}), rows: [{ key: 'a', cells: {}, link: null, actions: [], place: { path: 'a.md' } }] }] }),
+      answering('reopener', { title: '一页', subtitle: null, blocks: [{ kind: 'fields', fields: [{ label: '场景', value: { text: 's', reopen: { url: 1 } } }] }] }),
+    ])
+    expect(shown(await show(f, 'fine.page')).blocks[0]?.kind).toBe('table')
+    for (const [view, words] of [['stray.page', '{where}'], ['placeless.page', 'place'], ['reopener.page', 'reopen']] as const) {
+      const r = shown(await show(f, view))
+      expect([r.blocks[0]?.kind, r.problems.map((p) => p.message).join('\n')]).toEqual(['text', expect.stringContaining(words)])
+    }
+  })
+
+  it('keeps a trail of names and links, and drops one that is not as a problem', async () => {
+    const crumb = { label: '根', link: { view: 'files', params: {}, target: 'main' } }
+    const f = await fixture([answering('trailing', { title: '一页', subtitle: null, blocks: [], trail: [crumb] }), answering('lost', { title: '一页', subtitle: null, blocks: [], trail: [{ label: '根' }] })])
+    expect(shown(await show(f, 'trailing.page')).trail).toEqual([crumb])
+    const lost = shown(await show(f, 'lost.page'))
+    expect(lost.trail).toBeUndefined()
+    expect(lost.problems).toMatchObject([{ plugin: 'lost', message: expect.stringContaining('trail') }])
+  })
+})
+
 describe('the new blocks are checked too (D7)', () => {
   const answering = (name: string, answer: unknown) =>
     plugin(name, { views: [{ id: `${name}.page`, title: '一页', icon: 'triangle-alert', nav: true, filters: [{ name: 'who', label: '谁', options: [{ value: '', label: '全部' }], default: '' }] }], onView: async () => answer as never })
