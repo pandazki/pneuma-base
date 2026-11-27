@@ -104,9 +104,14 @@ export async function libraryFile(root: string, input: string, opts: { fetch?: b
   const fetch = opts.fetch === true ? { fetch: true } : {}
   const head = await store.read(path, { length: SNIFF, ...fetch })
   if (isFailure(head)) return head.reason === 'elsewhere' ? { kind: 'elsewhere', path, size: head.size ?? 0 } : null
+  // A token is storage's to compare: two texts may differ for one state. A range is of the first
+  // read's state when storage says that state still holds, and then carries the first read's token.
   const read = async (offset: number, length: number): Promise<FileRange | null> => {
     const r = await store.read(path, { offset, length, ...fetch })
-    return isFailure(r) || r.data === null ? null : { data: r.data, token: r.token }
+    if (isFailure(r) || r.data === null) return null
+    if (r.token === head.token) return { data: r.data, token: head.token }
+    const looked = await store.look([{ place: path, token: head.token }])
+    return { data: r.data, token: looked.same === 1 ? head.token : r.token }
   }
   return { kind: 'file', path, size: head.size, type: IMAGES[extname(path).toLowerCase()] ?? sniffed(head.data ?? new Uint8Array()), token: head.token, read }
 }
