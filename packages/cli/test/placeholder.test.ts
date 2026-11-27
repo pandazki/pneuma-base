@@ -102,20 +102,17 @@ describe('a file with only a placeholder on this machine', () => {
     expect(actionsIn(after.blocks).some((a) => a.label === '取回内容')).toBe(false)
   })
 
-  it('is fetched by inspect --content --fetch, and inspect --content says where it is until then', async () => {
+  it('is fetched by inspect --content --fetch, and inspect --content says where it is until then; --fetch goes only with --content', async () => {
     const elsewhere = await agent(['inspect', 'cloud/notes.placeholder', '--content'])
     expect(elsewhere).toContain('内容在 iCloud 上，4.0 KB。取回来：inspect cloud/notes.placeholder --content --fetch')
+    const alone = await sb.agent('claude-code', 's1', ['inspect', 'cloud/notes.placeholder', '--fetch'])
+    expect(alone.code).toBe(1)
+    expect(alone.stderr + alone.stdout).toContain('--fetch 跟 --content 一起写')
     expect(readFileSync(fetched, 'utf8')).not.toContain('cloud/notes.placeholder')
 
     const got = await agent(['inspect', 'cloud/notes.placeholder', '--content', '--fetch'])
     expect(got).toContain('内容（UTF-8 文字，')
     expect(got).toContain('the bytes of the notes')
     expect(readFileSync(fetched, 'utf8')).toContain('cloud/notes.placeholder\n')
-  })
-
-  it('refuses --fetch without --content', async () => {
-    const r = await sb.agent('claude-code', 's1', ['inspect', 'cloud/notes.placeholder', '--fetch'])
-    expect(r.code).toBe(1)
-    expect(r.stderr + r.stdout).toContain('--fetch 跟 --content 一起写')
   })
 })

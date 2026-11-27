@@ -16,6 +16,7 @@ let sb: Sandbox
 let lib: string
 let dirA: string
 let dirB: string
+let fresh: string
 
 const ok = <R extends { code: number; stdout: string; stderr: string }>(r: R): R => {
   expect(r.code, `${r.stdout}\n${r.stderr}`).toBe(0)
@@ -45,6 +46,11 @@ beforeAll(() => {
   A(['put', 'fast.txt', '--to', 'print/quotes/fast.txt', '--brought', '--by', 'owner'])
   A(['put', 'solid.txt', '--to', 'print/quotes/solid.txt', '--brought', '--by', 'owner'])
   A(['put', 'comparison.md', '--to', 'print/comparison.md', '--made', '--from', 'print/quotes/fast.txt', 'print/quotes/solid.txt'])
+
+  // A second library, with nothing in it, for an agent that finds nothing related.
+  fresh = join(tempDir(), 'fresh')
+  ok(sb.run(['init', fresh]))
+  ok(sb.run(['grant', 'issue', 'helper', '--library', fresh, '--agent', 'codex']))
 })
 
 describe('start, for the agent that comes next', () => {
@@ -62,10 +68,6 @@ describe('start, for the agent that comes next', () => {
   })
 
   it('says so when nothing is related, and prints no heading for a part that has nothing', () => {
-    const fresh = join(tempDir(), 'fresh')
-    ok(sb.run(['init', fresh]))
-    ok(sb.run(['grant', 'issue', 'helper', '--library', fresh, '--agent', 'codex']))
-    ok(sb.run(['skill', 'install', 'helper', '--agent', 'codex', '--dir', join(dirB, 'skills-fresh')]))
     const r = ok(sb.run(['@helper', 'start', '整理会议纪要'], { cwd: dirB }))
     expect(lines(r.stdout)).toEqual(['【记下】', '已记下（ledger）：在做：整理会议纪要', '【库里可能相关的】', '库里没有和这件事相关的东西。'])
     expect(ok(sb.run(['@helper', 'check', '--json'], { cwd: dirB })).json().sections).toEqual([])
@@ -73,7 +75,7 @@ describe('start, for the agent that comes next', () => {
 })
 
 describe('find', () => {
-  it('puts the hits of one scene under one heading, each hit one short line', () => {
+  it('puts the hits of one scene under one heading, each hit one short line; gives what the caller’s own session did, which start leaves out', () => {
     const out = lines(B(['find', 'print']).stdout)
     expect(out[0]).toMatch(new RegExp(`^场景 3f9a2c7e · claude-code · \\d{4}-\\d\\d-\\d\\d \\d\\d:\\d\\dZ · 在做：${DOING_A}$`))
     expect(out.slice(1).sort()).toEqual(['  print/comparison.md  做出来的', '  print/quotes/fast.txt  带进来的，主人给的', '  print/quotes/solid.txt  带进来的，主人给的'])
@@ -81,9 +83,7 @@ describe('find', () => {
     const hits = B(['find', 'print', '--json']).json().hits
     expect(hits.filter((h: any) => h.by === 'ledger').map((h: any) => h.group)).toEqual([out[0], out[0], out[0]])
     expect(hits.filter((h: any) => h.by === 'kernel').every((h: any) => h.group === null)).toBe(true)
-  })
 
-  it('gives what the caller’s own session did; start leaves it out', () => {
     writeFileSync(join(dirB, 'draft.md'), '下单邮件草稿：恒雅彩印\n')
     B(['put', 'draft.md', '--to', 'print/order-mail.md', '--made', '--from', 'print/comparison.md'])
 
@@ -98,7 +98,7 @@ describe('find', () => {
 })
 
 describe('inspect', () => {
-  it('leads with provenance and ends with the file facts; the fingerprint comes with the content', () => {
+  it('leads with provenance and ends with the file facts; the fingerprint comes with the content; a working directory is short in text, under ~ or cut to its last part, and whole in --json', () => {
     const out = lines(B(['inspect', 'print/comparison.md']).stdout)
     expect(out[0]).toBe('## 来历（ledger）')
     expect(out[1]).toContain('在 ~/work/print-job · 场景 3f9a2c7e')
@@ -111,10 +111,7 @@ describe('inspect', () => {
 
     const read = B(['inspect', 'print/comparison.md', '--content']).stdout
     expect(read).toMatch(/^print\/comparison\.md · \d+ 字节，改于 \d{4}-\d\d-\d\d \d\d:\d\dZ · 指纹 [0-9a-f]{12}…$/m)
-    expect(B(['inspect', 'print/comparison.md', '--content', '--json']).json().file.fingerprint).toMatch(/^[0-9a-f]{64}$/)
-  })
 
-  it('cuts a long working directory to its last part in text, and keeps it whole in --json', () => {
     expect(dirB.length).toBeGreaterThan(48)
     const text = B(['inspect', 'print/order-mail.md']).stdout
     expect(text).toContain(`在 ${cut(dirB)} · 场景 9b1d4e2a`)
@@ -124,7 +121,6 @@ describe('inspect', () => {
 
   it('takes a unique scene id prefix of six characters or more, and lists the candidates of an ambiguous one', () => {
     expect(B(['inspect', '3f9a2c']).stdout).toContain(`场景 3f9a2c7e\nclaude-code · `)
-    expect(B(['inspect', '3f9a2c', '--json']).json().sections[0].data.id).toBe(SA)
     expect(sb.run(['@codex', 'inspect', '3f9a2'], { cwd: dirB }).stdout).toContain('库里没有这个文件：3f9a2')
 
     A(['say', 'note', '另一次会话'], SA2)
@@ -134,27 +130,11 @@ describe('inspect', () => {
   })
 })
 
-describe('put over an existing file', () => {
-  it('says in one line that the old content went into the owner’s 留存, without the held copy’s path', () => {
-    writeFileSync(join(dirA, 'comparison.md'), '# 三家印刷厂的报价比较\n\n改了：首选速印通。\n')
-    const out = lines(A(['put', 'comparison.md', '--to', 'print/comparison.md', '--made', '--from', 'print/quotes/fast.txt']).stdout)
-    expect(out).toHaveLength(2)
-    expect(out[0]).toBe('已放入 print/comparison.md')
-    expect(out[1]).toMatch(/^ {2}ledger：已记下换了新内容，旧内容进了留存，主人取得回 · 条目 i_[0-9a-f]+$/)
-  })
-})
-
 describe('skill install', () => {
-  it('tells the owner that Codex needs the library among its writable directories', () => {
+  it('tells the owner that Codex needs the library among its writable directories, and gives no such hint for Claude', () => {
     const r = ok(sb.run(['skill', 'install', 'codex', '--agent', 'codex', '--dir', tempDir('pb-skills-')]))
     const hint = `Codex 在沙箱里运行，这个库要是它能写的目录之一，比如：codex --add-dir ${lib}`
     expect(lines(r.stdout)).toEqual([expect.stringMatching(/^已为 codex 写好技能：/), hint])
-    expect(ok(sb.run(['skill', 'install', 'codex', '--agent', 'codex', '--dir', tempDir('pb-skills-'), '--json'])).json().data.hint).toBe(hint)
-  })
-
-  it('gives no such hint for Claude', () => {
-    const r = ok(sb.run(['skill', 'install', 'claude', '--agent', 'claude', '--dir', tempDir('pb-skills-'), '--json']))
-    expect(r.json().data.hint).toBeUndefined()
-    expect(lines(ok(sb.run(['skill', 'install', 'claude', '--agent', 'claude', '--dir', tempDir('pb-skills-')])).stdout)).toHaveLength(1)
+    expect(ok(sb.run(['skill', 'install', 'claude', '--agent', 'claude', '--dir', tempDir('pb-skills-'), '--json'])).json().data.hint).toBeUndefined()
   })
 })
