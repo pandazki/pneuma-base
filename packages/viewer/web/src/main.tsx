@@ -1,13 +1,13 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
-import { followWindow, IN_SHELL, IN_TRAY } from './shell'
+import { followShell, IN_SHELL, IN_TRAY } from './shell'
 import { Tray } from './tray'
 import './theme.css'
 
 if (IN_SHELL) {
   document.documentElement.dataset.shell = 'mac'
-  followWindow()
+  followShell()
 }
 if (IN_TRAY) document.documentElement.dataset.panel = 'tray'
 

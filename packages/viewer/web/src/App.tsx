@@ -163,8 +163,8 @@ const keyOf = (req: ViewRequest | null) => (req === null ? null : JSON.stringify
 
 /** The main panel never gets narrower than this while the sidebar can step aside. */
 const MAIN_MIN = 520
-/** The folded sidebar; inside the Mac app it leaves room for the window's buttons above it. */
-const RAIL = IN_SHELL ? 76 : 48
+/** The folded sidebar; inside the Mac app its pane, 8px in from the window's edge, holds the window's buttons. */
+const RAIL = IN_SHELL ? 96 : 48
 
 function useWindowWidth(): number {
   const [width, setWidth] = useState(window.innerWidth)

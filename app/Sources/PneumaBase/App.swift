@@ -773,6 +773,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case "menu-pick": self.files.pick(rest)
         case "fake-placeholder": self.fakePlaceholders.insert(rest)
         case "owner-files": self.settings?.model.ownerFiles = rest == "on"
+        case "glass": glassForTest(rest, window: self.window, tray: self.tray)
         case "pids": Log.line("pids: app \(getpid()) server \(self.server?.pid ?? 0) web \(self.window.webContentPid ?? 0) storage \(self.watcher?.pid ?? 0)")
         default: break
         }

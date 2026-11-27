@@ -64,12 +64,17 @@ export function tellShell(message: ShellMessage): void {
 }
 
 /**
- * The app tells the page when its window stops or starts being the one in front, by a
- * `pneuma-shell` event with `{ window: 'active' | 'inactive' }`; the page dims its chrome meanwhile.
+ * The app tells the page, by `pneuma-shell` events, when its window stops or starts being the one in
+ * front (`{ window: 'active' | 'inactive' }`; the page dims its chrome meanwhile), and whether the
+ * system's glass is under the page (`{ transparency: 'glass' | 'reduced' }`; reduced when the owner's
+ * settings reduce transparency or raise contrast). The app sets the first transparency on `<html>`
+ * itself before the page loads, so the first frame is drawn right.
  */
-export function followWindow(): void {
+export function followShell(): void {
+  const root = document.documentElement
   window.addEventListener('pneuma-shell', (e) => {
-    const state = (e as CustomEvent<{ window?: unknown }>).detail?.window
-    if (state === 'active' || state === 'inactive') document.documentElement.dataset.window = state
+    const { window: state, transparency } = (e as CustomEvent<{ window?: unknown; transparency?: unknown }>).detail ?? {}
+    if (state === 'active' || state === 'inactive') root.dataset.window = state
+    if (transparency === 'glass' || transparency === 'reduced') root.dataset.transparency = transparency
   })
 }

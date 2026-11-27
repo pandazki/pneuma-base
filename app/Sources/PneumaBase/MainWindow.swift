@@ -22,6 +22,8 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
   var onPageMessage: (([String: Any]) -> Void)?
   /// The controller of the system's Quick Look panel, taken by the web view while it has files to show.
   var quickLook: QuickLook?
+  /// The window's content: its ground, the system's glass under the page's sidebar, the page on top.
+  let glass = GlassContainer()
 
   var isOpen: Bool { window?.isVisible ?? false }
 
@@ -164,9 +166,10 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
     if let url = Bundle.main.url(forResource: "shell", withExtension: "js"), let source = try? String(contentsOf: url, encoding: .utf8) {
       content.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true))
     }
+    content.addUserScript(Transparency.userScript)
     content.add(WeakHandler(self), name: "shell")
     let web = ShellWebView(frame: window?.contentView?.bounds ?? .zero, configuration: config)
-    web.setValue(false, forKey: "drawsBackground")
+    web.clearBackground()
     web.underPageBackgroundColor = pageColor
     web.allowsMagnification = false
     web.allowsBackForwardNavigationGestures = false
@@ -175,7 +178,7 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
     web.onFiles = { [weak self] urls in self?.onFiles?(urls) }
     web.dropTarget = { [weak self] in "\(self?.currentFolder ?? "inbox")/" }
     web.quickLook = quickLook
-    window?.contentView = web
+    window?.contentView = glass.hosting(web)
     // Made first responder now, while the window is not key: becoming key with no first responder
     // selects the first key view as Tab would, and WebKit then puts a focus ring on the first row.
     window?.makeFirstResponder(web)
@@ -216,6 +219,7 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
       ready = true
       show(reason: "ready")
       tellWindowState()
+      glass.tellPage()
       if let js = pendingScript {
         pendingScript = nil
         webView?.evaluateJavaScript(js)
@@ -225,6 +229,8 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
       requestedAt = nil
     case "regions":
       webView?.setRegions(drag: rects(body["drag"]), noDrag: rects(body["nodrag"]))
+    case "glass":
+      glass.place(body["panes"], postedAt: body["at"] as? Double)
     default:
       onPageMessage?(body)
     }
@@ -323,7 +329,7 @@ extension MainWindow: NSToolbarDelegate, NSSearchFieldDelegate {
 }
 
 /// The page's background, so that a resize or the moment before the first paint shows its colour.
-private let pageColor = NSColor(name: nil) { appearance in
+let pageColor = NSColor(name: nil) { appearance in
   appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
     ? NSColor(srgbRed: 0.055, green: 0.055, blue: 0.063, alpha: 1)
     : NSColor(srgbRed: 0.973, green: 0.973, blue: 0.973, alpha: 1)

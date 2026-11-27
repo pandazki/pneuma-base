@@ -61,8 +61,30 @@
   width: calc(var(--side-w) - 18px);
   min-height: 0;
 }
+/*
+ * In the app the sidebar is a pane floating 8px inside the window, as the system's own sidebar does,
+ * its corners concentric with the window's (26 − 8). The app puts the system's glass under the pane
+ * and draws the window's ground around it, so the page draws neither (`data-transparency="glass"`,
+ * set by the app); shell.js reports the pane's box (`data-glass`). Otherwise the page draws both,
+ * opaque, the pane with a border. The top row holds the window's buttons, centred 26px down.
+ */
 html[data-shell] .side {
-  padding-top: 0;
+  margin: 8px;
+  padding: 0 8px 8px;
+  border-radius: 18px;
+}
+html[data-shell] .side-inner {
+  width: calc(var(--side-w) - 32px);
+}
+html[data-shell] .side-top {
+  height: 36px;
+}
+html[data-transparency='glass'] :is(body, .shell) {
+  background: transparent;
+}
+html[data-shell]:not([data-transparency='glass']) .side {
+  background: var(--panel);
+  box-shadow: 0 0 0 1px var(--glass-border);
 }
 .side-top {
   display: flex;
@@ -322,6 +344,26 @@ html[data-shell] .side {
 html[data-shell] .shell[data-side='rail'] .side-top {
   justify-content: flex-start;
   padding-left: 0;
+}
+/*
+ * The app's rail is 80px wide, for the window's buttons: its icons stand under the middle one, and
+ * the toggle, which the buttons would cover, takes the library's empty row below them.
+ */
+html[data-shell] .side-inner {
+  transition: translate 420ms var(--ease);
+}
+html[data-shell] .side-toggle {
+  transition:
+    background-color 140ms ease,
+    color 140ms ease,
+    transform 160ms var(--ease),
+    translate 420ms var(--ease);
+}
+html[data-shell] .shell[data-side='rail'] .side-inner {
+  translate: 18px 0;
+}
+html[data-shell] .shell[data-side='rail'] .side-top .side-toggle {
+  translate: 0 33px;
 }
 /* The window behind another: the system dims its sidebar; so does the page. */
 html[data-window='inactive'] .side {
@@ -753,8 +795,9 @@ html[data-window='inactive'] .fresh {
 
 /*
  * The menu bar panel (tray.tsx): the home page's content in the app's small window, which sizes
- * itself to it. The panel's own ground, a head with the library, the parts with small grey titles,
- * a foot with the two buttons.
+ * itself to it. No ground of its own: the app's panel is a pane of the system's glass (or, with
+ * transparency reduced, an opaque ground). A head with the library, the parts with small grey titles,
+ * a foot with the two buttons; 14px in from the glass's rounded edge.
  */
 html[data-panel='tray'],
 html[data-panel='tray'] body {
@@ -766,7 +809,7 @@ html[data-panel='tray'] body {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 12px 12px 10px;
+  padding: 14px 14px 10px;
   container-type: inline-size;
 }
 .tray-head {
@@ -853,8 +896,8 @@ html[data-panel='tray'] body {
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  margin: 2px -12px -10px;
-  padding: 10px 12px;
+  margin: 2px -14px -10px;
+  padding: 10px 14px;
   box-shadow: inset 0 0.5px 0 var(--line);
 }
 .detail-title .head-actions {
