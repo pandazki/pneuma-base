@@ -217,6 +217,9 @@
 
 /* The table: a card, rows split by hairlines only, a faint hover, the open row on a grey wash. */
 .table-card {
+  overflow: clip;
+}
+.table-scroll {
   overflow-x: auto;
 }
 .table-card table {

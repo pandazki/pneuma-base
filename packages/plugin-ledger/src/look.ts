@@ -496,7 +496,7 @@ let lastLook: { key: string; answer: Promise<void> } | null = null
 
 /** How the library stands now, in the rows: the facts folded, and what changed since the last look looked at. */
 export function refresh(ctx: PluginContext): Promise<void> {
-  const key = `${ctx.dir}\0${ctx.now}\0${ctx.session.id}`
+  const key = `${ctx.library.root}\0${ctx.now}\0${ctx.session.id}`
   if (lastLook?.key === key) return lastLook.answer
   const answer = lookNow(ctx)
   lastLook = { key, answer }

@@ -102,11 +102,14 @@ test('4: a folder that had files before it became a library asks about each dire
   await page.goto(url)
   const main = page.getByRole('main')
   const decide = main.getByRole('region', { name: '等你决定' })
-  for (const dir of ['contracts', 'notes', 'photos']) await expect(decide).toContainText(`${dir}/ 没登记。`)
+  for (const dir of ['contracts', 'notes', 'photos']) await expect(decide).toContainText(`${dir}/ 没登记：`)
   await expect(main.getByRole('region', { name: '需要留意' })).not.toContainText('没登记的目录')
   await shoot(page, '4-ask', SHOTS)
   // The questions come in the order of the root's listing: contracts/, notes/, photos/.
   await decide.getByRole('button', { name: '登记里面的文件' }).nth(1).click()
+  // Registering everything inside is a named whole pass: it says first how many it will register.
+  await expect(page.getByRole('dialog')).toContainText('要登记 notes/ 里任意深处的全部文件：2 个，不含噪音。')
+  await page.getByRole('dialog').getByRole('button', { name: '登记里面的文件' }).click()
   await expect(decide.getByRole('status')).toContainText('已把 notes/里的 2 个文件记为主人带进来的')
   await shoot(page, '4-registered', SHOTS)
   expect(pb.run(['inspect', 'notes/ideas.txt', '--library', lib]).stdout).toContain('带进来的，主人给的')

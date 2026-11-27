@@ -3,8 +3,8 @@ import UserNotifications
 
 /// The menu bar item with its panel, the app's menus, the first-launch window, and the current
 /// library with its server and watcher. The app keeps no state of a library: everything it does to
-/// one goes through the command line, and it only remembers which libraries this machine knows and
-/// its own settings.
+/// one goes through the command line, its watcher reads storage's own subscription, and it only
+/// remembers which libraries this machine knows, the cursor its watcher last heard, and its own settings.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation, NSWindowDelegate, UNUserNotificationCenterDelegate {
   private let config = Config.load()
@@ -21,6 +21,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   private var counting = false
   private var countAgain = false
   private var countTimer: Timer?
+  /// The server's summary of what its pages show, last read: when it changes (a record written, a pairing asked), the dot is counted again.
+  private var rev: String?
+  private var revTimer: Timer?
+  private var revAsking = false
+  private var cursorSave: Timer?
 
   private var current: URL? { prefs.current.map { URL(fileURLWithPath: $0, isDirectory: true) } }
 
@@ -41,15 +46,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     window.onFiles = { [weak self] urls in self?.bring(urls, into: self?.window.currentFolder, from: "窗口") }
     window.onPageMessage = { [weak self] body in self?.pageSaid(body) }
     tray.onMessage = { [weak self] body in self?.pageSaid(body) }
-    welcome.onChoose = { [weak self] in self?.chooseLibrary() }
+    welcome.onChoose = { [weak self] choice in self?.chooseFolder(in: choice) }
+    welcome.onInstallOther = { [weak self] in self?.installOther() }
     welcome.onClose = { [weak self] in if self?.window.isOpen == false { NSApp.setActivationPolicy(.accessory) } }
     countTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.countWaiting() } }
+    revTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.askRev() } }
     if Config.hooksName != nil { listenForTestCommands() }
     guard config.complete else { return alert("这份 Pneuma Base 不完整", detail: "应用里缺少它自带的 Node 或命令行，什么都做不了。重新下载一份，或用 app/build.sh 重新构建。") }
     if Config.translocated { warnTranslocated() }
     Task { await installLauncher() }
     switchTo(current)
-    if !hasLibrary { welcome.show() } else if CommandLine.arguments.contains("--open") { openWindow() }
+    if !hasLibrary { Task { await showWelcome() } } else if CommandLine.arguments.contains("--open") { openWindow() }
   }
 
   /// Points the launcher at this app's own Node and command line, at every launch: what connected
@@ -98,6 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   @objc func openSettings() { settings?.show() }
 
   func applicationWillTerminate(_ notification: Notification) {
+    if let watcher, let cursor = watcher.cursor { keep(cursor, of: watcher.library) }
     watcher?.stop()
     server?.stop()
     Log.line("app: quit")
@@ -135,37 +143,182 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
     server.start()
     self.server = server
-    let watcher = Watcher(library: library, config: config, recordsOwnerFiles: prefs.watchesOwnerFiles)
-    watcher.onRecorded = { [weak self] registered, seen in self?.recorded(registered, seen) }
-    watcher.onActivity = { [weak self] in self?.countWaiting() }
-    watcher.start()
-    self.watcher = watcher
+    rev = nil
+    Task { await watch(library) }
     countWaiting()
   }
 
+  /// The watcher of the current library: the provider it uses, as `storage list` names it, started in
+  /// its long-lived mode and subscribed from the cursor kept for this library.
+  private func watch(_ library: URL) async {
+    let r = await runCli(["storage", "list", "--library", library.path, "--json"], in: library, config: config)
+    let data = r.json?["data"] as? [String: Any]
+    let used = (data?["library"] as? [String: Any])?["provider"] as? String
+    let providers = data?["providers"] as? [[String: Any]] ?? []
+    guard let program = providers.first(where: { $0["name"] as? String == used })?["executable"] as? String else {
+      return Log.line("watcher: no provider for \(library.lastPathComponent): \(r.err.prefix(200)) \(String(decoding: r.out.prefix(200), as: UTF8.self))")
+    }
+    guard server?.library == library, watcher == nil else { return }
+    let watcher = Watcher(library: library, config: config, provider: program, cursor: prefs.cursors?[library.standardizedFileURL.path], recordsOwnerFiles: prefs.watchesOwnerFiles)
+    watcher.onRecorded = { [weak self] registered, seen in self?.recorded(registered, seen) }
+    watcher.onCursor = { [weak self] cursor in self?.keepSoon(cursor, of: library) }
+    watcher.start()
+    self.watcher = watcher
+  }
+
+  /// The watcher's cursor for a library, kept in the app's preferences so the next subscription hears what changed meanwhile.
+  private func keep(_ cursor: String, of library: URL) {
+    var cursors = prefs.cursors ?? [:]
+    cursors[library.standardizedFileURL.path] = cursor
+    prefs.cursors = cursors
+    prefs.save(config)
+  }
+
+  private func keepSoon(_ cursor: String, of library: URL) {
+    var cursors = prefs.cursors ?? [:]
+    cursors[library.standardizedFileURL.path] = cursor
+    prefs.cursors = cursors
+    guard cursorSave == nil else { return }
+    cursorSave = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { [weak self] _ in
+      MainActor.assumeIsolated {
+        guard let self else { return }
+        self.cursorSave = nil
+        self.prefs.save(self.config)
+      }
+    }
+  }
+
+  /// Asks the server for its summary; a new one means something the dot may count changed.
+  private func askRev() {
+    guard !revAsking, let address = server?.address, var parts = URLComponents(url: address, resolvingAgainstBaseURL: false) else { return }
+    parts.path = "/api/rev"
+    guard let url = parts.url else { return }
+    revAsking = true
+    URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+      let seen = data.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }?["rev"] as? String
+      DispatchQueue.main.async {
+        MainActor.assumeIsolated {
+          guard let self else { return }
+          self.revAsking = false
+          guard let seen, seen != self.rev else { return }
+          let first = self.rev == nil
+          self.rev = seen
+          if !first { self.countWaiting() }
+        }
+      }
+    }.resume()
+  }
+
   @objc func openWindow() {
-    guard let library = current, server != nil else { return hasLibrary ? chooseLibrary() : welcome.show() }
+    guard let library = current, server != nil else {
+      if hasLibrary { chooseLibrary() } else { Task { await showWelcome() } }
+      return
+    }
     window.open(title: library.lastPathComponent, address: server?.address)
   }
 
-  @objc func chooseLibrary() {
-    NSApp.activate()
-    let panel = NSOpenPanel()
-    panel.canChooseDirectories = true
-    panel.canChooseFiles = false
-    panel.canCreateDirectories = true
-    panel.prompt = "就用这个文件夹"
-    panel.message = "选一个库，或一个要建成库的文件夹。"
-    guard panel.runModal() == .OK, let dir = panel.url else { return }
-    Task { await open(dir) }
+  @objc func chooseLibrary() { chooseFolder(in: nil) }
+
+  /// A folder the owner chooses for a library, kept by `choice` (the local folder when none): an
+  /// official provider not installed is installed first.
+  private func chooseFolder(in choice: StorageChoice?) {
+    Task {
+      if let repository = choice?.install {
+        welcome.say("正在装 \(repository)")
+        let r = await runCli(["storage", "install", repository, "--json"], in: config.home, config: config)
+        welcome.say("")
+        guard r.json?["outcome"] as? String == "done" else { return alert("没有装上 \(repository)", detail: (r.json?["text"] as? String) ?? r.err) }
+        await refreshChoices()
+      }
+      NSApp.activate()
+      let panel = NSOpenPanel()
+      panel.canChooseDirectories = true
+      panel.canChooseFiles = false
+      panel.canCreateDirectories = true
+      panel.prompt = "就用这个文件夹"
+      panel.message = "选一个库，或一个要建成库的文件夹。"
+      guard panel.runModal() == .OK, let dir = panel.url else { return }
+      await open(dir, provider: choice?.name)
+    }
   }
 
-  /// A folder the owner chose: made a library if it is not one, then the main window on its home page.
-  private func open(_ dir: URL) async {
+  /// The places to keep a library this machine offers: its providers, then the official ones not installed.
+  private func refreshChoices() async {
+    let r = await runCli(["storage", "list", "--json"], in: config.home, config: config)
+    let data = r.json?["data"] as? [String: Any]
+    let installed = (data?["providers"] as? [[String: Any]] ?? []).compactMap { p -> StorageChoice? in
+      guard let name = p["name"] as? String else { return nil }
+      let summary = (p["origin"] as? [String: Any])?["kind"] as? String == "built-in" ? "本机文件夹" : name
+      return StorageChoice(name: name, summary: summary, forms: p["addresses"] as? [String] ?? [], install: nil)
+    }
+    let official = (data?["official"] as? [[String: Any]] ?? []).compactMap { o -> StorageChoice? in
+      guard let name = o["name"] as? String, let repository = o["repository"] as? String else { return nil }
+      return StorageChoice(name: name, summary: o["summary"] as? String ?? name, forms: o["addresses"] as? [String] ?? [], install: repository)
+    }
+    let choices = installed + official
+    welcome.offer(choices.isEmpty ? [StorageChoice(name: "local-folder", summary: "本机文件夹", forms: ["path"], install: nil)] : choices)
+  }
+
+  private func showWelcome() async {
+    await refreshChoices()
+    welcome.show()
+  }
+
+  /// 安装别的存储…: a provider from a GitHub repository. The command line says what a provider is and
+  /// names the version and checksum; the owner accepts it here, and the install runs with that checksum.
+  private func installOther() {
+    NSApp.activate()
+    let ask = NSAlert()
+    ask.messageText = "安装别的存储"
+    ask.informativeText = "填一个 GitHub 仓库：owner/repo，或 owner/repo@版本。"
+    let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+    field.placeholderString = "owner/repo"
+    ask.accessoryView = field
+    ask.addButton(withTitle: "继续")
+    ask.addButton(withTitle: "取消")
+    ask.window.initialFirstResponder = field
+    guard ask.runModal() == .alertFirstButtonReturn else { return }
+    let repository = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !repository.isEmpty else { return }
+    Task { await install(["storage", "install", repository, "--json"], naming: repository) }
+  }
+
+  /// Runs an install; a refusal that carries an offer (the trust statement, and the call that accepts it) is asked of the owner, and the offer run when accepted.
+  private func install(_ args: [String], naming repository: String) async {
+    welcome.say("正在装 \(repository)")
+    let r = await runCli(args, in: config.home, config: config)
+    welcome.say("")
+    let text = (r.json?["text"] as? String) ?? r.err
+    if r.json?["outcome"] as? String == "done" {
+      await refreshChoices()
+      welcome.say(text)
+      return
+    }
+    guard let offer = r.json?["offer"] as? [String: Any], let call = offer["call"] as? [String: Any], let command = call["command"] as? String else {
+      return alert("没有装上 \(repository)", detail: text)
+    }
+    NSApp.activate()
+    let confirm = NSAlert()
+    confirm.messageText = "安装 \(repository)？"
+    confirm.informativeText = offer["confirm"] as? String ?? text
+    confirm.addButton(withTitle: offer["label"] as? String ?? "安装")
+    confirm.addButton(withTitle: "取消")
+    guard confirm.runModal() == .alertFirstButtonReturn else { return }
+    let callArgs = call["args"] as? [String: Any]
+    var words = command.split(separator: " ").map(String.init) + (callArgs?["positional"] as? [String] ?? [])
+    for (flag, value) in (callArgs?["flags"] as? [String: Any] ?? [:]).sorted(by: { $0.key < $1.key }) {
+      words += value as? Bool == true ? ["--\(flag)"] : (value as? [String] ?? []).flatMap { ["--\(flag)", $0] }
+    }
+    await install(words + ["--json"], naming: repository)
+  }
+
+  /// A folder the owner chose: made a library if it is not one, kept by `provider` when one was chosen,
+  /// then the main window on its home page.
+  private func open(_ dir: URL, provider: String? = nil) async {
     if !isLibrary(dir) {
-      let r = await runCli(["init", dir.path, "--json"], in: dir.deletingLastPathComponent(), config: config)
-      guard r.json?["outcome"] as? String == "done" else { return alert("没能把这个文件夹建成库", detail: r.err) }
-      Log.line("app: made \(dir.lastPathComponent) a library")
+      let r = await runCli(["init", dir.path, "--json"] + (provider.map { ["--provider", $0] } ?? []), in: dir.deletingLastPathComponent(), config: config)
+      guard r.json?["outcome"] as? String == "done" else { return alert("没能把这个文件夹建成库", detail: (r.json?["text"] as? String) ?? r.err) }
+      Log.line("app: made \(dir.lastPathComponent) a library with \((r.json?["data"] as? [String: Any])?["provider"] as? String ?? "?")")
     }
     if window.isOpen, current != dir { window.close() }
     if current != dir { window.forgetRoute() }
@@ -268,7 +421,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   @objc private func statusClicked() {
     let event = NSApp.currentEvent
     if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true { return showMenu() }
-    guard hasLibrary, let button = statusItem?.button else { return welcome.show() }
+    guard hasLibrary, let button = statusItem?.button else {
+      Task { await showWelcome() }
+      return
+    }
     tray.toggle(at: button)
   }
 
@@ -506,7 +662,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   /// `library:<folder>` (as if chosen in the first-launch window or 新建或打开一个库…), `drop:<path>`
   /// and `drop-window:<path>` (through the same code as a file dropped on the menu bar item or the
   /// window), `route:<fragment>` (the page's address fragment), `tray` (a click on the icon), `text:<file>` and `text-tray:<file>` (the page's text),
-  /// `snap:<file>`, `snap-tray:<file>`, `snap-welcome:<file>` and `snap-settings:<file>` (a picture of it),
+  /// `snap:<file>`, `snap-tray:<file>`, `snap-welcome:<file>` and `snap-settings:<file>` (a picture of it), `text-welcome:<file>` (what the first-launch window offers),
   /// `settings` (the settings window), `path-link:<folder>` and `path-unlink` (as the 在终端里用
   /// pneuma-base switch does), `text-settings:<file>` (the settings in words).
   private func listenForTestCommands() {
@@ -531,6 +687,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case "snap": self.window.snapshotForTest(to: file)
         case "snap-tray": snapshot(self.tray.webView, to: file, ground: .windowBackgroundColor)
         case "snap-welcome": self.welcome.snapshotForTest(to: file)
+        case "text-welcome": try? self.welcome.textForTest.write(to: file, atomically: true, encoding: .utf8)
         case "settings": self.openSettings()
         case "path-link": self.settings?.model.link(in: rest)
         case "path-unlink": self.settings?.model.unlink()
@@ -544,7 +701,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
           let xy = rest.split(separator: ",").compactMap { Double($0) }
           if xy.count == 2 { self.window.hitForTest(x: xy[0], y: xy[1]) }
         case "find": self.window.findForTest(rest)
-        case "pids": Log.line("pids: app \(getpid()) server \(self.server?.pid ?? 0) web \(self.window.webContentPid ?? 0)")
+        case "pids": Log.line("pids: app \(getpid()) server \(self.server?.pid ?? 0) web \(self.window.webContentPid ?? 0) storage \(self.watcher?.pid ?? 0)")
         default: break
         }
       }

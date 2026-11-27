@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
-import { defineCommand, definePlugin, pluginName, type Block } from '@pneuma-base/sdk'
-import { scanItem, scanLibrary } from './scan.js'
+import { CONTRACT, defineCommand, definePlugin, pluginName, type Block } from '@pneuma-base/sdk'
+import { heardMove, heardPurge, heardPut, scanItem, scanLibrary } from './scan.js'
 
 type BrokenLink = {
   source: string
@@ -58,9 +58,7 @@ const list = defineCommand({
 })
 
 export default definePlugin({
-  // Written against contract 1: it walks the library with tools.things and tools.files and reads
-  // files at tools.abs, which the kernel keeps for contract 1 until this plugin moves.
-  contract: 1,
+  contract: CONTRACT,
   name: pluginName('links'),
   version: '0.1.0',
   summary: '检查 Markdown 和 HTML 文件中的库内相对链接',
@@ -69,6 +67,19 @@ export default definePlugin({
   storage: [],
   ownerCommands: [list],
   views: [{ id: 'links.broken', title, icon: 'link', nav: true, filters: [] }],
+
+  // It checks the documents it heard of: put or registered, then moved, archived or purged.
+  async onPut(req, ctx) {
+    await heardPut(ctx, req)
+    return null
+  },
+  async onArchive(req, ctx) {
+    if (req.moved) await heardMove(ctx, req.from, req.to)
+    return null
+  },
+  async onPurged(paths, ctx) {
+    await heardPurge(ctx, paths)
+  },
 
   async onCheck(req, ctx) {
     const broken = await scanLibrary(ctx, { includeArchived: req.includeArchived })

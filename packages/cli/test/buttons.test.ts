@@ -114,7 +114,7 @@ describe('the buttons that give each verb and command a place', () => {
   it('the config page installs a plugin on this machine from a directory, and uninstalls it', async () => {
     const dir = join(sb.work, 'extra')
     mkdirSync(dir)
-    writeFileSync(join(dir, 'index.js'), "export default { contract: 1, name: 'extra', cognition: null, storage: [], statements: [], ownerCommands: [] }\n")
+    writeFileSync(join(dir, 'index.js'), "export default { contract: 2, name: 'extra', cognition: null, storage: [], statements: [], ownerCommands: [] }\n")
     await press(await viewer.view('config'), '从目录装一个插件到这台机器', { dir })
     expect((await sb.run(['plugin', 'list'])).stdout).toContain('extra')
     await press(await viewer.view('config'), '从这台机器卸掉')

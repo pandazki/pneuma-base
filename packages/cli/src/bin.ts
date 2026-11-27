@@ -7,6 +7,12 @@ if (!meetsNodeFloor(process.versions.node)) {
 }
 
 // Loaded after the check, so an older Node gets the sentence above and not an error from deep in a module.
+const { platformMismatch } = await import('@pneuma-base/kernel')
+const mismatch = platformMismatch()
+if (mismatch !== null) {
+  process.stderr.write(`${mismatch}\n`)
+  process.exit(1)
+}
 const { main, processIo } = await import('./main.js')
 const { builtinPlugins } = await import('./plugins.js')
 

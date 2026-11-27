@@ -1,5 +1,6 @@
 // C4 and C8 through the real command line. Most libraries here have only the version plugin, so
 // what holds an old version over a put is this plugin and nothing else.
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -192,6 +193,43 @@ describe('versions of a declared thing (C4)', () => {
     expect(next).not.toContain('放入 report.md')
   })
 
+  it('a hand edit deep inside a bundle is kept as a version when a put replaces it', () => {
+    const site = join(outside, 'site')
+    writeTree(site, { 'index.html': '<h1>1</h1>', 'css/a.css': 'a{}' })
+    ok(agent(['put', site, '--to', 'sites/a', '--made']))
+    declare('sites/a')
+    writeFileSync(join(lib, 'sites/a/css/a.css'), 'a{color:red}')
+    writeTree(site, { 'index.html': '<h1>2</h1>' })
+    ok(agent(['put', site, '--to', 'sites/a', '--made']))
+    expect(versions('sites/a').map((v) => [v.n, v.via])).toEqual([
+      [1, 'declare'],
+      [2, 'outside'],
+      [3, 'put'],
+    ])
+    ok(owner(['version', 'export', 'sites/a', '--version', '2', '--to', join(outside, 'v2')]))
+    expect(readTree(join(outside, 'v2'))).toEqual({ 'index.html': '<h1>1</h1>', 'css/a.css': 'a{color:red}' })
+  })
+
+  it('a hand edit deep inside a bundle, its top level unchanged, is missed by check and kept as a version by check --deep', () => {
+    const site = join(outside, 'site')
+    writeTree(site, { 'index.html': '<h1>1</h1>', 'css/a.css': 'a{}' })
+    ok(agent(['put', site, '--to', 'sites/a', '--made']))
+    declare('sites/a')
+    writeFileSync(join(lib, 'sites/a/css/a.css'), 'a{color:red}')
+    const plain = ok(agent(['check', '--json'])).json()
+    expect(plain.sections.filter((s: any) => s.plugin === 'version')).toEqual([])
+    expect(versions('sites/a')).toHaveLength(1)
+    const elsewhere = ok(agent(['check', '--deep', 'notes', '--json'])).json()
+    expect(elsewhere.sections.filter((s: any) => s.plugin === 'version')).toEqual([])
+    const deep = ok(agent(['check', '--deep', 'sites', '--json'])).json()
+    expect(deep.sections.find((s: any) => s.plugin === 'version').data.recorded).toEqual([{ path: 'sites/a', version: 2 }])
+    expect(versions('sites/a').map((v) => [v.n, v.via])).toEqual([
+      [1, 'declare'],
+      [2, 'outside'],
+    ])
+    expect(ok(agent(['check', '--deep', '--json'])).json().sections.filter((s: any) => s.plugin === 'version')).toEqual([])
+  })
+
   it('a bundle version is exported as the tree it had', () => {
     const site = join(outside, 'site')
     writeTree(site, { 'index.html': '<h1>1</h1>', 'css/a.css': 'a{}' })
@@ -301,7 +339,70 @@ describe('versions of a declared thing (C4)', () => {
     const dir = join(lib, '.pneuma-base/version')
     const files = Object.keys(readTree(dir))
     expect(files.filter((f) => f.startsWith('objects/'))).toHaveLength(2)
-    for (const file of files) expect(file).toMatch(/^(objects\/[0-9a-f]{2}\/[0-9a-f]{64}|facts\/s1\/\d+-[0-9a-f]{8}\.jsonl)$/)
+    for (const file of files) expect(file).toMatch(/^(objects\/[0-9a-f]{2}\/[0-9a-f]{64}|facts\/\d{4}-\d{2}-\d{2}\/\d+-[0-9a-f]+-\d+\.jsonl)$/)
     expect(readdirSync(lib).sort()).toEqual(['.pneuma-base', 'PNEUMA-BASE.md', 'a.md', 'b.md'])
+  })
+
+  it('versions the plugin wrote before storage still list, export and restore: facts under facts/<scene>/, a directory version as one object per file', () => {
+    const sha = (text: string) => createHash('sha256').update(text).digest('hex')
+    const tree = (files: Record<string, string>) => {
+      const rows = Object.entries(files)
+        .map(([path, text]) => ({ path, fingerprint: sha(text), size: Buffer.byteLength(text) }))
+        .sort((a, b) => Buffer.compare(Buffer.from(a.path), Buffer.from(b.path)))
+      return { rows, fingerprint: sha(rows.map((r) => `${r.path}\0${r.fingerprint}\n`).join('')) }
+    }
+    const V1 = { 'index.html': '<h1>1</h1>', 'css/a.css': 'a{}' }
+    const V2 = { 'index.html': '<h1>2</h1>' }
+    ok(put('v2', 'report.md'))
+    const site = join(outside, 'site')
+    writeTree(site, V2)
+    ok(agent(['put', site, '--to', 'sites/a', '--made']))
+
+    const dir = join(lib, '.pneuma-base/version')
+    for (const text of ['v1', 'v2', ...Object.values(V1), ...Object.values(V2)]) writeTree(dir, { [`objects/${sha(text).slice(0, 2)}/${sha(text)}`]: text })
+    const by = { kind: 'agent', name: 'claude-code' }
+    let n = 0
+    const f = (body: object) => ({ id: `f_20261125000000000_aaaaaa_${String(n++).padStart(4, '0')}`, at: '2026-11-25T00:00:00.000Z', scene: 's1', by, ...body })
+    const file = (text: string, via: string) => ({ kind: 'version', thing: 't_report', path: 'report.md', fingerprint: sha(text), manifest: { kind: 'file', rows: [{ path: '', fingerprint: sha(text), size: text.length }] }, via })
+    const bundle = (files: Record<string, string>, via: string) => {
+      const { rows, fingerprint } = tree(files)
+      return { kind: 'version', thing: 't_site', path: 'sites/a', fingerprint, manifest: { kind: 'bundle', rows }, via }
+    }
+    const facts = [
+      f({ kind: 'declare', thing: 't_report', path: 'report.md' }),
+      f(file('v1', 'declare')),
+      f({ kind: 'note', thing: 't_report', version: 'f_20261125000000000_aaaaaa_0001', text: '初稿' }),
+      f(file('v2', 'put')),
+      f({ kind: 'declare', thing: 't_site', path: 'sites/a' }),
+      f(bundle(V1, 'declare')),
+      f(bundle(V2, 'put')),
+    ]
+    writeTree(dir, { 'facts/s1/20261125000000000-0a1b2c3d.jsonl': facts.map((x) => `${JSON.stringify(x)}\n`).join('') })
+
+    const list = ok(owner(['version', 'list', 'sites/a', '--json'])).json().data
+    expect(list.state).toBe('current')
+    expect(list.versions.map((v: any) => [v.n, v.files])).toEqual([
+      [1, 2],
+      [2, 1],
+    ])
+    expect(versions('report.md').map((v) => [v.n, v.note])).toEqual([
+      [1, '初稿'],
+      [2, null],
+    ])
+    ok(owner(['version', 'export', 'sites/a', '--version', '1', '--to', join(outside, 'v1')]))
+    expect(readTree(join(outside, 'v1'))).toEqual(V1)
+    ok(owner(['version', 'export', 'report.md', '--version', '1', '--to', join(outside, 'r1.md')]))
+    expect(readFileSync(join(outside, 'r1.md'), 'utf8')).toBe('v1')
+
+    ok(owner(['version', 'restore', 'sites/a', '--version', '1']))
+    expect(readTree(join(lib, 'sites/a'), ['.pneuma-item'])).toEqual(V1)
+    expect(versions('sites/a').map((v) => [v.n, v.same])).toEqual([
+      [1, null],
+      [2, null],
+      [3, 1],
+    ])
+    ok(owner(['version', 'restore', 'report.md', '--version', '1']))
+    expect(readFileSync(join(lib, 'report.md'), 'utf8')).toBe('v1')
+    expect(versions('report.md').map((v) => v.same)).toEqual([null, null, 1])
   })
 })

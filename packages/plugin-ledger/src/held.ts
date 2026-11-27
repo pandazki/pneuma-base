@@ -1,7 +1,7 @@
 // Held copies: content a new version replaced, kept in the ledger's own place under held/ until the
 // owner drops it, and the owner commands over them. Every copy goes through storage: into the own place
 // from the content, and back from the own place to a new path. ledger-design.md section 5.
-import { posix, relative, sep } from 'node:path'
+import { posix } from 'node:path'
 import {
   defineCommand,
   isDescribed,
@@ -25,8 +25,8 @@ const HELD_DIR = 'held'
 /** Where the held copy of a version of `item` lies in the ledger's own place. */
 export const heldPlace = (item: ItemId, key: string, path: LibraryPath): Place => posix.join(HELD_DIR, item, key, posix.basename(path))
 
-/** A place of the ledger's own as the facts name it: relative to the library root. */
-const fromRoot = (ctx: PluginContext, place: Place) => posix.join(relative(ctx.library.root, ctx.dir).split(sep).join('/'), place)
+/** A place of the ledger's own as the facts name it: relative to the library root, where its record place is. */
+const fromRoot = (_ctx: PluginContext, place: Place) => posix.join('.pneuma-base', 'ledger', place)
 
 /** The key of the version a token names: its fingerprint when given, else the item's on record when the token is the one recorded. */
 export const keyOf = (item: ItemRow | undefined, token: string, fingerprint: Fingerprint | null) => heldKey(fingerprint ?? (item?.token === token ? item.fingerprint : null), token)
@@ -147,16 +147,23 @@ export const HELD_SHOWN = 200
 /** How many held copies `ledger held list` names before it gives the total and the command for the rest. */
 const LISTED = 20
 
-/** The held copies, at most `limit`, with the items they are of, and how many there are. */
-export async function heldCopies(ctx: PluginContext, limit = HELD_SHOWN): Promise<{ copies: (HeldRow & { current: ItemRow | undefined })[]; total: number }> {
+/** The held copies, at most `limit` after `after`, with the items they are of, how many there are, and the cursor of the ones that follow. */
+export async function heldCopies(ctx: PluginContext, limit = HELD_SHOWN, after?: string): Promise<{ copies: (HeldRow & { current: ItemRow | undefined })[]; total: number; next: string | null }> {
   const records = ctx.tools.storage.records
   const rows: HeldRow[] = []
-  for await (const page of pagesOf<HeldRow>(records, 'held', '', Math.min(limit, 1000))) {
-    rows.push(...page.map((r) => r.value))
-    if (rows.length >= limit) break
+  let next: string | null = null
+  if (limit <= 1000) {
+    const page = await records.under<HeldRow>('held', '', { limit, ...(after === undefined ? {} : { after }) })
+    rows.push(...page.rows.map((r) => r.value))
+    next = page.more?.after ?? null
+  } else {
+    for await (const page of pagesOf<HeldRow>(records, 'held', '', 1000, after)) {
+      rows.push(...page.map((r) => r.value))
+      if (rows.length >= limit) break
+    }
   }
   const items = await getAll<ItemRow>(records, 'items', rows.map((r) => r.item))
-  return { copies: rows.slice(0, limit).map((r) => ({ ...r, current: items.get(r.item) })), total: (await counters(records)).held ?? rows.length }
+  return { copies: rows.slice(0, limit).map((r) => ({ ...r, current: items.get(r.item) })), total: (await counters(records)).held ?? rows.length, next }
 }
 
 /** `ledger held list`, `ledger held restore`, `ledger held drop`: the owner's commands over held copies. */

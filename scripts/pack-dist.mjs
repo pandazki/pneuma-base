@@ -1,12 +1,17 @@
 // Builds the two package files a plugin project depends on, from the workspace as built:
 //   pneuma-base-<version>.tgz      the command line, with the kernel, the built-in plugins and the
 //                                  viewer bundled inside, so `npm install <tgz>` needs nothing else,
-//                                  storage's program as built on this machine, and the plugin
-//                                  standard PLUGINS.md
+//                                  the local folder's storage provider and the contract suite's
+//                                  program as built on this machine, and the plugin standard PLUGINS.md
+// The product is built on an Apple-silicon Mac, so its package carries darwin-arm64 programs and says so
+// on any other machine. Built elsewhere (CI on Linux), the package carries that machine's programs, for
+// its tests only.
 //   pneuma-base-sdk-<version>.tgz  @pneuma-base/sdk: the contract, the kit and the test kit
 // Nothing is published. usage: node scripts/pack-dist.mjs [--out <directory>]   (default dist-packages/)
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -76,11 +81,30 @@ try {
   }))
   cpSync(join(repo, 'PLUGINS.md'), join(cli, 'PLUGINS.md'))
   for (const [name, dir] of Object.entries(inside)) stage(pkg(dir), join(cli, 'node_modules', name), (m) => m)
-  // Storage, built for this machine by `pnpm build`: the kernel finds it beside its dist/.
-  const core = join(repo, 'core/target/release/pneuma-base-core')
-  if (!existsSync(core)) throw new Error('core/target/release/pneuma-base-core is missing: run pnpm build first.')
-  mkdirSync(join(cli, 'node_modules/@pneuma-base/kernel/bin'), { recursive: true })
-  cpSync(core, join(cli, 'node_modules/@pneuma-base/kernel/bin/pneuma-base-core'))
+  // Storage's programs, built for this machine by `pnpm build`: the kernel finds them beside its dist/,
+  // with the platform they were built for, and the official list names the local folder's checksum.
+  const kernel = join(cli, 'node_modules/@pneuma-base/kernel')
+  const platform = `${process.platform}-${process.arch}`
+  mkdirSync(join(kernel, 'bin'), { recursive: true })
+  for (const program of ['pneuma-base-core', 'pneuma-base-contract']) {
+    const built = join(repo, 'core/target/release', program)
+    if (!existsSync(built)) throw new Error(`core/target/release/${program} is missing: run pnpm build first.`)
+    cpSync(built, join(kernel, 'bin', program))
+  }
+  writeFileSync(join(kernel, 'bin/platform'), `${platform}\n`)
+  const core = join(kernel, 'bin/pneuma-base-core')
+  const scratch = mkdtempSync(join(tmpdir(), 'pack-dist-'))
+  const described = JSON.parse(execFileSync(core, ['describe', '--root', scratch], { encoding: 'utf8' }))
+  rmSync(scratch, { recursive: true, force: true })
+  const officialFile = join(kernel, 'official-providers.json')
+  const official = readJson(officialFile)
+  for (const p of official.providers) {
+    if (!p.builtIn) continue
+    p.version = described.version
+    p.sha256 = { [platform]: createHash('sha256').update(readFileSync(core)).digest('hex') }
+  }
+  writeFileSync(officialFile, `${JSON.stringify(official, null, 2)}\n`)
+  if (platform !== 'darwin-arm64') console.error(`storage programs in this package: ${platform}, for tests; the product package is built on darwin-arm64`)
 
   for (const file of [pack(sdk), pack(cli)]) console.log(file)
 } finally {

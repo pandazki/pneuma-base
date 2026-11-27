@@ -54,17 +54,31 @@ export type Library = {
   readonly clashes: readonly PluginProblem[]
 }
 
-/** `home` is this machine's `$PNEUMA_BASE_HOME`: local grant files, external plugins, plugin caches. */
-export type Context = { library: Library; actor: Actor; session: Session; now: Instant; home: string }
+/**
+ * `home` is this machine's `$PNEUMA_BASE_HOME`: local grant files, external plugins, plugin caches.
+ * `pass`: where a named whole pass the operation runs reports how far it is and hears that it should
+ * stop, given by the face that started it; absent, nobody watches and nothing stops it.
+ */
+export type Context = { library: Library; actor: Actor; session: Session; now: Instant; home: string; pass?: Pass }
+
+/** How far a named whole pass is: `done` of `total` (at least `total` with `atLeast`; null while unknown), and one sentence that says so. */
+export type PassProgress = { done: number; total: number | null; atLeast?: boolean; text: string }
 
 /**
- * The context a plugin's hook receives: the operation's context, where the plugin's own area in the
- * library is (`dir`, for contract 1, which writes there itself and makes it first; a plugin of
- * contract 2 reaches it through `tools.storage.own`), its cache directory outside the library
- * (`<home>/cache/<library id>/<plugin>/`), the kernel's helpers bound to the library, and its
- * credentials on this machine. The kernel creates neither directory; deleting the cache must lose nothing.
+ * The channel of a named whole pass (deep check, registering everything in a directory): the command
+ * line prints each report on standard error and stops on Ctrl-C; the page shows the reports with a way
+ * to stop. The first report says how much the pass will do. `stopped` turns true once the person asks
+ * it to stop; the pass then ends after the step under way, keeping what it did.
  */
-export type PluginContext = Context & { dir: string; cacheDir: string; tools: PluginTools; secrets: PluginSecrets }
+export type Pass = { report(progress: PassProgress): void; stopped(): boolean }
+
+/**
+ * The context a plugin's hook receives: the operation's context, its cache directory outside the
+ * library (`<home>/cache/<library id>/<plugin>/`, which the kernel does not create and whose deletion
+ * must lose nothing), the kernel's helpers bound to the library (its record place is reached through
+ * `tools.storage`), and its credentials on this machine.
+ */
+export type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: PluginSecrets }
 
 /**
  * The credentials the owner set for this plugin on this machine with `secret set`: kept under
@@ -86,10 +100,6 @@ export type SecretDecl = { name: string; description: string; optional?: boolean
 export type Region = 'content' | 'archive' | 'kernel'
 /** What an input names in the library: the path, where it lies, and the bundle it lies strictly inside, if any. */
 export type Resolved = { path: LibraryPath; region: Region; bundle: LibraryPath | null }
-/** A thing's facts that need no hashing. A file counts as one file; a bundle, as the files its fingerprint counts. */
-export type Thing = { kind: ThingKind; size: number; files: number; modifiedAt: Instant }
-/** A file a bundle counts: its path relative to the bundle, '/'-separated. */
-export type BundleFile = { path: string; size: number; modifiedAt: Instant }
 /** A file a bundle counts, with the sha256 of its content. */
 export type ManifestEntry = { path: string; fingerprint: Fingerprint; size: number }
 
@@ -132,29 +142,6 @@ export interface PluginTools {
   put(req: PutRequest): Promise<PutResult>
   /** Storage, where the plugin's records point: looking at places, content when asked, writes with expectations, its own record place. */
   readonly storage: PluginStorage
-
-  // ---- contract version 1, kept for the plugins written against it; removed when they move (written on the tools above) ----
-
-  /** @deprecated contract 1: a plugin reads the library only through `storage`. */
-  abs(path: LibraryPath): string
-  /** @deprecated contract 1: `what` and `storage.glance`. */
-  thing(path: LibraryPath): Promise<Thing | null>
-  /** @deprecated contract 1: walks the library, one level at a time. A plugin follows its own records instead. */
-  things(): Promise<LibraryPath[]>
-  /** @deprecated contract 1: walks a bundle, one level at a time. */
-  files(path: LibraryPath): Promise<BundleFile[] | null>
-  /** @deprecated contract 1: `storage.read` with `to`, or `storage.own.write` from the place. */
-  copyOut(path: LibraryPath, to: string): Promise<Fingerprint | null>
-  /** @deprecated contract 1: `storage.content`. */
-  fingerprint(path: LibraryPath): Promise<Fingerprint | null>
-  /** @deprecated contract 1: `storage.content` of each file of a walked bundle. */
-  manifest(path: LibraryPath): Promise<ManifestEntry[] | null>
-  /** @deprecated contract 1. */
-  fingerprintOfManifest(entries: readonly Pick<ManifestEntry, 'path' | 'fingerprint'>[]): Fingerprint
-  /** @deprecated contract 1: `storage.content` or `storage.own.content`; outside the library, the plugin hashes its own files. */
-  fingerprintOfFile(absolute: string): Promise<Fingerprint>
-  /** @deprecated contract 1: always empty; a write under way shows as `held` in `storage.look` and `storage.overview`. */
-  putting(): Promise<LibraryPath[]>
 }
 
 export type Note = { plugin: PluginName; text: string; data?: unknown }
@@ -219,8 +206,7 @@ export type ThingNow = { token: string; kind: ThingKind; size: number | null; fi
  * What `onPut` receives after the kernel accepted a put. `note` is trimmed; blank or absent is null.
  * `fingerprint` is the content's when it passed through the kernel (a place copies it in and
  * fingerprints it in the same pass); a register or a move reads no content and gives null, and the
- * thing is known by `now.token` until something asks for its content. A plugin written against
- * contract 1 gets the fingerprint filled in: the kernel reads the content for it.
+ * thing is known by `now.token` until something asks for its content.
  */
 export type AcceptedPut =
   | { kind: 'register'; path: LibraryPath; fingerprint: Fingerprint | null; now: ThingNow; origin: Origin; note: string | null; observed?: true }
@@ -240,16 +226,14 @@ export type AcceptedPut =
   /**
    * A register of a directory that holds registered things (an open directory): the loose files of its
    * one level, a page of them at a time, each with what storage said of it; none of their content read.
-   * A plugin registers the ones it does not know and leaves the ones it knows as they are. A plugin of
-   * contract 1 gets one `register` per file instead.
+   * A plugin registers the ones it does not know and leaves the ones it knows as they are.
    */
   | { kind: 'register-files'; path: LibraryPath; files: { path: LibraryPath; now: ThingNow }[]; origin: Origin; note: string | null; observed?: true }
 
 /**
  * What `revise` receives: a place onto a path whose content is to be replaced. `token` is the state of
- * what is there now, which the kernel's write expects; `current` its fingerprint when one is known
- * (always, for a plugin written against contract 1); `incoming` the new content's, null for a
- * directory not copied in yet.
+ * what is there now, which the kernel's write expects; `current` its fingerprint when one is known;
+ * `incoming` the new content's, null for a directory not copied in yet.
  */
 export type PlaceOverExisting = { path: LibraryPath; token: string; current: Fingerprint | null; incoming: Fingerprint | null }
 
@@ -338,6 +322,7 @@ export type SayAnswer =
 /**
  * `deep`: the named whole pass, which reads the content of every registered thing (under `dir`, all of
  * them when null) and says how much first; without it check compares state tokens and reads no content.
+ * The plugin that does the pass gives what it found as its first section.
  */
 export type CheckRequest = { since: Instant | 'last' | null; includeArchived: boolean; deep?: { dir: LibraryPath | null } }
 /**
@@ -537,7 +522,7 @@ export type StorageDecl = { dir: string; kind: 'body' | 'cache' } // relative to
 
 /** An object with only a contract, a name and empty lists is a valid plugin. */
 export interface Plugin {
-  /** The plugin contract it is written against: the sdk's `CONTRACT` (2), or 1 for a plugin not moved yet. The kernel refuses a version it does not run. */
+  /** The plugin contract it is written against: the sdk's `CONTRACT` (2), the only one the kernel runs. */
   readonly contract: number
   readonly name: PluginName
   /** Its own version, for people. */
@@ -591,8 +576,12 @@ export interface Plugin {
   /** The views it adds to the management UI. Each id starts with `<name>.`. */
   readonly views?: readonly ViewDecl[]
   readonly onView?: (req: ViewRequest, ctx: PluginContext) => Promise<ViewAnswer>
-  /** What it knows about one library path, as one section of the kernel's item panel: onInspect's counterpart in the UI. */
-  readonly onItemView?: (path: LibraryPath, ctx: PluginContext) => Promise<ItemSection | null>
+  /**
+   * What it knows about one library path, as one section of the kernel's item panel: onInspect's
+   * counterpart in the UI. `panel`: the panel's parameters, where its long lists' pages stand
+   * (`pagingOf` with a `name` of its own and target `panel`), and how many rows a page holds.
+   */
+  readonly onItemView?: (path: LibraryPath, ctx: PluginContext, panel?: { params: Record<string, string>; size: number }) => Promise<ItemSection | null>
   /** The absolute path of the directory its `custom` blocks' pages are in, such as `ui/` beside its `index.js`. */
   readonly ui?: string
 }
@@ -650,6 +639,13 @@ export type ActionInput = {
 export type Action = { label: string; tone: 'default' | 'danger'; confirm: string | null; inputs: ActionInput[]; call: Call }
 
 export type TableRow = { key: string; cells: Record<string, Cell>; link: Link | null; actions: Action[] }
+/**
+ * Where one page of a long list stands: `first`, the place of its first row counted from 1, and
+ * `shown`, how many rows it shows; `total`, how many rows the whole list has, or with `atLeast` how
+ * many at least; the pages before and after it, null at either end. The sdk's `pagingOf` makes it
+ * from the view's parameters.
+ */
+export type Paging = { first: number; shown: number; total: number; atLeast?: true; prev: Link | null; next: Link | null }
 /** An `optional` column steps aside, the last one first, when the table has no room to show every column whole. */
 export type TableColumn = { key: string; label: string; optional?: boolean }
 
@@ -713,20 +709,22 @@ export type Step = { key: string; title: string; done: boolean; summary: string 
  * axis in `unit` (such as 样 or 次); `text` is the one sentence that says what it shows, the chart's
  * caption on the page; `show` prints the sentence and a table of the numbers. At most
  * `CHART_SERIES_MAX` series, each with a value for every `x` label; stacked values are not negative.
+ * `page` on a table, a list, a timeline or a feed: its rows are one page of a longer list, the page
+ * drawn under them with the total and the way to the pages before and after.
  */
 export type Block =
   | { kind: 'section'; title: string; note: string | null; count: number | null; blocks: Block[]; actions: Action[]; collapse?: 'open' | 'closed'; plugin?: PluginName }
-  | { kind: 'table'; columns: TableColumn[]; rows: TableRow[]; empty: string }
+  | { kind: 'table'; columns: TableColumn[]; rows: TableRow[]; empty: string; page?: Paging }
   | { kind: 'fields'; fields: { label: string; value: Cell }[] }
-  | { kind: 'list'; items: { cell: Cell; note: string | null; actions: Action[] }[] }
-  | { kind: 'timeline'; entries: { at: Instant; title: Cell; lines: string[]; tag: Tag | null; actions?: Action[] }[] }
+  | { kind: 'list'; items: { cell: Cell; note: string | null; actions: Action[] }[]; page?: Paging }
+  | { kind: 'timeline'; entries: { at: Instant; title: Cell; lines: string[]; tag: Tag | null; actions?: Action[] }[]; page?: Paging }
   | { kind: 'text'; text: string; tone: Tone }
   | { kind: 'preview'; path: LibraryPath }
   | { kind: 'actions'; actions: Action[] }
   | { kind: 'empty'; title: string; hint: string | null }
   | { kind: 'embed'; url: string; title: string; height: number }
   | { kind: 'custom'; entry: string; height: number; text: string; data: unknown; actions: Record<string, Action>; plugin?: PluginName }
-  | { kind: 'feed'; groups: FeedGroup[]; empty: string }
+  | { kind: 'feed'; groups: FeedGroup[]; empty: string; page?: Paging }
   | { kind: 'stats'; stats: Stat[] }
   | { kind: 'tree'; param: string; selected: string; nodes: TreeNode[] }
   | { kind: 'asks'; asks: Ask[]; empty: string }
@@ -746,7 +744,8 @@ export type ViewFilter = { name: string; label: string; options: FilterOption[];
 export type ViewDecl = { id: string; title: string; icon: IconName; nav: boolean; filters: ViewFilter[]; ownerOnly?: boolean; home?: boolean }
 /** A view as the library lists it, with who gives it. */
 export type ListedView = ViewDecl & { by: PluginName | 'kernel' }
-export type ViewRequest = { view: string; params: Record<string, string> }
+/** `size`: how many rows a page of a long list holds, as the face asks: `PAGE_ROWS` on the page, `TEXT_ROWS` in the text form; absent, `PAGE_ROWS`. */
+export type ViewRequest = { view: string; params: Record<string, string>; size?: number }
 /**
  * `refresh`: seconds after which the page asks again, at least 5: for a view showing state from
  * outside the library, or one whose content changes with the clock. A view runs on the machine of
@@ -757,7 +756,8 @@ export type ViewRequest = { view: string; params: Record<string, string> }
  */
 export type ViewAnswer = { title: string; subtitle: string | null; blocks: Block[]; refresh?: number; filters?: { name: string; options: FilterOption[] }[]; open?: Link }
 export type ViewResult =
-  | ({ outcome: 'shown' } & ViewAnswer & { problems: PluginProblem[] })
+  /** `icon`: the kernel's item panel gives the icon of the kind of thing it shows, instead of the view's. */
+  | ({ outcome: 'shown' } & ViewAnswer & { problems: PluginProblem[]; icon?: IconName })
   | { outcome: 'no-such-view'; problems: PluginProblem[] }
   | { outcome: 'refused'; reason: 'agent-session'; text: string; problems: PluginProblem[] }
 /** Every view of a library: the plugins' first, in configuration order, then the kernel's. */

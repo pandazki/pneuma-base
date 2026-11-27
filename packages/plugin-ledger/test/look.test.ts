@@ -131,7 +131,7 @@ describe('check, by position', () => {
     write('notes/proj/src/main.ts', 'x')
     write('notes/proj/README.md', 'r')
     const r = await checkUntil(check, (x) => x.asks.length > 0)
-    expect(r.asks.map((a) => a.text)).toEqual(['notes/proj/ 没登记。'])
+    expect(r.asks.map((a) => a.text)).toEqual(['notes/proj/ 没登记：2 个文件。'])
     expect(section(r, '没登记的目录')).toBe('  notes/proj/')
     expect(told(r)).not.toMatch(/main\.ts|README|src/)
   })
@@ -179,7 +179,7 @@ describe('check --deep, by position', () => {
     const { check, reads } = await arranged()
     reads.length = 0
     const r = await check({ dir: null })
-    expect(section(r, '按内容查').split('\n')[0]).toBe('按内容查了 整个库 的 3 样登记过的东西。')
+    expect(section(r, '按内容查').split('\n')[0]).toBe('按内容查了整个库：3 样登记过的东西。')
     expect([...new Set(reads)].sort()).toEqual(['a.md', 'notes/n.md', 'site'])
   })
 
@@ -194,7 +194,7 @@ describe('check --deep, by position', () => {
     expect(body).toContain('只是碰过，内容没变（已按现在的记下）（1 样）：\n  notes/n.md')
     reads.length = 0
     const notes = await check({ dir: 'notes' })
-    expect(section(notes, '按内容查').split('\n')[0]).toBe('按内容查了 notes 的 1 样登记过的东西。')
+    expect(section(notes, '按内容查').split('\n')[0]).toBe('按内容查了 notes：1 样登记过的东西。')
     expect([...new Set(reads)]).toEqual(['notes/n.md'])
   })
 })
@@ -213,7 +213,7 @@ describe('registering', () => {
     const after = await check()
     expect(told(after)).not.toMatch(/b\.md|c\.md/)
     // Its folders are left as they were: one directory nobody looked into.
-    expect(after.asks.map((a) => a.text)).toEqual(['notes/deeper/ 没登记。'])
+    expect(after.asks.map((a) => a.text)).toEqual(['notes/deeper/ 没登记：1 个文件。'])
   })
 
   it('everything in a directory, by the owner, says how much first, reads no content, and leaves nothing to ask', async () => {

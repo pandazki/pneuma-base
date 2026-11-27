@@ -9,6 +9,7 @@ import {
   formOf,
   isFailure,
   KERNEL_ENTRIES,
+  probeWords,
   type Action,
   type Description,
   type LibraryPath,
@@ -17,6 +18,7 @@ import {
   type Place,
   type PluginAsk,
   type PluginContext,
+  type Probe,
 } from '@pneuma-base/kernel'
 import { fact, newItemId, writeFacts, type Entered } from './facts.js'
 import { refresh, stateOf } from './look.js'
@@ -29,6 +31,8 @@ export const ASKS = 20
 const LISTING = 1000
 /** How many things one fact of a register-everything act enters, so an interrupted act keeps what it did. */
 const BATCH = 500
+/** How many files the look before registering everything in a directory counts at most. */
+export const INSIDE_BUDGET = 5000
 
 const dirName = (dir: Place) => (dir === '' ? '库的根目录' : `${dir}/`)
 
@@ -104,17 +108,14 @@ const NOTHING = '没有还没登记的散文件。'
  * own. Says how far it is after each listing, and stops after the one under way when interrupted.
  */
 async function registerInside(ctx: PluginContext, dir: Place, input: string): Promise<OwnerAnswer> {
-  const scope = await ctx.tools.storage.probe(dir, 5000)
+  const scope = await ctx.tools.storage.probe(dir, INSIDE_BUDGET)
   if (isFailure(scope)) return { outcome: 'refused', reason: scope.reason, text: `没能看这个目录（${scope.reason}）：${input}` }
   const total = scope.exceeded ? `至少 ${scope.files}` : `${scope.files}`
-  const say = (text: string) => void process.stderr.write(`${text}\n`)
-  say(`要登记 ${dirName(dir)}里的全部文件：${total} 个，不含噪音。可以随时打断（Ctrl-C），登记过的不会重来。`)
+  // Past what the probe counted there is no total to give: the probe stopped at its budget.
+  const report = (n: number, text: string) => ctx.pass?.report({ done: n, total: scope.exceeded && n >= scope.files ? null : scope.files, ...(scope.exceeded ? { atLeast: true } : {}), text })
+  report(0, `要登记 ${dirName(dir)}里的全部文件：${total} 个，不含噪音。`)
   await stateOf(ctx)
-  let stop = false
-  const interrupt = () => {
-    stop = true
-  }
-  process.on('SIGINT', interrupt)
+  const stopped = () => ctx.pass?.stopped() ?? false
   let n = 0
   // What was listed and not entered yet, across directories: entered BATCH at a time.
   let pending: Description[] = []
@@ -122,33 +123,29 @@ async function registerInside(ctx: PluginContext, dir: Place, input: string): Pr
     while (pending.length >= BATCH || (all && pending.length > 0)) {
       n += await enter(ctx, pending.slice(0, BATCH))
       pending = pending.slice(BATCH)
-      // Past what the probe counted there is no total to give: the probe stopped at its budget.
-      say(scope.exceeded && n >= scope.files ? `已登记 ${n}` : `已登记 ${n} / ${total}`)
-      if (stop) return
+      report(n, scope.exceeded && n >= scope.files ? `已登记 ${n} 个` : `已登记 ${n} / ${total} 个`)
+      if (stopped()) return
     }
   }
-  try {
-    const queue: Place[] = [dir]
-    walk: for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
-      for await (const entries of listings(ctx, next)) {
-        if (stop) break walk
-        const found = await strays(ctx, next, entries, false)
-        queue.push(...found.dirs.map((d) => d.place))
-        pending.push(...found.files)
-        await flush(false)
-      }
+  const queue: Place[] = [dir]
+  walk: for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+    for await (const entries of listings(ctx, next)) {
+      if (stopped()) break walk
+      const found = await strays(ctx, next, entries, false)
+      queue.push(...found.dirs.map((d) => d.place))
+      pending.push(...found.files)
+      await flush(false)
     }
-    await flush(true)
-  } finally {
-    process.off('SIGINT', interrupt)
   }
-  if (stop) return done(`停下了：已把 ${dirName(dir)}里的 ${n} 个文件记为主人带进来的${scope.exceeded && n >= scope.files ? '' : `，共 ${total} 个`}。登记过的都留着，再运行同一条命令接着登记剩下的。`, { registered: n, of: scope.files, stopped: true })
+  if (!stopped()) await flush(true)
+  const left = scope.files - n
+  if (stopped()) return done(`停下了：已把 ${dirName(dir)}里的 ${n} 个文件记为主人带进来的${left > 0 ? `，还剩${scope.exceeded ? '至少' : ''} ${left} 个` : ''}。`, { registered: n, of: scope.files, stopped: true })
   return done(n === 0 ? `${dirName(dir)}里没有还没登记的文件。` : `已把 ${dirName(dir)}里的 ${n} 个文件记为主人带进来的。`, { registered: n })
 }
 
 export const REGISTER = defineCommand({
   name: 'ledger register',
-  summary: '把还没登记的散文件记为主人带进来的；写一个目录只登记它这一层的；加 --inside 登记这个目录里的全部文件，先说有多少，再一边登记一边报进度',
+  summary: '把还没登记的散文件记为主人带进来的；写一个目录只登记它这一层的；加 --inside 登记这个目录里的全部文件，先说有多少，再报进度，Ctrl-C 停下',
   params: {
     positional: [{ name: 'dir', hint: '库内的目录，. 是库的根目录；不写是所有看过的目录' }],
     flags: [{ name: 'inside', hint: '登记这个目录里任意深处的全部文件，噪音除外', kind: 'boolean' }],
@@ -192,14 +189,30 @@ export const LEAVE = defineCommand({
 
 const ownerAction = (label: string, command: OwnerCommand, fixed: Record<string, string | boolean>): Action => ({ label, tone: 'default', confirm: null, ...formOf(command, { fixed }) })
 
-/** The three answers to a closed directory. */
-export function closedActions(path: LibraryPath): Action[] {
+/** How many files a look found, in words: at least that many when it stopped at its budget. */
+const filesText = (p: Probe) => `${p.exceeded ? '至少 ' : ''}${p.files} 个`
+
+/**
+ * The three answers to a closed directory. Registering every file in it is a named whole pass: it
+ * says first what it will register, as far as a look into the directory found.
+ */
+export function closedActions(path: LibraryPath, look: Probe | null = null): Action[] {
+  const inside = ownerAction('登记里面的文件', REGISTER, { dir: path, inside: true })
   return [
     { label: '登记成一样东西', tone: 'default', confirm: null, inputs: [], call: { face: 'agent', verb: 'put', request: { kind: 'register', path, origin: { kind: 'brought', source: null, by: 'owner' }, note: null } } },
-    ownerAction('登记里面的文件', REGISTER, { dir: path, inside: true }),
+    { ...inside, confirm: `要登记 ${path}/ 里任意深处的全部文件${look === null ? '' : `：${filesText(look)}`}，不含噪音。` },
     { label: '不用管', tone: 'default', confirm: null, inputs: [], call: { face: 'owner', command: 'noise add', args: { positional: [path], flags: {} } } },
   ]
 }
+
+/** What a budgeted look into each closed directory found; null where storage could not look. */
+export async function closedLooks(ctx: PluginContext, paths: readonly LibraryPath[]): Promise<Map<string, Probe | null>> {
+  const looks = await Promise.all(paths.map((p) => ctx.tools.storage.probe(p)))
+  return new Map(paths.map((p, i) => [p, isFailure(looks[i]) ? null : (looks[i] as Probe)]))
+}
+
+/** A closed directory in one sentence: nothing registered in it, and what a look into it found. */
+export const closedText = (path: LibraryPath, look: Probe | null) => `${path}/ 没登记${look === null ? '' : `：${probeWords(look)}`}。`
 
 /**
  * One ask for each place with things nobody registered, at most ASKS of them: the loose files of an
@@ -214,13 +227,17 @@ export async function unownedAsks(ctx: PluginContext): Promise<PluginAsk[]> {
   const partial = new Set((await partialDirs(records)).map((m) => m.dir))
   const asks: PluginAsk[] = page.rows.map(({ key: dir, value }) => ({
     key: `ledger:unregistered:${dir}`,
-    text: `${dirName(dir)}有 ${partial.has(dir) ? `至少 ${value.loose.length}` : value.loose.length} 个文件还没登记。都记为你带进来的吗？`,
+    text: `${dirName(dir)}有${partial.has(dir) ? '至少' : ''} ${value.loose.length} 个文件还没登记。都记为你带进来的吗？`,
     about: dir === '' ? null : (dir as LibraryPath),
     actions: [ownerAction('都记为我带进来的', REGISTER, { dir: dir === '' ? '.' : dir, inside: false }), ownerAction('不登记，不再问', LEAVE, { dir: dir === '' ? '.' : dir })],
     suggested: 0,
   }))
   const closed = await standingList(records, 'closed', false, ASKS)
-  for (const m of closed.rows) asks.push({ key: `ledger:closed:${m.path}`, text: `${m.path}/ 没登记。`, about: m.path, actions: closedActions(m.path) })
+  const looks = await closedLooks(ctx, closed.rows.map((m) => m.path))
+  for (const m of closed.rows) {
+    const look = looks.get(m.path) ?? null
+    asks.push({ key: `ledger:closed:${m.path}`, text: closedText(m.path, look), about: m.path, actions: closedActions(m.path, look) })
+  }
   const places = (page.more === null ? page.rows.length : await records.count('seen', 'loose', 'y')) + closed.count
   if (places <= ASKS) return asks
   return [...asks.slice(0, ASKS - 1), { key: 'ledger:unregistered:more', text: `还有 ${places - (ASKS - 1)} 个地方有没登记的东西，都在状况页上：pneuma-base show ledger.standing --kind unowned`, about: null, actions: [] }]

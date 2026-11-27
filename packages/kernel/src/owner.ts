@@ -1,4 +1,5 @@
 import { makeAddress, resolveAddress } from './address.js'
+import { addressForm, chooseProvider, recordLibrary, type Runnable } from './providers.js'
 import { said, takenBy } from './claims.js'
 import { newConfig, saveConfig } from './library.js'
 import { KERNEL_COMMANDS, type Outcome } from './owner-commands.js'
@@ -6,7 +7,7 @@ import { checkArgs } from './params.js'
 import { makeContext, performOwner, pluginContext } from './pipeline.js'
 import { askLine } from './requests.js'
 import { agentSign, ownerOnlyRefusal, OWNER_DECIDES, type Env } from './session.js'
-import { storageOf } from './storage.js'
+import { bindProvider, storageOf } from './storage.js'
 import { usageOf, type Actor, type Context, type OwnerArgs, type OwnerParams, type OwnerResult, type OwnerValues, type Plugin, type PluginName, type PluginTable, type Requested, type Session } from '@pneuma-base/sdk'
 
 /** Who acts, in which session, on this machine, with no library at hand: the context of a command that needs none. */
@@ -86,41 +87,52 @@ async function gated(call: OwnerCall, name: string, gate: Gate, args: OwnerArgs,
   return performOwner(ctx, name, args, { destructive: gate.destructive, readOnly: gate.readOnly ?? false, setup: gate.setup ?? false, ...(call.request ? { request: call.request } : {}) }, decide)
 }
 
-/** Makes `dir` a library. Refused before anything is written, so a refused init has no library to send an event to. */
+/**
+ * Makes the library at `address`, through the provider that answers its form here (the one named, or
+ * the only one, the built-in first), and records on this machine which provider it uses. Only the owner
+ * makes a library: `env` is the caller's environment (none from code the owner runs in-process).
+ * Refused before anything is written, so a refused init has no library to send an event to.
+ */
 export async function initLibrary(
-  dir: string,
-  opts: { plugins: string[]; table: PluginTable; actor: Actor; session: Session; home: string },
+  address: string,
+  opts: { plugins: string[]; table: PluginTable; actor: Actor; session: Session; home: string; env?: Env; provider?: string | null },
 ): Promise<OwnerResult> {
-  if (await isLibrary(dir)) {
-    return { outcome: 'refused', reason: 'already-a-library', text: `${dir} 已经是一个库了`, problems: [] }
-  }
+  const refuse = (reason: string, text: string): OwnerResult => ({ outcome: 'refused', reason, text, problems: [] })
+  const sign = agentSign(opts.env ?? {}, false, opts.actor)
+  if (sign !== null) return refuse('agent-session', ownerOnlyRefusal('init', OWNER_DECIDES, sign))
+  const provider = chooseProvider(opts.home, addressForm(address), opts.provider ?? null)
+  if ('reason' in provider) return refuse(provider.reason, provider.text)
+  if (await isLibrary(address, provider)) return refuse('already-a-library', `${address} 已经是一个库了`)
   const unknown = opts.plugins.filter((name) => !opts.table.has(name))
-  if (unknown.length > 0) {
-    return { outcome: 'refused', reason: 'unknown-plugin', text: `没有这个插件：${unknown.join('、')}`, problems: [] }
-  }
+  if (unknown.length > 0) return refuse('unknown-plugin', `没有这个插件：${unknown.join('、')}`)
   // As `plugin add` would refuse each plugin after the first that claims a name an earlier one holds.
   const chosen = [...new Set(opts.plugins)].map((name) => opts.table.get(name) as Plugin)
   const clashes = chosen.flatMap((p, i) => takenBy(p, chosen.slice(0, i)).map((t) => ({ plugin: p.name, ...t })))
   if (clashes.length > 0) {
     const what = clashes.map((c) => `插件 ${c.plugin} 的${said(c.claim)}已归插件 ${c.holder}`).join('；')
     const pairs = [...new Set(clashes.map((c) => `${c.holder} 和 ${c.plugin}`))].join('、')
-    return { outcome: 'refused', reason: 'name-taken', text: `没有建库：${what}。一个名字只归一个插件，${pairs} 只能选一个。`, problems: [] }
+    return refuse('name-taken', `没有建库：${what}。一个名字只归一个插件，${pairs} 只能选一个。`)
   }
-  const root = await makeAddress(dir)
+  const root = await makeAddress(address)
+  bindProvider(root, provider)
+  await recordLibrary(opts.home, root, provider.name)
   // Storage's part first (tmp/run-7 architecture.md section 4): its cache area, and the noise declared at the root with the default names.
   await storageOf(root).init()
   const library = await saveConfig(root, newConfig(opts.plugins as PluginName[]), opts.table)
   const ctx = makeContext(library, opts.actor, opts.session, opts.home)
-  const args: OwnerArgs = { positional: [library.root], flags: opts.plugins.length === 0 ? { bare: true } : {} }
+  const flags = { ...(opts.plugins.length === 0 ? { bare: true as const } : {}), ...(opts.provider ? { provider: [opts.provider] } : {}) }
+  const args: OwnerArgs = { positional: [library.root], flags }
   return performOwner(ctx, 'init', args, { destructive: false, readOnly: false }, async () => ({
-    answer: { outcome: 'done', text: `已把 ${library.root} 建成库。说明在 PNEUMA-BASE.md。`, data: { root: library.root } },
+    answer: { outcome: 'done', text: `已把 ${library.root} 建成库，存储提供者是 ${provider.name}。说明在 PNEUMA-BASE.md。`, data: { root: library.root, provider: provider.name } },
   }))
 }
 
-/** Whether a folder holds a library's declaration, readable or not: init never writes over one. */
-async function isLibrary(dir: string): Promise<boolean> {
-  const root = await resolveAddress(dir)
-  return root !== null && (await storageOf(root).declaration.read()).token !== null
+/** Whether an address holds a library's declaration, readable or not, asked of the provider init would use: init never writes over one. */
+async function isLibrary(address: string, provider: Runnable): Promise<boolean> {
+  const root = await resolveAddress(address)
+  if (root === null) return false
+  bindProvider(root, provider)
+  return (await storageOf(root).declaration.read()).token !== null
 }
 
 const NEEDS_LIBRARY = '要用 @<授权名> 或 --library <库的目录> 指明是哪个库。'

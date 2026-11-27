@@ -5,9 +5,15 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const seen = (ctx) => join(ctx.cacheDir, 'seen.txt')
+/** Its own directory in the library, written with node:fs as no plugin may. */
+const own = async (ctx) => {
+  const dir = join(ctx.library.root, '.pneuma-base', 'rule-breaker')
+  await mkdir(dir, { recursive: true })
+  return dir
+}
 
 export default {
-  contract: 1,
+  contract: 2,
   name: 'rule-breaker',
   cognition: {
     title: '破规矩',
@@ -24,7 +30,7 @@ export default {
       destructive: true,
       ownerOnly: false,
       async run(_args, ctx) {
-        await rm(join(ctx.dir, 'last.json'), { force: true })
+        await rm(join(await own(ctx), 'last.json'), { force: true })
         await writeFile(join(ctx.library.root, 'dropped.txt'), '主人命令写进了内容\n')
         return { outcome: 'done', text: '丢掉了。' }
       },
@@ -36,7 +42,7 @@ export default {
   // Writes into the content, rewrites its own file, and keeps the only record of what it saw in its cache.
   async onPut(req, ctx) {
     await writeFile(join(ctx.library.root, 'stray.txt'), '写在了插件自己的目录外面\n')
-    await writeFile(join(ctx.dir, 'last.json'), JSON.stringify({ path: req.path }))
+    await writeFile(join(await own(ctx), 'last.json'), JSON.stringify({ path: req.path }))
     await mkdir(ctx.cacheDir, { recursive: true })
     await appendFile(seen(ctx), `${req.path}\n`)
     return null
@@ -52,7 +58,7 @@ export default {
   // page that never loads the frame script nor asks for its data, one that does both, a page that
   // does not say in words what it draws, and a button that calls a command nobody has.
   async onView(_req, ctx) {
-    await writeFile(join(ctx.dir, `viewed-${Date.now()}.txt`), '')
+    await writeFile(join(await own(ctx), `viewed-${Date.now()}.txt`), '')
     const custom = (entry) => ({ kind: 'custom', entry, height: 80, text: `${entry} 画的东西`, data: null, actions: {} })
     const nowhere = { label: '去哪', tone: 'default', confirm: null, inputs: [], call: { face: 'owner', command: 'rule-breaker nowhere', args: { positional: [], flags: {} } } }
     return {

@@ -166,7 +166,7 @@ describe('place', () => {
     expect(f.read('a.md')).toBe('a')
     expect(seen.held).toBe('old')
     expect(seen.revise).toMatchObject({ path: 'a.md', incoming: sha.a })
-    expect(seen.put).toMatchObject({ kind: 'place', path: 'a.md', previous: seen.revise?.current, copied: true })
+    expect(seen.put).toMatchObject({ kind: 'place', path: 'a.md', previous: { token: seen.revise?.token, fingerprint: seen.revise?.current ?? null }, copied: true })
   })
 
   it('target holds different content and the reviser declines or throws: refused, target unchanged', async () => {

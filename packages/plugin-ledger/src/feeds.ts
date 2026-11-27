@@ -1,19 +1,17 @@
 // The ledger's pages that tell what happened, each a feed of facts read from the log a page at a
 // time: the home page's part (since the owner last looked, and what needs looking at), the activity
 // page, the scenes and one scene.
-import { FIRST_WORDS, shortDir, type Action, type Block, type Cell, type FeedGroup, type FeedRow, type Grant, type Instant, type Stat, type ViewAnswer } from '@pneuma-base/kernel'
+import { FIRST_WORDS, pageAt, pagingOf, PAGE_ROWS, shortDir, type Action, type Block, type Cell, type FeedGroup, type FeedRow, type Grant, type Instant, type Stat, type ViewAnswer } from '@pneuma-base/kernel'
 import type { Conversation } from './conversation.js'
 import type { Fact, FactActor, SceneId } from './facts.js'
 import { archived, type SceneRow } from './model.js'
 import { counters, lookupOf } from './queries.js'
 import type { Records } from './rows.js'
-import { ACTIVITY_VIEW, actorMark, grantCell, itemLink, moreBlock, SCENES_VIEW, sceneCell, sceneDoing, sceneLink, standingCounts, STANDING_VIEW, WHO_OPTIONS } from './ui.js'
+import { ACTIVITY_VIEW, actorMark, grantCell, itemLink, SCENE_VIEW, SCENES_VIEW, sceneCell, sceneDoing, sceneLink, standingCounts, STANDING_VIEW, WHO_OPTIONS } from './ui.js'
 import { actorNames, factLine, shortScene, when, whereConversation, type Lookup, type StandingList } from './views.js'
 
 type Read = Pick<Records, 'get' | 'under' | 'where' | 'count'>
 
-/** How many rows one page of a feed shows. */
-export const FEED_PAGE = 50
 
 /** A day as a feed's heading, in this machine's time zone, as the view runs: 今天, 昨天, else the date and the weekday. */
 export function dayTitle(at: Instant, now: Instant): string {
@@ -162,10 +160,10 @@ function sayStep(agents: readonly FactActor[]): Block {
  * the agents' or the owner's, `agent` one agent's. Each filter's options carry how many facts each
  * would show, from the counts the rows keep.
  */
-export async function activityAnswer(records: Read, params: Record<string, string>, grants: readonly Grant[], now: Instant): Promise<ViewAnswer> {
+export async function activityAnswer(records: Read, params: Record<string, string>, grants: readonly Grant[], now: Instant, size = PAGE_ROWS): Promise<ViewAnswer> {
   const who = params.who ?? ''
   const agent = params.agent ?? ''
-  const after = params.after
+  const { after } = pageAt(params)
   const counts = await counters(records)
   const total = counts.log ?? 0
   const agents = Object.keys(counts)
@@ -180,15 +178,14 @@ export async function activityAnswer(records: Read, params: Record<string, strin
   if (total === 0) {
     return { title: '活动', subtitle: null, blocks: [{ kind: 'empty', title: '还没有任何记录', hint: 'agent 放东西、说在做什么，主人在这里做操作，都会一条条出现在这里。' }] }
   }
-  const opts = { limit: FEED_PAGE, ...(after === undefined ? {} : { after }) }
+  const opts = { limit: size, ...(after === undefined ? {} : { after }) }
   const page = agent !== '' ? (who === 'owner' ? { rows: [], more: null } : await records.where<Fact>('log', 'agent', agent, opts)) : who !== '' ? await records.where<Fact>('log', 'who', who, opts) : await records.under<Fact>('log', '', opts)
   const facts = page.rows.map((r) => r.value)
   const lookup = await lookupOf(records, facts)
   const groups = grouped(facts, (f) => dayTitle(f.at, now)).map(({ title, members }) => ({ title, count: members.length, rows: members.map((f) => factRow(lookup, f, grants, true)) }))
   const shown = n(who, agent)
-  const subtitle = page.more === null && after === undefined ? `${shown} 条` : `共 ${shown} 条，这里是${after === undefined ? '最近' : '更早'}的 ${facts.length} 条`
-  const more = page.more === null ? [] : [moreBlock(ACTIVITY_VIEW, { ...(who ? { who } : {}), ...(agent ? { agent } : {}) }, page.more.after, `更早的 ${FEED_PAGE} 条`)]
-  return { title: '活动', subtitle, blocks: [exportBlock(now), { kind: 'feed', groups, empty: '没有符合条件的记录。' }, ...more], filters }
+  const paging = pagingOf({ view: ACTIVITY_VIEW, params, rows: size, shown: facts.length, next: page.more?.after ?? null, total: shown })
+  return { title: '活动', subtitle: `${shown} 条`, blocks: [exportBlock(now), { kind: 'feed', groups, empty: '没有符合条件的记录。', page: paging }], filters }
 }
 
 /**
@@ -206,9 +203,9 @@ function exportBlock(now: Instant): Block {
 // ---- scenes ----
 
 /** Every session, newest first, by the day it began, a page at a time: who, what it said it was doing, how many things it put, where. */
-export async function scenesAnswer(records: Read, params: Record<string, string>, grants: readonly Grant[], now: Instant): Promise<ViewAnswer> {
-  const after = params.after
-  const page = await records.under<{ id: SceneId }>('sceneOrder', '', { limit: FEED_PAGE, ...(after === undefined ? {} : { after }) })
+export async function scenesAnswer(records: Read, params: Record<string, string>, grants: readonly Grant[], now: Instant, size = PAGE_ROWS): Promise<ViewAnswer> {
+  const { after } = pageAt(params)
+  const page = await records.under<{ id: SceneId }>('sceneOrder', '', { limit: size, ...(after === undefined ? {} : { after }) })
   const lookup = await lookupOf(records, [], { scenes: page.rows.map((r) => r.value.id) })
   const scenes = page.rows.flatMap((r) => lookup.scenes.get(r.value.id) ?? [])
   if (scenes.length === 0 && after === undefined) {
@@ -228,10 +225,10 @@ export async function scenesAnswer(records: Read, params: Record<string, string>
   }
   const groups = grouped(scenes, (s) => dayTitle(s.first, now)).map(({ title, members }) => ({ title, count: members.length, rows: members.map(row) }))
   const total = (await counters(records)).scenes ?? scenes.length
-  const more = page.more === null ? [] : [moreBlock(SCENES_VIEW, {}, page.more.after, `更早的 ${FEED_PAGE} 次`)]
+  const paging = pagingOf({ view: SCENES_VIEW, params, rows: size, shown: scenes.length, next: page.more?.after ?? null, total })
   // The newest scene opens in the panel when the window has room for both, as a click on its row would open it.
   const open = after === undefined && scenes[0] ? { open: sceneLink(scenes[0].id) } : {}
-  return { title: '场景', subtitle: `${total} 次会话`, blocks: [{ kind: 'feed', groups, empty: '' }, ...more], ...open }
+  return { title: '场景', subtitle: `${total} 次会话`, blocks: [{ kind: 'feed', groups, empty: '', page: paging }], ...open }
 }
 
 /** A length of time in words: 不到 1 分钟, 12 分钟, 2 小时 5 分, 3 天. */
@@ -257,19 +254,20 @@ function conversationFields(c: Conversation | null): { label: string; value: Cel
  * One scene: four figures (how long, how many things put, how many sources they rest on, how many
  * decisions), its conversation and where, then what happened in it, newest first, a page at a time.
  */
-export async function sceneAnswer(records: Read, scene: SceneRow, conversation: Conversation | null, grants: readonly Grant[], after?: string): Promise<ViewAnswer> {
+export async function sceneAnswer(records: Read, scene: SceneRow, conversation: Conversation | null, grants: readonly Grant[], params: Record<string, string> = {}, size = PAGE_ROWS): Promise<ViewAnswer> {
+  const { after } = pageAt(params)
   const stats: Stat[] = [
     { label: '时长', value: durationText(Date.parse(scene.last) - Date.parse(scene.first)), note: `${when(scene.first)} 开始` },
     { label: '放入', value: String(scene.puts), note: scene.puts === 0 ? null : `带进来 ${scene.brought} 样，做出来 ${scene.puts - scene.brought} 样` },
     { label: '依据', value: String(scene.sources.length + scene.outside.length), note: scene.outside.length === 0 ? null : `库外 ${scene.outside.length} 句` },
     { label: '决定', value: String(scene.decided), note: scene.lastDecided },
   ]
-  const page = await records.where<Fact>('log', 'scene', scene.id, { limit: FEED_PAGE, ...(after === undefined ? {} : { after }) })
+  const page = await records.where<Fact>('log', 'scene', scene.id, { limit: size, ...(after === undefined ? {} : { after }) })
   const facts = page.rows.map((r) => r.value)
   const lookup = await lookupOf(records, facts, { scenes: [scene.id] })
   const count = page.more === null && after === undefined ? facts.length : await records.count('log', 'scene', scene.id)
-  const more = page.more === null ? [] : [moreBlock('ledger.scene', { scene: scene.id }, page.more.after, `更早的 ${FEED_PAGE} 条`)]
-  const feed: Block = { kind: 'feed', groups: [{ title: '这次会话里发生的', count, rows: facts.map((f) => factRow(lookup, f, grants, false)) }], empty: '这次会话里还没有发生什么。' }
+  const paging = pagingOf({ view: SCENE_VIEW, params: { ...params, scene: scene.id }, rows: size, shown: facts.length, next: page.more?.after ?? null, total: count, target: 'panel' })
+  const feed: Block = { kind: 'feed', groups: [{ title: '这次会话里发生的', count, rows: facts.map((f) => factRow(lookup, f, grants, false)) }], empty: '这次会话里还没有发生什么。', page: paging }
   const fields: Block = {
     kind: 'fields',
     fields: [
@@ -279,7 +277,7 @@ export async function sceneAnswer(records: Read, scene: SceneRow, conversation: 
       { label: '场景号', value: { text: scene.id, mono: true, muted: true } },
     ],
   }
-  return { title: sceneDoing(scene) ?? `场景 ${shortScene(scene.id)}`, subtitle: `${actorNames(scene.actors)} · ${when(scene.first)}`, blocks: [{ kind: 'stats', stats }, fields, feed, ...more] }
+  return { title: sceneDoing(scene) ?? `场景 ${shortScene(scene.id)}`, subtitle: `${actorNames(scene.actors)} · ${when(scene.first)}`, blocks: [{ kind: 'stats', stats }, fields, feed] }
 }
 
 /** The answer when no single scene has the id or prefix asked for. */

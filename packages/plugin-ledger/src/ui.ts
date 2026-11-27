@@ -4,6 +4,9 @@
 import {
   formOf,
   originalPath,
+  pageOfList,
+  pagingOf,
+  probeWords,
   shortDir,
   withSuffix,
   type Action,
@@ -16,6 +19,8 @@ import {
   type ItemSection,
   type LibraryPath,
   type Link,
+  type Paging,
+  type Probe,
   type Tag,
   type TableRow,
   type TreeNode,
@@ -27,7 +32,7 @@ import { HELD_DROP, HELD_RESTORE, type heldCopies } from './held.js'
 import { archived, stateOfRow, type ItemRow, type MarkRow, type OriginLike, type SceneRow } from './model.js'
 import { DEFAULT_PERIOD, PERIODS } from './stats.js'
 import { closedActions } from './unowned.js'
-import { earlierText, heldKeyOf, keeps, MARK_LABEL, originLabel, SAID_LABEL, shortPrint, shortScene, STANDING_ORDER, standingTitle, STATE_LABEL, when, who, type ItemView, type Lookup, type StandingKind, type StandingList } from './views.js'
+import { earlierText, heldKeyOf, keeps, LIST_LIMIT, MARK_LABEL, originLabel, SAID_LABEL, shortPrint, shortScene, STANDING_ORDER, standingTitle, STATE_LABEL, when, who, type ItemView, type Lookup, type StandingKind, type StandingList } from './views.js'
 
 export const HOME_VIEW = 'ledger.home'
 export const ITEMS_VIEW = 'ledger.items'
@@ -81,10 +86,6 @@ export const moment = (at: Instant): Cell => ({ text: when(at), muted: true, at 
 export const none: Cell = { text: '—', muted: true }
 
 /** The link that continues a long page after its last row. */
-export const moreBlock = (view: string, params: Record<string, string>, after: string, text: string): Block => ({
-  kind: 'list',
-  items: [{ cell: { text, link: { view, params: { ...params, after }, target: 'main' } }, note: null, actions: [] }],
-})
 
 // ---- who ----
 
@@ -275,6 +276,7 @@ const COLUMNS = [
 ]
 
 /** One page of the library page: its rows, where the next page starts, and the counts and the tree it shows. */
+/** One page of the library: the rows, the cursor of what follows, the counts and folders, the view's parameters and how many rows a page holds. */
 export type ItemsPage = {
   show: string
   dir: string
@@ -283,6 +285,9 @@ export type ItemsPage = {
   counts: Record<string, number>
   tree: { path: string; count: number }[]
   params: Record<string, string>
+  size: number
+  /** The closed directories right in the folder, the first of them with what a look into each found, and how many there are. */
+  closed: { rows: { path: LibraryPath; look: Probe | null }[]; count: number }
 }
 
 /** The library page: the things `show` keeps in the folder `dir`, a page of them, with a tree of the open folders and how many each holds. */
@@ -306,10 +311,26 @@ export function itemsAnswer(page: ItemsPage, grants: readonly Grant[]): ViewAnsw
       : '库里还没有登记过的东西。让 agent 用 put 放东西进来；库里原有的文件在「状况」页，可以在那里给它们补上来历。'
   const shown = page.counts[show] ?? 0
   const tree: Block = { kind: 'tree', param: 'dir', selected: dir, nodes: [{ value: '', label: '全部文件夹', count: shown, children: folderTree(page.tree, show === 'archived' ? '_archive/' : '') }] }
-  const table: Block = { kind: 'table', columns: COLUMNS, rows, empty }
-  const more = page.after === null ? [] : [moreBlock(ITEMS_VIEW, page.params, page.after, `接着看后面的${dir === '' ? '（按最近改动）' : '（按路径）'}`)]
-  const subtitle = dir === '' ? `${shown} 样东西` : `${rows.length}${page.after === null ? '' : '+'} 样东西 · 在 ${dir}/`
-  return { title: '库', subtitle, blocks: [tree, table, ...more], filters: [{ name: 'show', options: SHOWS.map((o) => ({ ...o, count: page.counts[o.value] ?? 0 })) }] }
+  // A folder's count is of everything in it, so only the whole of it has an exact total; a kind of thing in a folder counts as far as the page goes.
+  const inFolder = page.tree.find((t) => t.path === (show === 'archived' ? `_archive/${dir}` : dir))?.count
+  const exact = dir === '' ? shown : show === '' ? inFolder : undefined
+  const at = { view: ITEMS_VIEW, params: page.params, rows: page.size, shown: rows.length, next: page.after }
+  const paging = pagingOf(exact === undefined ? { ...at, total: rows.length + (page.after === null ? 0 : 1), atLeast: page.after !== null } : { ...at, total: exact })
+  const table: Block = { kind: 'table', columns: COLUMNS, rows, empty, page: paging }
+  const subtitle = dir === '' ? `${shown} 样东西` : `${exact ?? `${paging.total}${paging.atLeast ? '+' : ''}`} 样东西 · 在 ${dir}/`
+  return { title: '库', subtitle, blocks: [tree, table, ...closedBlocks(page.closed)], filters: [{ name: 'show', options: SHOWS.map((o) => ({ ...o, count: page.counts[o.value] ?? 0 })) }] }
+}
+
+/** The closed directories of a folder: each one row with what a look into it found and its three answers, opening its panel. */
+function closedBlocks(closed: ItemsPage['closed']): Block[] {
+  if (closed.count === 0) return []
+  const items = closed.rows.map(({ path, look }) => ({
+    cell: { text: `${path.slice(path.lastIndexOf('/') + 1)}/`, mono: true, icon: 'folder-dot' as const, link: itemLink(path) },
+    note: look === null ? null : probeWords(look),
+    actions: closedActions(path, look),
+  }))
+  const all: Block[] = closed.count > closed.rows.length ? [{ kind: 'list', items: [{ cell: { text: `看全部 ${closed.count} 个`, icon: 'list', link: { view: STANDING_VIEW, params: { kind: 'closed' }, target: 'main' } }, note: null, actions: [] }] }] : []
+  return [{ kind: 'section', title: '没登记的目录', note: null, count: closed.count, blocks: [{ kind: 'list', items }, ...all], actions: [] }]
 }
 
 // ---- the item panel ----
@@ -319,24 +340,58 @@ const claimWords = (ver: ItemView['versions'][number]) => (ver.how === 'observed
 
 const counted = (title: string, count: number | null, blocks: Block[]): Block => ({ kind: 'section', title, note: null, count, blocks, actions: [] })
 
+/** A thing's state as words: as recorded, changed outside the library, moved, gone, removed, or part of a bundle now. */
+function stateWords(v: ItemView): Cell {
+  const { state } = v
+  switch (state.kind) {
+    case 'consistent':
+      return { text: '和记录的一样', muted: true }
+    case 'changed':
+      return { text: state.now === null ? '只比了状态，内容还没读' : '内容和记录的不一样', tag: { text: '在库外被改过', tone: 'warn' } }
+    case 'moved':
+      return { text: state.to, mono: true, link: itemLink(state.to), tag: { text: '挪到了', tone: 'info' } }
+    case 'missing':
+      return { text: '', tag: { text: '不在了', tone: 'bad' } }
+    case 'removed':
+      return { text: '', tag: { text: '已除掉', tone: 'neutral' } }
+    case 'absorbed':
+      return { text: v.absorbedInto ?? '', mono: true, icon: 'package', ...(v.absorbedInto === null ? {} : { link: itemLink(v.absorbedInto) }), tag: { text: '并入了', tone: 'neutral' } }
+  }
+}
+
+/** Reading a thing's content now: the named whole pass over this one thing. */
+const readAction = (path: LibraryPath): Action => ({ label: '读内容', tone: 'default', confirm: null, inputs: [], call: { face: 'agent', verb: 'check', request: { since: null, includeArchived: false, deep: { dir: path } } } })
+
+/** Where the panel's lists stand and how many rows a page of each holds. */
+export type PanelPage = { params: Record<string, string>; size: number }
+
+/** One page of one of the panel's lists, under its own name, and the way to the pages around it. */
+function panelPage<T>(all: readonly T[], panel: PanelPage, path: LibraryPath, name: string): { rows: T[]; page: Paging } {
+  const { rows, next } = pageOfList(all, panel.params, panel.size, name)
+  return { rows, page: pagingOf({ view: 'item', params: { ...panel.params, path }, rows: panel.size, shown: rows.length, next, total: all.length, target: 'panel', name }) }
+}
+
 /**
- * The ledger's part of the item panel, in the panel's order: when, who and in which scene, with its
- * state only when it is not as recorded; how it came, from where or from what, each source with its
- * state; what happened to it, each change and what was said; by which grant; what was made from it;
- * its held copies. Its actions go to the panel's bottom row.
+ * The ledger's part of the item panel, in the panel's order: its state in words, first, and whether
+ * its content was read; when, who and in which scene; how it came, from where or from what, each
+ * source with its state; what happened to it, each change and what was said; by which grant; what
+ * was made from it; its held copies; each long list a page at a time. Its actions go to the panel's
+ * bottom row.
  */
-export function itemSection(v: ItemView, lookup: Lookup, grants: readonly Grant[]): ItemSection {
+export function itemSection(v: ItemView, lookup: Lookup, grants: readonly Grant[], panel: PanelPage = { params: {}, size: LIST_LIMIT }): ItemSection {
   const { entered } = v
-  const off = v.state.kind !== 'consistent' && !(v.state.kind === 'absorbed' && v.absorbedInto !== null)
+  const live = !v.archived && v.state.kind !== 'removed' && v.state.kind !== 'missing' && v.state.kind !== 'absorbed'
+  // Reading is worth it where a fingerprint decides something: things rest on one never read, or only its state says a thing read before changed.
+  const worthReading = live && ((v.state.kind === 'consistent' && v.fingerprint === null && v.dependents.length > 0) || (v.state.kind === 'changed' && v.state.now === null && v.fingerprint !== null))
   const fields: Block = {
     kind: 'fields',
     fields: [
+      { label: '现状', value: stateWords(v) },
+      ...(live ? [{ label: '内容', value: v.fingerprint === null ? { text: '还没读过', muted: true } : { text: `读过 · ${v.fingerprint.slice(0, 12)}`, mono: true, muted: true } }] : []),
       { label: '何时', value: moment(entered.at) },
       { label: '谁', value: actorCell(entered.actor, grants) },
       { label: '场景', value: { ...sceneCell(lookup, entered.scene), ...(v.doing ? { text: v.doing } : {}) } },
       ...(entered.where?.cwd ? [{ label: '在哪', value: { text: shortDir(entered.where.cwd, 36), mono: true, muted: true } }] : []),
-      ...(off ? [{ label: '现状', value: { text: '', tag: stateTag(v.state) } }] : []),
-      ...(v.absorbedInto !== null ? [{ label: '并入', value: { text: v.absorbedInto, mono: true, icon: 'package' as const, link: itemLink(v.absorbedInto) } }] : []),
     ],
   }
   const blocks: Block[] = [fields]
@@ -359,7 +414,10 @@ export function itemSection(v: ItemView, lookup: Lookup, grants: readonly Grant[
     }),
     ...v.outside.map((text) => ({ cell: { text }, note: '库外', actions: [] })),
   ]
-  if (basis.length > 0) came.push({ kind: 'list', items: basis })
+  if (basis.length > 0) {
+    const { rows, page } = panelPage(basis, panel, v.path, 'basis.')
+    came.push({ kind: 'list', items: rows, page })
+  }
   blocks.push(counted('怎么来的', basis.length > 0 ? basis.length : null, came))
 
   // What happened to it: each content change with the sentence it came with, and what was said about it, newest first.
@@ -381,30 +439,34 @@ export function itemSection(v: ItemView, lookup: Lookup, grants: readonly Grant[
     tag: s.flavor === 'decided' ? { text: SAID_LABEL.decided, tone: 'neutral' as const } : null,
   }))
   const happened = [...changes, ...said].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
-  blocks.push(counted('发生过什么', happened.length, [{ kind: 'timeline', entries: happened }]))
+  const history = panelPage(happened, panel, v.path, 'history.')
+  blocks.push(counted('发生过什么', happened.length, [{ kind: 'timeline', entries: history.rows, page: history.page }]))
 
   blocks.push(counted('凭什么', null, [{ kind: 'text', tone: 'neutral', text: grantText(entered.actor, grants) }]))
 
   if (v.dependents.length > 0) {
-    const items = v.dependents.map((d) => ({ cell: { text: d.path, mono: true, link: itemLink(d.path) }, note: null, actions: [] }))
-    blocks.push(counted('被什么依据', items.length, [{ kind: 'list', items }]))
+    const { rows, page } = panelPage(v.dependents, panel, v.path, 'dependents.')
+    const items = rows.map((d) => ({ cell: { text: d.path, mono: true, link: itemLink(d.path) }, note: null, actions: [] }))
+    blocks.push(counted('被什么依据', v.dependents.length, [{ kind: 'list', items, page }]))
   }
 
   if (v.held.length > 0) {
-    const items = v.held.map((path) => {
+    const { rows, page } = panelPage(v.held, panel, v.path, 'held.')
+    const items = rows.map((path) => {
       const key = heldKeyOf(path)
       // Whose content it was, as the changes above show it; where it lies is the plugin's business.
       const ver = v.versions.find((x) => keeps([path], x))
       const note = !ver ? null : ver.by === 'owner' ? `主人直接改的那份内容，${who(ver.actor)} 代记` : `${who(ver.actor)} 放进来的那份内容`
       return { cell: { text: `留存 ${key.slice(0, 8)}`, mono: true }, note, actions: [restoreAction(v.item, v.path, v.archived, key)] }
     })
-    blocks.push(counted('留存', items.length, [{ kind: 'text', text: '被新内容换下来的旧内容，给主人的保险。取回时复制到一个新路径，现在的内容不动。', tone: 'neutral' }, { kind: 'list', items }]))
+    blocks.push(counted('留存', v.held.length, [{ kind: 'text', text: '被新内容换下来的旧内容，给主人的保险。取回时复制到一个新路径，现在的内容不动。', tone: 'neutral' }, { kind: 'list', items, page }]))
   }
 
   // An archived thing is changed and added to only once taken back.
   const actions = v.archived
     ? []
     : [
+        ...(worthReading ? [readAction(v.path)] : []),
         ...(v.unknownOrigin ? provenanceActions(v.path) : []),
         ...(v.state.kind === 'changed' ? [acceptAction(v.path)] : []),
         basisAction(v.path),
@@ -415,7 +477,7 @@ export function itemSection(v: ItemView, lookup: Lookup, grants: readonly Grant[
 }
 
 /** Every held copy, a page of them: whose content it was, where its thing is now, with the way back to a new path; and dropping them all, which asks first. */
-export function heldAnswer(held: Awaited<ReturnType<typeof heldCopies>>, sizes: ReadonlyMap<string, { size: number | null; bundle: boolean }>): ViewAnswer {
+export function heldAnswer(held: Awaited<ReturnType<typeof heldCopies>>, sizes: ReadonlyMap<string, { size: number | null; bundle: boolean }>, params: Record<string, string>, size: number): ViewAnswer {
   const rows: TableRow[] = held.copies.map((c) => {
     const item = c.current
     const size = sizes.get(c.place)
@@ -436,8 +498,16 @@ export function heldAnswer(held: Awaited<ReturnType<typeof heldCopies>>, sizes: 
     title: '留存',
     note: '被新内容换下来的旧内容，给主人的保险。取回时复制到一个新路径，现在的内容不动。',
     count: held.total,
-    blocks: [{ kind: 'table', columns: [{ key: 'path', label: '东西' }, { key: 'held', label: '留存' }, { key: 'size', label: '大小' }], rows, empty: '没有留存。放进内容不同的同名东西时，换下的旧内容留在这里。' }],
-    actions: rows.length > 0 ? [drop] : [],
+    blocks: [
+      {
+        kind: 'table',
+        columns: [{ key: 'path', label: '东西' }, { key: 'held', label: '留存' }, { key: 'size', label: '大小' }],
+        rows,
+        empty: '没有留存。放进内容不同的同名东西时，换下的旧内容留在这里。',
+        page: pagingOf({ view: HELD_VIEW, params, rows: size, shown: rows.length, next: held.next, total: held.total }),
+      },
+    ],
+    actions: held.total > 0 ? [drop] : [],
   }
   return { title: '留存', subtitle: `${held.total} 份`, blocks: [section] }
 }
@@ -474,8 +544,8 @@ export const STANDING_NOTES: Record<StandingKind, string> = {
   moved: '东西挪到了新的位置。agent 下次 check 时，记账会把新位置接上。',
 }
 
-/** One row of a kind, opening the thing's panel, with the actions that settle it. */
-function standingEntry(kind: StandingKind, m: MarkRow): Entry {
+/** One row of a kind, opening the thing's panel, with the actions that settle it; a closed directory with what a look into it found. */
+function standingEntry(kind: StandingKind, m: MarkRow, looks: ReadonlyMap<string, Probe | null>): Entry {
   const names = (refs: readonly { path: string }[] | undefined) => (refs ?? []).map((r) => r.path).join('、')
   // The path opens the item panel; a note only where it says more than the section's title.
   const entry = (path: string, note: string | null, open: string, actions: Action[] = []): Entry => ({ cell: { text: path, mono: true, link: itemLink(open) }, note, actions })
@@ -488,8 +558,10 @@ function standingEntry(kind: StandingKind, m: MarkRow): Entry {
       return entry(m.path, `上游 ${names(m.sources)} 有标记`, m.path)
     case 'unowned':
       return entry(m.path, m.adopted ? '入了册，来历不明' : null, m.path, provenanceActions(m.path))
-    case 'closed':
-      return entry(`${m.path}/`, null, m.path, closedActions(m.path))
+    case 'closed': {
+      const look = looks.get(m.path) ?? null
+      return entry(`${m.path}/`, look === null ? null : probeWords(look), m.path, closedActions(m.path, look))
+    }
     case 'changed':
       return entry(m.path, null, m.path, [acceptAction(m.path)])
     case 'missing':
@@ -504,20 +576,43 @@ export const standingCounts = (lists: readonly StandingList[]) =>
   lists.filter((l) => l.count > 0).map((l) => ({ kind: l.kind, title: standingTitle(l.kind), note: STANDING_NOTES[l.kind], count: l.count, atLeast: l.atLeast }))
 
 /** What needs looking at, one section for each kind with its first rows and how many, or one kind a page at a time; each row opens the thing's panel. */
-export function standingAnswer(lists: readonly (StandingList & { after: string | null })[], only: StandingKind | null): ViewAnswer {
+export function standingAnswer(
+  lists: readonly (StandingList & { after: string | null })[],
+  only: StandingKind | null,
+  params: Record<string, string> = {},
+  size = LIST_LIMIT,
+  looks: ReadonlyMap<string, Probe | null> = new Map(),
+  deep: number | null = null,
+): ViewAnswer {
   const shown = lists.filter((l) => l.count > 0 && (only === null || l.kind === only))
   const title = only ? `状况 · ${standingTitle(only)}` : '状况'
+  // Reading every registered thing's content tells a real change from a touch: a named whole pass, which says first how much it reads.
+  const read: Block[] = deep === null || deep === 0 ? [] : [{ kind: 'actions', actions: [deepAction(deep)] }]
   if (shown.length === 0) {
     const hint = '可能过期的、没人登记过的、被直接改过的东西会出现在这里，每样都带着对应的处理。'
-    return { title, subtitle: '一切正常', blocks: [{ kind: 'empty', title: '没有要处理的事', hint }] }
+    return { title, subtitle: '一切正常', blocks: [...read, { kind: 'empty', title: '没有要处理的事', hint }] }
   }
   const total = shown.reduce((n, l) => n + l.count, 0)
   const blocks: Block[] = shown.map((l) => {
-    const rest: Block[] =
-      l.after === null ? [] : [only === null ? { kind: 'list', items: [{ cell: { text: `看全部 ${l.count} 样`, link: { view: STANDING_VIEW, params: { kind: l.kind }, target: 'main' } }, note: null, actions: [] }] } : moreBlock(STANDING_VIEW, { kind: l.kind }, l.after, '接着看后面的')]
-    return { kind: 'section', title: standingTitle(l.kind), note: STANDING_NOTES[l.kind], count: l.count, blocks: [{ kind: 'list', items: l.rows.map((m) => standingEntry(l.kind, m)) }, ...rest], actions: [] }
+    const items = l.rows.map((m) => standingEntry(l.kind, m, looks))
+    // One kind alone pages through all of it; on the page of every kind each shows its first rows and the way to all of it.
+    const list: Block =
+      only === null
+        ? { kind: 'list', items }
+        : { kind: 'list', items, page: pagingOf({ view: STANDING_VIEW, params: { ...params, kind: l.kind }, rows: size, shown: items.length, next: l.after, total: l.count, atLeast: l.atLeast }) }
+    const all: Block[] = only === null && l.after !== null ? [{ kind: 'list', items: [{ cell: { text: `看全部 ${l.atLeast ? '至少 ' : ''}${l.count} 样`, icon: 'list', link: { view: STANDING_VIEW, params: { kind: l.kind }, target: 'main' } }, note: null, actions: [] }] }] : []
+    return { kind: 'section', title: standingTitle(l.kind), note: STANDING_NOTES[l.kind], count: l.count, blocks: [list, ...all], actions: [] }
   })
-  return { title, subtitle: `${shown.some((l) => l.atLeast) ? '至少 ' : ''}${total} 样要看`, blocks }
+  return { title, subtitle: `${shown.some((l) => l.atLeast) ? '至少 ' : ''}${total} 样要看`, blocks: [...read, ...blocks] }
 }
+
+/** The named whole pass over the library: `check --deep`, reading the content of each of `scope` registered things. */
+export const deepAction = (scope: number): Action => ({
+  label: '按内容查',
+  tone: 'default',
+  confirm: `要按内容读整个库：${scope} 样登记过的东西。`,
+  inputs: [],
+  call: { face: 'agent', verb: 'check', request: { since: null, includeArchived: false, deep: { dir: null } } },
+})
 
 export const isStandingKind = (k: string | undefined): k is StandingKind => STANDING_ORDER.includes(k as StandingKind)

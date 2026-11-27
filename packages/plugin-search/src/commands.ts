@@ -1,6 +1,5 @@
 // The owner commands the search plugin adds. None can make content unrecoverable: the embedder
-// record is a new file each time, and the index is a cache.
-import { rm } from 'node:fs/promises'
+// record is a new file each time, and the index and its rows are a cache.
 import { defineCommand, type OwnerAnswer, type OwnerCommand, type PluginContext } from '@pneuma-base/kernel'
 import { currentEmbedder, recordEmbedder } from './config.js'
 import { embedderFor, embedderLabel, KEY_SECRET, SET_KEY, type EmbedderConfig } from './embed.js'
@@ -21,14 +20,14 @@ function embedderOf(kind: string, url: string | null, model: string | null): Emb
   return { kind: 'http', url, model }
 }
 
+/** The named whole action: a new index, and every registered thing read into it, each file up to its first 1 MB. */
 async function rebuild(ctx: PluginContext): Promise<OwnerAnswer> {
   const config = await currentEmbedder(ctx)
   const key = await ctx.secrets.get(KEY_SECRET)
-  await rm(ctx.cacheDir, { recursive: true, force: true })
-  const index = SearchIndex.open(ctx.cacheDir, ctx.now)
+  const index = SearchIndex.fresh(ctx.cacheDir, ctx.now)
   let failure: string | null = null
   try {
-    await refresh(index, ctx)
+    await refresh(index, ctx, { files: Infinity })
     if (config !== null) {
       try {
         await embedMissing(index, embedderFor(config, key))
@@ -100,7 +99,7 @@ export const searchCommands: OwnerCommand[] = [
   }),
   defineCommand({
     name: 'search rebuild',
-    summary: '删掉查找的索引，从库里的文件重建',
+    summary: '删掉查找的索引，把登记过的东西全部重读一遍',
     params: {},
     destructive: false,
     ownerOnly: false,
@@ -109,7 +108,7 @@ export const searchCommands: OwnerCommand[] = [
   }),
   defineCommand({
     name: 'search status',
-    summary: '查找的索引有多少、待更新多少、配了什么嵌入器',
+    summary: '查找的索引有多少、待读多少、配了什么嵌入器',
     params: {},
     destructive: false,
     ownerOnly: false,

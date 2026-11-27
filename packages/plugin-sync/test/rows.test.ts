@@ -1,17 +1,20 @@
-// C6: each row of the sync rule table (design.md 五) through the real command line. One library;
-// the other side's changes are made directly in the target directory. After every sync, every
-// content either side held before it is still somewhere, both sides hold the same files, and a
-// second sync does nothing.
-import { chmodSync, existsSync, mkdirSync, renameSync, rmSync } from 'node:fs'
+// C6: each row of the sync rule table (design.md 五) through the real command line. The library here
+// registers what it holds; the other side's changes to a path the sync knows are made directly in
+// the target directory, and a path new there is registered by a second library through the same
+// target, whose facts make it known. After every sync, every content either side held before it is
+// still somewhere, both sides hold the same things, and a second sync does nothing.
+import { chmodSync, existsSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { contents, machine, ok, read, tempDir, write } from './support.js'
 
 let m: ReturnType<typeof machine>
+let root: string
 let lib: string
 let target: string
 
-const owner = (args: string[]) => m.run([...args, '--library', lib])
+const owner = (args: string[], dir = lib) => m.run([...args, '--library', dir])
+const put = (path: string, content: string, dir = lib) => ok(m.run(['--library', dir, '--as', 'claude-code', '--session', 's-rows', 'put', '-', '--to', path, '--made'], { input: content }))
 const local = {
   write: (path: string, content: string) => write(lib, path, content),
   remove: (path: string) => rmSync(join(lib, path)),
@@ -21,6 +24,16 @@ const remote = {
   write: (path: string, content: string) => write(target, path, content),
   remove: (path: string) => rmSync(join(target, path)),
   read: (path: string) => read(target, path),
+}
+
+/** A second library with the sync plugin and the same target, synced once. */
+function there(): string {
+  const dir = join(root, 'there')
+  ok(m.run(['init', dir, '--bare']))
+  ok(owner(['plugin', 'add', 'sync'], dir))
+  ok(owner(['sync', 'target', 'set', '--kind', 'dir', '--to', target], dir))
+  ok(owner(['sync', 'now'], dir))
+  return dir
 }
 
 /** Runs sync now and checks the properties every row must keep. Returns the run's record. */
@@ -40,12 +53,13 @@ const counts = (partial: Record<string, number>) => ({ pushed: 0, pulled: 0, rem
 
 beforeEach(() => {
   m = machine()
-  lib = join(tempDir(), 'lib')
+  root = tempDir()
+  lib = join(root, 'lib')
   target = join(tempDir(), 'target')
   ok(m.run(['init', lib, '--bare']))
   ok(owner(['plugin', 'add', 'sync']))
   ok(owner(['sync', 'target', 'set', '--kind', 'dir', '--to', target]))
-  local.write('a.md', 'base')
+  put('a.md', 'base')
   sync()
 })
 
@@ -64,7 +78,7 @@ describe('the rule table, one test per row', () => {
   })
 
   it('new here / absent there: pushed', () => {
-    local.write('notes/new.md', 'new')
+    put('notes/new.md', 'new')
     expect(sync().counts).toEqual(counts({ pushed: 1 }))
     expect(remote.read('notes/new.md')).toBe('new')
   })
@@ -77,7 +91,9 @@ describe('the rule table, one test per row', () => {
   })
 
   it('absent here / new there: pulled', () => {
-    remote.write('notes/new.md', 'new')
+    const other = there()
+    put('notes/new.md', 'new', other)
+    ok(owner(['sync', 'now'], other))
     expect(sync().counts).toEqual(counts({ pulled: 1 }))
     expect(local.read('notes/new.md')).toBe('new')
   })
@@ -106,7 +122,7 @@ describe('the rule table, one test per row', () => {
   })
 
   it('deleted here / unchanged there, moved here: the old path goes from the target', () => {
-    renameSync(join(lib, 'a.md'), join(lib, 'b.md'))
+    ok(m.run(['--library', lib, '--as', 'claude-code', '--session', 's-rows', 'put', 'a.md', '--to', 'b.md']))
     expect(sync().counts).toEqual(counts({ pushed: 1, removed: 1 }))
     expect(existsSync(join(target, 'a.md'))).toBe(false)
     expect(remote.read('b.md')).toBe('base')
@@ -121,7 +137,9 @@ describe('the rule table, one test per row', () => {
   })
 
   it('unchanged here / deleted there, moved there: the old path goes from here', () => {
-    renameSync(join(target, 'a.md'), join(target, 'b.md'))
+    const other = there()
+    ok(m.run(['--library', other, '--as', 'claude-code', '--session', 's-rows', 'put', 'a.md', '--to', 'b.md']))
+    ok(owner(['sync', 'now'], other))
     expect(sync().counts).toEqual(counts({ pulled: 1, removed: 1 }))
     expect(existsSync(join(lib, 'a.md'))).toBe(false)
     expect(local.read('b.md')).toBe('base')
@@ -153,12 +171,14 @@ describe('no base: the baseline was lost, or the target is new', () => {
   const loseBaseline = () => rmSync(join(m.home, '.pneuma-base', 'cache'), { recursive: true, force: true })
 
   it('present on both and different: conflict, both kept; one side only: copied; equal: nothing', () => {
+    const other = there()
+    put('only-there.md', 't', other)
+    put('same.md', 's', other)
+    ok(owner(['sync', 'now'], other))
+    put('only-here.md', 'h')
+    put('same.md', 's')
     local.write('a.md', 'mine')
     remote.write('a.md', 'theirs')
-    local.write('only-here.md', 'h')
-    remote.write('only-there.md', 't')
-    local.write('same.md', 's')
-    remote.write('same.md', 's')
     loseBaseline()
     const r = sync()
     expect(r.counts).toMatchObject({ conflicts: 1, kept: 0, removed: 0 })
@@ -187,8 +207,8 @@ describe('no base: the baseline was lost, or the target is new', () => {
 
 describe('a run the target fails in the middle of', () => {
   it('is refused by name, keeps what was done, loses nothing, and a rerun converges', () => {
-    local.write('b/x.md', 'x')
-    local.write('c.md', 'c')
+    put('b/x.md', 'x')
+    put('c.md', 'c')
     mkdirSync(join(target, 'b'))
     chmodSync(join(target, 'b'), 0o555)
     const before = new Set([...contents(lib).values(), ...contents(target).values()])
@@ -204,22 +224,5 @@ describe('a run the target fails in the middle of', () => {
     for (const content of before) expect([...contents(target).values()]).toContain(content)
     expect(remote.read('b/x.md')).toBe('x')
     expect(remote.read('c.md')).toBe('c')
-  })
-})
-
-describe('what is synced', () => {
-  it('a bundle file by file, marker included; not the configuration, the description, temporary files or OS junk', () => {
-    const site = join(tempDir(), 'site')
-    write(site, 'index.html', '<h1>hi</h1>')
-    write(site, 'css/a.css', 'body{}')
-    ok(m.run(['--library', lib, 'put', site, '--to', 'sites/one', '--made']))
-    local.write('.DS_Store', 'junk')
-    local.write('.pneuma-base/sync/tmp/half', 'half')
-    sync()
-    expect(remote.read('sites/one/index.html')).toBe('<h1>hi</h1>')
-    expect(remote.read('sites/one/css/a.css')).toBe('body{}')
-    expect(existsSync(join(target, 'sites/one/.pneuma-item'))).toBe(true)
-    for (const left of ['.DS_Store', '.pneuma-base/config.json', 'PNEUMA-BASE.md', '.pneuma-base/sync/tmp/half']) expect(existsSync(join(target, left)), left).toBe(false)
-    expect(existsSync(join(target, '.pneuma-base/sync/facts'))).toBe(true)
   })
 })

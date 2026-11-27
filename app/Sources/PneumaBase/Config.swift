@@ -100,8 +100,8 @@ private final class Drained: @unchecked Sendable {
   var data = Data()
 }
 
-/// The app's own small preferences file: the libraries it knows, the current one, and this machine's
-/// settings. Not in any library.
+/// The app's own small preferences file: the libraries it knows, the current one, the watcher's
+/// cursors, and this machine's settings. Not in any library.
 struct Prefs: Codable {
   var libraries: [String] = []
   var current: String?
@@ -110,6 +110,8 @@ struct Prefs: Codable {
   var ownerFiles: Bool?
   /// The symbolic link to the launcher that 在终端里用 pneuma-base put on the owner's PATH; unset means off.
   var pathLink: String?
+  /// The last cursor the watcher heard from storage's subscription, by library folder: the next subscription starts there.
+  var cursors: [String: String]?
 
   var watchesOwnerFiles: Bool { ownerFiles ?? true }
 

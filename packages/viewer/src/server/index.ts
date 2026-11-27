@@ -6,10 +6,10 @@ import { readFile, realpath, stat } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { extname, isAbsolute, join, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { dropEndpoint, openLibrary, PREFERRED_PORT, recordEndpoint, stopListening, type Env, type Instant, type PluginTable } from '@pneuma-base/kernel'
+import { dropEndpoint, libraryFile, openLibrary, PREFERRED_PORT, recordEndpoint, stopListening, type Env, type Instant, type PluginTable } from '@pneuma-base/kernel'
 import { agentRoutes, type McpEndpoint } from './agent.js'
-import { call, changes, init, state, tableOf, view, type Served } from './api.js'
-import { libraryFile, pluginUiFile, revision } from './files.js'
+import { call, changes, init, passOf, state, stop, tableOf, view, type Served } from './api.js'
+import { pluginUiFile, revision } from './files.js'
 import { readBody, sendJson, TooLarge } from './http.js'
 import { listenLoopback } from './listen.js'
 
@@ -111,20 +111,71 @@ function refusal(req: IncomingMessage, pathname: string, own: Own): string | nul
 
 const sameToken = (given: string | null, token: string) => given !== null && given.length === token.length && timingSafeEqual(Buffer.from(given), Buffer.from(token))
 
-/** A library file as it is, typed so the browser never runs it: no HTML, no scripts, sandboxed. */
-async function sendLibraryFile(res: ServerResponse, served: Served, query: URLSearchParams): Promise<void> {
+/** How many bytes the file route asks storage for at a time. */
+const CHUNK = 1 << 20
+
+/** The one range of a `Range: bytes=…` header, within a file of `size` bytes; null for none or one the route does not take. */
+function rangeOf(header: string | undefined, size: number): { start: number; end: number } | 'unsatisfiable' | null {
+  const m = header === undefined ? null : /^bytes=(\d*)-(\d*)$/.exec(header.trim())
+  if (m === null || (m[1] === '' && m[2] === '')) return null
+  const [start, end] = m[1] === '' ? [Math.max(0, size - Number(m[2])), size - 1] : [Number(m[1]), m[2] === '' ? size - 1 : Math.min(Number(m[2]), size - 1)]
+  return start > end || start >= size ? 'unsatisfiable' : { start, end }
+}
+
+/**
+ * A library file as it is, through storage, typed so the browser never runs it: no HTML, no scripts,
+ * sandboxed. One range when the request asks for it. A file a sync service keeps only as a placeholder
+ * is fetched only with `fetch=1`; without it the answer is 409 with its size.
+ */
+async function sendLibraryFile(req: IncomingMessage, res: ServerResponse, served: Served, query: URLSearchParams): Promise<void> {
   const library = await openLibrary(served.dir, await tableOf(served))
   if (!library) return sendJson(res, { status: 409, json: { error: 'not-a-library' } })
-  const file = await libraryFile(library.root, query.get('path') ?? '')
+  const file = await libraryFile(library.root, query.get('path') ?? '', { fetch: query.get('fetch') === '1' })
   if (!file) return sendJson(res, { status: 404, json: { error: 'no such file in the content or the archive' } })
-  res.writeHead(200, {
+  if (file.kind === 'elsewhere') return sendJson(res, { status: 409, json: { error: 'elsewhere', size: file.size } })
+  const range = rangeOf(req.headers.range, file.size)
+  if (range === 'unsatisfiable') {
+    res.writeHead(416, { 'content-range': `bytes */${file.size}` })
+    return void res.end()
+  }
+  const { start, end } = range ?? { start: 0, end: file.size - 1 }
+  res.writeHead(range === null ? 200 : 206, {
     'content-type': file.type,
-    'content-length': file.size,
+    'content-length': Math.max(0, end - start + 1),
+    'accept-ranges': 'bytes',
+    ...(range === null ? {} : { 'content-range': `bytes ${start}-${end}/${file.size}` }),
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
     'content-security-policy': "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'",
   })
-  createReadStream(file.path).pipe(res)
+  for (let at = start; at <= end; ) {
+    const chunk = await file.read(at, Math.min(CHUNK, end - at + 1))
+    // Gone or changed since the first read: the bytes sent so far are of another version, so the response is cut short.
+    if (chunk === null || chunk.token !== file.token || chunk.data.length === 0) return void res.destroy()
+    if (!res.write(chunk.data)) await new Promise((resolve) => res.once('drain', resolve))
+    at += chunk.data.length
+  }
+  res.end()
+}
+
+/**
+ * A call that names a pass, answered as lines of JSON: `{ progress }` as the pass reports, then
+ * `{ reply: { status, json } }`. The page going away asks the pass to stop.
+ */
+async function streamCall(res: ServerResponse, served: Served, body: unknown): Promise<void> {
+  res.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' })
+  const line = (value: unknown) => res.writable && res.write(`${JSON.stringify(value)}\n`)
+  let ended = false
+  res.on('close', () => {
+    if (!ended) stop(served, body)
+  })
+  try {
+    line({ reply: await call(served, body, (progress) => line({ progress })) })
+  } catch (error) {
+    line({ reply: { status: 500, json: { error: error instanceof Error ? error.message : String(error) } } })
+  }
+  ended = true
+  res.end()
 }
 
 async function api(req: IncomingMessage, res: ServerResponse, url: URL, served: Served): Promise<void> {
@@ -134,10 +185,14 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, served: 
       return sendJson(res, await state(served))
     case 'GET /api/view':
       return sendJson(res, await view(served, url.searchParams))
-    case 'POST /api/call':
-      return sendJson(res, await call(served, await readJson(req)))
+    case 'POST /api/call': {
+      const body = await readJson(req)
+      return passOf(body) === null ? sendJson(res, await call(served, body)) : streamCall(res, served, body)
+    }
+    case 'POST /api/stop':
+      return sendJson(res, stop(served, await readJson(req)))
     case 'GET /api/file':
-      return sendLibraryFile(res, served, url.searchParams)
+      return sendLibraryFile(req, res, served, url.searchParams)
     case 'GET /api/rev':
       // Pairings are machine state, not the library's: the home page hears of one through the same stamp.
       return sendJson(res, { status: 200, json: { rev: `${await changes(served)}-${await revision(join(served.home, 'pairings'))}` } })
@@ -194,7 +249,7 @@ async function pluginUi(res: ServerResponse, served: Served, pathname: string): 
  */
 export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const token = randomBytes(16).toString('hex')
-  const served: Served = { dir: opts.dir, builtins: opts.builtins, home: opts.home, env: opts.env, listened: new Set() }
+  const served: Served = { dir: opts.dir, builtins: opts.builtins, home: opts.home, env: opts.env, listened: new Set(), passes: new Map() }
   const webRoot = opts.webRoot ?? WEB_ROOT
   let own: Own = { hosts: new Set(), origins: new Set() }
   let agent: ReturnType<typeof agentRoutes> = () => null
