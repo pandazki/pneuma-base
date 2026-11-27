@@ -19,7 +19,7 @@ agent 用 `say deployable <库内路径>` 声明一样东西可以部署；主�
 
 | 路径 | 内容 |
 | --- | --- |
-| `config.json` | 目标：`{ "kind": "dir", "to": … }` 或 `{ "kind": "command", "publish": […], "unpublish": […], "url": …, "timeout": … }` |
+| `config.json` | 目标：`{ "format": 1, "target": { "kind": "dir", "to": … } }` 或 `{ "format": 1, "target": { "kind": "command", "publish": […], "unpublish": […], "url": …, "timeout": … } }` |
 | `facts/` | 部署库的记录 |
 
 记录按目标的标识区分：`dir:<目录>`、`command:<发布命令的参数表>`。
