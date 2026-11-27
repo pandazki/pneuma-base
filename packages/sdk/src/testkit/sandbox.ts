@@ -62,6 +62,12 @@ export interface Sandbox {
   readonly env: Readonly<Record<string, string>>
   /** The command line's `bin.js`. */
   readonly cli: string
+  /**
+   * The file the kernel writes a JSON line to for each listing, read and probe a plugin asks of storage,
+   * in every call and in the viewer (`PNEUMA_BASE_TOOL_LOG`): `plugin`, `area` (`content`, `own`, or a
+   * record place it named), `tool`, `place`, and `entries`, how many it answered (or `reason`, why not).
+   */
+  readonly toolLog: string
   /** `pneuma-base ...args`, with no library given. */
   run(args: readonly string[], opts?: CallOptions): Promise<Result>
   /** `pneuma-base --library <library> ...args`, as the owner. */
@@ -92,8 +98,9 @@ export async function sandbox(options: SandboxOptions = {}): Promise<Sandbox> {
   const home = join(root, 'home')
   const library = join(root, 'library')
   const work = join(root, 'work')
+  const toolLog = join(root, 'tool-log.jsonl')
   await Promise.all([mkdir(home), mkdir(work)])
-  const env = cleanEnv(home, options.env)
+  const env = cleanEnv(home, { PNEUMA_BASE_TOOL_LOG: toolLog, ...options.env })
   const viewers: Viewer[] = []
   const standIns: (() => Promise<void>)[] = []
 
@@ -112,6 +119,7 @@ export async function sandbox(options: SandboxOptions = {}): Promise<Sandbox> {
     work,
     env,
     cli,
+    toolLog,
     run,
     owner,
     agent: (name, session, args, opts) => run(['--library', library, '--as', name, '--session', session, ...args], opts),

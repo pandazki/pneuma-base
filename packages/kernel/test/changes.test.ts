@@ -42,8 +42,13 @@ describe('learning what changed', () => {
       // Live, and past what init wrote, which the system may number after the first mark.
       expect(await until(ask, (p) => p !== null && p.length === 0)).toEqual([])
       fx.write('notes/a.md', 'a')
-      const places = await until(ask, (p) => p !== null && p.length > 0)
-      expect(places).toContain('notes/a.md')
+      // An event of what init wrote may still come late, before or with the write's: every answer counts.
+      const seen = new Set<string>()
+      const gather = async () => {
+        for (const place of (await ask()) ?? []) seen.add(place)
+        return [...seen]
+      }
+      expect(await until(gather, (p) => p !== null && p.includes('notes/a.md'))).toContain('notes/a.md')
       expect(await ask()).toEqual([])
     } finally {
       store.unlisten()

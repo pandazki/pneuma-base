@@ -1,135 +1,199 @@
-// One sync, from the records to the two sides and back: what the target is, the plan, the run.
-import { createHash } from 'node:crypto'
-import { stat } from 'node:fs/promises'
-import { join, sep } from 'node:path'
+// One sync: pull the facts, so the other libraries' things are known; compare each key on the two
+// sides and against the baseline; plan; execute; push the facts written here; save the baseline.
 import { regionOf, type Fingerprint, type LibraryPath, type PluginContext } from '@pneuma-base/kernel'
-import { baselineAfter, execute, settledBy, type Execution, type Sides } from './execute.js'
-import {
-  countsOf,
-  currentTarget,
-  deletionRecords,
-  envelope,
-  lastRun,
-  readBaseline,
-  readFacts,
-  SCRATCH,
-  writeBaseline,
-  writeFact,
-  type Counts,
-  type DeletedFact,
-  type RunFact,
-  type TargetFact,
-} from './facts.js'
-import { conflictName, conflictOrigin, machineSlug, moment, plan, type Files, type Plan } from './rules.js'
-import { scopeOf, TARGET_DIR } from './scope.js'
-import { dirSide, filesUnder, giveTargetId, targetId } from './sides.js'
+import { emptyBaseline, readBaseline, writeBaseline, type BaseEntry, type Baseline } from './baseline.js'
+import { pullFacts, pushFacts, unpulledSyncFacts } from './carry.js'
+import { baselineAfter, execute, settledBy, unrun, type Execution, type Sides } from './execute.js'
+import { countsOf, envelope, parseFact, writeFacts, type Counts, type DeletedFact, type RunFact, type SyncFact, type TargetFact } from './facts.js'
+import { goneKeys, localMap, localOwn, localSide, localThings, type LocalMap } from './local.js'
+import { Change, COPIES, currentTarget, deletionFacts, fold, foldAll, lastRun } from './rows.js'
+import { conflictName, machineSlug, moment, plan, type Files, type Plan } from './rules.js'
+import { cacheDirsOf, ownOf, type Key } from './scope.js'
+import { targetMap, targetOwn, targetSide, targetThings, type TargetMap } from './target-side.js'
+import { isDirectory, TargetDir } from './target.js'
 
-/**
- * A plan ready to run, or why there is none. `settled`: the deletion records the baseline already
- * settled; `deletions`: the others, which the plan applies.
- */
+export type Ready = {
+  kind: 'ready'
+  record: TargetFact
+  target: TargetDir
+  base: Baseline
+  local: LocalMap
+  remote: TargetMap
+  out: Change
+  /** The deletion records the baseline has not settled, which the plan applies. */
+  deletions: DeletedFact[]
+  plan: Plan
+}
+
+/** A plan ready to run, or why there is none. */
 export type Prepared =
-  | { kind: 'ready'; record: TargetFact; sides: Sides; id: string | null; base: Files; settled: ReadonlySet<string>; deletions: DeletedFact[]; plan: Plan }
+  | Ready
   | { kind: 'no-target' }
   | { kind: 'target-missing' | 'target-overlaps'; record: TargetFact }
   | { kind: 'target-failed'; record: TargetFact; message: string }
 
-const within = (path: string, dir: string) => path === dir || path.startsWith(`${dir}${sep}`)
+const within = (path: string, dir: string) => path === dir || path.startsWith(`${dir}/`)
 
 /** Whether the target and the library would hold each other. */
 export const overlaps = (root: string, target: string) => within(target, root) || within(root, target)
 
-export async function prepare(ctx: PluginContext, record: TargetFact | null): Promise<Prepared> {
+/** The sync's rows brought up to its facts, and the target this machine uses. */
+export async function targetOf(ctx: PluginContext): Promise<{ rows: Change; record: TargetFact | null }> {
+  await foldAll(ctx)
+  const rows = new Change(ctx.tools.storage.records)
+  return { rows, record: await currentTarget(rows, ctx.session.machine) }
+}
+
+const only = (m: ReadonlyMap<Key, Fingerprint>, skip: ReadonlySet<Key>): Files => new Map([...m].filter(([k]) => !skip.has(k)))
+
+/**
+ * The plan a sync would run now. `run`: the target gets its id if it has none, the facts other
+ * libraries wrote are pulled into their record places first, and what was read is kept; otherwise
+ * (a status) nothing is written to the library or the target, and the sync's own facts not pulled
+ * yet are folded on top of its rows for this plan only.
+ */
+export async function prepare(ctx: PluginContext, record: TargetFact | null, mode: 'run' | 'status'): Promise<Prepared> {
   if (record === null) return { kind: 'no-target' }
-  const { root } = ctx.library
   const path = record.target.path
-  if (overlaps(root, path)) return { kind: 'target-overlaps', record }
-  if (!(await stat(path).catch(() => null))?.isDirectory()) return { kind: 'target-missing', record }
-  const keep = scopeOf(ctx.library.plugins)
-  const sides: Sides = { local: dirSide(root, join(ctx.dir, SCRATCH), keep), target: dirSide(path, join(path, TARGET_DIR, 'tmp'), keep) }
+  if (overlaps(ctx.library.root, path)) return { kind: 'target-overlaps', record }
+  if (!isDirectory(path)) return { kind: 'target-missing', record }
   try {
-    const id = await targetId(sides.target)
-    const [local, target, saved] = await Promise.all([sides.local.list(), sides.target.list(), readBaseline(ctx.cacheDir)])
-    const baseline = id !== null && saved?.target === id ? saved : null
-    const base = baseline?.files ?? new Map()
-    const settled = baseline?.settled ?? new Set<string>()
-    const deletions = (await deletionRecords(ctx, sides.target, local, target)).filter((f) => !settled.has(f.id))
+    const noise = await ctx.tools.storage.noise()
+    const target = new TargetDir(path, { names: new Set(noise.names), paths: noise.paths })
+    const me = ctx.library.config.id
+    const records = ctx.tools.storage.records
+    let id = target.id()
+    if (id === null && mode === 'run') id = target.giveId()
+    const saved = id === null ? null : readBaseline(ctx.cacheDir, id)
+    const base = saved ?? emptyBaseline(id ?? '')
+    const rows = new Change(records)
+    if (mode === 'run') {
+      await pullFacts(ctx, target, base, me)
+      writeBaseline(ctx.cacheDir, base)
+      await foldAll(ctx)
+    } else {
+      const unpulled = await unpulledSyncFacts(ctx, target, saved, me)
+      await foldAll(ctx)
+      await fold(rows, unpulled.flatMap((f) => parseFact(f) ?? []))
+    }
+
+    const out = new Change(records)
+    const local = localMap()
+    const remote = targetMap()
+    await localThings(ctx, rows, base.files.keys(), out, local)
+    for (const place of new Set([...(await ctx.tools.storage.recordPlaces()), ...target.ownPlaces()])) {
+      const caches = cacheDirsOf(ctx.library.plugins, place)
+      await localOwn(ctx, place, caches, out, local)
+      targetOwn(target, place, caches, base.files, remote)
+    }
+    targetThings(target, [...local.expects.keys()].filter((k) => ownOf(k) === null), base.files, remote)
+    await out.save()
+
+    const skip = local.skip
+    const baseFiles = new Map([...base.files].filter(([k]) => !skip.has(k)).map(([k, e]) => [k, e.fp] as const))
+    const deletions = (await deletionFacts(rows)).filter((f) => !base.settled.has(f.id))
     const name = (p: LibraryPath, n: number) => conflictName(p, machineSlug(ctx.session.machine), moment(ctx.now), n)
-    return { kind: 'ready', record, sides, id, base, settled, deletions, plan: plan({ local, target, base, deleted: deletions.flatMap((f) => f.deleted) }, name) }
+    const planned = plan({ local: only(local.files, skip), target: only(remote.files, skip), base: baseFiles, deleted: deletions.flatMap((f) => f.deleted) }, name)
+    return { kind: 'ready', record, target, base, local, remote, out, deletions, plan: planned }
   } catch (error) {
     return { kind: 'target-failed', record, message: error instanceof Error ? error.message : String(error) }
   }
 }
 
+/** What both sides hold after `done`, each key with the target's state then; a key whose step did not run, or that was left out, keeps its entry. */
+function baseAfter(ready: Ready, done: Execution): Map<Key, BaseEntry> {
+  const { plan: p, base, remote, local } = ready
+  const fps = baselineAfter(p, new Map([...base.files].map(([k, e]) => [k, e.fp])), done.done)
+  const open = unrun(p, done.done)
+  const after = new Map<Key, BaseEntry>()
+  for (const [key, fp] of fps) {
+    const seen = remote.seen.get(key)
+    if (open.has(key)) {
+      const old = base.files.get(key)
+      if (old !== undefined) after.set(key, old)
+    } else if (seen) after.set(key, { fp, at: seen.at })
+  }
+  for (const key of local.skip) {
+    const old = base.files.get(key)
+    if (old !== undefined) after.set(key, old)
+  }
+  return after
+}
+
 /**
- * Runs the plan, records the run, and saves the baseline. The run's own record goes to the target
- * in the same run, so a sync that changed nothing leaves nothing to sync.
+ * Runs the plan, records the run and what the run made on both sides, pushes the facts written here
+ * (the run's own among them, so a sync that changed nothing leaves nothing to sync), and saves the
+ * baseline.
  */
-export async function run(ctx: PluginContext, ready: Extract<Prepared, { kind: 'ready' }>): Promise<RunFact> {
-  const { plan: p, sides, record, base } = ready
-  let id = ready.id
+export async function run(ctx: PluginContext, ready: Ready): Promise<RunFact> {
+  const { plan: p, target, record, base, local, remote, out } = ready
+  const sides: Sides = { local: localSide(ctx, target, local, out), target: targetSide(target, remote), discard: (s) => target.discard(s) }
   let done: Execution = { done: [], skipped: [], failure: null }
   try {
-    id ??= await giveTargetId(sides.target)
     done = await execute(p, sides)
   } catch (error) {
     done = { ...done, failure: error instanceof Error ? error.message : String(error) }
   }
-  const failure = done.failure
+  const made: SyncFact[] = done.done.flatMap((s): SyncFact[] => {
+    if (s.kind !== 'keep' || ownOf(s.to) !== null) return []
+    return [s.as === 'conflict' ? { ...envelope(ctx), kind: 'conflict', copy: s.to, original: s.path } : { ...envelope(ctx), kind: 'things', paths: [s.to] }]
+  })
   const fact: RunFact = {
     ...envelope(ctx),
     kind: 'run',
     target: record.target,
-    outcome: failure === null ? 'done' : 'failed',
+    outcome: done.failure === null ? 'done' : 'failed',
     counts: countsOf(done.done, p.conflicts.length, done.skipped.length),
     conflicts: p.conflicts,
     kept: done.done.flatMap((s) => (s.kind === 'keep' && s.as !== 'conflict' ? [{ path: s.path, to: s.to }] : [])),
-    message: failure,
+    message: done.failure,
   }
-  const written = await writeFact(ctx, fact)
-  if (id === null) return fact
-  const after = baselineAfter(p, base, done.done)
-  if (failure === null) {
-    try {
-      await sides.target.write(written.path, written.bytes)
-      after.set(written.path, createHash('sha256').update(written.bytes).digest('hex') as Fingerprint)
-    } catch {
-      // The record stays here; the next run pushes it.
-    }
+  await writeFacts(ctx, [...made, fact])
+  await out.save()
+  try {
+    await pushFacts(ctx, target, base, ctx.library.config.id)
+  } catch {
+    // The facts stay here, and the cursors where they were: the next run pushes them.
   }
-  await writeBaseline(ctx.cacheDir, { target: id, files: after, settled: new Set([...ready.settled, ...settledBy(p, done.done, ready.deletions)]) })
+  base.files = baseAfter(ready, done)
+  base.settled = new Set([...base.settled, ...settledBy(p, done.done, ready.deletions)])
+  writeBaseline(ctx.cacheDir, base)
   return fact
 }
 
 /**
- * After a destructive owner command was done: records the paths of this machine's baseline that
- * are gone from the library now, with the content each held, so sync now deletes them on the
- * other side instead of bringing them back. Without a baseline nothing is recorded, and the
- * ordinary rules apply.
+ * After a destructive owner command was done: records the keys of this machine's baseline that the
+ * rows say are gone from the library now, with the content each held, so sync now deletes them on the
+ * other side instead of bringing them back. Without a baseline nothing is recorded, and the ordinary
+ * rules apply.
  */
 export async function recordDeletions(ctx: PluginContext, command: string): Promise<void> {
-  const baseline = await readBaseline(ctx.cacheDir)
-  if (baseline === null) return
-  const present = new Set(await filesUnder(ctx.library.root, scopeOf(ctx.library.plugins)))
-  const deleted = [...baseline.files].filter(([path]) => !present.has(path)).map(([path, fingerprint]) => ({ path, fingerprint }))
-  if (deleted.length > 0) await writeFact(ctx, { ...envelope(ctx), kind: 'deleted', command, deleted })
+  const base = readBaseline(ctx.cacheDir, null)
+  if (base === null) return
+  const places = new Set([...base.files.keys()].flatMap((k) => ownOf(k)?.place ?? []))
+  const gone = await goneKeys(ctx, places)
+  const deleted = [...base.files].filter(([key]) => gone.has(key)).map(([path, e]) => ({ path, fingerprint: e.fp }))
+  if (deleted.length > 0) await writeFacts(ctx, [{ ...envelope(ctx), kind: 'deleted', command, deleted }])
 }
 
-/** Conflict copies outside the archive, each with the path it was made for. Names only; nothing is read. */
+/** The conflict copies the syncs made that are still where they were made, each with the path it was made for. */
 export async function conflictCopies(ctx: PluginContext): Promise<{ copy: LibraryPath; original: LibraryPath }[]> {
-  const files = await filesUnder(ctx.library.root, scopeOf(ctx.library.plugins))
-  return files.flatMap((copy) => {
-    const original = regionOf(copy) === 'archive' ? null : conflictOrigin(copy)
-    return original === null ? [] : [{ copy, original }]
+  const { rows } = await targetOf(ctx)
+  const copies: { copy: LibraryPath; original: LibraryPath }[] = []
+  for await (const r of rows.all<{ original: LibraryPath }>(COPIES)) if (regionOf(r.key as LibraryPath) !== 'archive') copies.push({ copy: r.key as LibraryPath, original: r.value.original })
+  if (copies.length === 0) return []
+  const glanced = await ctx.tools.storage.glance(copies.map((c) => c.copy))
+  return copies.filter((_, i) => {
+    const g = glanced[i]
+    return g !== undefined && !('outcome' in g) && g.kind !== 'none'
   })
 }
 
 /** The target, this machine's last run, the plan a sync now would run, and the conflict copies still around. */
 export async function status(ctx: PluginContext) {
-  const facts = await readFacts(ctx)
-  const machine = ctx.session.machine
-  const prepared = await prepare(ctx, currentTarget(facts, machine))
-  return { prepared, record: prepared.kind === 'no-target' ? null : prepared.record, last: lastRun(facts, machine), copies: await conflictCopies(ctx) }
+  const { rows, record } = await targetOf(ctx)
+  const prepared = await prepare(ctx, record, 'status')
+  return { prepared, record: prepared.kind === 'no-target' ? null : prepared.record, last: await lastRun(rows, ctx.session.machine), copies: await conflictCopies(ctx) }
 }
 
 /** What a plan would do, by kind, and how many steps in all. */
@@ -144,7 +208,7 @@ export function countsText(c: Omit<Counts, 'skipped'>): string {
 export const when = (at: string) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`
 
 /** Why a plan is not ready, for a person or an agent. */
-export function notReadyText(prepared: Exclude<Prepared, { kind: 'ready' }>, machine: string): string {
+export function notReadyText(prepared: Exclude<Prepared, Ready>, machine: string): string {
   if (prepared.kind === 'no-target') return '还没设同步目标。主人用 sync target set --kind dir --to <目录> 设一个。'
   const { record } = prepared
   if (prepared.kind === 'target-overlaps') return `同步目标 ${record.target.path} 和库的目录互相包含，不能同步。用 sync target set 换一个库外的目录。`

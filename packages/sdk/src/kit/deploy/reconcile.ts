@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type { LibraryPath, PluginContext, PluginName, PluginTools } from '../../types.js'
 import { configFile } from '../config-file.js'
 import { recordStore, type RecordStore, type Skipped } from '../records.js'
-import { fingerprintOf, withStaged, type ThingKind } from './content.js'
+import { changing, fingerprintOf, NotStaged, withStaged, type ThingKind } from './content.js'
 import { apply, fold, parseFact, type Declared, type Deployments, type Fact, type FactBody, type OnTarget, type TargetKey, type ThingId } from './facts.js'
 import { plan, siteName, statusOf, want, type ContentId, type SiteName } from './model.js'
 import type { Look, Served, Target, TargetAdapter, TargetConfig, TargetEnv } from './target.js'
@@ -115,7 +115,7 @@ export async function thingsAt(tools: PluginTools, paths: readonly LibraryPath[]
 /**
  * The content id of the thing at a path: the target's own when it has one, from a copy of the files
  * (every byte read and copied, each time); else the fingerprint storage gives (read now, unless storage
- * knows it already).
+ * knows it already). Throws `NotStaged` when the content cannot be told now.
  */
 async function contentAt(run: Run, path: LibraryPath, kind: ThingKind | null): Promise<ContentId | null> {
   const { target, ctx } = run
@@ -133,8 +133,11 @@ function recorded(run: Run, id: ThingId): Map<SiteName, OnTarget> {
 
 /** A site a thing holds on the target: the content served there and where. */
 type OnSite = { readonly content: ContentId; readonly url: string | null }
-/** A look and the address of each site it holds, which a target that reports may tell apart from the records. */
-type Seen = Look & { sites: ReadonlyMap<SiteName, OnSite> }
+/**
+ * A look and the address of each site it holds, which a target that reports may tell apart from the
+ * records; `refused`, why its content could not be told now, so nothing is published or taken down for it.
+ */
+type Seen = Look & { sites: ReadonlyMap<SiteName, OnSite>; refused: string | null }
 
 /** Reads without changing anything. */
 export async function look(run: Run, id: ThingId): Promise<Seen> {
@@ -165,7 +168,15 @@ async function lookAll(run: Run, ids: readonly ThingId[]): Promise<Seen[]> {
   for (const thing of things) {
     const id = thing.id
     const archived = tools.regionOf(thing.path) === 'archive'
-    const standing = { on: thing.on, archived, content: kinds.has(id) ? await contentAt(run, thing.path, kinds.get(id) ?? null) : null }
+    let content: ContentId | null = null
+    let refused: string | null = null
+    try {
+      if (kinds.has(id)) content = await contentAt(run, thing.path, kinds.get(id) ?? null)
+    } catch (error) {
+      if (!(error instanceof NotStaged)) throw error
+      refused = error.message
+    }
+    const standing = { on: thing.on, archived, content }
     const original = archived ? tools.originalPath(thing.path) : thing.path
     const named = original === null ? null : nameOf(run, original)
     const mine = recorded(run, id)
@@ -174,7 +185,7 @@ async function lookAll(run: Run, ids: readonly ThingId[]): Promise<Seen[]> {
       return holder === undefined || holder === id || !run.d.things.has(holder)
     }
     const names = [...new Set([...(named === null ? [] : [named]), ...mine.keys()])].filter(ours)
-    parts.push({ thing, standing, archived, named, mine, names })
+    parts.push({ thing, standing, archived, named, mine, names, refused })
   }
   let answer: ReadonlyMap<SiteName, Served> | null = null
   let unreachable: string | null = null
@@ -185,7 +196,7 @@ async function lookAll(run: Run, ids: readonly ThingId[]): Promise<Seen[]> {
       unreachable = messageOf(error)
     }
   }
-  return parts.map(({ thing, standing, archived, named, mine, names }) => {
+  return parts.map(({ thing, standing, archived, named, mine, names, refused }) => {
     const told = (name: SiteName | null | undefined) => (name != null && names.includes(name) ? answer?.get(name) : undefined)
     const sites = new Map<SiteName, OnSite>(
       answer === null
@@ -198,9 +209,10 @@ async function lookAll(run: Run, ids: readonly ThingId[]): Promise<Seen[]> {
     const held = new Map([...sites].map(([site, s]) => [site, s.content]))
     const site = archived ? null : named
     const shown = site !== null && sites.has(site) ? site : [...sites.keys()][0]
-    const status = unreachable === null ? statusOf(site, standing, held) : 'unknown'
+    // Content that cannot be told now is wanted online and is not: pending.
+    const status = unreachable !== null ? 'unknown' : refused !== null ? 'pending' : statusOf(site, standing, held)
     const detail = run.view ? (told(shown)?.detail ?? told(named)?.detail ?? null) : null
-    return { thing, standing, held, status, site, url: (shown === undefined ? undefined : sites.get(shown))?.url ?? null, unreachable, detail, sites }
+    return { thing, standing, held, status, site, url: (shown === undefined ? undefined : sites.get(shown))?.url ?? null, unreachable, detail, sites, refused }
   })
 }
 
@@ -239,7 +251,8 @@ function adopt(run: Run, id: ThingId, seen: Seen): void {
 /** Makes the target hold what is wanted for one thing, recording each step the target did. */
 export async function settle(run: Run, id: ThingId): Promise<Settled> {
   const before = await look(run, id)
-  if (before.unreachable !== null) return { ...before, done: [], problem: { kind: 'failed', message: before.unreachable } }
+  const stop = before.unreachable ?? before.refused
+  if (stop !== null) return { ...before, done: [], problem: { kind: 'failed', message: stop } }
   adopt(run, id, before)
   const steps = plan(want(before.site, before.standing), before.held)
   if (steps.length === 0) return { ...before, done: [], problem: null }
@@ -304,20 +317,14 @@ export async function sweep(run: Run): Promise<{ done: Done[]; failed: { site: S
 
 /**
  * Copies the files the thing's content counts to a fresh directory in the cache (a single file keeps
- * its name; a bundle leaves out its marker and what its `.gitignore` files leave out), checks they are
- * the content decided on, and hands that directory to the target. With a target's own id and an ignore
- * file in the bundle, the copy is also checked against the fingerprint storage gives by the same rule.
+ * its name; a bundle's are its manifest's), checks they are the content decided on, and hands that
+ * directory to the target.
  */
 async function publish(run: Run, target: Target, path: LibraryPath, site: SiteName, content: ContentId): Promise<{ url: string | null }> {
-  const { storage } = run.ctx.tools
   const [kind] = await thingsAt(run.ctx.tools, [path])
-  const changing = () => new Error(`${path} 正在被改动，没有发布；之后运行 ${run.kit.name} sync`)
-  if (kind === null || kind === undefined) throw changing()
-  return withStaged(storage, path, kind, stageRoot(run.ctx), async (staged) => {
-    if ((target.identify ? await target.identify(staged.files) : staged.fingerprint) !== content) throw changing()
-    if (target.identify && staged.ignoring && (await fingerprintOf(storage, path)) !== staged.fingerprint) {
-      throw new Error(`${path} 复制出来的文件和它在库里按 .gitignore 算的内容不一样，没有发布`)
-    }
-    return target.publish(site, staged.dir, { content, path, at: run.ctx.now, files: staged.files, others: staged.others })
+  if (kind === null || kind === undefined) throw changing(path)
+  return withStaged(run.ctx.tools.storage, path, kind, stageRoot(run.ctx), async (staged) => {
+    if ((target.identify ? await target.identify(staged.files) : staged.fingerprint) !== content) throw changing(path)
+    return target.publish(site, staged.dir, { content, path, at: run.ctx.now, files: staged.files })
   })
 }

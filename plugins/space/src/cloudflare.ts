@@ -143,7 +143,6 @@ export const cloudflareTarget = defineTarget({
        * content of an earlier release is put back with `rollback`, and only new content is uploaded.
        */
       async publish(site, _dir, meta) {
-        if (meta.others.length > 0) throw new ControlError(`站点里的 ${meta.others.join('、')} 不是普通文件（符号链接之类）：库不把它们算进内容，PneumaSpace 的包也放不进；换成真的文件再放回库里`)
         const pkg = await packageOf(meta.files)
         const refused = refusal(meta.files, pkg)
         if (refused !== null) throw new ControlError(refused)

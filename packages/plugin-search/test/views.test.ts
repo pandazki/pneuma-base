@@ -1,6 +1,6 @@
 // The plugin's page and its section of the item panel, called directly: blocks of the kernel's
 // kinds that say what the index holds, which embedder is set, and owner commands as actions.
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -27,6 +27,11 @@ async function library() {
       mkdirSync(dirname(join(root, path)), { recursive: true })
       writeFileSync(join(root, path), content)
     },
+    register: async (path: string) => {
+      const r = await agentFace.put({ kind: 'register', path, origin: { kind: 'made', from: [], outside: [] } }, (await open()).ctx)
+      if (r.outcome !== 'accepted') throw new Error(`not registered: ${r.reason}`)
+    },
+    dropCache: async () => rmSync((await open()).pctx.cacheDir, { recursive: true, force: true }),
     find: async (text: string) => agentFace.find({ text, match: 'terms', filters: {}, includeArchived: false, skipOwnSession: false }, (await open()).ctx),
     owner: async (name: string, flags: Record<string, string[]> = {}) => {
       const { ctx } = await open()
@@ -69,15 +74,13 @@ describe('the search.status view', () => {
     expect(actions((await lib.status())?.blocks ?? []).map((a) => a.call)).toContainEqual({ face: 'owner', command: 'search embedder clear', args: { positional: [], flags: {} } })
   })
 
-  it('counts what find indexed, what changed since, and the vectors of the embedder that is set', async () => {
+  it('counts what is indexed, what is left to read, and the vectors of the embedder that is set', async () => {
     const lib = await library()
     lib.write('a.md', '退款在七天内处理。\n')
     lib.write('logo.png', Buffer.from([0x89, 0x00, 0xff]))
-    await lib.find('退款')
-    expect(fields((await lib.status())?.blocks ?? [])).toMatchObject({ 文件: '2 个，其中文本 1 个', 块: '1', 待更新: '没有' })
-
-    lib.write('a.md', '退款在十四天内处理。\n')
-    expect(fields((await lib.status())?.blocks ?? [])).toMatchObject({ 待更新: '1 个文件，下次 find 时更新' })
+    await lib.register('a.md')
+    await lib.register('logo.png')
+    expect(fields((await lib.status())?.blocks ?? [])).toMatchObject({ 文件: '2 个，其中文本 1 个', 块: '1', 待读: '没有' })
 
     expect((await lib.owner('search embedder set', { kind: ['hash'] })).outcome).toBe('done')
     await lib.find('退款')
@@ -93,17 +96,22 @@ describe('the item section', () => {
     lib.write('sites/a/index.html', '<p>冷制皂</p>')
     lib.write('sites/a/about.html', '<p>工作室</p>')
     lib.write(`sites/a/${BUNDLE_MARKER}`, '{"format":1}\n')
-    await lib.find('退款')
+    for (const path of ['a.md', 'logo.png', 'sites/a']) await lib.register(path)
     lib.write('new.md', '新来的\n')
 
     expect(await lib.item('a.md')).toEqual({ title: '查找', blocks: [{ kind: 'fields', fields: [{ label: '正文', value: { text: '已索引，1 块' } }, { label: '按意思', value: { text: '没配嵌入器' } }] }] })
     expect(fields((await lib.item('logo.png'))?.blocks ?? [])).toMatchObject({ 正文: '不是文本，不索引正文' })
-    expect(fields((await lib.item('new.md'))?.blocks ?? [])).toMatchObject({ 正文: '还没索引，下次 find 时补上' })
+    expect(fields((await lib.item('new.md'))?.blocks ?? [])).toMatchObject({ 正文: '没有索引：查找插件装上之后，它没有被放入或登记过' })
     expect(fields((await lib.item('sites/a'))?.blocks ?? [])).toMatchObject({ 正文: '已索引 2 个文件，2 块' })
 
     await lib.owner('search embedder set', { kind: ['hash'] })
     await lib.find('退款')
     expect(fields((await lib.item('a.md'))?.blocks ?? [])).toMatchObject({ 按意思: '1 / 1 块有向量' })
+
+    await lib.dropCache()
+    expect(fields((await lib.item('a.md'))?.blocks ?? [])).toMatchObject({ 正文: '还没读，下次 find 时读' })
+    await lib.find('退款')
+    expect(fields((await lib.item('a.md'))?.blocks ?? [])).toMatchObject({ 正文: '已索引，1 块' })
   })
 
   it('gives nothing for a path where there is no thing', async () => {

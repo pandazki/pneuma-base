@@ -21,7 +21,7 @@ export const session: Session = { id: 'test-session', source: 'flag', cwd: '/', 
 export const owner: Actor = { kind: 'owner' }
 
 export function plugin(name: string, parts: Partial<Plugin> = {}): Plugin {
-  return { contract: 1, name: name as PluginName, cognition: null, storage: [], statements: [], ownerCommands: [], ...parts }
+  return { contract: 2, name: name as PluginName, cognition: null, storage: [], statements: [], ownerCommands: [], ...parts }
 }
 
 async function mustOpen(root: string, table: Map<string, Plugin>): Promise<Library> {

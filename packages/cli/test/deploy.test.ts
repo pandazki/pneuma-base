@@ -237,6 +237,17 @@ describe('a command target', () => {
     expect(readdirSync(published)).toEqual([])
   })
 
+  it('runs the publish command in the copy of the content and the unpublish command in an empty directory, never in the library', () => {
+    const pub = script('publish.mjs', `import { cpSync } from 'node:fs'\nconst [name, out] = process.argv.slice(2)\ncpSync('.', out + '/' + name, { recursive: true })\n`)
+    const unpub = script('unpublish.mjs', `import { readdirSync, writeFileSync } from 'node:fs'\nconst [name, out] = process.argv.slice(2)\nwriteFileSync(out + '/' + name + '.seen', JSON.stringify(readdirSync('.')))\n`)
+    commandTarget(`'${node}' '${pub}' {name} '${published}'`, `'${node}' '${unpub}' {name} '${published}'`)
+
+    ok(owner(['deploy', 'on', 'sites/s0']))
+    expect(tree(join(published, 'sites-s0'))).toEqual(tree(join(lib, 'sites/s0')))
+    ok(owner(['deploy', 'off', 'sites/s0']))
+    expect(readFileSync(join(published, 'sites-s0.seen'), 'utf8')).toBe('[]')
+  })
+
   it('that fails: the switch answers with the reason, a put still succeeds and lists the problem, check reports it', () => {
     const fail = script('fail.mjs', `process.stderr.write('target is down\\n')\nprocess.exit(3)\n`)
     commandTarget(`'${node}' '${fail}' {dir} {name}`, `'${node}' '${fail}' {name}`)

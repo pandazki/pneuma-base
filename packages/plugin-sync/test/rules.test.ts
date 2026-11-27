@@ -1,10 +1,10 @@
 // The sync rule table (design.md 五) as a pure decision per path, the plan that keeps every content
 // that would vanish but what the owner deleted on purpose, and the executor over two in-memory
 // sides. C6: never lose content; CONTEXT 2.14: the owner may drop it.
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { Fingerprint, LibraryPath } from '@pneuma-base/kernel'
 import { describe, expect, it } from 'vitest'
-import { baselineAfter, execute, settledBy, type SyncTarget } from '../src/execute.js'
+import { baselineAfter, execute, settledBy, type SideIO, type Sides } from '../src/execute.js'
 import { conflictName, conflictOrigin, decide, plan, type Deletion, type Files, type Plan } from '../src/rules.js'
 
 const fp = (content: string) => createHash('sha256').update(content).digest('hex') as Fingerprint
@@ -165,26 +165,46 @@ describe('conflict copy names', () => {
 
 // ---- the executor, against two in-memory sides ----
 
-class Memory implements SyncTarget {
+const staging = new Map<string, Uint8Array>()
+const sha = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex') as Fingerprint
+
+/** A side in memory. What the plan saw is what `list` answered last. */
+class Memory implements SideIO {
   readonly files = new Map<string, Uint8Array>()
+  private seen = new Map<string, Fingerprint>()
   constructor(entries: Record<string, string>) {
     for (const [path, content] of Object.entries(entries)) this.files.set(path, Buffer.from(content))
   }
+  private now(key: LibraryPath): Fingerprint | null {
+    const bytes = this.files.get(key)
+    return bytes ? sha(bytes) : null
+  }
   async list() {
-    return new Map([...this.files].map(([path, bytes]) => [p(path), createHash('sha256').update(bytes).digest('hex') as Fingerprint]))
+    this.seen = new Map([...this.files].map(([path, bytes]) => [p(path), sha(bytes)]))
+    return new Map(this.seen) as Map<LibraryPath, Fingerprint>
   }
-  async read(path: LibraryPath) {
-    const bytes = this.files.get(path)
-    if (!bytes) throw Object.assign(new Error(`no ${path}`), { code: 'ENOENT' })
-    return bytes
+  async stage(key: LibraryPath, fingerprint: Fingerprint) {
+    const bytes = this.files.get(key)
+    if (!bytes || sha(bytes) !== fingerprint) return null
+    const path = randomUUID()
+    staging.set(path, bytes)
+    return { path, dir: false }
   }
-  async write(path: LibraryPath, bytes: Uint8Array) {
-    this.files.set(path, bytes)
+  async place(key: LibraryPath, staged: { path: string }, fingerprint: Fingerprint) {
+    const now = this.now(key)
+    if (now === fingerprint) return true
+    if (now !== (this.seen.get(key) ?? null)) return false
+    this.files.set(key, staging.get(staged.path) as Uint8Array)
+    return true
   }
-  async remove(path: LibraryPath) {
-    this.files.delete(path)
+  async remove(key: LibraryPath, fingerprint: Fingerprint) {
+    if (this.now(key) !== fingerprint) return false
+    this.files.delete(key)
+    return true
   }
 }
+
+const sides = (local: Memory, target: Memory): Sides => ({ local, target, discard: (s) => staging.delete(s.path) })
 
 const contents = (side: Memory) => new Set([...side.files.values()].map((b) => Buffer.from(b).toString()))
 const sorted = (m: ReadonlyMap<string, string>) => [...m].sort(([a], [b]) => (a < b ? -1 : 1))
@@ -210,7 +230,7 @@ describe('the executor', () => {
       const target = new Memory(t)
       const before = new Set([...Object.values(l), ...Object.values(t)])
       const r = plan({ local: await local.list(), target: await target.list(), base: files(b), deleted: [] }, namer)
-      const done = await execute(r, { local, target })
+      const done = await execute(r, sides(local, target))
       const label = JSON.stringify({ l, t, b })
       expect(done.failure, label).toBeNull()
       expect(done.skipped, label).toEqual([])
@@ -231,7 +251,7 @@ describe('the executor', () => {
       const local = new Memory(l)
       const target = new Memory(t)
       const r = plan({ local: await local.list(), target: await target.list(), base: files(b), deleted }, namer)
-      const done = await execute(r, { local, target })
+      const done = await execute(r, sides(local, target))
       const label = JSON.stringify({ l, t, b })
       expect(done.failure, label).toBeNull()
       expect(done.skipped, label).toEqual([])
@@ -258,7 +278,7 @@ describe('the executor', () => {
     ]
     const r = plan({ local: await local.list(), target: await target.list(), base: files({ 'a.md': 'x', 'b.md': 'y' }), deleted: records.flatMap((d) => d.deleted) }, namer)
     target.files.set('b.md', Buffer.from('changed meanwhile'))
-    const done = await execute(r, { local, target })
+    const done = await execute(r, sides(local, target))
     expect(settledBy(r, done.done, records)).toEqual(['ran', 'nothing to do'])
     expect(Buffer.from(target.files.get('b.md') as Uint8Array).toString()).toBe('changed meanwhile')
   })
@@ -268,7 +288,7 @@ describe('the executor', () => {
     const target = new Memory({ 'a.md': 'old' })
     const r = plan({ local: await local.list(), target: await target.list(), base: files({ 'a.md': 'old' }), deleted: [] }, namer)
     target.files.set('a.md', Buffer.from('edited meanwhile'))
-    const done = await execute(r, { local, target })
+    const done = await execute(r, sides(local, target))
     expect(Buffer.from(target.files.get('a.md') as Uint8Array).toString()).toBe('edited meanwhile')
     expect(done.skipped.map((s) => s.kind)).toEqual(['keep', 'copy'])
     expect(baselineAfter(r, files({ 'a.md': 'old' }), done.done).get(p('a.md'))).toBe(fp('old'))
@@ -278,12 +298,13 @@ describe('the executor', () => {
     const local = new Memory({ 'a.md': 'a', 'b.md': 'b' })
     const target = new Memory({})
     let writes = 0
-    target.write = async (path, bytes) => {
+    const place = target.place.bind(target)
+    target.place = async (key, staged, fingerprint) => {
       if (++writes > 1) throw new Error('target unreachable')
-      target.files.set(path, bytes)
+      return place(key, staged, fingerprint)
     }
     const r = plan({ local: await local.list(), target: new Map(), base: new Map(), deleted: [] }, namer)
-    const done = await execute(r, { local, target })
+    const done = await execute(r, sides(local, target))
     expect(done.failure).toContain('target unreachable')
     expect(done.done).toHaveLength(1)
     expect([...baselineAfter(r, new Map(), done.done).keys()]).toEqual(['a.md'])

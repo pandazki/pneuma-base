@@ -16,7 +16,7 @@ export function writePlugin(dir: string, files: Record<string, string>): string 
 /** `argv show` hands back the arguments and values it was given, so a test sees how the command line read them. */
 export const ARGV = {
   'index.js': `export default {
-  contract: 1,
+  contract: 2,
   name: 'argv',
   version: '1.0.0',
   summary: '把收到的参数原样交回',
@@ -53,7 +53,7 @@ export const ARGV = {
 /** Declares the secret `token`; `vault show` says what `ctx.secrets.get('token')` gave it. */
 export const VAULT = {
   'index.js': `export default {
-  contract: 1,
+  contract: 2,
   name: 'vault',
   version: '1.0.0',
   cognition: null,
@@ -83,7 +83,7 @@ export function pager(words: string, version: string): Record<string, string> {
   return {
     'index.js': `import { WORDS, VERSION } from './lib/words.js'
 export default {
-  contract: 1,
+  contract: 2,
   name: 'pager',
   version: VERSION,
   summary: '一页字',

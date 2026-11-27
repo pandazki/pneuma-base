@@ -9,7 +9,10 @@ import { CONTRACT, KERNEL_COMMAND_NAMES, PLUGIN_NAME, RESERVED_PLUGIN_NAMES, SEC
 import { exists, regularFile, replaceWith } from './machine-files.js'
 
 /** The plugin contract versions this kernel runs. */
-export const SUPPORTED_CONTRACTS: readonly number[] = [1, CONTRACT]
+export const SUPPORTED_CONTRACTS: readonly number[] = [CONTRACT]
+
+/** Where the plugin standard says what a plugin written against contract 1 changes. */
+const FROM_1 = '插件规范 PLUGINS.md 的「从第 1 版到第 2 版」一节'
 
 /** Flags every command line call takes; no command declares one of these. */
 export const GLOBAL_FLAG_NAMES: readonly string[] = ['library', 'as', 'session', 'json', 'help']
@@ -239,6 +242,7 @@ function whatIsWrong(p: unknown, name: string | null): string[] {
   }
   const supported = `第 ${SUPPORTED_CONTRACTS.join('、')} 版`
   if (p.contract === undefined) wrong.push(`没有写 contract，即它按哪一版插件契约写的；这个 pneuma-base 认识${supported}`)
+  else if (p.contract === 1) wrong.push(`contract 是 1：这个 pneuma-base 只跑第 ${CONTRACT} 版插件契约。要改的地方见${FROM_1}`)
   else check(SUPPORTED_CONTRACTS.includes(p.contract as number), `contract 是 ${JSON.stringify(p.contract)}，这个 pneuma-base 只认识${supported}插件契约`)
   if (name !== null) check(p.name === name, `名字是 ${JSON.stringify(p.name)}，不是目录名 ${name}`)
   else check(isText(p.name) && PLUGIN_NAME.test(p.name), `名字 ${JSON.stringify(p.name)} 不是插件名：小写字母开头，只用小写字母、数字和连字符`)

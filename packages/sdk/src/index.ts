@@ -10,9 +10,8 @@ export { defineCommand, formOf, usageOf, type FixedValue } from './params.js'
 export { PAGE_ROWS, TEXT_ROWS, pageAt, pageOfList, pagingOf, rowsOf, type PageAt, type PageOf } from './paging.js'
 
 /**
- * The version of the plugin contract this package describes. A plugin declares it as `contract`.
- * Version 2 hands a plugin storage's words (`tools.storage`); the kernel still runs a plugin written
- * against version 1, whose tools are kept as a layer over version 2's until those plugins move.
+ * The version of the plugin contract this package describes, the only one the kernel runs. A plugin
+ * declares it as `contract`. Version 2 hands a plugin storage's words (`tools.storage`).
  */
 export const CONTRACT = 2
 

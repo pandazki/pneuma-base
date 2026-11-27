@@ -31,7 +31,7 @@ export const MAX_PENDING = 20
 const REQUEST_ID = /^r-[0-9a-f]{8}$/
 
 /** The kernel's record place for requests. */
-const PLACE = 'requests'
+export const PLACE = 'requests'
 /** The shape of the rows; rows of another shape are derived again from the facts. */
 const ROWS_VERSION = 1
 

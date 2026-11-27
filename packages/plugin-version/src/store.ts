@@ -1,96 +1,72 @@
-// Content-addressed storage: objects/<first two hex>/<sha256>, each written once under its hash, so
-// the same content is stored once across versions and across things.
-import { createHash, randomBytes } from 'node:crypto'
-import { createReadStream } from 'node:fs'
-import { copyFile, link, mkdir, rename, rm, stat } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
-import type { Fingerprint, LibraryPath, PluginContext } from '@pneuma-base/kernel'
-import type { Manifest } from './facts.js'
+// The versions' content, in the plugin's own place, addressed by content: a file at
+// objects/<first two hex>/<sha256>, a directory thing whole at trees/<first two hex>/<fingerprint>, each
+// written once, so the same content is stored once across versions and across things. A copy is one
+// write from the thing's place into pending/, fingerprinted in the same pass, then moved to its address.
+import { randomBytes } from 'node:crypto'
+import { isDescribed, isFailure, type Fingerprint, type Instant, type LibraryPath, type Place, type PluginContext } from '@pneuma-base/kernel'
+import { objectPlace, treePlace } from './model.js'
 
-const objectPath = (dir: string, fingerprint: Fingerprint) => join(dir, 'objects', fingerprint.slice(0, 2), fingerprint)
-const scratch = (beside: string) => join(dirname(beside), `.tmp-${randomBytes(6).toString('hex')}`)
-/** The sha256 of a file this plugin wrote outside the library, as a version's row records it. */
-async function hashFile(path: string): Promise<Fingerprint> {
-  const hash = createHash('sha256')
-  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer)
-  return hash.digest('hex') as Fingerprint
+/** A copy of a thing's content in pending/, and what it is. */
+export type Shot = { fingerprint: Fingerprint; kind: 'file' | 'tree'; bytes: number; files: number; pending: { place: Place; token: string } }
+
+/** Copies the thing at `path` into pending/. Null when nothing is there; a failure when it could not be copied now. */
+export async function snapshot(ctx: PluginContext, path: LibraryPath): Promise<Shot | null | { failed: string }> {
+  const own = ctx.tools.storage.own
+  const place = `pending/${randomBytes(8).toString('hex')}`
+  const written = await own.write(place, { place: path }, 'empty')
+  if (isFailure(written)) return written.side === 'from' && written.reason === 'no_such_place' ? null : { failed: written.reason }
+  const kind = written.entry.kind === 'dir' ? 'tree' : 'file'
+  return { fingerprint: written.fingerprint, kind, bytes: written.bytes, files: written.files ?? 1, pending: { place, token: written.entry.token ?? '' } }
 }
 
-const present = async (path: string) => (await stat(path).catch(() => null))?.isFile() === true
+export async function discard(ctx: PluginContext, shot: Shot): Promise<void> {
+  await ctx.tools.storage.own.remove(shot.pending.place, shot.pending.token)
+}
 
-/** The thing at `path`, a file or a bundle, as a version records it; null when neither is there. */
-export async function snapshot(ctx: PluginContext, path: LibraryPath): Promise<{ fingerprint: Fingerprint; manifest: Manifest } | null> {
-  const thing = await ctx.tools.thing(path)
-  if (thing === null) return null
-  if (thing.kind === 'file') {
-    const fingerprint = await ctx.tools.fingerprint(path)
-    if (fingerprint === null) return null
-    return { fingerprint, manifest: { kind: 'file', rows: [{ path: '', fingerprint, size: thing.size }] } }
+/** Moves the copy to its address; where the same content is stored already, drops the copy. */
+export async function keep(ctx: PluginContext, shot: Shot): Promise<void> {
+  const own = ctx.tools.storage.own
+  const to = shot.kind === 'file' ? objectPlace(shot.fingerprint) : treePlace(shot.fingerprint)
+  const moved = await own.move(shot.pending.place, to, { from: shot.pending.token, to: 'empty' })
+  if (!isFailure(moved)) return
+  const there = (moved.actual as { to?: { kind?: string } } | undefined)?.to?.kind
+  if (moved.reason !== 'refused' || there === undefined || there === 'none') throw new Error(`没能把内容放进版本存放（${moved.reason}）`)
+  await discard(ctx, shot)
+}
+
+/** How many places one glance asks about. */
+const GLANCE = 500
+
+/** What is at these places of the plugin's own place, each one present with its token. */
+export async function present(ctx: PluginContext, places: readonly Place[]): Promise<Map<Place, string>> {
+  const out = new Map<Place, string>()
+  for (let i = 0; i < places.length; i += GLANCE) {
+    for (const g of await ctx.tools.storage.own.glance(places.slice(i, i + GLANCE))) if (isDescribed(g) && g.kind !== 'none') out.set(g.place, g.token ?? '')
   }
-  const rows = await ctx.tools.manifest(path)
-  if (rows === null) return null
-  return { fingerprint: ctx.tools.fingerprintOfManifest(rows), manifest: { kind: 'bundle', rows } }
+  return out
 }
 
-/**
- * Copies each file of the thing at `file` into the store, unless its content is there already. A
- * copy is checked against its row's sha256 before it takes its name; a mismatch means the thing
- * changed meanwhile, and throws.
- */
-export async function store(ctx: PluginContext, file: string, manifest: Manifest): Promise<void> {
-  const dir = ctx.dir
-  for (const row of manifest.rows) {
-    const target = objectPath(dir, row.fingerprint)
-    if (await present(target)) continue
-    await mkdir(dirname(target), { recursive: true })
-    const tmp = scratch(target)
-    try {
-      await copyFile(join(file, row.path), tmp)
-      if ((await ctx.tools.fingerprintOfFile(tmp)) !== row.fingerprint) throw new Error(`${row.path || '它'} 在记录时被改动了`)
-      await link(tmp, target).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== 'EEXIST') throw error
-      })
-    } finally {
-      await rm(tmp, { force: true })
-    }
-  }
-}
-
-/** Whether the store holds every file of this content. */
-export async function complete(dir: string, manifest: Manifest): Promise<boolean> {
-  for (const row of manifest.rows) if (!(await present(objectPath(dir, row.fingerprint)))) return false
-  return true
-}
-
-/**
- * Writes a version's content to `target`, which must not exist: the file, or a directory of the
- * bundle's files without the marker. Written under a temporary name beside it, each file checked
- * against its sha256, then renamed into place.
- */
-export async function writeOut(dir: string, manifest: Manifest, target: string): Promise<void> {
-  const tmp = scratch(target)
-  try {
-    if (manifest.kind === 'bundle') await mkdir(tmp)
-    for (const row of manifest.rows) {
-      const to = join(tmp, row.path)
-      await mkdir(dirname(to), { recursive: true })
-      await copyFile(objectPath(dir, row.fingerprint), to)
-      if ((await hashFile(to)) !== row.fingerprint) throw new Error(`存放里的内容 ${row.fingerprint.slice(0, 8)} 坏了`)
-    }
-    await rename(tmp, target)
-  } finally {
-    await rm(tmp, { recursive: true, force: true })
-  }
-}
-
-/** Deletes the stored content of these sha256s; how many files it deleted. */
-export async function drop(dir: string, fingerprints: Iterable<Fingerprint>): Promise<number> {
+/** Deletes the content at these places; how many it deleted. */
+export async function drop(ctx: PluginContext, places: readonly Place[]): Promise<number> {
   let deleted = 0
-  for (const fingerprint of fingerprints) {
-    const path = objectPath(dir, fingerprint)
-    if (!(await present(path))) continue
-    await rm(path)
-    deleted++
-  }
+  for (const [place, token] of await present(ctx, places)) if (!isFailure(await ctx.tools.storage.own.remove(place, token))) deleted++
   return deleted
 }
+
+/** A copy in pending/ older than this was left by a write that never finished. */
+const ABANDONED_MS = 60 * 60 * 1000
+
+/** Removes the copies in pending/ older than an hour at `now`, one page of it; how many it removed. */
+export async function sweepPending(ctx: PluginContext, now: Instant): Promise<number> {
+  const own = ctx.tools.storage.own
+  const page = await own.overview('pending')
+  if (isFailure(page)) return 0
+  const before = Date.parse(now) - ABANDONED_MS
+  let removed = 0
+  for (const e of page.entries) {
+    if (e.modified === undefined || Date.parse(e.modified) >= before) continue
+    if (!isFailure(await own.remove(e.place, e.token ?? ''))) removed++
+  }
+  return removed
+}
+

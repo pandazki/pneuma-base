@@ -2,7 +2,8 @@
 // MCP client). ARCHITECTURE "找、看、说、查、归档". Read through storage, only because asked.
 import { extname, posix } from 'node:path'
 import { mayRead } from './access.js'
-import type { Storage } from './storage.js'
+import { parseLibraryPath, regionOf } from './paths.js'
+import { storageOf, type Storage } from './storage.js'
 import { BUNDLE_MARKER, levelOf, whatIsOne } from './things.js'
 import { isFailure, type Content, type Context, type FileFacts, type LibraryPath } from '@pneuma-base/sdk'
 
@@ -66,5 +67,61 @@ async function fileContent(store: Storage, path: LibraryPath): Promise<Content> 
     return text.includes('\u0000') ? other('not-utf8', read.size) : { kind: 'text', path, size: read.size, text }
   } catch {
     return other('not-utf8', read.size)
+  }
+}
+
+/** The images the file route serves as images, by the file's name. */
+const IMAGES: Readonly<Record<string, string>> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.svg': 'image/svg+xml',
+}
+
+/** How many bytes of a file decide whether it is text. */
+const SNIFF = 8192
+
+/** One range of a file's bytes, read through storage with the token of the version they are of. */
+export type FileRange = { data: Uint8Array; token: string }
+
+/**
+ * A file of the content or the archive as the management UI's file route serves it: its size, its type
+ * (an image by its name; otherwise text when its first bytes are UTF-8 without NUL, else bytes; never
+ * HTML), and a reader of ranges, each through storage. `elsewhere`: a sync service keeps only a
+ * placeholder here, and its content is fetched only when asked with `fetch`.
+ */
+export type LibraryFile =
+  | { kind: 'file'; path: LibraryPath; size: number; type: string; token: string; read(offset: number, length: number): Promise<FileRange | null> }
+  | { kind: 'elsewhere'; path: LibraryPath; size: number }
+
+export async function libraryFile(root: string, input: string, opts: { fetch?: boolean } = {}): Promise<LibraryFile | null> {
+  const path = parseLibraryPath(root, input)
+  if (path === null || regionOf(path) === 'kernel') return null
+  const store = storageOf(root)
+  const fetch = opts.fetch === true ? { fetch: true } : {}
+  const head = await store.read(path, { length: SNIFF, ...fetch })
+  if (isFailure(head)) return head.reason === 'elsewhere' ? { kind: 'elsewhere', path, size: head.size ?? 0 } : null
+  // A token is storage's to compare: two texts may differ for one state. A range is of the first
+  // read's state when storage says that state still holds, and then carries the first read's token.
+  const read = async (offset: number, length: number): Promise<FileRange | null> => {
+    const r = await store.read(path, { offset, length, ...fetch })
+    if (isFailure(r) || r.data === null) return null
+    if (r.token === head.token) return { data: r.data, token: head.token }
+    const looked = await store.look([{ place: path, token: head.token }])
+    return { data: r.data, token: looked.same === 1 ? head.token : r.token }
+  }
+  return { kind: 'file', path, size: head.size, type: IMAGES[extname(path).toLowerCase()] ?? sniffed(head.data ?? new Uint8Array()), token: head.token, read }
+}
+
+function sniffed(head: Uint8Array): string {
+  if (head.includes(0)) return 'application/octet-stream'
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(head, { stream: true })
+    return 'text/plain; charset=utf-8'
+  } catch {
+    return 'application/octet-stream'
   }
 }

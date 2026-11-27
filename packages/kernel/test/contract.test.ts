@@ -1,6 +1,6 @@
 // The plugin contract as a third party builds against it: the sdk's root export, re-exported by the kernel.
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as sdk from '@pneuma-base/sdk'
 import { describe, expect, it } from 'vitest'
@@ -28,7 +28,7 @@ describe('the sdk', () => {
 
 describe('a plugin’s hooks', () => {
   it('are checked strictly: a hook that takes a narrower argument than the contract gives does not type-check', () => {
-    const base = { contract: 1, name: sdk.pluginName('narrow'), cognition: null, storage: [], statements: [], ownerCommands: [] }
+    const base = { contract: 2, name: sdk.pluginName('narrow'), cognition: null, storage: [], statements: [], ownerCommands: [] }
     const onPut = async (req: Extract<sdk.AcceptedPut, { kind: 'place' }>) => ({ text: req.source.kind })
     // @ts-expect-error onPut is given every kind of accepted put, not only a place
     const narrow: sdk.Plugin = { ...base, onPut }
@@ -41,7 +41,7 @@ describe('a plugin’s hooks', () => {
 
 describe('the loader of a plugin outside the repository', () => {
   const GOOD = {
-    contract: 1,
+    contract: 2,
     name: 'echo',
     version: '0.1.0',
     summary: '回一句话',
@@ -71,8 +71,12 @@ describe('the loader of a plugin outside the repository', () => {
   })
 
   it('refuses one without a contract, or with one it does not support, saying so in Chinese', async () => {
-    expect(await why({}, ['contract'])).toMatch(/没有写 contract.*第 1、2 版/)
-    expect(await why({ contract: 3 })).toMatch(/contract 是 3.*只认识第 1、2 版/)
+    expect(await why({}, ['contract'])).toMatch(/没有写 contract.*第 2 版/)
+    expect(await why({ contract: 3 })).toMatch(/contract 是 3.*只认识第 2 版/)
+  })
+
+  it('refuses a plugin written against contract 1, naming the section of the standard that says what changes', async () => {
+    expect(await why({ contract: 1 })).toMatch(/contract 是 1.*只跑第 2 版.*PLUGINS\.md 的「从第 1 版到第 2 版」一节/)
   })
 
   it('refuses the shapes it can check without calling a hook, naming each', async () => {
@@ -101,7 +105,7 @@ describe('the loader of a plugin outside the repository', () => {
     const home = tempDir('pb-k-home-')
     mkdirSync(join(home, 'plugins', 'plugin'), { recursive: true })
     const command = '{ name: "plugin add", summary: "", destructive: false, ownerOnly: false, run: async () => ({ outcome: "done", text: "" }) }'
-    writeFileSync(join(home, 'plugins', 'plugin', 'index.js'), `export default { contract: 1, name: 'plugin', cognition: null, storage: [], statements: [], ownerCommands: [${command}] }\n`)
+    writeFileSync(join(home, 'plugins', 'plugin', 'index.js'), `export default { contract: 2, name: 'plugin', cognition: null, storage: [], statements: [], ownerCommands: [${command}] }\n`)
     expect(await kernel.whyNotLoaded(home, 'plugin')).toMatch(/主人命令「plugin add」是内核自己的/)
   })
 })
@@ -175,52 +179,25 @@ describe('the tools on a plugin’s context', () => {
     expect(t.regionOf('_archive/old.md' as sdk.LibraryPath)).toBe('archive')
     expect(t.archivedPath('a.md' as sdk.LibraryPath)).toBe('_archive/a.md')
     expect(t.originalPath('_archive/a.md' as sdk.LibraryPath)).toBe('a.md')
-    expect(t.abs('notes/a.md' as sdk.LibraryPath)).toBe(join(f.root, 'notes', 'a.md'))
+    expect('abs' in t).toBe(false)
   })
 
-  it('say what is at a path, list the things, and the files a bundle counts, leaving out the kernel’s names', async () => {
+  it('say what is at a path, and give a bundle’s files and fingerprints from storage', async () => {
     const { ctx } = await probe()
     const t = ctx.tools
-    expect(await t.thing('site' as sdk.LibraryPath)).toMatchObject({ kind: 'bundle', files: 1, size: 4 })
-    expect(await t.thing('notes/a.md' as sdk.LibraryPath)).toMatchObject({ kind: 'file', files: 1, size: 1 })
-    expect(await t.thing('notes' as sdk.LibraryPath)).toBeNull()
-    expect(await t.things()).toEqual(['_archive/old.md', 'notes/a.md', 'site'])
-    expect((await t.files('site' as sdk.LibraryPath))?.map((file) => file.path)).toEqual(['index.html'])
-    expect(await t.files('notes/a.md' as sdk.LibraryPath)).toBeNull()
-  })
-
-  it('give fingerprints of things, manifests and files', async () => {
-    const { f, ctx } = await probe()
-    const t = ctx.tools
-    expect(await t.fingerprint('notes/a.md' as sdk.LibraryPath)).toBe(sha('a'))
-    expect(await t.fingerprintOfFile(join(f.root, 'notes', 'a.md'))).toBe(sha('a'))
-    const manifest = await t.manifest('site' as sdk.LibraryPath)
-    expect(manifest).toEqual([{ path: 'index.html', fingerprint: sha('<h1>'), size: 4 }])
-    expect(await t.fingerprint('site' as sdk.LibraryPath)).toBe(sha(`index.html\0${sha('<h1>')}\n`))
-    expect(t.fingerprintOfManifest(manifest ?? [])).toBe(await t.fingerprint('site' as sdk.LibraryPath))
-    expect(await t.fingerprint('gone.md' as sdk.LibraryPath)).toBeNull()
-    expect(await t.manifest('notes/a.md' as sdk.LibraryPath)).toBeNull()
-  })
-
-  it('copy a thing out, answering the fingerprint of the copy, and never into the library outside the plugin’s own directory', async () => {
-    const { f, ctx } = await probe()
-    const t = ctx.tools
-    const stage = join(tempDir('pb-k-stage-'), 'site')
-    expect(await t.copyOut('site' as sdk.LibraryPath, stage)).toBe(await t.fingerprint('site' as sdk.LibraryPath))
-    expect(readdirSync(stage)).toEqual(['index.html'])
-    const own = join(ctx.dir, 'stage')
-    expect(await t.copyOut('notes/a.md' as sdk.LibraryPath, own)).toBe(sha('a'))
-    expect(readFileSync(join(own, 'a.md'), 'utf8')).toBe('a')
-    await expect(t.copyOut('notes/a.md' as sdk.LibraryPath, join(f.root, 'copied'))).rejects.toThrow()
-    expect(existsSync(join(f.root, 'copied'))).toBe(false)
-    expect(await t.copyOut('gone.md' as sdk.LibraryPath, join(tempDir('pb-k-stage-'), 'x'))).toBeNull()
+    expect(await t.what(['site', 'notes/a.md', 'notes', 'gone.md'] as sdk.LibraryPath[])).toMatchObject([{ kind: 'bundle' }, { kind: 'file' }, { kind: 'folder' }, { kind: 'none', entry: null }])
+    expect(await t.storage.content('notes/a.md')).toMatchObject({ kind: 'file', fingerprint: sha('a'), size: 1 })
+    const site = await t.storage.content('site', { manifest: true })
+    expect(site).toMatchObject({ kind: 'dir', fingerprint: sha(`index.html\0${sha('<h1>')}\n`), files: 1 })
+    expect(!sdk.isFailure(site) && site.kind === 'dir' ? site.manifest?.entries : null).toEqual([{ path: 'index.html', fingerprint: sha('<h1>'), size: 4 }])
+    expect(await t.storage.content('gone.md')).toMatchObject({ outcome: 'failed', reason: 'no_such_place' })
+    for (const v1 of ['thing', 'things', 'files', 'copyOut', 'fingerprint', 'manifest', 'fingerprintOfManifest', 'fingerprintOfFile', 'putting']) expect(v1 in t, v1).toBe(false)
   })
 
   it('answer what a path names without asking whether something is there', async () => {
     const { f, ctx } = await probe()
     const t = ctx.tools
     expect(await t.resolve('notes/absent.md')).toEqual({ path: 'notes/absent.md', region: 'content', bundle: null })
-    expect(await t.thing('notes/absent.md' as sdk.LibraryPath)).toBeNull()
     for (const input of ['', '.', '..', '../x.md', f.root, join(f.root, '..', 'x.md')]) expect(await t.resolve(input), input).toBeNull()
   })
 
@@ -238,16 +215,11 @@ describe('the tools on a plugin’s context', () => {
     symlinkSync(join(f.root, 'site'), join(f.root, 'sitelink'))
     symlinkSync(join(f.root, 'notes', 'a.md'), join(f.root, 'site', 'inlink.md'))
 
-    expect(await t.things()).toEqual(['_archive/old.md', 'notes/a.md', 'site'])
-    expect((await t.files('site' as sdk.LibraryPath))?.map((file) => file.path)).toEqual(['index.html'])
+    const site = await t.storage.content('site', { manifest: true })
+    expect(!sdk.isFailure(site) && site.kind === 'dir' ? site.manifest?.entries.map((e) => e.path) : null).toEqual(['index.html'])
     const linked = ['alias.md', 'out.md', 'outdir', 'outdir/x.md', 'notelink/a.md', 'sitelink', 'site/inlink.md'] as sdk.LibraryPath[]
-    for (const path of linked) {
-      expect(await t.thing(path), path).toBeNull()
-      expect(await t.fingerprint(path), path).toBeNull()
-      expect(await t.files(path), path).toBeNull()
-      expect(await t.manifest(path), path).toBeNull()
-      expect(await t.copyOut(path, join(tempDir('pb-k-stage-'), 'copy')), path).toBeNull()
-    }
+    for (const [i, at] of (await t.what(linked)).entries()) expect(at.kind === 'other' || at.kind === 'none', linked[i]).toBe(true)
+    for (const path of linked) expect(sdk.isFailure(await t.storage.content(path)), path).toBe(true)
     for (const path of ['alias.md', 'notelink/a.md', 'outdir/x.md']) {
       expect(await t.resolve(path), path).toMatchObject({ path })
       expect(await t.resolve(join(f.root, path)), path).toMatchObject({ path })

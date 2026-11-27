@@ -1,8 +1,24 @@
 // Test-only plugins. Run by Node's type stripping, so only erasable TypeScript here.
-import { appendFile, readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { pluginName, type Action, type Block, type Event, type Instant, type LibraryPath, type OwnerCommand, type Plugin, type PluginContext } from '@pneuma-base/kernel'
+import { isDescribed, isFailure, pluginName, type Action, type Block, type Event, type Instant, type LibraryPath, type OwnerCommand, type Plugin, type PluginContext } from '@pneuma-base/kernel'
+
+/** A file of the plugin's own record place as text, through storage; null when it is not there. */
+async function readOwn(ctx: PluginContext, place: string): Promise<string | null> {
+  const read = await ctx.tools.storage.own.read(place)
+  return isFailure(read) || read.data === null ? null : Buffer.from(read.data).toString('utf8')
+}
+
+/** Writes a file of the plugin's own record place whole, over what is there now. */
+async function writeOwn(ctx: PluginContext, place: string, text: string): Promise<void> {
+  const own = ctx.tools.storage.own
+  for (;;) {
+    const [at] = await own.glance([place])
+    const expect = at !== undefined && isDescribed(at) && at.kind !== 'none' ? (at.token ?? 'empty') : 'empty'
+    const written = await own.write(place, { data: text }, expect)
+    if (!isFailure(written)) return
+    if (written.reason !== 'refused') throw new Error(`没能写 ${place}：${written.reason}`)
+  }
+}
 
 /** One line per event it observes, in `.pneuma-base/recorder/events.jsonl`. */
 export function describeEvent(event: Event): string {
@@ -17,20 +33,20 @@ const clear: OwnerCommand = {
   destructive: true,
   ownerOnly: true,
   run: async (_args, ctx) => {
-    await writeFile(join(ctx.dir, 'events.jsonl'), '')
+    await writeOwn(ctx, 'events.jsonl', '')
     return { outcome: 'done', text: 'cleared' }
   },
 }
 
 export const recorder: Plugin = {
-  contract: 1,
+  contract: 2,
   name: pluginName('recorder'),
   cognition: null,
   storage: [{ dir: '.', kind: 'body' }],
   statements: [],
   ownerCommands: [clear],
   observe: async (event, ctx) => {
-    await appendFile(join(ctx.dir, 'events.jsonl'), `${describeEvent(event)}\n`)
+    await writeOwn(ctx, 'events.jsonl', `${(await readOwn(ctx, 'events.jsonl')) ?? ''}${describeEvent(event)}\n`)
   },
 }
 
@@ -40,7 +56,7 @@ const boom = (hook: string) => async (): Promise<never> => {
 
 /** Throws in every hook. */
 export const thrower: Plugin = {
-  contract: 1,
+  contract: 2,
   name: pluginName('thrower'),
   cognition: { title: '总是出错的测试插件', text: '## 测试插件\n\n它在每个钩子里都抛错。' },
   storage: [],
@@ -63,7 +79,7 @@ const ping = (label: string): Action => ({ label, tone: 'default', confirm: null
 const owner = (command: string, positional: string[] = [], flags: Record<string, string[]> = {}) => ({ face: 'owner' as const, command, args: { positional, flags } })
 
 /** How many times `pager bump` ran in this library, kept in pager's own directory. */
-const count = async (ctx: PluginContext) => Number(await readFile(join(ctx.dir, 'count'), 'utf8').catch(() => '0'))
+const count = async (ctx: PluginContext) => Number((await readOwn(ctx, 'count')) ?? '0')
 
 /** A long outside address, for a cell that has to be cut. */
 export const LONG_URL = 'http://127.0.0.1:18080/apps/a-rather-long-application-name-for-the-demo-site/index.html'
@@ -113,7 +129,7 @@ async function newThings(ctx: PluginContext): Promise<Block[]> {
 
 /** Declares one view that uses every kind of block, and one kind no page knows; one with each newer thing; and two for how often a view is asked. */
 export const pager: Plugin = {
-  contract: 1,
+  contract: 2,
   name: pluginName('pager'),
   cognition: null,
   storage: [{ dir: '.', kind: 'body' }],
@@ -129,7 +145,7 @@ export const pager: Plugin = {
       ownerOnly: false,
       run: async (_args, ctx) => {
         const next = (await count(ctx)) + 1
-        await writeFile(join(ctx.dir, 'count'), String(next))
+        await writeOwn(ctx, 'count', String(next))
         return { outcome: 'done', text: `计数是 ${next}` }
       },
     },
@@ -180,7 +196,7 @@ export const pager: Plugin = {
 }
 
 /** Whether the owner answered asker's question, kept in asker's own directory. */
-const answered = async (ctx: PluginContext) => (await readFile(join(ctx.dir, 'answered'), 'utf8').catch(() => null)) !== null
+const answered = async (ctx: PluginContext) => (await readOwn(ctx, 'answered')) !== null
 const answer = (word: string): OwnerCommand => ({
   name: `asker ${word}`,
   summary: `Answer ${word}.`,
@@ -188,7 +204,7 @@ const answer = (word: string): OwnerCommand => ({
   destructive: false,
   ownerOnly: true,
   run: async (_args, ctx) => {
-    await writeFile(join(ctx.dir, 'answered'), word)
+    await writeOwn(ctx, 'answered', word)
     return { outcome: 'done', text: word === 'yes' ? '好，上线了' : '好，先不上线' }
   },
 })
@@ -198,7 +214,7 @@ const undo: Action = { label: '取回', tone: 'default', confirm: null, inputs: 
 
 /** Asks the owner one thing until answered, adds a line to the home page, and has one page of the newer blocks with counted filter options. */
 export const asker: Plugin = {
-  contract: 1,
+  contract: 2,
   name: pluginName('asker'),
   cognition: { title: '问主人的测试插件', text: '## 测试插件\n\n它问主人一件事。' },
   storage: [{ dir: '.', kind: 'body' }],

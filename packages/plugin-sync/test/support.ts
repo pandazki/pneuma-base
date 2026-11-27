@@ -1,6 +1,6 @@
 // Drives the real built command line, as packages/cli/test does: temp libraries, temp home.
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -51,20 +51,37 @@ export function write(root: string, path: string, content: string): void {
 
 export const read = (root: string, path: string) => readFileSync(join(root, path), 'utf8')
 
-const JUNK = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini', '.git', 'node_modules'])
-
-/** The synced files under `root` and their text: the machine's configuration, temporary files, OS junk and the target's own folder left out. */
+/**
+ * The things under `root` and their text, a library's or a target's: every file but the library's
+ * record area and description and the target's own folder. A directory thing's marker is one of them.
+ */
 export function contents(root: string): Map<string, string> {
   const out = new Map<string, string>()
-  const skip = new Set(['.pneuma-base/config.json', 'PNEUMA-BASE.md', '.pneuma-base/tmp', '.pneuma-base/sync/tmp', '.pneuma-sync'])
+  const skip = new Set(['.pneuma-base', 'PNEUMA-BASE.md', '.pneuma-sync'])
   const walk = (rel: string) => {
     for (const e of readdirSync(rel === '' ? root : join(root, rel), { withFileTypes: true })) {
       const path = rel === '' ? e.name : `${rel}/${e.name}`
-      if (skip.has(path) || JUNK.has(e.name) || e.name.startsWith('.tmp-')) continue
+      if (skip.has(path)) continue
       if (e.isDirectory()) walk(path)
       else if (e.isFile()) out.set(path, readFileSync(join(root, path), 'utf8'))
     }
   }
   walk('')
   return new Map([...out].sort(([a], [b]) => (a < b ? -1 : 1)))
+}
+
+/** Every fact of a record place of the library at `root`, in whatever layout storage or an earlier version wrote it. */
+export function factsOf(root: string, place: string): Record<string, unknown>[] {
+  const dir = join(root, '.pneuma-base', place, 'facts')
+  if (!existsSync(dir)) return []
+  return readdirSync(dir, { recursive: true, encoding: 'utf8' })
+    .filter((n) => n.endsWith('.jsonl'))
+    .flatMap((n) => readFileSync(join(dir, n), 'utf8').split('\n').filter((l) => l.trim() !== ''))
+    .map((l) => JSON.parse(l) as Record<string, unknown>)
+}
+
+/** What a plugin asked of storage while `PNEUMA_BASE_TOOL_LOG` named `file`: the kernel's log, one call a line. */
+export function toolCalls(file: string): { plugin: string; area: string; tool: string; place?: string; entries?: number }[] {
+  if (!existsSync(file)) return []
+  return readFileSync(file, 'utf8').split('\n').filter((l) => l !== '').map((l) => JSON.parse(l))
 }

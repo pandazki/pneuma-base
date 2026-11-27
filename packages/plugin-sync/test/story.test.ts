@@ -2,11 +2,11 @@
 // in it gives the same provenance. Conflicts keep both and are reported, in sync now and in check.
 // C8: the description carries the sync section exactly while the plugin is installed. Plus the
 // commands' refusals: no target, a target missing on this machine, a target overlapping the library.
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { contents, machine, ok, read, tempDir, write } from './support.js'
+import { contents, factsOf, machine, ok, read, tempDir, toolCalls, write } from './support.js'
 
 let m: ReturnType<typeof machine>
 let root: string
@@ -28,19 +28,19 @@ type Library = {
   confirmed: (args: string[]) => ReturnType<typeof m.run>
 }
 
-/** A library with the ledger (init's default) and the sync plugin, synced to the shared target. */
-function library(name: string): Library {
+/** A library with the ledger (init's default), the sync plugin and `plugins`, synced to the shared target. */
+function library(name: string, plugins: string[] = []): Library {
   const dir = join(root, name)
   ok(m.run(['init', dir]))
   const owner = (args: string[]) => m.run([...args, '--library', dir], { cwd: outside })
-  ok(owner(['plugin', 'add', 'sync']))
+  for (const p of ['sync', ...plugins]) ok(owner(['plugin', 'add', p]))
   ok(owner(['sync', 'target', 'set', '--kind', 'dir', '--to', target]))
   const agent = (args: string[], input?: string) => m.run(['--library', dir, '--as', 'claude-code', '--session', `s-${name}`, ...args], { cwd: outside, ...(input === undefined ? {} : { input }) })
   const confirmed = (args: string[]) => m.run([...args, '--library', dir], { cwd: outside, confirm: true })
   return { dir, agent, owner, confirmed }
 }
 
-const factFiles = (lib: string) => readdirSync(join(lib, '.pneuma-base/ledger/facts'), { recursive: true, encoding: 'utf8' }).filter((n) => n.endsWith('.jsonl')).sort()
+const factIds = (lib: string, place = 'ledger') => factsOf(lib, place).map((f) => f.id as string)
 
 describe('two libraries, one target (C6)', () => {
   it('the second gets the same files and records, and inspect gives the same provenance', () => {
@@ -48,7 +48,7 @@ describe('two libraries, one target (C6)', () => {
     ok(a.agent(['put', '-', '--to', 'sources/s.md', '--brought', '--source', 'https://example.com/s'], 'source text'))
     ok(a.agent(['put', '-', '--to', 'notes/summary.md', '--made', '--from', 'sources/s.md'], 'summary of s'))
     // The ledger records sync now itself after it ran; that record travels with the next sync.
-    const synced = factFiles(a.dir)
+    const synced = factIds(a.dir)
     ok(a.owner(['sync', 'now']))
 
     const b = library('b')
@@ -56,7 +56,7 @@ describe('two libraries, one target (C6)', () => {
     expect(r.stdout).toContain('已同步')
     expect(read(b.dir, 'notes/summary.md')).toBe('summary of s')
     expect(read(b.dir, 'sources/s.md')).toBe('source text')
-    for (const file of synced) expect(factFiles(b.dir)).toContain(file)
+    expect(factIds(b.dir)).toEqual(expect.arrayContaining(synced))
 
     const inspect = (lib: typeof a) => ok(lib.agent(['inspect', 'notes/summary.md', '--json'])).json().sections
     expect(inspect(b)).toEqual(inspect(a))
@@ -97,6 +97,107 @@ describe('two libraries, one target (C6)', () => {
   })
 })
 
+/** The files under a record place's own content and their text, its facts left out. */
+function ownContent(lib: string, place: string): Map<string, string> {
+  const dir = join(lib, '.pneuma-base', place)
+  if (!existsSync(dir)) return new Map()
+  const files = readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((n) => !n.startsWith('facts') && !n.endsWith('/') && existsSync(join(dir, n)) && !readdirSafe(join(dir, n)))
+  return new Map(files.sort().map((n) => [n, readFileSync(join(dir, n), 'utf8')]))
+}
+const readdirSafe = (path: string) => {
+  try {
+    readdirSync(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+describe('what two libraries carry through one target', () => {
+  it('a file, a directory thing with its marker, a moved and an archived thing, the ledger facts, a held copy and a version object; the second ledger tells them as the first does', () => {
+    const a = library('a', ['version'])
+    const site = join(outside, 'site')
+    write(site, 'index.html', '<h1>hi</h1>')
+    write(site, 'css/a.css', 'body{}')
+    ok(a.agent(['put', '-', '--to', 'notes/n.md', '--made'], 'note'))
+    ok(a.agent(['put', site, '--to', 'sites/one', '--made']))
+    ok(a.agent(['say', 'versioned', 'sites/one', '第一版']))
+    ok(a.agent(['put', '-', '--to', 'notes/moving.md', '--made'], 'moving'))
+    ok(a.agent(['put', 'notes/moving.md', '--to', 'notes/moved.md']))
+    ok(a.agent(['put', '-', '--to', 'notes/old.md', '--made'], 'old'))
+    ok(a.agent(['archive', 'notes/old.md']))
+    ok(a.agent(['put', '-', '--to', 'doc.md', '--made'], 'first version'))
+    ok(a.agent(['put', '-', '--to', 'doc.md', '--made'], 'second version'))
+    const facts = factIds(a.dir)
+    ok(a.owner(['sync', 'now']))
+
+    const b = library('b', ['version'])
+    ok(b.owner(['sync', 'now']))
+    expect(read(b.dir, 'notes/n.md')).toBe('note')
+    expect(read(b.dir, 'sites/one/index.html')).toBe('<h1>hi</h1>')
+    expect(read(b.dir, 'sites/one/css/a.css')).toBe('body{}')
+    expect(existsSync(join(b.dir, 'sites/one/.pneuma-item'))).toBe(true)
+    expect(read(b.dir, 'notes/moved.md')).toBe('moving')
+    expect(existsSync(join(b.dir, 'notes/moving.md'))).toBe(false)
+    expect(read(b.dir, '_archive/notes/old.md')).toBe('old')
+    expect(read(b.dir, 'doc.md')).toBe('second version')
+    expect(factIds(b.dir)).toEqual(expect.arrayContaining(facts))
+    const held = ownContent(a.dir, 'ledger')
+    expect([...held.values()]).toContain('first version')
+    expect(ownContent(b.dir, 'ledger')).toEqual(held)
+    expect(ownContent(a.dir, 'version').size).toBeGreaterThan(0)
+    expect(ownContent(b.dir, 'version')).toEqual(ownContent(a.dir, 'version'))
+
+    const ledger = (lib: Library, path: string) => ok(lib.agent(['inspect', path, '--json'])).json().sections.find((x: any) => x.plugin === 'ledger')?.body
+    for (const path of ['notes/n.md', 'sites/one', 'notes/moved.md', '_archive/notes/old.md', 'doc.md']) expect(ledger(b, path), path).toBe(ledger(a, path))
+    expect(ledger(b, 'sites/one')).toContain('现状：一致')
+    expect(ok(b.agent(['version', 'list', 'sites/one'])).stdout).toContain('第 1 版')
+  })
+
+  it('a sync with nothing changed reads no content on either side', () => {
+    const a = library('a')
+    const site = join(outside, 'site')
+    write(site, 'index.html', '<h1>hi</h1>')
+    ok(a.agent(['put', '-', '--to', 'notes/n.md', '--made'], 'note'))
+    ok(a.agent(['put', site, '--to', 'sites/one', '--made']))
+    ok(a.owner(['sync', 'now']))
+    ok(a.owner(['sync', 'now']))
+    // A target file sync tried to read would fail the run.
+    for (const path of ['notes/n.md', 'sites/one/index.html']) chmodSync(join(target, path), 0o000)
+    const log = join(outside, 'tools.jsonl')
+    const r = m.run(['sync', 'now', '--json', '--library', a.dir], { cwd: outside, env: { PNEUMA_BASE_TOOL_LOG: log } })
+    for (const path of ['notes/n.md', 'sites/one/index.html']) chmodSync(join(target, path), 0o644)
+    expect(r.code, r.stdout + r.stderr).toBe(0)
+    expect(r.json().data.counts).toEqual({ pushed: 0, pulled: 0, removed: 0, deleted: 0, kept: 0, conflicts: 0, skipped: 0 })
+    const calls = toolCalls(log).filter((c) => c.plugin === 'sync')
+    expect(calls.filter((c) => c.tool === 'lookRows').length).toBeGreaterThan(0)
+    expect(calls.filter((c) => c.tool === 'content' || c.tool === 'read' || c.tool === 'overview')).toEqual([])
+  })
+
+  it('a closed directory nobody registered is never looked into, even when it cannot be read', () => {
+    const a = library('a')
+    ok(a.agent(['put', '-', '--to', 'notes/n.md', '--made'], 'note'))
+    const closed = join(a.dir, 'downloads')
+    mkdirSync(closed)
+    for (let i = 0; i < 300; i++) writeFileSync(join(closed, `f${i}.bin`), `${i}`)
+    chmodSync(closed, 0o000)
+    const log = join(outside, 'tools.jsonl')
+    try {
+      const run = (args: string[]) => m.run([...args, '--json', '--library', a.dir], { cwd: outside, env: { PNEUMA_BASE_TOOL_LOG: log } })
+      for (const args of [['sync', 'now'], ['sync', 'status'], ['sync', 'now']]) {
+        const r = run(args)
+        expect(r.code, r.stdout + r.stderr).toBe(0)
+        expect(r.stdout).not.toContain('downloads')
+      }
+    } finally {
+      chmodSync(closed, 0o755)
+    }
+    expect(read(target, 'notes/n.md')).toBe('note')
+    expect(existsSync(join(target, 'downloads'))).toBe(false)
+    expect(toolCalls(log).filter((c) => c.plugin === 'sync' && c.place?.startsWith('downloads'))).toEqual([])
+  })
+})
+
 describe('what the owner deletes with a destructive command stays deleted (CONTEXT 2.14)', () => {
   /** A and B synced through the one target; `setup` runs on A first. */
   function synced(setup: (a: Library) => void): { a: Library; b: Library } {
@@ -108,7 +209,11 @@ describe('what the owner deletes with a destructive command stays deleted (CONTE
     ok(a.owner(['sync', 'now']))
     return { a, b }
   }
-  const texts = (dir: string) => [...contents(dir).values()]
+  /** The text of every file under `dir`, things and records and the target's own folder alike; storage's cache left out. */
+  const texts = (dir: string) =>
+    readdirSync(dir, { recursive: true, withFileTypes: true })
+      .filter((e) => e.isFile() && !join(e.parentPath, e.name).includes('/.pneuma-base/cache/'))
+      .map((e) => readFileSync(join(e.parentPath, e.name), 'utf8'))
   const both = (a: Library, b: Library) => {
     ok(a.owner(['sync', 'now']))
     return ok(b.owner(['sync', 'now', '--json'])).json().data
@@ -296,7 +401,7 @@ describe('refusals', () => {
 
   it('setting the same target again records nothing new', () => {
     const a = library('a')
-    const facts = () => readdirSync(join(a.dir, '.pneuma-base/sync/facts'))
+    const facts = () => factsOf(a.dir, 'sync')
     const n = facts().length
     expect(ok(a.owner(['sync', 'target', 'set', '--kind', 'dir', '--to', target])).stdout).toContain('没有变')
     expect(facts()).toHaveLength(n)
@@ -329,7 +434,7 @@ describe('scope', () => {
     ok(b.owner(['sync', 'now']))
     expect(read(b.dir, '.pneuma-base/config.json')).toBe(config)
     expect(existsSync(join(target, '.pneuma-base/config.json'))).toBe(false)
-    write(b.dir, 'z.md', 'z')
+    ok(b.agent(['put', '-', '--to', 'z.md', '--made'], 'z'))
     ok(b.owner(['sync', 'now']))
     expect(read(target, 'z.md')).toBe('z')
   })

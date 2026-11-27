@@ -2,9 +2,10 @@
 // storage in its own words, at the places a plugin's records point, through the one door.
 import { type Context, type LibraryPath, type Pass, type Place, type PlaceStore, type PluginName, type PluginStorage, type PluginTools, type WriteSource } from '@pneuma-base/sdk'
 import { changesSince } from './changes.js'
-import { v1Tools } from './contract-v1.js'
 import { archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
+import { PLACE as REQUESTS } from './requests.js'
 import { storageOf, type Area, type Source, type Storage, type StorageProgress } from './storage.js'
+import { loggedStorage } from './tool-log.js'
 import { rankHits, searchTerms, SENTENCE_HITS } from './terms.js'
 import { enclosingBundle, markBundle, THING_FILES, THING_RULE, whatIs } from './things.js'
 
@@ -52,8 +53,12 @@ function placeStore(area: Area, own: PluginName, heard?: StorageHeard): PlaceSto
   }
 }
 
-/** What a plugin gets of storage: the content, its own record place and its content, holds, and change learned from the kernel's cursor. */
-export function pluginStorage(store: Storage, name: PluginName, heard?: StorageHeard): PluginStorage {
+/**
+ * What a plugin gets of storage: the content, its own record place and its content, holds, change
+ * learned from the kernel's cursor, and the library's other record places by name (`places`, the
+ * installed plugins). `heard` carries storage's progress on a content read or write to a pass.
+ */
+export function pluginStorage(store: Storage, name: PluginName, places: readonly string[], heard?: StorageHeard): PluginStorage {
   return {
     ...placeStore(store, name, heard),
     probe: store.probe,
@@ -66,6 +71,11 @@ export function pluginStorage(store: Storage, name: PluginName, heard?: StorageH
     changed: (mark) => changesSince(store, mark),
     own: placeStore(store.own(name), name),
     records: store.records(name),
+    recordPlaces: async () => [REQUESTS, ...places],
+    recordPlace(place) {
+      const { append, since } = store.records(place)
+      return { own: placeStore(store.own(place), name), facts: { append, since } }
+    },
   }
 }
 
@@ -91,7 +101,6 @@ export function pluginTools(ctx: Context, name: PluginName, heard?: StorageHeard
       const { agentFace } = await import('./agent.js')
       return agentFace.put(req, ctx)
     },
-    storage: pluginStorage(store, name, heard),
-    ...v1Tools(store, root, name),
+    storage: loggedStorage(pluginStorage(store, name, ctx.library.config.plugins, heard), name),
   }
 }

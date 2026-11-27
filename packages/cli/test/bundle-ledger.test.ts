@@ -118,6 +118,8 @@ describe('a bundle with the ledger', () => {
     expect(ledgerOnly).toMatch(/sites\/landing\s+目录，做出来的/)
 
     ok(owner(['plugin', 'add', 'search']))
+    // Put before the search plugin was added: its text is indexed once it is registered again.
+    ok(agent(['put', join(lib, 'sites/landing'), '--made']))
     const withSearch = ok(agent(['find', '一块铝'], 's2')).stdout
     expect(withSearch).toContain('在做：做早鸟预订页')
     expect(withSearch).toMatch(/sites\/landing\s+目录，做出来的\s+index\.html：.*一块铝/)
@@ -126,8 +128,8 @@ describe('a bundle with the ledger', () => {
   it('with the search plugin, find reaches a bundle’s text past images that sort before it', () => {
     const image = Buffer.alloc(400 * 1024, 0xff)
     write(outside, { 'shop/assets/a.png': image, 'shop/assets/b.png': image, 'shop/assets/c.png': image, 'shop/index.html': '<h1>黄铜镇纸</h1>' })
-    ok(agent(['put', 'shop', '--to', 'sites/shop', '--made']))
     ok(owner(['plugin', 'add', 'search']))
+    ok(agent(['put', 'shop', '--to', 'sites/shop', '--made']))
     expect(ok(agent(['find', '黄铜镇纸'], 's2')).stdout).toMatch(/sites\/shop\s+目录，做出来的\s+index\.html：.*黄铜镇纸/)
   })
 })
