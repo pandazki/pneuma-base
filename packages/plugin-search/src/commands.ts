@@ -3,6 +3,8 @@
 import { defineCommand, type OwnerAnswer, type OwnerCommand, type PluginContext } from '@pneuma-base/kernel'
 import { currentEmbedder, recordEmbedder } from './config.js'
 import { embedderFor, embedderLabel, KEY_SECRET, SET_KEY, type EmbedderConfig } from './embed.js'
+import { readPending } from './reader.js'
+import { counts } from './registry.js'
 import { embedMissing, messageOf, refresh } from './search.js'
 import { SearchIndex } from './store.js'
 import { statusOf, statusText } from './views.js'
@@ -20,17 +22,34 @@ function embedderOf(kind: string, url: string | null, model: string | null): Emb
   return { kind: 'http', url, model }
 }
 
-/** The named whole action: a new index, and every registered thing read into it, each file up to its first 1 MB. */
+/**
+ * The named whole pass: a new index, and every registered thing read into it, each file up to its
+ * first 1 MB, then a vector for every piece. Says how many things first and how far after each page
+ * and batch; stops after the one under way when asked, and what is left is read by the next find.
+ */
 async function rebuild(ctx: PluginContext): Promise<OwnerAnswer> {
   const config = await currentEmbedder(ctx)
   const key = await ctx.secrets.get(KEY_SECRET)
   const index = SearchIndex.fresh(ctx.cacheDir, ctx.now)
+  const stopped = () => ctx.pass?.stopped() ?? false
   let failure: string | null = null
+  let stop: string | null = null
   try {
-    await refresh(index, ctx, { files: Infinity })
-    if (config !== null) {
+    await refresh(index, ctx, { files: 0 })
+    const { pending } = await counts(ctx)
+    ctx.pass?.report({ done: 0, total: pending, text: `要重建查找的索引：读 ${pending} 样登记过的东西。` })
+    await readPending(ctx, index, { files: Infinity }, undefined, (read) => {
+      ctx.pass?.report({ done: read, total: pending, text: `已读 ${read} / ${pending} 样` })
+      if (stopped()) stop = `停下了：读了 ${read} / ${pending} 样，其余的下次 find 时接着读。`
+      return stop !== null
+    })
+    if (config !== null && stop === null) {
       try {
-        await embedMissing(index, embedderFor(config, key))
+        await embedMissing(index, embedderFor(config, key), (n, total) => {
+          ctx.pass?.report({ done: n, total, text: `按意思：已建 ${n} / ${total} 块的向量` })
+          if (stopped()) stop = `停下了：${n} / ${total} 块有了向量，其余的下次 find 时接着建。`
+          return stop !== null
+        })
       } catch (error) {
         failure = messageOf(error)
       }
@@ -39,9 +58,9 @@ async function rebuild(ctx: PluginContext): Promise<OwnerAnswer> {
     index.close()
   }
   const s = await statusOf(ctx)
-  const built = `已重建索引：${s.files} 个文件，其中文本 ${s.textFiles} 个，${s.chunks} 块。`
+  const built = `${stop === null ? '已重建索引' : '索引重建了一部分'}：${s.files} 个文件，其中文本 ${s.textFiles} 个，${s.chunks} 块。`
   if (failure !== null) return refused('embedder-failed', `${built}按意思的向量没建完（${s.vectors} / ${s.chunks} 块）：${failure}`)
-  return done(`${built}${config ? `按意思：${s.vectors} / ${s.chunks} 块有向量。` : ''}`, s)
+  return done(`${stop ?? ''}${built}${config ? `按意思：${s.vectors} / ${s.chunks} 块有向量。` : ''}`, { ...s, stopped: stop !== null })
 }
 
 export const SET_EMBEDDER = defineCommand({

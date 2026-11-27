@@ -847,7 +847,7 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 - 放回：导出到系统临时目录，再经 `ctx.tools.put` 放到原路径，出处「<路径> 的第 n 版」，所以别的插件看得到、授权的门照样拦。已归档的以 `archived` 拒绝。
 - 清掉只删别的版本和东西都不再要的内容，另删 `pending/` 里超过一小时的残留。拒绝还有 `not-versioned`、`no-such-version`、`pruned`、`content-missing`、`export-failed`；随归档区清掉的东西是 `gone`，它的各版内容留在存放里，没有命令再到得了。
 
-**怎么知道变了。** 行 `tokens` 以现在的路径为键，字段 `token` 是最近一版或上次查时的令牌。`check` 和页面让存储按这张表比（`lookRows`），只读不同的，一次最多 8 个：和最近一版不同就记新一版，相同只更新令牌。`check --deep` 读范围内每样没归档的东西。
+**怎么知道变了。** 行 `tokens` 以现在的路径为键，字段 `token` 是最近一版或上次查时的令牌。`check` 和页面让存储按这张表比（`lookRows`），只读不同的，一次最多 8 个：和最近一版不同就记新一版，相同只更新令牌。`check --deep` 是有名字的全量动作：令牌不同的照上面先比，范围内其余没归档的东西，先说几样，一页 100 样地按内容读，每页报进度、存一次，停下时做完手上那页，答复说读了几样。
 
 - 带标记的目录的令牌只代表第一层；深处改动 `check` 看不出，`check --deep` 看得出。写说明时比深令牌（存在 `tokens` 行的值里），所以深处的改动在写说明之前记成一版。
 - 放入要换掉一个目录时不信令牌，照样复制比较；放入带来的指纹等于最近一版就不复制。
@@ -977,7 +977,7 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 | `search rebuild` | 主人和 agent，只动缓存 | 删掉索引，全部重读 |
 | `search status` | 主人和 agent，只读 | 索引多少、待读多少、嵌入器 |
 
-`embedder set` 设好后试嵌入一次。`search rebuild` 删掉整个缓存目录，一次读完全部，不经 `ctx.pass` 报范围和进度，也停不下；向量没建完时以 `embedder-failed` 拒绝，全文部分已重建。
+`embedder set` 设好后试嵌入一次。`search rebuild` 是有名字的全量动作：删掉整个缓存目录，先说要读几样，一页 100 样地读，每页报进度；配了嵌入器时再一批 32 块地建向量，每批报一次。停下时做完手上那页或那批，没读的留着待读，下次 `find` 接着读。向量没建完时以 `embedder-failed` 拒绝，全文部分已重建。
 
 | 存放 | 性质 | 内容 |
 | --- | --- | --- |
@@ -1277,7 +1277,7 @@ viewerFace.show(req: ViewRequest, call: { ctx; table; env; viaGrant }): Promise<
 壳本身见第 10 节。这里是网页这一侧（`shell.ts`、`tray.tsx`）：
 
 - 地址带 `shell=mac` 时：`<html>` 标上 `data-shell`，字体用系统的，边栏顶部给窗口的三个按钮留出位置，外框的字不能选中，只对浏览器有意义的提示换掉。壳在窗口成为或不再是前台窗口时发 `pneuma-shell` 事件，网页标上 `data-window`，窗口在后面时把外框调淡。`data-drag` 标出能拖动窗口的区域，壳据此拖窗口；浏览器里这个标记什么都不做。
-- 再带 `panel=tray` 时，网页是菜单栏面板的排法。它取首页的同一份答复，不认识任何插件的视图：顶上是库名（点了是壳的库的菜单）和「N 件等你」；还有没做的步骤时一行「开始：还有 N 步没做」；「等你决定」是首页所有 `asks` 块里的前三件，在这里就能回答，多的写一行「还有 N 件，在窗口里看」；「自上次以来」是首页所有 `feed` 块里最新的五行，没有时用第一个不空的 `empty`，再没有是「还没有谁做过什么。」；底下是「打开窗口」和「退出」。只在面板显示着时每两秒问一次摘要。
+- 再带 `panel=tray` 时，网页是菜单栏面板的排法。它取首页的同一份答复，不认识任何插件的视图：顶上是库名（点了是壳的库的菜单）和「N 件等你」；还有没做的步骤时一行「开始：还有 N 步没做」；「等你决定」是首页所有 `asks` 块里的前三件，在这里就能回答，多的写一行「还有 N 件，在窗口里看」；回答跑起有名字的全量动作时，提示里和窗口里一样有进度和「停下」；「自上次以来」是首页所有 `feed` 块里最新的五行，没有时用第一个不空的 `empty`，再没有是「还没有谁做过什么。」；底下是「打开窗口」和「退出」。只在面板显示着时每两秒问一次摘要。
 - 网页对壳说的话经 `window.webkit.messageHandlers.shell.postMessage` 发出。壳注入的 `shell.js` 发 `ready`、`painted`、`regions`。网页发 `{ type: 'choose', to }`（`drop` 块的「选择…」）、`{ type: 'open', link? }`（打开窗口，给了链接就在窗口里打开它）、`{ type: 'libraries' }`、`{ type: 'quit' }`；面板另发 `{ type: 'height', height }`（壳照它定面板的高）和 `{ type: 'waiting', count }`（图标上的点）。
 - 壳对网页说的都是 `pneuma-shell` 事件：`{ window }`（见上）；`{ link }`，窗口照点了这个链接那样打开它；`{ notice: { tone, text } }`，窗口显示成一条提示并重取，说的是拖放和监看做了什么；`{ panel: 'shown' }`，面板又显示出来，重取。
 
