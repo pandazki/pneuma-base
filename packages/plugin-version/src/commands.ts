@@ -55,6 +55,7 @@ const NUMBER = '[1-9][0-9]*'
 
 export const VERSION_EXPORT = defineCommand({
   name: 'version export',
+  act: { kind: 'exported', object: 'path' },
   summary: '把某一版写到库外的一个新路径',
   params: {
     positional: [PATH],
@@ -65,7 +66,6 @@ export const VERSION_EXPORT = defineCommand({
   },
   destructive: false,
   ownerOnly: false,
-  readOnly: true,
   async run({ path: input, version, to }, ctx) {
     const n = Number(version)
     const found = await chosen(ctx, input, n)
@@ -85,6 +85,7 @@ export const VERSION_EXPORT = defineCommand({
 
 export const VERSION_RESTORE = defineCommand({
   name: 'version restore',
+  act: { kind: 'restored', object: 'path' },
   summary: '把某一版放回来，作为新的一版',
   params: { positional: [PATH], flags: [{ name: 'version', hint: '第几版', kind: 'value', required: true, pattern: NUMBER }] },
   destructive: false,
@@ -120,6 +121,7 @@ async function neededContent(ctx: PluginContext): Promise<Set<Place>> {
 
 export const VERSION_PRUNE = defineCommand({
   name: 'version prune',
+  act: { kind: 'removed', object: 'path' },
   summary: '只留最近的几版，清掉更早的',
   params: { positional: [PATH], flags: [{ name: 'keep', hint: '留几版', kind: 'value', required: true, pattern: NUMBER }] },
   destructive: true,

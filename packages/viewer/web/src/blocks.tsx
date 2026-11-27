@@ -1,6 +1,6 @@
 // One renderer per kind of block. A block draws itself from its data alone; links, actions and
 // parameters go to the shell through the environment.
-import type { Block, Cell, Link, Paging, SortKey, TableRow, Tone } from '@pneuma-base/kernel'
+import type { Block, Cell, Link, ListItem, Paging, SortKey, TableRow, Tone } from '@pneuma-base/kernel'
 import { ArrowDown, ArrowUp, ChevronRight, CircleAlert, CircleCheck, CircleHelp, ExternalLink, Folder, Inbox, Info, TriangleAlert, type LucideIcon } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { api, outsideUrl } from './api'
@@ -25,7 +25,7 @@ export const sameLink = (a: Link | null, b: { view: string; params: Record<strin
   a !== null && b !== null && a.view === b.view && JSON.stringify(Object.entries(a.params).sort()) === JSON.stringify(Object.entries(b.params).sort())
 
 /** What a section is for, on demand: an ⓘ beside its title that says it in a tooltip, and to a screen reader as the section's description. */
-function About({ text, title }: { text: string; title: string }) {
+export function About({ text, title }: { text: string; title: string }) {
   return (
     <span className="about" role="img" tabIndex={0} aria-label={`${title}：${text}`} data-tip={text}>
       <Info strokeWidth={2} aria-hidden />
@@ -322,16 +322,64 @@ function FieldsView({ block }: { block: Extract<Block, { kind: 'fields' }> }) {
   )
 }
 
+type Toggle = NonNullable<ListItem['toggle']>
+
+/**
+ * A setting's switch. Turning it, by click, Space or Enter, runs its action through the same path as a
+ * button, so a question and a notice come as they do there. It moves at once, goes back when the action
+ * was cancelled or did not succeed, and otherwise stands as the page's next answer says.
+ */
+function SettingSwitch({ name, toggle }: { name: string; toggle: Toggle }) {
+  const { onAction } = useEnv()
+  // Where it was turned to, and on which answer of the page; a newer answer says where it stands.
+  const [turned, setTurned] = useState<{ on: boolean; of: Toggle } | null>(null)
+  const pending = turned !== null && turned.of === toggle
+  const on = pending ? turned.on : toggle.on
+  const turn = async () => {
+    if (pending) return
+    setTurned({ on: !toggle.on, of: toggle })
+    const done = await onAction(toggle.action)
+    if (done?.tone !== 'good') setTurned(null)
+  }
+  return (
+    <button
+      type="button"
+      role="switch"
+      className="switch"
+      aria-checked={on}
+      aria-label={name}
+      aria-busy={pending || undefined}
+      data-tip={toggle.action.label}
+      onClick={(e) => {
+        e.stopPropagation()
+        void turn()
+      }}
+    />
+  )
+}
+
+/**
+ * A list: rows of a cell, its long text behind an ⓘ, a grey note, its actions and, for a setting, its
+ * switch at the end. Among several rows, a row whose actions are only icons and a 「···」 shows them while
+ * the pointer or the focus is on it.
+ */
 function ListView({ block }: { block: Extract<Block, { kind: 'list' }> }) {
+  const quiet = (item: ListItem) => block.items.length > 1 && item.toggle === undefined && placeActions(item.actions).main === null
   const items = (
     <ul className={turns(block.page) ? 'list' : 'card list'}>
       {block.items.map((item, i) => (
-        <li key={`${item.cell.text}-${i}`}>
+        <li key={`${item.cell.text}-${i}`} data-acts={item.toggle !== undefined || item.actions.length > 0 || undefined} data-lead={item.cell.actor ? 'mark' : item.cell.icon ? 'icon' : undefined}>
           <div className="min-w-0 flex-1">
-            <CellView cell={item.cell} />
+            <div className="list-cell">
+              {/* The ⓘ belongs to the name: a mark of the row's state comes after it. */}
+              <CellView cell={item.about && item.cell.tag ? { ...item.cell, tag: undefined } : item.cell} />
+              {item.about ? <About text={item.about} title={item.cell.text} /> : null}
+              {item.about && item.cell.tag ? <TagView tag={item.cell.tag} /> : null}
+            </div>
             {item.note ? <p className="list-note">{localMoments(item.note)}</p> : null}
           </div>
-          <ActionBar actions={item.actions} />
+          <ActionBar actions={item.actions} className={quiet(item) ? 'row-actions' : ''} />
+          {item.toggle ? <SettingSwitch name={item.cell.text} toggle={item.toggle} /> : null}
         </li>
       ))}
     </ul>

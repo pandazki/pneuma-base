@@ -1,10 +1,13 @@
-// The menu bar panel: the home page's content in the app's small window, compact. The library's
-// name; what waits for the owner, three at most, decided right here as on the home page; the latest
-// rows of what agents did since the owner last looked; then 打开窗口 and 退出. It draws the same blocks the home page answers and
-// knows no view of any plugin: the asks are every asks block, the rows every feed block's, newest first.
+// The menu bar panel: the home page's content in the app's small window. Its head is the
+// library's name, which opens the window on home, with how many things wait when any do; at the right
+// an icon for the window and the 「···」 menu (the app's: appearance, libraries, settings, quit). Then
+// what waits for the owner, three at most, decided right here as on the home page; then the latest
+// rows of what agents did, one line each. It draws the same blocks the home page answers and knows no
+// view of any plugin: the asks are every asks block, the rows every feed block's, newest first. The
+// panel sizes to the content up to the room the app gives it, and scrolls inside past that.
 import type { Action, Ask, Block, FeedRow, Link, ViewResult } from '@pneuma-base/kernel'
-import { ChevronDown, ChevronRight, Power } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AppWindow, ChevronRight, CircleDashed, Ellipsis } from 'lucide-react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { api, type State } from './api'
 import { AsksView } from './pieces/asks'
 import { FeedView } from './pieces/feed'
@@ -17,7 +20,7 @@ import { Toaster, useToasts } from './toasts'
 
 /** How many asks the panel shows, and how many rows of what happened. */
 const ASKS = 3
-const ROWS = 5
+const ROWS = 8
 
 const everyBlock = (blocks: readonly Block[]): Block[] =>
   blocks.flatMap((b) => [b, ...(b.kind === 'section' ? everyBlock(b.blocks) : b.kind === 'steps' ? b.steps.flatMap((s) => everyBlock(s.blocks)) : [])])
@@ -33,7 +36,9 @@ export function Tray() {
   const [down, setDown] = useState(false)
   const [pending, setPending] = useState<{ id: number; action: Action; resolve(done: Done | null): void } | null>(null)
   const asked = useRef(0)
-  const root = useRef<HTMLDivElement | null>(null)
+  const head = useRef<HTMLElement | null>(null)
+  const body = useRef<HTMLDivElement | null>(null)
+  const content = useRef<HTMLDivElement | null>(null)
   const toasts = useToasts()
   const { busy, settle, report } = toasts
   const refresh = useCallback(() => setTick((t) => t + 1), [])
@@ -90,13 +95,19 @@ export function Tray() {
     if (home?.outcome === 'shown') tellShell({ type: 'waiting', count: asks.length })
   }, [home, asks.length])
 
-  // The app sizes its window to the content.
-  useEffect(() => {
-    const el = root.current
-    if (!el) return
-    const tell = () => tellShell({ type: 'height', height: Math.ceil(el.getBoundingClientRect().height) })
+  // The app sizes its window to the content: the head and everything under it, however much of it the
+  // body now shows; past the room the app gives, the body scrolls.
+  useLayoutEffect(() => {
+    const parts = [head.current, content.current, body.current]
+    if (parts.some((p) => p === null)) return
+    const tell = () => {
+      const [h, c, b] = parts as [HTMLElement, HTMLElement, HTMLElement]
+      const style = getComputedStyle(b)
+      const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
+      tellShell({ type: 'height', height: Math.ceil(h.getBoundingClientRect().height + c.getBoundingClientRect().height + padding) })
+    }
     const observer = new ResizeObserver(tell)
-    observer.observe(el)
+    for (const p of parts) observer.observe(p as HTMLElement)
     tell()
     return () => observer.disconnect()
   }, [])
@@ -134,50 +145,71 @@ export function Tray() {
     [tick, run],
   )
   const dialog = usePresence(pending, 200)
-  const open = () => tellShell({ type: 'open' })
   const openHome = () => tellShell({ type: 'open', link: HOME })
+  const name = nameOf(state)
 
   return (
     <BlockEnvContext.Provider value={env}>
-      <div ref={root} className="tray">
-        <header className="tray-head">
-          <button type="button" className="tray-library" onClick={() => tellShell({ type: 'libraries' })} aria-label={`库：${nameOf(state)}，换一个库`}>
-            <span className="truncate">{nameOf(state)}</span>
-            <ChevronDown strokeWidth={2} aria-hidden />
-          </button>
-          {asks.length > 0 ? <span className="tag tone-warn">{asks.length} 件等你</span> : null}
+      <div className="tray">
+        <header ref={head} className="tray-head">
+          <span role="link" tabIndex={0} className="tray-library" onClick={openHome} onKeyDown={(e) => e.key === 'Enter' && openHome()} data-tip="在窗口里打开首页">
+            <span className="truncate">{name}</span>
+          </span>
+          {asks.length > 0 ? (
+            <span className="tray-waiting" role="img" aria-label={`${asks.length} 件事等你决定`} data-tip={`${asks.length} 件事等你决定`}>
+              {asks.length}
+            </span>
+          ) : null}
+          <span className="tray-tools">
+            <button type="button" className="icon-btn" aria-label="打开窗口" data-tip="打开窗口" onClick={() => tellShell({ type: 'open' })}>
+              <AppWindow strokeWidth={1.75} aria-hidden />
+            </button>
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="更多"
+              data-tip="更多"
+              aria-haspopup="menu"
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect()
+                tellShell({ type: 'panel-menu', x: Math.round(r.left), y: Math.round(r.bottom + 4) })
+              }}
+            >
+              <Ellipsis strokeWidth={1.75} aria-hidden />
+            </button>
+          </span>
         </header>
-        {down ? <p className="tray-note" role="alert">连不上服务，正在重新连接。</p> : null}
-        {left > 0 ? (
-          <button type="button" className="tray-start" onClick={openHome}>
-            <span>开始：还有 {left} 步没做</span>
-            <ChevronRight strokeWidth={2} aria-hidden />
-          </button>
-        ) : null}
-        {/* Nothing to decide is not said; once something was, the part stays, so an answer's receipt is seen. */}
-        {hadAsks.current ? (
-          <section className="tray-part" aria-label="等你决定">
-            <h2>等你决定</h2>
-            <AsksView block={{ kind: 'asks', asks: asks.slice(0, ASKS), empty: '没有要你决定的事。' }} />
-            {asks.length > ASKS ? (
-              <button type="button" className="tray-more" onClick={openHome}>
-                还有 {asks.length - ASKS} 件，在窗口里看
-              </button>
+        <div ref={body} className="tray-body">
+          <div ref={content} className="tray-content">
+            {down ? (
+              <p className="tray-note" role="alert">
+                连不上服务，正在重新连接。
+              </p>
             ) : null}
-          </section>
-        ) : null}
-        <section className="tray-part" aria-label="自上次以来">
-          <h2>自上次以来</h2>
-          <FeedView block={{ kind: 'feed', groups: rows.length > 0 ? [{ title: '', count: null, rows: rows.slice(0, ROWS) }] : [], empty: quiet }} />
-        </section>
-        <footer className="tray-foot">
-          <button type="button" className="btn btn-sm" onClick={open}>
-            打开窗口
-          </button>
-          <button type="button" className="icon-btn" aria-label="退出" data-tip="退出" onClick={() => tellShell({ type: 'quit' })}>
-            <Power strokeWidth={2} aria-hidden />
-          </button>
-        </footer>
+            {left > 0 ? (
+              <span role="link" tabIndex={0} className="tray-row" onClick={openHome} onKeyDown={(e) => e.key === 'Enter' && openHome()}>
+                <CircleDashed strokeWidth={1.75} aria-hidden />
+                <span className="truncate">开始：还有 {left} 步没做</span>
+                <ChevronRight className="tray-row-chev" strokeWidth={2} aria-hidden />
+              </span>
+            ) : null}
+            {/* Nothing to decide is not said; once something was, the part stays, so an answer's receipt is seen. */}
+            {hadAsks.current ? (
+              <section className="tray-part" aria-label="等你决定">
+                <AsksView block={{ kind: 'asks', asks: asks.slice(0, ASKS), empty: '没有要你决定的事了。' }} compact />
+                {asks.length > ASKS ? (
+                  <span role="link" tabIndex={0} className="tray-row" onClick={openHome} onKeyDown={(e) => e.key === 'Enter' && openHome()}>
+                    <span className="truncate">还有 {asks.length - ASKS} 件，在窗口里看</span>
+                    <ChevronRight className="tray-row-chev" strokeWidth={2} aria-hidden />
+                  </span>
+                ) : null}
+              </section>
+            ) : null}
+            <section className="tray-part" aria-label="自上次以来">
+              <FeedView block={{ kind: 'feed', groups: rows.length > 0 ? [{ title: '', count: null, rows: rows.slice(0, ROWS) }] : [], empty: quiet }} dense />
+            </section>
+          </div>
+        </div>
       </div>
       {dialog.shown ? (
         <ActionDialog

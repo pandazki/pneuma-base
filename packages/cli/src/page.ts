@@ -1,7 +1,7 @@
 // A page of the management UI as the command line prints it: the same typed blocks in words, so an
 // agent reading it knows what the person sees, and every button written as the command line that
 // does the same thing. ARCHITECTURE.md「`show` 的文字」.
-import { commandLine, quote, usageOf, type Action, type ActorMark, type Block, type Call, type Cell, type Crumb, type FeedRow, type FlagParam, type Link, type OwnerCommandInfo, type Paging, type PositionalParam, type TreeNode, type ViewDecl, type ViewList, type ViewRequest, type ViewResult } from '@pneuma-base/kernel'
+import { commandLine, quote, usageOf, type Action, type ActorMark, type Block, type Call, type Cell, type Crumb, type FeedGroup, type FeedRow, type FlagParam, type Link, type OwnerCommandInfo, type Paging, type PositionalParam, type TreeNode, type ViewDecl, type ViewList, type ViewRequest, type ViewResult } from '@pneuma-base/kernel'
 
 type Shown = Extract<ViewResult, { outcome: 'shown' }>
 type OwnerCall = Extract<Call, { face: 'owner' }>
@@ -157,6 +157,15 @@ function feedRowLines(row: FeedRow, commands: readonly OwnerCommandInfo[], inden
   return [`${indent}- ${line.join('  ')}`, ...(row.action ? [actionLine(row.action, commands, `${indent}    `)] : [])]
 }
 
+/** How many rows a feed group holds: its own and those of the groups under it. */
+const rowsIn = (g: FeedGroup): number => g.rows.length + (g.groups ?? []).reduce((n, h) => n + rowsIn(h), 0)
+
+/** A feed group: its heading, when it has one, then its rows, or the groups under it one step in. */
+function groupLines(g: FeedGroup, commands: readonly OwnerCommandInfo[], indent: string): string[] {
+  const under = `${indent}  `
+  return [`${indent}${g.title}${g.count === null ? '' : `（${g.count}）`}${g.link ? `  → ${linkCommand(g.link)}` : ''}`, ...(g.groups ? g.groups.flatMap((h) => groupLines(h, commands, under)) : g.rows.flatMap((r) => feedRowLines(r, commands, under)))]
+}
+
 /** The page a tree's folder opens: the same view with its parameter set to the folder. */
 const treeCommand = (req: ViewRequest, param: string, value: string) => linkCommand({ view: req.view, params: { ...req.params, [param]: value }, target: 'main' })
 
@@ -209,7 +218,17 @@ function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: 
     case 'fields':
       return block.fields.map((f) => `${indent}${f.label}：${cellText(f.value)}`)
     case 'list':
-      return [...block.items.flatMap((item) => [`${indent}- ${cellText(item.cell)}`, ...(item.note === null ? [] : [`${more}${item.note}`]), ...actions(item.actions, more)]), ...pageLines(block.page, indent)]
+      return [
+        ...block.items.flatMap((item) => [
+          `${indent}- ${cellText(item.cell)}`,
+          ...(item.note === null ? [] : [`${more}${item.note}`]),
+          ...(item.about === undefined ? [] : [`${more}（${item.about}）`]),
+          // A setting: whether it is on, and the command that turns it the other way.
+          ...(item.toggle === undefined ? [] : [`${more}${item.toggle.on ? '开着' : '关着'}  ${actionLine(item.toggle.action, commands, '')}`]),
+          ...actions(item.actions, more),
+        ]),
+        ...pageLines(block.page, indent),
+      ]
     case 'timeline':
       return [
         ...block.entries.flatMap((e) => [
@@ -232,11 +251,8 @@ function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: 
     case 'custom':
       return [...block.text.split('\n').map((l) => `${indent}${l}`), ...actions(Object.values(block.actions))]
     case 'feed':
-      if (block.groups.every((g) => g.rows.length === 0)) return [`${indent}${block.empty}`]
-      return [
-        ...block.groups.flatMap((g) => [`${indent}${g.title}${g.count === null ? '' : `（${g.count}）`}${g.link ? `  → ${linkCommand(g.link)}` : ''}`, ...g.rows.flatMap((r) => feedRowLines(r, commands, more))]),
-        ...pageLines(block.page, indent),
-      ]
+      if (block.groups.every((g) => rowsIn(g) === 0)) return [`${indent}${block.empty}`]
+      return [...block.groups.flatMap((g) => groupLines(g, commands, indent)), ...pageLines(block.page, indent)]
     case 'stats':
       return block.stats.map((s) => `${indent}${s.label}：${s.value}${s.note === null ? '' : `（${s.note}）`}`)
     case 'tree':

@@ -1,6 +1,6 @@
 // The shell around the views: the detail panel's tabs and their place in the address, the command
 // palette, keyboard movement in a table, a notice that turns into its answer in place, the sidebar's
-// remembered width, and both colour schemes without a reload.
+// remembered width, both colour schemes without a reload, and the browser's own choice of one.
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import { expect, openShared, tempDir, test, write, type Cli } from './support.ts'
@@ -196,4 +196,31 @@ test('both colour schemes apply without a reload', async ({ page, pb }) => {
   await page.emulateMedia({ colorScheme: 'light' })
   await expect.poll(colours).toEqual(light)
   expect(await page.evaluate(() => (window as unknown as { kept?: number }).kept)).toBe(1)
+})
+
+test('in a browser the configuration page chooses 浅色, 深色 or 跟随系统 at once, and the browser keeps the choice', async ({ page, pb }) => {
+  const lib = join(tempDir(), 'lib')
+  pb.run(['init', lib, '--bare'])
+  const { url } = await pb.view(lib)
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.goto(`${url}#view=config`)
+  const ground = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor)
+  const choice = page.getByRole('region', { name: '这个浏览器' }).getByRole('radiogroup', { name: '外观' })
+  await expect(choice.getByRole('radio', { name: '跟随系统' })).toHaveAttribute('aria-checked', 'true')
+  await expect.poll(ground).toBe('rgb(248, 248, 248)')
+
+  await choice.getByRole('radio', { name: '深色' }).click()
+  await expect.poll(ground).toBe('rgb(14, 14, 16)')
+  await page.reload()
+  await expect(choice.getByRole('radio', { name: '深色' })).toHaveAttribute('aria-checked', 'true')
+  await expect.poll(ground).toBe('rgb(14, 14, 16)')
+
+  await choice.getByRole('radio', { name: '跟随系统' }).click()
+  await expect.poll(ground).toBe('rgb(248, 248, 248)')
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await expect.poll(ground).toBe('rgb(14, 14, 16)')
+  await choice.getByRole('radio', { name: '浅色' }).click()
+  await expect.poll(ground).toBe('rgb(248, 248, 248)')
+  await page.reload()
+  await expect.poll(ground).toBe('rgb(248, 248, 248)')
 })

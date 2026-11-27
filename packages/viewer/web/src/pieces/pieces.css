@@ -45,11 +45,9 @@
   box-shadow: none;
   color: var(--surface);
 }
-@media (prefers-color-scheme: dark) {
-  .actor[data-kind='agent'] {
-    background: oklch(0.34 0.06 var(--hue));
-    color: oklch(0.86 0.09 var(--hue));
-  }
+:where([data-scheme='dark']) .actor[data-kind='agent'] {
+  background: oklch(0.34 0.06 var(--hue));
+  color: oklch(0.86 0.09 var(--hue));
 }
 .actor-named {
   display: inline-flex;
@@ -65,8 +63,10 @@
 }
 
 /*
- * ---- a feed: groups under a grey bar; rows of two lines with the moment in a column at the left.
- * Narrow, as in the panel or the menu bar panel, the moment opens the grey line and the sentence wraps. ----
+ * ---- a feed: groups under a heading; a row is the mark, what (an act's icon and a thing's name with
+ * its folder grey, or a sentence) and a grey second line, with the moment in a column at the left. A
+ * row with nothing for its grey line is one line high. Narrow, as in the panel, the moment opens the
+ * grey line and a sentence wraps. Dense, as in the menu bar panel, a row is one line, the moment at its right. ----
  */
 
 .feed {
@@ -78,28 +78,43 @@
 .feed-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+}
+/* A heading over headings, such as a day over its scenes, is the stronger of the two. */
+.feed-group[data-outer] {
+  gap: 8px;
+}
+.feed-group[data-outer] > .feed-head > :is(button, span) {
+  color: var(--ink);
+  font-weight: 600;
+}
+/* A heading is a quiet line over its rows; one that opens what it names, such as a scene, is a button. */
+.feed-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 .feed-head > :is(button, span) {
   display: flex;
-  width: 100%;
+  min-width: 0;
   align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  padding: 0 12px;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 4px;
   border-radius: var(--radius-item);
-  background: var(--chip);
-  color: var(--ink);
+  color: var(--ink-2);
   font-size: 12.5px;
-  font-weight: 500;
   line-height: 18px;
   text-align: left;
 }
 .feed-head > button {
-  transition: background-color 140ms ease;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
 }
 .feed-head > button:hover {
-  background: var(--select);
+  background: var(--wash);
+  color: var(--ink);
 }
 .feed-head-title {
   min-width: 0;
@@ -109,21 +124,14 @@
 }
 .feed-count {
   flex: none;
-  padding: 0 6px;
-  border-radius: var(--radius-tag);
-  background: var(--surface);
-  box-shadow: inset 0 0 0 0.5px var(--line-strong);
   color: var(--ink-3);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 16px;
+  font-size: 11.5px;
   font-variant-numeric: tabular-nums;
 }
 .feed-head-chev {
   flex: none;
   width: 14px;
   height: 14px;
-  margin-left: auto;
   color: var(--ink-4);
 }
 .feed-rows {
@@ -134,10 +142,13 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 54px;
-  padding: 8px 12px;
+  min-height: 52px;
+  padding: 7px 12px;
   border-radius: var(--radius-item);
   transition: background-color 120ms ease;
+}
+.feed-row:not(:has(.feed-meta > :is(.feed-cell, .feed-whose))) {
+  min-height: 40px;
 }
 .feed-row[data-link] {
   cursor: pointer;
@@ -169,42 +180,73 @@
   min-width: 0;
   flex-direction: column;
 }
+/* The act, the name, the folder: the name takes the room it needs before the folder takes what is left. */
 .feed-line {
-  display: block;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, max-content) minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
   overflow: hidden;
   color: var(--ink);
   font-size: 13px;
   line-height: 20px;
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+.feed-line:not(:has(.feed-act)) {
+  display: block;
+  text-overflow: ellipsis;
+}
+.feed-act {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--ink-3);
+}
+.feed-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.feed-folder {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
 }
 .feed-meta {
   display: flex;
-  flex-wrap: wrap;
+  min-width: 0;
   align-items: center;
   column-gap: 6px;
+  overflow: hidden;
   color: var(--ink-3);
   font-size: 12px;
   line-height: 18px;
+  white-space: nowrap;
+}
+.feed-meta:not(:has(> :is(.feed-cell, .feed-whose))) {
+  display: none;
 }
 .feed-meta-time {
   display: none;
-}
-.feed-meta-time::after,
-.feed-cell::before {
-  content: '·';
-  color: var(--ink-4);
-}
-.feed-meta-time::after {
-  margin-left: 6px;
-}
-.feed-cell::before {
-  margin-right: 6px;
 }
 .feed-cell {
   display: inline-flex;
   min-width: 0;
   align-items: center;
+}
+.feed-cell + .feed-cell::before,
+.feed-whose + .feed-cell::before {
+  content: '·';
+  margin-right: 6px;
+  color: var(--ink-4);
+}
+.feed-note {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .feed-meta .link {
   color: inherit;
@@ -215,20 +257,22 @@
 }
 .feed-whose {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 5px;
 }
-.feed-whose::before {
+.feed-whose::after {
   content: '';
+  order: -1;
   width: 6px;
   height: 6px;
   border-radius: 999px;
   background: var(--ink-2);
 }
-.feed-whose[data-whose='approved']::before {
+.feed-whose[data-whose='approved']::after {
   background: var(--good);
 }
-.feed-whose[data-whose='observed']::before {
+.feed-whose[data-whose='observed']::after {
   background: var(--ink-4);
 }
 .feed-end {
@@ -236,6 +280,14 @@
   flex: none;
   align-items: center;
   margin-left: auto;
+}
+/* What a row offers only on demand, such as opening its scene's conversation again. */
+.feed-hover {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.feed-row:is(:hover, :focus-within) .feed-hover {
+  opacity: 1;
 }
 .feed-empty,
 .asks-empty {
@@ -249,13 +301,24 @@
     gap: 10px;
     padding: 8px 10px;
   }
-  .feed-time {
+  .feed-row > .feed-time {
     display: none;
   }
-  .feed-meta-time {
+  .feed-meta > .feed-meta-time {
     display: inline-flex;
   }
-  .feed-line {
+  .feed-meta:has(> .feed-meta-time) {
+    display: flex;
+  }
+  .feed-meta-time + :is(.feed-cell, .feed-whose)::before {
+    content: '·';
+    margin-right: 6px;
+    color: var(--ink-4);
+  }
+  .feed-line:not(:has(.feed-act)),
+  .feed-name[data-said],
+  .feed-meta:has(> .feed-note),
+  .feed-note {
     overflow: visible;
     overflow-wrap: anywhere;
     white-space: normal;
@@ -263,6 +326,25 @@
   .feed-row > .actor {
     margin-top: 2px;
   }
+}
+/* Dense: one line a row, quiet until the pointer is on it. */
+.feed[data-dense] {
+  gap: 6px;
+}
+.feed[data-dense] .feed-row {
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+}
+.feed-row[data-dense] > .feed-time {
+  display: block;
+  min-width: 0;
+  margin-left: auto;
+  font-size: 11.5px;
+}
+.feed-row[data-dense] > .actor {
+  margin-top: 0;
 }
 
 /* ---- what waits for the owner: one card, an ask per row; an answered one folds into a line ---- */
@@ -581,10 +663,8 @@
   gap: 2px;
   padding: 8px 10px;
   border-radius: var(--radius-item);
-  background: var(--glass);
-  -webkit-backdrop-filter: var(--glass-filter);
-  backdrop-filter: var(--glass-filter);
-  box-shadow: var(--glass-edge), var(--shadow-popover);
+  background: var(--overlay);
+  box-shadow: var(--shadow-popover);
   font-size: 12px;
   line-height: 18px;
   pointer-events: none;
@@ -715,48 +795,4 @@
     width: 100%;
     opacity: 0.35;
   }
-}
-/* A row with nothing for its grey line to say is one line; in a narrow feed the line carries the moment. */
-.feed-meta:not(:has(> .feed-cell, > .feed-whose)) {
-  display: none;
-}
-@container feed (max-width: 520px) {
-  .feed-meta:not(:has(> .feed-cell, > .feed-whose)) {
-    display: flex;
-  }
-}
-/* The moment alone on the grey line has nothing to be set apart from. */
-.feed-meta-time:last-child::after {
-  content: none;
-}
-/* The first thing the grey line says needs no dot before it. */
-.feed-meta-time + .feed-cell::before {
-  content: none;
-}
-.feed-meta-time + .feed-cell {
-  margin-left: 0;
-}
-/* A heading that opens what it names, such as a scene, is a quiet line over its rows, not a bar: its count only where more than one row stands under it. */
-.feed-head > button {
-  min-height: 28px;
-  padding: 0 4px;
-  background: transparent;
-  color: var(--ink-2);
-  font-weight: 400;
-}
-.feed-head > button:hover {
-  background: var(--wash);
-  color: var(--ink);
-}
-.feed-head > button .feed-count {
-  background: transparent;
-  box-shadow: none;
-  padding: 0;
-}
-.feed-head > button .feed-head-chev {
-  margin-left: 0;
-}
-/* A row whose grey line has nothing to say is one line high. */
-.feed-row:not(:has(.feed-meta > .feed-cell, .feed-meta > .feed-whose)) {
-  min-height: 40px;
 }

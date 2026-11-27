@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { sandbox, tempDir, type Run, type Sandbox } from './helpers.js'
+import { feedRowsIn, sandbox, tempDir, type Run, type Sandbox } from './helpers.js'
 
 const BIN = fileURLToPath(new URL('../dist/bin.js', import.meta.url))
 
@@ -142,14 +142,14 @@ describe('asking, and the owner deciding', () => {
   })
 
   it('the activity has a row for asking, one for the approved command with both names and 主人批准的, and rows for withdrawing and declining', () => {
-    const rows = (ok(owner(['show', 'ledger.activity', '--json'])).json().blocks as any[]).find((b) => b.kind === 'feed').groups.flatMap((g: any) => g.rows) as any[]
+    const rows = feedRowsIn((ok(owner(['show', 'ledger.activity', '--json'])).json().blocks as any[]).find((b) => b.kind === 'feed').groups)
     const approved = rows.find((r) => r.whose === 'approved')
     expect(approved).toMatchObject({ actor: { kind: 'owner' }, text: expect.stringContaining('plugin add') })
     expect(approved.meta).toEqual(expect.arrayContaining([expect.objectContaining({ actor: { kind: 'agent', name: 'claude', grant: 'claude' }, text: expect.stringContaining(decided.approved) })]))
     expect(rows.filter((r) => r.text.startsWith('主人面的操作 request approve'))).toEqual([])
     // The owner's request list names the ask too; the row of asking is the agent's.
     expect(rows.find((r) => r.text.includes(WHY) && !r.text.startsWith('主人面的操作'))).toMatchObject({ actor: { name: 'claude' }, whose: 'agent', text: expect.stringContaining('plugin add version') })
-    expect(rows.find((r) => r.text.includes(decided.declined) && r.text.includes('拒绝'))).toMatchObject({ actor: { kind: 'owner' }, whose: 'owner' })
+    expect(rows.find((r) => r.act === 'declined' && r.text.includes(decided.declined))).toMatchObject({ actor: { kind: 'owner' }, whose: 'owner', text: expect.stringMatching(/^pneuma-base request decline /) })
     expect(rows.find((r) => r.text.includes('撤回') && r.text.includes(decided.withdrawn))).toMatchObject({ actor: { name: 'claude' } })
     expect(ok(owner(['show', 'ledger.activity'])).stdout).toContain('[主人批准的]')
   })

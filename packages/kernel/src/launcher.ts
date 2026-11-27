@@ -124,6 +124,7 @@ export const ranText = ({ launcher: l }: Installed): string => `命令：${l.pat
 
 export const launcherInstall: KernelCommand = command({
   name: 'launcher install',
+  act: { kind: 'installed', name: 'pneuma-base 命令' },
   summary: '让这台机器上的 pneuma-base 命令（$PNEUMA_BASE_HOME/bin/pneuma-base）指向现在这个命令行；接上的 agent 都按它的路径运行',
   params: {},
   destructive: false,

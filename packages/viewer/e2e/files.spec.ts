@@ -234,7 +234,7 @@ test('the context menu: the page’s preview and a path to copy, then the librar
   await expect(page.getByRole('dialog').getByRole('textbox', { name: '新的库内路径' })).toHaveValue('inbox/c-picture.png')
 })
 
-test('a time from today keeps its whole width as the page’s clock moves it on: 刚刚 becomes 1 分钟前 and stays whole', async ({ page, pb }) => {
+test('a time from today keeps its whole width as the page’s clock moves it on: 刚刚 becomes 2 分钟前 and stays whole', async ({ page, pb }) => {
   const lib = join(tempDir(), 'lib')
   write(lib, 'fresh.md', 'x\n')
   pb.run(['init', lib, '--bare'])
@@ -243,7 +243,7 @@ test('a time from today keeps its whole width as the page’s clock moves it on:
   await page.goto(`${url}#view=files`)
   const row = page.getByRole('main').getByRole('row', { name: /fresh\.md/ })
   await expect(row).toContainText('刚刚')
-  await page.clock.runFor(70_000)
-  await expect(row).toContainText('1 分钟前')
+  await page.clock.runFor(130_000)
+  await expect(row).toContainText('2 分钟前')
   expect(await cutTexts(page.getByRole('main').getByRole('table'))).toEqual([])
 })

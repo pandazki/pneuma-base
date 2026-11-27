@@ -12,15 +12,6 @@
   box-shadow: var(--shadow-card);
 }
 
-/* A layer floating over the page's content, in the material of the UI's palette, menus and notices. */
-.glass {
-  background: var(--glass);
-  -webkit-backdrop-filter: var(--glass-filter);
-  backdrop-filter: var(--glass-filter);
-  border-radius: var(--radius-panel);
-  box-shadow: var(--glass-edge), var(--shadow-popover);
-}
-
 /* Buttons: secondary by default, three sizes, near-black primary, red as a tint; pressed shrinks to .97. */
 .btn {
   position: relative;
@@ -420,7 +411,7 @@
   cursor: not-allowed;
 }
 
-/* A switch: a checkbox with role="switch", a 32x20 track and a 16px knob that slides. */
+/* A switch: a checkbox, or a button with aria-checked, with role="switch"; a 32x20 track and a 16px knob that slides. */
 .switch {
   appearance: none;
   position: relative;
@@ -452,12 +443,15 @@
 .switch:hover:not(:disabled) {
   background: color-mix(in srgb, var(--ink-strong) 18%, transparent);
 }
-.switch:checked {
+.switch:is(:checked, [aria-checked='true']) {
   background: var(--primary);
 }
-.switch:checked::after {
+.switch:is(:checked, [aria-checked='true'])::after {
   transform: translateX(12px);
   background: var(--on-primary);
+}
+.switch[aria-busy='true'] {
+  cursor: progress;
 }
 .switch:disabled {
   opacity: 0.5;

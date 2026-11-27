@@ -68,6 +68,12 @@ describe('「开始」 on the home page', () => {
     expect(stepsOf(home())).toBeNull()
   })
 
+  it('counts a grant issued by hand as an agent connected, as the agents page lists it', () => {
+    run(['init', lib])
+    run(['grant', 'issue', 'grok', '--library', lib, '--agent', 'grok-bot'])
+    expect(states(stepsOf(home()))).toEqual(['connect:已接上 grok-bot', 'first:todo', 'say:todo'])
+  })
+
   it('in a library without the ledger has the kernel’s two steps, and a hidden file put there by Finder is not the first thing', () => {
     run(['init', lib, '--bare'])
     writeFileSync(join(lib, '.DS_Store'), '')

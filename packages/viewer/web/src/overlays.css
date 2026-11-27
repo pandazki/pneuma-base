@@ -1,6 +1,6 @@
 /*
  * What the management UI lays over the page: dialogs, the command palette, menus, the tooltip and
- * the notices; all but the tooltip in the glass material of theme.css. Not part of the frame kit.
+ * the notices. Not part of the frame kit.
  */
 
 /* ---- overlays: dialog, palette, menu, tooltip ---- */
@@ -43,10 +43,8 @@
   max-height: 100%;
   overflow: hidden auto;
   border-radius: var(--radius-dialog);
-  background: var(--glass);
-  -webkit-backdrop-filter: var(--glass-filter);
-  backdrop-filter: var(--glass-filter);
-  box-shadow: var(--glass-edge), var(--shadow-dialog);
+  background: var(--overlay);
+  box-shadow: var(--shadow-dialog);
   animation: dialog-in 240ms var(--ease) both;
 }
 .layer[data-leaving] .dialog {
@@ -156,10 +154,8 @@
 .palette-layer::before {
   background: rgba(0, 0, 0, 0.12);
 }
-@media (prefers-color-scheme: dark) {
-  .palette-layer::before {
-    background: rgba(0, 0, 0, 0.45);
-  }
+:where([data-scheme='dark']) .palette-layer::before {
+  background: rgba(0, 0, 0, 0.45);
 }
 .palette-layer[data-leaving] .palette {
   animation: dialog-out 150ms ease-in both;
@@ -171,10 +167,8 @@
   max-width: 100%;
   overflow: hidden;
   border-radius: var(--radius-panel);
-  background: var(--glass);
-  -webkit-backdrop-filter: var(--glass-filter);
-  backdrop-filter: var(--glass-filter);
-  box-shadow: var(--glass-edge), var(--shadow-popover);
+  background: var(--overlay);
+  box-shadow: var(--shadow-popover);
   animation: palette-in 200ms var(--ease) both;
 }
 @keyframes palette-in {
@@ -326,10 +320,8 @@
   max-width: min(320px, 100vw - 16px);
   padding: 4px;
   border-radius: var(--radius-panel);
-  background: var(--glass);
-  -webkit-backdrop-filter: var(--glass-filter);
-  backdrop-filter: var(--glass-filter);
-  box-shadow: var(--glass-edge), var(--shadow-popover);
+  background: var(--overlay);
+  box-shadow: var(--shadow-popover);
   transform-origin: top left;
   animation: menu-in 220ms var(--ease) both;
 }
@@ -480,21 +472,18 @@
   position: relative;
   height: 100%;
   border-radius: var(--radius-card);
-  background: var(--glass);
-  -webkit-backdrop-filter: var(--glass-filter);
-  backdrop-filter: var(--glass-filter);
+  background: var(--overlay);
   box-shadow:
-    var(--glass-edge),
+    0 0 0 0.5px rgba(0, 0, 0, 0.08),
+    0 1px 1px -1px rgba(0, 0, 0, 0.1),
     0 1px 2px rgba(0, 0, 0, 0.05),
     0 10px 24px -10px rgba(0, 0, 0, 0.14);
 }
-@media (prefers-color-scheme: dark) {
-  .toast-card {
-    box-shadow:
-      var(--glass-edge),
-      0 1px 2px rgba(0, 0, 0, 0.4),
-      0 12px 28px -10px rgba(0, 0, 0, 0.6);
-  }
+:where([data-scheme='dark']) .toast-card {
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.1),
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 12px 28px -10px rgba(0, 0, 0, 0.6);
 }
 .toast-content {
   display: flex;
@@ -580,10 +569,8 @@
   width: 20px;
   height: 20px;
   border-radius: 999px;
-  background: var(--glass);
-  -webkit-backdrop-filter: var(--glass-filter);
-  backdrop-filter: var(--glass-filter);
-  box-shadow: var(--glass-edge), var(--shadow-card);
+  background: var(--overlay);
+  box-shadow: var(--shadow-card);
   color: var(--ink-3);
   opacity: 0;
   transform: scale(0.8);
@@ -607,5 +594,5 @@
 }
 .toast-close:hover {
   color: var(--ink);
-  box-shadow: var(--glass-edge), var(--shadow-card-hover);
+  box-shadow: var(--shadow-card-hover);
 }

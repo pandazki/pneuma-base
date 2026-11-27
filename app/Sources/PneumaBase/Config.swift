@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 /// What the app needs to run the command line, fixed at launch.
 struct Config: Sendable {
@@ -105,6 +105,28 @@ private final class Drained: @unchecked Sendable {
   var data = Data()
 }
 
+/// How the app looks: as the system does, or always light, or always dark. It is NSApp's appearance,
+/// so the window, the panel, the sheets and menus and the pages in the web views all follow it.
+enum Appearance: String, CaseIterable, Codable {
+  case system, light, dark
+
+  var word: String {
+    switch self {
+    case .system: "跟随系统"
+    case .light: "浅色"
+    case .dark: "深色"
+    }
+  }
+
+  var appearance: NSAppearance? {
+    switch self {
+    case .system: nil
+    case .light: NSAppearance(named: .aqua)
+    case .dark: NSAppearance(named: .darkAqua)
+    }
+  }
+}
+
 /// The app's own small preferences file: the libraries it knows, the current one, the watcher's
 /// cursors, and this machine's settings. Not in any library.
 struct Prefs: Codable {
@@ -115,6 +137,8 @@ struct Prefs: Codable {
   var ownerFiles: Bool?
   /// The symbolic link to the launcher that 在终端里用 pneuma-base put on the owner's PATH; unset means off.
   var pathLink: String?
+  /// 外观: unset means following the system.
+  var appearance: Appearance?
   /// The last cursor the watcher heard from storage's subscription, by library folder: the next subscription starts there.
   var cursors: [String: String]?
 

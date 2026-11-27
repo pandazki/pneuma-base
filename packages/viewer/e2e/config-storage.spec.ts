@@ -1,7 +1,7 @@
-// The configuration page's storage section, with the commands behind its buttons: the providers this
-// machine has, the one the library uses marked; installing a third-party one from a repository, which
-// is refused until the owner accepts what a provider is, then asks with the checksum; and removing an
-// installed one. The release comes from a stand-in for GitHub on this machine. Installing for real runs
+// The configuration page's storage section, with the commands behind its buttons: where the library is
+// kept, its folder copied and, in the Mac app, shown in Finder; installing a third-party provider from
+// a repository, which is refused until the owner accepts what a provider is, then asks with the
+// checksum; and removing an installed one. The release comes from a stand-in for GitHub on this machine. Installing for real runs
 // the contract suite on the program, about half a minute, which packages/cli/test/storage-providers.slow.test.ts
 // does; here the page goes as far as that question, and the provider it removes is one whose registry
 // entry the test writes, as storage install writes it last (packages/cli/test/pages.test.ts does the same).
@@ -33,7 +33,7 @@ async function releaseOf(repository: string, version: string, name: string, form
   return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, close: () => new Promise<void>((done) => server.close(() => done())) }
 }
 
-test('storage on the configuration page: the provider in use, installing another through its buttons, and removing one', async ({ page, pb }) => {
+test('storage on the configuration page: where the library is kept, installing another through its 「···」, and removing one', async ({ page, pb }) => {
   const bytes = Buffer.from('#!/bin/sh\n')
   const host = await releaseOf('acme/alpha-folder', 'v1.0.0', 'alpha-folder', 'alpha', bytes)
   try {
@@ -47,23 +47,36 @@ test('storage on the configuration page: the provider in use, installing another
       JSON.stringify({ format: 1, name: 'beta-folder', version: 'v1.0.0', contract: 1, addresses: ['beta'], executable: 'v1.0.0/beta-folder', sha256: '0'.repeat(64), official: false, installed: '2026-11-27T00:00:00.000Z', from: { repository: 'acme/beta-folder', tag: 'v1.0.0' } }),
     )
     const { url } = await pb.view(lib, { env: { PNEUMA_BASE_RELEASE_HOST: host.url } })
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
     await page.goto(`${url}#view=config`)
     const storage = page.getByRole('main').getByRole('region', { name: '存储', exact: true })
-    const builtIn = storage.getByRole('row', { name: /^local-folder/ })
-    await expect(builtIn).toContainText('本机路径')
-    await expect(builtIn).toContainText('随 pneuma-base 带着')
-    await expect(builtIn).toContainText('这个库在用')
-    await expect(storage.getByRole('region', { name: '噪音' })).toBeVisible()
-    const beta = storage.getByRole('row', { name: /^beta-folder/ })
-    await expect(beta).toContainText('来自 acme/beta-folder')
-    await expect(beta).not.toContainText('这个库在用')
-    // Its rare actions are in its row's menu.
-    await beta.getByRole('button', { name: '更多' }).click()
-    await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['换新版本', '卸掉'])
+    // One row: the library's folder by its name, the whole path on demand and to copy, and the provider in use.
+    const kept = storage.getByRole('listitem').first()
+    await expect(kept).toContainText('lib')
+    await expect(kept).toContainText('本机文件夹')
+    await expect(kept.locator('[data-tip]').first()).toHaveAttribute('data-tip', lib)
+    await kept.getByRole('button', { name: '复制' }).click()
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(lib)
+    // Showing it in Finder is the Mac app's.
+    await expect(kept.getByRole('button', { name: '在访达中显示' })).toHaveCount(0)
+    // The noise, folded under it with its count, opens to a row per name; among so many rows, a row's
+    // 「···」 shows while the pointer is on it, where the one row of storage keeps its own in sight.
+    const noise = storage.getByRole('region', { name: '噪音' })
+    await noise.getByRole('button', { name: '噪音' }).click()
+    const git = noise.getByRole('listitem').filter({ hasText: '.git' }).first()
+    await page.mouse.move(0, 0)
+    await expect(git.locator('.actions')).toHaveCSS('opacity', '0')
+    await expect(kept.locator('.actions')).toHaveCSS('opacity', '1')
+    await git.hover()
+    await expect(git.locator('.actions')).toHaveCSS('opacity', '1')
+    await noise.getByRole('button', { name: '噪音' }).click()
+    // The other providers' actions are in its 「···」, the dangerous last.
+    await kept.getByRole('button', { name: '更多' }).click()
+    await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['更新 beta-folder', '安装别的存储…', '卸掉 beta-folder'])
     await page.keyboard.press('Escape')
 
     // Another from a repository: refused at first, the refusal saying what a provider is, with the checksum.
-    await storage.getByRole('button', { name: '安装别的存储…' }).click()
+    await fromMenu(kept, '安装别的存储…')
     const form = page.getByRole('dialog')
     await form.getByRole('textbox').fill('acme/alpha-folder')
     await form.getByRole('button', { name: '安装别的存储…' }).click()
@@ -74,14 +87,25 @@ test('storage on the configuration page: the provider in use, installing another
     await expect(page.getByRole('dialog')).toContainText(`sha256:${sha256(bytes)}`)
     await page.getByRole('dialog').getByRole('button', { name: '取消' }).click()
     await expect(page.getByRole('dialog')).toHaveCount(0)
-    await expect(storage.getByRole('row', { name: /^alpha-folder/ })).toHaveCount(0)
 
-    // Removing one asks first, then it is gone from the list.
-    await fromMenu(beta, '卸掉')
+    // Removing one asks first, then it is gone from the menu.
+    await fromMenu(kept, '卸掉 beta-folder')
     await expect(page.getByRole('dialog')).toContainText('卸掉存储提供者 beta-folder？')
-    await page.getByRole('dialog').getByRole('button', { name: '卸掉' }).click()
+    await page.getByRole('dialog').getByRole('button', { name: '卸掉 beta-folder' }).click()
     await expect(notices).toContainText('已卸下存储提供者 beta-folder v1.0.0。')
-    await expect(beta).toHaveCount(0)
+    await kept.getByRole('button', { name: '更多' }).click()
+    await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['安装别的存储…'])
+    await page.keyboard.press('Escape')
+
+    // In the Mac app the row shows the folder in Finder, by asking the app.
+    await page.addInitScript(() => {
+      const sent: unknown[] = []
+      ;(window as unknown as { sent: unknown[] }).sent = sent
+      ;(window as unknown as { webkit: unknown }).webkit = { messageHandlers: { shell: { postMessage: (m: unknown) => sent.push(m) } } }
+    })
+    await page.goto(`${url}&shell=mac#view=config`)
+    await kept.getByRole('button', { name: '在访达中显示' }).click()
+    expect(await page.evaluate(() => (window as unknown as { sent: { type: string }[] }).sent.filter((m) => m.type === 'reveal-local'))).toEqual([{ type: 'reveal-local', path: lib }])
   } finally {
     await host.close()
   }

@@ -1,10 +1,10 @@
 // The viewer face on a library with no plugin (K2): the kernel's three pages and the item panel,
 // given as blocks; showing a view changes nothing and sends no event. How a page prints, and a view the
 // library does not have, are packages/cli/test/show.test.ts's.
-import { utimesSync } from 'node:fs'
+import { mkdirSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { agentFace, viewerFace, type Action, type Block, type Event, type ViewResult } from '../src/index.js'
+import { agentFace, loadPlugins, viewerFace, type Action, type Block, type Event, type ViewResult } from '../src/index.js'
 import { saveConnection } from '../src/connections.js'
 import { fixture, plugin, type Fixture } from './support.js'
 
@@ -162,57 +162,50 @@ describe('the views of a library with no plugin', () => {
     expect(second.map((r) => r.key)).toEqual(Array.from({ length: 20 }, (_, i) => `n${String(19 - i).padStart(2, '0')}.md`))
   })
 
-  it('config shows the library, every plugin it knows with 装上 or 卸下, the grants with skill generation, and the storage providers', async () => {
-    const f = await fixture()
-    const table = new Map([
-      ['ledger', plugin('ledger', { cognition: { title: '记账与对账', text: '' } })],
-      ['pager', plugin('pager', { version: '0.2.0', summary: '一页字' })],
-      ['bare', plugin('bare')],
-    ])
-    const r = shown(await viewerFace.show({ view: 'config', params: {} }, { ctx: f.ctx, table, env: {}, viaGrant: false }))
-    // The library's location in one line; its id in the folded record at the end.
-    expect(r.blocks[0]).toMatchObject({ kind: 'fields', line: true, fields: [{ label: '位置', value: { text: f.root, copy: true } }] })
-    const sections = r.blocks.filter((b) => b.kind === 'section')
-    expect(sections.map((s) => s.kind === 'section' && s.title)).toEqual(['插件', '授权与技能', '存储', '记录'])
-    expect(sections[3]).toMatchObject({ collapse: 'closed', blocks: [{ kind: 'fields', fields: [{ label: '库标识', value: { text: f.library.config.id } }, { label: '说明' }] }] })
-    const plugins = tableOf({ outcome: 'shown', title: '', subtitle: null, blocks: [sections[0] as Block], problems: [] })
-    // Its version and what it brings, as plugin list shows them: the summary, else the cognition's title.
-    // One not installed is grey, with the one icon that installs it.
-    expect(plugins.columns.map((c) => c.label)).toEqual(['名字', '版本', '做什么'])
-    expect(plugins.rows).toMatchObject([
-      {
-        key: 'ledger',
-        cells: { name: { text: 'ledger', muted: true }, version: { text: '—', muted: true }, title: { text: '记账与对账', muted: true } },
-        actions: [{ label: '装上', as: 'icon', icon: 'plus', call: { face: 'owner', command: 'plugin add', args: { positional: ['ledger'] } } }],
-      },
-      { key: 'pager', cells: { version: { text: '0.2.0' }, title: { text: '一页字' } }, actions: [{ label: '装上', call: { command: 'plugin add', args: { positional: ['pager'] } } }] },
-      { key: 'bare', cells: { version: { text: '—', muted: true }, title: { text: '—', muted: true } } },
-    ])
-    expect(sections[1]).toMatchObject({ actions: [{ label: '发授权', call: { command: 'grant issue' } }] })
-    expect(JSON.stringify(sections[1])).toContain('codex --add-dir')
-    // Storage: the built-in local folder, the one this library uses, a form to install another from a
-    // repository, and the library's noise inside it.
-    const storage = sections[2]
-    if (storage?.kind !== 'section') throw new Error('no storage section')
-    expect(storage).toMatchObject({ actions: [{ label: '安装别的存储…', call: { command: 'storage install' } }] })
-    expect(storage.blocks[0]).toMatchObject({
-      kind: 'table',
-      rows: [{ key: 'local-folder', cells: { name: { text: 'local-folder' }, addresses: { text: '本机路径' }, came: { text: '随 pneuma-base 带着' }, state: { text: '这个库在用', icon: 'check' } }, actions: [] }],
-    })
-    expect(storage.blocks[1]).toMatchObject({ kind: 'section', title: '噪音' })
+  it('config is settings with no column heads: a row and a switch per plugin, where the library is kept, the noise and the record folded', async () => {
+    const pages = { views: [{ id: 'ledger.items', title: '库', icon: 'layers' as const, nav: true, filters: [] }], onView: async () => ({ title: '库', subtitle: null, blocks: [] }) }
+    const ledger = plugin('ledger', { title: '记账', summary: '记下每样东西从哪来', about: '记下每样东西是哪次会话放进来的。', ...pages })
+    const f = await fixture([ledger])
+    const config = { ...f.library.config, plugins: [...f.library.config.plugins, 'gone' as never] }
+    const ctx = { ...f.ctx, library: { ...f.library, config, unavailable: ['gone' as never] } }
+    // A plugin installed on this machine from elsewhere, beside the built-in ones.
+    mkdirSync(join(f.home, 'plugins', 'meter'), { recursive: true })
+    writeFileSync(join(f.home, 'plugins', 'meter', 'index.js'), "export default { contract: 2, name: 'meter', version: '0.2.0', summary: '量一量', cognition: null, storage: [], statements: [], ownerCommands: [] }\n")
+    const table = await loadPlugins(f.home, new Map([['ledger', ledger], ['bare', plugin('bare', { cognition: { title: '光秃秃的', text: '' } })]]))
+    const r = shown(await viewerFace.show({ view: 'config', params: {} }, { ctx, table, env: {}, viaGrant: false }))
+    expect(r.blocks.map((b) => (b.kind === 'section' ? b.title : b.kind))).toEqual(['插件', '存储', '记录'])
+    expect(flat(r.blocks).filter((b) => b.kind === 'table')).toEqual([])
+    const itemsOf = (b: Block | undefined) => (b?.kind === 'section' && b.blocks[0]?.kind === 'list' ? b.blocks[0].items : [])
 
-    // An installed plugin comes first with 卸下, and one this pneuma-base lacks says so.
-    const installed = await fixture([plugin('ledger')])
-    const config = { ...installed.library.config, plugins: [...installed.library.config.plugins, 'gone' as never] }
-    const ctx = { ...installed.ctx, library: { ...installed.library, config, unavailable: ['gone' as never] } }
-    const listed = shown(await viewerFace.show({ view: 'config', params: {} }, { ctx, table: new Map([['ledger', plugin('ledger')], ['pager', plugin('pager')]]), env: {}, viaGrant: false }))
-    const rows = tableOf(listed).rows
-    expect(rows).toMatchObject([
-      { key: 'ledger', cells: { name: { text: 'ledger' } }, actions: [{ label: '卸下', as: 'menu', call: { command: 'plugin remove', args: { positional: ['ledger'] } } }] },
-      { key: 'gone', cells: { name: { tag: { text: '这个 pneuma-base 里没有' } } }, actions: [{ label: '卸下' }] },
-      { key: 'pager', cells: { name: { muted: true } }, actions: [{ label: '装上' }] },
-    ])
-    expect(rows[0]?.cells.name?.muted).toBeUndefined()
+    // In a stable order, whether on or off: the display name, opening its page; a short line; the long
+    // text with the identifier; a switch that turns it the other way. A built-in plugin has no version.
+    const plugins = itemsOf(r.blocks[0])
+    expect(plugins.map((i) => [i.cell.text, i.toggle?.on])).toEqual([['记账', true], ['bare', false], ['meter', false], ['gone', true]])
+    expect(plugins[0]).toMatchObject({
+      cell: { text: '记账', icon: 'layers', link: { view: 'ledger.items', target: 'main' } },
+      note: '记下每样东西从哪来',
+      about: expect.stringMatching(/^记下每样东西是哪次会话放进来的。.*ledger/),
+      toggle: { on: true, action: { label: '卸下', call: { face: 'owner', command: 'plugin remove', args: { positional: ['ledger'] } } } },
+      actions: [],
+    })
+    expect(plugins[0]?.cell.mono).toBeUndefined()
+    // Without a summary, its cognition's title; off, the switch installs it.
+    expect(plugins[1]).toMatchObject({ cell: { text: 'bare', icon: 'package' }, note: '光秃秃的', toggle: { action: { label: '装上', call: { command: 'plugin add', args: { positional: ['bare'] } } } }, actions: [] })
+    expect(plugins[1]?.cell.link).toBeUndefined()
+    // Installed on this machine: its version said quietly, and it can leave the machine from its 「···」.
+    expect(plugins[2]).toMatchObject({ note: '量一量 · 0.2.0', actions: [{ label: '从这台机器卸掉', tone: 'danger', confirm: expect.any(String), call: { command: 'plugin uninstall' } }] })
+    expect(plugins[3]).toMatchObject({ cell: { text: 'gone', tag: { text: '这个 pneuma-base 里没有', tone: 'warn' } }, toggle: { on: true, action: { label: '卸下' } } })
+    expect(r.blocks[0]).toMatchObject({ actions: [{ label: '从目录装一个插件到这台机器', as: 'icon', call: { command: 'plugin install' } }] })
+
+    // Where the library is kept: one row, its folder on this machine and the provider in use; the other
+    // providers and installing another behind its 「···」; the noise folded inside, as a list.
+    const storage = r.blocks[1]
+    if (storage?.kind !== 'section') throw new Error('no storage section')
+    expect(itemsOf(storage)).toMatchObject([{ cell: { text: f.root, local: true, icon: 'folder' }, note: '本机文件夹', actions: [{ label: '安装别的存储…', call: { command: 'storage install' } }] }])
+    expect(storage.actions).toEqual([])
+    expect(storage.blocks[1]).toMatchObject({ kind: 'section', title: '噪音', collapse: 'closed', count: expect.any(Number), actions: [{ label: '加一条', call: { command: 'noise add' } }] })
+    expect(itemsOf(storage.blocks[1])[0]).toMatchObject({ actions: [{ label: '去掉', call: { command: 'noise remove' } }] })
+    expect(r.blocks[2]).toMatchObject({ collapse: 'closed', blocks: [{ kind: 'fields', fields: [{ label: '库标识', value: { text: f.library.config.id } }, { label: '说明' }] }] })
   })
 
   it('item gives the archive and move actions, the file’s facts and a preview that folds; with no file there it says so', async () => {

@@ -107,7 +107,7 @@ const SAY_FROM = 5_000
 /** How often a rebuild says how far it is. */
 const SAY_EVERY_MS = 1_000
 /** Tables the fold writes and never reads: a rebuild saves them while it reads on (they hold almost half the bytes). */
-const WRITTEN_ONLY = ['log', 'find', 'bytime', 'sceneOrder', 'hrev']
+const WRITTEN_ONLY = ['log', 'acts', 'find', 'bytime', 'sceneOrder', 'hrev']
 
 /** Whether the process holding a rebuild is still at it: a sign of life lately, and on this machine, the process is there. */
 function running(build: Build): boolean {

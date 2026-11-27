@@ -6,8 +6,8 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
-import type { Block } from '@pneuma-base/kernel'
-import { sandbox, tempDir, type Run, type Sandbox } from './helpers.js'
+import type { Block, FeedRow } from '@pneuma-base/kernel'
+import { feedRowsIn, sandbox, tempDir, type Run, type Sandbox } from './helpers.js'
 
 let sb: Sandbox
 let lib: string
@@ -119,18 +119,23 @@ describe('ledger export', () => {
   const activity = () => {
     const page = ok(owner(['show', 'ledger.activity', '--json'])).json()
     const feed = (page.blocks as Block[]).find((b) => b.kind === 'feed') as Extract<Block, { kind: 'feed' }>
-    return feed.groups.flatMap((g) => g.rows)
+    return feedRowsIn(feed.groups) as FeedRow[]
   }
 
-  it('writes one row per fact of the activity, in its order, with its sentence and whose act it was, as JSON Lines; and the same rows as CSV, quoting commas, quotes and line breaks, which a spreadsheet reads back whole', () => {
+  it('writes one row per fact, newest first: the activity’s acts and what is no act there, with its sentence and whose act it was, as JSON Lines; and the same rows as CSV, quoting commas, quotes and line breaks, which a spreadsheet reads back whole', () => {
     const dir = tempDir('pb-out-')
     const to = join(dir, 'audit.jsonl')
     const shown = activity()
     const r = ok(owner(['ledger', 'export', '--to', to]))
     expect(r.stdout).toContain('导出到')
     const rows = readFileSync(to, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l) as Record<string, string>)
-    // The same sentence as the activity's row, but a record spells out the usual origin the page leaves unsaid.
-    expect(rows.map((x) => [x.id, x.at, x.text?.replace('（做出来的）', ''), x.whose])).toEqual(shown.map((x) => [x.key, x.at, x.text, x.whose]))
+    // The activity's acts, which it groups by scene, newest first as the log keeps them; the record also keeps what is no act there, as a scene saying what it is doing.
+    const acts = rows.filter((x) => shown.some((s) => s.key === x.id))
+    const newest = [...shown].sort((a, b) => b.at.localeCompare(a.at) || a.key.localeCompare(b.key))
+    expect(acts.map((x) => [x.id, x.at, x.whose])).toEqual(newest.map((x) => [x.key, x.at, x.whose]))
+    expect(rows.filter((x) => !acts.includes(x)).map((x) => x.kind)).toEqual(expect.arrayContaining(['said']))
+    // The same sentence as the activity's row, but a record spells out the usual origin the page leaves unsaid; a command's is its answer, the row's the command as given.
+    for (const x of acts.filter((x) => x.kind !== 'owner.op')) expect(x.text?.replace('（做出来的）', '')).toBe(shown.find((s) => s.key === x.id)?.text)
     expect(rows.filter((x) => x.kind === 'item.enter' && x.text?.includes('（做出来的）')).length).toBeGreaterThan(0)
     expect(Object.keys(rows[0] as object)).toEqual(['id', 'at', 'actor', 'actor_kind', 'grant', 'session', 'kind', 'path', 'text', 'whose', 'request'])
     const put = rows.find((x) => x.kind === 'item.enter' && x.path === 'pay/integration.md')

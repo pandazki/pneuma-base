@@ -2,6 +2,7 @@
 // window around the page, keeps its server running and drags the window by the areas marked
 // `data-drag`; the page leaves room for the window's buttons and drops what only a browser needs.
 import type { Link } from '@pneuma-base/kernel'
+import type { SchemeChoice } from './scheme'
 
 export const IN_SHELL = new URLSearchParams(window.location.search).get('shell') === 'mac'
 
@@ -13,8 +14,11 @@ export type MenuItem = { id: string; label: string; danger?: true }
 
 /**
  * What the page asks of the app: choose files or folders to put into the library folder `to`; open
- * the main window, on a link when one is given; show the menu of libraries; quit; and, from the
- * panel, how tall its content is and how many things wait for the owner, for the dot on the icon.
+ * the main window, on a link when one is given; from the panel, how tall its content is and how many
+ * things wait for the owner, for the dot on the icon, and the app's menu at a point of the panel
+ * (appearance, libraries, settings, quit). This machine's settings, which the configuration page
+ * shows as rows: tell them (they come back as a `machine` event, and again whenever one changes), set
+ * one, open the settings window.
  *
  * Files of the library, named by their library paths, which the app turns into files of this machine
  * through storage: Quick Look on them as a set, showing the `at`-th (again while it is up, to follow
@@ -24,15 +28,19 @@ export type MenuItem = { id: string; label: string; danger?: true }
  * places, each answered by itself; the system's drag of these files out of the window, from the
  * pointer, giving copies; how many places are selected, for the app's menus. A conversation opened
  * again: `url` when an application handles it, else `run` in the default terminal, else `reveal`.
- * A question before an act that cannot be undone, as the system's sheet (`confirmInShell`).
+ * A question before an act that cannot be undone, as the system's sheet (`confirmInShell`). A path of
+ * this machine a cell names (`Cell.local`, such as the library's folder), shown selected in Finder.
  */
 export type ShellMessage =
   | { type: 'choose'; to: string }
   | { type: 'open'; link?: Link }
-  | { type: 'libraries' }
-  | { type: 'quit' }
   | { type: 'height'; height: number }
   | { type: 'waiting'; count: number }
+  | { type: 'panel-menu'; x: number; y: number }
+  | { type: 'machine' }
+  | { type: 'machine-set'; key: 'appearance'; value: SchemeChoice }
+  | { type: 'machine-set'; key: 'ownerFiles' | 'login' | 'pathLink'; value: boolean }
+  | { type: 'settings' }
   | { type: 'preview'; paths: string[]; at: number }
   | { type: 'launch'; paths: string[] }
   | { type: 'reveal'; paths: string[] }
@@ -43,6 +51,7 @@ export type ShellMessage =
   | { type: 'selection'; count: number }
   | { type: 'reopen'; url: string | null; run: { command: string; cwd: string } | null; reveal: string }
   | { type: 'confirm'; id: number; text: string; act: string; danger: boolean }
+  | { type: 'reveal-local'; path: string }
 
 /** What the app's menus ask of the page's selection, and what the context menu's 打开 and 快速查看 hand back. */
 export type ShellCommand = 'open' | 'preview' | 'reveal' | 'copy-path' | 'rename' | 'list' | 'icons' | 'up'
@@ -83,17 +92,12 @@ export function confirmInShell(text: string, act: string, danger: boolean): Prom
 }
 
 /**
- * The app tells the page, by `pneuma-shell` events, when its window stops or starts being the one in
- * front (`{ window: 'active' | 'inactive' }`; the page dims its chrome meanwhile), and whether the
- * system's glass is under the page (`{ transparency: 'glass' | 'reduced' }`; reduced when the owner's
- * settings reduce transparency or raise contrast). The app sets the first transparency on `<html>`
- * itself before the page loads, so the first frame is drawn right.
+ * The app tells the page when its window stops or starts being the one in front, by a
+ * `pneuma-shell` event with `{ window: 'active' | 'inactive' }`; the page dims its chrome meanwhile.
  */
 export function followShell(): void {
-  const root = document.documentElement
   window.addEventListener('pneuma-shell', (e) => {
-    const { window: state, transparency } = (e as CustomEvent<{ window?: unknown; transparency?: unknown }>).detail ?? {}
-    if (state === 'active' || state === 'inactive') root.dataset.window = state
-    if (transparency === 'glass' || transparency === 'reduced') root.dataset.transparency = transparency
+    const state = (e as CustomEvent<{ window?: unknown }>).detail?.window
+    if (state === 'active' || state === 'inactive') document.documentElement.dataset.window = state
   })
 }

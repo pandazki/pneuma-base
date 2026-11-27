@@ -11,6 +11,7 @@ import type {
   Actor,
   Library,
   Note,
+  OwnerActDone,
   OwnerAnswer,
   OwnerArgs,
   OwnerResult,
@@ -90,10 +91,10 @@ export async function performOwner(
   ctx: Context,
   command: string,
   args: OwnerArgs,
-  how: { destructive: boolean; readOnly: boolean; setup?: boolean; request?: Requested },
+  how: { destructive: boolean; readOnly: boolean; setup?: boolean; act?: OwnerActDone; request?: Requested },
   body: () => Promise<{ answer: OwnerAnswer; library?: Library; problems?: PluginProblem[] }>,
 ): Promise<OwnerResult> {
-  const marks = { destructive: how.destructive, readOnly: how.readOnly, setup: how.setup ?? false, ...(how.request ? { request: how.request } : {}) }
+  const marks = { destructive: how.destructive, readOnly: how.readOnly, setup: how.setup ?? false, ...(how.act ? { act: how.act } : {}), ...(how.request ? { request: how.request } : {}) }
   return finish(ctx, (result) => ({ face: 'owner', command, args, ...marks, result }), async () => {
     const { answer, library, problems } = await body()
     return { result: { ...answer, problems: problems ?? [] }, ...(library ? { library } : {}) }

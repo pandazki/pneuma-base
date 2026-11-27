@@ -51,6 +51,7 @@ export type { KernelCommand, Outcome } from './kernel-command.js'
 
 const grantIssue = command({
   name: 'grant issue',
+  act: { kind: 'granted', object: 'name' },
   summary: '发一份授权：给谁、哪个区域、只读还是读写',
   params: {
     positional: [{ name: 'name', hint: '授权名', required: true, pattern: GRANT_NAME.source }],
@@ -87,6 +88,7 @@ const grantIssue = command({
 
 const grantRevoke = command({
   name: 'grant revoke',
+  act: { kind: 'revoked', object: 'name' },
   summary: '撤回一份授权',
   params: { positional: [{ name: 'name', hint: '授权名', required: true }] },
   destructive: false,
@@ -105,6 +107,7 @@ const grantRevoke = command({
 
 const skillInstall = command({
   name: 'skill install',
+  act: { kind: 'installed', object: 'grant' },
   summary: '为一个 agent 产品写一份指向说明的技能',
   params: {
     positional: [{ name: 'grant', hint: '授权名', required: true }],
@@ -138,6 +141,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
   grantRevoke,
   command({
     name: 'plugin add',
+    act: { kind: 'on', object: 'plugin' },
     summary: '在这个库里装上一个插件',
     params: { positional: [PLUGIN] },
     destructive: false,
@@ -172,6 +176,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
   }),
   command({
     name: 'plugin remove',
+    act: { kind: 'off', object: 'plugin' },
     summary: '在这个库里卸下一个插件；它名下的目录原样留着',
     params: REMOVE,
     destructive: false,
@@ -197,6 +202,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
   }),
   command({
     name: 'plugin catch-up',
+    act: { kind: 'synced', object: 'plugin' },
     summary: '让插件补上装上之前库里登记过的东西；停下过的接着补',
     params: { positional: [PLUGIN] },
     destructive: false,
@@ -213,6 +219,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
   skillInstall,
   command({
     name: 'archive purge',
+    act: { kind: 'removed', name: '归档' },
     summary: '清空归档区',
     params: {},
     destructive: true,
@@ -237,6 +244,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
   }),
   command({
     name: 'plugin install',
+    act: { kind: 'installed', object: 'dir' },
     summary: '把一个插件目录装到这台机器上，同名的换成新的',
     params: { positional: [{ name: 'dir', hint: '插件目录', required: true }] },
     destructive: false,
@@ -260,6 +268,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
   }),
   command({
     name: 'plugin uninstall',
+    act: { kind: 'uninstalled', object: 'plugin' },
     summary: '从这台机器卸掉一个装上来的插件；库里名下的目录和它的密钥原样留着',
     params: { positional: [PLUGIN] },
     destructive: false,
@@ -283,7 +292,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
   }),
   command({
     name: 'plugin list',
-    summary: '这台机器能装的插件：自带的和装上来的，各自的版本、契约和一句说明；带 --library 时标出这个库装了哪些',
+    summary: '这台机器能装的插件：自带的和装上来的，各自的版本、契约、名字和说明；带 --library 时标出这个库装了哪些',
     params: {},
     destructive: false,
     ownerOnly: false,
@@ -293,13 +302,15 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       const plugins = await machineListing(call.ctx.home, call.table, call.ctx.library)
       const lines = plugins.map((p) => {
         const state = p.failed !== null ? `没能加载：${p.failed}` : [`契约 ${p.contract}`, p.origin === 'built-in' ? '自带' : '装上来的', ...(p.installed ? ['这个库装了'] : [])].join(' · ')
-        return `${p.name} ${p.version ?? '—'}  ${state}${p.summary === null ? '' : `\n    ${p.summary}`}`
+        const line = p.title === null ? p.summary : `${p.title}${p.summary === null ? '' : `：${p.summary}`}`
+        return [`${p.name} ${p.version ?? '—'}  ${state}`, ...[line, p.about].flatMap((l) => (l === null ? [] : [`    ${l}`]))].join('\n')
       })
       return done(lines.join('\n') || '这台机器没有任何插件。', { plugins })
     },
   }),
   command({
     name: 'secret set',
+    act: { kind: 'set', object: 'name' },
     summary: '为一个插件在这台机器上设一个密钥；值从标准输入读，或在终端里不回显地输入',
     params: { positional: [PLUGIN, { name: 'name', hint: '密钥名', required: true, pattern: SECRET_NAME.source }] },
     destructive: false,
@@ -345,6 +356,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
   }),
   command({
     name: 'secret remove',
+    act: { kind: 'removed', object: 'name' },
     summary: '删掉一个插件在这台机器上的一个密钥',
     params: { positional: [PLUGIN, { name: 'name', hint: '密钥名', required: true, pattern: SECRET_NAME.source }] },
     destructive: false,
@@ -379,7 +391,10 @@ export type MachinePlugin = {
   name: string
   version: string | null
   contract: number | null
+  /** The name a person says, its short line (else its cognition's title) and its whole text. */
+  title: string | null
   summary: string | null
+  about: string | null
   origin: 'built-in' | 'machine'
   /** Whether the library given has it installed; null when none was given. */
   installed: boolean | null
@@ -395,11 +410,11 @@ async function machineListing(home: string, table: PluginTable, library: Library
     const p = table.get(name)
     const installed = library === null ? null : library.config.plugins.includes(name as PluginName)
     if (!p) {
-      out.push({ name, version: null, contract: null, summary: null, origin: 'machine', installed, failed: (await whyNotLoaded(home, name)) ?? '没能加载' })
+      out.push({ name, version: null, contract: null, title: null, summary: null, about: null, origin: 'machine', installed, failed: (await whyNotLoaded(home, name)) ?? '没能加载' })
       continue
     }
     const summary = p.summary ?? p.cognition?.title ?? null
-    out.push({ name, version: p.version ?? null, contract: p.contract, summary, origin: machineDirOf(p) === null ? 'built-in' : 'machine', installed, failed: null })
+    out.push({ name, version: p.version ?? null, contract: p.contract, title: p.title ?? null, summary, about: p.about ?? null, origin: machineDirOf(p) === null ? 'built-in' : 'machine', installed, failed: null })
   }
   return out
 }

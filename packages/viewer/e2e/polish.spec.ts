@@ -36,6 +36,8 @@ test('agents get marks that tell them apart: two from the name, or the first lat
   pb.run(['init', lib])
   for (const agent of ['codex', 'copilot', 'claude-code', 'gemini']) {
     pb.run(['--library', lib, '--as', agent, 'start', `${agent} 在整理笔记`], { env: { PNEUMA_BASE_SESSION: `s-${agent}` } })
+    // Saying what it is doing is no act; a note is, so each is a row on home.
+    pb.run(['--library', lib, '--as', agent, 'say', 'note', `${agent} 记一笔`], { env: { PNEUMA_BASE_SESSION: `s-${agent}` } })
   }
   const { url } = await pb.view(lib)
   await page.goto(`${url}#view=ledger.scenes`)
@@ -52,12 +54,14 @@ test('agents get marks that tell them apart: two from the name, or the first lat
 // The two tests that only look at it share one, built once per worker.
 const withNotes = test.extend<object, { notesUrl: string }>({ notesUrl: shared(notes) })
 
-withNotes('in the panel a feed row keeps its moment, in the grey line, and its whole sentence', async ({ page, notesUrl: url }) => {
+withNotes('in the panel a feed row says its moment in the grey line, unless the row above said the same, and a decision’s words wrap whole', async ({ page, notesUrl: url }) => {
   const panel = page.getByRole('complementary', { name: '详情' })
   await page.goto(`${url}#view=home&panel=ledger.scene&panel.scene=sess-b`)
   const rows = panel.locator('.feed-row')
   await expect(rows.first()).toBeVisible()
-  for (const row of await rows.all()) await expect(row.locator('.feed-meta-time')).toBeVisible()
+  await expect(rows.first().locator('.feed-meta-time')).toBeVisible()
+  const moments = await rows.evaluateAll((els) => els.map((el) => el.querySelector('.feed-meta-time')?.textContent ?? null))
+  moments.forEach((m, i) => expect(m !== null || (i > 0 && moments.slice(0, i).some((n) => n !== null))).toBe(true))
   const long = panel.locator('.feed-line', { hasText: LONG })
   const box = await long.evaluate((el) => ({ shown: el.clientHeight, whole: el.scrollHeight, lines: Math.round(el.clientHeight / 20) }))
   expect(box.whole).toBeLessThanOrEqual(box.shown + 1)

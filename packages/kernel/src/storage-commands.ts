@@ -1,7 +1,7 @@
 // The storage commands, owner-only and of this machine: which providers it has, installing one from a
 // repository's releases, removing one, updating one (ARCHITECTURE.md「存储」;
 // PROVIDERS.md). And the section of the configuration page that shows them, with their forms.
-import { formOf, type Action, type Block, type Call, type Context, type Instant, type OwnerParams, type TableRow } from '@pneuma-base/sdk'
+import { formOf, type Action, type Block, type Call, type Context, type Instant, type ListItem, type OwnerParams } from '@pneuma-base/sdk'
 import { command, done, refused, type KernelCommand, type Outcome } from './kernel-command.js'
 import type { OwnerCall } from './owner.js'
 import { candidateOf, fetchManifest, installCandidate, parseRelease, RELEASE, type Candidate, type Refusal } from './provider-install.js'
@@ -91,6 +91,7 @@ function officialCandidate(o: OfficialProvider, c: Candidate | Refusal): Candida
 
 const storageInstall = command({
   name: 'storage install',
+  act: { kind: 'installed', object: 'repository' },
   summary: '从一个 GitHub 仓库的发布装一个存储提供者到这台机器：取本平台的程序，钉在一个版本上，对校验和，过了契约测试才装',
   params: INSTALL_PARAMS,
   destructive: false,
@@ -123,6 +124,7 @@ const storageInstall = command({
 
 const storageUpdate = command({
   name: 'storage update',
+  act: { kind: 'changed', object: 'name' },
   summary: '把一个装上来的存储提供者换成新的版本：第三方的取仓库最新的发布，官方的取名单里的版本；同样先对校验和、过契约测试',
   params: UPDATE_PARAMS,
   destructive: false,
@@ -148,6 +150,7 @@ const storageUpdate = command({
 
 const storageRemove = command({
   name: 'storage remove',
+  act: { kind: 'uninstalled', object: 'name' },
   summary: '从这台机器卸掉一个装上来的存储提供者',
   params: { positional: [NAME] },
   destructive: false,
@@ -189,83 +192,43 @@ const storageList = command({
 
 export const STORAGE_COMMANDS: readonly KernelCommand[] = [storageList, storageInstall, storageRemove, storageUpdate]
 
-/** The address forms in the words a person reads; a form not named here is written as it is. */
-const FORMS: Record<string, string> = { path: '本机路径' }
-const formsText = (forms: readonly string[]) => (forms.length === 0 ? '—' : forms.map((f) => FORMS[f] ?? f).join('、'))
-
-/** Where a provider on this machine came from, in the state column's grey words. */
-const cameText = (p: Provider) => (p.origin.kind === 'built-in' ? '随 pneuma-base 带着' : `${p.official ? '官方，' : ''}来自 ${p.origin.repository}`)
-
 /**
- * The configuration page's section: this machine's providers, the one this library uses marked, with
- * the facets it gives as it describes itself; the official ones not installed; each with the command
- * that changes it as a form. Installing a third-party provider is refused until the owner accepts the
- * trust statement, which the refusal carries as an offer with the checksum. `inside` goes under the
- * table, such as the library's noise.
+ * The configuration page's section: one row saying where this library is kept, its folder on this
+ * machine and the provider in use; behind the row's 「···」 the other providers' actions (an official
+ * one not installed, updating or removing an installed one) and installing another from a repository.
+ * Installing a third-party provider is refused until the owner accepts the trust statement, which the
+ * refusal carries as an offer with the checksum. `inside` goes under the row, such as the library's noise.
  */
 export async function storageSection(ctx: Context, inside: Block[] = []): Promise<Block> {
-  const dash = { text: '—', muted: true }
   const providers = await machineProviders(ctx.home)
+  const official = officialProviders()
   let used: string | null = null
   try {
     used = providerOf(ctx.library.root, ctx.home).name
   } catch {
     used = null
   }
-  const rows: TableRow[] = providers.map((p) => ({
-    key: p.name,
-    cells: {
-      name: { text: p.name, mono: true },
-      version: { text: p.version, mono: true },
-      addresses: { text: formsText(p.addresses) },
-      came: { text: cameText(p), muted: true },
-      // Only the one this library uses says something here.
-      state: p.name === used ? { text: '这个库在用', icon: 'check' } : { text: '', normal: true },
-    },
-    link: null,
-    actions:
-      p.origin.kind === 'built-in'
-        ? []
-        : [
-            { label: '换新版本', tone: 'default', confirm: null, inputs: [], call: ownerForm('storage update', UPDATE_PARAMS, { name: p.name }), as: 'menu', icon: 'arrow-down-to-line' },
-            { label: '卸掉', tone: 'danger', confirm: `卸掉存储提供者 ${p.name}？用它的库在这台机器上打不开，直到再装上。`, inputs: [], call: ownerForm('storage remove', { positional: [NAME] }, { name: p.name }), icon: 'trash-2' },
-          ],
-  }))
-  const official: TableRow[] = notInstalled(providers).map((o) => ({
-    key: `official:${o.name}`,
-    cells: {
-      name: { text: o.name, mono: true },
-      version: o.version === null ? dash : { text: o.version, mono: true },
-      addresses: { text: formsText(o.addresses), muted: true },
-      came: { text: `官方，没装：${o.repository}`, muted: true },
-      state: { text: '', normal: true },
-    },
-    link: null,
-    actions: [{ label: '装上', tone: 'default', confirm: null, inputs: [], call: ownerForm('storage install', INSTALL_PARAMS, { repository: o.repository }), as: 'icon', icon: 'plus' }],
-  }))
+  const install = (o: OfficialProvider): Action => ({ label: `装上 ${o.summary}`, tone: 'default', confirm: null, inputs: [], call: ownerForm('storage install', INSTALL_PARAMS, { repository: o.repository }), as: 'menu', icon: 'plus' })
+  const installed = providers.filter((p) => p.origin.kind !== 'built-in')
   const { inputs, call } = formOf({ name: 'storage install', params: INSTALL_PARAMS })
-  const other: Action = { label: '安装别的存储…', tone: 'default', confirm: null, inputs: inputs.filter((i) => i.name === 'repository'), call: { ...call, args: { positional: call.args.positional, flags: {} } }, as: 'icon', icon: 'folder-plus' }
+  const actions: Action[] = [
+    ...notInstalled(providers).map(install),
+    ...installed.map((p): Action => ({ label: `更新 ${p.name}`, tone: 'default', confirm: null, inputs: [], call: ownerForm('storage update', UPDATE_PARAMS, { name: p.name }), as: 'menu', icon: 'arrow-down-to-line' })),
+    { label: '安装别的存储…', tone: 'default', confirm: null, inputs: inputs.filter((i) => i.name === 'repository'), call: { ...call, args: { positional: call.args.positional, flags: {} } }, as: 'menu', icon: 'folder-plus' },
+    ...installed.map((p): Action => ({ label: `卸掉 ${p.name}`, tone: 'danger', confirm: `卸掉存储提供者 ${p.name}？用它的库在这台机器上打不开，直到再装上。`, inputs: [], call: ownerForm('storage remove', { positional: [NAME] }, { name: p.name }), icon: 'trash-2' })),
+  ]
+  const where: ListItem = {
+    cell: { text: ctx.library.root, local: true, icon: 'folder' },
+    note: used === null ? null : (official.find((o) => o.name === used)?.summary ?? used),
+    actions,
+  }
   return {
     kind: 'section',
     title: '存储',
     note: null,
     about: '存储提供者以主人的身份运行，看得到库里的全部内容。库用哪一个，记在这台机器上。',
-    count: providers.length,
-    blocks: [
-      {
-        kind: 'table',
-        columns: [
-          { key: 'name', label: '提供者' },
-          { key: 'version', label: '版本', optional: true },
-          { key: 'addresses', label: '地址' },
-          { key: 'came', label: '来历', optional: true },
-          { key: 'state', label: '' },
-        ],
-        rows: [...rows, ...official],
-        empty: '',
-      },
-      ...inside,
-    ],
-    actions: [other],
+    count: null,
+    blocks: [{ kind: 'list', items: [where] }, ...inside],
+    actions: [],
   }
 }

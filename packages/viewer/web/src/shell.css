@@ -61,30 +61,8 @@
   width: calc(var(--side-w) - 18px);
   min-height: 0;
 }
-/*
- * In the app the sidebar is a pane floating 8px inside the window, as the system's own sidebar does,
- * its corners concentric with the window's (26 − 8). The app puts the system's glass under the pane
- * and draws the window's ground around it, so the page draws neither (`data-transparency="glass"`,
- * set by the app); shell.js reports the pane's box (`data-glass`). Otherwise the page draws both,
- * opaque, the pane with a border. The top row holds the window's buttons, centred 26px down.
- */
 html[data-shell] .side {
-  margin: 8px;
-  padding: 0 8px 8px;
-  border-radius: 18px;
-}
-html[data-shell] .side-inner {
-  width: calc(var(--side-w) - 32px);
-}
-html[data-shell] .side-top {
-  height: 36px;
-}
-html[data-transparency='glass'] :is(body, .shell) {
-  background: transparent;
-}
-html[data-shell]:not([data-transparency='glass']) .side {
-  background: var(--panel);
-  box-shadow: 0 0 0 1px var(--glass-border);
+  padding-top: 0;
 }
 .side-top {
   display: flex;
@@ -345,22 +323,13 @@ html[data-shell] .shell[data-side='rail'] .side-top {
   justify-content: flex-start;
   padding-left: 0;
 }
-/*
- * The app's rail is 80px wide, for the window's buttons: its icons stand under the middle one, and
- * the toggle, which the buttons would cover, takes the library's empty row below them.
- */
-html[data-shell] .side-inner {
-  transition: translate 420ms var(--ease);
-}
+/* In the app the window's buttons cover the rail's top row: the toggle steps down into the library's empty row below them. */
 html[data-shell] .side-toggle {
   transition:
     background-color 140ms ease,
     color 140ms ease,
     transform 160ms var(--ease),
     translate 420ms var(--ease);
-}
-html[data-shell] .shell[data-side='rail'] .side-inner {
-  translate: 18px 0;
 }
 html[data-shell] .shell[data-side='rail'] .side-top .side-toggle {
   margin-left: 0;
@@ -448,11 +417,7 @@ html[data-window='inactive'] .fresh {
   background: var(--panel);
   transition: box-shadow 140ms ease;
 }
-/* Content scrolled under the head: the head floats over it, in glass. */
 .main[data-scrolled] .page-head {
-  background: var(--glass);
-  -webkit-backdrop-filter: var(--glass-filter);
-  backdrop-filter: var(--glass-filter);
   box-shadow: 0 0.5px 0 var(--line);
 }
 .page-head > h1 {
@@ -613,10 +578,8 @@ html[data-window='inactive'] .fresh {
   background: linear-gradient(rgba(0, 0, 0, 0.012), rgba(0, 0, 0, 0.012)), var(--panel);
   animation: detail-in 200ms ease;
 }
-@media (prefers-color-scheme: dark) {
-  .detail {
-    background: linear-gradient(rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.12)), var(--panel);
-  }
+:where([data-scheme='dark']) .detail {
+  background: linear-gradient(rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.12)), var(--panel);
 }
 @keyframes detail-in {
   from {
@@ -795,111 +758,153 @@ html[data-window='inactive'] .fresh {
 }
 
 /*
- * The menu bar panel (tray.tsx): the home page's content in the app's small window, which sizes
- * itself to it. No ground of its own: the app's panel is a pane of the system's glass (or, with
- * transparency reduced, an opaque ground). A head with the library, the parts with small grey titles,
- * a foot with the two buttons; 14px in from the glass's rounded edge.
+ * The menu bar panel (tray.tsx): the home page's content in the app's small window, which rounds it
+ * and gives it a hairline and a shadow. One surface, the panel's ground, with nothing of another
+ * ground inside: rows and buttons are quiet until the pointer is on them. The head stays; the body
+ * under it scrolls once the content is taller than the room the app gives the panel.
  */
 html[data-panel='tray'],
-html[data-panel='tray'] body {
-  height: auto;
+html[data-panel='tray'] body,
+html[data-panel='tray'] #root {
+  height: 100%;
   min-height: 0;
-  background: transparent;
+  overflow: hidden;
+  background: var(--panel);
 }
 .tray {
   display: flex;
+  height: 100%;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px 14px 10px;
   container-type: inline-size;
 }
 .tray-head {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 8px;
-  min-height: 28px;
+  gap: 6px;
+  min-height: 46px;
+  padding: 8px 8px 4px 10px;
 }
 .tray-library {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 4px;
-  margin-left: -6px;
   padding: 2px 6px;
   border-radius: var(--radius-control);
   color: var(--ink-strong);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   line-height: 20px;
   transition: background-color 140ms ease;
+}
+.tray-library:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
 }
 .tray-library:hover {
   background: var(--wash);
 }
-.tray-library > svg {
-  width: 13px;
-  height: 13px;
+.tray-waiting {
+  display: grid;
   flex: none;
-  color: var(--ink-3);
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
 }
-.tray-head .tag {
+.tray-tools {
+  display: flex;
+  flex: none;
+  gap: 2px;
   margin-left: auto;
 }
+.tray-body {
+  flex: 1;
+  min-height: 0;
+  padding: 2px 6px 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.tray-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .tray-note {
+  padding: 0 8px;
   color: var(--bad);
   font-size: 12px;
   line-height: 18px;
 }
-.tray-start,
-.tray-more {
+.tray-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
-  padding: 6px 10px;
+  min-height: 32px;
+  padding: 0 8px;
   border-radius: var(--radius-item);
-  background: var(--tray);
-  box-shadow: inset 0 0 0 0.5px var(--line);
-  color: var(--ink);
+  color: var(--ink-2);
   font-size: 12.5px;
   line-height: 18px;
-  text-align: left;
-  transition: background-color 140ms ease;
+  cursor: default;
+  transition: background-color 120ms ease;
 }
-.tray-start:hover,
-.tray-more:hover {
+.tray-row:hover {
   background: var(--wash);
+  color: var(--ink);
 }
-.tray-start > svg {
-  width: 13px;
-  height: 13px;
+.tray-row > svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
   color: var(--ink-3);
 }
-.tray-more {
-  margin-top: 6px;
-  color: var(--ink-2);
+.tray-row > .tray-row-chev {
+  margin-left: auto;
+  color: var(--ink-4);
 }
-.tray-part > h2 {
-  margin-bottom: 6px;
-  color: var(--ink-3);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 16px;
-}
-.tray .feed-row {
-  min-height: 0;
-  padding: 6px 4px;
-}
-.tray .asks-row {
-  padding: 10px 12px 12px;
-}
-.tray-foot {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin: 2px -14px -10px;
-  padding: 10px 14px;
+.tray-part + .tray-part {
+  padding-top: 8px;
   box-shadow: inset 0 0.5px 0 var(--line);
+}
+.tray .asks[data-compact] .asks-row {
+  gap: 2px;
+  padding: 8px 8px 10px;
+}
+.tray .asks[data-compact] .asks-row[data-folded] {
+  padding-block: 6px;
+}
+.tray .asks-text {
+  font-weight: 400;
+}
+.tray .asks-answers {
+  gap: 6px;
+  margin-top: 6px;
+}
+/* An answer is a quiet wash on the panel; the suggested one a little stronger, not a dark block. */
+.tray .asks-answers .btn {
+  background: var(--chip);
+  box-shadow: none;
+}
+.tray .asks-answers .btn:hover:not(:disabled) {
+  background: var(--select);
+}
+.tray .asks-answers .btn-primary {
+  background: var(--select);
+  color: var(--ink-strong);
+  font-weight: 600;
+}
+.tray .feed-empty {
+  padding: 6px 8px;
+  font-size: 12.5px;
 }
 .detail-title .head-actions {
   flex: none;

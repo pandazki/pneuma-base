@@ -35,6 +35,10 @@
 # Only the copy of the app this script starts is driven or stopped: it has its own hook name and is
 # found by it, never by the app's name. With PNEUMA_BASE_SHOTS set to a folder, it saves pictures of
 # the first-launch window, the panel and the files page as a list and as icons there, light and dark.
+#
+# `verify.sh pictures <library folder> <folder>` only takes pictures, into the second folder, of the
+# app on that library, light and dark: the window on home, activity, the configuration page and the
+# agents page, the window with the sidebar folded, and the panel.
 set -eu
 cd "$(dirname "$0")"
 app="$(pwd)/dist/Pneuma Base.app"
@@ -93,6 +97,37 @@ heard() { page_eval "$1"; }
 ok() { echo "ok   $1"; }
 fail() { echo "FAIL $1"; status=1; }
 status=0
+
+if [ "${1:-}" = pictures ]; then
+  plib="$2"; out="$3"; mkdir -p "$out"
+  start
+  wait_for "app: status item shown" 10 || true
+  hook "library:$plib"
+  wait_for "window: shown" 20 || { fail "pictures: the window did not open"; stop; exit 1; }
+  sleep 2
+  hook "resize:1440,900"; sleep 1
+  # The icon's click toggles the panel, which closes whenever another window takes the keyboard.
+  open_tray() { mark; hook tray; logged "tray: shown" 2 || { sleep 0.5; hook tray; logged "tray: shown" 3; }; sleep 1.5; }
+  picture() { mark; hook "$1:$out/$2.png"; logged "capture: wrote $2.png" 5 || echo "     (no picture $2)"; }
+  for look in light dark; do
+    hook "$look"; sleep 1
+    for page in "home=" "activity=view=ledger.activity" "config=view=config" "agents=view=agents"; do
+      hook "route:${page#*=}"; sleep 2
+      picture capture "window-${page%%=*}-$look"
+    done
+    hook "route:"; sleep 1
+    page_eval 'document.querySelector("[aria-label=收起侧栏]").click(), "folded"' >/dev/null; sleep 1
+    picture capture "window-rail-$look"
+    page_eval 'document.querySelector("[aria-label=展开侧栏]").click(), "unfolded"' >/dev/null; sleep 1
+    open_tray; picture capture-tray "tray-$look"
+    hook "tray-fit:$work/fit-$look.txt"; sleep 1; sed "s/^/     $look panel: /" "$work/fit-$look.txt" 2>/dev/null || true
+    hook "route:"; sleep 0.5
+  done
+  hook system
+  stop
+  echo "pictures in $out"
+  exit $status
+fi
 
 start
 wait_for "welcome: shown" 10 && ok "first launch with no library: the welcome window" || fail "first launch: the welcome window"
@@ -284,36 +319,36 @@ page_shows home-4.txt "等你决定" 10 && ! grep -q "接上你的 agent" "$work
 
 hook tray
 wait_for "tray: shown" 5 && ok "a click on the icon opens the panel" || fail "the panel opens"
-page_shows tray.txt "要上线吗" 10 text-tray && grep -q "我的库" "$work/tray.txt" && grep -q "打开窗口" "$work/tray.txt" && ok "the panel: the library, the ask, 打开窗口" || fail "the panel: $(head -c 300 "$work/tray.txt")"
+page_shows tray.txt "要上线吗" 10 text-tray && grep -q "我的库" "$work/tray.txt" && ok "the panel: the library, the ask" || fail "the panel: $(head -c 300 "$work/tray.txt")"
 snap snap-tray tray-app
 
-# Liquid Glass. The sidebar is a pane the page leaves clear over the system's glass, which the app
-# moves with the page's report of the pane; the panel's frame is glass; with transparency reduced
-# (the app's own flag, as the system's setting would set it) both are opaque with a border, and so is
-# the page's floating material. With PNEUMA_BASE_SHOTS set, pictures of the window and the panel as
-# the screen shows them, over a colourful desktop the app puts behind them; and the frame times.
-glass_report() { rm -f "$work/$1"; hook "glass:report:$work/$1"; i=0; while [ ! -s "$work/$1" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done; cat "$work/$1" 2>/dev/null || true; }
-# The pane of glass is where the page's sidebar is: "x,y,w,h rR" both.
-glass_follows() { pane=$(sed -n 's/^pane: \(.*\) glass$/\1/p' "$work/$1"); side=$(sed -n 's/^page sidebar: //p' "$work/$1"); [ -n "$pane" ] && [ "$pane" = "$side" ]; }
-glass_report glass-1.txt >/dev/null
-grep -qx "tray: glass r20" "$work/glass-1.txt" && ok "the panel's frame is one pane of the system's glass" || fail "the panel's frame: $(grep '^tray' "$work/glass-1.txt")"
-grep -qx "window: clear" "$work/glass-1.txt" && grep -qx "page transparency: glass" "$work/glass-1.txt" && grep -qx "page sidebar ground: rgba(0, 0, 0, 0)" "$work/glass-1.txt" && grep -qx "page ground: rgba(0, 0, 0, 0)" "$work/glass-1.txt" \
-  && glass_follows glass-1.txt && ok "the sidebar is glass: the page leaves it clear and the glass covers it, $pane" || fail "the sidebar's glass: $(cat "$work/glass-1.txt")"
-hook "glass:resize:1000,640"; sleep 1
-glass_report glass-2.txt >/dev/null
-glass_follows glass-2.txt && echo "$pane" | grep -q ",624 r" && ok "after a resize to 1000x640 the glass covers the sidebar: $pane" || fail "after a resize: $(cat "$work/glass-2.txt")"
-page_eval 'document.querySelector("[aria-label=收起侧栏]").click(), "folded"' >/dev/null; sleep 1
-glass_report glass-3.txt >/dev/null
-glass_follows glass-3.txt && [ "$pane" != "$(sed -n 's/^pane: \(.*\) glass$/\1/p' "$work/glass-2.txt")" ] && ok "folded to a rail, the glass covers the rail: $pane" || fail "folded: $(cat "$work/glass-3.txt")"
-page_eval 'document.querySelector("[aria-label=展开侧栏]").click(), "unfolded"' >/dev/null; sleep 1
-hook glass:reduce; sleep 1
-glass_report glass-4.txt >/dev/null
-grep -qx "window: opaque" "$work/glass-4.txt" && grep -q "^pane: .* hidden$" "$work/glass-4.txt" && grep -qx "tray: opaque" "$work/glass-4.txt" && grep -qx "page transparency: reduced" "$work/glass-4.txt" \
-  && grep -q "^page sidebar ground: rgb(" "$work/glass-4.txt" && grep -q "^page glass: none rgb(" "$work/glass-4.txt" \
-  && ok "transparency reduced: the window and the panel are opaque, no glass; the page draws an opaque sidebar and floating layers, $(sed -n 's/^page glass: //p' "$work/glass-4.txt")" || fail "transparency reduced: $(cat "$work/glass-4.txt")"
-hook glass:normal; sleep 1
-glass_report glass-5.txt >/dev/null
-grep -qx "window: clear" "$work/glass-5.txt" && grep -qx "tray: glass r20" "$work/glass-5.txt" && grep -q "^page glass: blur" "$work/glass-5.txt" && glass_follows glass-5.txt && ok "back to glass: $(sed -n 's/^page glass: //p' "$work/glass-5.txt")" || fail "back to glass: $(cat "$work/glass-5.txt")"
+# The panel: one line a row and no text button but the asks' answers; under a small display's menu
+# bar it is as tall as the room and its body scrolls under the head, the last row in reach.
+fit() { rm -f "$work/$1"; hook "tray-fit:$work/$1"; i=0; while [ ! -s "$work/$1" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done; cat "$work/$1" 2>/dev/null || true; }
+fit fit-1.txt >/dev/null
+rows=$(sed -n 's/^rows: //p' "$work/fit-1.txt"); tallest=$(sed -n 's/^tallest row: //p' "$work/fit-1.txt")
+[ "${rows:-0}" -gt 3 ] && [ "${tallest:-99}" -le 34 ] && grep -qx "text buttons: 0" "$work/fit-1.txt" && ok "the panel: $rows rows of one line each (the tallest $tallest pt), no text button outside the asks" || fail "the panel's rows: $(tr '\n' ' ' < "$work/fit-1.txt")"
+hook "tray-room:300"; sleep 1
+fit fit-2.txt >/dev/null
+panel=$(sed -n 's/^panel: //p' "$work/fit-2.txt")
+[ "${panel:-999}" -le 300 ] && grep -qx "scrolls: true" "$work/fit-2.txt" && grep -qx "last row inside: true" "$work/fit-2.txt" && ok "with 300 pt under the menu bar: the panel is $panel pt and scrolls, the last row in reach" || fail "the panel on a small display: $(tr '\n' ' ' < "$work/fit-2.txt")"
+hook "tray-room:"; sleep 0.5
+
+# 外观, from the panel's 「···」 and from the configuration page: the app, the window, the panel and both
+# pages follow at once, and the choice is kept.
+appearance() { rm -f "$work/$1"; hook "text-appearance:$work/$1"; i=0; while [ ! -s "$work/$1" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done; tr '\n' ' ' < "$work/$1" 2>/dev/null || true; }
+mark; hook panel-menu
+logged "panel-menu: 外观 | 跟随系统 | 浅色 | 深色 | 库 | 我的库 | 新建或打开一个库… | 设置… | 退出 Pneuma Base" && ok "the panel's 「···」: 外观, the libraries, 设置…, 退出" || fail "the panel's menu: $(since_mark | grep 'panel-menu:')"
+hook "menu-pick:深色"; sleep 1
+[ "$(appearance look-1.txt)" = "choice: dark kept: dark app: dark window: dark tray: dark page: dark tray page: dark " ] && ok "深色 from the panel's menu: the window, the panel and both pages are dark, and it is kept" || fail "深色: $(appearance look-1.txt)"
+hook "route:view=config"; sleep 2
+page_eval '[...document.querySelectorAll("main [aria-label=这台机器] [role=radio]")].find((b) => b.textContent === "浅色")?.click(), "clicked"' >/dev/null; sleep 1
+[ "$(appearance look-2.txt)" = "choice: light kept: light app: light window: light tray: light page: light tray page: light " ] && ok "浅色 from the configuration page's row: all light at once, kept" || fail "浅色 from the page: $(appearance look-2.txt)"
+hook panel-menu; hook "menu-pick:跟随系统"; sleep 1
+look=$(appearance look-3.txt); sys=$(echo "$look" | sed -n 's/.*app: \([a-z]*\).*/\1/p')
+[ "$look" = "choice: system kept: system app: $sys window: $sys tray: $sys page: $sys tray page: $sys " ] && ok "跟随系统: everything as the system is ($sys), kept" || fail "跟随系统: $look"
+hook "route:"; sleep 1
+
 # A question before an act that cannot be undone is the system's sheet on the window: 断开 an agent, then 取消.
 hook "route:view=agents"; sleep 1
 agents_before=$(pb --library "$lib" agent list 2>&1)
@@ -329,9 +364,7 @@ else
 fi
 if [ -n "$shots" ]; then
   mkdir -p "$shots"
-  hook glass:backdrop
-  for look in light dark; do hook "$look"; sleep 1.2; hook "glass:capture:$shots/glass-sheet-$look.png"; wait_for "capture: wrote glass-sheet-$look.png" 5 || echo "     (no picture glass-sheet-$look)"; done; hook system
-  hook glass:backdrop:off
+  for look in light dark; do hook "$look"; sleep 1.2; hook "capture:$shots/sheet-$look.png"; wait_for "capture: wrote sheet-$look.png" 5 || echo "     (no picture sheet-$look)"; done; hook system
 fi
 hook "sheet:1"
 logged "sheet: answered 1" && sleep 1.5 && [ "$(pb --library "$lib" agent list 2>&1)" = "$agents_before" ] && ok "取消 on the sheet: nothing changed, agent list is as it was" || fail "取消 on the sheet: $(since_mark | grep 'sheet:' | tail -2) $(pb --library "$lib" agent list 2>&1 | head -5)"
@@ -340,10 +373,9 @@ hook "route:"; sleep 1
 if [ -n "$shots" ]; then
   mkdir -p "$shots"
   # $1 the picture's name, $2 the hook (capture or capture-tray), $3 what to do in the page before, $4 after.
-  shoot() { for look in light dark; do hook "$look"; [ -n "${3:-}" ] && page_eval "$3" >/dev/null; sleep 1.2; hook "glass:$2:$shots/glass-$1-$look.png"; wait_for "capture: wrote glass-$1-$look.png" 5 || echo "     (no picture glass-$1-$look)"; [ -n "${4:-}" ] && page_eval "$4" >/dev/null; sleep 0.4; done; hook system; }
+  shoot() { for look in light dark; do hook "$look"; [ -n "${3:-}" ] && page_eval "$3" >/dev/null; sleep 1.2; hook "$2:$shots/app-$1-$look.png"; wait_for "capture: wrote app-$1-$look.png" 5 || echo "     (no picture app-$1-$look)"; [ -n "${4:-}" ] && page_eval "$4" >/dev/null; sleep 0.4; done; hook system; }
   # The icon's click toggles the panel, which closes whenever another window takes the keyboard.
   open_tray() { mark; hook tray; logged "tray: shown" 2 || { sleep 0.5; hook tray; logged "tray: shown" 3; }; sleep 0.5; }
-  hook glass:backdrop; sleep 0.5
   open_tray
   shoot tray capture-tray
   shoot window capture
@@ -357,18 +389,8 @@ if [ -n "$shots" ]; then
   shoot notice capture 'window.dispatchEvent(new CustomEvent("pneuma-shell", { detail: { notice: { tone: "good", text: "已放进 inbox/paper.pdf，记成你带进来的" } } })), "notice"'
   page_eval 'document.querySelector(".main").scrollTop = 0' >/dev/null
   hook "route:"; sleep 1
-  hook glass:reduce; sleep 0.5
-  shoot reduced capture
-  open_tray
-  shoot tray-reduced capture-tray
-  hook glass:normal
-  hook glass:backdrop:off
-  echo "     pictures in $shots/glass-*.png"
+  echo "     pictures in $shots/app-*.png"
 fi
-hook "route:view=ledger.activity"; sleep 1
-rm -f "$work/frames.txt"; hook "glass:frames:$work/frames.txt"
-wait_for "frames: wrote frames.txt" 30 && ok "frame times:" && sed 's/^/       /' "$work/frames.txt" || fail "frame times: $(grep 'frames:' "$log" | tail -1)"
-hook "route:"; sleep 1
 
 # The local endpoint: the address the server got, the sentence on the page, the guide, and one pairing
 # asked over HTTP by an application not in the products table, allowed by the owner, then MCP over HTTP.
@@ -509,6 +531,7 @@ hook path-unlink; sleep 1
 [ ! -e "$work/bin/pneuma-base" ] && [ ! -L "$work/bin/pneuma-base" ] && ok "turned off: the link is gone" || fail "the link is left"
 
 thumbs_kept=$(ls "$pb_home/app/cache/thumbnails/"*/*.png | wc -l | tr -d ' ')
+hook dark; sleep 0.5
 hook quit
 i=0; while kill -0 "$pid" 2>/dev/null && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done
 sleep 1
@@ -526,6 +549,9 @@ desktop_before=$(cat "$desktop"); skill_before=$(cat "$skill")
 : > "$log"
 start "$work/moved/Pneuma Base.app"
 wait_for "launcher: written" 10 && grep -q "exec '$work/moved/Pneuma Base.app/Contents/MacOS/node'" "$launcher" && ok "moved: the launcher now runs the moved app's Node" || fail "moved: $(grep 'launcher:' "$log") $(tail -1 "$launcher")"
+hook open; wait_for "window: shown" 15 || true; sleep 1
+appearance look-4.txt | grep -q "^choice: dark kept: dark app: dark window: dark " && ok "launched again: 深色, chosen before quitting, is kept and the window opens dark" || fail "the appearance after a restart: $(appearance look-4.txt)"
+hook system
 wait_for "thumbnails: removed 1 not used for 30 days" 10 && [ ! -e "$stale" ] && [ "$(ls "$pb_home/app/cache/thumbnails/"*/*.png | wc -l | tr -d ' ')" = $((thumbs_kept - 1)) ] && ok "launched again: the thumbnail not used for 30 days is removed, the others stay" || fail "thumbnail cache at launch: $(grep 'thumbnails:' "$log"), $(ls "$pb_home/app/cache/thumbnails/"*/*.png | wc -l | tr -d ' ') of $thumbs_kept left"
 [ "$(cat "$desktop")" = "$desktop_before" ] && [ "$(cat "$skill")" = "$skill_before" ] && bare "$find_line" | grep -q "notes/books.md" && ok "moved: the skill and the MCP entry are unchanged and still work" || fail "moved: the entries"
 stop

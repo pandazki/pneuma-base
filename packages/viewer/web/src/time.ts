@@ -5,11 +5,14 @@ const pad = (n: number) => String(n).padStart(2, '0')
 const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 const MINUTE = 60_000
 
-/** Within the last hour: 刚刚 under a minute, else N 分钟前; null for anything older or in the future. */
+/**
+ * Within the last hour: 刚刚 under two minutes, else N 分钟前; null for anything older or in the future.
+ * Recorded moments are whole minutes, so a thing done a second ago can be stamped up to two minutes back.
+ */
 function ago(d: Date, now: Date): string | null {
   const ms = now.getTime() - d.getTime()
   if (ms < -MINUTE || ms >= 60 * MINUTE) return null
-  return ms < MINUTE ? '刚刚' : `${Math.floor(ms / MINUTE)} 分钟前`
+  return ms < 2 * MINUTE ? '刚刚' : `${Math.floor(ms / MINUTE)} 分钟前`
 }
 
 /**

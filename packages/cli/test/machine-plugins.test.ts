@@ -80,20 +80,24 @@ describe('plugin install', () => {
 })
 
 describe('plugin list', () => {
-  it('lists the built-in plugins and the installed ones with version, contract and summary, and which a library has', () => {
+  it('lists the built-in plugins and the installed ones with version, contract, the name a person says with its short line and its whole text, and which a library has', () => {
     install(source(pager('第一版', '0.1.0')))
     const machine = sb.run(['plugin', 'list'])
     expect(machine.code, machine.stderr).toBe(0)
-    expect(machine.stdout).toContain('pager 0.1.0  契约 2 · 装上来的\n    一页字')
-    expect(machine.stdout).toMatch(/ledger 0\.9\.0 {2}契约 2 · 自带\n {4}记下每样东西/)
+    expect(machine.stdout).toContain('pager 0.1.0  契约 2 · 装上来的\n    一页字\n')
+    expect(machine.stdout).toMatch(/ledger 0\.9\.0 {2}契约 2 · 自带\n {4}记账：[^\n]+\n {4}记下每样东西是哪次会话/)
     expect(machine.stdout).not.toContain('这个库装了')
     sb.run(['plugin', 'add', 'pager', '--library', lib])
     const listed = sb.run(['plugin', 'list', '--library', lib, '--json']).json().data.plugins
-    expect(listed).toContainEqual({ name: 'pager', version: '0.1.0', contract: 2, summary: '一页字', origin: 'machine', installed: true, failed: null })
+    expect(listed).toContainEqual({ name: 'pager', version: '0.1.0', contract: 2, title: null, summary: '一页字', about: null, origin: 'machine', installed: true, failed: null })
     expect(listed).toContainEqual(expect.objectContaining({ name: 'ledger', origin: 'built-in', installed: true }))
     expect(listed).toContainEqual(expect.objectContaining({ name: 'deploy', origin: 'built-in', installed: false }))
+    // Each built-in plugin: a title, a short line of twenty characters at most, and its whole text in sentences.
+    const titles = Object.fromEntries(listed.map((p: { name: string; title: string | null }) => [p.name, p.title]))
+    expect([titles.ledger, titles.version, titles.sync, titles.deploy, titles.search]).toEqual(['记账', '版本', '同步', '部署', '查找'])
     for (const name of ['ledger', 'version', 'sync', 'deploy', 'search']) {
-      expect(listed).toContainEqual(expect.objectContaining({ name, version: PNEUMA_BASE_VERSION, summary: expect.stringMatching(/^[^\n。]+。$/u) }))
+      const p = listed.find((q: { name: string }) => q.name === name)
+      expect(p, name).toMatchObject({ version: PNEUMA_BASE_VERSION, summary: expect.stringMatching(/^[^\n。]{1,20}$/u), about: expect.stringMatching(/^[^\n]+。$/u) })
     }
   })
 })
@@ -164,8 +168,8 @@ describe('a running UI server', () => {
     const server = await serve()
     const section = () => api(server, '/api/view?view=config').then((v) => v.blocks.find((b: any) => b.title === '密钥'))
     const before = await section()
-    const row = before.blocks[0].rows[0]
-    expect(row.cells).toMatchObject({ plugin: { text: 'vault' }, name: { text: 'token' }, description: { text: '外面服务的令牌' }, state: { tag: { text: '没设' } } })
+    const row = before.blocks[0].items[0]
+    expect(row).toMatchObject({ cell: { text: 'token', tag: { text: '没设' } }, note: 'vault', about: '外面服务的令牌' })
     const [setter] = row.actions
     expect(setter.inputs).toEqual([{ name: 'value', label: '值', placeholder: null, value: null, options: null, secret: true }])
     expect(setter.call).toEqual({ face: 'owner', command: 'secret set', args: { positional: ['vault', 'token'], flags: {} }, stdin: '{value}' })
@@ -174,7 +178,9 @@ describe('a running UI server', () => {
     expect(JSON.stringify(reply)).not.toContain('tok-from-the-page')
     expect(statSync(join(home, 'secrets', 'vault', 'token')).mode & 0o777).toBe(0o600)
     expect(sb.run(['--library', lib, 'vault', 'show', '--json']).json().data.token).toBe('tok-from-the-page')
-    // Set is the usual state: the page leaves it unsaid, the text form says it.
-    expect((await section()).blocks[0].rows[0].cells.state).toEqual({ text: '已设', muted: true, normal: true })
+    // Set is the usual state and goes unsaid; replacing it and removing it are in the row's 「···」.
+    const after = (await section()).blocks[0].items[0]
+    expect(after.cell.tag).toBeUndefined()
+    expect(after.actions.map((a: { label: string }) => a.label)).toEqual(['换一个', '删掉'])
   })
 })

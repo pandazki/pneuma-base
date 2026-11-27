@@ -142,8 +142,12 @@ export async function openShared(page: Page, entry: string, view: string): Promi
 
 /** Chooses `action` from the 「···」 menu inside `region`. */
 export async function fromMenu(region: Locator, action: string): Promise<void> {
-  await region.getByRole('button', { name: '更多' }).first().click()
-  await region.page().getByRole('menu').getByRole('menuitem', { name: action }).click()
+  // A refresh that lands just after the menu opens redraws the row and closes it: open it again.
+  await expect(async () => {
+    const item = region.page().getByRole('menu').getByRole('menuitem', { name: action })
+    if (!(await item.isVisible())) await region.getByRole('button', { name: '更多' }).first().click({ timeout: 2_000 })
+    await item.click({ timeout: 2_000 })
+  }).toPass({ timeout: 30_000 })
 }
 
 /** The texts inside `table` matching `cells` that are cut short on screen. */

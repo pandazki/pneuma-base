@@ -282,8 +282,8 @@ describe('agent connect --via mcp-http', () => {
 })
 
 describe('the agents page', () => {
-  type Item = { cell: { text: string; actor?: { name: string; grant?: string }; tag?: { text: string } }; note: string | null; actions: { label: string; call: { command: string } }[] }
-  type Page = { blocks: { kind: string; title: string; about?: string; normal?: true; blocks: { kind: string; items?: Item[]; text?: string; title?: string }[] }[]; problems: unknown[] }
+  type Item = { cell: { text: string; actor?: { name: string; grant?: string }; tag?: { text: string } }; note: string | null; actions: { label: string; tone: string; confirm: string | null; call: { command: string } }[] }
+  type Page = { blocks: { kind: string; title: string; about?: string; normal?: true; actions: { label: string; call: { command: string } }[]; blocks: { kind: string; items?: Item[]; text?: string; title?: string }[] }[]; problems: unknown[] }
   const page = () => {
     const shown = ok(run(['--library', lib, 'show', 'agents', '--json'])).json() as Page
     expect(shown.problems).toEqual([])
@@ -295,8 +295,9 @@ describe('the agents page', () => {
   it('has a row per connected agent: its mark, how it is connected, what the grant reaches, when it was last here, 断开; and the products found here with 接上', () => {
     put('.claude/x', '')
     put('.cursor/x', '')
-    // None connected yet: one quiet line, which the page leaves out; the products below say what to do.
-    expect(section('接上的 agent')).toMatchObject({ normal: true, blocks: [{ kind: 'text', tone: 'neutral', text: '还没有接上任何 agent。' }] })
+    // None connected yet: one quiet line, and the section's head issues a grant by hand.
+    expect(section('接上的 agent')).toMatchObject({ blocks: [{ kind: 'text', tone: 'neutral', text: '还没有接上任何 agent。' }], actions: [{ label: '发授权', call: { command: 'grant issue' } }] })
+    expect(section('接上的 agent')?.about).toContain(`codex --add-dir ${lib}`)
     ok(run(['agent', 'connect', 'claude-code', '--library', lib, '--area', 'notes', '--read-only']))
     let shown = sections()
     // What the grant reaches: the area in the note, read-only as the one mark.
@@ -315,5 +316,20 @@ describe('the agents page', () => {
 
     rmSync(join(sb.home, '.claude/skills/pneuma-base-claude-code/SKILL.md'))
     expect(sections()['接上的 agent']?.[0]?.items?.[0]?.cell.tag).toEqual({ text: '接上时写的不在了', tone: 'warn' })
+  })
+
+  it('lists a grant no product connected with as an agent row: its mark and name, the grant when named otherwise, the area, read-only as a mark; skills and 撤回 in its 「···」', () => {
+    ok(run(['grant', 'issue', 'grok', '--agent', 'grok-bot', '--library', lib]))
+    ok(run(['grant', 'issue', 'helper', '--agent', 'helper', '--area', 'notes', '--read-only', '--library', lib]))
+    const items = sections()['接上的 agent']?.[0]?.items ?? []
+    expect(items.map((i) => [i.cell.text, i.cell.actor, i.cell.tag?.text, i.note])).toEqual([
+      ['grok-bot', { kind: 'agent', name: 'grok-bot', grant: 'grok' }, undefined, '凭授权 grok · 还没在这里做过事'],
+      ['helper', { kind: 'agent', name: 'helper', grant: 'helper' }, '只读', '区域 notes/ · 还没在这里做过事'],
+    ])
+    expect(items[0]?.actions).toMatchObject([
+      { label: '为 Claude 生成技能', call: { command: 'skill install' } },
+      { label: '为 Codex 生成技能', call: { command: 'skill install' } },
+      { label: '撤回', tone: 'danger', confirm: expect.stringContaining('grok'), call: { command: 'grant revoke' } },
+    ])
   })
 })

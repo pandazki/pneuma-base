@@ -23,6 +23,7 @@ function switchCommand(kit: Kit, on: boolean): OwnerCommand {
   const [verb, effect] = on ? ['打开', '发布'] : ['关上', '下线']
   return defineCommand({
     name: switchName(kit.name, on),
+    act: { kind: on ? 'on' : 'off', object: 'path' },
     summary: on ? '打开开关：发布一样可部署的东西，之后线上跟着它的内容' : '关上开关：把一样东西从目标上撤下',
     params: SWITCH_PARAMS,
     destructive: false,
@@ -49,6 +50,7 @@ function switchCommand(kit: Kit, on: boolean): OwnerCommand {
 function syncCommand(kit: Kit): OwnerCommand {
   return defineCommand({
     name: `${kit.name} sync`,
+    act: { kind: 'synced', name: '部署' },
     summary: '把全部可部署的东西对一遍：该发布的发布，该下线的下线；跑几遍结果都一样',
     params: {},
     destructive: false,
@@ -156,6 +158,7 @@ function secretNotes(kit: Kit, unset: readonly SecretDecl[]): string[] {
 function targetSetCommand(kit: Kit): OwnerCommand {
   return {
     name: targetSetName(kit),
+    act: { kind: 'set', object: 'to', name: '部署目标' },
     summary: `配部署目标：${kit.targets.map((t) => t.label).join('，或')}`,
     params: { flags: targetFlags(kit) },
     destructive: false,

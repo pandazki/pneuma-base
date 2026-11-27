@@ -69,9 +69,9 @@ test('the items page and the provenance chain of a relayed library', async ({ pa
   await expect(items.locator('tbody tr:not(.group-row)')).toHaveCount(4)
   await expect(row('payments/comparison.md')).toHaveCount(0)
 
-  // The config page of a library with the ledger and two grants.
-  await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '配置' }).click()
-  await expect(page.getByRole('region', { name: '授权与技能' }).getByRole('row', { name: /codex/ })).toBeVisible()
+  // The Agent page of a library with two grants and no product connected: each grant an agent's row.
+  await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: 'Agent' }).click()
+  await expect(page.getByRole('region', { name: '接上的 agent' }).getByRole('listitem').filter({ hasText: 'Codex' })).toBeVisible()
   await panel.getByRole('button', { name: '关闭详情' }).click()
 
   // By keyboard: a row opens its panel with Enter; Escape closes it.

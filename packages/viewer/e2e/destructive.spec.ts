@@ -54,7 +54,7 @@ test('purging the archive asks first; cancelled, nothing changes; confirmed, it 
   await expect(main.getByText('归档区是空的')).toBeVisible()
   expect(existsSync(join(lib, '_archive'))).toBe(false)
   await nav.getByRole('button', { name: '活动' }).click()
-  await expect(main.getByRole('listitem').filter({ hasText: '主人面的操作 archive purge' }).getByRole('img', { name: '主人' })).toBeVisible()
+  await expect(main.getByRole('listitem').filter({ has: page.locator('.feed-line[title^="pneuma-base archive purge"]') }).getByRole('img', { name: '主人' })).toBeVisible()
 })
 
 test('in the app the question is the system’s sheet: 取消 changes nothing, the act empties the archive', async ({ page, pb }) => {

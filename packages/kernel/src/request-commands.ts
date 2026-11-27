@@ -82,6 +82,7 @@ export const REQUEST_COMMANDS: readonly KernelCommand[] = [
   }),
   command({
     name: 'request decline',
+    act: { kind: 'declined', object: 'id' },
     summary: '拒绝 agent 的一个请求，可以说一句理由；它请的命令不运行',
     params: DECLINE.params,
     destructive: false,

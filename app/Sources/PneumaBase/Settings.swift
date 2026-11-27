@@ -2,12 +2,13 @@ import AppKit
 import ServiceManagement
 import SwiftUI
 
-/// This machine's settings, in the settings window (⌘,). The two conveniences are off until the owner
-/// turns them on: `pneuma-base` on the PATH of the owner's own terminal, and opening at login.
-/// 直接放进来的文件算主人的 is here too, and still in the menus.
+/// This machine's settings, in the settings window (⌘,), and as rows of the configuration page in the
+/// app. The two conveniences are off until the owner turns them on: `pneuma-base` on the PATH of the
+/// owner's own terminal, and opening at login. 外观 and 直接放进来的文件算主人的 are here too, and in the menus.
 @MainActor
 final class MachineSettings: ObservableObject {
   let launcher: URL
+  @Published var appearance: Appearance { didSet { if appearance != oldValue { onAppearance?(appearance) } } }
   @Published var ownerFiles: Bool { didSet { if ownerFiles != oldValue { onOwnerFiles?(ownerFiles) } } }
   /// The symbolic link to the launcher the app put in a folder on the owner's PATH, if it did.
   @Published private(set) var link: String?
@@ -19,11 +20,13 @@ final class MachineSettings: ObservableObject {
   @Published private(set) var pathNote: String?
   @Published private(set) var login = SMAppService.mainApp.status
   @Published private(set) var loginNote: String?
+  var onAppearance: ((Appearance) -> Void)?
   var onOwnerFiles: ((Bool) -> Void)?
   var onLink: ((String?) -> Void)?
 
-  init(launcher: URL, ownerFiles: Bool, link: String?) {
+  init(launcher: URL, appearance: Appearance, ownerFiles: Bool, link: String?) {
     self.launcher = launcher
+    self.appearance = appearance
     self.ownerFiles = ownerFiles
     self.link = link.flatMap { (try? FileManager.default.destinationOfSymbolicLink(atPath: $0)) == launcher.path ? $0 : nil }
   }
@@ -153,6 +156,7 @@ final class MachineSettings: ObservableObject {
   /// The settings in words, for verify.sh.
   var text: String {
     [
+      "外观：\(appearance.word)",
       "直接放进来的文件算主人的：\(ownerFiles ? "开着" : "关着")",
       "在终端里用 pneuma-base：\(link.map { "开着，\($0)" } ?? "关着")",
       "PATH 上能放的文件夹：\((folders ?? []).joined(separator: "、"))",
@@ -169,6 +173,12 @@ struct SettingsView: View {
 
   var body: some View {
     Form {
+      Section {
+        Picker("外观", selection: $model.appearance) {
+          ForEach(Appearance.allCases, id: \.self) { Text($0.word).tag($0) }
+        }
+        .pickerStyle(.segmented)
+      }
       Section {
         Toggle("直接放进来的文件算主人的", isOn: $model.ownerFiles)
         note("开着时，在访达里拷进库、或直接改了的文件，会记成你带进来的、你改的（看到的，不是谁说的）。")
