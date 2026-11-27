@@ -69,7 +69,7 @@ describe('PLUGINS.md', () => {
   }
 
   it('lists every icon name a view or a cell may use, and every class and token the frame kit gives, as the sdk gives them', () => {
-    expect(rowNames('`IconName`', /`([a-z][a-z-]*)`/g)).toEqual([...ICON_NAMES])
+    expect(rowNames('`IconName`', /`([a-z][a-z0-9-]*)`/g)).toEqual([...ICON_NAMES])
     expect(rowNames('`frame.css` 的类（`FRAME_CLASSES`）', /`([a-z][a-z-]*)`/g)).toEqual([...FRAME_CLASSES])
     expect(rowNames('`frame.css` 的变量（`FRAME_TOKENS`）', /`(--[a-z0-9-]+)`/g)).toEqual([...FRAME_TOKENS])
   })
