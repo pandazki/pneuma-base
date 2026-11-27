@@ -3,13 +3,12 @@
 // remembered width, and both colour schemes without a reload.
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
-import { expect, relay, tempDir, test, write, type Cli } from './support.ts'
+import { expect, tempDir, test, write, type Cli } from './support.ts'
 
 const row = (page: Page, path: string) => page.getByRole('main').getByRole('row', { name: new RegExp(`^${path.replaceAll('.', '\\.')}\\b`) })
 const hashOf = (page: Page) => new URLSearchParams(new URL(page.url()).hash.slice(1))
 
-test('several things open at once as tabs, kept in the address; Escape closes the front one', async ({ page, pb }) => {
-  const { url } = await pb.view(relay(pb))
+test('several things open at once as tabs, kept in the address; Escape closes the front one', async ({ page, relayUrl: url }) => {
   await page.goto(`${url}#view=ledger.items`)
   const panel = page.getByRole('complementary', { name: '详情' })
   const tabs = panel.getByRole('tablist', { name: '打开的详情' }).getByRole('tab')
@@ -56,8 +55,7 @@ test('several things open at once as tabs, kept in the address; Escape closes th
   expect(hashOf(page).has('panel')).toBe(false)
 })
 
-test('the palette finds a thing by its text and opens it, and with nothing typed lists the pages', async ({ page, pb }) => {
-  const { url } = await pb.view(relay(pb))
+test('the palette finds a thing by its text and opens it, and with nothing typed lists the pages', async ({ page, relayUrl: url }) => {
   await page.goto(url)
   await expect(page.getByRole('heading', { level: 1, name: '首页' })).toBeVisible()
   const palette = page.getByRole('dialog', { name: '命令面板' })
@@ -94,8 +92,7 @@ test('the palette finds a thing by its text and opens it, and with nothing typed
   await expect(page.getByRole('complementary', { name: '详情' })).toBeVisible()
 })
 
-test('in a table the arrow keys move between rows, one row in the Tab order, and Enter opens it', async ({ page, pb }) => {
-  const { url } = await pb.view(relay(pb))
+test('in a table the arrow keys move between rows, one row in the Tab order, and Enter opens it', async ({ page, relayUrl: url }) => {
   await page.goto(`${url}#view=ledger.items`)
   const rows = page.getByRole('main').getByRole('table').getByRole('row')
   await expect(rows).toHaveCount(8)
@@ -154,7 +151,9 @@ test('an action’s notice appears at once and turns into its answer in place', 
 })
 
 test('the sidebar’s width is kept across a reload, and the sidebar folds to a rail', async ({ page, pb }) => {
-  const { url } = await pb.view(relay(pb))
+  const lib = join(tempDir(), 'lib')
+  pb.run(['init', lib])
+  const { url } = await pb.view(lib)
   await page.goto(url)
   const handle = page.getByRole('separator', { name: '侧栏的宽度' })
   const width = Number(await handle.getAttribute('aria-valuenow'))
@@ -175,10 +174,12 @@ test('the sidebar’s width is kept across a reload, and the sidebar folds to a 
 })
 
 test('both colour schemes apply without a reload', async ({ page, pb }) => {
-  const { url } = await pb.view(relay(pb))
-  await page.goto(`${url}#view=ledger.items`)
-  await row(page, 'payments/comparison.md').click()
-  await expect(page.getByRole('complementary', { name: '详情' }).getByTestId('panel-title')).toHaveText('comparison.md')
+  const lib = join(tempDir(), 'lib')
+  pb.run(['init', lib, '--bare'])
+  write(lib, 'notes.md', '# 笔记\n')
+  const { url } = await pb.view(lib)
+  await page.goto(`${url}#view=files&panel=item&panel.path=notes.md`)
+  await expect(page.getByRole('complementary', { name: '详情' }).getByTestId('panel-title')).toHaveText('notes.md')
   await page.evaluate(() => ((window as unknown as { kept: number }).kept = 1))
   const colours = () =>
     page.evaluate(() => {

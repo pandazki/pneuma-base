@@ -9,11 +9,6 @@ import { test as base, type Locator, type Page } from '@playwright/test'
 
 const BIN = fileURLToPath(new URL('../../cli/dist/bin.js', import.meta.url))
 const BIN_WITH_TEST_PLUGINS = fileURLToPath(new URL('../../cli/test/fixtures/bin-with-test-plugins.ts', import.meta.url))
-export const SHOTS = fileURLToPath(new URL('../../../tmp/run-2/shots/', import.meta.url))
-/** Where the whole story's screenshots go. */
-export const STORY_SHOTS = fileURLToPath(new URL('../../../tmp/run-3/shots/', import.meta.url))
-/** Where the presentation layer's screenshots go: $PNEUMA_BASE_SHOTS, else tmp/run-4/shots/. */
-export const PRESENTATION_SHOTS = process.env.PNEUMA_BASE_SHOTS ?? fileURLToPath(new URL('../../../tmp/run-4/shots/', import.meta.url))
 
 export function tempDir(prefix = 'pb-e2e-'): string {
   return realpathSync(mkdtempSync(join(tmpdir(), prefix)))
@@ -88,8 +83,26 @@ export function cli(): Cli {
   }
 }
 
-/** Each test gets its own command line and home; servers it started are stopped afterwards. */
-export const test = base.extend<{ pb: Cli }>({
+/** A library built once for every test of a worker that asks for it, and the address of its page. */
+export function shared(build: (pb: Cli) => string): [(args: object, use: (url: string) => Promise<void>) => Promise<void>, { scope: 'worker' }] {
+  return [
+    // eslint-disable-next-line no-empty-pattern -- Playwright reads a fixture's dependencies from this pattern; this one has none.
+    async ({}, use) => {
+      const pb = cli()
+      const server = await pb.view(build(pb))
+      await use(server.url)
+      await server.stop()
+    },
+    { scope: 'worker' },
+  ]
+}
+
+/**
+ * Each test gets its own command line and home; servers it started are stopped afterwards. A test that
+ * only looks at the relay library takes `relayUrl`, its page, built once per worker; one that changes
+ * the library builds its own with relay(pb).
+ */
+export const test = base.extend<{ pb: Cli }, { relayUrl: string }>({
   // eslint-disable-next-line no-empty-pattern -- Playwright reads a fixture's dependencies from this pattern; this one has none.
   pb: async ({}, use) => {
     const started: { stop(): Promise<void> }[] = []
@@ -103,9 +116,15 @@ export const test = base.extend<{ pb: Cli }>({
     await use(c)
     await Promise.all(started.map((s) => s.stop()))
   },
+  relayUrl: shared(relay),
 })
 
 export { expect } from '@playwright/test'
+
+/** Two frames of the page: what its timers or its last answer set going has rendered, and any fetch it led to has started. */
+export async function frames(page: Page): Promise<void> {
+  await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))))
+}
 
 /** The navigation's entries, in order, once the navigation has rendered. */
 export async function navTitles(page: Page): Promise<string[]> {
@@ -122,8 +141,8 @@ export function cutTexts(table: Locator, cells = 'td'): Promise<string[]> {
   )
 }
 
-/** Saves the page in the light and the dark scheme under `dir`, tmp/run-2/shots/ unless given. */
-export async function shoot(page: Page, name: string, dir = SHOTS): Promise<void> {
+/** Saves the page in the light and the dark scheme under `dir`: the tour's pictures, which only it takes. */
+export async function shoot(page: Page, name: string, dir = join(tmpdir(), 'pneuma-base-shots')): Promise<void> {
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme })
     await page.waitForTimeout(150)

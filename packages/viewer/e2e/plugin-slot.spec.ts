@@ -1,8 +1,9 @@
 // C2: a test plugin that declares views gets pages in the navigation once installed, its blocks
-// render by kind, and the pages go when it is removed. A plugin that throws in its view does not
-// blank the UI: its page says it failed and every other page carries on.
+// render by kind, and the pages go when it is removed. A block the kernel replaced, because no one
+// knows its kind, renders as what it says; a plugin that throws in its view is the kernel's
+// (packages/kernel/test/viewer.test.ts) and the server's (packages/viewer/test/server.test.ts).
 import { join } from 'node:path'
-import { cutTexts, expect, navTitles, shoot, tempDir, test, write } from './support.ts'
+import { cutTexts, expect, navTitles, tempDir, test, write } from './support.ts'
 
 // The sample table's moment reads 11:11 here: the digit whose proportional and tabular widths differ most.
 test.use({ timezoneId: 'UTC' })
@@ -41,7 +42,6 @@ test('a plugin’s page appears when installed, renders each kind of block, and 
   await expect(main.getByText('空状态的标题')).toBeVisible() // empty
   await expect(main.getByText('插件 pager 的一块没法显示：blocks[7] 是不认识的块：sparkle')).toBeVisible() // a kind no one knows, caught by the kernel
   await expect(main.getByRole('alert')).toContainText('插件 pager 出了问题：一块没法显示')
-  await shoot(page, 'c2-plugin-blocks')
   await main.getByRole('button', { name: '再打个招呼' }).click() // actions
   await expect(page.getByRole('status')).toContainText('pong')
 
@@ -55,26 +55,4 @@ test('a plugin’s page appears when installed, renders each kind of block, and 
   await expect(page.getByRole('status')).toContainText('已卸下插件 pager')
   await expect(nav.getByRole('button', { name: '块的样例' })).toHaveCount(0)
   expect(await navTitles(page)).toEqual(['首页', '文件', '归档区', 'Agent', '配置'])
-})
-
-test('a plugin that throws in its view does not blank the UI', async ({ page, pb }) => {
-  const lib = join(tempDir(), 'lib')
-  pb.run(['init', lib, '--bare'], { testPlugins: true })
-  write(lib, 'a.md', 'a')
-  pb.run(['plugin', 'add', 'thrower', '--library', lib], { testPlugins: true, codes: [3] })
-  const { url } = await pb.view(lib, { testPlugins: true })
-  await page.goto(url)
-
-  const nav = page.getByRole('navigation', { name: '导航' })
-  await nav.getByRole('button', { name: '总出错的页' }).click()
-  const main = page.getByRole('main')
-  await expect(main.getByText('插件 thrower 出错了，没能给出这一页')).toBeVisible()
-  await expect(main.getByText('thrower failed in onView').first()).toBeVisible()
-
-  await nav.getByRole('button', { name: '文件' }).click()
-  await page.getByRole('row', { name: /a\.md/ }).click()
-  const panel = page.getByRole('complementary', { name: '详情' })
-  await expect(panel.getByRole('figure', { name: '预览' })).toContainText('a')
-  await expect(panel.getByText('插件 thrower 出错了，没能给出它知道的')).toBeVisible()
-  await expect(panel.getByText('thrower failed in onItemView').first()).toBeVisible()
 })
