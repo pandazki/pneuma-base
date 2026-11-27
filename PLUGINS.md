@@ -1053,7 +1053,7 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `unreachable` | 读不到目标时的原因 |
 | `detail` | `serving` 对它的站点说的 `detail`：先取它正在其下服务的站点，再取它的路径有的、归档的东西曾有的站点名。所以归档了的、待下线的东西也有。在页和面板之外是 `null` |
 
-`switchAction(插件名, look)` 是表格里的那个开关：`{ label: '打开' 或 '关上', tone: 'default', confirm: null, inputs: [], call: { face: 'owner', command: '<插件名> on' 或 '<插件名> off', args: { positional: [路径], flags: {} } } }`；归档了又关着的东西没有开关，答 `null`。
+`switchAction(插件名, look)` 是表格里的那个开关：`{ label: '打开' 或 '关上', tone: 'default', confirm: null, inputs: [], call: { face: 'owner', command: '<插件名> on' 或 '<插件名> off', args: { positional: [路径], flags: {} } }, as: 'icon', icon: 'power' }`，画成一个电源图标，`label` 进提示；归档了又关着的东西没有开关，答 `null`。
 
 PneumaSpace 插件（`space`）就是一个部署插件，带两种目标：一台机器上的 PneumaSpace（`--kind machine`）和 Cloudflare 上的 PneumaSpace（`--kind cloudflare`）。前一种用 PneumaSpace 的管理接口发布，`identify` 用上传的包的 sha256 作内容编号，`serving` 问 PneumaSpace 真在服务什么，令牌是可选的密钥，表格和面板里加了版本这些格，另有一页「看板」。下面是这一种的代码，省掉了两处：它打的是字节只由文件决定的 tar 包，这里把文件依次连起来；站点的地址它从 PneumaSpace 的入口算，这里从管理地址算。后一种以主人的账户登录控制台接口，用 `configure` 的 `note` 说账户密钥从哪里来，用 `close` 在一次运行结束时退出登录。
 
