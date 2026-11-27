@@ -33,7 +33,7 @@ describe('fold', () => {
     expect(rows.versions('i_a').map((v) => [v.fingerprint, v.claimed])).toEqual([[fp('a'), false], [fp('b'), true]])
   })
 
-  it('makes a later enter of a path an item holds an alias, so the item has one enter and every fact lands on it', async () => {
+  it('makes a later enter of a path an item holds an alias, so the item has one enter and every fact lands on it; never onto an item that moved away or was removed', async () => {
     const rows = await folded([
       f(1, enter('i_one', 'shared.md', 's', { kind: 'adopted' })),
       f(2, enter('i_two', 'shared.md', 's', { kind: 'adopted' }), { scene: 's2', actor: codex }),
@@ -43,6 +43,19 @@ describe('fold', () => {
     expect(rows.items().map((i) => i.id)).toEqual(['i_b', 'i_one'])
     expect(rows.item('i_b')?.basis.items[0]?.item).toBe('i_one')
     expect(rows.history('i_one').flatMap((h) => (h.kind === 'said' ? [h.text] : []))).toEqual(['about the alias'])
+
+    const gone = await folded([
+      f(1, enter('i_a', 'a.md', 'a')),
+      f(2, { kind: 'item.move', item: id('i_a'), from: p('a.md'), to: p('b.md'), archive: null }),
+      f(3, enter('i_c', 'a.md', 'c')),
+      f(4, enter('i_d', 'd.md', 'd')),
+      f(5, { kind: 'item.remove', item: id('i_d') }),
+      f(6, enter('i_e', 'd.md', 'e')),
+    ])
+    expect(gone.items().map((i) => i.id)).toEqual(['i_a', 'i_c', 'i_d', 'i_e'])
+    expect(gone.path('a.md')).toBe('i_c')
+    expect(gone.path('d.md')).toBe('i_e')
+    expect(gone.item('i_d')?.removed).toBe(true)
   })
 
   it('lets an alias that knows the origin fill in an adopted item, and item.basis too', async () => {
@@ -61,21 +74,6 @@ describe('fold', () => {
     ])
     expect(rows.versions('i_a').map((v) => v.note)).toEqual(['初稿', '重算'])
     expect(rows.versions('i_d').map((v) => v.note)).toEqual(['主人给的'])
-  })
-
-  it('does not alias onto an item that moved away or was removed', async () => {
-    const rows = await folded([
-      f(1, enter('i_a', 'a.md', 'a')),
-      f(2, { kind: 'item.move', item: id('i_a'), from: p('a.md'), to: p('b.md'), archive: null }),
-      f(3, enter('i_c', 'a.md', 'c')),
-      f(4, enter('i_d', 'd.md', 'd')),
-      f(5, { kind: 'item.remove', item: id('i_d') }),
-      f(6, enter('i_e', 'd.md', 'e')),
-    ])
-    expect(rows.items().map((i) => i.id)).toEqual(['i_a', 'i_c', 'i_d', 'i_e'])
-    expect(rows.path('a.md')).toBe('i_c')
-    expect(rows.path('d.md')).toBe('i_e')
-    expect(rows.item('i_d')?.removed).toBe(true)
   })
 
   it('keeps the basis across a revise, replacing the rows of the sources it names; item.basis replaces it all', async () => {

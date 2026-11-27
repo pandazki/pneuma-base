@@ -1,7 +1,7 @@
 // MCP over HTTP at /mcp/<grant> on the management UI's server, driven by the official SDK client's
 // streamable HTTP transport in both eras:
-// - the same tools as the stdio server for the same grant, and the command line's answers for the
-//   parity cases; a management command called by name is refused as over stdio;
+// - the same tools as the stdio server for the same grant, and the command line's answers for a
+//   read, a write, a refusal and a page; a management command called by name is refused as over stdio;
 // - 2026-07-28: mirrored headers checked against the body, an unknown method 404, `?session=` names
 //   the scene, `subscriptions/listen` hears a plugin added;
 // - legacy: one connection is one scene of the grant's agent, an unknown session 404, DELETE ends it,
@@ -90,7 +90,14 @@ describe.each(['legacy', 'modern'] as const)('MCP over HTTP answers as over stdi
     expect((await http.client.listTools()).tools).toEqual((await stdio.listTools()).tools)
   })
 
-  for (const c of PARITY_CASES) it(`${c[0]} ${JSON.stringify(c[1])} is ${c[2].join(' ')}`, () => expectParity(sb, http.client, c))
+  // The full list runs over standard input and output in mcp.test.ts; over HTTP, one case of each kind.
+  it('answers a read, a write, a refusal and a page as the command line does', async () => {
+    for (const argv of ['find notes --include-archived', 'put - --to notes/a.md --brought', 'archive notes/missing.md', 'show files --dir notes']) {
+      const c = PARITY_CASES.find((p) => p[2].join(' ') === argv)
+      if (c === undefined) throw new Error(`no parity case ${argv}`)
+      await expectParity(sb, http.client, c)
+    }
+  })
 
   it('refuses a management command called by name as over stdio', async () => {
     const overHttp = await call(http.client, 'grant_issue', { name: 'x', agent: 'y' })
@@ -123,8 +130,19 @@ describe('a legacy connection', () => {
     expect(claude[0].meta[0].text).toBe('放入 1 样')
   })
 
-  it('answers 404 to a session it does not know, and to one DELETE ended', async () => {
+  it('lives by its session id: needed after initialize, 404 when unknown or ended by DELETE, 400 with an era it does not serve', async () => {
+    expect((await post(server, 'g', { jsonrpc: '2.0', id: 1, method: 'tools/list' })).status).toBe(400)
     expect((await post(server, 'g', { jsonrpc: '2.0', id: 2, method: 'tools/list' }, { 'mcp-session-id': 'no-such-session' })).status).toBe(404)
+    const get = (headers: Record<string, string>) => fetch(`${server.endpoint}/mcp/g`, { headers: { accept: 'text/event-stream', ...headers } })
+    expect((await get({})).status).toBe(400)
+    expect((await get({ 'mcp-session-id': 'no-such-session' })).status).toBe(404)
+
+    const opened = await post(server, 'g', initialize())
+    expect(opened.status).toBe(200)
+    const raw = opened.headers.get('mcp-session-id') as string
+    expect((await post(server, 'g', { jsonrpc: '2.0', id: 2, method: 'ping' }, { 'mcp-session-id': raw, 'mcp-protocol-version': '1999-01-01' })).status).toBe(400)
+    expect((await post(server, 'g', { jsonrpc: '2.0', method: 'notifications/initialized' }, { 'mcp-session-id': raw })).status).toBe(202)
+
     const { client, transport } = await connectHttp(server, 'g', 'legacy')
     const id = transport.sessionId as string
     expect(id).toMatch(/^[0-9a-f-]{36}$/)
@@ -133,18 +151,6 @@ describe('a legacy connection', () => {
     expect((await post(server, 'g', { jsonrpc: '2.0', id: 3, method: 'ping' }, { 'mcp-session-id': id })).status).toBe(404)
     expect((await post(server, 'ro', { jsonrpc: '2.0', id: 3, method: 'ping' }, { 'mcp-session-id': id })).status).toBe(404)
     await client.close()
-  })
-
-  it('needs its session id after initialize, and an era it serves', async () => {
-    expect((await post(server, 'g', { jsonrpc: '2.0', id: 1, method: 'tools/list' })).status).toBe(400)
-    const opened = await post(server, 'g', initialize())
-    expect(opened.status).toBe(200)
-    const id = opened.headers.get('mcp-session-id') as string
-    expect((await post(server, 'g', { jsonrpc: '2.0', id: 2, method: 'ping' }, { 'mcp-session-id': id, 'mcp-protocol-version': '1999-01-01' })).status).toBe(400)
-    expect((await post(server, 'g', { jsonrpc: '2.0', method: 'notifications/initialized' }, { 'mcp-session-id': id })).status).toBe(202)
-    const get = (headers: Record<string, string>) => fetch(`${server.endpoint}/mcp/g`, { headers: { accept: 'text/event-stream', ...headers } })
-    expect((await get({})).status).toBe(400)
-    expect((await get({ 'mcp-session-id': 'no-such-session' })).status).toBe(404)
   })
 
   it('holds at most 32 connections: a 33rd ends the one idle longest', async () => {
@@ -177,7 +183,7 @@ describe('a 2026-07-28 request', () => {
     expect((await post(server, 'g', callFind(), modernHeaders('tools/call', `=?base64?${Buffer.from('find').toString('base64')}?=`))).status).toBe(200)
   })
 
-  it('is 400 with HeaderMismatch (-32020) when a mirrored header is missing or says otherwise', async () => {
+  it('is refused what the era does not take: a mirrored header missing or saying otherwise, a method or version it does not have, a batch; a notification is 202', async () => {
     for (const [body, headers] of [
       [callFind(), modernHeaders('tools/call', 'inspect')],
       [callFind(), modernHeaders('tools/call')],
@@ -190,9 +196,7 @@ describe('a 2026-07-28 request', () => {
       expect(r.status, JSON.stringify(headers)).toBe(400)
       expect(r.json()).toMatchObject({ jsonrpc: '2.0', id: 1, error: { code: -32020 } })
     }
-  })
 
-  it('is 404 with -32601 for a method the server does not have, and 400 with -32022 for a version it does not serve', async () => {
     const unknown = await post(server, 'g', { jsonrpc: '2.0', id: 7, method: 'nothing/here', params: { _meta: META } }, modernHeaders('nothing/here'))
     expect(unknown.status).toBe(404)
     expect(unknown.json()).toMatchObject({ id: 7, error: { code: -32601 } })
@@ -200,9 +204,7 @@ describe('a 2026-07-28 request', () => {
     const unsupported = await post(server, 'g', { jsonrpc: '2.0', id: 8, method: 'tools/list', params: { _meta: future } }, { ...modernHeaders('tools/list'), 'mcp-protocol-version': '2099-01-01' })
     expect(unsupported.status).toBe(400)
     expect(unsupported.json()).toMatchObject({ id: 8, error: { code: -32022, data: { supported: [MODERN] } } })
-  })
 
-  it('takes one message per request: a batch is 400, a notification 202', async () => {
     expect((await post(server, 'g', [listTools(1), listTools(2)], modernHeaders('tools/list'))).status).toBe(400)
     expect((await post(server, 'g', { jsonrpc: '2.0', method: 'notifications/progress', params: {} }, { 'mcp-protocol-version': MODERN })).status).toBe(202)
   })

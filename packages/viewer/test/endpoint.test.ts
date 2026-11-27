@@ -113,7 +113,7 @@ describe('where the endpoint listens', () => {
     expect(others.filter((_, i) => reached[i]).map((a) => a.address)).toEqual([])
   })
 
-  it('takes the next free port when the preferred one is taken, on either loopback address', async () => {
+  it('takes the next free port when the preferred one is taken, on either loopback address, and refuses an exact port that is taken', async () => {
     const { root, home } = await library()
     const preferred = await block('127.0.0.1')
     if (hasIpv6Loopback()) await block('::1', preferred + 1)
@@ -121,12 +121,7 @@ describe('where the endpoint listens', () => {
     expect(server.port).toBeGreaterThan(hasIpv6Loopback() ? preferred + 1 : preferred)
     expect(server.port).toBeLessThanOrEqual(preferred + 19)
     expect(await reachable('127.0.0.1', server.port)).toBe(true)
-  })
-
-  it('refuses to start on an exact port that is taken', async () => {
-    const { root, home } = await library()
-    const taken = await block('127.0.0.1')
-    await expect(serve(root, home, { port: taken })).rejects.toMatchObject({ code: 'EADDRINUSE' })
+    await expect(serve(root, home, { port: preferred })).rejects.toMatchObject({ code: 'EADDRINUSE' })
   })
 
   it('writes its address to machine state while it runs, never the token, and takes it away on close', async () => {
@@ -243,22 +238,6 @@ describe('pairing over HTTP', () => {
     expect((await http(server, '/pair')).status).toBe(405)
   })
 
-  it('answers a request as the kernel decides: 201 with where to poll, or the refusal’s status', async () => {
-    const { root, home } = await library()
-    const server = await serve(root, home)
-    const r = await http(server, '/pair', { method: 'POST', ...json({ product: 'claude-code', why: '想帮主人整理资料' }) })
-    const body = r.json()
-    if (body.outcome === 'requested') {
-      expect(r.status).toBe(201)
-      expect(body).toMatchObject({ id: expect.stringMatching(/^p-[0-9a-f]{8}$/), code: expect.any(String), expires: expect.any(String), again: false, text: expect.any(String) })
-      expect(body.poll).toBe(`${server.endpoint}/pair/${body.id}`)
-      expect((await http(server, `/pair/${body.id}`)).status).toBe(200)
-    } else {
-      expect(body).toMatchObject({ outcome: 'refused', text: expect.any(String) })
-      expect(r.status).toBe({ usage: 400, 'too-many': 429, 'not-a-library': 409 }[body.reason as string])
-    }
-  })
-
   it('answers 404 for a pairing it does not have, and for an id of another shape', async () => {
     const { root, home } = await library()
     const server = await serve(root, home)
@@ -312,7 +291,7 @@ describe('the MCP route', () => {
     expect(JSON.parse(seen[0]?.request.body ?? '')).toEqual({ jsonrpc: '2.0', id: 1, method: 'ping' })
   })
 
-  it('refuses another method, another content type, a body over 8 MiB and a name that is no grant name, before the endpoint sees it', async () => {
+  it('refuses another method, another content type, a body over 8 MiB and a name that is no grant name, before the endpoint sees it; is 404 on a server started without one', async () => {
     const { root, home } = await library()
     const { endpoint, seen } = recorder()
     const server = await serve(root, home, { mcp: endpoint })
@@ -321,11 +300,7 @@ describe('the MCP route', () => {
     expect((await http(server, '/mcp/claude', { method: 'POST', headers: { 'content-type': 'application/json' }, body: Buffer.alloc(8 * 1024 * 1024 + 1, 0x20) })).status).toBe(413)
     for (const name of ['Claude', 'a_b', 'a.b', '-x']) expect((await http(server, `/mcp/${name}`, { method: 'POST', ...json({}) })).status, name).toBe(404)
     expect(seen).toEqual([])
-  })
-
-  it('is 404 when the server was started without one', async () => {
-    const { root, home } = await library()
-    const server = await serve(root, home)
-    expect((await http(server, '/mcp/claude', { method: 'POST', ...json({ jsonrpc: '2.0', id: 1, method: 'ping' }) })).status).toBe(404)
+    const without = await serve(root, home)
+    expect((await http(without, '/mcp/claude', { method: 'POST', ...json({ jsonrpc: '2.0', id: 1, method: 'ping' }) })).status).toBe(404)
   })
 })

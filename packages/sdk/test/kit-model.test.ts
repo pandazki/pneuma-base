@@ -52,9 +52,6 @@ function reconcile(w: World, targetFails: boolean): World {
 
 const status = (w: World): Status => statusOf(siteName(w.path), w, w.target)
 
-/** The target holds the current content under the current path's name, and nothing else. */
-const servesCurrent = (w: World) => new Map([[siteName(w.path), w.content as ContentId]])
-
 type Cell = [state: keyof typeof STATES, op: keyof typeof OPS, ok: Status, failed: Status]
 
 // The applicable cells of the table; the README says why the others cannot happen.
@@ -94,14 +91,21 @@ const CELLS: Cell[] = [
 ]
 
 describe('the state × operation table', () => {
-  it.each(CELLS)('%s, %s: %s, or %s when the target fails', (state, op, ok, failed) => {
-    const after = OPS[op](STATES[state]())
-    const done = reconcile(after, false)
-    expect(status(done)).toBe(ok)
-    expect(done.target).toEqual(ok === 'online' ? servesCurrent(done) : new Map())
-    const stuck = reconcile(after, true)
-    expect(status(stuck)).toBe(failed)
-    expect(stuck.target).toEqual(after.target)
+  // One row per cell, so a failure's diff names the cells that went wrong: the state with a target
+  // that answers and what it then holds (the current content under the current name when online,
+  // nothing otherwise); the state with a target that fails and what it then holds (what it held).
+  it('ends each applicable cell in the state it names, with a target that answers and with one that fails', () => {
+    const held = (target: Map<SiteName, ContentId>) => Object.fromEntries(target)
+    const got = CELLS.map(([state, op]) => {
+      const after = OPS[op](STATES[state]())
+      const [done, stuck] = [reconcile(after, false), reconcile(after, true)]
+      return [state, op, status(done), held(done.target), status(stuck), held(stuck.target)]
+    })
+    const expected = CELLS.map(([state, op, ok, failed]) => {
+      const after = OPS[op](STATES[state]())
+      return [state, op, ok, ok === 'online' ? { [siteName(after.path)]: after.content } : {}, failed, held(after.target)]
+    })
+    expect(got).toEqual(expected)
   })
 
   it('names each starting state as the table does', () => {

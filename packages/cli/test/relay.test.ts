@@ -1,7 +1,8 @@
 // C3, the relay. Session A (claude-code, directory X) puts four brought-in files and two made
 // ones, says what it is doing and records a decision. Session B (codex, directory Y, told nothing)
 // learns all of it from start, find and inspect, puts back a file made from A's output, and inspect
-// leads from B's file step by step back to A's brought-in sources.
+// leads from B's file step by step back to A's brought-in sources. How start, find and inspect lay
+// out their text is agent-text.test.ts's; a find by origin is packages/plugin-ledger/test/find.test.ts's.
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
@@ -74,19 +75,7 @@ describe('session B, told nothing', () => {
     expect(related.map((h: any) => h.title)).not.toContain('场景 sess-b')
   })
 
-  it('find matches the words A said and the content, and says which session made each thing for what', () => {
-    const r = ok(B(['find', '支付']))
-    expect(r.stdout).toContain('payments/comparison.md')
-    expect(r.stdout).toContain('场景 sess-a')
-    const lines = r.stdout.split('\n')
-    expect(lines).toContain('  payments/comparison.md  做出来的')
-    const heading = lines.find((l) => l.startsWith('场景 sess-a')) ?? ''
-    for (const readable of ['claude-code', DOING]) expect(heading).toContain(readable)
-    const made = B(['find', '--origin', 'made', '--json']).json().hits.map((h: any) => h.path)
-    expect(made.sort()).toEqual(['payments/comparison.md', 'payments/recommendation.md'])
-  })
-
-  it('inspect gives who, when, where, what for, the basis and its state, what built on it, and the decision', () => {
+  it('inspect gives who, when, where, what for, the basis and its state, what built on it, and the decision; of a scene, its card', () => {
     const text = ok(B(['inspect', 'payments/comparison.md'])).stdout
     for (const readable of ['做出来的', 'claude-code', shown(dirA), '场景 sess-a', `当时在做：${DOING}`, `库外：${OUTSIDE}`, '被依据：payments/recommendation.md', `决定：${DECIDED}`]) {
       expect(text).toContain(readable)
@@ -104,14 +93,12 @@ describe('session B, told nothing', () => {
       dependents: [{ path: 'payments/recommendation.md' }],
     })
     expect(data.basis.map((b: any) => [b.path, b.state])).toEqual(Object.keys(SOURCES).map((p) => [p, 'consistent']))
+
+    const card = ok(B(['inspect', 'sess-a'])).stdout
+    for (const readable of ['claude-code', shown(dirA), DOING, DECIDED, 'payments/recommendation.md']) expect(card).toContain(readable)
   })
 
-  it('inspect of a scene gives its card', () => {
-    const text = ok(B(['inspect', 'sess-a'])).stdout
-    for (const readable of ['claude-code', shown(dirA), DOING, DECIDED, 'payments/recommendation.md']) expect(text).toContain(readable)
-  })
-
-  it('puts back a file made from A’s output; inspect leads step by step back to A’s brought-in sources', () => {
+  it('puts back a file made from A’s output; inspect leads step by step back to A’s brought-in sources; A, coming back later, sees in start what B did', () => {
     writeFileSync(join(dirB, 'integration.md'), '# 接入 Paddle\n')
     ok(B(['put', 'integration.md', '--to', 'payments/integration-notes.md', '--made', '--from', 'payments/recommendation.md']))
 
@@ -135,10 +122,8 @@ describe('session B, told nothing', () => {
     walk('payments/integration-notes.md')
     expect(Object.fromEntries(brought)).toEqual({ ...SOURCES, 'payments/sources/eu-vat-note.txt': null })
     expect(seen).toEqual(new Set(['payments/integration-notes.md', 'payments/recommendation.md', 'payments/comparison.md', ...Object.keys(SOURCES), 'payments/sources/eu-vat-note.txt']))
-  })
 
-  it('A, coming back later, sees in start what B did since', () => {
-    const text = ok(sb.run(['@claude', 'start', '看看支付接入的进展', '--session', 'sess-a2'], { cwd: dirA })).stdout
-    for (const readable of ['sess-b', 'codex', shown(dirB), 'payments/integration-notes.md']) expect(text).toContain(readable)
+    const later = ok(sb.run(['@claude', 'start', '看看支付接入的进展', '--session', 'sess-a2'], { cwd: dirA })).stdout
+    for (const readable of ['sess-b', 'codex', shown(dirB), 'payments/integration-notes.md']) expect(later).toContain(readable)
   })
 })

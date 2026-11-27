@@ -3,13 +3,13 @@
 // never mentioned; the rows are a cache that may be thrown away; an agent's start and check are bounded.
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { AGENT_TEXT_LIMIT, bounded } from '../src/format.js'
 import { sandbox, tempDir, type Run, type Sandbox } from './helpers.js'
 
 let sb: Sandbox
 let lib: string
-let closed: string
+let closed = ''
 
 const ok = (r: Run) => {
   expect(r.code, r.stdout + r.stderr).toBe(0)
@@ -19,7 +19,8 @@ const agent = (args: string[], input?: string) => ok(sb.run(['--library', lib, '
 const owner = (args: string[]) => ok(sb.run(['--library', lib, ...args]))
 const titles = (r: Run) => (r.json().sections as { title: string }[]).map((s) => s.title)
 
-beforeEach(() => {
+/** A library with one registered file and a folder nobody registered and nobody may read. */
+function setUp() {
   sb = sandbox()
   lib = join(tempDir(), 'lib')
   ok(sb.run(['init', lib]))
@@ -29,12 +30,16 @@ beforeEach(() => {
   mkdirSync(join(closed, 'pkg'), { recursive: true })
   writeFileSync(join(closed, 'pkg/index.js'), 'x')
   chmodSync(closed, 0o000)
-})
+}
 
-afterEach(() => chmodSync(closed, 0o755))
+afterEach(() => {
+  if (closed !== '') chmodSync(closed, 0o755)
+  closed = ''
+})
 
 describe('a directory no record points into', () => {
   it('is one line in check and one question on the home page, and is never opened', () => {
+    setUp()
     const check = agent(['check', '--json']).json()
     expect(check.problems).toEqual([])
     expect(check.sections.find((s: any) => s.title === '没登记的目录').data).toEqual({ count: 1, shown: [{ path: 'vendor' }] })
@@ -44,6 +49,7 @@ describe('a directory no record points into', () => {
   })
 
   it('is not mentioned again once the owner leaves it alone, which adds it to the noise', () => {
+    setUp()
     owner(['noise', 'add', 'vendor'])
     // What remains is the news that the owner did it.
     expect(titles(agent(['check', '--json']))).toEqual(['自上次以来'])
@@ -54,6 +60,7 @@ describe('a directory no record points into', () => {
 
 describe('the rows', () => {
   it('may be thrown away: check says the same after storage’s cache is gone', () => {
+    setUp()
     writeFileSync(join(lib, 'notes/a.md'), 'edited by hand')
     writeFileSync(join(lib, 'loose.md'), 'nobody registered me')
     const before = agent(['check', '--json']).json().sections
@@ -65,6 +72,7 @@ describe('the rows', () => {
 
 describe('an agent’s start and check', () => {
   it('name at most twenty of a kind, then how many and where they all are', () => {
+    setUp()
     for (let i = 0; i < 30; i++) writeFileSync(join(lib, `loose-${String(i).padStart(2, '0')}.md`), `${i}`)
     const text = agent(['check']).stdout
     expect(text).toContain('loose-19.md')

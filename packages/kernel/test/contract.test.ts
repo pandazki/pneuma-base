@@ -19,11 +19,6 @@ describe('the sdk', () => {
     expect(() => sdk.instant('not a date')).toThrow()
   })
 
-  it('is what the kernel exports, so imports from the kernel keep working', () => {
-    expect(kernel.CONTRACT).toBe(2)
-    expect(kernel.pluginName).toBe(sdk.pluginName)
-    expect(kernel.definePlugin).toBe(sdk.definePlugin)
-  })
 })
 
 describe('a plugin’s hooks', () => {
@@ -66,16 +61,10 @@ describe('the loader of a plugin outside the repository', () => {
     return reason
   }
 
-  it('loads a plugin that declares a contract this kernel supports', async () => {
+  it('loads a plugin that declares the contract this kernel supports, and refuses one without a contract, with one it does not support, or written against contract 1, naming the section of the standard that says what changes', async () => {
     expect(await why({})).toBeNull()
-  })
-
-  it('refuses one without a contract, or with one it does not support, saying so in Chinese', async () => {
     expect(await why({}, ['contract'])).toMatch(/没有写 contract.*第 2 版/)
     expect(await why({ contract: 3 })).toMatch(/contract 是 3.*只认识第 2 版/)
-  })
-
-  it('refuses a plugin written against contract 1, naming the section of the standard that says what changes', async () => {
     expect(await why({ contract: 1 })).toMatch(/contract 是 1.*只跑第 2 版.*PLUGINS\.md 的「从第 1 版到第 2 版」一节/)
   })
 
@@ -169,7 +158,7 @@ describe('the tools on a plugin’s context', () => {
     return { f, ctx: grabbed, heard }
   }
 
-  it('turn an agent’s input into a library path with its region and the bundle it lies in', async () => {
+  it('turn an agent’s input into a library path with its region and the bundle it lies in, without asking whether something is there', async () => {
     const { f, ctx } = await probe()
     const t = ctx.tools
     expect(await t.resolve('site/index.html')).toEqual({ path: 'site/index.html', region: 'content', bundle: 'site' })
@@ -180,6 +169,8 @@ describe('the tools on a plugin’s context', () => {
     expect(t.archivedPath('a.md' as sdk.LibraryPath)).toBe('_archive/a.md')
     expect(t.originalPath('_archive/a.md' as sdk.LibraryPath)).toBe('a.md')
     expect('abs' in t).toBe(false)
+    expect(await t.resolve('notes/absent.md')).toEqual({ path: 'notes/absent.md', region: 'content', bundle: null })
+    for (const input of ['', '.', '..', '../x.md', f.root, join(f.root, '..', 'x.md')]) expect(await t.resolve(input), input).toBeNull()
   })
 
   it('say what is at a path, and give a bundle’s files and fingerprints from storage', async () => {
@@ -192,13 +183,6 @@ describe('the tools on a plugin’s context', () => {
     expect(!sdk.isFailure(site) && site.kind === 'dir' ? site.manifest?.entries : null).toEqual([{ path: 'index.html', fingerprint: sha('<h1>'), size: 4 }])
     expect(await t.storage.content('gone.md')).toMatchObject({ outcome: 'failed', reason: 'no_such_place' })
     for (const v1 of ['thing', 'things', 'files', 'copyOut', 'fingerprint', 'manifest', 'fingerprintOfManifest', 'fingerprintOfFile', 'putting']) expect(v1 in t, v1).toBe(false)
-  })
-
-  it('answer what a path names without asking whether something is there', async () => {
-    const { f, ctx } = await probe()
-    const t = ctx.tools
-    expect(await t.resolve('notes/absent.md')).toEqual({ path: 'notes/absent.md', region: 'content', bundle: null })
-    for (const input of ['', '.', '..', '../x.md', f.root, join(f.root, '..', 'x.md')]) expect(await t.resolve(input), input).toBeNull()
   })
 
   it('agree with each other and with the verbs that a symbolic link in the library is no thing: none follows one', async () => {

@@ -68,7 +68,7 @@ async function checkUntil(check: () => Promise<CheckResult>, ok: (r: CheckResult
 }
 
 describe('check, by position', () => {
-  it('a registered file: changed content is said; a touch that kept the content is not; a gone one is missing', async () => {
+  it('a registered file: changed content is said; a touch that kept the content is not; a gone one is missing, and back as it was is missing no longer', async () => {
     const { root, put, check, reads } = await library()
     await put('a.md', 'one')
     await put('b.md', 'two')
@@ -88,18 +88,9 @@ describe('check, by position', () => {
     reads.length = 0
     await check()
     expect(reads.filter((p) => p === 'b.md')).toEqual([])
-  })
-
-  it('a registered file gone and then back as it was is missing no longer', async () => {
-    const { root, put, check } = await library()
-    await put('a.md', 'kept content')
-    await check()
-    unlinkSync(join(root, 'a.md'))
-    const gone = await checkUntil(check, (x) => section(x, '不在了的').includes('a.md'))
-    expect(section(gone, '不在了的')).toBe('  a.md')
-    writeFileSync(join(root, 'a.md'), 'kept content')
-    const back = await checkUntil(check, (x) => !told(x).includes('a.md'))
-    expect(told(back)).not.toContain('a.md')
+    writeFileSync(join(root, 'c.md'), 'three')
+    const back = await checkUntil(check, (x) => !told(x).includes('c.md'))
+    expect(told(back)).not.toContain('c.md')
   })
 
   it('a registered directory-thing: a change in it is said of the thing, never of its files', async () => {
@@ -175,16 +166,14 @@ describe('check --deep, by position', () => {
     return l
   }
 
-  it('reads every registered thing, and nothing else: no loose file, no directory nobody looked into, no noise', async () => {
-    const { check, reads } = await arranged()
-    reads.length = 0
-    const r = await check({ dir: null })
-    expect(section(r, '按内容查').split('\n')[0]).toBe('按内容查了整个库：3 样登记过的东西。')
-    expect([...new Set(reads)].sort()).toEqual(['a.md', 'notes/n.md', 'site'])
-  })
-
-  it('says which changed by content, which were only touched, and stays within the directory named', async () => {
+  it('reads every registered thing and nothing else; says which changed by content, which were only touched; stays within the directory named', async () => {
     const { root, check, reads } = await arranged()
+    reads.length = 0
+    const whole = await check({ dir: null })
+    expect(section(whole, '按内容查').split('\n')[0]).toBe('按内容查了整个库：3 样登记过的东西。')
+    // No loose file, no directory nobody looked into, no noise.
+    expect([...new Set(reads)].sort()).toEqual(['a.md', 'notes/n.md', 'site'])
+
     writeFileSync(join(root, 'a.md'), 'one, changed')
     const later = new Date(Date.now() + 60_000)
     utimesSync(join(root, 'notes/n.md'), later, later)

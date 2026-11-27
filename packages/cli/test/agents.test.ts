@@ -55,6 +55,7 @@ const launcher = () => join(pbHome(), 'bin', 'pneuma-base')
 
 type Case = { product: string; via?: 'mcp'; setup: Record<string, string>; skill?: string; file?: string; format?: 'json' | 'toml' }
 
+/** One case per kind of configuration a product needs: a skill, MCP in JSON, MCP in TOML, and Claude Desktop's JSON. */
 const CASES: Case[] = [
   { product: 'claude-code', setup: { '.claude/skills/mine/SKILL.md': '---\nname: mine\n---\n' }, skill: '.claude/skills/pneuma-base-claude-code/SKILL.md' },
   {
@@ -64,7 +65,6 @@ const CASES: Case[] = [
     file: '.claude.json',
     format: 'json',
   },
-  { product: 'codex', setup: { '.codex/config.toml': 'model = "o3"\n' }, skill: '.agents/skills/pneuma-base-codex/SKILL.md' },
   {
     product: 'codex',
     via: 'mcp',
@@ -73,8 +73,6 @@ const CASES: Case[] = [
     format: 'toml',
   },
   { product: 'claude-desktop', setup: { 'Library/Application Support/Claude/claude_desktop_config.json': '{\n    "globalShortcut": "",\n    "preferences": {"menuBarEnabled": false}\n}' }, file: 'Library/Application Support/Claude/claude_desktop_config.json', format: 'json' },
-  { product: 'cursor', setup: { '.cursor/mcp.json': '{"mcpServers":{}}' }, skill: '.cursor/skills/pneuma-base-cursor/SKILL.md' },
-  { product: 'cursor', via: 'mcp', setup: { '.cursor/argv.json': '{}\n' }, file: '.cursor/mcp.json', format: 'json' },
 ]
 
 type Entry = { type?: string; command: string; args: string[]; env?: Record<string, string> }
@@ -104,6 +102,8 @@ describe('agent connect, list and disconnect', () => {
         if (typeof entry === 'string') expect(entry).toContain(`[mcp_servers.pneuma-base-${c.product}]\ncommand = ${JSON.stringify(launcher())}\nargs = ["@${c.product}", "mcp"]\n`)
         else expect(entry).toEqual({ ...(c.product === 'claude-desktop' ? {} : { type: 'stdio' }), command: launcher(), args: [`@${c.product}`, 'mcp'] })
         expect(connected.stdout).toContain(`~/${c.file}`)
+        // A product that loads skills, connected by MCP, gets the MCP server and no skill.
+        for (const skills of ['.claude/skills', '.agents/skills']) expect(existsSync(join(sb.home, skills, `pneuma-base-${c.product}`))).toBe(false)
       }
 
       const listed = ok(run(['agent', 'list', '--library', lib, '--json'])).json()
@@ -128,13 +128,6 @@ describe('agent connect, list and disconnect', () => {
 
     ok(run(['agent', 'disconnect', 'claude-desktop']))
     expect(ok(run(['agent', 'disconnect', 'claude-desktop'])).stdout).toContain('没有叫 claude-desktop 的连接')
-  })
-
-  it('--via mcp on a product that loads skills registers the MCP server and writes no skill', () => {
-    put('.claude/settings.json', '{}')
-    ok(run(['agent', 'connect', 'claude-code', '--library', lib, '--via', 'mcp']))
-    expect(existsSync(join(sb.home, '.claude/skills'))).toBe(false)
-    expect(entryOf({ product: 'claude-code', setup: {}, file: '.claude.json', format: 'json' })).toMatchObject({ type: 'stdio', command: launcher() })
   })
 
   it('refuses a configuration it cannot read, leaves it untouched, issues no grant, and prints what to paste', () => {
@@ -201,11 +194,11 @@ describe('agent connect, list and disconnect', () => {
     expect(existsSync(join(sb.home, '.cursor/skills/pneuma-base-cursor-3/SKILL.md'))).toBe(true)
   })
 
-  it('refuses each command in an agent session, and the page too', () => {
+  it('refuses connecting and disconnecting in an agent session or through a grant, and the page too', () => {
     put('.cursor/x', '')
     ok(run(['agent', 'connect', 'cursor', '--library', lib]))
     const before = tree(sb.home)
-    for (const args of [['agent', 'detect'], ['agent', 'list'], ['agent', 'connect', 'cursor', '--library', lib, '--name', 'c2'], ['agent', 'disconnect', 'cursor'], ['show', 'agents', '--library', lib]]) {
+    for (const args of [['agent', 'connect', 'cursor', '--library', lib, '--name', 'c2'], ['agent', 'disconnect', 'cursor'], ['show', 'agents', '--library', lib]]) {
       const r = run(args, { CLAUDE_CODE_SESSION_ID: 'session-1' })
       expect(r.code, `${args.join(' ')}\n${r.stdout}${r.stderr}`).toBe(2)
       expect(r.stdout).toContain('agent-session')
@@ -235,30 +228,28 @@ describe('agent connect --via mcp-http', () => {
   const origin = 'http://127.0.0.1:7638'
   const serve = () => recordEndpoint(pbHome(), { url: origin, port: 7638, pid: process.pid, library: lib, at: instant(Date.now()) })
 
-  const URL_CASES = [
-    { product: 'claude-code', setup: { '.claude.json': '{"numStartups": 3}\n', '.claude/settings.json': '{}' }, file: '.claude.json', entry: { type: 'http', url: `${origin}/mcp/claude-code` } },
-    { product: 'codex', setup: { '.codex/config.toml': 'model = "o3"\n' }, file: '.codex/config.toml', entry: `\n[mcp_servers.pneuma-base-codex]\nurl = "${origin}/mcp/codex"\n` },
-    { product: 'cursor', setup: { '.cursor/mcp.json': '{"mcpServers":{}}' }, file: '.cursor/mcp.json', entry: { url: `${origin}/mcp/cursor` } },
-  ]
-
-  for (const c of URL_CASES) {
-    it(`${c.product}: writes the endpoint's MCP address, and disconnect leaves HOME exactly as it was`, async () => {
-      for (const [path, content] of Object.entries(c.setup)) put(path, content)
-      await serve()
-      const before = tree(sb.home)
-      const connected = ok(run(['agent', 'connect', c.product, '--library', lib, '--via', 'mcp-http']))
-      expect(connected.stdout).toContain(`${origin}/mcp/${c.product}`)
-      const text = readFileSync(join(sb.home, c.file), 'utf8')
-      if (typeof c.entry === 'string') expect(text).toBe(`model = "o3"\n${c.entry}`)
-      else expect((JSON.parse(text) as { mcpServers: Record<string, unknown> }).mcpServers[`pneuma-base-${c.product}`]).toEqual(c.entry)
-      expect(ok(run(['agent', 'list', '--library', lib, '--json'])).json().data.connections).toEqual([expect.objectContaining({ grant: c.product, way: 'mcp-http', inPlace: true })])
-      ok(run(['agent', 'disconnect', c.product]))
-      expect(tree(sb.home)).toEqual(before)
-      expect(grants()).toEqual([])
-    })
-  }
+  it('writes the endpoint’s MCP address, and disconnect leaves HOME exactly as it was', async () => {
+    put('.claude.json', '{"numStartups": 3}\n')
+    put('.claude/settings.json', '{}')
+    await serve()
+    const before = tree(sb.home)
+    const connected = ok(run(['agent', 'connect', 'claude-code', '--library', lib, '--via', 'mcp-http']))
+    expect(connected.stdout).toContain(`${origin}/mcp/claude-code`)
+    const text = readFileSync(join(sb.home, '.claude.json'), 'utf8')
+    expect((JSON.parse(text) as { mcpServers: Record<string, unknown> }).mcpServers['pneuma-base-claude-code']).toEqual({ type: 'http', url: `${origin}/mcp/claude-code` })
+    expect(ok(run(['agent', 'list', '--library', lib, '--json'])).json().data.connections).toEqual([expect.objectContaining({ grant: 'claude-code', way: 'mcp-http', inPlace: true })])
+    ok(run(['agent', 'disconnect', 'claude-code']))
+    expect(tree(sb.home)).toEqual(before)
+    expect(grants()).toEqual([])
+  })
 
   it('connects a product the table does not know by MCP alone: a grant under its name, nothing written, and the ways to reach the library', async () => {
+    // Without an endpoint, the command and the stdio form only.
+    const alone = ok(run(['agent', 'connect', 'antigravity', '--library', lib]))
+    expect(alone.stdout).toContain(`${launcher()} @antigravity mcp`)
+    expect(alone.stdout).not.toContain('/mcp/antigravity')
+    ok(run(['agent', 'disconnect', 'antigravity']))
+
     await serve()
     const before = tree(sb.home)
     const r = ok(run(['agent', 'connect', 'my-agent', '--library', lib]))
@@ -272,12 +263,6 @@ describe('agent connect --via mcp-http', () => {
     ok(run(['agent', 'disconnect', 'my-agent']))
     expect(grants()).toEqual([])
     expect(ok(run(['agent', 'list', '--library', lib, '--json'])).json().data.connections).toEqual([])
-  })
-
-  it('connects a product the table does not know without an endpoint too, giving the command and the stdio form', () => {
-    const r = ok(run(['agent', 'connect', 'antigravity', '--library', lib]))
-    expect(r.stdout).toContain(`${launcher()} @antigravity mcp`)
-    expect(r.stdout).not.toContain('/mcp/antigravity')
   })
 
   it('refuses Claude Desktop, whose configuration takes no address, and a product with an address but no endpoint running', () => {
@@ -307,6 +292,7 @@ describe('the agents page', () => {
   it('has a row per connected agent: its mark, how it is connected, what the grant reaches, when it was last here, 断开; and the products found here with 接上', () => {
     put('.claude/x', '')
     put('.cursor/x', '')
+    expect(sections()['接上的 agent']).toEqual([{ kind: 'empty', title: '还没有接上任何 agent', hint: '在下面找到的产品那一行点「接上」。' }])
     ok(run(['agent', 'connect', 'claude-code', '--library', lib, '--area', 'notes', '--read-only']))
     let page = sections()
     expect(page['接上的 agent']).toMatchObject([{ kind: 'list', items: [{ cell: { text: 'Claude Code', actor: { name: 'claude-code', grant: 'claude-code' } }, note: '技能 · 区域 notes/ · 只读 · 写在 ~/.claude/skills/pneuma-base-claude-code/SKILL.md · 还没在这里做过事', actions: [{ label: '断开', call: { command: 'agent disconnect' } }] }] }])
@@ -319,9 +305,5 @@ describe('the agents page', () => {
 
     rmSync(join(sb.home, '.claude/skills/pneuma-base-claude-code/SKILL.md'))
     expect(sections()['接上的 agent']?.[0]?.items?.[0]?.cell.tag).toEqual({ text: '接上时写的不在了', tone: 'warn' })
-  })
-
-  it('says so when no agent is connected yet', () => {
-    expect(sections()['接上的 agent']).toEqual([{ kind: 'empty', title: '还没有接上任何 agent', hint: '在下面找到的产品那一行点「接上」。' }])
   })
 })

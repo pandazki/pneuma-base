@@ -77,6 +77,7 @@ agent 带着自己的授权调用，`pneuma-base @<授权名> <动词>`；经 MC
 | 文档 | 给谁 |
 | --- | --- |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 想知道它怎样建起来、为什么这样建的人和 agent |
+| [`TESTING.md`](TESTING.md) | 改这个仓库的人和 agent：每套测试管什么、什么时候跑、怎样加一个 |
 | [`PLUGINS.md`](PLUGINS.md) | 写插件的人：插件规范，从五分钟走通到完整的参考 |
 | [`STORAGE.md`](STORAGE.md)、[`PROVIDERS.md`](PROVIDERS.md) | 写存储提供者的人：存储的契约，和提供者怎么登记、安装、运行 |
 | [`core/README.md`](core/README.md) | 本机文件夹提供者 `pneuma-base-core` 的线上形式 |
@@ -90,13 +91,14 @@ agent 带着自己的授权调用，`pneuma-base @<授权名> <动词>`；经 MC
 pnpm build        # 构建存储的程序（cargo），编译各包，构建界面
 pnpm typecheck    # 类型检查
 pnpm lint         # lint，含包之间的导入方向和存储的门
-pnpm test         # 单元测试和命令行的端到端测试（vitest）
+pnpm test:changed # 改动需要的测试：改了的包的，加几个穿过各层的（CI 跑这个）
+pnpm test         # 单元测试和命令行的端到端测试（vitest），发版时全跑
 pnpm test:e2e     # 界面的端到端测试（Playwright，用本机的 Chrome）
 pnpm test:slow    # 脚手架和 PLUGINS.md 的五分钟：生成插件项目，装依赖、构建、跑它们自己的测试（要联网）
 cargo test --manifest-path core/Cargo.toml   # 存储：契约测试逐句跑一遍
 ```
 
-测试都用临时目录和临时的 `PNEUMA_BASE_HOME`，不碰 `~/.pneuma-base`；除了 `pnpm test:slow` 从 npm 装生成项目的开发依赖，都不联网。`scripts/` 下的 `bench-*.mjs` 量性能（`ARCHITECTURE.md` 第 13 节）。`scripts/agent-relay/` 和 `scripts/agent-site/` 用真的 Claude 和 Codex 走一遍故事，会花模型额度，不在 `pnpm test` 里。
+每套测试管什么、什么时候跑、怎样加一个测试，在 [`TESTING.md`](TESTING.md)。测试都用临时目录和临时的 `PNEUMA_BASE_HOME`，不碰 `~/.pneuma-base`；除了 `pnpm test:slow` 从 npm 装生成项目的开发依赖，都不联网。`scripts/` 下的 `bench-*.mjs` 量性能（`ARCHITECTURE.md` 第 13 节）。`scripts/agent-relay/` 和 `scripts/agent-site/` 用真的 Claude 和 Codex 走一遍故事，会花模型额度，不在 `pnpm test` 里。
 
 ## 许可
 

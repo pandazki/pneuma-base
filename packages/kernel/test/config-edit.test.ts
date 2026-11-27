@@ -17,18 +17,18 @@ const JSON_FILES: Record<string, string> = {
 }
 
 describe('a JSON entry', () => {
-  for (const [label, text] of Object.entries(JSON_FILES)) {
-    it(`goes in and comes out leaving the file byte for byte: ${label}`, () => {
+  it('goes in and comes out leaving the file byte for byte, however the file is written', () => {
+    for (const [label, text] of Object.entries(JSON_FILES)) {
       const added = addJsonEntry(text, 'mcpServers', 'pneuma-base-cursor', VALUE)
-      if (added.outcome !== 'added') throw new Error(JSON.stringify(added))
+      if (added.outcome !== 'added') throw new Error(`${label}: ${JSON.stringify(added)}`)
       const parsed = JSON.parse(added.text) as { mcpServers: Record<string, unknown> }
-      expect(parsed.mcpServers['pneuma-base-cursor']).toEqual(VALUE)
-      expect(jsonEntry(added.text, 'mcpServers', 'pneuma-base-cursor')).toEqual({ outcome: 'found', value: VALUE })
+      expect(parsed.mcpServers['pneuma-base-cursor'], label).toEqual(VALUE)
+      expect(jsonEntry(added.text, 'mcpServers', 'pneuma-base-cursor'), label).toEqual({ outcome: 'found', value: VALUE })
       // Everything the file had is still there, in the same order.
-      expect(Object.keys(parsed).filter((k) => k !== 'mcpServers')).toEqual(Object.keys(JSON.parse(text) as object).filter((k) => k !== 'mcpServers'))
-      expect(removeJsonEntry(added.text, 'mcpServers', 'pneuma-base-cursor', added)).toBe(text)
-    })
-  }
+      expect(Object.keys(parsed).filter((k) => k !== 'mcpServers'), label).toEqual(Object.keys(JSON.parse(text) as object).filter((k) => k !== 'mcpServers'))
+      expect(removeJsonEntry(added.text, 'mcpServers', 'pneuma-base-cursor', added), label).toBe(text)
+    }
+  })
 
   it('creates a file that did not exist, and taking the entry out leaves an empty object', () => {
     const added = addJsonEntry(null, 'mcpServers', 'pneuma-base-x', VALUE)
@@ -45,8 +45,11 @@ describe('a JSON entry', () => {
     expect(JSON.parse(removeJsonEntry(more, 'mcpServers', 'mine', added))).toEqual({ mcpServers: { theirs: { command: 't' } } })
   })
 
-  it('finds an entry of that name already there instead of adding a second', () => {
+  it('finds an entry of that name already there instead of adding a second, and refuses a file it cannot read as one JSON object', () => {
     expect(addJsonEntry('{"mcpServers": {"mine": {"command": "z"}}}', 'mcpServers', 'mine', VALUE)).toEqual({ outcome: 'present', value: { command: 'z' } })
+    for (const text of ['', '// comment\n{}', '[1]', '{"a": 1,}', '{"mcpServers": []}', '{"mcpServers": {}, "mcpServers": {}}', '{"mcpServers": {"m": 1, "m": 2}}']) {
+      expect(addJsonEntry(text, 'mcpServers', 'm', VALUE).outcome, text).toBe('unreadable')
+    }
   })
 
   it('replaces only the value of its entry', () => {
@@ -56,12 +59,6 @@ describe('a JSON entry', () => {
     expect(replaced.startsWith('{\n  "mcpServers": {\n    "a": 1,\n    "mine": ')).toBe(true)
     expect(replaced.endsWith('\n  },\n  "z": 2\n}\n')).toBe(true)
   })
-
-  it('refuses a file it cannot read as one JSON object', () => {
-    for (const text of ['', '// comment\n{}', '[1]', '{"a": 1,}', '{"mcpServers": []}', '{"mcpServers": {}, "mcpServers": {}}', '{"mcpServers": {"m": 1, "m": 2}}']) {
-      expect(addJsonEntry(text, 'mcpServers', 'm', VALUE).outcome, text).toBe('unreadable')
-    }
-  })
 })
 
 const COMMAND = { command: '/opt/node', args: ['/opt/pb/bin.js', '@codex', 'mcp'], env: { PNEUMA_BASE_HOME: '/h/.pneuma-base' } }
@@ -69,21 +66,19 @@ const COMMAND = { command: '/opt/node', args: ['/opt/pb/bin.js', '@codex', 'mcp'
 describe('a TOML table', () => {
   const block = tomlBlock('mcp_servers', 'pneuma-base-codex', COMMAND)
 
-  it('is written as Codex writes one', () => {
+  it('is written as Codex writes one, appended to whatever the file holds and removed by exact match', () => {
     expect(block).toBe(
       '[mcp_servers.pneuma-base-codex]\ncommand = "/opt/node"\nargs = ["/opt/pb/bin.js", "@codex", "mcp"]\n\n[mcp_servers.pneuma-base-codex.env]\nPNEUMA_BASE_HOME = "/h/.pneuma-base"\n',
     )
-  })
-
-  for (const text of [null, '', 'model = "o3"\n', '# a comment\nmodel = "o3"\n\n[mcp_servers.other]\ncommand = "x"   # trailing\n', 'model = "o3"']) {
-    it(`is appended and removed by exact match: ${JSON.stringify(text)}`, () => {
+    for (const text of [null, '', 'model = "o3"\n', '# a comment\nmodel = "o3"\n\n[mcp_servers.other]\ncommand = "x"   # trailing\n', 'model = "o3"']) {
+      const label = JSON.stringify(text)
       const added = appendToml(text, 'mcp_servers', 'pneuma-base-codex', block)
-      if (added.outcome !== 'added') throw new Error(JSON.stringify(added))
-      expect(added.text.startsWith(text ?? '')).toBe(true)
-      expect(tomlState(added.text, 'pneuma-base-codex', added.appended)).toBe('in-place')
-      expect(removeToml(added.text, added.appended)).toBe(text ?? '')
-    })
-  }
+      if (added.outcome !== 'added') throw new Error(`${label}: ${JSON.stringify(added)}`)
+      expect(added.text.startsWith(text ?? ''), label).toBe(true)
+      expect(tomlState(added.text, 'pneuma-base-codex', added.appended), label).toBe('in-place')
+      expect(removeToml(added.text, added.appended), label).toBe(text ?? '')
+    }
+  })
 
   it('finds its own table already there, and refuses a name or a table it would clash with', () => {
     expect(appendToml(`x = 1\n\n${block}`, 'mcp_servers', 'pneuma-base-codex', block).outcome).toBe('present')

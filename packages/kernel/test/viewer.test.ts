@@ -1,5 +1,6 @@
 // The viewer face on a library with no plugin (K2): the kernel's three pages and the item panel,
-// given as blocks; showing a view changes nothing and sends no event.
+// given as blocks; showing a view changes nothing and sends no event. How a page prints, and a view the
+// library does not have, are packages/cli/test/show.test.ts's.
 import { describe, expect, it } from 'vitest'
 import { agentFace, viewerFace, type Action, type Block, type Event, type ViewResult } from '../src/index.js'
 import { saveConnection } from '../src/connections.js'
@@ -37,19 +38,17 @@ describe('the views of a library with no plugin', () => {
     })
   })
 
-  it('config, a page of management, is refused in an agent’s session in the words an owner-only command is refused in; the rest are open', async () => {
-    const f = await fixture()
+  it('config, a page of management, and a plugin’s owner-only view are refused in an agent’s session, naming what showed it; the rest are open', async () => {
+    const owned = plugin('owned', { views: [{ id: 'owned.setup', title: '设置', icon: 'settings', nav: true, filters: [], ownerOnly: true }], onView: async () => ({ title: '设置', subtitle: null, blocks: [] }) })
+    const f = await fixture([owned])
     f.write('a.md', 'a')
     expect((await show(f, 'config')).outcome).toBe('shown')
-    const refusal = (sign: string) => ({
-      outcome: 'refused',
-      reason: 'agent-session',
-      text: `「show config」是替主人做的决定，只有主人能做，不能在 agent 的会话里做（${sign}）。需要的话告诉主人；主人在自己的终端里做，或在自己的终端里运行 pneuma-base view 用界面做。`,
-      problems: [],
-    })
-    expect(await show(f, 'config', {}, { CLAUDECODE: '1' })).toEqual(refusal('环境里有 CLAUDECODE'))
+    expect((await show(f, 'owned.setup')).outcome).toBe('shown')
+    // The words are an owner-only command's (packages/cli/test/show.test.ts); here, what showed the session.
+    expect(await show(f, 'config', {}, { CLAUDECODE: '1' })).toMatchObject({ outcome: 'refused', reason: 'agent-session', text: expect.stringContaining('（环境里有 CLAUDECODE）') })
+    expect(await show(f, 'owned.setup', {}, { CODEX_THREAD_ID: 't' })).toMatchObject({ outcome: 'refused', reason: 'agent-session', text: expect.stringContaining('「show owned.setup」') })
     await f.reopen({ kind: 'agent', name: 'claude-code', grant: null })
-    expect(await show(f, 'config')).toEqual(refusal('调用者是 agent claude-code'))
+    expect(await show(f, 'config')).toMatchObject({ outcome: 'refused', reason: 'agent-session', text: expect.stringContaining('（调用者是 agent claude-code）') })
     for (const [view, params] of [['files', {}], ['archive', {}], ['item', { path: 'a.md' }]] as const) expect((await show(f, view, params)).outcome).toBe('shown')
   })
 
@@ -120,14 +119,13 @@ describe('the views of a library with no plugin', () => {
       rows: [{ key: 'local-folder', cells: { name: { text: 'local-folder' }, addresses: { text: '本机路径' }, facets: { text: expect.stringContaining('fs') }, state: { text: '随 pneuma-base 带着', tag: { text: '这个库在用' } } }, actions: [] }],
     })
     expect(storage.blocks[1]).toMatchObject({ kind: 'section', title: '噪音' })
-  })
 
-  it('config lists an installed plugin first with 卸下, and one this pneuma-base lacks as such', async () => {
-    const f = await fixture([plugin('ledger')])
-    const config = { ...f.library.config, plugins: [...f.library.config.plugins, 'gone' as never] }
-    const ctx = { ...f.ctx, library: { ...f.library, config, unavailable: ['gone' as never] } }
-    const r = shown(await viewerFace.show({ view: 'config', params: {} }, { ctx, table: new Map([['ledger', plugin('ledger')], ['pager', plugin('pager')]]), env: {}, viaGrant: false }))
-    expect(tableOf(r).rows).toMatchObject([
+    // An installed plugin comes first with 卸下, and one this pneuma-base lacks says so.
+    const installed = await fixture([plugin('ledger')])
+    const config = { ...installed.library.config, plugins: [...installed.library.config.plugins, 'gone' as never] }
+    const ctx = { ...installed.ctx, library: { ...installed.library, config, unavailable: ['gone' as never] } }
+    const listed = shown(await viewerFace.show({ view: 'config', params: {} }, { ctx, table: new Map([['ledger', plugin('ledger')], ['pager', plugin('pager')]]), env: {}, viaGrant: false }))
+    expect(tableOf(listed).rows).toMatchObject([
       { key: 'ledger', cells: { state: { tag: { text: '已装' } } }, actions: [{ label: '卸下', call: { command: 'plugin remove', args: { positional: ['ledger'] } } }] },
       { key: 'gone', cells: { state: { tag: { text: '这个 pneuma-base 里没有' } } }, actions: [{ label: '卸下' }] },
       { key: 'pager', actions: [{ label: '装上' }] },
@@ -153,7 +151,7 @@ describe('the views of a library with no plugin', () => {
     expect(shown(await show(f, 'item', { path: 'gone.md' })).blocks).toMatchObject([{ kind: 'text', tone: 'warn' }])
   })
 
-  it('item of an archived file offers to take it back, and still finds it under its original path', async () => {
+  it('item of an archived file offers to take it back, and still finds it under its original path; of an archived path, it follows the file once it was taken back', async () => {
     const f = await fixture()
     f.write('_archive/a.md', 'a')
     for (const path of ['a.md', '_archive/a.md']) {
@@ -161,18 +159,9 @@ describe('the views of a library with no plugin', () => {
       expect(r.blocks[0]).toMatchObject({ kind: 'text', text: '文件 · 1 B · 已归档' })
       expect(r.blocks.at(-1)).toMatchObject({ actions: [{ label: '取回', call: { request: { kind: 'unarchive', path: '_archive/a.md' } } }] })
     }
-  })
-
-  it('item of an archived path follows the file once it was taken back', async () => {
-    const f = await fixture()
-    f.write('a.md', 'a')
-    const facts = flat(shown(await show(f, 'item', { path: '_archive/a.md' })).blocks).find((b) => b.kind === 'fields')
-    expect(facts?.kind === 'fields' && facts.fields[0]?.value.text).toBe('a.md')
-  })
-
-  it('an unknown view is no-such-view', async () => {
-    const f = await fixture()
-    expect(await show(f, 'nope')).toEqual({ outcome: 'no-such-view', problems: [] })
+    f.write('b.md', 'b')
+    const facts = flat(shown(await show(f, 'item', { path: '_archive/b.md' })).blocks).find((b) => b.kind === 'fields')
+    expect(facts?.kind === 'fields' && facts.fields[0]?.value.text).toBe('b.md')
   })
 })
 
@@ -184,9 +173,10 @@ describe('bundles in the views', () => {
     f.write(`${at}/logo.svg`, '<svg/>')
   }
 
-  it('files shows a bundle as one row with its own icon and how many entries its first level has, opening the item panel, not a folder', async () => {
+  it('files and archive show a bundle as one row with its own icon and how many entries its first level has; in files it opens the item panel, not a folder', async () => {
     const f = await fixture()
     site(f)
+    site(f, '_archive/old')
     f.write('notes/a.md', 'a')
     f.write('top.txt', 't')
     const rows = tableOf(await show(f, 'files')).rows
@@ -195,6 +185,7 @@ describe('bundles in the views', () => {
     expect(rows[0]).toMatchObject({ cells: { name: { icon: 'folder' } }, link: { view: 'files', params: { dir: 'notes' } }, actions: [] })
     expect(rows[1]).toMatchObject({ cells: { name: { text: 'site', icon: 'package', tag: { text: '3 项' } } }, link: { view: 'item', params: { path: 'site' }, target: 'panel' } })
     expect(rows[2]?.cells.name).toMatchObject({ icon: 'file' })
+    expect(tableOf(await show(f, 'archive')).rows).toMatchObject([{ key: '_archive/old', cells: { original: { text: 'old', icon: 'package', tag: { text: '3 项' } } } }])
   })
 
   it('with a plugin keeping records, a folder with nothing registered in it is one row: what a look found, the kernel’s two answers, and it still opens', async () => {
@@ -257,25 +248,6 @@ describe('bundles in the views', () => {
     expect(asked).toEqual(['site/css/main.css'])
     expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['text', 'section:知道的', 'section:文件', 'section:预览'])
   })
-
-  it('archive lists an archived bundle as one row', async () => {
-    const f = await fixture()
-    site(f, '_archive/site')
-    const rows = tableOf(await show(f, 'archive')).rows
-    expect(rows).toMatchObject([{ key: '_archive/site', cells: { original: { text: 'site', icon: 'package', tag: { text: '3 项' } } } }])
-  })
-})
-
-describe('showing a view', () => {
-  it('sends no event', async () => {
-    const events: Event[] = []
-    const f = await fixture([plugin('recorder', { observe: async (e) => void events.push(e) })])
-    events.length = 0
-    f.write('a.md', 'a')
-    for (const view of ['files', 'archive', 'config']) await show(f, view)
-    await show(f, 'item', { path: 'a.md' })
-    expect(events).toEqual([])
-  })
 })
 
 describe('the view slot', () => {
@@ -302,64 +274,45 @@ describe('the view slot', () => {
     expect(problems).toEqual([{ plugin: 'stray', message: 'view files does not start with stray.' }])
   })
 
-  it('shows a plugin’s view with its parameters', async () => {
-    const f = await fixture([pager])
-    expect(await show(f, 'pager.page', { q: 'x' })).toEqual({ outcome: 'shown', title: '测试页', subtitle: 'x', blocks: [{ kind: 'text', text: 'from pager', tone: 'info' }], problems: [] })
-  })
-
-  it('gives a filter left out its default, as the page does', async () => {
+  it('shows a plugin’s view with its parameters, a filter left out at its default, as the page does', async () => {
     const filtered = plugin('filtered', {
       views: [{ id: 'filtered.page', title: '筛', icon: 'list', nav: true, filters: [{ name: 'who', label: '谁', options: [{ value: 'all', label: '全部' }, { value: 'me', label: '我' }], default: 'all' }] }],
       onView: async (req) => ({ title: '筛', subtitle: JSON.stringify(req.params), blocks: [] }),
     })
-    const f = await fixture([filtered])
+    const f = await fixture([pager, filtered])
+    expect(await show(f, 'pager.page', { q: 'x' })).toEqual({ outcome: 'shown', title: '测试页', subtitle: 'x', blocks: [{ kind: 'text', text: 'from pager', tone: 'info' }], problems: [] })
     expect(shown(await show(f, 'filtered.page')).subtitle).toBe('{"who":"all"}')
     expect(shown(await show(f, 'filtered.page', { who: 'me' })).subtitle).toBe('{"who":"me"}')
   })
 
-  it('refuses a plugin’s owner-only view in an agent’s session too', async () => {
-    const owned = plugin('owned', { views: [{ id: 'owned.setup', title: '设置', icon: 'settings', nav: true, filters: [], ownerOnly: true }], onView: async () => ({ title: '设置', subtitle: null, blocks: [] }) })
-    const f = await fixture([owned])
-    expect((await show(f, 'owned.setup')).outcome).toBe('shown')
-    expect(await show(f, 'owned.setup', {}, { CODEX_THREAD_ID: 't' })).toMatchObject({ outcome: 'refused', reason: 'agent-session', text: expect.stringContaining('「show owned.setup」是替主人做的决定') })
-  })
-
-  it('a plugin that throws in onView gets a page that says so and a problem; the other views still work (K8)', async () => {
-    const f = await fixture([thrower, pager])
+  it('a plugin that throws in onView, or answers no view at all, gets a page that says so and a problem; the other views still work (K8)', async () => {
+    const broken = plugin('broken', { views: [{ id: 'broken.page', title: '坏页', icon: 'triangle-alert', nav: true, filters: [] }], onView: async () => ({ title: 'x' }) as never })
+    const f = await fixture([thrower, pager, broken])
     const r = shown(await show(f, 'thrower.page'))
     expect(r).toMatchObject({ title: '出错的页', blocks: [{ kind: 'empty', title: expect.stringContaining('thrower'), hint: 'thrower failed in onView' }] })
     expect(r.problems).toEqual([{ plugin: 'thrower', message: 'thrower failed in onView' }])
+    expect(shown(await show(f, 'broken.page')).problems).toMatchObject([{ plugin: 'broken' }])
     expect(shown(await show(f, 'pager.page')).problems).toEqual([])
     expect(shown(await show(f, 'files')).problems).toEqual([])
   })
 
-  it('a plugin that answers no view at all is failing too', async () => {
-    const broken = plugin('broken', { views: [{ id: 'broken.page', title: '坏页', icon: 'triangle-alert', nav: true, filters: [] }], onView: async () => ({ title: 'x' }) as never })
-    const f = await fixture([broken])
-    expect(shown(await show(f, 'broken.page')).problems).toMatchObject([{ plugin: 'broken' }])
-  })
-
-  it('the item panel adds one section per plugin, in configuration order, a failing one saying it failed', async () => {
+  it('the item panel adds one section per plugin, in configuration order, a failing one saying it failed; with no file at the path it says so, and the plugins still give their sections', async () => {
     const f = await fixture([thrower, pager])
     f.write('a.md', 'a')
     const r = shown(await show(f, 'item', { path: 'a.md' }))
     expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['text', 'section:插件 thrower', 'section:测试插件知道的', 'section:文件', 'section:预览', 'actions'])
     expect(r.blocks[2]).toMatchObject({ blocks: [{ text: 'pager knows a.md' }] })
     expect(r.problems).toEqual([{ plugin: 'thrower', message: 'thrower failed in onItemView' }])
+    const gone = shown(await show(f, 'item', { path: 'gone.md' }))
+    expect(gone.blocks).toMatchObject([{ kind: 'text', tone: 'warn' }, { kind: 'section', title: '插件 thrower' }, { kind: 'section', title: '测试插件知道的', blocks: [{ text: 'pager knows gone.md' }] }])
   })
 
-  it('with no file at the path the panel says so, and the plugins still give their sections', async () => {
-    const f = await fixture([pager])
-    const r = shown(await show(f, 'item', { path: 'gone.md' }))
-    expect(r.blocks).toMatchObject([{ kind: 'text', tone: 'warn' }, { kind: 'section', title: '测试插件知道的', blocks: [{ text: 'pager knows gone.md' }] }])
-  })
-
-  it('a plugin view sends no event either', async () => {
+  it('showing a view sends no event: the kernel’s views, a plugin’s view, the item panel', async () => {
     const events: Event[] = []
     const f = await fixture([pager, plugin('recorder', { observe: async (e) => void events.push(e) })])
     events.length = 0
     f.write('a.md', 'a')
-    await show(f, 'pager.page')
+    for (const view of ['files', 'archive', 'config', 'pager.page']) await show(f, view)
     await show(f, 'item', { path: 'a.md' })
     expect(events).toEqual([])
   })
@@ -375,7 +328,7 @@ describe('what a plugin’s view answers is checked (D7)', () => {
     })
   const text = (t: string): Block => ({ kind: 'text', text: t, tone: 'neutral' })
 
-  it('a block of a kind no one knows, or lacking a required field, is replaced by one saying whose and why; the rest stands', async () => {
+  it('a block of a kind no one knows, or lacking a required field, is replaced by one saying whose and why, in a view or in the item panel; the rest stands', async () => {
     const blocks = [
       text('前面的'),
       { kind: 'sparkle' },
@@ -394,17 +347,16 @@ describe('what a plugin’s view answers is checked (D7)', () => {
     ])
     expect(r.problems).toHaveLength(3)
     expect(r.problems.every((p) => p.plugin === 'odd')).toBe(true)
+
+    // The blocks of a plugin's section in the item panel are checked the same way.
+    const g = await fixture([answering('odd', { title: '一页', subtitle: null, blocks: [{ kind: 'embed', url: 'file:///etc/passwd', title: '本机文件', height: 200 }] })])
+    g.write('a.md', 'a')
+    const panel = shown(await show(g, 'item', { path: 'a.md' }))
+    expect(panel.blocks[1]).toMatchObject({ kind: 'section', title: '它知道的', blocks: [{ kind: 'text', tone: 'bad', text: expect.stringContaining('http') }] })
+    expect(panel.problems).toMatchObject([{ plugin: 'odd' }])
   })
 
-  it('checks the blocks of a plugin’s section in the item panel the same way', async () => {
-    const f = await fixture([answering('odd', { title: '一页', subtitle: null, blocks: [{ kind: 'embed', url: 'file:///etc/passwd', title: '本机文件', height: 200 }] })])
-    f.write('a.md', 'a')
-    const r = shown(await show(f, 'item', { path: 'a.md' }))
-    expect(r.blocks[1]).toMatchObject({ kind: 'section', title: '它知道的', blocks: [{ kind: 'text', tone: 'bad', text: expect.stringContaining('http') }] })
-    expect(r.problems).toMatchObject([{ plugin: 'odd' }])
-  })
-
-  it('stamps a custom block with the plugin that gave it, and refuses one from a plugin without ui or with an entry that climbs out', async () => {
+  it('stamps a custom block with the plugin that gave it, and refuses one from a plugin without ui, with an entry that climbs out, or that does not say in words what it draws', async () => {
     const custom = (entry: string): Block => ({ kind: 'custom', entry, height: 200, text: '一条小图', data: { n: 1 }, actions: {}, plugin: 'someone-else' as never })
     const answer = { title: '一页', subtitle: null, blocks: [custom('page.html'), custom('../other/page.html')] }
     const f = await fixture([answering('drawn', answer, { ui: '/somewhere/ui' }), answering('plain', answer)])
@@ -414,17 +366,15 @@ describe('what a plugin’s view answers is checked (D7)', () => {
     const plain = shown(await show(f, 'plain.page'))
     expect(plain.blocks.map((b) => b.kind)).toEqual(['text', 'text'])
     expect(plain.problems[0]?.message).toContain('ui')
-  })
 
-  it('refuses a custom block that does not say in words what it draws', async () => {
     const wordless = { kind: 'custom', entry: 'page.html', height: 200, data: null, actions: {} }
-    const f = await fixture([answering('mute', { title: '一页', subtitle: null, blocks: [wordless] }, { ui: '/somewhere/ui' })])
-    const r = shown(await show(f, 'mute.page'))
-    expect(r.blocks).toMatchObject([{ kind: 'text', tone: 'bad', text: expect.stringContaining('缺少 text') }])
-    expect(r.problems).toMatchObject([{ plugin: 'mute', message: expect.stringContaining('缺少 text') }])
+    const g = await fixture([answering('mute', { title: '一页', subtitle: null, blocks: [wordless] }, { ui: '/somewhere/ui' })])
+    const mute = shown(await show(g, 'mute.page'))
+    expect(mute.blocks).toMatchObject([{ kind: 'text', tone: 'bad', text: expect.stringContaining('缺少 text') }])
+    expect(mute.problems).toMatchObject([{ plugin: 'mute', message: expect.stringContaining('缺少 text') }])
   })
 
-  it('refuses a block whose action calls nothing the library runs, arguments its command does not take, a 「说」 no plugin hears, or an input it does not ask for', async () => {
+  it('refuses a block whose action calls nothing the library runs, arguments its command does not take, a 「说」 no plugin hears, an input it does not ask for, or an input pattern that is not a regular expression', async () => {
     const tag = { name: 'tagger tag', summary: '打标签', params: { positional: [{ name: 'path', hint: '库内路径', required: true }], flags: [{ name: 'color', hint: '颜色', kind: 'value' as const, options: [{ value: 'red', label: '红' }] }] }, destructive: false, ownerOnly: false, run: async () => ({ outcome: 'done' as const, text: '' }) }
     const owner = (args: { positional: string[]; flags: Record<string, string[] | true> }, inputs: string[] = []) => ({
       label: '按钮',
@@ -446,10 +396,11 @@ describe('what a plugin’s view answers is checked (D7)', () => {
       owner({ positional: ['{path}'], flags: {} }),
       say('unheard'),
       { ...say('heard'), call: { face: 'agent', verb: 'shout', request: {} } },
+      { ...owner({ positional: ['{p}'], flags: {} }, ['p']), inputs: [{ name: 'p', label: '前缀', placeholder: null, value: null, options: null, pattern: '[a-' }] },
     ]
     const f = await fixture([answering('tagger', page(actions), { statements: ['heard'], onSay: async () => ({ outcome: 'heard', note: '' }), ownerCommands: [tag] })])
     const r = shown(await show(f, 'tagger.page'))
-    expect(r.blocks.map((b) => b.kind)).toEqual(['actions', 'actions', 'actions', 'text', 'text', 'text', 'text', 'text', 'text', 'text'])
+    expect(r.blocks.map((b) => b.kind)).toEqual(['actions', 'actions', 'actions', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text'])
     expect(r.problems.map((p) => p.message)).toEqual([
       expect.stringContaining('主人命令「tagger nothing」这个库里没有'),
       expect.stringContaining('少了 <库内路径>'),
@@ -458,10 +409,11 @@ describe('what a plugin’s view answers is checked (D7)', () => {
       expect.stringContaining('写了 {path}，却没有叫这个名字的输入'),
       expect.stringContaining('说的「unheard」这个库里没有插件听'),
       expect.stringContaining('不是一个动词或一条主人命令的调用'),
+      expect.stringContaining('pattern'),
     ])
   })
 
-  it('keeps a refresh of at least five seconds, raises a shorter one to five, and drops one that is not a number as a problem', async () => {
+  it('keeps a refresh of at least five seconds, raises a shorter one to five, and drops one that is not a number as a problem; keeps an open that links to a panel, and drops one that does not', async () => {
     const f = await fixture([
       answering('slow', { title: '慢', subtitle: null, blocks: [], refresh: 30 }),
       answering('eager', { title: '急', subtitle: null, blocks: [], refresh: 1 }),
@@ -474,38 +426,16 @@ describe('what a plugin’s view answers is checked (D7)', () => {
     expect(wrong.refresh).toBeUndefined()
     expect(wrong.problems).toMatchObject([{ plugin: 'wrong', message: expect.stringContaining('refresh') }])
     expect('refresh' in shown(await show(f, 'quiet.page'))).toBe(false)
-  })
 
-  it('keeps an open that links to a panel, and drops one that does not as a problem', async () => {
     const panel = { view: 'item', params: { path: 'a.md' }, target: 'panel' }
-    const f = await fixture([
+    const g = await fixture([
       answering('opener', { title: '开', subtitle: null, blocks: [], open: panel }),
-      answering('wrong', { title: '错', subtitle: null, blocks: [], open: { ...panel, target: 'main' } }),
+      answering('closer', { title: '错', subtitle: null, blocks: [], open: { ...panel, target: 'main' } }),
     ])
-    expect(shown(await show(f, 'opener.page')).open).toEqual(panel)
-    const wrong = shown(await show(f, 'wrong.page'))
-    expect(wrong.open).toBeUndefined()
-    expect(wrong.problems).toMatchObject([{ plugin: 'wrong', message: expect.stringContaining('open') }])
-  })
-
-  it('lets the new fields through: link cells, embeds, timeline actions, patterned inputs', async () => {
-    const act = { label: '放回', tone: 'default', confirm: '放回这一版？', inputs: [{ name: 'p', label: '前缀', placeholder: null, value: null, options: null, pattern: '[a-z]+', hint: '小写字母' }], call: { face: 'owner', command: 'grant revoke', args: { positional: ['{p}'], flags: {} } } }
-    const blocks = [
-      { kind: 'fields', fields: [{ label: '地址', value: { text: 'https://example.com/', href: 'https://example.com/', copy: true } }] },
-      { kind: 'embed', url: 'http://127.0.0.1:18080/apps/demo/', title: '预览', height: 320 },
-      { kind: 'timeline', entries: [{ at: '2026-11-25T01:00:00.000Z', title: { text: '第 1 版' }, lines: [], tag: null, actions: [act] }] },
-    ]
-    const f = await fixture([answering('fine', { title: '好', subtitle: null, blocks })])
-    const r = shown(await show(f, 'fine.page'))
-    expect(r.problems).toEqual([])
-    expect(r.blocks).toEqual(blocks)
-  })
-
-  it('refuses an input pattern that is not a regular expression', async () => {
-    const act = { label: '设', tone: 'default', confirm: null, inputs: [{ name: 'p', label: '前缀', placeholder: null, value: null, options: null, pattern: '[a-' }], call: { face: 'owner', command: 'grant revoke', args: { positional: ['{p}'], flags: {} } } }
-    const f = await fixture([answering('regex', { title: '一页', subtitle: null, blocks: [{ kind: 'actions', actions: [act] }] })])
-    const r = shown(await show(f, 'regex.page'))
-    expect(r.blocks).toMatchObject([{ kind: 'text', tone: 'bad', text: expect.stringContaining('pattern') }])
+    expect(shown(await show(g, 'opener.page')).open).toEqual(panel)
+    const closer = shown(await show(g, 'closer.page'))
+    expect(closer.open).toBeUndefined()
+    expect(closer.problems).toMatchObject([{ plugin: 'closer', message: expect.stringContaining('open') }])
   })
 })
 
@@ -525,12 +455,18 @@ describe('the new blocks are checked too (D7)', () => {
     { kind: 'chart', form: 'stacked', text: '放进 4 样。', unit: '', x: ['今天'], series: [{ label: 'a', values: [1] }, { label: 'b', values: [0] }, { label: 'c', values: [2] }, { label: 'd', values: [1] }] },
   ]
 
-  it('lets a feed, stats, a tree, asks, charts and an actor on a cell through as they are, with the filter options the view answered', async () => {
+  it('lets a feed, stats, a tree, asks, charts, an actor on a cell, link cells, embeds, timeline actions and patterned inputs through as they are, with the filter options the view answered', async () => {
     const options = [{ value: '', label: '全部', count: 3 }, { value: 'x', label: '某个', count: 1 }]
-    const f = await fixture([answering('fine', page(good, { filters: [{ name: 'who', options }] }))])
+    const act = { label: '放回', tone: 'default', confirm: '放回这一版？', inputs: [{ name: 'p', label: '前缀', placeholder: null, value: null, options: null, pattern: '[a-z]+', hint: '小写字母' }], call: { face: 'owner', command: 'grant revoke', args: { positional: ['{p}'], flags: {} } } }
+    const blocks = [
+      { kind: 'fields', fields: [{ label: '地址', value: { text: 'https://example.com/', href: 'https://example.com/', copy: true } }] },
+      { kind: 'embed', url: 'http://127.0.0.1:18080/apps/demo/', title: '预览', height: 320 },
+      { kind: 'timeline', entries: [{ at: '2026-11-25T01:00:00.000Z', title: { text: '第 1 版' }, lines: [], tag: null, actions: [act] }] },
+    ]
+    const f = await fixture([answering('fine', page([...good, ...blocks], { filters: [{ name: 'who', options }] }))])
     const r = shown(await show(f, 'fine.page'))
     expect(r.problems).toEqual([])
-    expect(r.blocks).toEqual(good)
+    expect(r.blocks).toEqual([...good, ...blocks])
     expect(r.filters).toEqual([{ name: 'who', options }])
   })
 
@@ -605,23 +541,19 @@ describe('the home page', () => {
       onView: async () => ({ title: '一部分', subtitle: null, blocks: [{ kind: 'steps', steps: [{ key: name, title: `${name} 这一步`, done, summary: done ? '做了' : null, blocks: inner }] }, { kind: 'text', text: `${name} 的部分`, tone: 'neutral' }] as never }),
     })
 
-  it('opens with 开始 while a step is left: the kernel’s two, then the steps the home parts give, which leave those parts', async () => {
+  it('opens with 开始 while a step is left: the kernel’s two, then the steps the home parts give, which leave those parts; drops it once every step is done, the parts’ steps included', async () => {
     const f = await fixture([stepper('one', false)])
     const r = shown(await show(f, 'home'))
     expect(r.problems).toEqual([])
     expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['section:开始', 'section:等你决定', 'text'])
     expect(r.blocks[0]).toMatchObject({ note: '做完了 0 步，还有 3 步。', blocks: [{ kind: 'steps', steps: [{ key: 'connect', done: false }, { key: 'first', done: false }, { key: 'one', title: 'one 这一步', blocks: [{ text: 'one 的一步' }] }] }] })
     expect(r.blocks[2]).toMatchObject({ text: 'one 的部分' })
-  })
 
-  it('drops 开始 once every step is done, the parts’ steps included', async () => {
-    const f = await fixture([stepper('one', true)])
-    f.write('a.md', 'a')
-    const before = shown(await show(f, 'home'))
-    expect(before.blocks[0]).toMatchObject({ title: '开始', note: '做完了 2 步，还有 1 步。' })
-    await saveConnection(f.home, { format: 1, grant: 'claude-code', grantId: 'g', product: 'claude-code', library: f.root, way: 'skill', at: f.ctx.now, wrote: { kind: 'skill', file: `${f.home}/SKILL.md`, fingerprint: 'x', dirs: [] }, command: null })
-    const after = shown(await show(f, 'home'))
-    expect(after.blocks.map((b) => (b.kind === 'section' ? b.title : b.kind))).toEqual(['等你决定', 'text'])
+    const g = await fixture([stepper('one', true)])
+    g.write('a.md', 'a')
+    expect(shown(await show(g, 'home')).blocks[0]).toMatchObject({ title: '开始', note: '做完了 2 步，还有 1 步。' })
+    await saveConnection(g.home, { format: 1, grant: 'claude-code', grantId: 'g', product: 'claude-code', library: g.root, way: 'skill', at: g.ctx.now, wrote: { kind: 'skill', file: `${g.home}/SKILL.md`, fingerprint: 'x', dirs: [] }, command: null })
+    expect(shown(await show(g, 'home')).blocks.map((b) => (b.kind === 'section' ? b.title : b.kind))).toEqual(['等你决定', 'text'])
   })
 
   it('checks the blocks inside a part’s steps as a section’s, and a drop as a block of its own', async () => {

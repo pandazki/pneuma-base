@@ -1,7 +1,7 @@
 // C11, K4: the kernel imports no plugin, not the command line and not the viewer; plugins reach the
 // kernel only through its package. Run 2 C9: the viewer imports no plugin package, and its page
 // takes only types from the kernel. The lint rules go red on deliberate violations.
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ESLint } from 'eslint'
@@ -75,6 +75,20 @@ describe('dependency direction', () => {
 
   it('flags a plugin importing the viewer', async () => {
     expect(await restrictedImports(`export { startServer } from '@pneuma-base/viewer'\n`, 'packages/plugin-ledger/src/violation.ts')).toHaveLength(1)
+  })
+
+  it('flags a plugin importing the command line, or another plugin by a relative path', async () => {
+    expect(await restrictedImports(`export * from '@pneuma-base/cli'\n`, 'packages/plugin-version/src/violation.ts')).toHaveLength(1)
+    expect(await restrictedImports(`export * from '../../plugin-ledger/src/index.js'\n`, 'packages/plugin-version/src/violation.ts')).toHaveLength(1)
+  })
+
+  it('every plugin package depends on the kernel, or the sdk for its kit, and on no other package of this repository', () => {
+    for (const dir of readdirSync(join(root, 'packages')).filter((d) => d.startsWith('plugin-'))) {
+      const pkg = JSON.parse(readFileSync(join(root, 'packages', dir, 'package.json'), 'utf8'))
+      const ours = Object.keys(pkg.dependencies ?? {}).filter((d) => d.startsWith('@pneuma-base/'))
+      expect(ours.length, dir).toBe(1)
+      expect(['@pneuma-base/kernel', '@pneuma-base/sdk'], dir).toContain(ours[0])
+    }
   })
 
   it('the viewer package depends on the kernel and on no plugin', () => {

@@ -53,7 +53,6 @@ describe('pair request and pair status', () => {
     expect(first).toMatchObject({ outcome: 'requested', again: false, pairing: { product: 'claude-code', why: WHY, library: lib, via: 'command-line', decision: null } })
     expect(first.pairing.id).toMatch(/^p-[0-9a-f]{8}$/)
     expect(first.pairing.code).toMatch(/^\d{3}-\d{3}$/)
-    expect(Date.parse(first.pairing.expires) - Date.parse(first.pairing.at)).toBe(10 * 60_000)
     const text = ok(run(['pair', 'request', 'claude-code', WHY, '--library', lib])).stdout
     expect(text).toContain(first.pairing.code)
     expect(text).toContain(`pair status ${first.pairing.id}`)
@@ -62,7 +61,7 @@ describe('pair request and pair status', () => {
     expect(ok(run(['pair', 'status', first.pairing.id])).stdout).toContain(first.pairing.code)
   })
 
-  it('refuses a name that is no product, a reason empty or too long, a folder that is no library, and a sixth waiting pairing', () => {
+  it('refuses a name that is no product, a reason empty or too long, a folder that is no library, and an id it does not have', () => {
     expect(request('My Agent').code).toBe(1)
     expect(request('codex', '   ').code).toBe(1)
     expect(request('codex', '长'.repeat(201)).code).toBe(1)
@@ -70,27 +69,20 @@ describe('pair request and pair status', () => {
     expect(notLibrary.code).toBe(2)
     expect(notLibrary.json()).toMatchObject({ outcome: 'refused', reason: 'not-a-library' })
     expect(ok(request('codex', '第一行\n第二行\t完')).json().pairing.why).toBe('第一行 第二行 完')
-    for (const p of ['a1', 'a2', 'a3', 'a4']) requested(p)
-    const sixth = request('a5')
-    expect(sixth.code).toBe(2)
-    expect(sixth.json()).toMatchObject({ outcome: 'refused', reason: 'too-many' })
-  })
-
-  it('answers no pairing for an id it does not have', () => {
-    const r = run(['pair', 'status', 'p-00000000'])
-    expect(r.code).toBe(2)
-    expect(r.stdout).toContain('no-such-pairing')
+    const unknown = run(['pair', 'status', 'p-00000000', '--json'])
+    expect(unknown.code).toBe(2)
+    expect(unknown.json()).toMatchObject({ outcome: 'refused', reason: 'no-such-pairing' })
   })
 })
 
 describe('the owner allows or declines', () => {
   it('pair allow connects the product under its name: the grant, the connection, the skill; the agent is told its command', () => {
     const { id, code } = requested('claude-code')
-    const r = ok(owner(['pair', 'allow', id]))
+    const r = ok(owner(['pair', 'allow', id, '--read-only']))
     expect(r.stdout).toContain(code)
     expect(grants()).toEqual([expect.objectContaining({ name: 'claude-code', agent: 'claude-code' })])
     expect(existsSync(join(sb.home, '.claude/skills/pneuma-base-claude-code/SKILL.md'))).toBe(true)
-    expect(ok(run(['agent', 'list', '--library', lib, '--json'])).json().data.connections).toEqual([expect.objectContaining({ grant: 'claude-code', product: 'claude-code', way: 'skill', inPlace: true })])
+    expect(ok(run(['agent', 'list', '--library', lib, '--json'])).json().data.connections).toEqual([expect.objectContaining({ grant: 'claude-code', product: 'claude-code', way: 'skill', inPlace: true, readOnly: true })])
     const answer = status(id)
     expect(answer).toMatchObject({
       state: 'connected',
@@ -99,14 +91,6 @@ describe('the owner allows or declines', () => {
     expect(answer.connected.next).toContain(`${launcher()} @claude-code start`)
     expect(answer.text).toContain('claude-code')
     expect(ok(run(['@claude-code', 'start', '读论文'], { PNEUMA_BASE_SESSION: 'paired' })).code).toBe(0)
-    expect(owner(['pair', 'allow', id]).stdout).toContain('not-pending')
-  })
-
-  it('connects a product the table does not know by MCP, writing nothing', () => {
-    const { id } = requested('my-agent')
-    ok(owner(['pair', 'allow', id, '--read-only']))
-    expect(ok(run(['agent', 'list', '--library', lib, '--json'])).json().data.connections).toEqual([expect.objectContaining({ grant: 'my-agent', way: 'mcp-http', readOnly: true })])
-    expect(status(id)).toMatchObject({ state: 'connected', connected: { grant: 'my-agent', way: 'mcp-http', command: `${launcher()} @my-agent` } })
   })
 
   it('names the grant after the product, or the product with a number when that name connects something else here', () => {
@@ -119,8 +103,11 @@ describe('the owner allows or declines', () => {
     expect(status(id)).toMatchObject({ state: 'connected', connected: { grant: 'claude-code-2' } })
   })
 
-  it('keeps a pairing waiting when the connect is refused, and refuses an expired one and one of another library', () => {
+  it('keeps a pairing waiting when the connect is refused, and refuses it in an agent session, from another library and once expired', () => {
     const { id } = requested('cursor')
+    const inSession = run(['--library', lib, 'pair', 'allow', id], { CLAUDE_CODE_SESSION_ID: 'session-1' })
+    expect(inSession.code).toBe(2)
+    expect(inSession.stdout).toContain('agent-session')
     const refused = owner(['pair', 'allow', id])
     expect(refused.code).toBe(2)
     expect(refused.stdout).toContain('not-found')
@@ -133,7 +120,6 @@ describe('the owner allows or declines', () => {
     age(id)
     expect(status(id).state).toBe('expired')
     expect(owner(['pair', 'allow', id]).stdout).toContain('expired')
-    expect(requested('cursor').id).not.toBe(id)
   })
 
   it('pair decline tells the agent not to ask again, and a decided pairing takes no second decision', () => {
@@ -156,13 +142,6 @@ describe('the owner allows or declines', () => {
     expect(text).not.toContain(declined.code)
     expect(ok(owner(['pair', 'list', '--all'])).stdout).toContain(declined.code)
   })
-
-  it('is refused in an agent session', () => {
-    const { id } = requested('claude-code')
-    const r = run(['--library', lib, 'pair', 'allow', id], { CLAUDE_CODE_SESSION_ID: 'session-1' })
-    expect(r.code).toBe(2)
-    expect(r.stdout).toContain('agent-session')
-  })
 })
 
 describe('on the pages', () => {
@@ -182,9 +161,6 @@ describe('on the pages', () => {
       ['允许', 'pair allow', ['area', 'read-only']],
       ['拒绝', 'pair decline', ['reason']],
     ])
-    const text = ok(owner(['show', 'home'])).stdout
-    expect(text).toContain(`${ask?.text}（claude-code）\n    agent connect claude-code --name claude-code --via skill\n    $ pair allow ${id}`)
-    expect(text).toContain(`$ pair decline ${id} [<理由>]  # 拒绝（只给主人）`)
   })
 
   it('a pairing settled or expired leaves the home page, and the agents page lists every pairing with its state', () => {

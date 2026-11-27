@@ -5,7 +5,7 @@
 // Prints the test paths and whether the browser tests and the slow tests are needed. --run runs
 // vitest on the paths (nothing to run is a success). --github writes e2e= and slow= to $GITHUB_OUTPUT.
 import { execFileSync, spawnSync } from 'node:child_process'
-import { appendFileSync, existsSync } from 'node:fs'
+import { appendFileSync, existsSync, readdirSync } from 'node:fs'
 
 const args = process.argv.slice(2)
 const flag = (name) => args.includes(name)
@@ -15,8 +15,12 @@ const changed = execFileSync('git', ['diff', '--name-only', `${base}...HEAD`], {
   .split('\n')
   .filter((line) => line !== '')
 
+const cliTests = (...names) => names.map((name) => `packages/cli/test/${name}.test.ts`)
 /** The tests that cross the layers: a whole task as an agent, the sparse rules, the faces agreeing. */
-const ACROSS = ['whole-story', 'sparse', 'start', 'put-and-archive', 'mcp', 'buttons'].map((name) => `packages/cli/test/${name}.test.ts`)
+const ACROSS = cliTests('whole-story', 'sparse', 'start', 'put-and-archive', 'mcp', 'buttons')
+/** The command line's tests that go through the UI server: its page, HTTP and endpoint faces agreeing with the command line. */
+const THROUGH_SERVER = cliTests('buttons', 'endpoint-story', 'mcp-http', 'view')
+const UNIT = readdirSync('packages').map((pkg) => `packages/${pkg}/test`).filter((dir) => existsSync(dir))
 
 const paths = new Set()
 let e2e = false
@@ -27,6 +31,14 @@ for (const file of changed) {
   // Below the command line: what it does to a whole task is checked by the few tests that cross the layers.
   if (/^(core\/|packages\/(kernel|sdk|plugin-[^/]+)\/src\/)/.test(file)) for (const test of ACROSS) paths.add(test)
   if (file.startsWith('core/')) for (const dir of ['packages/kernel/test', 'packages/plugin-ledger/test']) paths.add(dir)
+  if (file.startsWith('packages/viewer/src/')) for (const test of THROUGH_SERVER) paths.add(test)
+  // The deploy kit is the sdk's, and its tests are the deploy plugin's.
+  if (file.startsWith('packages/sdk/src/kit/')) paths.add('packages/plugin-deploy/test')
+  // The workspace's dependencies and test configuration reach every test.
+  if (/^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig\.base\.json|vitest\.[\w.-]+\.ts)$/.test(file)) {
+    for (const dir of UNIT) paths.add(dir)
+    e2e = slow = true
+  }
   if (file === 'PLUGINS.md') paths.add('packages/cli/test/plugins-doc.test.ts')
   // What a person sees: the pages, and whatever gives them their blocks.
   if (/^packages\/viewer\//.test(file) || /\/src\/(ui|views|viewer|blocks|home|[a-z-]*page[a-z-]*)\.ts$/.test(file) || file === 'packages/sdk/src/types.ts') e2e = true

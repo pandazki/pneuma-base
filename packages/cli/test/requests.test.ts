@@ -1,11 +1,12 @@
 // Requests: an agent asks for what only the owner may do, with its reason and the exact command; the
 // owner approves or declines with one act; the agent sees the outcome at its next check; the audit
-// names who asked and who decided. ARCHITECTURE.md section 4, 「请」.
+// names who asked and who decided. ARCHITECTURE.md section 4, 「请」. The kernel's tests own a plugin's
+// askable commands and an approval the gate now refuses (packages/kernel/test/requests.test.ts).
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { sandbox, tempDir, type Run, type Sandbox } from './helpers.js'
 
 const BIN = fileURLToPath(new URL('../dist/bin.js', import.meta.url))
@@ -40,11 +41,19 @@ function ok(r: Run): Run {
 const owner = (args: string[], input?: string) => sb.run(['--library', lib, ...args], input === undefined ? {} : { input })
 const as = (grant: string) => (args: string[]) => sb.run([`@${grant}`, ...args], { env: { PNEUMA_BASE_SESSION: `session-of-${grant}` } })
 const claude = as('claude')
+const lastLine = (r: Run) => r.stdout.trimEnd().split('\n').at(-1)
+
+/** `pneuma-base ...args` started without waiting, as another process would at the same moment; resolves to its exit code. */
+const running = (args: string[]) =>
+  new Promise<number>((resolve) => {
+    const child = spawn(process.execPath, [BIN, ...args], { cwd: sb.home, env: { PATH: process.env.PATH ?? '', HOME: sb.home, PNEUMA_BASE_HOME: join(sb.home, '.pneuma-base') } })
+    child.on('exit', (code) => resolve(code ?? -1))
+  })
 
 /** A library with the ledger, a grant for claude, one for codex, a read-only one and one limited to an area. */
-function library(flags: string[] = []): string {
+function library(): string {
   const dir = join(tempDir(), 'lib')
-  ok(sb.run(['init', dir, ...flags]))
+  ok(sb.run(['init', dir]))
   ok(sb.run(['--library', dir, 'grant', 'issue', 'claude', '--agent', 'claude']))
   ok(sb.run(['--library', dir, 'grant', 'issue', 'codex', '--agent', 'codex']))
   ok(sb.run(['--library', dir, 'grant', 'issue', 'reader', '--agent', 'reader', '--read-only']))
@@ -53,38 +62,30 @@ function library(flags: string[] = []): string {
   return dir
 }
 
-const askVersion = (who = claude) => who(['ask', WHY, 'plugin', 'add', 'version', '--json'])
 const installed = () => JSON.parse(readFileSync(join(lib, '.pneuma-base/config.json'), 'utf8')).plugins as string[]
 
-beforeEach(() => {
-  sb = sandbox()
-  lib = library()
-})
+// One library for these tests: each adds requests of its own, in the order written; the audit reads
+// what the first three decided, before the later ones crowd the activity.
+describe('asking, and the owner deciding', () => {
+  beforeAll(() => {
+    sb = sandbox()
+    lib = library()
+  })
+  const decided = { approved: '', declined: '', withdrawn: '' }
 
-describe('an agent refused an owner command', () => {
-  it('is told the exact ask line that would request it, and that line works', () => {
-    const r = claude(['plugin', 'add', 'version'])
-    expect(r.code).toBe(2)
-    const line = r.stdout.trimEnd().split('\n').at(-1) as string
-    expect(line).toBe('pneuma-base @claude ask "<为什么>" plugin add version')
-    const asked = sb.run(['@claude', 'ask', WHY, 'plugin', 'add', 'version', '--json'])
+  it('an agent refused an owner command is told the exact ask line, flags quoted for the shell; the line asks, and the owner sees the request in request list and on the home page, in the same lines', () => {
+    const refused = claude(['plugin', 'add', 'version'])
+    expect(refused.code).toBe(2)
+    expect(lastLine(refused)).toBe('pneuma-base @claude ask "<为什么>" plugin add version')
+    expect(lastLine(claude(['grant', 'issue', 'helper', '--agent', 'my helper', '--read-only']))).toBe(`pneuma-base @claude ask "<为什么>" grant issue helper --agent 'my helper' --read-only`)
+
+    const asked = claude(['ask', WHY, 'plugin', 'add', 'version', '--json'])
     expect(asked.code).toBe(0)
     expect(asked.json()).toMatchObject({ outcome: 'asked', again: false, request: { command: 'plugin add', line: 'plugin add version', status: { kind: 'pending' } } })
-  })
-
-  it('carries the flags of the command into the ask line, quoted for the shell', () => {
-    const r = claude(['grant', 'issue', 'helper', '--agent', 'my helper', '--read-only'])
-    expect(r.stdout.trimEnd().split('\n').at(-1)).toBe(`pneuma-base @claude ask "<为什么>" grant issue helper --agent 'my helper' --read-only`)
-  })
-})
-
-describe('asking, and the owner deciding', () => {
-  it('answers with the request id and says the owner will see it; the owner sees it in request list and on the home page, in the same lines', () => {
-    const asked = askVersion()
-    expect(asked.code).toBe(0)
     const id = asked.json().request.id as string
     expect(id).toMatch(/^r-[0-9a-f]{8}$/)
     expect(claude(['ask', WHY, 'plugin', 'add', 'version']).stdout).toContain(id)
+    decided.approved = id
 
     const list = ok(owner(['request', 'list'])).stdout
     expect(list).toContain(WHY)
@@ -92,140 +93,136 @@ describe('asking, and the owner deciding', () => {
     expect(list).toContain(`$ request approve ${id}  # 批准`)
     expect(list).toContain(`$ request decline ${id} [<理由>]  # 拒绝`)
     const home = ok(owner(['show', 'home'])).stdout
-    const entry = list.split('\n').slice(1).filter((l) => l.trim() !== '')
-    for (const line of entry) expect(home, line).toContain(line)
-
+    for (const line of list.split('\n').slice(1).filter((l) => l.trim() !== '')) expect(home, line).toContain(line)
     const ask = (ok(owner(['show', 'home', '--json'])).json().blocks as any[]).flatMap((b) => b.blocks ?? []).find((b: any) => b.kind === 'asks').asks[0]
     expect(ask).toMatchObject({ by: { kind: 'agent', name: 'claude', grant: 'claude' }, text: WHY, command: 'plugin add version', suggested: 0 })
     expect(ask.actions.map((a: any) => a.label)).toEqual(['批准', '拒绝'])
   })
 
   it('approve runs the command as the owner; the agent sees the outcome at its next check, once; inspect shows it in full', () => {
-    const id = askVersion().json().request.id as string
-    const approved = ok(owner(['request', 'approve', id]))
-    expect(approved.stdout).toContain('已装上插件 version')
+    const id = decided.approved
+    expect(ok(owner(['request', 'approve', id])).stdout).toContain('已装上插件 version')
     expect(installed()).toContain('version')
     expect(ok(owner(['request', 'list'])).stdout).toContain('没有等你决定的请求')
-    expect(ok(owner(['request', 'list', '--all'])).stdout).toMatch(new RegExp(`${id}.*plugin add version.*已批准`))
 
-    const check = ok(claude(['check']))
-    expect(check.stdout).toContain('## 你提的请求')
-    expect(check.stdout).toContain(`${id} plugin add version：已批准`)
-    expect(check.stdout).toContain('已装上插件 version')
-    expect(ok(claude(['check', '--json'])).json().requests).toEqual({ ended: [], pending: 0 })
+    const check = ok(claude(['check'])).stdout
+    expect(check).toContain('## 你提的请求')
+    expect(check).toContain(`${id} plugin add version：已批准`)
+    expect(check).toContain('已装上插件 version')
     expect(ok(claude(['check'])).stdout).not.toContain('你提的请求')
 
     const inspect = ok(claude(['inspect', id])).stdout
     for (const words of ['claude', WHY, 'plugin add version', '已批准', '已装上插件 version']) expect(inspect).toContain(words)
     expect(inspect).not.toContain('库里没有这个文件')
-    expect(ok(claude(['inspect', id, '--json'])).json().request).toMatchObject({ id, status: { kind: 'approved', outcome: { outcome: 'done' } }, seen: true })
   })
 
-  it('decline with a reason: nothing runs, and the agent reads the reason at its next check', () => {
-    const id = askVersion().json().request.id as string
+  it('decline with a reason: nothing runs, the agent reads the reason at its next check, and it cannot be approved after', () => {
+    const id = claude(['ask', '要按意思找', 'plugin', 'add', 'search', '--json']).json().request.id as string
+    decided.declined = id
     expect(ok(owner(['request', 'decline', id, '先不装，下周再说'])).stdout).toContain(id)
-    expect(installed()).not.toContain('version')
+    expect(installed()).not.toContain('search')
     const check = ok(claude(['check'])).stdout
-    expect(check).toContain(`${id} plugin add version：已拒绝`)
+    expect(check).toContain(`${id} plugin add search：已拒绝`)
     expect(check).toContain('先不装，下周再说')
     expect(owner(['request', 'approve', id]).code).toBe(2)
   })
 
   it('the agent that asked withdraws a pending one; another agent may not; a decided one stays as it was', () => {
-    const id = askVersion().json().request.id as string
+    const ask = () => claude(['ask', '要同步', 'plugin', 'add', 'sync', '--json']).json().request.id as string
+    const id = ask()
+    decided.withdrawn = id
     expect(as('codex')(['ask', '--withdraw', id, '--json']).json()).toMatchObject({ outcome: 'refused', reason: 'not-yours' })
     expect(ok(claude(['ask', '--withdraw', id, '--json'])).json()).toMatchObject({ outcome: 'withdrawn', request: { id, status: { kind: 'withdrawn' } } })
     expect(ok(owner(['request', 'list'])).stdout).toContain('没有等你决定的请求')
     expect(owner(['request', 'approve', id, '--json']).json()).toMatchObject({ outcome: 'refused', reason: 'not-pending' })
     expect(claude(['ask', '--withdraw', id, '--json']).json()).toMatchObject({ outcome: 'refused', reason: 'not-pending' })
-    expect(claude(['ask', '--withdraw', 'r-00000000', '--json']).json()).toMatchObject({ outcome: 'refused', reason: 'no-such-request' })
+    expect(claude(['ask', '--withdraw', 'r-ffffffff', '--json']).json()).toMatchObject({ outcome: 'refused', reason: 'no-such-request' })
     // A withdrawn request is no longer the same pending one: asking again makes a new one.
-    expect(askVersion().json().request.id).not.toBe(id)
+    expect(ask()).not.toBe(id)
   })
 
-  it('the same pending request from the same agent is one; another agent’s is its own; at most 20 pending per agent', () => {
-    const first = askVersion().json()
-    const again = askVersion().json()
-    expect(again).toMatchObject({ outcome: 'asked', again: true, request: { id: first.request.id, why: WHY } })
-    expect(askVersion(as('codex')).json().request.id).not.toBe(first.request.id)
-    for (let i = 1; i < 20; i++) ok(claude(['ask', '第几个', 'grant', 'revoke', `g${i}`]))
-    const over = claude(['ask', '再一个', 'grant', 'revoke', 'g20', '--json'])
-    expect(over.code).toBe(2)
-    expect(over.json()).toMatchObject({ outcome: 'refused', reason: 'too-many' })
-    expect(askVersion().json()).toMatchObject({ outcome: 'asked', again: true })
+  it('the activity has a row for asking, one for the approved command with both names and 主人批准的, and rows for withdrawing and declining', () => {
+    const rows = (ok(owner(['show', 'ledger.activity', '--json'])).json().blocks as any[]).find((b) => b.kind === 'feed').groups.flatMap((g: any) => g.rows) as any[]
+    const approved = rows.find((r) => r.whose === 'approved')
+    expect(approved).toMatchObject({ actor: { kind: 'owner' }, text: expect.stringContaining('plugin add') })
+    expect(approved.meta).toEqual(expect.arrayContaining([expect.objectContaining({ actor: { kind: 'agent', name: 'claude', grant: 'claude' }, text: expect.stringContaining(decided.approved) })]))
+    expect(rows.filter((r) => r.text.startsWith('主人面的操作 request approve'))).toEqual([])
+    // The owner's request list names the ask too; the row of asking is the agent's.
+    expect(rows.find((r) => r.text.includes(WHY) && !r.text.startsWith('主人面的操作'))).toMatchObject({ actor: { name: 'claude' }, whose: 'agent', text: expect.stringContaining('plugin add version') })
+    expect(rows.find((r) => r.text.includes(decided.declined) && r.text.includes('拒绝'))).toMatchObject({ actor: { kind: 'owner' }, whose: 'owner' })
+    expect(rows.find((r) => r.text.includes('撤回') && r.text.includes(decided.withdrawn))).toMatchObject({ actor: { name: 'claude' } })
+    expect(ok(owner(['show', 'ledger.activity'])).stdout).toContain('[主人批准的]')
   })
 
-  it('approving a command that is now refused records the refusal as the outcome', () => {
-    const id = claude(['ask', '帮手要一份授权', 'grant', 'issue', 'helper', '--agent', 'helper', '--json']).json().request.id as string
-    ok(owner(['grant', 'issue', 'helper', '--agent', 'someone-else']))
-    const approved = owner(['request', 'approve', id, '--json'])
-    expect(approved.code).toBe(2)
-    expect(approved.json()).toMatchObject({ outcome: 'refused', reason: 'grant-exists' })
-    expect(ok(claude(['inspect', id, '--json'])).json().request.status).toMatchObject({ kind: 'approved', outcome: { outcome: 'refused', reason: 'grant-exists' } })
-    expect(ok(claude(['check'])).stdout).toContain('grant-exists')
-  })
-})
-
-describe('what cannot be asked for', () => {
-  const refusal = (args: string[]) => {
-    const r = claude(['ask', '想要', ...args, '--json'])
-    return { code: r.code, ...(r.code === 0 || r.code === 2 ? r.json() : { stderr: r.stderr }) }
-  }
-
-  it('each is refused with its own reason, and nothing is recorded', () => {
+  it('what cannot be asked for is refused with its own reason, and nothing is recorded', () => {
+    const before = requestFacts(lib).length
+    const refusal = (args: string[]) => {
+      const r = claude(['ask', '想要', ...args, '--json'])
+      return { code: r.code, ...(r.code === 0 || r.code === 2 ? r.json() : { stderr: r.stderr }) }
+    }
     expect(refusal(['archive', 'purge'])).toMatchObject({ code: 2, reason: 'red-line', text: expect.stringContaining('当面') })
     expect(refusal(['secret', 'set', 'search', 'key'])).toMatchObject({ code: 2, reason: 'not-askable' })
-    expect(refusal(['request', 'approve', 'r-00000000'])).toMatchObject({ code: 2, reason: 'not-askable' })
     expect(refusal(['plugin', 'list'])).toMatchObject({ code: 2, reason: 'run-it-yourself', text: expect.stringContaining('pneuma-base @claude plugin list') })
     expect(refusal(['nothing', 'here'])).toMatchObject({ code: 2, reason: 'unknown-command', text: expect.stringContaining('nothing here') })
     expect(refusal(['grant', 'issue', 'helper'])).toMatchObject({ code: 1, stderr: expect.stringContaining('要写 --agent <给谁>') })
-    expect(refusal(['grant', 'issue', 'helper', '--agent', 'x', '--color', 'red'])).toMatchObject({ code: 1, stderr: expect.stringContaining('grant issue 不认识 --color') })
     expect(claude(['ask', '想要']).code).toBe(1)
-    expect(claude(['ask']).code).toBe(1)
-    expect(requestFacts(lib)).toEqual([])
+    // The owner has nobody to ask.
+    expect(owner(['ask', '我自己要', 'plugin', 'add', 'deploy', '--json']).json()).toMatchObject({ outcome: 'refused', reason: 'not-an-agent' })
+    expect(requestFacts(lib)).toHaveLength(before)
   })
 
-  it('the owner has nobody to ask', () => {
-    expect(owner(['ask', WHY, 'plugin', 'add', 'version', '--json']).json()).toMatchObject({ outcome: 'refused', reason: 'not-an-agent' })
-  })
-
-  it('a read-only grant and a grant limited to an area may ask', () => {
-    expect(askVersion(as('reader')).json()).toMatchObject({ outcome: 'asked', request: { by: { name: 'reader' } } })
-    expect(askVersion(as('notes')).json()).toMatchObject({ outcome: 'asked', request: { by: { name: 'notetaker' } } })
-  })
-})
-
-describe('the store', () => {
   it('two processes asking at once lose nothing: different asks are two requests, the same ask is one', async () => {
-    const run = (args: string[]) =>
-      new Promise<number>((resolve) => {
-        const child = spawn(process.execPath, [BIN, ...args], { cwd: sb.home, env: { PATH: process.env.PATH ?? '', HOME: sb.home, PNEUMA_BASE_HOME: join(sb.home, '.pneuma-base') } })
-        child.on('exit', (code) => resolve(code ?? -1))
-      })
     const codes = await Promise.all([
-      run(['@claude', 'ask', '一', 'grant', 'revoke', 'a']),
-      run(['@claude', 'ask', '二', 'grant', 'revoke', 'b']),
-      run(['@claude', 'ask', '三', 'grant', 'revoke', 'c']),
-      run(['@claude', 'ask', '同一个', 'grant', 'revoke', 'd']),
-      run(['@claude', 'ask', '同一个', 'grant', 'revoke', 'd']),
+      running(['@claude', 'ask', '一', 'grant', 'revoke', 'a']),
+      running(['@claude', 'ask', '二', 'grant', 'revoke', 'b']),
+      running(['@claude', 'ask', '三', 'grant', 'revoke', 'c']),
+      running(['@claude', 'ask', '同一个', 'grant', 'revoke', 'd']),
+      running(['@claude', 'ask', '同一个', 'grant', 'revoke', 'd']),
     ])
     expect(codes).toEqual([0, 0, 0, 0, 0])
     const list = ok(owner(['request', 'list'])).stdout
     for (const line of ['grant revoke a', 'grant revoke b', 'grant revoke c', 'grant revoke d']) expect(list).toContain(line)
     expect(list.match(/grant revoke d/g)).toHaveLength(1)
     // Every ask is a fact; the same line asked twice at once folds into one request.
-    expect(new Set(requestFacts(lib).filter((f) => f.kind === 'asked').map((f) => (f.args as { positional: string[] }).positional[0])).size).toBe(4)
+    const asked = requestFacts(lib).filter((f) => f.kind === 'asked').map((f) => (f.args as { positional: string[] }).positional[0])
+    expect(new Set(asked.filter((p) => ['a', 'b', 'c', 'd'].includes(p as string))).size).toBe(4)
+  })
+
+  it('the same pending request from the same agent is one; another agent’s is its own; at most 20 pending per agent; a read-only grant and one limited to an area may ask', async () => {
+    const line = ['ask', '要清掉旧授权', 'grant', 'revoke', 'g0', '--json']
+    const notes = as('notes')
+    const first = notes(line).json()
+    expect(first).toMatchObject({ outcome: 'asked', again: false, request: { by: { name: 'notetaker' } } })
+    expect(notes(line).json()).toMatchObject({ outcome: 'asked', again: true, request: { id: first.request.id } })
+    const reader = as('reader')(line).json()
+    expect(reader).toMatchObject({ outcome: 'asked', request: { by: { name: 'reader' } } })
+    expect(reader.request.id).not.toBe(first.request.id)
+    // Nineteen more, five processes at a time.
+    for (let n = 1; n < 20; n += 5) {
+      const batch = Array.from({ length: Math.min(5, 20 - n) }, (_, i) => running(['@notes', 'ask', '第几个', 'grant', 'revoke', `g${n + i}`]))
+      expect(await Promise.all(batch)).toEqual(Array(batch.length).fill(0))
+    }
+    const over = notes(['ask', '再一个', 'grant', 'revoke', 'g20', '--json'])
+    expect(over.code).toBe(2)
+    expect(over.json()).toMatchObject({ outcome: 'refused', reason: 'too-many' })
+    expect(notes(line).json()).toMatchObject({ outcome: 'asked', again: true })
   })
 
   it('is facts appended to the kernel’s record place, and another machine’s decision arriving by sync settles the request', () => {
-    const id = askVersion().json().request.id as string
+    const id = claude(['ask', '不再要 codex', 'grant', 'revoke', 'codex', '--json']).json().request.id as string
     expect(requestFacts(lib).filter((f) => f.request === id).map((f) => f.kind)).toEqual(['asked'])
     syncedFacts(lib, [{ request: id, kind: 'decided', at: new Date().toISOString(), decision: 'declined', reason: '另一台机器上拒绝的' }])
     expect(ok(owner(['request', 'list', '--all'])).stdout).toContain('另一台机器上拒绝的')
     expect(ok(claude(['inspect', id, '--json'])).json().request.status).toMatchObject({ kind: 'declined', reason: '另一台机器上拒绝的' })
   })
 
+})
+
+describe('the store', () => {
   it('request list --all lists the 50 latest settled requests and how many older ones it left out; --older lists them all; every fact stays', () => {
+    sb = sandbox()
+    lib = join(tempDir(), 'lib')
+    ok(sb.run(['init', lib, '--bare']))
     const by = { name: 'claude', grant: null }
     const facts: unknown[] = []
     for (let i = 0; i < 55; i++) {
@@ -241,8 +238,9 @@ describe('the store', () => {
     expect(all).not.toContain('grant revoke g4 ')
     expect(all).toContain('更早的 5 个没有列出')
     expect(all).toContain('--older')
-    expect(ok(owner(['request', 'list', '--all', '--json'])).json().data).toMatchObject({ requests: expect.any(Array), older: 5 })
-    expect(ok(owner(['request', 'list', '--all', '--json'])).json().data.requests).toHaveLength(50)
+    const data = ok(owner(['request', 'list', '--all', '--json'])).json().data
+    expect(data).toMatchObject({ requests: expect.any(Array), older: 5 })
+    expect(data.requests).toHaveLength(50)
 
     const older = ok(owner(['request', 'list', '--all', '--older'])).stdout
     expect(older).toContain('grant revoke g0 ')
@@ -252,10 +250,9 @@ describe('the store', () => {
 
   it('works in a library with no plugin', () => {
     sb = sandbox()
-    lib = library(['--bare'])
-    const refused = claude(['grant', 'issue', 'helper', '--agent', 'helper'])
-    const line = refused.stdout.trimEnd().split('\n').at(-1) as string
-    expect(line).toBe('pneuma-base @claude ask "<为什么>" grant issue helper --agent helper')
+    lib = join(tempDir(), 'lib')
+    ok(sb.run(['init', lib, '--bare']))
+    ok(owner(['grant', 'issue', 'claude', '--agent', 'claude']))
     const id = claude(['ask', '帮手要一份授权', 'grant', 'issue', 'helper', '--agent', 'helper', '--json']).json().request.id as string
     expect(ok(owner(['show', 'home'])).stdout).toContain('帮手要一份授权')
     ok(owner(['request', 'approve', id]))
@@ -263,67 +260,53 @@ describe('the store', () => {
   })
 })
 
+// A library of its own, with the deploy plugin asking about sites/shop: the tests run in order on it.
 describe('a request standing in for a plugin’s ask about the same command', () => {
   const homeAsks = () => (ok(owner(['show', 'home', '--json'])).json().blocks as any[]).flatMap((b) => b.blocks ?? []).find((b: any) => b.kind === 'asks').asks as any[]
   const SHOP = '店要上线给客户看'
-
-  beforeEach(() => {
-    // The notetaker's area is an empty directory nothing registered is in: leave it, so only the asks under test stand.
-    ok(owner(['noise', 'add', 'notes']))
-    ok(owner(['plugin', 'add', 'deploy']))
-    const site = join(tempDir('pb-site-'), 'shop')
+  /** A site claude puts in and says is deployable, so the deploy plugin asks the owner about it. */
+  const deployable = (name: string) => {
+    const site = join(tempDir('pb-site-'), name)
     mkdirSync(site)
-    writeFileSync(join(site, 'index.html'), '<h1>shop</h1>')
-    ok(claude(['put', site, '--to', 'sites/shop', '--made']))
-    ok(claude(['say', 'deployable', 'sites/shop']))
+    writeFileSync(join(site, 'index.html'), `<h1>${name}</h1>`)
+    ok(claude(['put', site, '--to', `sites/${name}`, '--made']))
+    ok(claude(['say', 'deployable', `sites/${name}`]))
+  }
+
+  beforeAll(() => {
+    sb = sandbox()
+    lib = join(tempDir(), 'lib')
+    ok(sb.run(['init', lib]))
+    ok(owner(['grant', 'issue', 'claude', '--agent', 'claude']))
+    ok(owner(['grant', 'issue', 'codex', '--agent', 'codex']))
+    ok(owner(['plugin', 'add', 'deploy']))
+    deployable('shop')
   })
+
+  let waiting = ''
 
   it('is the one row while it waits: the agent’s reason stands, the plugin’s ask about sites/shop is not raised beside it, on the home page or in check', () => {
     expect(homeAsks().map((a) => a.about)).toEqual(['sites/shop'])
-    const id = claude(['ask', SHOP, 'deploy', 'on', 'sites/shop', '--json']).json().request.id as string
-    expect(homeAsks()).toEqual([expect.objectContaining({ key: `request:${id}`, text: SHOP, command: 'deploy on sites/shop' })])
+    waiting = claude(['ask', SHOP, 'deploy', 'on', 'sites/shop', '--json']).json().request.id as string
+    expect(homeAsks()).toEqual([expect.objectContaining({ key: `request:${waiting}`, text: SHOP, command: 'deploy on sites/shop' })])
     expect(ok(as('codex')(['check', '--json'])).json().asks).toEqual([])
     expect(ok(owner(['show', 'home'])).stdout).not.toContain('可以部署，还没上线')
   })
 
-  it('settles both when declined: nothing is left to decide', () => {
-    const id = claude(['ask', SHOP, 'deploy', 'on', 'sites/shop', '--json']).json().request.id as string
-    ok(owner(['request', 'decline', id, '还没好']))
+  it('settles both once decided: declined, or approved', () => {
+    ok(owner(['request', 'decline', waiting, '还没好']))
     expect(homeAsks()).toEqual([])
-  })
 
-  it('settles both when approved', () => {
+    deployable('shop2')
     ok(owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', join(tempDir('pb-target-'), 'www')]))
-    const id = claude(['ask', SHOP, 'deploy', 'on', 'sites/shop', '--json']).json().request.id as string
+    const id = claude(['ask', SHOP, 'deploy', 'on', 'sites/shop2', '--json']).json().request.id as string
     ok(owner(['request', 'approve', id]))
     expect(homeAsks()).toEqual([])
   })
 
   it('stands in for nothing when it asks for another command or other arguments', () => {
+    deployable('shop3')
     claude(['ask', SHOP, 'deploy', 'on', 'sites/other'])
-    expect(homeAsks().map((a) => a.about ?? a.command)).toEqual(['deploy on sites/other', 'sites/shop'])
-  })
-})
-
-describe('the audit', () => {
-  it('the activity has a row for asking, one for the approved command with both names and 主人批准的, and rows for withdrawing and declining', () => {
-    const approvedId = askVersion().json().request.id as string
-    ok(owner(['request', 'approve', approvedId]))
-    const declinedId = claude(['ask', '帮手要一份授权', 'grant', 'issue', 'helper', '--agent', 'helper', '--json']).json().request.id as string
-    ok(owner(['request', 'decline', declinedId, '不需要']))
-    const withdrawnId = claude(['ask', '清掉', 'grant', 'revoke', 'reader', '--json']).json().request.id as string
-    ok(claude(['ask', '--withdraw', withdrawnId]))
-
-    const rows = (ok(owner(['show', 'ledger.activity', '--json'])).json().blocks as any[]).find((b) => b.kind === 'feed').groups.flatMap((g: any) => g.rows) as any[]
-    const approved = rows.find((r) => r.whose === 'approved')
-    expect(approved).toMatchObject({ actor: { kind: 'owner' }, text: expect.stringContaining('plugin add') })
-    expect(approved.meta).toEqual(expect.arrayContaining([expect.objectContaining({ actor: { kind: 'agent', name: 'claude', grant: 'claude' }, text: expect.stringContaining(approvedId) })]))
-    expect(rows.filter((r) => r.text.includes('request approve'))).toEqual([])
-    expect(rows.find((r) => r.text.includes(WHY))).toMatchObject({ actor: { name: 'claude' }, whose: 'agent', text: expect.stringContaining('plugin add version') })
-    expect(rows.find((r) => r.text.includes(declinedId) && r.text.includes('拒绝'))).toMatchObject({ actor: { kind: 'owner' }, whose: 'owner' })
-    expect(rows.find((r) => r.text.includes('撤回') && r.text.includes(withdrawnId))).toMatchObject({ actor: { name: 'claude' } })
-
-    const text = ok(owner(['show', 'ledger.activity'])).stdout
-    expect(text).toContain('[主人批准的]')
+    expect(homeAsks().map((a) => a.about ?? a.command)).toEqual(['deploy on sites/other', 'sites/shop3'])
   })
 })

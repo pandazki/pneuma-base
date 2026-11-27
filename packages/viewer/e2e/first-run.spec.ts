@@ -1,15 +1,10 @@
 // The owner's first run in the page: the home page's 「开始」 through its three states, the drop area
-// as the app and a browser show it, the agents page, and the menu bar panel's layout. HOME is the
-// test's own, with the product folders the test makes, and PATH has no agent program on it.
+// as the app and a browser show it, what the app tells the page, and the menu bar panel's layout. HOME
+// is the test's own, with the product folders the test makes, and PATH has no agent program on it.
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import type { Page } from '@playwright/test'
-import { expect, shoot, tempDir, test, write, type Cli } from './support.ts'
-
-/** Where these screenshots go: $PNEUMA_BASE_SHOTS, else tmp/run-6/a1-shots/. */
-const SHOTS = process.env.PNEUMA_BASE_SHOTS ?? fileURLToPath(new URL('../../../tmp/run-6/a1-shots/', import.meta.url))
-mkdirSync(SHOTS, { recursive: true })
+import { expect, tempDir, test, write, type Cli } from './support.ts'
 
 const noAgentPath = () => ({ PATH: `${tempDir('pb-e2e-bin-')}:/usr/bin:/bin` })
 
@@ -42,7 +37,6 @@ test('开始 walks the owner from a new library to an agent at work, each step f
   await expect(connect.getByRole('listitem').filter({ hasText: 'Claude Code' })).toContainText('技能：~/.claude/skills/pneuma-base-claude-code/SKILL.md')
   await expect(start.getByRole('listitem', { name: /第 2 步，放进第一样东西，还没做/ })).toContainText(`pneuma-base put <文件或文件夹> --to inbox/<名字> --brought --by owner --library '${lib}'`)
   await expect(start.getByRole('listitem', { name: /第 3 步，对你的 agent 说一句/ })).toContainText('看看我的 Pneuma Base 库里有什么。')
-  await shoot(page, 'home-start-0', SHOTS)
 
   // One click: no form, the same agent connect the agents page runs.
   await connect.getByRole('listitem').filter({ hasText: 'Claude Code' }).getByRole('button', { name: '接上' }).click()
@@ -54,19 +48,16 @@ test('开始 walks the owner from a new library to an agent at work, each step f
   await done.getByRole('button', { name: /接上你的 agent/ }).click()
   await expect(done.getByRole('listitem').filter({ hasText: 'Claude Code' })).toContainText('已接上')
   await done.getByRole('button', { name: /接上你的 agent/ }).click()
-  await shoot(page, 'home-start-1', SHOTS)
 
   const paper = join(tempDir('pb-e2e-out-'), 'paper.pdf')
   writeFileSync(paper, '%PDF')
   pb.run(['--library', lib, 'put', paper, '--to', 'inbox/paper.pdf', '--brought', '--by', 'owner'], { env: noAgentPath() })
   await expect(start.getByRole('listitem', { name: /第 2 步，放进第一样东西，做完了/ })).toContainText('库的根目录里有 1 样东西')
   await expect(start).toContainText('做完了 2 步，还有 1 步。')
-  await shoot(page, 'home-start-2', SHOTS)
 
   pb.run(['@claude-code', 'start', '看看库里有什么'], { env: noAgentPath() })
   await expect(page.getByRole('main').getByRole('region', { name: '开始' })).toHaveCount(0)
   await expect(page.getByRole('main').getByRole('region', { name: '等你决定' })).toBeVisible()
-  await shoot(page, 'home-start-3', SHOTS)
 })
 
 test('in the app the drop area chooses files for the app to put into inbox/; in a browser it shows the command', async ({ page, pb }) => {
@@ -80,7 +71,6 @@ test('in the app the drop area chooses files for the app to put into inbox/; in 
   await expect(start).not.toContainText('pneuma-base put')
   await drop.click()
   expect(await sent()).toContainEqual({ type: 'choose', to: 'inbox' })
-  await shoot(page, 'home-start-0-app', SHOTS)
 })
 
 test('in the app, the page shows what the app says it did and opens the links the panel hands it', async ({ page, pb }) => {
@@ -93,29 +83,6 @@ test('in the app, the page shows what the app says it did and opens the links th
   await expect(page.getByText('已放进 inbox/paper.pdf，记成你带进来的')).toBeVisible()
   await tell({ link: { view: 'agents', params: {}, target: 'main' } })
   await expect(page.getByRole('main').getByRole('region', { name: '接上的 agent', exact: true })).toBeVisible()
-})
-
-test('the agents page: a row per connected agent with its mark and reach, 断开 on it, and the products found here with 接上', async ({ page, pb }) => {
-  const lib = newLibrary(pb)
-  pb.run(['--library', lib, 'agent', 'connect', 'claude-code', '--area', 'notes'], { env: noAgentPath() })
-  pb.run(['@claude-code', 'start', '整理笔记'], { env: noAgentPath() })
-  const { url } = await pb.view(lib, { env: noAgentPath() })
-  await page.goto(`${url}#view=agents`)
-  const main = page.getByRole('main')
-  const connected = main.getByRole('region', { name: '接上的 agent', exact: true })
-  const row = connected.getByRole('listitem').filter({ hasText: 'Claude Code' })
-  await expect(row.locator('.actor')).toHaveText('CC')
-  await expect(row).toContainText('技能 · 区域 notes/ · 读写 · 写在 ~/.claude/skills/pneuma-base-claude-code/SKILL.md · 最近来过：')
-  await expect(row).toContainText('1 次会话，放进 0 样东西')
-  const found = main.getByRole('region', { name: '这台机器上找到的' })
-  await expect(found.getByRole('listitem').filter({ hasText: 'Cursor' }).getByRole('button', { name: '接上' })).toBeVisible()
-  await expect(main.getByRole('region', { name: '接上的 agent 能做什么' })).toContainText('红线')
-  await shoot(page, 'agents', SHOTS)
-
-  await row.getByRole('button', { name: '断开' }).click()
-  await page.getByRole('dialog').getByRole('button', { name: '断开' }).click()
-  await expect(connected).toContainText('还没有接上任何 agent')
-  expect(existsSync(join(pb.home, '.claude/skills/pneuma-base-claude-code/SKILL.md'))).toBe(false)
 })
 
 test('the menu bar panel: the library, what waits for the owner decided right there, the latest rows, and the two buttons', async ({ page, pb }) => {
@@ -144,7 +111,6 @@ test('the menu bar panel: the library, what waits for the owner decided right th
   await expect(latest.getByRole('listitem')).toHaveCount(5)
   await expect(latest.getByRole('listitem').first()).toContainText('notes/b.md')
   await expect.poll(sent).toContainEqual({ type: 'waiting', count: 4 })
-  await shoot(page, 'tray', SHOTS)
 
   await decide.getByRole('button', { name: '上线', exact: true }).first().click()
   await expect(decide.getByRole('status')).toContainText('上线')

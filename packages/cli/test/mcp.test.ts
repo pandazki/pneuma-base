@@ -35,10 +35,11 @@ describe('the tool list', () => {
     for (const t of tools.slice(VERBS.length)) expect(t.description).toBe(commands.find((c) => c.name.replaceAll(' ', '_') === t.name)?.summary)
   })
 
-  it('refuses each management command called by name with the reason and words of the command line', async () => {
-    const management = ownerFace.commands([...builtinPlugins.values()]).filter((c) => c.destructive || c.ownerOnly)
-    expect(management.length).toBeGreaterThan(10)
+  it('refuses a management command called by name with the reason and words of the command line: the kernel’s, a plugin’s, a destructive one', async () => {
+    const commands = ownerFace.commands([...builtinPlugins.values()])
+    const management = ['grant issue', 'deploy on', 'archive purge'].map((name) => commands.find((c) => c.name === name && (c.destructive || c.ownerOnly)))
     for (const c of management) {
+      if (c === undefined) throw new Error('a sample is no longer a management command')
       const r = await call(client, c.name.replaceAll(' ', '_'))
       const cli = sb.run(['@g', ...c.name.split(' '), '--json'])
       expect(cli.code, c.name).toBe(2)
@@ -150,26 +151,29 @@ describe.each(['legacy', 'modern'] as const)('a whole task through a real MCP cl
     expect(claude[0].meta[0].text).toBe('放入 2 样')
   })
 
-  it('a second connection on the same day is a scene of its own', async () => {
-    const other = await connect(sb, 'g', era)
-    try {
-      expect(textOf(await call(other, 'start', { sentence: '另一件事' }))).toContain('【记下】')
-    } finally {
-      await other.close()
-    }
-    expect(sceneRows(sb, lib).filter((row) => row.actor.name === 'claude').map((row) => row.text).sort()).toEqual(['另一件事', '写一份下单流程的说明'].sort())
-  })
+  // What does not depend on the era, once: the plugin added below reads a resource in the modern era.
+  if (era === 'legacy') {
+    it('a second connection on the same day is a scene of its own', async () => {
+      const other = await connect(sb, 'g', era)
+      try {
+        expect(textOf(await call(other, 'start', { sentence: '另一件事' }))).toContain('【记下】')
+      } finally {
+        await other.close()
+      }
+      expect(sceneRows(sb, lib).filter((row) => row.actor.name === 'claude').map((row) => row.text).sort()).toEqual(['另一件事', '写一份下单流程的说明'].sort())
+    })
 
-  it('serves the description and the pages as resources', async () => {
-    const resources = (await client.listResources()).resources
-    expect(resources.map((r) => r.uri)).toContain('pneuma-base://library/description')
-    expect(resources.map((r) => r.uri)).toContain('pneuma-base://library/show/files')
-    expect(resources.map((r) => r.uri)).not.toContain('pneuma-base://library/show/config')
-    const description = await client.readResource({ uri: 'pneuma-base://library/description' })
-    expect(description.contents[0]).toMatchObject({ text: client.getInstructions() })
-    const files = await client.readResource({ uri: 'pneuma-base://library/show/files' })
-    expect(files.contents[0]).toMatchObject({ text: sb.run(['@g', 'show', 'files']).stdout.trimEnd() })
-  })
+    it('serves the description and the pages as resources', async () => {
+      const resources = (await client.listResources()).resources
+      expect(resources.map((r) => r.uri)).toContain('pneuma-base://library/description')
+      expect(resources.map((r) => r.uri)).toContain('pneuma-base://library/show/files')
+      expect(resources.map((r) => r.uri)).not.toContain('pneuma-base://library/show/config')
+      const description = await client.readResource({ uri: 'pneuma-base://library/description' })
+      expect(description.contents[0]).toMatchObject({ text: client.getInstructions() })
+      const files = await client.readResource({ uri: 'pneuma-base://library/show/files' })
+      expect(files.contents[0]).toMatchObject({ text: sb.run(['@g', 'show', 'files']).stdout.trimEnd() })
+    })
+  }
 })
 
 describe.each(['legacy', 'modern'] as const)('a plugin added while connected (%s)', (era) => {

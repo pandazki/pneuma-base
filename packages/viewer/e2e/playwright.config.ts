@@ -8,7 +8,8 @@ export default defineConfig({
   testMatch: '*.spec.ts',
   timeout: 60_000,
   expect: { timeout: 8_000 },
-  workers: 2,
+  // Half the machine's processors here; CI's runner has four, and two there leave room for the servers.
+  workers: process.env.CI ? 2 : '50%',
   reporter: [['list']],
   outputDir: join(tmpdir(), 'pneuma-base-e2e-results'),
   use: {

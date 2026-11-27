@@ -88,7 +88,8 @@ describe('「开始」 on the home page', () => {
   it('shows the sentence to say to any agent, to copy, only while an endpoint runs for this library, and so does the agents page', async () => {
     run(['init', lib])
     const origin = 'http://127.0.0.1:7638'
-    const sentence = `读一下 ${origin}/guide，接上我的 Pneuma Base 库。`
+    // The sentence's words are guide.test.ts's; here, that it carries this endpoint's guide.
+    const sentence = `${origin}/guide`
     const connect = () => (stepsOf(home()) as Step[])[0] as Step
     const agents = () => (run(['--library', lib, 'show', 'agents', '--json']).json() as { blocks: { kind: string; title: string; blocks: Block[] }[] }).blocks
     const record = (library: string) => recordEndpoint(join(sb.home, '.pneuma-base'), { url: origin, port: 7638, pid: process.pid, library, at: instant(Date.now()) })
@@ -97,10 +98,10 @@ describe('「开始」 on the home page', () => {
     expect(agents().map((b) => b.title)).not.toContain('让 agent 自己接上')
 
     await record(lib)
-    const item = { kind: 'list', items: [{ cell: { text: sentence, copy: true }, note: expect.stringContaining('点「允许」'), actions: [] }] }
-    expect(connect().blocks).toContainEqual(item)
+    const item = { kind: 'list', items: [{ cell: { text: expect.stringContaining(sentence), copy: true }, note: expect.stringContaining('点「允许」'), actions: [] }] }
+    expect(connect().blocks).toEqual(expect.arrayContaining([item]))
     expect(agents().find((b) => b.title === '让 agent 自己接上')?.blocks).toEqual([item])
-    expect(run(['--library', lib, 'show', 'home']).stdout).toContain(`- ${sentence}\n`)
+    expect(run(['--library', lib, 'show', 'home']).stdout).toContain(sentence)
   })
 
   it('prints with show home: each step with whether it is done and its commands', () => {

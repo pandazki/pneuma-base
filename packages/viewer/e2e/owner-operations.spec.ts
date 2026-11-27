@@ -4,7 +4,7 @@
 // the command line then reports those that changed content or capabilities.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, shoot, tempDir, test, write } from './support.ts'
+import { expect, tempDir, test, write } from './support.ts'
 
 test('every owner operation from the page leaves a trace an agent sees in check', async ({ page, pb }) => {
   const lib = join(tempDir(), 'lib')
@@ -51,7 +51,6 @@ test('every owner operation from the page leaves a trace an agent sees in check'
   await unowned.getByRole('listitem').filter({ hasText: 'summary.md' }).getByRole('button', { name: '记为做出来的' }).click()
   await dialog.getByLabel('依据库里的哪些').fill('doc.md\ndoc.first.md')
   await dialog.getByLabel('库外的依据').fill('主人在对话里口述的提纲')
-  await shoot(page, 'c5-provenance-dialog')
   await dialog.getByRole('button', { name: '记为做出来的' }).click()
   await expect(status).toContainText('已放好 summary.md')
   await expect(unowned).toHaveCount(0)

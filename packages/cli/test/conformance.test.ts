@@ -1,66 +1,15 @@
-// The standard's behavioural rules, as the test kit checks them for a third party, over the five
-// built-in plugins; and over plugins that break them, so each check is seen to catch what it names.
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+// The standard's behavioural rules, as the test kit checks them for a third party, over plugins that
+// break them, so each check is seen to catch what it names. The five built-in plugins passing every
+// check: conformance-<plugin>.test.ts, one file each.
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { deploy } from '@pneuma-base/plugin-deploy'
-import { ledger } from '@pneuma-base/plugin-ledger'
-import { search } from '@pneuma-base/plugin-search'
-import { sync } from '@pneuma-base/plugin-sync'
-import { version } from '@pneuma-base/plugin-version'
-import type { Plugin } from '@pneuma-base/kernel'
-import { conformance, type ConformanceOptions, type SetupContext } from '@pneuma-base/sdk/testkit'
-import { tempDir } from './helpers.js'
+import { conformance } from '@pneuma-base/sdk/testkit'
 
 const cli = fileURLToPath(new URL('../dist/bin.js', import.meta.url))
 const fixture = (name: string) => fileURLToPath(new URL(`./fixtures/breakers/${name}/`, import.meta.url))
 
-const write = (path: string, content: string) => {
-  mkdirSync(join(path, '..'), { recursive: true })
-  writeFileSync(path, content)
-}
-
-/** A site in the library at sites/shop, and its next version beside the agent, as the version and deploy examples assume. */
-async function shop({ sandbox, cwd }: SetupContext) {
-  write(join(sandbox.work, 'shop-first/index.html'), '<h1>小店</h1>')
-  expect((await sandbox.agent('setup', 'setup', ['put', join(sandbox.work, 'shop-first'), '--to', 'sites/shop', '--made'])).code).toBe(0)
-  write(join(cwd, 'shop/index.html'), '<h1>小店，换了配色</h1>')
-}
-
-const target = (plugin: string) => async ({ sandbox }: SetupContext) => {
-  expect((await sandbox.owner([plugin, 'target', 'set', '--kind', 'dir', '--to', await tempDir(`pb-${plugin}-`)])).code).toBe(0)
-}
-
-/** What each built-in's examples stand on. The ledger's bring a page with curl, which here prints instead of fetching. */
-const SETUP: Record<string, ConformanceOptions['setup']> = {
-  async ledger({ sandbox, cwd, bin }) {
-    write(join(bin, 'curl'), '#!/bin/sh\nfor last; do :; done\nprintf "<html>%s</html>" "$last"\n')
-    chmodSync(join(bin, 'curl'), 0o755)
-    write(join(cwd, 'comparison.md'), '# 支付服务对比\n')
-    const put = ['put', '-', '--to', 'payments/sources/paddle-pricing.html', '--brought', '--source', 'https://www.paddle.com/pricing']
-    expect((await sandbox.agent('setup', 'setup', put, { input: '<html>paddle</html>' })).code).toBe(0)
-  },
-  version: shop,
-  sync: target('sync'),
-  async deploy(s) {
-    await shop(s)
-    await target('deploy')(s)
-  },
-  search: undefined,
-}
-
-describe('conformance over the built-in plugins', () => {
-  for (const plugin of [ledger, version, sync, deploy, search] as Plugin[]) {
-    it(`${plugin.name} passes every check`, async () => {
-      const setup = SETUP[plugin.name]
-      const r = await conformance({ builtin: plugin }, { cli, ...(setup ? { setup } : {}) })
-      expect(r.checks.filter((c) => !c.ok), r.text).toEqual([])
-    })
-  }
-})
-
-describe('conformance over plugins that break the rules', () => {
+// The tests run concurrently (vitest's maxConcurrency at a time): the kit keeps no process state, and each check works in temporary libraries of its own.
+describe.concurrent('conformance over plugins that break the rules', () => {
   it('names each rule a loaded plugin breaks, with what is wrong and the rule', async () => {
     const r = await conformance(fixture('rule-breaker'), { cli })
     const failed = Object.fromEntries(r.checks.filter((c) => !c.ok).map((c) => [c.name, c.problems.join('\n')]))
@@ -115,17 +64,13 @@ describe('conformance over plugins that break the rules', () => {
     expect(failed.catchup).toContain('后装上、补上之后，条目面板 conformance/early.md 的答复和装着它时放进来的不一样')
   })
 
-  it('stops at loading a plugin written against contract 1', async () => {
-    const r = await conformance(fixture('old-contract'), { cli })
-    expect(r.checks.find((c) => c.name === 'loads')?.ok, r.text).toBe(false)
-    expect(r.checks.find((c) => c.name === 'hooks')?.problems).toEqual(['没有查：插件没装上'])
-  })
-
-  it('stops at loading a plugin named after a word of the command line', async () => {
-    const r = await conformance(fixture('reserved-name'), { cli })
-    expect(r.ok).toBe(false)
-    expect(r.checks.find((c) => c.name === 'names')?.problems).toEqual(['插件名 find 是命令行或内核自己用的词'])
-    expect(r.checks.find((c) => c.name === 'loads')?.problems.join('\n')).toContain('命令行或内核自己用的词')
-    expect(r.checks.find((c) => c.name === 'hooks')?.problems).toEqual(['没有查：插件没装上'])
+  it('stops at loading a plugin written against contract 1, or named after a word of the command line', async () => {
+    const [old, reserved] = await Promise.all([conformance(fixture('old-contract'), { cli }), conformance(fixture('reserved-name'), { cli })])
+    expect(old.checks.find((c) => c.name === 'loads')?.ok, old.text).toBe(false)
+    expect(old.checks.find((c) => c.name === 'hooks')?.problems).toEqual(['没有查：插件没装上'])
+    expect(reserved.ok).toBe(false)
+    expect(reserved.checks.find((c) => c.name === 'names')?.problems).toEqual(['插件名 find 是命令行或内核自己用的词'])
+    expect(reserved.checks.find((c) => c.name === 'loads')?.problems.join('\n')).toContain('命令行或内核自己用的词')
+    expect(reserved.checks.find((c) => c.name === 'hooks')?.problems).toEqual(['没有查：插件没装上'])
   })
 })
