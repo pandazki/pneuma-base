@@ -521,6 +521,94 @@ pub fn added_at(_dir: RawFd, _name: &CStr) -> Option<i128> {
     None
 }
 
+/// One entry of a directory as `listed` gives it: its name, whether it is a regular file, its
+/// birth, change and arrival times where kept, and a file's size.
+pub struct Listed {
+    pub name: Vec<u8>,
+    pub file: bool,
+    pub btime_ns: Option<i128>,
+    pub ctime_ns: i128,
+    pub added_ns: Option<i128>,
+    pub size: u64,
+}
+
+/// Every entry of the open directory `dir` with its times and size, many entries a call
+/// (`getattrlistbulk`): no call per entry. `None` where the platform has no such call.
+#[cfg(target_os = "macos")]
+pub fn listed(dir: RawFd) -> Option<Result<Vec<Listed>, Errno>> {
+    const VREG: u32 = 1;
+    let mut list = libc::attrlist {
+        bitmapcount: libc::ATTR_BIT_MAP_COUNT,
+        reserved: 0,
+        commonattr: libc::ATTR_CMN_RETURNED_ATTRS
+            | libc::ATTR_CMN_NAME
+            | libc::ATTR_CMN_OBJTYPE
+            | libc::ATTR_CMN_CRTIME
+            | libc::ATTR_CMN_CHGTIME
+            | libc::ATTR_CMN_ADDEDTIME,
+        volattr: 0,
+        dirattr: 0,
+        fileattr: libc::ATTR_FILE_DATALENGTH,
+        forkattr: 0,
+    };
+    let u32_at = |b: &[u8], at: usize| u32::from_ne_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]]);
+    let i64_at = |b: &[u8], at: usize| {
+        let mut word = [0u8; 8];
+        word.copy_from_slice(&b[at..at + 8]);
+        i64::from_ne_bytes(word)
+    };
+    let time_at = |b: &[u8], at: usize| ns(i64_at(b, at), i64_at(b, at + 8));
+    let mut buf = vec![0u8; 128 * 1024];
+    let mut out = Vec::new();
+    loop {
+        // SAFETY: the attribute list and buffer are valid for the size given.
+        let n = unsafe {
+            libc::getattrlistbulk(
+                dir,
+                (&raw mut list).cast(),
+                buf.as_mut_ptr().cast(),
+                buf.len(),
+                u64::from(libc::FSOPT_PACK_INVAL_ATTRS),
+            )
+        };
+        if n < 0 {
+            return Some(Err(last_errno()));
+        }
+        if n == 0 {
+            return Some(Ok(out));
+        }
+        let mut at = 0;
+        for _ in 0..n {
+            let e = &buf[at..];
+            let length = u32_at(e, 0) as usize;
+            // The attributes follow the returned set (five words), each in the order of its bit,
+            // all of them present (`FSOPT_PACK_INVAL_ATTRS`).
+            let (common, file) = (u32_at(e, 4), u32_at(e, 16));
+            let name_at = 24 + u32_at(e, 24) as usize;
+            let name_len = (u32_at(e, 28) as usize).saturating_sub(1);
+            let valid = |bit: u32| common & bit != 0;
+            out.push(Listed {
+                name: e[name_at..name_at + name_len].to_vec(),
+                file: valid(libc::ATTR_CMN_OBJTYPE) && u32_at(e, 32) == VREG,
+                btime_ns: valid(libc::ATTR_CMN_CRTIME).then(|| time_at(e, 36)),
+                ctime_ns: time_at(e, 52),
+                added_ns: valid(libc::ATTR_CMN_ADDEDTIME).then(|| time_at(e, 68)),
+                size: if file & libc::ATTR_FILE_DATALENGTH != 0 {
+                    i64_at(e, 84).max(0) as u64
+                } else {
+                    0
+                },
+            });
+            at += length;
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn listed(_dir: RawFd) -> Option<Result<Vec<Listed>, Errno>> {
+    None
+}
+
 /// The value of an extended attribute of the place at `path`, not following a link; `None` when
 /// it has none by that name.
 #[cfg(target_os = "macos")]

@@ -491,17 +491,23 @@ pub fn serve_echoes_ids(env: &Env) -> Outcome {
     serve.request(json!("a"), "describe", json!({}));
     serve.request(json!(2), "glance", json!({ "places": [""] }));
     serve.send("this is not json");
+    serve.send("[7, \"describe\"]");
     serve.request(json!(3), "nope", json!({}));
     let mut by_id = BTreeMap::new();
-    for _ in 0..4 {
+    let mut not_requests = Vec::new();
+    for _ in 0..5 {
         let answer = serve.receive();
-        by_id.insert(answer["id"].to_string(), answer);
+        if answer["id"].is_null() {
+            not_requests.push(answer);
+        } else {
+            by_id.insert(answer["id"].to_string(), answer);
+        }
     }
     assert_eq!(by_id["\"a\""]["contract"], 1, "{by_id:?}");
     assert_eq!(by_id["2"]["entries"][0]["kind"], "dir", "{by_id:?}");
     assert_eq!(
-        by_id["null"],
-        json!({ "id": null, "outcome": "failed", "reason": "bad_request" })
+        not_requests,
+        vec![json!({ "id": null, "outcome": "failed", "reason": "bad_request" }); 2]
     );
     assert_failed(&by_id["3"], "bad_request");
     assert_eq!(serve.finish(), 0);

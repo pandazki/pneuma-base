@@ -647,7 +647,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CODEX_THREAD_ID -u ANTIGRAVITY_CO
 `records` 的：
 
 - `append(事实列表)`：把几条事实写成一次，答每条的次序号。写过的事实从不改写。
-- `since(游标, limit)`：游标之后的事实（`null` 是从头），至多 `limit` 条，答 `{ facts: [{ order, fact }], cursor, more }`；`limit` 是 0 时只答事实现在到哪。游标对不上那里的事实时（比如事实被删了）答 `null`：从 `null` 重来。
+- `since(游标, limit)`：游标之后的事实（`null` 是从头），至多 `limit` 条，答 `{ facts: [{ order, fact }], cursor, more }`，从头读时存储还可带 `files`：事实文件的个数（一个文件放一条或几条）；`limit` 是 0 时只答事实现在到哪。游标对不上那里的事实时（比如事实被删了）答 `null`：从 `null` 重来。
 - `put(表, { cursor, expect })`：在一次提交里写几张表的行，带 `cursor` 时一起存下这些行推到了哪个游标。带 `expect` 时只在存下的游标还是它时写，否则什么都不写，答存下的那个。
 - `get(表, 键列表)`、`under(表, 前缀, { limit, after })`、`where(表, 字段, 值, { limit, after })`、`count(表, 字段, 值)`：按键、按键的前缀、按字段读行。行是 `{ key, fields?, value }`，`fields` 至多 4 个、都是文字，是能按它问的；`put` 里 `value` 为 `null` 是删掉这一行。
 - `reset()`：丢掉全部的行和存下的游标。

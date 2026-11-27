@@ -113,6 +113,60 @@ pub fn facts_since_gives_only_what_follows_the_cursor(env: &Env) -> Outcome {
     Ok(())
 }
 
+pub fn a_long_read_gives_every_fact_once_in_order(env: &Env) -> Outcome {
+    let lib = env.lib();
+    let mut appended = Vec::new();
+    for n in 0..300 {
+        let answer = lib.run(
+            "facts.append",
+            json!({ "place": "log", "facts": [{ "n": n }] }),
+        );
+        appended.extend(strings_of(&answer["orders"]));
+    }
+    let (mut orders, mut facts, mut cursor) = (Vec::new(), Vec::new(), Value::Null);
+    loop {
+        let page = lib.run(
+            "facts.since",
+            json!({ "place": "log", "cursor": cursor, "limit": 200 }),
+        );
+        orders.extend(orders_of(&page));
+        facts.extend(facts_of(&page));
+        cursor = page["cursor"].clone();
+        if page["more"] != true {
+            break;
+        }
+    }
+    assert_eq!(orders, appended);
+    assert_eq!(
+        facts,
+        (0..300).map(|n| json!({ "n": n })).collect::<Vec<_>>()
+    );
+    Ok(())
+}
+
+pub fn a_read_from_no_cursor_counts_the_facts_files(env: &Env) -> Outcome {
+    let lib = env.lib();
+    for facts in [
+        json!([{ "n": 1 }]),
+        json!([{ "n": 2 }, { "n": 3 }]),
+        json!([{ "n": 4 }]),
+    ] {
+        lib.run("facts.append", json!({ "place": "log", "facts": facts }));
+    }
+    let first = lib.run(
+        "facts.since",
+        json!({ "place": "log", "cursor": null, "limit": 1 }),
+    );
+    match first.get("files") {
+        Some(files) => assert_eq!(files, &json!(3), "{first}"),
+        None if facts_dir(&lib, "log").is_some() => {
+            panic!("the local layout counts its facts files: {first}")
+        }
+        None => return not_exercised("the provider does not count facts files"),
+    }
+    Ok(())
+}
+
 pub fn facts_are_only_appended(env: &Env) -> Outcome {
     let lib = env.lib();
     lib.run(
@@ -416,6 +470,38 @@ pub fn the_old_layout_is_still_read(env: &Env) -> Outcome {
         json!({ "place": "log", "cursor": since["cursor"] }),
     );
     assert_eq!(facts_of(&later), [json!({ "old": 4 })]);
+    Ok(())
+}
+
+pub fn a_long_file_of_the_old_layout_is_read_page_by_page(env: &Env) -> Outcome {
+    let lib = env.lib();
+    if !local_fact_layout(&lib) {
+        return not_exercised(NO_FACT_LAYOUT);
+    }
+    // More than a megabyte in one file, with a line that is not a fact in it.
+    let pad = "x".repeat(200);
+    let mut text = String::new();
+    for n in 0..6000 {
+        text.push_str(&format!("{{\"n\":{n},\"pad\":\"{pad}\"}}\n"));
+        if n == 2500 {
+            text.push_str("not json\n");
+        }
+    }
+    lib.write(".pneuma-base/log/facts/scene-a/001.jsonl", &text);
+    let (mut seen, mut cursor) = (Vec::new(), Value::Null);
+    loop {
+        let page = lib.run(
+            "facts.since",
+            json!({ "place": "log", "cursor": cursor, "limit": 1000 }),
+        );
+        assert!(page["facts"].as_array().unwrap().len() <= 1000, "{page}");
+        seen.extend(facts_of(&page).iter().map(|f| f["n"].as_i64().unwrap()));
+        cursor = page["cursor"].clone();
+        if page["more"] != true {
+            break;
+        }
+    }
+    assert_eq!(seen, (0..6000).collect::<Vec<_>>());
     Ok(())
 }
 
