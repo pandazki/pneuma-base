@@ -555,7 +555,7 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 **写一个库外的插件**要的都在仓库里，`PLUGINS.md` 从五分钟走通讲到完整的参考：
 
 - 两个包文件，`pnpm pack:dist` 打进 `dist-packages/`（不进 git）：`pneuma-base-<版本>.tgz` 是命令行，内核、五个自带插件、界面的服务和网页都作为捆绑的依赖在里面，内核的 `bin/` 里是这台机器上构建的存储程序和契约测试的程序，另带 `PLUGINS.md`；`pneuma-base-sdk-<版本>.tgz` 是 `@pneuma-base/sdk`，不依赖这个仓库的别的包。两个的版本都是 sdk 的 `PNEUMA_BASE_VERSION`，每个工作区包的 `package.json` 和它不一样时打包拒绝（`scripts/pack-dist.mjs`）。
-- 测试工具 `@pneuma-base/sdk/testkit` 跑真的命令行，不另造一个假的内核。`conformance` 把规范里行为上的规矩跑成检查（`PLUGINS.md` 第 7 节），仓库自己的测试拿它查自带的五个插件，也拿故意违规的插件看每条检查都会变红（`packages/cli/test/conformance.test.ts`）。
+- 测试工具 `@pneuma-base/sdk/testkit` 跑真的命令行，不另造一个假的内核。`conformance` 把规范里行为上的规矩跑成检查（`PLUGINS.md` 第 7 节），仓库自己的测试拿它查自带的五个插件（`packages/cli/test/conformance-<插件>.test.ts`，一个插件一个文件），也拿故意违规的插件看每条检查都会变红（`conformance.test.ts`）。
 - 脚手架 `pneuma-base plugin new <目录> [--kind blank|deploy]` 是命令行的命令，不是内核的：它只从命令行包里的 `templates/` 写一个项目目录，不碰库，不碰 `$PNEUMA_BASE_HOME`，不发事件。两种项目都不改一行就通过自己的测试（`packages/cli/test/scaffold.slow.test.ts`，在 `pnpm test:slow` 里，要联网）。
 - `plugins/` 下有三个照第三方的做法、只依赖两个包文件写的插件：`space`（发布到 PneumaSpace）、`links`、`pulse`。它们也是契约的回归测试（`plugins/README.md`）。
 
@@ -1015,7 +1015,7 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 
 - `packages/cli/test/pages.test.ts` 顺着链接走遍一个装了全部自带插件的库的每一页。每一页 `show` 印得出，字里有每一格、每个按钮的命令和翻页的命令；每个按钮调得到一个动词或这个库里在的命令，参数合它的参数表（`actionFault`）。每个动词和命令要么在某页上有按钮，要么有一页读的是同样的东西（`READS`，比如 `plugin list` 读 `config`），要么列在 `NO_PLACE` 里写明为什么。
 - `mcp.test.ts`：工具是每个动词和每条业务命令，没有管理的命令；按名字调管理的命令，拒绝的理由和字同命令行；输入出自参数表；同样的参数，工具和命令行答的一样。
-- `mcp-http.test.ts`：HTTP 上和标准输入输出上列出同样的工具，对同一组调用（`mcp-cases.ts`）给同样的答复，两代协议各走一遍。
+- `mcp-http.test.ts`：HTTP 上和标准输入输出上列出同样的工具，对其中一读、一写、一个拒绝、一页（`mcp-cases.ts` 的例子）给同样的答复，两代协议各走一遍；全部的例子在标准输入输出上走。
 - `endpoint-story.test.ts`：`/guide` 和 `pneuma-base guide` 是同一段说明，经 HTTP 和经命令行配对走到同一个状态，一个 agent 从读说明走到它的场景记在它名下。
 
 ### 命令行
