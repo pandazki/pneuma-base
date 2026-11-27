@@ -250,7 +250,7 @@ function whatIsWrong(p: unknown, name: string | null): string[] {
   else check(isText(p.name) && PLUGIN_NAME.test(p.name), `名字 ${JSON.stringify(p.name)} 不是插件名：小写字母开头，只用小写字母、数字和连字符`)
   const own = isText(p.name) ? p.name : String(name)
   check(!RESERVED_PLUGIN_NAMES.includes(own), `名字 ${own} 是命令行或内核自己用的词，插件不能叫这个`)
-  for (const key of ['version', 'summary']) check(optional(p[key], isText), `${key} 不是文字`)
+  for (const key of ['version', 'title', 'summary', 'about']) check(optional(p[key], isText), `${key} 不是文字`)
   check(optional(p.keeps, (v) => v === 'every' || v === 'some'), 'keeps 只能是 every 或 some')
   const c = p.cognition
   check(c === null || (isObject(c) && isText(c.title) && isText(c.text)), 'cognition 既不是 null 也不是 { title, text }')

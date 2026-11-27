@@ -7,7 +7,7 @@ import { isAbsolute } from 'node:path'
 import { parseCall } from './call.js'
 import { ownerFace } from './owner.js'
 import { checkArgs } from './params.js'
-import { CHART_SERIES_MAX, type Action, type Block, type Library, type Link, type OwnerParams, type Plugin, type PluginProblem, type ViewAnswer, type ViewDecl } from '@pneuma-base/sdk'
+import { CHART_SERIES_MAX, FEED_ACTS, type Action, type Block, type Library, type Link, type OwnerParams, type Plugin, type PluginProblem, type ViewAnswer, type ViewDecl } from '@pneuma-base/sdk'
 
 /** What is wrong with `value` at `at`, or null when it fits. */
 type Check = (value: unknown, at: string) => string | null
@@ -99,7 +99,7 @@ const actorMark = shape({ kind: oneOf('agent', 'owner'), name: string, 'grant?':
 const who: Check = (v, at) => (typeof v === 'string' ? null : actorMark(v, at))
 const truth: Check = (v, at) => (v === true ? null : `${at} 只能是 true`)
 const reopen = shape({ url: nullable(string), run: nullable(shape({ command: string, cwd: string })), reveal: string })
-const cell = shape({ text: string, 'mono?': boolean, 'muted?': boolean, 'tag?': tag, 'link?': link, 'at?': string, 'icon?': string, 'href?': string, 'copy?': boolean, 'actor?': actorMark, 'normal?': truth, 'reopen?': reopen })
+const cell = shape({ text: string, 'mono?': boolean, 'muted?': boolean, 'tag?': tag, 'link?': link, 'at?': string, 'icon?': string, 'href?': string, 'copy?': boolean, 'actor?': actorMark, 'normal?': truth, 'reopen?': reopen, 'local?': truth })
 const paging = shape({ first: number, shown: number, total: number, 'atLeast?': boolean, prev: nullable(link), next: nullable(link) })
 
 const call: Check = (v, at) => {
@@ -127,7 +127,7 @@ const both =
     a(v, at) ?? b(v, at)
 
 const feedRow = both(
-  shape({ key: string, at: string, actor: who, text: string, meta: listOf(cell), 'whose?': oneOf('agent', 'owner', 'approved', 'observed'), 'action?': action, 'settled?': string, link: nullable(link) }),
+  shape({ key: string, at: string, actor: who, text: string, meta: listOf(cell), 'whose?': oneOf('agent', 'owner', 'approved', 'observed'), 'action?': action, 'settled?': string, link: nullable(link), 'act?': oneOf(...FEED_ACTS), 'path?': string, 'note?': string }),
   (v, at) => ((v as Raw).action !== undefined && (v as Raw).settled !== undefined ? `${at} 不能同时有 action 和 settled` : null),
 )
 const feedGroup = shape({ title: string, count: nullable(number), 'link?': link, rows: listOf(feedRow), 'reopen?': reopen })
@@ -166,7 +166,7 @@ const KINDS: Record<Block['kind'], Check> = {
     'each?': shape({ actions, rename: nullable(action) }),
   }),
   fields: shape({ fields: listOf(shape({ label: string, value: cell })), 'line?': truth }),
-  list: shape({ items: listOf(shape({ cell, note: nullable(string), actions })), 'page?': paging }),
+  list: shape({ items: listOf(shape({ cell, note: nullable(string), actions, 'about?': string, 'toggle?': shape({ on: boolean, action }) })), 'page?': paging }),
   timeline: shape({ entries: listOf(shape({ at: string, title: cell, lines: listOf(string), tag: nullable(tag), 'actions?': actions, 'actor?': who })), 'page?': paging }),
   text: shape({ text: string, tone }),
   preview: shape({ path: string }),
@@ -236,7 +236,7 @@ function ownActions(block: Block): Action[] {
     case 'table':
       return block.rows.flatMap((r) => r.actions)
     case 'list':
-      return block.items.flatMap((i) => i.actions)
+      return block.items.flatMap((i) => [...i.actions, ...(i.toggle ? [i.toggle.action] : [])])
     case 'timeline':
       return block.entries.flatMap((e) => e.actions ?? [])
     case 'custom':

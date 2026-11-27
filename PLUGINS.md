@@ -69,7 +69,7 @@ export default definePlugin({
 - 插件不得走一遍库：它跟着自己的记录，只在记录指到的地方问存储，一次取一页，不进没登记的目录，即自己没登记成一样东西、里面也没有登记过的东西的目录（检查：`bounded`）。库的文件夹里可以有任意多的东西，插件的代价要跟着它记着的那部分走（4.2 的「一页一页」）。
 - 插件从它听到的放知道库里登记了什么：`onPut`（登记、放入、`register-files`、挪）、`onArchive`、`onPurged`。插件装进一个已经有东西的库时，装上之前登记过的东西它从登记补上：记着登记的插件（记账插件）答 `registered`，工具 `registered` 一页一页地给出（4.2）；`plugin add` 装上它之后，内核把这些一页一页交给它的 `catchUp`，`plugin catch-up <名字>` 再补一次或接着补（3.5）。
 - 内核不认识的字段，插件对象上的不管，块里的原样留着。
-- 插件可以写 `version` 和 `summary`（一句中文，说它带来什么），`plugin list` 和配置页显示它们；没有 `summary` 时显示认知段的标题。
+- 插件可以写 `version`、`title`、`summary` 和 `about`，`plugin list` 和配置页显示它们。`title` 是人会说的名字（记账插件是「记账」），`name` 仍是命令行里的标识，配置页把它放在提示里；`summary` 是一行短话，说它做什么，二十个字左右以内，配置页把它写在名字下面；`about` 是完整的说明，配置页放在名字旁的 ⓘ 里。没有 `title` 时显示 `name`，没有 `summary` 时显示认知段的标题。装到这台机器上来的插件，配置页轻轻地写出它的 `version`；自带的插件就是应用的版本，不写。
 - 库的配置里只写插件名。说明、帮助、界面里的插件内容都来自插件对象。
 
 ## 3. 插件能做的七件事
@@ -873,7 +873,7 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `section` | `title`、`note`（文字或 `null`）、`count`（数字或 `null`）、`blocks`、`actions` | `collapse`：`open` 或 `closed`，可以折起来，值是开始时的样子；`about`：这一节是做什么的，给第一次来的人，界面放在标题旁的 ⓘ 里，悬停或聚焦时显示，`show` 印在标题下的括号里；`normal: true`：这一节此刻没有要人看的（没有要决定的、没有要留意的），界面整节不画，`show` 照印 | 分节；里面的块逐个核对。`note` 留给这一节此刻的内容（比如「你还没看过，这是最近的」），说明这一节是什么的话放 `about`。节的 `actions` 画在标题那一行：图标、「···」、一个安静的按钮（见 `Action`）；`as: 'inline'` 的动作画成节里第一行的输入框 |
 | `table` | `columns`（每列 `{ key, label }`）、`rows`（每行 `{ key, cells, link, actions }`，`cells` 按列的 `key` 给 `Cell`，`link` 可以是 `null`）、`empty` | 列的 `optional`：放不下时这一列先让开，后面的先让；行的 `group`：同组的行排在一起，组名是它们上面的一行小标题，格里只写组名之后的部分（比如按文件夹分组，格里只写名字），有组时表头只给读屏；`page`：见下面的 `Paging`；行的 `place`（`RowPlace`）：这一行代表库里的一个地方，界面把它当文件，能选中、预览、打开、拖出、右键，页头能在列表和图标之间切换；`sorted`：`{ by, desc }`，带 `place` 的表现在怎么排，`by` 是 `SortKey`，界面让和它同名的列头和页头的小菜单能换排法，换的是视图的参数 `sort`（`SortKey`，前面加 `-` 倒过来），视图要按它排；`each`：`{ actions, rename }`，对表里任何一样东西（`place` 是 `file` 或 `bundle` 的）都能做的动作，说一次，`{path}` 是它的库内路径，`{in}` 是它所在的文件夹带斜杠（根上是空的）；`rename` 是一个动作或 `null`，它唯一的输入 `name` 在原处写在名字上 | 记录表；没有行时只显示 `empty`。一列的格全是 `normal` 时整列让开。有 `link` 的行，动作在悬停或聚焦时才出现。`show` 在表下印一次 `each` 的动作 |
 | `fields` | `fields`（每项 `{ label, value }`，`value` 是 `Cell`） | `line: true`：几个字段说成一行，不带标签，标签进悬停，`show` 照印标签；适合谁、何时、在哪次会话这类一看就懂的值 | 字段组；`normal` 的字段不画 |
-| `list` | `items`（每项 `{ cell, note, actions }`，`note` 可以是 `null`） | `page` | 列表；窄处要路径完整时用它，不用表格 |
+| `list` | `items`（每项 `{ cell, note, actions }`，`note` 可以是 `null`） | `page`；项的 `about`：这一项是什么，说完整，界面放在格旁的 ⓘ 里，`show` 印在说明后面；项的 `toggle`：`{ on, action }`，这一项是一个开或关的设置，界面在行尾画一个开关，拨它就做 `action`（先问它的 `confirm`），所以 `action` 是把它拨到另一边的那个，`show` 印「开着」或「关着」和这个动作的命令 | 列表；窄处要路径完整时用它，不用表格。设置写成带 `toggle` 的项：格是名字（可带 `icon`），`note` 是一行短话 |
 | `timeline` | `entries`（每条 `{ at, title, lines, tag }`，`title` 是 `Cell`，`tag` 可以是 `null`） | 条目的 `actions`、`actor`（谁做的，`ActorMark` 或名字：界面在线上画它的记号，名字进悬停，`show` 印名字）；`page` | 时间线 |
 | `text` | `text`、`tone` | | 一段字 |
 | `preview` | `path`（库内路径） | | 一个文件的预览 |
@@ -881,7 +881,7 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `empty` | `title`、`hint`（文字或 `null`） | | 空的状态 |
 | `embed` | `url`（http 或 https）、`title`、`height` | | 库外的一个页面，放在沙箱框架里，带「在新标签页打开」 |
 | `custom` | `entry`、`height`、`text`、`actions` | `data` | 插件自己画的页，见 4.5；`text` 是这一块用字说的同样的事 |
-| `feed` | `groups`（每组 `{ title, count, rows }`，`count` 可以是 `null`）、`empty` | 组的 `link`：打开组名说的东西；组的 `reopen`：组是一个场景时，再打开它的对话（同 `Cell` 的）；`page` | 发生过的事，按日或按场景分组；没有行时只显示 `empty`，一句灰字。每行 `{ key, at, actor, text, meta, link }`：`actor` 是 `ActorMark` 或一个名字，`meta` 是灰的一行 `Cell`，`link` 可以是 `null`；可选 `whose`（`agent`、`owner`、`approved`、`observed`：自己做的、主人做的、主人批准的、看到的；界面不画 `agent`，它几乎是每一行，只画别的三种，`show` 每行都印）、`action`（一个安静的按钮，比如撤销）或 `settled`（一个灰词，说它后来怎样了），`action` 和 `settled` 不同时有 |
+| `feed` | `groups`（每组 `{ title, count, rows }`，`count` 可以是 `null`）、`empty` | 组的 `link`：打开组名说的东西；组的 `reopen`：组是一个场景时，再打开它的对话（同 `Cell` 的）；`page` | 发生过的事，按日或按场景分组；没有行时只显示 `empty`，一句灰字。每行 `{ key, at, actor, text, meta, link }`：`actor` 是 `ActorMark` 或一个名字，`meta` 是灰的一行 `Cell`，`link` 可以是 `null`；可选 `whose`（`agent`、`owner`、`approved`、`observed`：自己做的、主人做的、主人批准的、看到的；界面不画 `agent`，它几乎是每一行，只画别的三种，`show` 每行都印）、`action`（一个安静的按钮，比如撤销）或 `settled`（一个灰词，说它后来怎样了），`action` 和 `settled` 不同时有。再可选 `act`、`path`、`note`，把同一行拆开说：`act` 是哪种动作（`FeedAct`：`made` 做的人放进来、`brought` 从外面带进来、`changed` 换了内容、`moved` 挪了、`archived` 归档、`restored` 从归档区取回、`note` 备注、`decision` 决定、`doing` 一次会话说它在做什么、`basis` 补上依据、`removed` 随归档区清掉、`command` 执行了一条命令、`request` 请主人做），`path` 是它说的那样东西的库内路径，`note` 是做的人随它写的话（放入的备注、一条备注或决定的原话、在做什么）。有 `act` 时界面把动作画成图标，东西只写名字（路径的最后一段），文件夹灰着写在旁边，和上一行同一个文件夹时不再写；`note` 是这一行的第二行，代替 `meta`；没有 `path` 时 `note` 就是这一行。`text` 仍是整句话：在这一行的提示里，`show` 和导出照印 |
 | `stats` | `stats`（每个 `{ label, value, note }`，`value` 是字，`note` 可以是 `null`） | | 几个数，每个一张小卡 |
 | `tree` | `param`、`selected`、`nodes`（每个 `{ value, label, count, children }`，`count` 可以是 `null`） | | 一棵树，比如文件夹。选一个节点，就是把这一页的参数 `param` 设成它的 `value` 再取一次；排在一页最前面时画在左边一栏。`show` 把每个节点印成打开它的命令 |
 | `asks` | `asks`（每件 `{ key, by, text, about, actions }`，`by` 是名字或 `ActorMark`，`about` 可以是 `null`）、`empty` | 每件的 `suggested`：推荐的回答在 `actions` 里的位置；`command`：这件事说到的命令行，印在问话下面 | 等主人定的事；回答后在原处折成一行回执。首页用它放 `onAsks` 的问题，插件自己的页也能用 |
@@ -891,7 +891,7 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 
 | 类型 | 字段 |
 | --- | --- |
-| `Cell` | `text`；可选 `normal: true`（这是常态的值，比如「一致」「读写」「离线」：页面不画它，一列全是常态就整列让开，`show` 照印）、`mono`、`muted`、`tag`、`link`、`actor`（`ActorMark`，谁做的：文字前画它的记号，`text` 空时显示名字）、`at`（这一格是一个时刻，界面按看的人的本地时间显示，近的写「N 分钟前」「今天 15:34」）、`icon`（`IconName`）、`href`（http 或 https 的地址，新标签页打开，放不下时从中间截短）、`copy: true`（复制 `href`，没有就复制 `text`）、`reopen`（`Reopen`：这一格说的是一个场景，它的对话在这台机器上，Mac 应用在旁边给「打开那次对话」，浏览器不画；用内核的 `reopenOf` 得到） |
+| `Cell` | `text`；可选 `normal: true`（这是常态的值，比如「一致」「读写」「离线」：页面不画它，一列全是常态就整列让开，`show` 照印）、`mono`、`muted`、`tag`、`link`、`actor`（`ActorMark`，谁做的：文字前画它的记号，`text` 空时显示名字）、`at`（这一格是一个时刻，界面按看的人的本地时间显示，近的写「N 分钟前」「今天 15:34」）、`icon`（`IconName`）、`href`（http 或 https 的地址，新标签页打开，放不下时从中间截短）、`copy: true`（复制 `href`，没有就复制 `text`）、`reopen`（`Reopen`：这一格说的是一个场景，它的对话在这台机器上，Mac 应用在旁边给「打开那次对话」，浏览器不画；用内核的 `reopenOf` 得到）、`local: true`（`text` 是视图所在那台机器上的绝对路径，比如库放在哪：界面只写最后一段，整个路径在提示里，带拷贝，Mac 应用里另带「在访达中显示」；`show` 印整个路径） |
 | `Tag` | `{ text, tone }`，`tone` 是 `neutral`、`good`、`warn`、`bad`、`info`。正常的状态给 `normal: true`，不要给它标签；标签留给偏离正常的 |
 | `ActorMark` | `{ kind: 'agent' \| 'owner', name, grant? }`：agent 画成名字里取的两个字母，底色由名字定，同一个名字总是同一个颜色；主人画成一个灰圆。字母：头两个词的首字母（claude-code 是 CC），一个词的取头两个字母（codex 是 Co），汉字一个就是记号；屏上两个名字的字母一样时，各取首字母加第一个和对方同位不同的字母（codex 和 copilot 是 Cd 和 Cp）。所以不靠颜色也分得开。`grant` 是它凭的授权名 |
 | `FilterOption` | `{ value, label, count? }`：筛选的一个选项，`count` 是选它时有几条。视图答复可以带 `filters: { name, options }[]`，给它声明了的筛选这一次的选项和数目（比如出现过的 agent），界面和 `show` 用它代替声明里的选项；只有一个选项的筛选界面不画 |
@@ -1390,7 +1390,7 @@ pneuma-base plugin uninstall marks
 | `index.js` | 在目录里，载入不抛错，缺省导出一个对象 |
 | `contract` | 写了，是 `CONTRACT`，即 `2`。写 `1` 的，原因指向第 10 节「从第 1 版到第 2 版」 |
 | `name` | 合 `PLUGIN_NAME`：小写字母开头，只用小写字母、数字、连字符，最长 41 个字符；装到本机之后和目录名相同；不是 `RESERVED_PLUGIN_NAMES` 里的词：`tmp`、`requests`、`kernel`、`trash`、`holds`、`ask`、`request`、`start`、`show`、`find`、`inspect`、`put`、`say`、`check`、`archive`、`unarchive`、`init`、`view`、`help`、`grant`、`plugin`、`skill`、`secret`、`agent`、`launcher`、`noise`、`storage`、`cache`、`pair`、`guide`、`mcp`（命令行的词、内核命令的头一个词、和插件记录处并排的内核的记录处与存储自己的几处） |
-| `version`、`summary` | 没有，或是文字 |
+| `version`、`title`、`summary`、`about` | 没有，或是文字 |
 | `keeps` | 没有，或是 `every`、`some` |
 | `cognition` | `null`，或 `{ title, text }`，两样都是文字 |
 | `storage` | 列表，每项 `{ dir, kind }`，`kind` 是 `body` 或 `cache` |

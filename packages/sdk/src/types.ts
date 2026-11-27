@@ -549,8 +549,12 @@ export interface Plugin {
   readonly name: PluginName
   /** Its own version, for people. */
   readonly version?: string
-  /** What it brings, in one Chinese sentence for people. */
+  /** The name a person would say, such as 记账 for `ledger`; its `name` stays the identifier. */
+  readonly title?: string
+  /** What it does, in a short Chinese line for people: about twenty characters at most. */
   readonly summary?: string
+  /** What it brings, said whole, shown on demand beside its title. */
+  readonly about?: string
   readonly cognition: CognitionSection | null
   /**
    * With `revise`: whether it holds every replaced content (`every`) or only some (`some`, the
@@ -646,9 +650,11 @@ export type ActorMark = { kind: 'agent' | 'owner'; name: string; grant?: string 
  * (a table column whose every cell is normal steps aside, a field with a normal value is not shown),
  * so only a departure from it catches the eye; the text form still prints it. `reopen`: the cell names
  * a scene whose conversation is on this machine; in the Mac app the page offers to open it again
- * beside the cell.
+ * beside the cell. `local`: `text` is an absolute path on the machine the views run on, such as where
+ * the library is kept; the page shows its last part, the whole in its tooltip, a way to copy it, and
+ * in the Mac app a way to show it in Finder. The text form prints the whole path.
  */
-export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; link?: Link; at?: Instant; icon?: IconName; href?: string; copy?: true; actor?: ActorMark; normal?: true; reopen?: Reopen }
+export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; link?: Link; at?: Instant; icon?: IconName; href?: string; copy?: true; actor?: ActorMark; normal?: true; reopen?: Reopen; local?: true }
 
 /**
  * How the Mac app opens a scene's conversation again on this machine, the first way it can: `url`,
@@ -731,11 +737,26 @@ export type Paging = { first: number; shown: number; total: number; atLeast?: tr
 export type TableColumn = { key: string; label: string; optional?: boolean }
 
 /**
+ * The kind of act a feed row tells, which a page shows as an icon instead of a word: a thing put in by
+ * the one who made it, a thing brought in from outside, new content, a move, archived, taken back from
+ * the archive, a note or a decision written about something, what a session says it is doing, sources
+ * added to a thing, a thing gone with the archive it was in, a command run, a request to the owner.
+ */
+export const FEED_ACTS = ['made', 'brought', 'changed', 'moved', 'archived', 'restored', 'note', 'decision', 'doing', 'basis', 'removed', 'command', 'request'] as const
+export type FeedAct = (typeof FEED_ACTS)[number]
+/**
  * One thing that happened, as a feed tells it: when, who, one sentence, a grey line of `meta`, and
  * `whose` act it was, where that says something: an agent's on its own, the owner's, one the owner
  * approved at an agent's request, or one the app only observed. It carries one quiet `action`, such
  * as the one that undoes it, or `settled`, a grey word saying how it ended, such as that it was taken
  * back; not both. A row with a `link` opens it.
+ *
+ * `act`, `path` and `note` say the same row in parts, so a page can say less: the kind of act, the
+ * library path of the thing it is about, and the words the actor wrote with it (a put's note, the text
+ * of a note or a decision, what a session says it is doing). With `act`, the page draws the act as an
+ * icon and the thing as its name, its folder grey beside it, and the note, when there is one, as the
+ * row's second line in place of `meta`; with no `path` the note is the row's line. `text` stays the
+ * whole sentence: in the row's tooltip, in the text form and wherever the parts are not drawn.
  */
 export type FeedRow = {
   key: string
@@ -747,9 +768,20 @@ export type FeedRow = {
   action?: Action
   settled?: string
   link: Link | null
+  act?: FeedAct
+  path?: LibraryPath
+  note?: string
 }
 /** Rows under a heading, such as a day or a scene; `link` opens what the heading names; `reopen`, the scene's conversation, as a cell's. */
 export type FeedGroup = { title: string; count: number | null; link?: Link; rows: FeedRow[]; reopen?: Reopen }
+/**
+ * One row of a list: its cell, a grey `note` under it, and its actions. `about`: what the row is, said
+ * whole, shown on demand beside the cell, as a section's. `toggle`: the row is a setting that is on or
+ * off, drawn as a switch at its end; turning it runs `action`, which turns it the other way (asking its
+ * `confirm` first), so `action` is the one for the state it is not in. The text form prints the state
+ * and the action's command.
+ */
+export type ListItem = { cell: Cell; note: string | null; actions: Action[]; about?: string; toggle?: { on: boolean; action: Action } }
 /** One figure: a label, a number or a short text, and a grey sentence about it. */
 export type Stat = { label: string; value: string; note: string | null }
 /** The most series a chart draws: each takes the next colour of one small palette, the same in every chart. */
@@ -809,7 +841,7 @@ export type Block =
   | { kind: 'section'; title: string; note: string | null; count: number | null; blocks: Block[]; actions: Action[]; collapse?: 'open' | 'closed'; plugin?: PluginName; about?: string; normal?: true }
   | { kind: 'table'; columns: TableColumn[]; rows: TableRow[]; empty: string; page?: Paging; sorted?: { by: SortKey; desc: boolean }; each?: { actions: Action[]; rename: Action | null } }
   | { kind: 'fields'; fields: { label: string; value: Cell }[]; line?: true }
-  | { kind: 'list'; items: { cell: Cell; note: string | null; actions: Action[] }[]; page?: Paging }
+  | { kind: 'list'; items: ListItem[]; page?: Paging }
   | { kind: 'timeline'; entries: { at: Instant; title: Cell; lines: string[]; tag: Tag | null; actions?: Action[]; actor?: ActorMark | string }[]; page?: Paging }
   | { kind: 'text'; text: string; tone: Tone }
   | { kind: 'preview'; path: LibraryPath }
