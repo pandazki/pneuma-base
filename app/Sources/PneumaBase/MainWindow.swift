@@ -1,4 +1,5 @@
 import AppKit
+import Quartz
 import WebKit
 
 /// The window for the current library: native chrome around the page the server serves. The web
@@ -17,8 +18,10 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
   private var ready = false
   private var pendingScript: String?
   var onFiles: (([URL]) -> Void)?
-  /// A message of the page's own for the app: choose files, open, the libraries' menu, quit.
+  /// A message of the page's own for the app: choose files, open, the libraries' menu, quit, and files of the library.
   var onPageMessage: (([String: Any]) -> Void)?
+  /// The controller of the system's Quick Look panel, taken by the web view while it has files to show.
+  var quickLook: QuickLook?
 
   var isOpen: Bool { window?.isVisible ?? false }
 
@@ -80,7 +83,24 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
 
   /// A line the page shows as its notice: what a drop or the watcher did.
   func notice(tone: String, text: String) {
-    webView?.evaluateJavaScript("window.dispatchEvent(new CustomEvent('pneuma-shell', { detail: { notice: { tone: \(Self.jsString(tone)), text: \(Self.jsString(text)) } } }))")
+    tell(["notice": ["tone": tone, "text": text]])
+  }
+
+  /// A `pneuma-shell` event in the page with this detail.
+  func tell(_ detail: [String: Any]) {
+    guard let webView, let data = try? JSONSerialization.data(withJSONObject: detail) else { return }
+    webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('pneuma-shell', { detail: \(String(decoding: data, as: UTF8.self)) }))")
+  }
+
+  /// The system's context menu at a point of the page, in CSS pixels from its top left.
+  func popUp(_ menu: NSMenu, at point: CGPoint) {
+    guard let webView else { return }
+    menu.popUp(positioning: nil, at: webView.isFlipped ? point : CGPoint(x: point.x, y: webView.bounds.height - point.y), in: webView)
+  }
+
+  /// The system's drag of these files out of the window, from the pointer; false without a mouse event to start it from.
+  func dragFiles(_ urls: [URL], source: FileDragSource) -> Bool {
+    webView?.dragFiles(urls, source: source) ?? false
   }
 
   static func jsString(_ s: String) -> String {
@@ -154,6 +174,7 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
     web.uiDelegate = self
     web.onFiles = { [weak self] urls in self?.onFiles?(urls) }
     web.dropTarget = { [weak self] in "\(self?.currentFolder ?? "inbox")/" }
+    web.quickLook = quickLook
     window?.contentView = web
     // Made first responder now, while the window is not key: becoming key with no first responder
     // selects the first key view as Tab would, and WebKit then puts a focus ring on the first row.
@@ -175,12 +196,15 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
     Log.line("window: closed")
   }
 
-  /// The page dims its chrome while the window is not the key window, as the system's own windows do.
+  /// The page dims its chrome while the window is not the main window, as the system's own windows do;
+  /// a panel taking the keyboard, as Quick Look does, leaves it main.
   func windowDidBecomeKey(_ notification: Notification) { tellWindowState() }
   func windowDidResignKey(_ notification: Notification) { tellWindowState() }
+  func windowDidBecomeMain(_ notification: Notification) { tellWindowState() }
+  func windowDidResignMain(_ notification: Notification) { tellWindowState() }
 
   private func tellWindowState() {
-    let state = window?.isKeyWindow ?? true ? "active" : "inactive"
+    let state = window?.isMainWindow ?? true ? "active" : "inactive"
     webView?.evaluateJavaScript("window.dispatchEvent(new CustomEvent('pneuma-shell', { detail: { window: '\(state)' } }))")
   }
 
@@ -320,6 +344,9 @@ final class ShellWebView: WKWebView {
   var onFiles: (([URL]) -> Void)?
   /// Where files dropped now would go, as the overlay says it.
   var dropTarget: (() -> String)?
+  var quickLook: QuickLook?
+  /// The latest mouse-down or mouse-dragged event: a drag of files out starts from it.
+  private var lastMouse: NSEvent?
 
   func setRegions(drag: [CGRect], noDrag: [CGRect]) {
     self.drag = drag
@@ -337,6 +364,7 @@ final class ShellWebView: WKWebView {
   }
 
   override func mouseDown(with event: NSEvent) {
+    lastMouse = event
     guard drags(at: pagePoint(event)) else { return super.mouseDown(with: event) }
     if event.clickCount == 2 {
       switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
@@ -348,6 +376,30 @@ final class ShellWebView: WKWebView {
     }
     window?.performDrag(with: event)
   }
+
+  override func mouseDragged(with event: NSEvent) {
+    lastMouse = event
+    super.mouseDragged(with: event)
+  }
+
+  /// Files dragged out from the pointer, each with its icon: other applications get a copy.
+  func dragFiles(_ urls: [URL], source: FileDragSource) -> Bool {
+    guard let event = lastMouse, !urls.isEmpty else { return false }
+    let p = convert(event.locationInWindow, from: nil)
+    let items = urls.enumerated().map { i, url in
+      let item = NSDraggingItem(pasteboardWriter: url as NSURL)
+      let offset = CGFloat(min(i, 4) * 4)
+      item.setDraggingFrame(NSRect(x: p.x - 24 + offset, y: p.y - 24 - offset, width: 48, height: 48), contents: NSWorkspace.shared.icon(forFile: url.path))
+      return item
+    }
+    beginDraggingSession(with: items, event: event, source: source)
+    return true
+  }
+
+  // The Quick Look panel, on the main thread, finds its controller along the responder chain, which starts here.
+  override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { MainActor.assumeIsolated { quickLook?.wanted ?? false } }
+  override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) { MainActor.assumeIsolated { quickLook?.begin(panel) } }
+  override func endPreviewPanelControl(_ panel: QLPreviewPanel!) { MainActor.assumeIsolated { quickLook?.end(panel) } }
 
   private static let browserItems: Set<String> = [
     "WKMenuItemIdentifierReload", "WKMenuItemIdentifierGoBack", "WKMenuItemIdentifierGoForward",
@@ -367,14 +419,19 @@ final class ShellWebView: WKWebView {
     info.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
   }
 
+  /// A drag of the window's own files coming back over it: no drop, into the library or the page.
+  private func own(_ info: NSDraggingInfo) -> Bool { info.draggingSource is FileDragSource }
+
   override func draggingEntered(_ info: NSDraggingInfo) -> NSDragOperation {
+    if own(info) { return [] }
     guard !files(info).isEmpty else { return super.draggingEntered(info) }
     showOverlay(true)
     return .copy
   }
 
   override func draggingUpdated(_ info: NSDraggingInfo) -> NSDragOperation {
-    files(info).isEmpty ? super.draggingUpdated(info) : .copy
+    if own(info) { return [] }
+    return files(info).isEmpty ? super.draggingUpdated(info) : .copy
   }
 
   override func draggingExited(_ info: NSDraggingInfo?) {
@@ -383,10 +440,12 @@ final class ShellWebView: WKWebView {
   }
 
   override func prepareForDragOperation(_ info: NSDraggingInfo) -> Bool {
-    files(info).isEmpty ? super.prepareForDragOperation(info) : true
+    if own(info) { return false }
+    return files(info).isEmpty ? super.prepareForDragOperation(info) : true
   }
 
   override func performDragOperation(_ info: NSDraggingInfo) -> Bool {
+    if own(info) { return false }
     let urls = files(info)
     guard !urls.isEmpty else { return super.performDragOperation(info) }
     showOverlay(false)
@@ -477,6 +536,24 @@ extension MainWindow {
 
   func routeForTest(_ fragment: String) {
     webView?.evaluateJavaScript("location.hash = \(Self.jsString(fragment))")
+  }
+
+  /// Runs `js` in the page and logs what it evaluated to, as text on one line.
+  func evalForTest(_ js: String) {
+    guard let webView else { return Log.line("eval: no page") }
+    webView.evaluateJavaScript(js) { result, error in
+      MainActor.assumeIsolated {
+        let text: String
+        if let error, (error as NSError).code != WKError.javaScriptResultTypeIsUnsupported.rawValue {
+          text = "error: \(error.localizedDescription)"
+        } else if let result, !(result is NSNull) {
+          text = result as? String ?? (try? JSONSerialization.data(withJSONObject: result, options: .fragmentsAllowed)).map { String(decoding: $0, as: UTF8.self) } ?? "\(result)"
+        } else {
+          text = "undefined"
+        }
+        Log.line("eval: \(text.replacingOccurrences(of: "\n", with: "\\n"))")
+      }
+    }
   }
 }
 
