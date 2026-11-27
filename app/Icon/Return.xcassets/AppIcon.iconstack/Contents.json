@@ -1,0 +1,54 @@
+{
+  "info": {
+    "author": "xcode",
+    "version": 1
+  },
+  "properties": {
+    "background": [
+      {
+        "icon-studio-idiom": "macOS",
+        "icon-studio-appearance": "light",
+        "icon-studio-localization": "unspecified",
+        "value": {
+          "type": "gradient",
+          "gradient": {
+            "type": "icon-stack-gradient",
+            "name": "Day",
+            "matching-style": "fully-qualified-name"
+          }
+        }
+      },
+      {
+        "icon-studio-idiom": "macOS",
+        "icon-studio-appearance": "dark",
+        "icon-studio-localization": "unspecified",
+        "value": {
+          "type": "gradient",
+          "gradient": {
+            "type": "icon-stack-gradient",
+            "name": "Night",
+            "matching-style": "fully-qualified-name"
+          }
+        }
+      },
+      {
+        "icon-studio-idiom": "macOS",
+        "icon-studio-appearance": "tinted",
+        "icon-studio-localization": "unspecified",
+        "value": {
+          "type": "gradient",
+          "gradient": {
+            "type": "icon-stack-gradient",
+            "name": "Mono",
+            "matching-style": "fully-qualified-name"
+          }
+        }
+      }
+    ]
+  },
+  "groups": [
+    {
+      "filename": "Ribbon.iconstackgroup"
+    }
+  ]
+}

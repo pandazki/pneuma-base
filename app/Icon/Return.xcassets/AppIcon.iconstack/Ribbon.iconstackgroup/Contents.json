@@ -1,0 +1,35 @@
+{
+  "info": {
+    "author": "xcode",
+    "version": 1
+  },
+  "layers": [
+    {
+      "filename": "Fold.iconstacklayer"
+    },
+    {
+      "filename": "Return.iconstacklayer"
+    }
+  ],
+  "properties": {
+    "specular": [
+      {
+        "icon-studio-idiom": "macOS",
+        "icon-studio-appearance": "unspecified",
+        "icon-studio-localization": "unspecified",
+        "value": {
+          "enabled": true,
+          "placement": "inside"
+        }
+      }
+    ],
+    "lighting": [
+      {
+        "icon-studio-idiom": "macOS",
+        "icon-studio-appearance": "unspecified",
+        "icon-studio-localization": "unspecified",
+        "value": "individual"
+      }
+    ]
+  }
+}

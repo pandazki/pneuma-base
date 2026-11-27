@@ -1,0 +1,29 @@
+{
+  "info": {
+    "author": "xcode",
+    "version": 1
+  },
+  "properties": {
+    "type": "linear-gradient",
+    "primary-color": {
+      "type": "color",
+      "name": "MonoTop",
+      "matching-style": "fully-qualified-name"
+    },
+    "secondary-color": {
+      "type": "color",
+      "name": "MonoBottom",
+      "matching-style": "fully-qualified-name"
+    },
+    "orientation": {
+      "start": {
+        "x": 0.5,
+        "y": 0
+      },
+      "stop": {
+        "x": 0.5,
+        "y": 1
+      }
+    }
+  }
+}
