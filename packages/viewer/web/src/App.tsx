@@ -27,10 +27,13 @@ const KEPT = 24
 /**
  * Loads `load()` whenever `key` or `tick` changes, and again `every(answer)` seconds after an answer
  * that asks for it. The last answer for a key stays on screen while it is asked for again, so a
- * refresh never empties the page; another key shows nothing until its own answer comes.
+ * refresh never empties the page; another key shows nothing until its own answer comes, but another
+ * page of the same view, whose key differs only in where its lists start, keeps the page it turned
+ * from on screen, so the keyboard stays where it was.
  */
 function useLoad<T>(key: string | null, tick: number, load: () => Promise<T>, every: (answer: T) => number | undefined = () => undefined): Load<T> {
   const kept = useRef(new Map<string, T>())
+  const lastShown = useRef<{ key: string; data: T } | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
   const [, setAnswers] = useState(0)
   const [again, setAgain] = useState(0)
@@ -58,7 +61,16 @@ function useLoad<T>(key: string | null, tick: number, load: () => Promise<T>, ev
       window.clearTimeout(timer)
     }
   }, [key, tick, again])
-  return { data: key === null ? null : (kept.current.get(key) ?? null), failed: key !== null && failed === key }
+  const own = key === null ? null : (kept.current.get(key) ?? null)
+  if (own !== null && key !== null) lastShown.current = { key, data: own }
+  const turned = own === null && key !== null && lastShown.current !== null && unpaged(lastShown.current.key) === unpaged(key) ? lastShown.current.data : null
+  return { data: own ?? turned, failed: key !== null && failed === key }
+}
+
+/** A view's key without where its lists start: the same for every page of it. */
+const unpaged = (key: string) => {
+  const [view, params] = JSON.parse(key) as [string, [string, string][]]
+  return JSON.stringify([view, params.filter(([name]) => !/(^|\.)(after|back)$/.test(name))])
 }
 
 /** A view's own pace: the seconds its answer gave as `refresh`, for state from outside the library. */
@@ -237,7 +249,7 @@ export function App() {
   const [palette, setPalette] = useState(false)
   const [changedAt, setChangedAt] = useState<Date | null>(null)
   const toasts = useToasts()
-  const { busy, settle } = toasts
+  const { busy, settle, report } = toasts
   const [prefs, setPrefs] = usePrefs()
   const [resizing, setResizing] = useState(false)
   const [keepSide, setKeepSide] = useState(false)
@@ -345,7 +357,7 @@ export function App() {
       const id = busy(action.label)
       let done: Done
       try {
-        const reply = await api.call(fill(action.call, values, action.inputs), confirmed)
+        const reply = await api.pass(fill(action.call, values, action.inputs), confirmed, (progress, pass) => report(id, progress, () => void api.stop(pass).catch(() => undefined)))
         settle(id, reply.tone, reply.text, offerOf(reply.result))
         done = { tone: reply.tone, text: reply.text }
       } catch (error) {
@@ -356,7 +368,7 @@ export function App() {
       refresh()
       return done
     },
-    [refresh, busy, settle],
+    [refresh, busy, settle, report],
   )
 
   const onLink = useCallback(
@@ -394,7 +406,15 @@ export function App() {
     window.addEventListener('pneuma-shell', heard)
     return () => window.removeEventListener('pneuma-shell', heard)
   }, [onLink, push, refresh])
-  const env: BlockEnv = useMemo(() => ({ tick, onLink, onAction, onParam: onMainParam, selected }), [tick, onLink, onAction, onMainParam, selected])
+  const onPage = useCallback(
+    (link: Link) => {
+      const req = { view: link.view, params: link.params }
+      if (link.target === 'main') go((r) => ({ ...r, main: req }))
+      else go((r) => retop(r, req))
+    },
+    [go],
+  )
+  const env: BlockEnv = useMemo(() => ({ tick, onLink, onAction, onParam: onMainParam, onPage, selected }), [tick, onLink, onAction, onMainParam, onPage, selected])
   const panelEnv: BlockEnv = useMemo(() => ({ ...env, onParam: onPanelParam }), [env, onPanelParam])
   const dialog = usePresence(pending, 200)
   const paletteShown = usePresence(palette ? true : null, 150)

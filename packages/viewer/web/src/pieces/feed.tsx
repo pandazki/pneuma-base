@@ -11,6 +11,7 @@ import { ActionButton, CellView, Moment, wantsTab } from '../cells'
 import { useEnv } from '../env'
 import { columnTime } from '../time'
 import { ActorBadge } from './actor'
+import { Pager, turns } from './pager'
 
 type Feed = Extract<Block, { kind: 'feed' }>
 
@@ -137,6 +138,11 @@ export function FeedView({ block }: { block: Feed }) {
           </section>
         ),
       )}
+      {turns(block.page) ? (
+        <div className="feed-pager">
+          <Pager page={block.page} />
+        </div>
+      ) : null}
     </div>
   )
 }

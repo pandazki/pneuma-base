@@ -7,7 +7,7 @@ import { eachPlugin } from './pipeline.js'
 import { changesSince } from './changes.js'
 import { storageOf, type Storage } from './storage.js'
 import { DESCRIPTION_FILE, KERNEL_DIR, ARCHIVE_DIR } from './paths.js'
-import { isDescribed, type Context, type LibraryPath, type Place } from '@pneuma-base/sdk'
+import { isDescribed, type Context, type Library, type LibraryPath, type Place, type Probe } from '@pneuma-base/sdk'
 
 export type DirKind = 'open' | 'thing' | 'closed'
 
@@ -34,6 +34,15 @@ export function dirKind(dir: Place, registered: Registered): DirKind {
   return registered.things.has(dir) ? 'thing' : 'closed'
 }
 
+/**
+ * What a budgeted look into a directory found, in words: how many files, at least that many when the
+ * look stopped at its budget, and whether it looks like a project, by the well-known names at its top.
+ */
+export function probeWords(p: Probe): string {
+  const files = p.exceeded ? (p.files > 0 ? `至少 ${p.files} 个文件` : `至少 ${p.dirs} 个目录`) : p.files > 0 ? `${p.files} 个文件` : p.dirs > 0 ? `没有文件，${p.dirs} 个目录` : '空的'
+  return p.markers.length === 0 ? files : `${files}，像一个项目（${p.markers.join('、')}）`
+}
+
 /** The kernel's own names at the root, which no listing of the content mentions as anything. */
 export const KERNEL_ENTRIES: ReadonlySet<string> = new Set([KERNEL_DIR, DESCRIPTION_FILE, ARCHIVE_DIR])
 
@@ -41,6 +50,9 @@ export const KERNEL_ENTRIES: ReadonlySet<string> = new Set([KERNEL_DIR, DESCRIPT
 export const placeIn = (dir: Place, name: string): Place => (dir === '' ? name : `${dir}/${name}`)
 
 /** The open directories every plugin's records make, and the root: where the management UI's change poll looks. */
+/** Whether a plugin of the library keeps records of what is registered; without one no directory is opened by them, and folders are only folders. */
+export const keepsRecords = (library: Library): boolean => library.plugins.some((p) => p.openDirs !== undefined)
+
 export async function openDirectories(ctx: Context): Promise<Place[]> {
   const heard = await eachPlugin(ctx, (plugin, pctx) => plugin.openDirs?.(pctx))
   return [...new Set<Place>(['', ...heard.values.flatMap(({ value }) => value)])].sort()

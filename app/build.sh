@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds app/dist/Pneuma Base.app from this checkout: self-contained, signed ad hoc. Inside are a Node
-# program and the command line (with the management pages and the five built-in plugins); the app runs
-# only those. One command, no Xcode project.
+# program and the command line (with the management pages, the five built-in plugins, the local folder's
+# storage provider and the contract suite's program); the app runs only those. One command, no Xcode project.
 #   app/build.sh [--node <path>] [--dist]
 # The Node is --node, else $PNEUMA_BASE_NODE, else the `node` on PATH. It must meet the command line's
 # Node floor and depend on nothing outside macOS itself, as the builds from nodejs.org do; Homebrew's
@@ -55,6 +55,11 @@ mkdir -p "$contents/MacOS" "$contents/Resources"
 cp "$bin" "$contents/MacOS/Pneuma Base"
 cp "$node" "$contents/MacOS/node"
 mv .build/app-stage/package "$contents/Resources/cli"
+# Storage's programs come inside the command line's package: the local folder's provider and the contract
+# suite's program, built on this Mac. The product is for Apple-silicon Macs only.
+kbin="$contents/Resources/cli/node_modules/@pneuma-base/kernel/bin"
+for program in pneuma-base-core pneuma-base-contract; do [ -x "$kbin/$program" ] || { echo "$kbin/$program is missing" >&2; exit 1; }; done
+[ "$(cat "$kbin/platform")" = darwin-arm64 ] || { echo "storage's programs are built for $(cat "$kbin/platform"); the app is for darwin-arm64: build it on an Apple-silicon Mac" >&2; exit 1; }
 cp Resources/shell.js Resources/parent-watch.mjs "$contents/Resources/"
 sed -e "s|@VERSION@|$version|" Resources/Info.plist > "$contents/Info.plist"
 swift Tools/icon.swift "$contents/Resources/AppIcon.icns"

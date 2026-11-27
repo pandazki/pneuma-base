@@ -2,11 +2,16 @@
 # Checks the built app without a person, along the path a new owner walks, with a temporary HOME
 # and a temporary PNEUMA_BASE_HOME, so no real agent configuration or library is read or written.
 # Build it first: app/build.sh. Everything runs on the app's own Node and command line, with nothing
-# on PATH but system tools. The first launch points the machine's launcher at the app's Node and
-# command line and shows the welcome window; choosing a folder (the same code, by a test hook) makes
-# it a library and opens the window on home with 「开始」; a file dropped on the window (the drop code,
-# by a test hook) is put as brought by the owner, into inbox/ or the folder the library page shows; a file written straight into the library is
-# registered as the owner's and seen, a direct change recorded as seen; an agent's puts stay the
+# on PATH but system tools. The app carries the local folder's storage provider and the contract
+# suite's program for darwin-arm64. The first launch points the machine's launcher at the app's Node and
+# command line and shows the welcome window, which offers where to keep the library: with the one
+# provider, a folder; choosing a folder (the same code, by a test hook) makes it a library and opens
+# the window on home with 「开始」; the watcher is the provider's own subscription, a child of the app;
+# a file dropped on the window (the drop code, by a test hook) is put as brought by the owner, into
+# inbox/ or the folder the library page shows; a file written straight into the library is heard
+# through the subscription and registered as the owner's and seen, a direct change recorded as seen; a
+# small plain folder written in is registered as one thing, a project folder of 80,000 files is the
+# ledger's question and nothing in it is registered; an agent's puts stay the
 # agent's; connecting the fake Claude Code folds the first step; with env -i and system tools only,
 # the exact command lines the installed skill names and the command the fake Claude Desktop's MCP
 # entry names work, and what they do is the agent's; an ask puts the dot on the icon and shows in the
@@ -15,7 +20,7 @@
 # home with its code and, allowed, lets the application put by MCP over HTTP under its own name;
 # 在终端里用 pneuma-base puts a link in a folder on PATH and takes it out; a moved copy
 # of the app repoints the launcher and the agents keep working; quitting and killing the app leave no
-# process behind.
+# process behind: no app, no server, no storage provider.
 #
 # Only the copy of the app this script starts is driven or stopped: it has its own hook name and is
 # found by it, never by the app's name. With PNEUMA_BASE_SHOTS set to a folder, it saves pictures of
@@ -64,6 +69,12 @@ status=0
 
 start
 wait_for "welcome: shown" 10 && ok "first launch with no library: the welcome window" || fail "first launch: the welcome window"
+hook "text-welcome:$work/welcome.txt"; sleep 1
+grep -q "^places: 本机文件夹（local-folder）$" "$work/welcome.txt" && grep -q "^picker: hidden$" "$work/welcome.txt" && grep -q "^button: 选一个文件夹…$" "$work/welcome.txt" && grep -q "^other: 安装别的存储…$" "$work/welcome.txt" \
+  && ok "where to keep the library: with the one provider, choosing a folder; 安装别的存储… beside it" || fail "the welcome window offers: $(cat "$work/welcome.txt" 2>&1)"
+kbin="$app/Contents/Resources/cli/node_modules/@pneuma-base/kernel/bin"
+[ -x "$kbin/pneuma-base-core" ] && [ -x "$kbin/pneuma-base-contract" ] && [ "$(cat "$kbin/platform")" = darwin-arm64 ] && ok "the app carries the provider and the contract suite's program, for darwin-arm64" || fail "the app's storage programs: $(ls "$kbin" 2>&1)"
+pb storage list | grep -q "^    程序：$kbin/pneuma-base-core$" && ok "storage list: the local folder, built in, runs from the app" || fail "storage list: $(pb storage list 2>&1)"
 wait_for "launcher: written" 10 && ok "first launch writes the launcher $launcher" || fail "the launcher: $(grep 'launcher:' "$log")"
 grep -q "exec '$app/Contents/MacOS/node' '$app/Contents/Resources/cli/dist/bin.js'" "$launcher" && grep -q "PNEUMA_BASE_HOME='$pb_home'" "$launcher" && ok "the launcher runs the app's own Node and command line, with this home" || fail "the launcher's content: $(cat "$launcher")"
 snap snap-welcome first-launch
@@ -75,6 +86,9 @@ pid=$(app_pid)
 child=$(pgrep -P "$pid" -f "parent-watch.mjs" || true)
 [ -n "$child" ] && ok "the server is a child of the app (pid $child)" || fail "server child running"
 ps -o command= -p "$child" | grep -q "$app/Contents/MacOS/node .*$app/Contents/Resources/cli/dist/bin.js view" && ok "the server runs the app's own Node and command line" || fail "the server runs: $(ps -o command= -p "$child")"
+wait_for "watcher: subscribed to 我的库" 15 || true
+storage=$(pgrep -P "$pid" -f "pneuma-base-core serve" || true)
+[ -n "$storage" ] && ps -o command= -p "$storage" | grep -q "^$kbin/pneuma-base-core serve --root $lib$" && ok "the watcher is the provider's subscription: $kbin/pneuma-base-core serve, a child of the app (pid $storage)" || fail "the watcher's provider: $(grep 'watcher:' "$log" | head -3) $(ps -o command= -p "${storage:-0}" 2>&1)"
 page_shows home-0.txt "接上你的 agent" 10 && page_text home-0.txt | grep -q "做完了 0 步，还有 3 步" && ok "home opens with 开始, 0 of 3 done" || fail "home opens with 开始: $(head -c 300 "$work/home-0.txt")"
 
 echo "dropped" > "$work/Downloads/dropped.txt"
@@ -82,7 +96,7 @@ hook "drop-window:$work/Downloads/dropped.txt"
 wait_for "drop (窗口): placed" 10 && ok "drop on the window: placed" || fail "drop on the window: placed"
 pb --library "$lib" inspect inbox/dropped.txt | grep -q "带进来的，主人给的 · 主人" && ok "drop: inbox/dropped.txt, brought by the owner" || fail "drop: brought by the owner: $(pb --library "$lib" inspect inbox/dropped.txt | head -3)"
 pb --library "$lib" inspect inbox/dropped.txt | grep -q "出处：Downloads" && ok "drop: its source is the folder it came from" || fail "drop: source"
-page_shows home-1.txt "库里有 1 样东西" 10 && ok "the second step folds: 库里有 1 样东西" || fail "the second step folds"
+page_shows home-1.txt "库的根目录里有 1 样东西" 10 && ok "the second step folds: 库的根目录里有 1 样东西" || fail "the second step folds"
 hook "route:view=ledger.items&view.dir=docs"
 sleep 1
 echo "into the folder shown" > "$work/Downloads/shown.txt"
@@ -100,12 +114,32 @@ hex=$(printf '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><array>
 xattr -wx com.apple.metadata:kMDItemWhereFroms "$hex" "$work/Downloads/report.pdf"
 cp "$work/Downloads/report.pdf" "$lib/report.pdf"
 wait_for "watcher: registered.*direct.txt" 20 && ok "a file written into the library: registered by the watcher" || fail "a file written into the library: registered"
+grep -q "watcher: heard .*direct.txt" "$log" && ok "heard through storage's subscription" || fail "heard through the subscription: $(grep 'watcher: heard' "$log" | head -3)"
 pb --library "$lib" inspect direct.txt | grep -q "带进来的，主人给的（自动登记） · 主人" && ok "it is the owner's, seen: 带进来的，主人给的（自动登记）" || fail "it is the owner's, seen: $(pb --library "$lib" inspect direct.txt | head -3)"
 pb --library "$lib" inspect report.pdf | grep -q "出处：https://example.com/files/report.pdf" && ok "xattr: the download address is the source" || fail "xattr: the download address is the source"
 
 echo "changed in place" >> "$lib/inbox/dropped.txt"
 wait_for "watcher: registered \[\] seen \[\"inbox/dropped.txt\"\]" 20 && ok "a direct change: recorded" || fail "a direct change: recorded"
 pb --library "$lib" inspect inbox/dropped.txt | grep -q "直接改的，自动登记" && ok "it is recorded as seen: 直接改的，自动登记" || fail "the change is recorded as seen"
+
+# A small plain folder written in is registered as one thing; a project folder of 80,000 files is the ledger's question.
+mkdir -p "$lib/photos" && for i in 1 2 3; do echo "photo $i" > "$lib/photos/p$i.jpg"; done
+wait_for "watcher: registered.*photos" 20 && pb --library "$lib" inspect photos | grep -q "带进来的，主人给的（自动登记）" && ok "a small plain folder written in: registered as one thing, the owner's, seen" || fail "the small folder: $(grep 'watcher:' "$log" | tail -3) $(pb --library "$lib" inspect photos | head -3)"
+/usr/bin/python3 -c "
+import os, sys
+root = sys.argv[1]
+os.makedirs(root)
+open(os.path.join(root, 'package.json'), 'w').write('{\"name\": \"proj\"}\n')
+for d in range(400):
+    os.makedirs(os.path.join(root, 'src', 'd%03d' % d))
+    for f in range(200):
+        open(os.path.join(root, 'src', 'd%03d' % d, 'f%03d.ts' % f), 'w').write('export {}\n')
+" "$lib/proj"
+found=$(find "$lib/proj" -type f | wc -l | tr -d ' ')
+page_shows home-proj.txt "proj/ 没登记" 60 && ok "a project folder of $found files written in: the ledger's question on home, proj/ 没登记" || fail "the project folder's question: $(grep -n 'proj' "$work/home-proj.txt" | head -3)"
+wait_for "watcher: proj/ is a question" 30 && ok "the watcher's probe: $(grep -o 'watcher: proj/ is a question.*' "$log" | head -1 | sed 's/watcher: //')" || fail "the watcher on proj/: $(grep 'watcher: storage cannot say\|watcher: looked\|watcher: heard' "$log" | tail -3)"
+pb --library "$lib" inspect proj | grep -q "^proj/ · 目录，没有登记，至少 [0-9]* 个文件，顶上有 package.json$" && ok "proj/ is not a thing: $(pb --library "$lib" inspect proj | head -1)" || fail "proj/: $(pb --library "$lib" inspect proj | head -5)"
+! grep -q "watcher: registered.*proj" "$log" && ! pb --library "$lib" find f000 | grep -q "proj/" && ok "nothing in it is registered" || fail "registered from proj/: $(grep 'watcher: registered' "$log" | tail -2) $(pb --library "$lib" find f000 | head -3)"
 
 page_text home-2.txt | grep -q "Claude Code" && ok "step 1 lists Claude Code, found in the fake HOME" || fail "step 1 lists Claude Code"
 pb --library "$lib" agent connect claude-code >/dev/null
@@ -118,7 +152,7 @@ echo "# 书单" > "$work/books.md"
 line() { grep "^$launcher @claude-code $1 " "$skill" | sed 's/ *#.*//'; }
 start_line=$(line start | sed 's/"<一句话：这次在做什么>"/整理读书笔记/')
 put_line=$(line put | sed -e "s|<库外的文件或目录>|$work/books.md|" -e 's|<库内路径>|notes/books.md|' -e 's| --from <依据的库内路径…>||')
-find_line=$(line find | sed 's/<文字>/书单/')
+find_line=$(line find | sed 's/<文字>/books/')
 [ -n "$start_line" ] && [ -n "$put_line" ] && [ -n "$find_line" ] && ok "the skill names the launcher by absolute path in its three command lines" || fail "the skill's command lines: $(grep '@claude-code' "$skill")"
 for l in "$start_line" "$put_line" "$find_line"; do
   out=$(bare "$l" 2>&1) && echo "     \$ $l" && echo "$out" | sed -n '1,3s/^/       /p' || fail "with env -i: $l: $out"
@@ -190,7 +224,7 @@ grep -q "在终端里用 pneuma-base：关着" "$work/settings.txt" && grep -q "
 grep -q "PATH 上能放的文件夹：.*$work/bin" "$work/settings.txt" && ok "settings: a folder on the owner's PATH they can write is offered" || fail "settings: the PATH folders: $(cat "$work/settings.txt")"
 snap snap-settings settings
 hook "path-link:$work/bin"; sleep 1
-[ "$(readlink "$work/bin/pneuma-base")" = "$launcher" ] && env -i HOME="$fake_home" PATH="$work/bin:/usr/bin:/bin" pneuma-base --library "$lib" find 书单 | grep -q "notes/books.md" && ok "在终端里用 pneuma-base: a link on PATH, and pneuma-base runs in a terminal" || fail "the link on PATH: $(ls -l "$work/bin")"
+[ "$(readlink "$work/bin/pneuma-base")" = "$launcher" ] && env -i HOME="$fake_home" PATH="$work/bin:/usr/bin:/bin" pneuma-base --library "$lib" find books | grep -q "notes/books.md" && ok "在终端里用 pneuma-base: a link on PATH, and pneuma-base runs in a terminal" || fail "the link on PATH: $(ls -l "$work/bin")"
 hook path-unlink; sleep 1
 [ ! -e "$work/bin/pneuma-base" ] && [ ! -L "$work/bin/pneuma-base" ] && ok "turned off: the link is gone" || fail "the link is left"
 
@@ -199,6 +233,8 @@ i=0; while kill -0 "$pid" 2>/dev/null && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1))
 sleep 1
 kill -0 "$pid" 2>/dev/null && fail "quit: the app is still running" || ok "quit: the app ended"
 kill -0 "$child" 2>/dev/null && fail "quit: the server $child is left" || ok "quit: no server left"
+left=$(pgrep -f "pneuma-base-core serve --root $lib" || true)
+[ -z "$left" ] && ok "quit: no storage provider left" || fail "quit: storage providers left: $(ps -o pid=,command= -p "$(echo $left | tr ' ' ',')")"
 
 # The app moves: a copy elsewhere repoints the launcher at its own Node and command line, and the
 # agents' entries, untouched, keep working. Moved away, the launcher dangles and agent list says so;
@@ -226,5 +262,7 @@ child=$(pgrep -P "$pid" -f "parent-watch.mjs" || true)
 kill -9 "$pid"
 sleep 1.5
 [ -n "$child" ] && ! kill -0 "$child" 2>/dev/null && ok "kill -9: no server left" || fail "kill -9: left ${child:-no server seen}"
+left=$(pgrep -f "pneuma-base-core serve --root $lib" || true)
+[ -z "$left" ] && ok "kill -9: no storage provider left" || fail "kill -9: storage providers left: $left"
 echo "library left in $lib"
 exit $status

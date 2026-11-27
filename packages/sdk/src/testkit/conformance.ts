@@ -20,7 +20,7 @@ export const RULES: Record<CheckName, string> = {
   examples: '认知段里的每条命令示例，在一个新库上做完准备步骤之后，照原样在 agent 的会话里能跑，退出码是 0',
   hooks: '每个钩子在空库上、在每个动词之后都不抛错，答复里没有这个插件的问题；登记已在库里的文件（插件收到的指纹是 null，凭 now.token 认它）和登记一个目录这一层的散文件（插件收到一次 register-files）也一样',
   writes: '插件只往库里自己名下的 .pneuma-base/<插件名>/ 写；那里已有的文件不改写、不删（声明为配置的文件、缓存目录和破坏性的主人命令除外）；视图和条目面板里的一节什么都不写',
-  bounded: '插件只在自己的记录指到的地方问存储，一次只取一页：一个钩子或命令里，一览和探查库的内容合起来不超过 1000 条；没人登记过的目录，它和它下面的地方，不一览、不探查、不取内容、不读',
+  bounded: '插件只在自己的记录指到的地方问存储，一次只取一页：一个钩子或命令里，一览和探查库的内容合起来不超过 1000 条；没人登记过的目录只在它自己那里带预算地探查，不一览、不取内容、不读，它下面的地方什么都不问',
   cache: '缓存删掉什么都不丢：删掉它在本机的缓存目录、声明为缓存的目录和它记录处的行前后，找、看、查的答复一样',
   blocks: '视图和条目面板里的一节答复的都是合法的块，钩子不抛错；每个动作调的是一个动词或这个库里在的一条主人命令，参数合它的参数表；custom 块带 text，用字说出它画的；custom 块指向的页面在插件的 ui 目录里，取得到，载入 /plugin-kit/frame.js，脚本里调用 pneuma.onData',
   remove: '卸下插件之后库照常能用：配置和说明里没有它，动词照常答复、没有问题，界面没有它的视图，内容一样不少',
@@ -365,7 +365,9 @@ function boundedWatch(log: string, plugin: string, fail: (c: CheckName, what: st
     if (listed > PAGE) fail('bounded', `${what}时，它一览和探查库的内容共取了 ${listed} 条，多于一页（${PAGE} 条）`)
     const inside = asked.flatMap((c) => {
       const dir = UNREGISTERED.find((d) => c.place !== undefined && within(c.place, d))
-      return dir === undefined || LOOKS[c.tool] === undefined ? [] : [`${what}时，它${LOOKS[c.tool]}了没人登记过的目录 ${dir}：${c.place}`]
+      // A budgeted probe of the directory itself is how a closed directory is looked at; anything else there or below it is not.
+      if (dir === undefined || LOOKS[c.tool] === undefined || (c.tool === 'probe' && c.place === dir)) return []
+      return [`${what}时，它${LOOKS[c.tool]}了没人登记过的目录 ${dir}：${c.place}`]
     })
     for (const problem of new Set(inside)) fail('bounded', problem)
     return result

@@ -62,13 +62,13 @@ async function firstThingStep({ ctx }: ViewerCall): Promise<Step> {
   const { root } = ctx.library
   const page = await storageOf(root).overview('', { limit: FIRST_LOOK })
   const things = isFailure(page) ? [] : page.entries.filter((e) => !KERNEL_ENTRIES.has(e.place) && !e.place.startsWith('.'))
-  const atLeast = !isFailure(page) && page.more !== null ? '至少 ' : ''
+  const atLeast = !isFailure(page) && page.more !== null ? '至少 ' : ' '
   const command = `pneuma-base put <文件或文件夹> --to ${INBOX}/<名字> --brought --by owner --library ${shellWord(root)}`
   return {
     key: 'first',
     title: '放进第一样东西',
     done: things.length > 0,
-    summary: things.length > 0 ? `库的根目录里有 ${atLeast}${things.length} 样东西` : null,
+    summary: things.length > 0 ? `库的根目录里有${atLeast}${things.length} 样东西` : null,
     blocks: [{ kind: 'drop', to: INBOX, command }],
   }
 }

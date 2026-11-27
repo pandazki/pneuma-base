@@ -54,8 +54,23 @@ export type Library = {
   readonly clashes: readonly PluginProblem[]
 }
 
-/** `home` is this machine's `$PNEUMA_BASE_HOME`: local grant files, external plugins, plugin caches. */
-export type Context = { library: Library; actor: Actor; session: Session; now: Instant; home: string }
+/**
+ * `home` is this machine's `$PNEUMA_BASE_HOME`: local grant files, external plugins, plugin caches.
+ * `pass`: where a named whole pass the operation runs reports how far it is and hears that it should
+ * stop, given by the face that started it; absent, nobody watches and nothing stops it.
+ */
+export type Context = { library: Library; actor: Actor; session: Session; now: Instant; home: string; pass?: Pass }
+
+/** How far a named whole pass is: `done` of `total` (at least `total` with `atLeast`; null while unknown), and one sentence that says so. */
+export type PassProgress = { done: number; total: number | null; atLeast?: boolean; text: string }
+
+/**
+ * The channel of a named whole pass (deep check, registering everything in a directory): the command
+ * line prints each report on standard error and stops on Ctrl-C; the page shows the reports with a way
+ * to stop. The first report says how much the pass will do. `stopped` turns true once the person asks
+ * it to stop; the pass then ends after the step under way, keeping what it did.
+ */
+export type Pass = { report(progress: PassProgress): void; stopped(): boolean }
 
 /**
  * The context a plugin's hook receives: the operation's context, its cache directory outside the
@@ -307,6 +322,7 @@ export type SayAnswer =
 /**
  * `deep`: the named whole pass, which reads the content of every registered thing (under `dir`, all of
  * them when null) and says how much first; without it check compares state tokens and reads no content.
+ * The plugin that does the pass gives what it found as its first section.
  */
 export type CheckRequest = { since: Instant | 'last' | null; includeArchived: boolean; deep?: { dir: LibraryPath | null } }
 /**
@@ -560,8 +576,12 @@ export interface Plugin {
   /** The views it adds to the management UI. Each id starts with `<name>.`. */
   readonly views?: readonly ViewDecl[]
   readonly onView?: (req: ViewRequest, ctx: PluginContext) => Promise<ViewAnswer>
-  /** What it knows about one library path, as one section of the kernel's item panel: onInspect's counterpart in the UI. */
-  readonly onItemView?: (path: LibraryPath, ctx: PluginContext) => Promise<ItemSection | null>
+  /**
+   * What it knows about one library path, as one section of the kernel's item panel: onInspect's
+   * counterpart in the UI. `panel`: the panel's parameters, where its long lists' pages stand
+   * (`pagingOf` with a `name` of its own and target `panel`), and how many rows a page holds.
+   */
+  readonly onItemView?: (path: LibraryPath, ctx: PluginContext, panel?: { params: Record<string, string>; size: number }) => Promise<ItemSection | null>
   /** The absolute path of the directory its `custom` blocks' pages are in, such as `ui/` beside its `index.js`. */
   readonly ui?: string
 }
@@ -619,6 +639,13 @@ export type ActionInput = {
 export type Action = { label: string; tone: 'default' | 'danger'; confirm: string | null; inputs: ActionInput[]; call: Call }
 
 export type TableRow = { key: string; cells: Record<string, Cell>; link: Link | null; actions: Action[] }
+/**
+ * Where one page of a long list stands: `first`, the place of its first row counted from 1, and
+ * `shown`, how many rows it shows; `total`, how many rows the whole list has, or with `atLeast` how
+ * many at least; the pages before and after it, null at either end. The sdk's `pagingOf` makes it
+ * from the view's parameters.
+ */
+export type Paging = { first: number; shown: number; total: number; atLeast?: true; prev: Link | null; next: Link | null }
 /** An `optional` column steps aside, the last one first, when the table has no room to show every column whole. */
 export type TableColumn = { key: string; label: string; optional?: boolean }
 
@@ -682,20 +709,22 @@ export type Step = { key: string; title: string; done: boolean; summary: string 
  * axis in `unit` (such as 样 or 次); `text` is the one sentence that says what it shows, the chart's
  * caption on the page; `show` prints the sentence and a table of the numbers. At most
  * `CHART_SERIES_MAX` series, each with a value for every `x` label; stacked values are not negative.
+ * `page` on a table, a list, a timeline or a feed: its rows are one page of a longer list, the page
+ * drawn under them with the total and the way to the pages before and after.
  */
 export type Block =
   | { kind: 'section'; title: string; note: string | null; count: number | null; blocks: Block[]; actions: Action[]; collapse?: 'open' | 'closed'; plugin?: PluginName }
-  | { kind: 'table'; columns: TableColumn[]; rows: TableRow[]; empty: string }
+  | { kind: 'table'; columns: TableColumn[]; rows: TableRow[]; empty: string; page?: Paging }
   | { kind: 'fields'; fields: { label: string; value: Cell }[] }
-  | { kind: 'list'; items: { cell: Cell; note: string | null; actions: Action[] }[] }
-  | { kind: 'timeline'; entries: { at: Instant; title: Cell; lines: string[]; tag: Tag | null; actions?: Action[] }[] }
+  | { kind: 'list'; items: { cell: Cell; note: string | null; actions: Action[] }[]; page?: Paging }
+  | { kind: 'timeline'; entries: { at: Instant; title: Cell; lines: string[]; tag: Tag | null; actions?: Action[] }[]; page?: Paging }
   | { kind: 'text'; text: string; tone: Tone }
   | { kind: 'preview'; path: LibraryPath }
   | { kind: 'actions'; actions: Action[] }
   | { kind: 'empty'; title: string; hint: string | null }
   | { kind: 'embed'; url: string; title: string; height: number }
   | { kind: 'custom'; entry: string; height: number; text: string; data: unknown; actions: Record<string, Action>; plugin?: PluginName }
-  | { kind: 'feed'; groups: FeedGroup[]; empty: string }
+  | { kind: 'feed'; groups: FeedGroup[]; empty: string; page?: Paging }
   | { kind: 'stats'; stats: Stat[] }
   | { kind: 'tree'; param: string; selected: string; nodes: TreeNode[] }
   | { kind: 'asks'; asks: Ask[]; empty: string }
@@ -715,7 +744,8 @@ export type ViewFilter = { name: string; label: string; options: FilterOption[];
 export type ViewDecl = { id: string; title: string; icon: IconName; nav: boolean; filters: ViewFilter[]; ownerOnly?: boolean; home?: boolean }
 /** A view as the library lists it, with who gives it. */
 export type ListedView = ViewDecl & { by: PluginName | 'kernel' }
-export type ViewRequest = { view: string; params: Record<string, string> }
+/** `size`: how many rows a page of a long list holds, as the face asks: `PAGE_ROWS` on the page, `TEXT_ROWS` in the text form; absent, `PAGE_ROWS`. */
+export type ViewRequest = { view: string; params: Record<string, string>; size?: number }
 /**
  * `refresh`: seconds after which the page asks again, at least 5: for a view showing state from
  * outside the library, or one whose content changes with the clock. A view runs on the machine of
@@ -726,7 +756,8 @@ export type ViewRequest = { view: string; params: Record<string, string> }
  */
 export type ViewAnswer = { title: string; subtitle: string | null; blocks: Block[]; refresh?: number; filters?: { name: string; options: FilterOption[] }[]; open?: Link }
 export type ViewResult =
-  | ({ outcome: 'shown' } & ViewAnswer & { problems: PluginProblem[] })
+  /** `icon`: the kernel's item panel gives the icon of the kind of thing it shows, instead of the view's. */
+  | ({ outcome: 'shown' } & ViewAnswer & { problems: PluginProblem[]; icon?: IconName })
   | { outcome: 'no-such-view'; problems: PluginProblem[] }
   | { outcome: 'refused'; reason: 'agent-session'; text: string; problems: PluginProblem[] }
 /** Every view of a library: the plugins' first, in configuration order, then the kernel's. */

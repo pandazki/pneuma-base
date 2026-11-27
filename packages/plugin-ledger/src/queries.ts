@@ -106,6 +106,7 @@ export async function itemViewOf(records: Read, item: ItemRow): Promise<ItemView
     dependents,
     said: saidOf(item, history, scene),
     state: stateOfRow(item, bundle),
+    fingerprint: item.fingerprint,
     versions: history.filter((h): h is Version => h.kind === 'version'),
     held: held.map((h) => h.path),
     archived: archived(item),

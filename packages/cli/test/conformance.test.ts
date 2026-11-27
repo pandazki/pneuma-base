@@ -97,6 +97,15 @@ describe('conformance over plugins that break the rules', () => {
     expect(r.text).toContain(`规则：${r.checks.find((c) => c.name === 'bounded')?.rule}`)
   })
 
+  it('lets a plugin probe a directory nobody registered, once and budgeted, and names any look below it', async () => {
+    const r = await conformance(fixture('peeker'), { cli })
+    const failed = Object.fromEntries(r.checks.filter((c) => !c.ok).map((c) => [c.name, c.problems]))
+    expect(Object.keys(failed), r.text).toEqual(['bounded'])
+    expect(failed.bounded).toContain('check时，它探查了没人登记过的目录 conformance-heap：conformance-heap/below')
+    expect(failed.bounded).toContain('check时，它读了没人登记过的目录 conformance-heap：conformance-heap/0.txt')
+    expect(failed.bounded?.filter((p) => p.endsWith('：conformance-heap'))).toEqual([])
+  })
+
   it('stops at loading a plugin written against contract 1', async () => {
     const r = await conformance(fixture('old-contract'), { cli })
     expect(r.checks.find((c) => c.name === 'loads')?.ok, r.text).toBe(false)

@@ -20,6 +20,7 @@ import { codexHint } from './products.js'
 import { NOISE_COMMANDS } from './noise-commands.js'
 import { PAIR_COMMANDS } from './pair-commands.js'
 import { REQUEST_COMMANDS } from './request-commands.js'
+import { STORAGE_COMMANDS } from './storage-commands.js'
 import { readSecret, removeSecret, SECRET_LIMIT, secretNames, secretsDir, writeSecret } from './secrets.js'
 import {
   formOf,
@@ -340,6 +341,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
   ...REQUEST_COMMANDS,
   ...PAIR_COMMANDS,
   ...NOISE_COMMANDS,
+  ...STORAGE_COMMANDS,
 ]
 
 /** A plugin by name and version, as `pager 0.2.0`. */

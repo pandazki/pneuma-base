@@ -1,99 +1,189 @@
-import CoreServices
 import Foundation
 
-/// Watches the current library with FSEvents, and the machine's pairings folder, where an agent's
-/// request to be connected arrives. Any change at all is told to `onActivity`, so the app can count
-/// again what waits for the owner. With 直接放进来的文件算主人的 on, it also records,
-/// through the command line, what the owner did to the library outside the tools: a file that
-/// appeared is registered as brought by the owner and seen (`put --brought --by owner --observed`), a
-/// file changed directly is recorded as a change seen (`say revised --observed`).
+/// Watches the current library through storage's own subscription: it starts the library's provider
+/// in its long-lived mode (`serve --root <library>`), subscribes from the cursor it last kept, and acts
+/// on the places it hears of. It has no event stream of its own. With 直接放进来的文件算主人的 on, it
+/// records, through the command line, what the owner did to the library outside the tools: a file
+/// that appeared is registered as brought by the owner and seen (`put --brought --by owner --observed`),
+/// a file changed directly is recorded as a change seen (`say revised --observed`), and a new directory
+/// is registered as one thing only when a probe within its budget finds it small and plain (no project
+/// marker at its top); any other directory stays the ledger's question.
 ///
 /// Whether a file is anybody's is the ledger's to say, and it says so with a put in progress taken
-/// into account: a put marks its paths before it places anything, and the ledger's standing page
-/// leaves a marked path out, and any path a record arrived for while it looked. So the watcher only
-/// waits for the library to be quiet, so a copy still being written is not taken half-way, reads the
-/// standing page once, and acts on the paths it lists that had an event since it last looked. A
-/// put that starts after the look and lands first makes the watcher's own put only a note (已在册).
-/// A file an agent wrote in place against its instructions and registers later is taken for the
-/// owner's first; the agent's own put then corrects the origin, as an origin seen gives way to one said.
+/// into account (a put holds its places in storage until its records are written). So the watcher
+/// only waits for the library to be quiet, so a copy still being written is not taken half-way, reads
+/// the ledger's standing page once, and acts on the paths it lists that it heard of since it last
+/// looked. A put that lands between the look and the watcher's own put makes that put only a note
+/// (已在册).
 @MainActor
 final class Watcher {
   static let quiet: TimeInterval = 3
+  /// A probe of a new directory counts at most this many entries.
+  static let probeBudget = 500
+  static let subscription = "subscribe"
 
   let library: URL
   private let root: String
   private let config: Config
-  private var stream: FSEventStreamRef?
+  /// The program of the provider the library uses, as `storage list` names it.
+  private let provider: String
+  private var process: Process?
+  private var input: FileHandle?
+  private var unread = Data()
+  private var nextId = 1
+  private var waiting: [Int: CheckedContinuation<Answer?, Never>] = [:]
+  private var wanted = false
+  private var failures = 0
+  private var launchedAt = Date()
+  /// The cursor of the last answer heard: the next subscription starts there, so what changed while nobody listened is heard too.
+  private(set) var cursor: String?
   private var lastEvent = Date.distantPast
-  /// Library paths that had an event since the watcher last looked.
+  /// Library places heard of since the watcher last looked.
   private var touched: Set<String> = []
   private var timer: Timer?
-  private var activityTimer: Timer?
   private var passing = false
   /// 直接放进来的文件算主人的.
   var recordsOwnerFiles: Bool
   var onRecorded: ((_ registered: [String], _ seen: [String]) -> Void)?
-  var onActivity: (() -> Void)?
+  var onCursor: ((String) -> Void)?
 
-  init(library: URL, config: Config, recordsOwnerFiles: Bool) {
+  init(library: URL, config: Config, provider: String, cursor: String?, recordsOwnerFiles: Bool) {
     self.library = library
-    // FSEvents reports real paths; `resolvingSymlinksInPath` would turn /private/tmp into /tmp.
-    self.root = Self.real(library.path)
+    // The kernel speaks to storage at the real path of the folder, so the watcher does too.
+    self.root = realpath(library.path, nil).map { p in defer { free(p) }; return String(cString: p) } ?? library.path
     self.config = config
+    self.provider = provider
+    self.cursor = cursor
     self.recordsOwnerFiles = recordsOwnerFiles
   }
 
-  private static func real(_ path: String) -> String {
-    realpath(path, nil).map { p in defer { free(p) }; return String(cString: p) } ?? path
-  }
-
-  /// Where agents' pairings wait, machine state: a new one is something more waiting for the owner.
-  private var pairings = ""
+  var pid: Int32? { process?.processIdentifier }
 
   func start() {
-    let folder = config.home.appendingPathComponent("pairings", isDirectory: true)
-    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    pairings = Self.real(folder.path)
-    var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
-    let callback: FSEventStreamCallback = { _, info, count, paths, _, _ in
-      guard let info else { return }
-      let watcher = Unmanaged<Watcher>.fromOpaque(info).takeUnretainedValue()
-      let list = Unmanaged<CFArray>.fromOpaque(paths).takeUnretainedValue() as? [String] ?? []
-      MainActor.assumeIsolated { watcher.heard(list.prefix(count)) }
-    }
-    let flags = UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer)
-    guard let stream = FSEventStreamCreate(nil, callback, &context, [root, pairings] as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.2, flags) else { return }
-    FSEventStreamSetDispatchQueue(stream, .main)
-    FSEventStreamStart(stream)
-    self.stream = stream
-    Log.line("watcher: watching \(library.lastPathComponent), owner files \(recordsOwnerFiles ? "on" : "off")")
+    wanted = true
+    if process == nil { launch() }
   }
 
+  private func launch() {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: provider)
+    p.arguments = ["serve", "--root", root]
+    p.environment = config.childEnvironment
+    let stdin = Pipe(), stdout = Pipe()
+    p.standardInput = stdin
+    p.standardOutput = stdout
+    p.standardError = FileHandle.nullDevice
+    stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
+      let chunk = handle.availableData
+      if chunk.isEmpty { handle.readabilityHandler = nil; return }
+      DispatchQueue.main.async { MainActor.assumeIsolated { self?.read(chunk, from: p) } }
+    }
+    p.terminationHandler = { [weak self] ended in
+      DispatchQueue.main.async { MainActor.assumeIsolated { self?.exited(ended) } }
+    }
+    do {
+      try p.run()
+    } catch {
+      Log.line("watcher: could not start \(provider): \(error)")
+      return
+    }
+    process = p
+    input = stdin.fileHandleForWriting
+    unread = Data()
+    launchedAt = Date()
+    var subscribe: [String: Any] = ["id": Self.subscription, "op": "subscribe"]
+    if let cursor { subscribe["cursor"] = cursor }
+    send(subscribe)
+    Log.line("watcher: subscribed to \(library.lastPathComponent) through pid \(p.processIdentifier), owner files \(recordsOwnerFiles ? "on" : "off")")
+  }
+
+  /// Ends the subscription: the provider cancels it when its input closes, and exits. Waits up to two seconds before it is stopped.
   func stop() {
+    wanted = false
     timer?.invalidate()
-    activityTimer?.invalidate()
-    guard let stream else { return }
-    FSEventStreamStop(stream)
-    FSEventStreamInvalidate(stream)
-    FSEventStreamRelease(stream)
-    self.stream = nil
+    guard let p = process else { return }
+    process = nil
+    try? input?.close()
+    input = nil
+    let deadline = Date().addingTimeInterval(2)
+    while p.isRunning && Date() < deadline { usleep(10_000) }
+    if p.isRunning { p.terminate() }
+    for (_, waiter) in waiting { waiter.resume(returning: nil) }
+    waiting = [:]
+    Log.line("watcher: stopped")
   }
 
-  private func heard(_ paths: ArraySlice<String>) {
-    for path in paths {
-      if path == pairings || path.hasPrefix(pairings + "/") { continue }
-      guard path == root || path.hasPrefix(root + "/") else { continue }
-      let rel = String(path.dropFirst(root.count + 1))
-      lastEvent = Date()
-      if rel.isEmpty || rel == ".pneuma-base" || rel.hasPrefix(".pneuma-base/") || rel == "PNEUMA-BASE.md" || rel.hasPrefix("_archive/") { continue }
-      if (rel as NSString).lastPathComponent == ".DS_Store" { continue }
-      touched.insert(rel)
+  private func exited(_ p: Process) {
+    guard p === process else { return }
+    process = nil
+    input = nil
+    for (_, waiter) in waiting { waiter.resume(returning: nil) }
+    waiting = [:]
+    Log.line("watcher: provider exited with \(p.terminationStatus)")
+    guard wanted else { return }
+    failures = Date().timeIntervalSince(launchedAt) > 10 ? 1 : failures + 1
+    let delay = min(0.25 * pow(2, Double(failures)), 10)
+    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+      MainActor.assumeIsolated {
+        guard let self, self.wanted, self.process == nil else { return }
+        self.launch()
+      }
     }
-    activityTimer?.invalidate()
-    activityTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { [weak self] _ in
-      MainActor.assumeIsolated { self?.onActivity?() }
+  }
+
+  private func send(_ request: [String: Any]) {
+    guard let input, let data = try? JSONSerialization.data(withJSONObject: request) else { return }
+    try? input.write(contentsOf: data + Data("\n".utf8))
+  }
+
+  /// One answer line, handed from the reader to whoever asked on the main actor.
+  struct Answer: @unchecked Sendable { let json: [String: Any] }
+
+  /// One of storage's read-only operations on the same process, answered by id.
+  func ask(_ op: String, _ body: [String: Any]) async -> [String: Any]? {
+    guard process != nil else { return nil }
+    let id = nextId
+    nextId += 1
+    let answer = await withCheckedContinuation { waiter in
+      waiting[id] = waiter
+      send(body.merging(["id": id, "op": op]) { a, _ in a })
     }
-    if recordsOwnerFiles && !touched.isEmpty { schedule(after: Self.quiet) }
+    return answer?.json
+  }
+
+  /// An answer line may come in many chunks, and one chunk may hold many lines.
+  private func read(_ chunk: Data, from p: Process) {
+    guard p === process else { return }
+    unread.append(chunk)
+    while let nl = unread.firstIndex(of: 0x0A) {
+      let line = unread[unread.startIndex..<nl]
+      unread.removeSubrange(unread.startIndex...nl)
+      if let answer = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] { heard(answer) }
+    }
+  }
+
+  private func heard(_ answer: [String: Any]) {
+    if let id = answer["id"] as? Int, let waiter = waiting.removeValue(forKey: id) { return waiter.resume(returning: Answer(json: answer)) }
+    guard answer["id"] as? String == Self.subscription else { return }
+    guard let progress = answer["progress"] as? [String: Any] else {
+      // The subscription itself ended: this volume keeps no history to listen to, or it was cancelled.
+      return Log.line("watcher: subscription ended: \(answer["reason"] as? String ?? answer["outcome"] as? String ?? "?")")
+    }
+    if let next = progress["cursor"] as? String, next != cursor {
+      cursor = next
+      onCursor?(next)
+    }
+    guard progress["outcome"] as? String == "done" else {
+      return Log.line("watcher: storage cannot say what changed before \(cursor ?? "now"); listening on")
+    }
+    let places = (progress["places"] as? [String] ?? []).filter { place in
+      !(place.isEmpty || place == "PNEUMA-BASE.md" || place == "_archive" || place.hasPrefix("_archive/"))
+    }
+    guard !places.isEmpty else { return }
+    lastEvent = Date()
+    touched.formUnion(places)
+    Log.line("watcher: heard \(places.count) place(s): \(places.prefix(3).joined(separator: ", "))\(places.count > 3 ? ", …" : "")")
+    if recordsOwnerFiles { schedule(after: Self.quiet) }
   }
 
   private func schedule(after seconds: TimeInterval) {
@@ -106,7 +196,7 @@ final class Watcher {
     }
   }
 
-  /// A path counts when it, or a folder it is in, had an event.
+  /// A path counts when it, or a folder it is in, was heard of.
   private static func covered(_ path: String, by touched: Set<String>) -> Bool {
     var p = path
     while !p.isEmpty {
@@ -114,6 +204,11 @@ final class Watcher {
       p = (p as NSString).deletingLastPathComponent
     }
     return false
+  }
+
+  /// A directory counts when it, or anything in it, was heard of.
+  private static func heardIn(_ dir: String, _ touched: Set<String>) -> Bool {
+    touched.contains(dir) || touched.contains { $0.hasPrefix(dir + "/") }
   }
 
   private func pass() async {
@@ -131,13 +226,25 @@ final class Watcher {
       touched.formUnion(looking)
       return
     }
-    let eligible = { (path: String) in Self.covered(path, by: looking) }
-    let unowned = Self.paths(blocks, titled: "没人登记过的").filter(eligible)
-    let changed = Self.paths(blocks, titled: "被直接改过的").filter(eligible)
-    Log.line("watcher: looked, \(unowned.count) nobody's, \(changed.count) changed directly")
+    let unowned = Self.paths(blocks, titled: "没人登记过的").filter { Self.covered($0, by: looking) }
+    let dirs = Self.paths(blocks, titled: "没登记的目录").filter { Self.heardIn($0, looking) }
+    let changed = Self.paths(blocks, titled: "被直接改过的").filter { Self.covered($0, by: looking) }
+    Log.line("watcher: looked, \(unowned.count) nobody's, \(dirs.count) new folder(s), \(changed.count) changed directly")
+
+    var small: [String] = []
+    for dir in dirs.sorted() {
+      let probe = await ask("probe", ["place": dir, "budget": Self.probeBudget])
+      let markers = probe?["markers"] as? [String] ?? []
+      if probe?["outcome"] as? String == "done", probe?["exceeded"] as? Bool == false, markers.isEmpty {
+        small.append(dir)
+      } else {
+        let files = probe?["files"] as? Int ?? 0
+        Log.line("watcher: \(dir)/ is a question: \(probe?["exceeded"] as? Bool == true ? "at least " : "")\(files) files, markers \(markers)")
+      }
+    }
 
     var registered: [String] = [], seen: [String] = []
-    for path in unowned.sorted() {
+    for path in unowned.sorted() + small {
       var args = ["--library", library.path, "--session", config.session, "put", path, "--brought", "--by", "owner", "--observed", "--note", "自动登记", "--json"]
       if let from = downloadAddress(of: URL(fileURLWithPath: root + "/" + path)) { args += ["--source", from] }
       let r = await runCli(args, in: library, config: config)

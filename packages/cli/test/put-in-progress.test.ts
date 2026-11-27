@@ -55,7 +55,14 @@ it('check never reports a path being put as nobody’s or as changed directly', 
   expect(samples).toBeGreaterThan(puts)
   expect(reported).toEqual([])
   // No sample took a move for one it saw: the only moves on record are the agent's own.
-  const rows = JSON.parse(sb.run(['--library', lib, 'show', 'ledger.activity', '--json']).stdout).blocks.find((b: any) => b.kind === 'feed').groups.flatMap((g: any) => g.rows)
+  // Every page of the activity, each from the link the one before gives to the next.
+  const rows: any[] = []
+  for (let params: Record<string, string> | null = {}; params !== null; ) {
+    const flags: string[] = Object.entries(params).flatMap(([k, v]) => [`--${k}`, v])
+    const feed: any = JSON.parse(sb.run(['--library', lib, 'show', 'ledger.activity', ...flags, '--json']).stdout).blocks.find((b: any) => b.kind === 'feed')
+    rows.push(...feed.groups.flatMap((g: any) => g.rows))
+    params = feed.page?.next?.params ?? null
+  }
   const moves = rows.filter((row: any) => row.text.startsWith('挪 '))
   expect(moves.map((row: any) => row.actor.name)).toEqual(Array(puts / 4).fill('race-agent'))
 }, 180_000)

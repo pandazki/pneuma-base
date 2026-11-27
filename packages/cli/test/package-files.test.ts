@@ -1,6 +1,7 @@
 // B7: the two package files a plugin project depends on, installed into an empty directory with no
 // registry, run as a third party runs them.
 import { spawn, spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -58,6 +59,33 @@ describe('the package files', () => {
       expect(JSON.stringify(files.blocks)).toContain('notes')
     } finally {
       viewer.kill('SIGINT')
+    }
+  })
+
+  it('carry the local folder’s provider and the contract suite’s program for the platform they were built on, which the official list and storage list name', () => {
+    const bin = join(project, 'node_modules/pneuma-base/node_modules/@pneuma-base/kernel/bin')
+    const platform = `${process.platform}-${process.arch}`
+    expect(readdirSync(bin).sort()).toEqual(['platform', 'pneuma-base-contract', 'pneuma-base-core'])
+    expect(readFileSync(join(bin, 'platform'), 'utf8')).toBe(`${platform}\n`)
+    const sha = createHash('sha256').update(readFileSync(join(bin, 'pneuma-base-core'))).digest('hex')
+    const official = JSON.parse(readFileSync(join(bin, '../official-providers.json'), 'utf8'))
+    expect(official.providers).toEqual([expect.objectContaining({ name: 'local-folder', builtIn: true, sha256: { [platform]: sha } })])
+    const listed = JSON.parse(run('npx', ['--no', '--', 'pneuma-base', 'storage', 'list', '--json'])).data.providers
+    expect(listed).toEqual([expect.objectContaining({ name: 'local-folder', executable: join(bin, 'pneuma-base-core'), sha256: sha, version: official.providers[0].version })])
+  })
+
+  it('say plainly, on a machine of another platform, which one the build is for', () => {
+    const file = join(project, 'node_modules/pneuma-base/node_modules/@pneuma-base/kernel/bin/platform')
+    const built = readFileSync(file, 'utf8')
+    const here = `${process.platform}-${process.arch}`
+    const other = here === 'darwin-arm64' ? 'linux-x64' : 'darwin-arm64'
+    writeFileSync(file, `${other}\n`)
+    try {
+      const r = spawnSync('npx', ['--no', '--', 'pneuma-base', 'storage', 'list'], { cwd: project, env, encoding: 'utf8' })
+      expect(r.status).toBe(1)
+      expect(r.stderr).toBe(`这个 pneuma-base 是给 ${other === 'darwin-arm64' ? 'Apple 芯片的 Mac (darwin-arm64)' : other} 构建的，这台机器是 ${here}。\n`)
+    } finally {
+      writeFileSync(file, built)
     }
   })
 

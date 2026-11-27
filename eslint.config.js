@@ -143,6 +143,8 @@ const MAY_TOUCH_FILES = {
   'packages/kernel/src/products.ts': 'where each agent product keeps its configuration and its conversations',
   'packages/kernel/src/agent-commands.ts': "agents' configuration files and skill folders",
   'packages/kernel/src/owner-commands.ts': 'the skill file an owner command writes where the owner says, and installed plugins',
+  'packages/kernel/src/providers.ts': "the storage providers on this machine: the registry under $PNEUMA_BASE_HOME, the programs of this installation, and a provider's describe, run on an empty folder of its own",
+  'packages/kernel/src/provider-install.ts': "a provider taken from a repository's releases into $PNEUMA_BASE_HOME, and the contract suite run on it before it is used",
   'packages/plugin-ledger/src/conversation.ts': "agents' conversation transcripts, outside the library",
   'packages/plugin-ledger/src/export-file.ts': 'the audit export the owner names: one file outside the library, written page by page',
   'packages/viewer/src/server/index.ts': "the built pages and the files of a plugin's ui folder, outside every library",
