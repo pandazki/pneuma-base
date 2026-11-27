@@ -3,7 +3,7 @@
 import { mkdirSync, mkdtempSync, readdirSync, realpathSync, renameSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { agentFace, initLibrary, makeContext, openLibrary, ownerFace, viewerFace, type Actor, type Block, type Instant, type Library, type Session, type ViewResult } from '@pneuma-base/kernel'
+import { agentFace, initLibrary, makeContext, openLibrary, ownerFace, viewerFace, type Actor, type Block, type FeedGroup, type FeedRow, type Instant, type Library, type Session, type ViewResult } from '@pneuma-base/kernel'
 import { describe, expect, it } from 'vitest'
 import { ledger } from '../src/index.js'
 
@@ -56,7 +56,8 @@ const rowsOf = (r: ViewResult) => tableIn(shown(r).blocks).rows
 const feedRows = (blocks: Block[]) => {
   const feed = flat(blocks).find((b) => b.kind === 'feed')
   if (feed?.kind !== 'feed') throw new Error('no feed')
-  return feed.groups.flatMap((g) => g.rows)
+  const rowsIn = (g: FeedGroup): FeedRow[] => [...g.rows, ...(g.groups ?? []).flatMap(rowsIn)]
+  return feed.groups.flatMap(rowsIn)
 }
 const nameOf = (actor: string | { name: string }) => (typeof actor === 'string' ? actor : actor.name)
 
@@ -260,7 +261,7 @@ describe('the scenes page', () => {
       '放入 comparison.md',
       '放入 old.md（现在在 _archive/old.md）（带进来的）',
       '放入 src/stripe.html（带进来的）',
-      '在做：给小店选支付服务',
+      // What it was doing is the page's title, not one of its acts.
     ])
     // An archive that still stands can be taken back from its row; a fact with no undo says nothing there.
     expect(rows[0]).toMatchObject({ action: { label: '取回', call: { verb: 'archive', request: { kind: 'unarchive', path: '_archive/old.md' } } } })
@@ -343,25 +344,28 @@ describe('the standing view', () => {
 })
 
 describe('the activity page', () => {
-  it('has the facts newest first by day, owner operations included: who, the act, the thing and the note, the sentence, by which grant; a scene whose doing is on the page is named there once; a fact about a thing opens it; it keeps the agents’ or the owner’s, or one agent’s, each option saying how many', async () => {
+  it('has the acts newest first by day and in a day by scene, owner operations included: who, the act, the thing and the note, the sentence, by which grant; a scene of several acts under what it was doing, which is no row; a fact about a thing opens it; it keeps the agents’ or the owner’s, or one agent’s, each option saying how many rows', async () => {
     const { show, codex } = await relayed()
     const rows = feedRows(shown(await show('ledger.activity')).blocks)
     // The library was made at the real time, after the test's session at 02:00Z, so its init is newest.
-    expect(rows[0]).toMatchObject({ actor: { kind: 'owner', name: '主人' }, whose: 'owner', text: expect.stringContaining('主人面的操作 init') })
+    expect(rows[0]).toMatchObject({ actor: { kind: 'owner', name: '主人' }, whose: 'owner', act: 'created', path: 'lib', text: expect.stringMatching(/^pneuma-base init \/.+\/lib$/) })
     expect(rows.slice(1, 4).map((row) => [nameOf(row.actor), row.whose, row.act, row.path, row.note, row.text, ...row.meta.map((c) => c.text)])).toEqual([
       ['claude-code', 'agent', 'archived', 'old.md', undefined, '归档 old.md', '没带授权'],
       ['claude-code', 'agent', 'decision', 'comparison.md', '用 Paddle', '决定：用 Paddle（关于 comparison.md）', '没带授权'],
       ['claude-code', 'agent', 'made', 'recommendation.md', undefined, '放入 recommendation.md', '没带授权'],
     ])
     expect(rows[1]?.link).toEqual({ view: 'item', params: { path: '_archive/old.md' }, target: 'panel' })
-    expect(rows.find((row) => row.act === 'doing')).toMatchObject({ note: '给小店选支付服务', link: { view: 'ledger.scene', params: { scene: 'sess-a' }, target: 'panel' } })
+    expect(rows.find((row) => row.act === 'doing')).toBeUndefined()
+    const feed = flat(shown(await show('ledger.activity')).blocks).find((b) => b.kind === 'feed')
+    const scenes = feed?.kind === 'feed' ? feed.groups.flatMap((day) => day.groups ?? []) : []
+    expect(scenes.filter((g) => g.title !== '').map((g) => [g.title, g.count, g.link])).toEqual([['给小店选支付服务', 6, { view: 'ledger.scene', params: { scene: 'sess-a' }, target: 'panel' }]])
     expect(rows[1]?.at).toMatch(/^2026-11-25T02:00:\d\d\.000Z$/)
 
     await agentFace.say({ kind: 'note', about: 'comparison.md', text: '看过了', args: {} }, codex())
     const r = shown(await show('ledger.activity'))
     expect(r.filters).toEqual([
-      { name: 'who', options: [{ value: '', label: '全部', count: 9 }, { value: 'agent', label: 'agent 做的', count: 8 }, { value: 'owner', label: '主人做的', count: 1 }] },
-      { name: 'agent', options: [{ value: '', label: '全部 agent', count: 9 }, { value: 'claude-code', label: 'claude-code', count: 7 }, { value: 'codex', label: 'codex', count: 1 }] },
+      { name: 'who', options: [{ value: '', label: '全部', count: 8 }, { value: 'agent', label: 'agent 做的', count: 7 }, { value: 'owner', label: '主人做的', count: 1 }] },
+      { name: 'agent', options: [{ value: '', label: '全部 agent', count: 8 }, { value: 'claude-code', label: 'claude-code', count: 6 }, { value: 'codex', label: 'codex', count: 1 }] },
     ])
     expect(feedRows(shown(await show('ledger.activity', { who: 'owner' })).blocks).map((row) => nameOf(row.actor))).toEqual(['主人'])
     expect(feedRows(shown(await show('ledger.activity', { agent: 'codex' })).blocks).map((row) => row.text)).toEqual(['备注：看过了（关于 comparison.md）'])
@@ -392,11 +396,13 @@ describe('the ledger’s part of the home page', () => {
     expect(seen).toMatchObject({ actions: [], note: '上次看过：2026-11-25 02:00Z', blocks: [{ kind: 'feed', groups: [], empty: '那之后还没有谁做过什么。' }, { kind: 'list' }] })
     expect(listIn(seen).map((i) => [i.cell.text, i.cell.link])).toEqual([['看全部活动', { view: 'ledger.activity', params: {}, target: 'main' }]])
 
-    // A scene of one act is that row, in a list without a heading; the section counts it.
+    // A scene saying what it is doing is no act, so nothing yet; its one act is then that row, naming the scene, in a list without a heading; the section counts it.
     await agentFace.say({ kind: 'doing', about: null, text: '整理首页文案', args: {} }, claudeIn('sess-c'))
+    expect(sectionNamed(shown(await asCodex()).blocks, '自上次以来')).toMatchObject({ count: null, blocks: [{ kind: 'feed', groups: [] }, { kind: 'list' }] })
+    await agentFace.say({ kind: 'note', about: null, text: '首页先不动', args: {} }, claudeIn('sess-c'))
     const doing = sectionNamed(shown(await asCodex()).blocks, '自上次以来')
     const doingFeed = doing.blocks[0]
-    expect(doingFeed?.kind === 'feed' && doingFeed.groups.map((g) => [g.title, g.count, g.rows.map((r) => [r.act, r.note, r.text])])).toEqual([['', null, [['doing', '整理首页文案', '在做：整理首页文案']]]])
+    expect(doingFeed?.kind === 'feed' && doingFeed.groups.map((g) => [g.title, g.count, g.rows.map((r) => [r.act, r.note, r.text, r.meta.map((c) => c.text)])])).toEqual([['', null, [['note', '首页先不动', '备注：首页先不动', ['整理首页文案', '没带授权']]]]])
     expect(doing).toMatchObject({ count: 1, note: null })
 
     writeFileSync(join(root, 'src/stripe.html'), 'stripe, new prices')
@@ -465,8 +471,13 @@ describe('things nobody registered', () => {
     expect(fieldIn(came, '来历')?.value.text).toBe('带进来的，主人给的')
     const rows = feedRows(shown(await show('ledger.activity')).blocks)
     expect(rows.map((r) => r.text).filter((t) => t.includes('ledger register') || t.includes('放入'))).toEqual([
-      '主人面的操作 ledger register：已把 notes/里的 1 个文件记为主人带进来的。',
-      '主人面的操作 ledger register：已把 2 样东西记为主人带进来的。',
+      'pneuma-base ledger register notes --inside',
+      'pneuma-base ledger register .',
+    ])
+    // Each says what it did to what: brought in, the folder.
+    expect(rows.filter((r) => r.text.includes('ledger register')).map((r) => [r.act, r.path])).toEqual([
+      ['brought', 'notes'],
+      ['brought', '.'],
     ])
     expect(shown(await show('ledger.standing')).blocks).toMatchObject([{ kind: 'actions' }, { kind: 'empty' }])
   })

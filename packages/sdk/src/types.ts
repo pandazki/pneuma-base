@@ -510,8 +510,10 @@ export interface OwnerCommand {
   readonly params: OwnerParams
   readonly destructive: boolean
   readonly ownerOnly: boolean
-  /** It changes nothing, in the library or outside it, such as a listing; its event is no news to agents. */
+  /** It changes nothing, in the library or outside it, and takes nothing out, such as a listing: looking is no act, and the audit keeps no fact of it. */
   readonly readOnly?: boolean
+  /** What it does, for its row in the audit; without it the row is the command itself. */
+  readonly act?: OwnerAct
   /** It configures plugins, targets or embedders without changing items; its event is news only after an agent's first visit. */
   readonly setup?: boolean
   /**
@@ -521,6 +523,13 @@ export interface OwnerCommand {
   readonly askable?: false
   readonly run: (args: CommandArgs, ctx: PluginContext) => Promise<OwnerAnswer>
 }
+
+/**
+ * What an owner command does, as its row in the audit says it: the kind of act, drawn as an icon, and
+ * what it was done to: the argument named `object` (a positional or a flag of its `params`), else
+ * `name`, a fixed name such as 归档.
+ */
+export type OwnerAct = { readonly kind: FeedAct; readonly object?: string; readonly name?: string }
 
 // ---- events ----
 
@@ -535,7 +544,10 @@ export type Requested = { id: RequestId; by: OwnerRequest['by'] }
  */
 export type Event =
   | { [V in Verb]: { face: 'agent'; verb: V; request: Parameters<AgentFace[V]>[0]; result: Awaited<ReturnType<AgentFace[V]>> | Failure } }[Verb]
-  | { face: 'owner'; command: string; args: OwnerArgs; destructive: boolean; readOnly: boolean; setup: boolean; request?: Requested; result: OwnerResult | Failure }
+  | { face: 'owner'; command: string; args: OwnerArgs; destructive: boolean; readOnly: boolean; setup: boolean; act?: OwnerActDone; request?: Requested; result: OwnerResult | Failure }
+
+/** An owner command's `act` as it ran: the kind, and what it was done to as the call gave it, or null. */
+export type OwnerActDone = { kind: FeedAct; object: string | null }
 
 // ---- the extension point ----
 
@@ -742,7 +754,37 @@ export type TableColumn = { key: string; label: string; optional?: boolean }
  * the archive, a note or a decision written about something, what a session says it is doing, sources
  * added to a thing, a thing gone with the archive it was in, a command run, a request to the owner.
  */
-export const FEED_ACTS = ['made', 'brought', 'changed', 'moved', 'archived', 'restored', 'note', 'decision', 'doing', 'basis', 'removed', 'command', 'request'] as const
+/** The kinds of act a feed row draws as an icon: an agent's on the content, and what an owner command did (`OwnerAct`). */
+export const FEED_ACTS = [
+  'made',
+  'brought',
+  'changed',
+  'moved',
+  'archived',
+  'restored',
+  'note',
+  'decision',
+  'doing',
+  'basis',
+  'removed',
+  'command',
+  'request',
+  'created',
+  'on',
+  'off',
+  'connected',
+  'disconnected',
+  'granted',
+  'revoked',
+  'installed',
+  'uninstalled',
+  'set',
+  'synced',
+  'exported',
+  'declined',
+  'hidden',
+  'shown',
+] as const
 export type FeedAct = (typeof FEED_ACTS)[number]
 /**
  * One thing that happened, as a feed tells it: when, who, one sentence, a grey line of `meta`, and
@@ -752,7 +794,8 @@ export type FeedAct = (typeof FEED_ACTS)[number]
  * back; not both. A row with a `link` opens it.
  *
  * `act`, `path` and `note` say the same row in parts, so a page can say less: the kind of act, the
- * library path of the thing it is about, and the words the actor wrote with it (a put's note, the text
+ * library path of the thing it is about (for an owner command, what it was done to, as given), and
+ * the words the actor wrote with it (a put's note, the text
  * of a note or a decision, what a session says it is doing). With `act`, the page draws the act as an
  * icon and the thing as its name, its folder grey beside it, and the note, when there is one, as the
  * row's second line in place of `meta`; with no `path` the note is the row's line. `text` stays the
@@ -772,8 +815,12 @@ export type FeedRow = {
   path?: LibraryPath
   note?: string
 }
-/** Rows under a heading, such as a day or a scene; `link` opens what the heading names; `reopen`, the scene's conversation, as a cell's. */
-export type FeedGroup = { title: string; count: number | null; link?: Link; rows: FeedRow[]; reopen?: Reopen }
+/**
+ * Rows under a heading, such as a day or a scene; `link` opens what the heading names; `reopen`, the
+ * scene's conversation, as a cell's. `groups`: headings of their own under this one, in place of its
+ * rows, which are then empty, such as a day's scenes; one level deep.
+ */
+export type FeedGroup = { title: string; count: number | null; link?: Link; rows: FeedRow[]; reopen?: Reopen; groups?: FeedGroup[] }
 /**
  * One row of a list: its cell, a grey `note` under it, and its actions. `about`: what the row is, said
  * whole, shown on demand beside the cell, as a section's. `toggle`: the row is a setting that is on or

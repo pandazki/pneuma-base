@@ -7,6 +7,12 @@ import { fileURLToPath } from 'node:url'
 const BIN = fileURLToPath(new URL('../dist/bin.js', import.meta.url))
 const BIN_WITH_TEST_PLUGINS = fileURLToPath(new URL('./fixtures/bin-with-test-plugins.ts', import.meta.url))
 
+/** A feed's groups and the groups under them, such as the activity page's days and each day's scenes. */
+export const feedGroupsIn = (groups: readonly any[]): any[] => groups.flatMap((g) => [g, ...feedGroupsIn(g.groups ?? [])])
+
+/** Every row of a feed, its groups' and theirs. */
+export const feedRowsIn = (groups: readonly any[]): any[] => feedGroupsIn(groups).flatMap((g) => g.rows)
+
 /**
  * Every fact a plugin's records hold, as written: every .jsonl file under its facts/, in the dated
  * layout storage writes (STORAGE.md「放记录的地方：操作」) and the layout by scene it still reads.

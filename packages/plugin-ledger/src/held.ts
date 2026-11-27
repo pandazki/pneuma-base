@@ -66,6 +66,7 @@ const refused = (reason: string, text: string): OwnerAnswer => ({ outcome: 'refu
 
 export const HELD_RESTORE = defineCommand({
   name: 'ledger held restore',
+  act: { kind: 'restored', object: 'item' },
   summary: '把一份留存取回到一个新路径',
   params: {
     positional: [{ name: 'item', hint: '库内路径或条目号', required: true }],
@@ -124,6 +125,7 @@ export const HELD_RESTORE = defineCommand({
 
 export const HELD_DROP = defineCommand({
   name: 'ledger held drop',
+  act: { kind: 'removed', name: '留住的旧版' },
   summary: '清掉全部留存',
   params: {},
   destructive: true,

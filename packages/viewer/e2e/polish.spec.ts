@@ -36,6 +36,8 @@ test('agents get marks that tell them apart: two from the name, or the first lat
   pb.run(['init', lib])
   for (const agent of ['codex', 'copilot', 'claude-code', 'gemini']) {
     pb.run(['--library', lib, '--as', agent, 'start', `${agent} 在整理笔记`], { env: { PNEUMA_BASE_SESSION: `s-${agent}` } })
+    // Saying what it is doing is no act; a note is, so each is a row on home.
+    pb.run(['--library', lib, '--as', agent, 'say', 'note', `${agent} 记一笔`], { env: { PNEUMA_BASE_SESSION: `s-${agent}` } })
   }
   const { url } = await pb.view(lib)
   await page.goto(`${url}#view=ledger.scenes`)

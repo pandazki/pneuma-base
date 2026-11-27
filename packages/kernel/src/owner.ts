@@ -1,3 +1,4 @@
+import { basename } from 'node:path'
 import { catchingUp, catchingUpLine } from './catch-up.js'
 import { makeAddress, resolveAddress } from './address.js'
 import { addressForm, chooseProvider, recordLibrary, type Runnable } from './providers.js'
@@ -9,7 +10,7 @@ import { makeContext, performOwner, pluginContext } from './pipeline.js'
 import { askLine } from './requests.js'
 import { agentSign, ownerOnlyRefusal, OWNER_DECIDES, type Env } from './session.js'
 import { bindProvider, storageOf } from './storage.js'
-import { usageOf, type Actor, type Context, type OwnerArgs, type OwnerParams, type OwnerResult, type OwnerValues, type Plugin, type PluginName, type PluginTable, type Requested, type Session } from '@pneuma-base/sdk'
+import { usageOf, type Actor, type Context, type OwnerAct, type OwnerActDone, type OwnerArgs, type OwnerParams, type OwnerResult, type OwnerValues, type Plugin, type PluginName, type PluginTable, type Requested, type Session } from '@pneuma-base/sdk'
 
 /** Who acts, in which session, on this machine, with no library at hand: the context of a command that needs none. */
 export type MachineContext = Omit<Context, 'library'> & { library: null }
@@ -54,7 +55,15 @@ export type OwnerCommandInfo = {
  * How a command is gated: destructive ones lose data; owner-only ones decide for the owner, and may be
  * asked for unless `askable` is false. Read-only ones change nothing; setup ones configure plugins or targets.
  */
-type Gate = { destructive: boolean; ownerOnly: boolean; readOnly?: boolean; setup?: boolean; askable?: false }
+type Gate = { destructive: boolean; ownerOnly: boolean; readOnly?: boolean; setup?: boolean; askable?: false; act?: OwnerAct }
+
+/** A command's act as this call ran it: what it was done to, from the argument the act names, else its fixed name. */
+function actDone(act: OwnerAct, params: OwnerParams, args: OwnerArgs): OwnerActDone {
+  const at = (params.positional ?? []).findIndex((p) => p.name === act.object)
+  const flag = act.object === undefined ? undefined : args.flags[act.object]
+  const given = at >= 0 ? args.positional[at] : Array.isArray(flag) ? flag[0] : undefined
+  return { kind: act.kind, object: given ?? act.name ?? null }
+}
 
 const isAskable = (gate: Gate) => gate.ownerOnly && !gate.destructive && gate.askable !== false
 
@@ -85,7 +94,8 @@ async function gated(call: OwnerCall, name: string, gate: Gate, args: OwnerArgs,
     const { answer, problems } = await decide()
     return { ...answer, problems: problems ?? [] }
   }
-  return performOwner(ctx, name, args, { destructive: gate.destructive, readOnly: gate.readOnly ?? false, setup: gate.setup ?? false, ...(call.request ? { request: call.request } : {}) }, decide)
+  const act = gate.act ? { act: actDone(gate.act, params, args) } : {}
+  return performOwner(ctx, name, args, { destructive: gate.destructive, readOnly: gate.readOnly ?? false, setup: gate.setup ?? false, ...act, ...(call.request ? { request: call.request } : {}) }, decide)
 }
 
 /**
@@ -123,7 +133,7 @@ export async function initLibrary(
   const ctx = makeContext(library, opts.actor, opts.session, opts.home)
   const flags = { ...(opts.plugins.length === 0 ? { bare: true as const } : {}), ...(opts.provider ? { provider: [opts.provider] } : {}) }
   const args: OwnerArgs = { positional: [library.root], flags }
-  return performOwner(ctx, 'init', args, { destructive: false, readOnly: false }, async () => ({
+  return performOwner(ctx, 'init', args, { destructive: false, readOnly: false, act: { kind: 'created', object: basename(library.root) } }, async () => ({
     answer: { outcome: 'done', text: `已把 ${library.root} 建成库，存储提供者是 ${provider.name}。说明在 PNEUMA-BASE.md。`, data: { root: library.root, provider: provider.name } },
   }))
 }

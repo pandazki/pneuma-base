@@ -13,17 +13,32 @@ import {
   Archive,
   ArchiveRestore,
   ArrowDownToLine,
+  ArrowUpFromLine,
+  Ban,
   ChevronRight,
+  CircleX,
+  Eye,
+  EyeOff,
   Flag,
   FolderInput,
+  FolderPlus,
+  KeyRound,
   Link2,
   MessageCircleQuestion,
   MessageSquareText,
+  PackageMinus,
+  PackagePlus,
   Pencil,
   Play,
+  Plug,
+  RefreshCw,
+  SlidersHorizontal,
   Sparkles,
   Terminal,
+  ToggleLeft,
+  ToggleRight,
   Trash2,
+  Unplug,
   type LucideIcon,
 } from 'lucide-react'
 import type { KeyboardEvent, MouseEvent } from 'react'
@@ -42,6 +57,21 @@ const WHOSE: Record<NonNullable<FeedRow['whose']>, string | null> = { agent: nul
 
 /** Each kind of act as the icon a row shows, and its word for a screen reader. */
 const ACTS: Record<FeedAct, { icon: LucideIcon; word: string }> = {
+  created: { icon: FolderPlus, word: '建库' },
+  on: { icon: ToggleRight, word: '打开' },
+  off: { icon: ToggleLeft, word: '关上' },
+  connected: { icon: Plug, word: '接上' },
+  disconnected: { icon: Unplug, word: '断开' },
+  granted: { icon: KeyRound, word: '发授权' },
+  revoked: { icon: Ban, word: '撤回' },
+  installed: { icon: PackagePlus, word: '装上' },
+  uninstalled: { icon: PackageMinus, word: '卸掉' },
+  set: { icon: SlidersHorizontal, word: '设成' },
+  synced: { icon: RefreshCw, word: '同步' },
+  exported: { icon: ArrowUpFromLine, word: '导出' },
+  declined: { icon: CircleX, word: '拒绝' },
+  hidden: { icon: EyeOff, word: '不再管' },
+  shown: { icon: Eye, word: '又管起来' },
   made: { icon: Sparkles, word: '放入' },
   brought: { icon: ArrowDownToLine, word: '带进来' },
   changed: { icon: Pencil, word: '改了' },
@@ -236,23 +266,28 @@ function Rows({ rows, dense }: { rows: FeedRow[]; dense: boolean }) {
   )
 }
 
-/** A group with a heading is a region of the page by that name. */
+/** How many rows a group holds: its own and those of the groups under it. */
+const rowsIn = (group: FeedGroup): number => group.rows.length + (group.groups ?? []).reduce((n, g) => n + rowsIn(g), 0)
+
+/** A group with a heading is a region of the page by that name; one with groups under it, such as a day of scenes, heads them. */
+function Group({ group, dense }: { group: FeedGroup; dense: boolean }) {
+  const inner = group.groups ? group.groups.map((g, i) => <Group key={`${g.title}-${i}`} group={g} dense={dense} />) : <Rows rows={group.rows} dense={dense} />
+  if (group.title === '') return <div className="feed-group">{inner}</div>
+  return (
+    <section className="feed-group" aria-label={group.title} data-outer={group.groups ? '' : undefined}>
+      <Head group={group} />
+      {inner}
+    </section>
+  )
+}
+
 export function FeedView({ block, dense = false }: { block: Feed; dense?: boolean }) {
-  if (block.groups.every((g) => g.rows.length === 0)) return <p className="feed-empty">{block.empty}</p>
+  if (block.groups.every((g) => rowsIn(g) === 0)) return <p className="feed-empty">{block.empty}</p>
   return (
     <div className="feed" data-dense={dense || undefined}>
-      {block.groups.map((group, i) =>
-        group.title === '' ? (
-          <div key={i} className="feed-group">
-            <Rows rows={group.rows} dense={dense} />
-          </div>
-        ) : (
-          <section key={`${group.title}-${i}`} className="feed-group" aria-label={group.title}>
-            <Head group={group} />
-            <Rows rows={group.rows} dense={dense} />
-          </section>
-        ),
-      )}
+      {block.groups.map((group, i) => (
+        <Group key={`${group.title}-${i}`} group={group} dense={dense} />
+      ))}
       {turns(block.page) ? (
         <div className="feed-pager">
           <Pager page={block.page} />

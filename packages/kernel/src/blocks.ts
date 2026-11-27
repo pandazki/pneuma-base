@@ -130,7 +130,7 @@ const feedRow = both(
   shape({ key: string, at: string, actor: who, text: string, meta: listOf(cell), 'whose?': oneOf('agent', 'owner', 'approved', 'observed'), 'action?': action, 'settled?': string, link: nullable(link), 'act?': oneOf(...FEED_ACTS), 'path?': string, 'note?': string }),
   (v, at) => ((v as Raw).action !== undefined && (v as Raw).settled !== undefined ? `${at} 不能同时有 action 和 settled` : null),
 )
-const feedGroup = shape({ title: string, count: nullable(number), 'link?': link, rows: listOf(feedRow), 'reopen?': reopen })
+const feedGroup: Check = (v, at) => shape({ title: string, count: nullable(number), 'link?': link, rows: listOf(feedRow), 'reopen?': reopen, 'groups?': listOf(feedGroup) })(v, at)
 const rowPlace = shape({ path: string, kind: oneOf('file', 'bundle', 'open', 'closed'), token: nullable(string), 'elsewhere?': truth })
 const treeNode: Check = (v, at) => shape({ value: string, label: string, count: nullable(number), children: listOf(treeNode) })(v, at)
 const ask = both(

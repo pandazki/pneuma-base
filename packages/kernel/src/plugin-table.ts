@@ -5,7 +5,7 @@ import { cp, mkdir, readdir, realpath, rename, rm, stat, writeFile } from 'node:
 import * as nodeModule from 'node:module'
 import { join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { CONTRACT, KERNEL_COMMAND_NAMES, PLUGIN_NAME, RESERVED_PLUGIN_NAMES, SECRET_NAME, type Plugin, type PluginTable } from '@pneuma-base/sdk'
+import { CONTRACT, FEED_ACTS, KERNEL_COMMAND_NAMES, PLUGIN_NAME, RESERVED_PLUGIN_NAMES, SECRET_NAME, type Plugin, type PluginTable } from '@pneuma-base/sdk'
 import { exists, regularFile, replaceWith } from './machine-files.js'
 
 /** The plugin contract versions this kernel runs. */
@@ -199,6 +199,7 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 const isText = (v: unknown): v is string => typeof v === 'string'
 const isBoolean = (v: unknown): v is boolean => typeof v === 'boolean'
 const optional = (v: unknown, is: (v: unknown) => boolean) => v === undefined || is(v)
+const isAct = (v: unknown) => isObject(v) && (FEED_ACTS as readonly unknown[]).includes(v.kind) && optional(v.object, isText) && optional(v.name, isText)
 const isPattern = (v: unknown) => {
   if (!isText(v)) return false
   try {
@@ -277,6 +278,7 @@ function commandWrong(cmd: unknown, plugin: string): string | null {
   const typed = isText(cmd.summary) && isBoolean(cmd.destructive) && isBoolean(cmd.ownerOnly) && typeof cmd.run === 'function'
   const flags = optional(cmd.readOnly, isBoolean) && optional(cmd.setup, isBoolean) && optional(cmd.askable, (v) => v === false)
   if (!typed || !flags) return `主人命令「${name}」要有文字的 summary、真假的 destructive 和 ownerOnly、函数 run，readOnly 和 setup 是真假，askable 没有或是 false`
+  if (!optional(cmd.act, isAct)) return `主人命令「${name}」的 act 要有 kind（${FEED_ACTS.join('、')} 之一），object 和 name 没有或是文字`
   if (cmd.params === undefined) return `主人命令「${name}」没有 params：每条命令都声明它的参数，什么都不带的写 params: {}`
   const wrong = paramsWrong(cmd.params)
   return wrong === null ? null : `主人命令「${name}」的 params：${wrong}`

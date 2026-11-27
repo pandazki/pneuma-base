@@ -3,7 +3,7 @@
 // page, the scenes and one scene.
 import { FIRST_WORDS, pageAt, pagingOf, PAGE_ROWS, shortDir, type Action, type Block, type Cell, type FeedAct, type FeedGroup, type FeedRow, type Grant, type Instant, type LibraryPath, type Reopen, type Stat, type ViewAnswer } from '@pneuma-base/kernel'
 import { reopenFor, type Conversation } from './conversation.js'
-import type { Fact, FactActor, SceneId } from './facts.js'
+import { isAct, type Fact, type FactActor, type SceneId } from './facts.js'
 import { archived, type SceneRow } from './model.js'
 import { counters, lookupOf } from './queries.js'
 import type { Records } from './rows.js'
@@ -84,7 +84,9 @@ const where = (lookup: Lookup, id: Fact & { item: unknown }) => lookup.items.get
 /**
  * The fact in parts, for a page that says less than its sentence: the kind of act, the path of the
  * thing (where it is now; for an archive or a move, where the act left it or took it from), and the
- * words its actor wrote with it. A fact a sentence says better, such as a request, has no parts.
+ * words its actor wrote with it. An owner command is what it did to what, as it declares; one an older
+ * ledger recorded without that is the command by its name. A fact a sentence says better, such as a
+ * request or a command refused, has no parts.
  */
 function partsOf(lookup: Lookup, f: Fact): Pick<FeedRow, 'act' | 'path' | 'note'> {
   const note = (text: string | undefined) => (text ? { note: text } : {})
@@ -103,22 +105,52 @@ function partsOf(lookup: Lookup, f: Fact): Pick<FeedRow, 'act' | 'path' | 'note'
     case 'item.remove':
       return { act: 'removed', ...at(where(lookup, f)) }
     case 'owner.op':
-      return f.request || f.refused !== undefined ? {} : { act: 'command', note: f.summary }
+      if (f.refused !== undefined) return {}
+      return f.act === undefined ? { act: 'command', ...at(f.command) } : { act: f.act, ...at(f.object ?? null) }
     default:
       return {}
   }
 }
 
+/** An owner command as a row says it whole: the command as given, never what it printed. */
+function commandText(f: Extract<Fact, { kind: 'owner.op' }>): string {
+  const line = `pneuma-base ${f.line ?? f.command}${f.refused === undefined ? '' : `（被拒绝：${f.refused}）`}`
+  return f.request ? `批准了 ${f.request.by.name} 的请求：${line}` : line
+}
+
 /**
- * One fact as a feed row: when, who, the sentence check says and the same in parts, who asked for it,
- * in which scene and by which grant, and what can still be done. `withScene`: the row names its scene,
- * unless it is the scene saying what it is doing.
+ * One fact as a feed row: when, who, the sentence check says (for an owner command, the command as
+ * given) and the same in parts, who asked for it, in which scene and by which grant, and what can
+ * still be done. `withScene`: the row names its scene.
  */
 function factRow(lookup: Lookup, f: Fact, grants: readonly Grant[], withScene: boolean): FeedRow {
   const grant = grantCell(f.actor, grants)
-  const scene = withScene && !(f.kind === 'said' && f.flavor === 'doing')
-  const meta: Cell[] = [...askedBy(f, grants), ...(scene ? [sceneCell(lookup, f.scene)] : []), ...(grant ? [grant] : [])]
-  return { key: f.id, at: f.at, actor: actorMark(f.actor, grants), text: factLine(lookup, f, true), meta, whose: whoseOf(f), link: factLink(lookup, f), ...partsOf(lookup, f), ...endOf(lookup, f) }
+  const meta: Cell[] = [...askedBy(f, grants), ...(withScene ? [sceneCell(lookup, f.scene)] : []), ...(grant ? [grant] : [])]
+  const text = f.kind === 'owner.op' ? commandText(f) : factLine(lookup, f, true)
+  return { key: f.id, at: f.at, actor: actorMark(f.actor, grants), text, meta, whose: whoseOf(f), link: factLink(lookup, f), ...partsOf(lookup, f), ...endOf(lookup, f) }
+}
+
+/**
+ * Acts by scene, as home and each day of the activity page show them: a scene's several acts under its
+ * sentence, which opens it; a scene of one act is that one row, its sentence the row's second line
+ * when the act has no note of its own, else in its tooltip.
+ */
+function sceneGroups(lookup: Lookup, acts: readonly Fact[], grants: readonly Grant[]): FeedGroup[] {
+  const groups: FeedGroup[] = []
+  for (const { members } of grouped(acts, (f) => f.scene)) {
+    const scene = (members[0] as Fact).scene
+    if (members.length === 1) {
+      const last = groups.at(-1)
+      const row = factRow(lookup, members[0] as Fact, grants, true)
+      if (last !== undefined && last.title === '') last.rows.push(row)
+      else groups.push({ title: '', count: null, rows: [row] })
+      continue
+    }
+    const again = lookup.scenes.get(scene)
+    const reopen = again === undefined ? null : reopenFor(again)
+    groups.push({ title: sceneTitle(lookup, scene), count: members.length, link: sceneLink(scene), rows: members.map((f) => factRow(lookup, f, grants, false)), ...(reopen === null ? {} : { reopen }) })
+  }
+  return groups
 }
 
 // ---- home ----
@@ -140,26 +172,10 @@ const SEEN_ALL: Action = { label: '都看过了', tone: 'default', confirm: null
  * one list without a heading.
  */
 export async function homeAnswer(records: Read, lists: readonly StandingList[], news: { since: Instant | null; facts: readonly Fact[] }, agents: readonly FactActor[], grants: readonly Grant[]): Promise<ViewAnswer> {
-  const { since, facts } = news
+  const { since } = news
+  const facts = news.facts.filter(isAct)
   const lookup = await lookupOf(records, facts)
-  const groups: FeedGroup[] = []
-  for (const { members } of grouped(facts, (f) => f.scene)) {
-    const scene = (members[0] as Fact).scene
-    const title = sceneTitle(lookup, scene)
-    // The sentence that heads the group is not a row of it as well, unless it is all the group tells.
-    const heading = (f: Fact) => f.kind === 'said' && f.flavor === 'doing' && f.text === title
-    const told = members.every(heading) ? members : members.filter((f) => !heading(f))
-    if (told.length === 1) {
-      const last = groups.at(-1)
-      const row = factRow(lookup, told[0] as Fact, grants, true)
-      if (last !== undefined && last.title === '') last.rows.push(row)
-      else groups.push({ title: '', count: null, rows: [row] })
-      continue
-    }
-    const reopen = lookup.scenes.get(scene)
-    const again = reopen === undefined ? null : reopenFor(reopen)
-    groups.push({ title, count: told.length, link: sceneLink(scene), rows: told.map((f) => factRow(lookup, f, grants, false)), ...(again === null ? {} : { reopen: again }) })
-  }
+  const groups = sceneGroups(lookup, facts, grants)
   const done = groups.reduce((n, g) => n + g.rows.length, 0)
   // Nothing new since the last look: when that was, and the way to everything that ever happened.
   const looked = done === 0 && since !== null
@@ -204,35 +220,34 @@ function sayStep(agents: readonly FactActor[]): Block {
 // ---- activity ----
 
 /**
- * The latest facts, newest first, owner operations included, by day, a page at a time: `who` keeps
- * the agents' or the owner's, `agent` one agent's. Each filter's options carry how many facts each
- * would show, from the counts the rows keep.
+ * The latest acts, newest first, owner operations included, by day and in each day by scene, as home
+ * shows them, a page at a time: `who` keeps the agents' or the owner's, `agent` one agent's. A scene
+ * saying what it is doing is no act: it heads its acts or is their second line. Each filter's options
+ * carry how many acts each would show, from the counts the rows keep, so they count the rows.
  */
 export async function activityAnswer(records: Read, params: Record<string, string>, grants: readonly Grant[], now: Instant, size = PAGE_ROWS): Promise<ViewAnswer> {
   const who = params.who ?? ''
   const agent = params.agent ?? ''
   const { after } = pageAt(params)
   const counts = await counters(records)
-  const total = counts.log ?? 0
+  const total = counts.acts ?? 0
   const agents = Object.keys(counts)
-    .filter((k) => k.startsWith('log:agent:') && (counts[k] ?? 0) > 0)
-    .map((k) => k.slice('log:agent:'.length))
+    .filter((k) => k.startsWith('acts:agent:') && (counts[k] ?? 0) > 0)
+    .map((k) => k.slice('acts:agent:'.length))
     .sort()
-  const n = (w: string, a: string) => (a !== '' ? (w === 'owner' ? 0 : (counts[`log:agent:${a}`] ?? 0)) : w !== '' ? (counts[`log:who:${w}`] ?? 0) : total)
+  const n = (w: string, a: string) => (a !== '' ? (w === 'owner' ? 0 : (counts[`acts:agent:${a}`] ?? 0)) : w !== '' ? (counts[`acts:who:${w}`] ?? 0) : total)
   const filters = [
     { name: 'who', options: WHO_OPTIONS.map((o) => ({ ...o, count: n(o.value, agent) })) },
     { name: 'agent', options: [{ value: '', label: '全部 agent' }, ...agents.map((a) => ({ value: a, label: a }))].map((o) => ({ ...o, count: n(who, o.value) })) },
   ]
   if (total === 0) {
-    return { title: '活动', subtitle: null, blocks: [{ kind: 'empty', title: '还没有任何记录', hint: 'agent 放东西、说在做什么，主人在这里做操作，都会一条条出现在这里。' }] }
+    return { title: '活动', subtitle: null, blocks: [{ kind: 'empty', title: '还没有任何记录', hint: 'agent 放东西、改东西，主人在这里做操作，都会一条条出现在这里。' }] }
   }
   const opts = { limit: size, ...(after === undefined ? {} : { after }) }
-  const page = agent !== '' ? (who === 'owner' ? { rows: [], more: null } : await records.where<Fact>('log', 'agent', agent, opts)) : who !== '' ? await records.where<Fact>('log', 'who', who, opts) : await records.under<Fact>('log', '', opts)
+  const page = agent !== '' ? (who === 'owner' ? { rows: [], more: null } : await records.where<Fact>('acts', 'agent', agent, opts)) : who !== '' ? await records.where<Fact>('acts', 'who', who, opts) : await records.under<Fact>('acts', '', opts)
   const facts = page.rows.map((r) => r.value)
   const lookup = await lookupOf(records, facts)
-  // A scene whose own row on this page says what it is doing is named there, not again on each of its rows.
-  const named = new Set(facts.filter((f) => f.kind === 'said' && f.flavor === 'doing').map((f) => f.scene))
-  const groups = grouped(facts, (f) => dayTitle(f.at, now)).map(({ title, members }) => ({ title, count: members.length, rows: members.map((f) => factRow(lookup, f, grants, !named.has(f.scene))) }))
+  const groups = grouped(facts, (f) => dayTitle(f.at, now)).map(({ title, members }) => ({ title, count: members.length, rows: [], groups: sceneGroups(lookup, members, grants) }))
   const shown = n(who, agent)
   const paging = pagingOf({ view: ACTIVITY_VIEW, params, rows: size, shown: facts.length, next: page.more?.after ?? null, total: shown })
   // How many: the tabs say it.
@@ -317,10 +332,10 @@ export async function sceneAnswer(records: Read, scene: SceneRow, conversation: 
   // A figure or two read better as words in a line than as cards.
   const figures: Block[] =
     stats.length >= 3 ? [{ kind: 'stats', stats }] : stats.length > 0 ? [{ kind: 'fields', line: true, fields: stats.map((s) => ({ label: s.label, value: { text: `${s.label} ${s.value}${s.note === null ? '' : `（${s.note}）`}`, muted: true } })) }] : []
-  const page = await records.where<Fact>('log', 'scene', scene.id, { limit: size, ...(after === undefined ? {} : { after }) })
+  const page = await records.where<Fact>('acts', 'scene', scene.id, { limit: size, ...(after === undefined ? {} : { after }) })
   const facts = page.rows.map((r) => r.value)
   const lookup = await lookupOf(records, facts, { scenes: [scene.id] })
-  const count = page.more === null && after === undefined ? facts.length : await records.count('log', 'scene', scene.id)
+  const count = page.more === null && after === undefined ? facts.length : await records.count('acts', 'scene', scene.id)
   const paging = pagingOf({ view: SCENE_VIEW, params: { ...params, scene: scene.id }, rows: size, shown: facts.length, next: page.more?.after ?? null, total: count, target: 'panel' })
   // The page is the scene: its rows need no heading of their own.
   const feed: Block = { kind: 'feed', groups: [{ title: '', count: null, rows: facts.map((f) => factRow(lookup, f, grants, false)) }], empty: '这次会话里还没有发生什么。', page: paging }

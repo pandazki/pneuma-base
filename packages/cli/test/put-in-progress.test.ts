@@ -5,7 +5,7 @@
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { sandbox, tempDir, type Sandbox } from './helpers.js'
+import { feedRowsIn, sandbox, tempDir, type Sandbox } from './helpers.js'
 
 /** The command line, without waiting: its exit code and standard output. */
 function run(sb: Sandbox, args: string[]): Promise<{ code: number; stdout: string }> {
@@ -60,7 +60,7 @@ it('check never reports a path being put as nobody’s or as changed directly', 
   for (let params: Record<string, string> | null = {}; params !== null; ) {
     const flags: string[] = Object.entries(params).flatMap(([k, v]) => [`--${k}`, v])
     const feed: any = JSON.parse(sb.run(['--library', lib, 'show', 'ledger.activity', ...flags, '--json']).stdout).blocks.find((b: any) => b.kind === 'feed')
-    rows.push(...feed.groups.flatMap((g: any) => g.rows))
+    rows.push(...feedRowsIn(feed.groups))
     params = feed.page?.next?.params ?? null
   }
   const moves = rows.filter((row: any) => row.text.startsWith('挪 '))

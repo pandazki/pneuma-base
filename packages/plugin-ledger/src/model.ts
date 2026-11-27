@@ -7,7 +7,7 @@ import type { Basis, Envelope, FactActor, How, ItemId, LedgerOrigin, SceneId } f
 import type { Tx } from './rows.js'
 
 /** The shape of the rows; rows of another shape are derived again from the facts. */
-export const ROWS_VERSION = 3
+export const ROWS_VERSION = 4
 
 /** An origin as a row keeps it: a made one's sources are the item's `basis`. */
 export type OriginLike = Exclude<LedgerOrigin, { kind: 'made' }> | { kind: 'made' }

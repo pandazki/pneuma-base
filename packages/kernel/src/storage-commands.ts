@@ -91,6 +91,7 @@ function officialCandidate(o: OfficialProvider, c: Candidate | Refusal): Candida
 
 const storageInstall = command({
   name: 'storage install',
+  act: { kind: 'installed', object: 'repository' },
   summary: '从一个 GitHub 仓库的发布装一个存储提供者到这台机器：取本平台的程序，钉在一个版本上，对校验和，过了契约测试才装',
   params: INSTALL_PARAMS,
   destructive: false,
@@ -123,6 +124,7 @@ const storageInstall = command({
 
 const storageUpdate = command({
   name: 'storage update',
+  act: { kind: 'changed', object: 'name' },
   summary: '把一个装上来的存储提供者换成新的版本：第三方的取仓库最新的发布，官方的取名单里的版本；同样先对校验和、过契约测试',
   params: UPDATE_PARAMS,
   destructive: false,
@@ -148,6 +150,7 @@ const storageUpdate = command({
 
 const storageRemove = command({
   name: 'storage remove',
+  act: { kind: 'uninstalled', object: 'name' },
   summary: '从这台机器卸掉一个装上来的存储提供者',
   params: { positional: [NAME] },
   destructive: false,

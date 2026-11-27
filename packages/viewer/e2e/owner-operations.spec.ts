@@ -105,11 +105,14 @@ test('every owner operation from the page leaves a trace an agent sees in check'
   await expect(status).toContainText('已为 claude 写好技能')
   expect(existsSync(join(skills, 'pneuma-base-claude', 'SKILL.md'))).toBe(true)
 
-  // The activity page lists every one of them.
+  // The activity page lists every one of them, each as what was done to what, never what the command printed.
   await nav.getByRole('button', { name: '活动' }).click()
+  const switchedOn = main.getByRole('listitem').filter({ has: page.getByRole('img', { name: '打开' }) }).filter({ hasText: 'pager' }).first()
+  await expect(switchedOn).toBeVisible()
+  await expect(switchedOn).not.toContainText('已装上')
   for (const command of ['ledger held restore', 'plugin add', 'plugin remove', 'grant issue', 'grant revoke', 'skill install']) {
-    // The row says what came of it; the command is in its tooltip.
-    await expect(main.getByRole('listitem').filter({ has: page.locator(`.feed-line[title^="主人面的操作 ${command}："]`) }).first().getByRole('img', { name: '主人' })).toBeVisible()
+    // The row says what was done to what; the command as given is its tooltip.
+    await expect(main.getByRole('listitem').filter({ has: page.locator(`.feed-line[title^="pneuma-base ${command} "]`) }).first().getByRole('img', { name: '主人' })).toBeVisible()
   }
   await expect(main.getByRole('listitem').filter({ has: page.locator('.feed-line[title^="认了 notes.md 的直接改动"]') }).getByRole('img', { name: '主人' })).toBeVisible()
 

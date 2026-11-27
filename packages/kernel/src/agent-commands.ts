@@ -267,6 +267,7 @@ export function agentCommands({ grantIssue, grantRevoke, skillInstall }: Base): 
     }),
     command({
       name: 'agent connect',
+      act: { kind: 'connected', object: 'product' },
       summary: '把一个 agent 产品接到这个库：发授权，再装技能或登记 MCP 服务；产品表里没有的产品只发授权，它经 MCP 自己连上来',
       params: {
         positional: [{ name: 'product', hint: '产品', required: true, pattern: GRANT_NAME.source }],
@@ -344,6 +345,7 @@ export function agentCommands({ grantIssue, grantRevoke, skillInstall }: Base): 
     }),
     command({
       name: 'agent disconnect',
+      act: { kind: 'disconnected', object: 'grant' },
       summary: '断开一个接上的 agent：拿掉接上时写的，再撤回授权',
       params: { positional: [{ name: 'grant', hint: '授权名', required: true }], flags: [{ name: 'keep-grant', hint: '授权留着', kind: 'boolean' }] },
       destructive: false,
@@ -380,7 +382,7 @@ export function agentCommands({ grantIssue, grantRevoke, skillInstall }: Base): 
         if (library === null) return act(null)
         // Run from the command line with no library at hand: the grant is revoked in its library, as an operation of that library.
         const ctx = makeContext(library, call.ctx.actor, call.ctx.session, call.ctx.home, call.ctx.now)
-        const r = await performOwner(ctx, 'agent disconnect', { positional: [grant], flags: {} }, { destructive: false, readOnly: false }, () => act({ ...call, ctx }))
+        const r = await performOwner(ctx, 'agent disconnect', { positional: [grant], flags: {} }, { destructive: false, readOnly: false, act: { kind: 'disconnected', object: grant } }, () => act({ ...call, ctx }))
         const { problems, ...answer } = r
         return { answer, problems }
       },

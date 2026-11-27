@@ -1,7 +1,7 @@
 // The shape of the kernel's own owner commands, and the answers they give. ARCHITECTURE.md「命令表」.
 import type { KernelCommandName } from './claims.js'
 import type { LibraryCall, OwnerCall } from './owner.js'
-import type { Library, OwnerAnswer, OwnerParams, OwnerValues, ParamValues, PluginProblem } from '@pneuma-base/sdk'
+import type { Library, OwnerAct, OwnerAnswer, OwnerParams, OwnerValues, ParamValues, PluginProblem } from '@pneuma-base/sdk'
 
 export type Outcome = { answer: OwnerAnswer; library?: Library; problems?: PluginProblem[] }
 
@@ -14,6 +14,7 @@ type KernelBase = {
   readonly readOnly?: boolean
   readonly setup?: boolean
   readonly askable?: false
+  readonly act?: OwnerAct
 }
 
 /**

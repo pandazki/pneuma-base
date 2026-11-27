@@ -3,6 +3,7 @@
 // thing is known by its state token, and its content is read only where a fingerprint decides
 // something or the owner names a whole pass. ARCHITECTURE.md「记账与对账」.
 import {
+  commandLine,
   CONTRACT,
   PNEUMA_BASE_VERSION,
   isFailure,
@@ -276,7 +277,8 @@ function purged(event: Extract<Event, { face: 'owner' }>): LibraryPath[] {
 /**
  * The fact an event makes, if any. Approving a request is no row of its own: the run it approved is
  * the row, carrying who asked, whether the command did it or refused, since the owner decided either way.
- * `ledger stats` is the page 统计 read as text and leaves no row, as looking at the page leaves none.
+ * A read-only command leaves none: it only looks, as `ledger stats` reads the page 统计 as text. The
+ * record keeps the command as given and what it did to what, as the command declares; not what it printed.
  */
 function recordOf(event: Event): FactBody | null {
   if (event.face === 'agent') {
@@ -287,13 +289,14 @@ function recordOf(event: Event): FactBody | null {
     return null
   }
   const r = event.result
-  if (event.command === 'request approve' || event.command === LEDGER_STATS.name || r.outcome === 'failed' || (r.outcome === 'refused' && !event.request)) return null
+  if (event.readOnly || event.command === 'request approve' || r.outcome === 'failed' || (r.outcome === 'refused' && !event.request)) return null
   return {
     kind: 'owner.op',
     command: event.command,
     summary: ownerSummary(r.text),
     destructive: event.destructive,
-    ...(event.readOnly ? { readOnly: true as const } : {}),
+    line: commandLine(event.command, event.args),
+    ...(event.act ? { act: event.act.kind, ...(event.act.object === null ? {} : { object: event.act.object }) } : {}),
     ...(event.setup ? { setup: true as const } : {}),
     ...(event.request ? { request: { id: event.request.id, by: { kind: 'agent' as const, name: event.request.by.name, grant: event.request.by.grant } } } : {}),
     ...(r.outcome === 'refused' ? { refused: r.reason } : {}),

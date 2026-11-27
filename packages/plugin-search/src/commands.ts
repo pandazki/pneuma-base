@@ -65,6 +65,7 @@ async function rebuild(ctx: PluginContext): Promise<OwnerAnswer> {
 
 export const SET_EMBEDDER = defineCommand({
   name: 'search embedder set',
+  act: { kind: 'set', object: 'model', name: '嵌入模型' },
   summary: '设按意思找用的嵌入器：hash，或 OpenAI 兼容的 http 服务',
   params: {
     flags: [
@@ -105,6 +106,7 @@ export const searchCommands: OwnerCommand[] = [
   SET_EMBEDDER,
   defineCommand({
     name: 'search embedder clear',
+    act: { kind: 'removed', name: '嵌入模型' },
     summary: '清除嵌入器，find 只按文字找',
     params: {},
     destructive: false,

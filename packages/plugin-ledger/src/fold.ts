@@ -2,7 +2,7 @@
 // id). It reads only the rows the batch names (prefetched in a few asks) and the few that a fact reaches
 // through them: a bundle's absorbed things, a source's dependents. ARCHITECTURE.md「存放和行」.
 import { originalPath, type LibraryPath, type Place } from '@pneuma-base/kernel'
-import { actorKey, inOrder, isTold, mayBeNews, newsKey, requestOf, turned, type Basis, type Fact, type FactActor, type ItemId, type LedgerOrigin } from './facts.js'
+import { actorKey, inOrder, isAct, isTold, mayBeNews, newsKey, requestOf, turned, type Basis, type Fact, type FactActor, type ItemId, type LedgerOrigin } from './facts.js'
 import {
   ancestors,
   archived,
@@ -240,7 +240,7 @@ class Folding {
       case 'said':
         return this.said(f, scene)
       case 'owner.op': {
-        if (!scene.ops.some((op) => op.command === f.command && actorKey(op.actor) === actorKey(f.actor))) scene.ops.push({ command: f.command, actor: f.actor })
+        if (!f.readOnly && !scene.ops.some((op) => op.command === f.command && actorKey(op.actor) === actorKey(f.actor))) scene.ops.push({ command: f.command, actor: f.actor })
         this.tx.set('scenes', scene.id, scene)
         if (f.command === 'ledger held drop' && f.refused === undefined) await this.dropHeld()
         return
@@ -604,12 +604,15 @@ class Folding {
 
   // ---- what every fact is counted as ----
 
+  /** Every told fact into the log, which the export reads whole and news is read from; the acts also into their own table, by whom and by scene, as the pages read them, and counted. */
   private async log(f: Fact): Promise<void> {
     const { tx } = this
-    tx.set('log', newsKey(f), f, { who: f.actor.kind, scene: f.scene, ...(f.actor.kind === 'agent' ? { agent: f.actor.name } : {}), ...(mayBeNews(f) ? { news: 'y' } : {}) })
-    await tx.bump('log', 1)
-    await tx.bump(`log:who:${f.actor.kind}`, 1)
-    if (f.actor.kind === 'agent') await tx.bump(`log:agent:${f.actor.name}`, 1)
+    tx.set('log', newsKey(f), f, mayBeNews(f) ? { news: 'y' } : {})
+    if (!isAct(f)) return
+    tx.set('acts', newsKey(f), f, { who: f.actor.kind, scene: f.scene, ...(f.actor.kind === 'agent' ? { agent: f.actor.name } : {}) })
+    await tx.bump('acts', 1)
+    await tx.bump(`acts:who:${f.actor.kind}`, 1)
+    if (f.actor.kind === 'agent') await tx.bump(`acts:agent:${f.actor.name}`, 1)
   }
 
   private async count(f: Fact): Promise<void> {

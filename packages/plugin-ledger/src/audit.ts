@@ -112,6 +112,7 @@ const FORMATS = [
 
 export const LEDGER_EXPORT = defineCommand({
   name: 'ledger export',
+  act: { kind: 'exported', object: 'to' },
   summary: '把活动里的每一条记录导出到库外的一个文件，给审计用',
   params: {
     flags: [
@@ -123,7 +124,6 @@ export const LEDGER_EXPORT = defineCommand({
   },
   destructive: false,
   ownerOnly: true,
-  readOnly: true,
   async run({ to, since, until, format }, ctx) {
     const from = since === null ? null : momentOf(since, false)
     const till = until === null ? null : momentOf(until, true)

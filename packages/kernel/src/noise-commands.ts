@@ -35,6 +35,7 @@ export const NOISE_COMMANDS: readonly KernelCommand[] = [
   }),
   command({
     name: 'noise add',
+    act: { kind: 'hidden', object: 'path' },
     summary: '加一条噪音：一个库内路径，或用 --name 加一个名字；之后库不再报告、不再进入它',
     params: { positional: [PATH], flags: [NAME] },
     destructive: false,
@@ -49,6 +50,7 @@ export const NOISE_COMMANDS: readonly KernelCommand[] = [
   }),
   command({
     name: 'noise remove',
+    act: { kind: 'shown', object: 'path' },
     summary: '去掉一条噪音：一个库内路径，或用 --name 去掉一个名字',
     params: { positional: [PATH], flags: [NAME] },
     destructive: false,

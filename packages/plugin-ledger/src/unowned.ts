@@ -145,6 +145,7 @@ async function registerInside(ctx: PluginContext, dir: Place, input: string): Pr
 
 export const REGISTER = defineCommand({
   name: 'ledger register',
+  act: { kind: 'brought', object: 'dir' },
   summary: '把还没登记的散文件记为主人带进来的；写一个目录只登记它这一层的；加 --inside 登记这个目录里的全部文件，先说有多少，再报进度，Ctrl-C 停下',
   params: {
     positional: [{ name: 'dir', hint: '库内的目录，. 是库的根目录；不写是所有看过的目录' }],
@@ -168,6 +169,7 @@ export const REGISTER = defineCommand({
 
 export const LEAVE = defineCommand({
   name: 'ledger leave',
+  act: { kind: 'hidden', object: 'dir', name: '没登记的散文件' },
   summary: '还没登记的散文件照原样留着，不再为它们问主人；写一个目录只管它这一层的',
   params: { positional: [{ name: 'dir', hint: '库内的目录；不写是所有看过的目录' }] },
   destructive: false,

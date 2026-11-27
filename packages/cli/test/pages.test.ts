@@ -7,12 +7,12 @@
 // - every business verb and command has a button or is the read behind a page, and every management
 //   command has a place on the owner's pages; what has none is listed below with why.
 import { join } from 'node:path'
-import { actionFault, callableIn, openLibrary, ownerFace, type Action, type Block, type Cell, type Link, type ListedView, type Paging, type TreeNode, type ViewResult } from '@pneuma-base/kernel'
+import { actionFault, callableIn, openLibrary, ownerFace, type Action, type Block, type Cell, type FeedGroup, type FeedRow, type Link, type ListedView, type Paging, type TreeNode, type ViewResult } from '@pneuma-base/kernel'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { main, type Io } from '../dist/main.js'
 import { commandOf, linkCommand, minute } from '../dist/page.js'
 import { builtinPlugins } from '../dist/plugins.js'
-import { sandbox, tempDir, type Sandbox } from './helpers.js'
+import { feedGroupsIn, feedRowsIn, sandbox, tempDir, type Sandbox } from './helpers.js'
 
 type Shown = Extract<ViewResult, { outcome: 'shown' }>
 type Page = { link: Link; json: Shown; text: string }
@@ -93,7 +93,7 @@ function actionsOf(b: Block): Action[] {
     case 'custom':
       return Object.values(b.actions)
     case 'feed':
-      return b.groups.flatMap((g) => g.rows.flatMap((r) => (r.action ? [r.action] : [])))
+      return (feedRowsIn(b.groups) as FeedRow[]).flatMap((r) => (r.action ? [r.action] : []))
     case 'asks':
       return b.asks.flatMap((a) => a.actions)
     default:
@@ -112,7 +112,7 @@ function cellsOf(b: Block): Cell[] {
     case 'timeline':
       return b.entries.map((e) => e.title)
     case 'feed':
-      return b.groups.flatMap((g) => g.rows.flatMap((r) => r.meta))
+      return (feedRowsIn(b.groups) as FeedRow[]).flatMap((r) => r.meta)
     default:
       return []
   }
@@ -132,7 +132,7 @@ function linksOf(b: Block, view: string): Link[] {
     case 'table':
       return [...cells, ...b.rows.flatMap((r) => (r.link ? [r.link] : []))]
     case 'feed':
-      return [...cells, ...b.groups.flatMap((g) => [...(g.link ? [g.link] : []), ...g.rows.flatMap((r) => (r.link ? [r.link] : []))])]
+      return [...cells, ...(feedGroupsIn(b.groups) as FeedGroup[]).flatMap((g) => [...(g.link ? [g.link] : []), ...g.rows.flatMap((r) => (r.link ? [r.link] : []))])]
     case 'tree':
       return nodes(b.nodes).map((n) => ({ view, params: { [b.param]: n.value }, target: 'main' as const }))
     case 'asks':
@@ -267,7 +267,7 @@ describe('every page of a library with every built-in plugin', () => {
         if (block.kind === 'custom') expect(text, where).toContain(block.text)
         if (block.kind === 'section') expect(text, where).toContain(block.title)
         if (block.kind === 'text') expect(text, where).toContain(block.text)
-        if (block.kind === 'feed') for (const row of block.groups.flatMap((g) => g.rows)) expect(text, `${where}: ${row.text}`).toContain(row.text)
+        if (block.kind === 'feed') for (const row of feedRowsIn(block.groups) as FeedRow[]) expect(text, `${where}: ${row.text}`).toContain(row.text)
         if (block.kind === 'asks') for (const ask of block.asks) expect(text, `${where}: ${ask.text}`).toContain(`${ask.text}${ask.command === undefined ? '' : `（${typeof ask.by === 'string' ? ask.by : ask.by.name}）\n    ${ask.command}`}`)
         if (block.kind === 'stats') for (const stat of block.stats) expect(text, `${where}: ${stat.label}`).toContain(`${stat.label}：${stat.value}`)
         if (block.kind === 'tree') for (const node of block.nodes) expect(text, `${where}: ${node.label}`).toContain(node.label)

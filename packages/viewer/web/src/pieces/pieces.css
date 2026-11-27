@@ -80,6 +80,14 @@
   flex-direction: column;
   gap: 2px;
 }
+/* A heading over headings, such as a day over its scenes, is the stronger of the two. */
+.feed-group[data-outer] {
+  gap: 8px;
+}
+.feed-group[data-outer] > .feed-head > :is(button, span) {
+  color: var(--ink);
+  font-weight: 600;
+}
 /* A heading is a quiet line over its rows; one that opens what it names, such as a scene, is a button. */
 .feed-head {
   display: flex;

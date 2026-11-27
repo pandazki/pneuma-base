@@ -58,6 +58,7 @@ export const PAIR_COMMANDS: readonly KernelCommand[] = [
   }),
   command({
     name: 'pair allow',
+    act: { kind: 'connected', object: 'name' },
     summary: '允许一个请求接入的 agent：以它的产品名发授权，照产品表接上（就是 agent connect）；可以限在一个区域、只读，或另起授权名',
     params: PAIR_ALLOW.params,
     destructive: false,
@@ -80,6 +81,7 @@ export const PAIR_COMMANDS: readonly KernelCommand[] = [
   }),
   command({
     name: 'pair decline',
+    act: { kind: 'declined', object: 'id' },
     summary: '拒绝一个请求接入的 agent，可以说一句理由；它下次问的时候知道，不会再请求',
     params: PAIR_DECLINE.params,
     destructive: false,

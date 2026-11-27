@@ -295,12 +295,13 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('greet'), cog
 | `destructive: true` | 以 `agent-session` 拒绝 | 要当面确认：终端里问，输入 `yes` 才做；别的回答、输入结束（Ctrl+D）、不在终端里，都以 `not-confirmed` 拒绝；界面里是动作的 `confirm` 那一问 | 丢数据、不能撤回的。它可以删、改写插件自己目录里的文件（3.7） |
 | `ownerOnly: true` | 以 `agent-session` 拒绝；调用者是 agent 时，话的最后一行是请主人做它的 `ask` | 直接做 | 不丢数据、但替主人做决定的：对外发布、设部署或同步的目标、设密钥 |
 | `askable: false` | 被拒时不给 `ask` 那一行；`ask` 请它以 `not-askable` 拒绝 | 直接做 | 只给主人、又要主人亲手给东西的：值从标准输入读的（像内核的 `secret set`），或要主人在场才能定的 |
-| `readOnly: true` | 照做 | 照做 | 什么都不改的，库里库外都不改。它的事件对 agent 不算消息 |
+| `readOnly: true` | 照做 | 照做 | 只看的：库里库外都不改，也不往外拿数据（导出不是只读的）。列东西、说状态的命令都是。看不是动作，记账插件不为它记事实 |
 | `setup: true` | 照做 | 照做 | 只改插件、目标这类配置、不动条目的。agent 第一次来之后再改才算消息 |
 
 **被 agent 请。** 只给主人、不破坏的命令，插件不用多写什么，agent 就能请主人做：它在会话里被拒时，拒绝的话最后一行是 `pneuma-base @<授权名> ask "<为什么>" <命令和参数>`；agent 照着提，内核当场按这条命令的参数表核对参数，主人在首页或 `request list` 里批准，命令就以主人此刻的身份照原样跑，`run` 拿到的和主人自己跑时一样，事件多带一个 `request`（3.5）。破坏性的命令不能请，要主人当面确认。不想被请的写 `askable: false`；它只能写 `false`，写别的装载时拒绝（检查：`loads`）。
 
 - `readOnly: true` 的命令必须什么都不改。符合性检查以主人身份跑每条参数都可省的 `readOnly` 命令，它出的问题算在 `hooks` 里，它改了东西算在 `writes` 里。
+- 改了东西的命令写 `act`，活动页的那一行就说它做了什么：`{ kind, object?, name? }`。`kind` 是动作的种类，画成图标（`FEED_ACTS` 里的一个：`on`、`off`、`installed`、`set`、`synced`、`exported`、`removed`、`restored` 这些）；`object` 是参数表里一个位置参数或开关的名字，它的值是这一行的名字（`deploy on <path>` 写 `object: 'path'`）；没有这样的参数时写 `name`，一个固定的名字（`sync now` 写 `name: '同步'`）。不写 `act` 的，那一行的图标是命令，名字是命令名。命令的答复从不上那一行，照给的写法写出的命令在提示和 `show` 里。装载时核对它的形状（检查：`loads`）。
 - `destructive: true` 的命令可以删、改写插件自己目录里的文件，库里别处的什么都不得动（检查：`writes`）。主人总能丢掉数据。符合性检查以主人身份跑每条参数都可省的破坏性命令，像人在界面里点了确认那样给它当面确认；要参数的，列成提醒。
 
 **谁算 agent。** 调用带着授权、写了 `--as`，或环境里有 `PNEUMA_BASE_SESSION` 或 agent 产品的会话变量（4.1 列出），门就当它在 agent 的会话里，拒绝的话说出是哪一样。管理界面的服务用启动它的 shell 的环境，所以在 agent 的会话里启动的界面同样被拒。
@@ -351,7 +352,7 @@ notes/plan.md：第三节的数字还没核对（claude-code）
 
 库根和插件 `openDirs` 答的目录是展开的目录。登记一个展开的目录不加标记，登记它这一层的散文件（`register-files`，3.2）；界面每 2 秒只看这些目录有没有变（3.6）。记着登记过的东西的插件该答它：不答，登记一个装着登记过的东西的目录会给它加上标记，把里面的东西并成一样。
 
-agent 面的事件是 `{ face: 'agent', verb, request, result }`，失败时 `result` 是 `{ outcome: 'failed', message }`；主人面的是 `{ face: 'owner', command, args, destructive, readOnly, setup, request?, result }`：主人批准 agent 的请求时跑的那条命令带 `request: { id, by: { name, grant } }`，说是谁请的，被拒也照样发；批准这件事本身另是一条 `request approve` 的事件。agent 提请求和撤回是动词 `ask` 的事件，`result` 是 `AskResult`。主人命令结果里的 `data` 不在契约里，类型是 `unknown`：要知道清空了哪些、装卸了谁，用 `onPurged`、`onAdd`、`onRemove`。不发事件的有：视图和条目面板，开始之前就被拒绝的主人命令（没有这条命令，或要库却没给库），和不用指明库、也没带库运行的内核命令：`plugin install`、`plugin uninstall`、`plugin list`、三条 `secret`、四条 `storage`、`agent detect`、`agent disconnect`、`agent list`、`launcher install`。`plugin add` 的事件在库重新打开之后发，刚装上的插件听得到；`plugin remove` 的事件发时它已经不在。
+agent 面的事件是 `{ face: 'agent', verb, request, result }`，失败时 `result` 是 `{ outcome: 'failed', message }`；主人面的是 `{ face: 'owner', command, args, destructive, readOnly, setup, act?, request?, result }`：命令声明了 `act` 时，`act` 是它的种类和这次针对的东西（`{ kind, object }`，没有对象是 `null`）；主人批准 agent 的请求时跑的那条命令带 `request: { id, by: { name, grant } }`，说是谁请的，被拒也照样发；批准这件事本身另是一条 `request approve` 的事件。agent 提请求和撤回是动词 `ask` 的事件，`result` 是 `AskResult`。主人命令结果里的 `data` 不在契约里，类型是 `unknown`：要知道清空了哪些、装卸了谁，用 `onPurged`、`onAdd`、`onRemove`。不发事件的有：视图和条目面板，开始之前就被拒绝的主人命令（没有这条命令，或要库却没给库），和不用指明库、也没带库运行的内核命令：`plugin install`、`plugin uninstall`、`plugin list`、三条 `secret`、四条 `storage`、`agent detect`、`agent disconnect`、`agent list`、`launcher install`。`plugin add` 的事件在库重新打开之后发，刚装上的插件听得到；`plugin remove` 的事件发时它已经不在。
 
 **补上。** 从放里学登记了什么的插件（查找、同步、链接检查这样的）装进一个已经在用的库时，要补上装上之前登记过的东西，之后它对这些东西的答复和装着它时放进来的一样（检查：`catchup`）。内核替它做：`plugin add` 装上它、调过 `onAdd` 之后，一页一页地取登记（`tools.registered`），交给它的 `catchUp`，直到最后一页。这是它的一次有名字的全量动作（`ctx.pass`，3.4），由内核报进度：先说一共多少样，每页报一次进度，人停下就停在那一页之后。补到哪里记在内核的记录处 `kernel` 里，`plugin catch-up <名字>`（主人和 agent 都能用）从停下的那一页接着补，补完了的从头再补一遍。没补完时，内核在这个插件的找的命中、查的节、主人命令的答复和它的页上加一行：「装上之前登记的 2000 样补了 500 样；接着补：pneuma-base plugin catch-up <名字>」。答 `registered` 的是配置里第一个有它的插件；没有这样的插件时登记是空的，`catchUp` 不调。插件只记着一部分东西（版本插件只记声明过的）就不用 `catchUp`：声明一样早就在库里的东西照常能做。
 

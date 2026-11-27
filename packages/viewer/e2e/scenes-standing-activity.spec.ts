@@ -69,7 +69,7 @@ test('scenes, standing and activity: what happened and what needs attention', as
   const rows = main.getByRole('listitem')
   await expect(rows.first().locator('.feed-name')).toHaveText('integration-notes.md')
   await expect(rows.first().getByRole('img', { name: /^codex/ })).toBeVisible()
-  const granted = rows.filter({ has: page.locator('.feed-line[title^="主人面的操作 grant issue："]') })
+  const granted = rows.filter({ has: page.locator('.feed-line[title^="pneuma-base grant issue "]') })
   await expect(granted.first().getByRole('img', { name: '主人' })).toBeVisible()
   // An agent acting on its own is the ordinary case, and goes unmarked.
   await expect(main.getByText('自己做的')).toHaveCount(0)

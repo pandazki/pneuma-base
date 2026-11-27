@@ -13,6 +13,7 @@ const refused = (reason: string, text: string, data?: unknown): OwnerAnswer => (
 
 export const TARGET_SET = defineCommand({
   name: 'sync target set',
+  act: { kind: 'set', object: 'to', name: '同步目标' },
   summary: '设同步目标：本机上的一个目录',
   params: {
     flags: [
@@ -60,6 +61,7 @@ function runText(fact: RunFact): string[] {
 
 const now = defineCommand({
   name: 'sync now',
+  act: { kind: 'synced', name: '同步' },
   summary: '现在同步：不合并内容，不让任何内容找不回',
   params: {},
   destructive: false,
