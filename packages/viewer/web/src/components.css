@@ -12,6 +12,15 @@
   box-shadow: var(--shadow-card);
 }
 
+/* A layer floating over the page's content, in the material of the UI's palette, menus and notices. */
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--glass-edge), var(--shadow-popover);
+}
+
 /* Buttons: secondary by default, three sizes, near-black primary, red as a tint; pressed shrinks to .97. */
 .btn {
   position: relative;

@@ -15,7 +15,7 @@ import { BlockEnvContext, type BlockEnv, type Done } from './env'
 import { pageActions, Palette } from './palette'
 import { PANEL, SIDE, useFileLook, usePrefs, type FileLook } from './prefs'
 import { activate, back, closeAll, closeTab, follow, retop, shownOf, useRoute } from './route'
-import { IN_SHELL, type ShellCommand } from './shell'
+import { confirmInShell, IN_SHELL, type ShellCommand } from './shell'
 import { entryOf, firstPage, navOrder, POLL_MS, Sidebar } from './sidebar'
 import { localMoments } from './time'
 import { Toaster, useToasts } from './toasts'
@@ -163,8 +163,8 @@ const keyOf = (req: ViewRequest | null) => (req === null ? null : JSON.stringify
 
 /** The main panel never gets narrower than this while the sidebar can step aside. */
 const MAIN_MIN = 520
-/** The folded sidebar; inside the Mac app it leaves room for the window's buttons above it. */
-const RAIL = IN_SHELL ? 76 : 48
+/** The folded sidebar; inside the Mac app its pane, 8px in from the window's edge, holds the window's buttons. */
+const RAIL = IN_SHELL ? 96 : 48
 
 function useWindowWidth(): number {
   const [width, setWidth] = useState(window.innerWidth)
@@ -267,6 +267,7 @@ function HeadActions({ actions }: { actions: Action[] }) {
   return <ActionBar actions={actions} small={false} className="head-actions" />
 }
 
+/** A view's answer. Keyed by its page where it is used: what a block keeps (a section folded, an answer) belongs to that page, not to the place. */
 function Shown({ result, failed }: { result: ViewResult | null; failed: boolean }) {
   if (result === null) return failed ? <p className="note" data-tone="bad">这一页没能取到。</p> : <Loading />
   if (result.outcome === 'no-such-view') return <p className="note">没有这一页。</p>
@@ -530,9 +531,12 @@ export function App() {
     [go],
   )
   onLinkRef.current = onLink
+  // In the app, a question with nothing to fill in is the system's sheet.
   const onAction = useCallback(
-    (action: Action, values: Record<string, string> = {}, filled = false): Promise<Done | null> =>
-      (action.inputs.length > 0 && !filled) || action.confirm !== null ? new Promise((resolve) => setPending({ id: ++asked.current, action, values, resolve })) : run(action, values, false),
+    (action: Action, values: Record<string, string> = {}, filled = false): Promise<Done | null> => {
+      if (IN_SHELL && action.confirm !== null && action.inputs.length === 0) return confirmInShell(action.confirm, action.label, action.tone === 'danger').then((ok) => (ok ? run(action, values, true) : null))
+      return (action.inputs.length > 0 && !filled) || action.confirm !== null ? new Promise((resolve) => setPending({ id: ++asked.current, action, values, resolve })) : run(action, values, false)
+    },
     [run],
   )
   const selected = useCallback((link: Link | null) => link !== null && link.target === 'panel' && sameLink(link, top), [top])
@@ -649,7 +653,7 @@ export function App() {
             </header>
             <div className="page-body">
               <Problems problems={data.problems} />
-              <Shown result={shown.data} failed={shown.failed} />
+              <Shown key={current?.view} result={shown.data} failed={shown.failed} />
             </div>
           </main>
           {hasTabs ? (
@@ -669,7 +673,7 @@ export function App() {
               >
                 <BlockEnvContext.Provider value={panelEnv}>
                   <div className="blocks">
-                    <Shown result={detail.data} failed={detail.failed} />
+                    <Shown key={keyOf(top)} result={detail.data} failed={detail.failed} />
                   </div>
                 </BlockEnvContext.Provider>
               </DetailPanel>

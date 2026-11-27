@@ -581,8 +581,10 @@
   gap: 2px;
   padding: 8px 10px;
   border-radius: var(--radius-item);
-  background: var(--overlay);
-  box-shadow: var(--shadow-popover);
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  box-shadow: var(--glass-edge), var(--shadow-popover);
   font-size: 12px;
   line-height: 18px;
   pointer-events: none;

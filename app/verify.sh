@@ -287,6 +287,89 @@ wait_for "tray: shown" 5 && ok "a click on the icon opens the panel" || fail "th
 page_shows tray.txt "要上线吗" 10 text-tray && grep -q "我的库" "$work/tray.txt" && grep -q "打开窗口" "$work/tray.txt" && ok "the panel: the library, the ask, 打开窗口" || fail "the panel: $(head -c 300 "$work/tray.txt")"
 snap snap-tray tray-app
 
+# Liquid Glass. The sidebar is a pane the page leaves clear over the system's glass, which the app
+# moves with the page's report of the pane; the panel's frame is glass; with transparency reduced
+# (the app's own flag, as the system's setting would set it) both are opaque with a border, and so is
+# the page's floating material. With PNEUMA_BASE_SHOTS set, pictures of the window and the panel as
+# the screen shows them, over a colourful desktop the app puts behind them; and the frame times.
+glass_report() { rm -f "$work/$1"; hook "glass:report:$work/$1"; i=0; while [ ! -s "$work/$1" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done; cat "$work/$1" 2>/dev/null || true; }
+# The pane of glass is where the page's sidebar is: "x,y,w,h rR" both.
+glass_follows() { pane=$(sed -n 's/^pane: \(.*\) glass$/\1/p' "$work/$1"); side=$(sed -n 's/^page sidebar: //p' "$work/$1"); [ -n "$pane" ] && [ "$pane" = "$side" ]; }
+glass_report glass-1.txt >/dev/null
+grep -qx "tray: glass r20" "$work/glass-1.txt" && ok "the panel's frame is one pane of the system's glass" || fail "the panel's frame: $(grep '^tray' "$work/glass-1.txt")"
+grep -qx "window: clear" "$work/glass-1.txt" && grep -qx "page transparency: glass" "$work/glass-1.txt" && grep -qx "page sidebar ground: rgba(0, 0, 0, 0)" "$work/glass-1.txt" && grep -qx "page ground: rgba(0, 0, 0, 0)" "$work/glass-1.txt" \
+  && glass_follows glass-1.txt && ok "the sidebar is glass: the page leaves it clear and the glass covers it, $pane" || fail "the sidebar's glass: $(cat "$work/glass-1.txt")"
+hook "glass:resize:1000,640"; sleep 1
+glass_report glass-2.txt >/dev/null
+glass_follows glass-2.txt && echo "$pane" | grep -q ",624 r" && ok "after a resize to 1000x640 the glass covers the sidebar: $pane" || fail "after a resize: $(cat "$work/glass-2.txt")"
+page_eval 'document.querySelector("[aria-label=收起侧栏]").click(), "folded"' >/dev/null; sleep 1
+glass_report glass-3.txt >/dev/null
+glass_follows glass-3.txt && [ "$pane" != "$(sed -n 's/^pane: \(.*\) glass$/\1/p' "$work/glass-2.txt")" ] && ok "folded to a rail, the glass covers the rail: $pane" || fail "folded: $(cat "$work/glass-3.txt")"
+page_eval 'document.querySelector("[aria-label=展开侧栏]").click(), "unfolded"' >/dev/null; sleep 1
+hook glass:reduce; sleep 1
+glass_report glass-4.txt >/dev/null
+grep -qx "window: opaque" "$work/glass-4.txt" && grep -q "^pane: .* hidden$" "$work/glass-4.txt" && grep -qx "tray: opaque" "$work/glass-4.txt" && grep -qx "page transparency: reduced" "$work/glass-4.txt" \
+  && grep -q "^page sidebar ground: rgb(" "$work/glass-4.txt" && grep -q "^page glass: none rgb(" "$work/glass-4.txt" \
+  && ok "transparency reduced: the window and the panel are opaque, no glass; the page draws an opaque sidebar and floating layers, $(sed -n 's/^page glass: //p' "$work/glass-4.txt")" || fail "transparency reduced: $(cat "$work/glass-4.txt")"
+hook glass:normal; sleep 1
+glass_report glass-5.txt >/dev/null
+grep -qx "window: clear" "$work/glass-5.txt" && grep -qx "tray: glass r20" "$work/glass-5.txt" && grep -q "^page glass: blur" "$work/glass-5.txt" && glass_follows glass-5.txt && ok "back to glass: $(sed -n 's/^page glass: //p' "$work/glass-5.txt")" || fail "back to glass: $(cat "$work/glass-5.txt")"
+# A question before an act that cannot be undone is the system's sheet on the window: 断开 an agent, then 取消.
+hook "route:view=agents"; sleep 1
+agents_before=$(pb --library "$lib" agent list 2>&1)
+mark
+# 断开 is in a row's 「···」: open each until one holds it, and choose it.
+page_eval '(async () => { const wait = (ms) => new Promise((r) => setTimeout(r, ms)); window.__pbAsked = "none"; for (const more of document.querySelectorAll("main [aria-label=更多]")) { more.click(); await wait(200); const item = [...document.querySelectorAll("[role=menuitem]")].find((m) => m.textContent.includes("断开")); if (item) { item.click(); window.__pbAsked = "asked"; return } more.click(); await wait(100) } })(), "started"' >/dev/null
+sleep 2
+asked=$(page_eval 'window.__pbAsked')
+if [ "$asked" = asked ] && logged "sheet: " && since_mark | grep -q "sheet: 断开后，.* | 断开 (danger) | 取消$"; then
+  ok "断开 asks with the system's sheet: $(since_mark | sed -n 's/^.*sheet: //p' | head -1)"
+else
+  fail "断开's sheet ($asked): $(since_mark | grep 'sheet:' | tail -2)"
+fi
+if [ -n "$shots" ]; then
+  mkdir -p "$shots"
+  hook glass:backdrop
+  for look in light dark; do hook "$look"; sleep 1.2; hook "glass:capture:$shots/glass-sheet-$look.png"; wait_for "capture: wrote glass-sheet-$look.png" 5 || echo "     (no picture glass-sheet-$look)"; done; hook system
+  hook glass:backdrop:off
+fi
+hook "sheet:1"
+logged "sheet: answered 1" && sleep 1.5 && [ "$(pb --library "$lib" agent list 2>&1)" = "$agents_before" ] && ok "取消 on the sheet: nothing changed, agent list is as it was" || fail "取消 on the sheet: $(since_mark | grep 'sheet:' | tail -2) $(pb --library "$lib" agent list 2>&1 | head -5)"
+hook "route:"; sleep 1
+
+if [ -n "$shots" ]; then
+  mkdir -p "$shots"
+  # $1 the picture's name, $2 the hook (capture or capture-tray), $3 what to do in the page before, $4 after.
+  shoot() { for look in light dark; do hook "$look"; [ -n "${3:-}" ] && page_eval "$3" >/dev/null; sleep 1.2; hook "glass:$2:$shots/glass-$1-$look.png"; wait_for "capture: wrote glass-$1-$look.png" 5 || echo "     (no picture glass-$1-$look)"; [ -n "${4:-}" ] && page_eval "$4" >/dev/null; sleep 0.4; done; hook system; }
+  # The icon's click toggles the panel, which closes whenever another window takes the keyboard.
+  open_tray() { mark; hook tray; logged "tray: shown" 2 || { sleep 0.5; hook tray; logged "tray: shown" 3; }; sleep 0.5; }
+  hook glass:backdrop; sleep 0.5
+  open_tray
+  shoot tray capture-tray
+  shoot window capture
+  page_eval 'document.querySelector("[aria-label=收起侧栏]").click(), "folded"' >/dev/null; sleep 1
+  shoot window-rail capture
+  page_eval 'document.querySelector("[aria-label=展开侧栏]").click(), "unfolded"' >/dev/null; sleep 1
+  hook "route:view=ledger.activity"; sleep 1
+  shoot scrolled capture 'document.querySelector(".main").scrollTop = 300'
+  palette='window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true })), "palette"'
+  shoot palette capture "$palette" "$palette"
+  shoot notice capture 'window.dispatchEvent(new CustomEvent("pneuma-shell", { detail: { notice: { tone: "good", text: "已放进 inbox/paper.pdf，记成你带进来的" } } })), "notice"'
+  page_eval 'document.querySelector(".main").scrollTop = 0' >/dev/null
+  hook "route:"; sleep 1
+  hook glass:reduce; sleep 0.5
+  shoot reduced capture
+  open_tray
+  shoot tray-reduced capture-tray
+  hook glass:normal
+  hook glass:backdrop:off
+  echo "     pictures in $shots/glass-*.png"
+fi
+hook "route:view=ledger.activity"; sleep 1
+rm -f "$work/frames.txt"; hook "glass:frames:$work/frames.txt"
+wait_for "frames: wrote frames.txt" 30 && ok "frame times:" && sed 's/^/       /' "$work/frames.txt" || fail "frame times: $(grep 'frames:' "$log" | tail -1)"
+hook "route:"; sleep 1
+
 # The local endpoint: the address the server got, the sentence on the page, the guide, and one pairing
 # asked over HTTP by an application not in the products table, allowed by the owner, then MCP over HTTP.
 record=$(ls "$pb_home/endpoints/" 2>/dev/null | head -1)
