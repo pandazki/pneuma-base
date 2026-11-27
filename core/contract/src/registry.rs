@@ -387,6 +387,22 @@ pub const CHECKS: &[Check] = &[
         records::a_read_from_no_cursor_counts_the_facts_files,
         ["5.facts.since.answer"]
     ),
+    check!(
+        records::a_facts_file_carried_in_is_read_like_any,
+        [
+            "5.facts.carry.question",
+            "5.facts.carry.input",
+            "5.facts.carry.answer",
+            "5.carry.1",
+            "5.carry.2",
+            "5.carry.3",
+            "5.carry.4"
+        ]
+    ),
+    check!(
+        records::a_carried_file_is_named_by_its_day_and_comes_from_outside,
+        ["5.facts.carry.input", "5.carry.5", "5.carry.6"]
+    ),
     check!(records::facts_are_only_appended, ["5.s1", "1.fact"]),
     check!(records::facts_travel_with_the_folder, ["5.s1"]),
     check!(

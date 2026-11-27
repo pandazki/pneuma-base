@@ -1,9 +1,12 @@
 // The facts of every record place between the library and the target. Each library writes its own
 // stream per place in the target, one new file per run, never rewritten; a library pulls the other
-// streams past the file it read last. A fact is identified by the sha256 of its JSON: a pull never
-// appends a fact the place already has, and a push never ships one that came from a pull.
+// streams past the file it read last, each file carried in whole as a facts file of its place, under
+// a name that is the same each time (`TargetDir.carriedName`), so carrying it again changes nothing.
+// Sync reads the other record places and copies files in; it appends no fact to them. A fact is
+// identified by the sha256 of its JSON: a pull skips a file whose facts the place has, and a push
+// never ships a fact that came from a pull.
 import { createHash } from 'node:crypto'
-import type { PluginContext } from '@pneuma-base/kernel'
+import { isFailure, type PluginContext } from '@pneuma-base/kernel'
 import type { Baseline, FactsBase } from './baseline.js'
 import type { TargetDir } from './target.js'
 
@@ -64,17 +67,18 @@ async function rebuilt(ctx: PluginContext, target: TargetDir, place: string, me:
   return out
 }
 
-/** The facts of the other libraries' streams of `place` past what `fb` read, not had yet; and the last file read of each stream. */
-function unread(target: TargetDir, place: string, me: string, fb: FactsBase): { facts: unknown[]; ids: string[]; read: Map<string, string> } {
-  const facts: unknown[] = []
-  const ids: string[] = []
+/** The files of the other libraries' streams of `place` past what `fb` read, each with the facts in it not had yet; and the last file read of each stream. */
+function unread(target: TargetDir, place: string, me: string, fb: FactsBase): { files: { lib: string; file: string; facts: unknown[]; ids: string[] }[]; read: Map<string, string> } {
+  const files: { lib: string; file: string; facts: unknown[]; ids: string[] }[] = []
   const seen = new Set<string>()
   const read = new Map(fb.read)
   for (const lib of target.streams(place)) {
     if (lib === me) continue
     const last = fb.read.get(lib)
-    const files = target.streamFiles(place, lib).filter((name) => last === undefined || name > last)
-    for (const file of files) {
+    const names = target.streamFiles(place, lib).filter((name) => last === undefined || name > last)
+    for (const file of names) {
+      const facts: unknown[] = []
+      const ids: string[] = []
       for (const fact of target.readStream(place, lib, file)) {
         const id = factId(fact)
         if (fb.pulled.has(id) || seen.has(id)) continue
@@ -82,37 +86,38 @@ function unread(target: TargetDir, place: string, me: string, fb: FactsBase): { 
         facts.push(fact)
         ids.push(id)
       }
+      files.push({ lib, file, facts, ids })
     }
-    const end = files.at(-1)
+    const end = names.at(-1)
     if (end !== undefined) read.set(lib, end)
   }
-  return { facts, ids, read }
+  return { files, read }
 }
 
 /**
- * Pulls the facts of every place found in the target that this library does not have: appends them to
- * their record places and keeps what was read in `base`. Answers the sync's own facts among them.
+ * Pulls the facts of every place found in the target that this library does not have: carries each
+ * stream file with a fact not had yet into its record place whole, and keeps what was read in `base`.
  */
-export async function pullFacts(ctx: PluginContext, target: TargetDir, base: Baseline, me: string): Promise<unknown[]> {
-  let mine: unknown[] = []
+export async function pullFacts(ctx: PluginContext, target: TargetDir, base: Baseline, me: string): Promise<void> {
   for (const place of target.factPlaces()) {
     const fb = base.facts.get(place) ?? (await rebuilt(ctx, target, place, me))
-    const { facts, ids, read } = unread(target, place, me, fb)
-    for (let i = 0; i < facts.length; i += FACT_PAGE) await ctx.tools.storage.recordPlace(place).facts.append(facts.slice(i, i + FACT_PAGE))
-    for (const id of ids) fb.pulled.add(id)
+    const { files, read } = unread(target, place, me, fb)
+    const carrier = ctx.tools.storage.carry(place)
+    for (const { lib, file, ids } of files) {
+      if (ids.length === 0) continue
+      const carried = await carrier.facts(target.carriedName(place, lib, file), target.streamPath(place, lib, file))
+      if (isFailure(carried)) throw new Error(`记录处 ${place} 的事实没能带进来（${carried.reason}）：${target.streamPath(place, lib, file)}`)
+      for (const id of ids) fb.pulled.add(id)
+    }
     fb.read = read
     base.facts.set(place, fb)
-    if (place === SYNC_PLACE) mine = facts
   }
-  return mine
 }
 
-/** The sync's own facts a pull would bring, read without appending anything. */
+/** The sync's own facts a pull would bring, read without carrying anything. */
 export async function unpulledSyncFacts(ctx: PluginContext, target: TargetDir, base: Baseline | null, me: string): Promise<unknown[]> {
-  const fb = base?.facts.get(SYNC_PLACE)
-  if (fb !== undefined) return unread(target, SYNC_PLACE, me, fb).facts
-  const here = await idsHere(ctx, SYNC_PLACE)
-  return unread(target, SYNC_PLACE, me, { ...fresh(), pulled: here }).facts
+  const fb = base?.facts.get(SYNC_PLACE) ?? { ...fresh(), pulled: await idsHere(ctx, SYNC_PLACE) }
+  return unread(target, SYNC_PLACE, me, fb).files.flatMap((f) => f.facts)
 }
 
 /**

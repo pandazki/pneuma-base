@@ -167,6 +167,111 @@ pub fn a_read_from_no_cursor_counts_the_facts_files(env: &Env) -> Outcome {
     Ok(())
 }
 
+/// A facts file written elsewhere, in a folder outside the library, with these lines.
+fn written_elsewhere(dir: &tempfile::TempDir, name: &str, text: &str) -> String {
+    let path = dir.path().join(name);
+    fs::write(&path, text).unwrap();
+    path.to_string_lossy().into_owned()
+}
+
+fn facts_from(lib: &Lib, place: &str, cursor: &Value) -> (Vec<Value>, Value) {
+    let page = lib.run(
+        "facts.since",
+        json!({ "place": place, "cursor": cursor, "limit": 10000 }),
+    );
+    (facts_of(&page), page["cursor"].clone())
+}
+
+pub fn a_facts_file_carried_in_is_read_like_any(env: &Env) -> Outcome {
+    let lib = env.lib();
+    lib.run(
+        "facts.append",
+        json!({ "place": "log", "facts": [{ "n": 1 }] }),
+    );
+    let (_, cursor) = facts_from(&lib, "log", &Value::Null);
+    let outside = scratch();
+    let from = written_elsewhere(&outside, "a.jsonl", "{\"n\":2}\n{\"n\":3}\n");
+    // An older day than any here: a file arrives after the cursor wherever it lands.
+    let file = "2020-01-02/20200102030405006-elsewhere-000001.jsonl";
+    let carried = lib.run(
+        "facts.carry",
+        json!({ "place": "log", "file": file, "from": from }),
+    );
+    assert_eq!(carried["outcome"], "done", "{carried}");
+    assert_eq!(carried["carried"], true, "{carried}");
+    let (after, cursor) = facts_from(&lib, "log", &cursor);
+    assert_eq!(after, [json!({ "n": 2 }), json!({ "n": 3 })]);
+    // The same name again, from other bytes: the file there stays as it is.
+    let other = written_elsewhere(&outside, "b.jsonl", "{\"n\":9}\n");
+    let again = lib.run(
+        "facts.carry",
+        json!({ "place": "log", "file": file, "from": other }),
+    );
+    assert_eq!(again["carried"], false, "{again}");
+    assert_eq!(facts_from(&lib, "log", &cursor).0, Vec::<Value>::new());
+    let all: BTreeSet<String> = facts_from(&lib, "log", &Value::Null)
+        .0
+        .iter()
+        .map(Value::to_string)
+        .collect();
+    assert_eq!(
+        all,
+        [r#"{"n":1}"#, r#"{"n":2}"#, r#"{"n":3}"#]
+            .map(String::from)
+            .into_iter()
+            .collect()
+    );
+    Ok(())
+}
+
+pub fn a_carried_file_is_named_by_its_day_and_comes_from_outside(env: &Env) -> Outcome {
+    let lib = env.lib();
+    let outside = scratch();
+    let from = written_elsewhere(&outside, "a.jsonl", "{\"n\":1}\n");
+    for file in [
+        "x.jsonl",
+        "2020-01-02/x.txt",
+        "2020-01-02/.x.jsonl",
+        "2020-01-02/../x.jsonl",
+        "20200102/x.jsonl",
+        "2020-01-02/a/x.jsonl",
+    ] {
+        assert_failed(
+            &lib.run(
+                "facts.carry",
+                json!({ "place": "log", "file": file, "from": from }),
+            ),
+            "bad_request",
+        );
+    }
+    let file = "2020-01-02/x.jsonl";
+    let none = outside.path().join("none.jsonl");
+    for (source, reason) in [
+        (none.to_string_lossy().into_owned(), "no_such_place"),
+        (outside.path().to_string_lossy().into_owned(), "not_a_file"),
+    ] {
+        let answer = lib.run(
+            "facts.carry",
+            json!({ "place": "log", "file": file, "from": source }),
+        );
+        assert_failed(&answer, reason);
+        assert_eq!(answer["side"], "from", "{answer}");
+    }
+    if env.path_addressed() {
+        lib.write("inside.jsonl", "{\"n\":1}\n");
+        let inside = lib.at("inside.jsonl").to_string_lossy().into_owned();
+        assert_failed(
+            &lib.run(
+                "facts.carry",
+                json!({ "place": "log", "file": file, "from": inside }),
+            ),
+            "bad_request",
+        );
+    }
+    assert_eq!(facts_from(&lib, "log", &Value::Null).0, Vec::<Value>::new());
+    Ok(())
+}
+
 pub fn facts_are_only_appended(env: &Env) -> Outcome {
     let lib = env.lib();
     lib.run(

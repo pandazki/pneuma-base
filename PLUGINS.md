@@ -710,7 +710,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CODEX_THREAD_ID -u ANTIGRAVITY_CO
 
 | 词 | 在插件这里是什么 |
 | --- | --- |
-| 位置 | 一个以 `/` 分隔的相对路径，`''` 是库根。库内路径都是位置；在 `own` 和 `recordPlace(名字).own` 上，位置相对那个记录处 |
+| 位置 | 一个以 `/` 分隔的相对路径，`''` 是库根。库内路径都是位置；在 `own`、`recordPlace(名字).own` 和 `carry(名字)` 上，位置相对那个记录处 |
 | 一层 | 一个目录直接含有的那些位置。存储列出的只是一层（`overview`），从不往下走 |
 | 看一眼、一览、探查 | 不读内容地问一个位置的三种办法：看一眼（`glance`）只取存储已经知道的；一览（`overview`）列一个目录的一层，一页缺省 200 项；探查（`probe`）在一个目录里带预算地数，说它至少多大 |
 | 状态令牌 | 存储对一个位置此刻状态的标记，`token`。不透明：插件只存下、交回去；比较由存储在 `look`、`lookRows` 和写的预期里做。目录的令牌只说它自己这一层；深看时另有深令牌，说它里面每个文件 |
@@ -740,7 +740,8 @@ env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CODEX_THREAD_ID -u ANTIGRAVITY_CO
 | `own` | 上面 `glance` 到 `remove` 这九个 | 插件记录处里事实以外的地方：留存的副本、配置这类内容，位置相对 `.pneuma-base/<插件名>/`。还没写过时根是一个空目录；第一次写就建立它。这里没有噪音，`hold` 管不到，`changed` 从不报告；放事实的 `facts` 不在其中，答 `outside` |
 | `records` | 见下 | 插件的记录处：只追加的事实，和从事实推出的行 |
 | `recordPlaces()`，异步 | 名字的列表 | 内核在这个库里认得的记录处：内核自己的 `requests`，和这个库装着的每个插件的 |
-| `recordPlace(名字)` | `{ own, facts }` | 另一个记录处：`facts` 是它的事实（`append`、`since`，同下），`own` 是它事实以外的地方（同上面的九个）。名字可以不在 `recordPlaces()` 里，比如别的机器上装着的插件写的。只给工作就是把整个库带到别处的插件用，比如同步；别的插件只读写自己的记录处（检查：`writes`） |
+| `recordPlace(名字)` | `{ own, facts }` | 读另一个记录处：`facts` 只有 `since`（同下），`own` 是它事实以外的地方，只有不改东西的那几个：`glance`、`overview`、`look`、`lookRows`、`content`、`read`。名字可以不在 `recordPlaces()` 里，比如别的机器上装着的插件写的。插件只写自己的记录处（检查：`writes`） |
+| `carry(名字)` | `{ copy, remove, facts }` | 一个记录处要同步的部分，按字节复制进来，只给工作就是把整个库带到别处的插件用，比如同步。`copy(位置, 库外的路径, 预期)` 把库外的文件或目录复制到它自己的地方的那个位置上，`remove(位置, 预期)` 拿掉；`facts(名字, 库外的路径)` 把在别处写下的一个事实文件整个放进它的事实里，名字写成 `<YYYY-MM-DD>/<名字>.jsonl`，答 `{ carried }`：那里已经有这个名字时什么都不改，答 `false`，所以带两次和带一次一样。它不能追加事实、写行，也不能改已有的事实文件 |
 
 `records` 的：
 

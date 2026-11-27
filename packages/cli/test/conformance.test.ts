@@ -108,6 +108,13 @@ describe('conformance over plugins that break the rules', () => {
     expect(failed.bounded?.filter((p) => p.endsWith('：conformance-heap'))).toEqual([])
   })
 
+  it('leaves a plugin no way to write a record place not its own', async () => {
+    const r = await conformance(fixture('trespasser'), { cli })
+    const failed = Object.fromEntries(r.checks.filter((c) => !c.ok).map((c) => [c.name, c.problems]))
+    expect(Object.keys(failed), r.text).toEqual(['hooks'])
+    expect(failed.hooks?.join('\n')).toMatch(/没能写别的记录处：.*append.*；.*write/)
+  })
+
   it('names a plugin that learns what is registered from puts and does not catch up', async () => {
     const r = await conformance(fixture('forgetful'), { cli })
     const failed = Object.fromEntries(r.checks.filter((c) => !c.ok).map((c) => [c.name, c.problems]))

@@ -19,10 +19,10 @@ pub use place::{Area, Place, PlaceArg, RecordPlace, STORAGE_NAMES};
 use request::Req;
 pub use request::{
     ChangedRequest, ContentRequest, ContentRule, CursorExpect, DeclarationWriteRequest, DeepLook,
-    Expect, FactsAppendRequest, FactsSinceRequest, GlanceRequest, HoldRequest, LookFrom, LookItem,
-    LookRequest, LookRows, ManifestPage, MoveRequest, NoiseEdit, OverviewRequest, ProbeRequest,
-    ReadRequest, RemoveRequest, RowChange, RowsGetRequest, RowsPutRequest, RowsUnderRequest,
-    RowsWhereRequest, Source, SubscribeRequest, WriteRequest,
+    Expect, FactsAppendRequest, FactsCarryRequest, FactsSinceRequest, GlanceRequest, HoldRequest,
+    LookFrom, LookItem, LookRequest, LookRows, ManifestPage, MoveRequest, NoiseEdit,
+    OverviewRequest, ProbeRequest, ReadRequest, RemoveRequest, RowChange, RowsGetRequest,
+    RowsPutRequest, RowsUnderRequest, RowsWhereRequest, Source, SubscribeRequest, WriteRequest,
 };
 pub use time::Time;
 pub use token::{DeepToken, Token, Trust};
@@ -98,6 +98,7 @@ pub trait Storage: Sync {
 
     fn facts_append(&self, req: &FactsAppendRequest) -> Result<FactsAppendAnswer, Failure>;
     fn facts_since(&self, req: &FactsSinceRequest, ctx: &Ctx) -> Result<FactsSinceAnswer, Failure>;
+    fn facts_carry(&self, req: &FactsCarryRequest) -> Result<FactsCarryAnswer, Failure>;
     fn rows_put(&self, req: &RowsPutRequest) -> Result<(), Failure>;
     fn rows_get(&self, req: &RowsGetRequest) -> Result<RowsGetAnswer, Failure>;
     fn rows_under(&self, req: &RowsUnderRequest) -> Result<RowsPage, Failure>;
@@ -132,6 +133,7 @@ pub enum Op {
     Remove,
     FactsAppend,
     FactsSince,
+    FactsCarry,
     RowsPut,
     RowsGet,
     RowsUnder,
@@ -150,7 +152,7 @@ pub enum Op {
 }
 
 impl Op {
-    pub const ALL: [Op; 27] = [
+    pub const ALL: [Op; 28] = [
         Op::Glance,
         Op::Overview,
         Op::Probe,
@@ -163,6 +165,7 @@ impl Op {
         Op::Remove,
         Op::FactsAppend,
         Op::FactsSince,
+        Op::FactsCarry,
         Op::RowsPut,
         Op::RowsGet,
         Op::RowsUnder,
@@ -194,6 +197,7 @@ impl Op {
             Op::Remove => "remove",
             Op::FactsAppend => "facts.append",
             Op::FactsSince => "facts.since",
+            Op::FactsCarry => "facts.carry",
             Op::RowsPut => "rows.put",
             Op::RowsGet => "rows.get",
             Op::RowsUnder => "rows.under",
@@ -226,6 +230,7 @@ impl Op {
                 | Op::Move
                 | Op::Remove
                 | Op::FactsAppend
+                | Op::FactsCarry
                 | Op::RowsPut
                 | Op::RowsReset
                 | Op::Init
@@ -298,6 +303,7 @@ fn run(storage: &dyn Storage, op: Op, text: &str, ctx: &Ctx) -> Result<String, F
         Op::Remove => done(storage.remove(&request::remove(req)?, ctx)?),
         Op::FactsAppend => done(storage.facts_append(&request::facts_append(req)?)?),
         Op::FactsSince => done(storage.facts_since(&request::facts_since(req)?, ctx)?),
+        Op::FactsCarry => done(storage.facts_carry(&request::facts_carry(req)?)?),
         Op::RowsPut => done(storage.rows_put(&request::rows_put(text)?).map(empty)?),
         Op::RowsGet => done(storage.rows_get(&request::rows_get(req)?)?),
         Op::RowsUnder => done(storage.rows_under(&request::rows_under(req)?)?),

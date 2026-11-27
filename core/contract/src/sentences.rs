@@ -426,6 +426,16 @@ pub const SENTENCES: &[Sentence] = &[
         "事实（按次序）和新游标；没有游标时还可带 `files`：事实文件的个数",
     ),
     checked("5.facts.since.cost", "新事实的条数，与已有总数无关"),
+    checked(
+        "5.facts.carry.question",
+        "把别处写下的这个事实文件原样放进来",
+    ),
+    checked(
+        "5.facts.carry.input",
+        "记录处、事实文件的名字（`<日期>/<名字>.jsonl`）、来源（库外的一个文件）",
+    ),
+    checked("5.facts.carry.answer", "`carried`：放进来了没有"),
+    outside("5.facts.carry.cost", "文件的大小", COST),
     checked("5.rows.put.input", "记录处、表名、行（键、可查的字段、值）"),
     checked("5.rows.put.answer", "完成"),
     outside("5.rows.put.cost", "行数", COST),
@@ -452,6 +462,24 @@ pub const SENTENCES: &[Sentence] = &[
     checked(
         "5.s2",
         "`facts.since` 的代价不能随已有事实的总数增长，所以事实文件按日期分目录存放；旧版式（不分日期：按场景分的目录，或直接放在事实目录下的文件）仍然读。",
+    ),
+    checked(
+        "5.carry.1",
+        "`facts.carry` 让一个在别处写下的事实文件按字节进来，不经解读。",
+    ),
+    checked(
+        "5.carry.2",
+        "这个名字的文件已经在时什么都不改，答 `carried: false`，所以带两次和带一次一样；",
+    ),
+    checked("5.carry.3", "它从不改写、挪动或删除已有的事实文件。"),
+    checked(
+        "5.carry.4",
+        "进来的文件和别的事实文件一样读：读者的游标之后，它按到达的先后给出。",
+    ),
+    checked("5.carry.5", "名字不合这个写法答 `bad_request`；"),
+    checked(
+        "5.carry.6",
+        "来源没有或不是文件，答相应的失败并带 `side: from`；来源在库里答 `bad_request`。",
     ),
     checked("5.s3", "行是缓存：不同步，可以整个删掉。"),
     outside(

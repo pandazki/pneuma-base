@@ -268,6 +268,21 @@ export class TargetDir {
       })
   }
 
+  /** Where one file of a stream is: a facts file a library carries in whole. */
+  streamPath(place: string, library: string, file: string): string {
+    return join(this.streamDir(place, library), file)
+  }
+
+  /**
+   * The name a stream file is carried in under, `<YYYY-MM-DD>/<moment>-<library>-<number>.jsonl`:
+   * the moment it was written here (UTC), the library that wrote it and its number in that stream,
+   * the same each time it is asked.
+   */
+  carriedName(place: string, library: string, file: string): string {
+    const at = new Date(lstatSync(this.streamPath(place, library, file)).mtimeMs).toISOString()
+    return `${at.slice(0, 10)}/${at.replace(/\D/g, '').slice(0, 17)}-${library}-${file.slice(0, 10)}.jsonl`
+  }
+
   /** Writes the facts as the next file of this library's stream, never replacing one. */
   writeStream(place: string, library: string, facts: readonly unknown[]): void {
     const dir = this.streamDir(place, library)
