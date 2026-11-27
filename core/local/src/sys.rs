@@ -695,7 +695,7 @@ pub fn added_at(_dir: RawFd, _name: &CStr) -> Option<i128> {
 
 /// One entry of a directory as `listed` gives it: its name, whether it is a regular file, its
 /// birth, change and arrival times where kept, and a file's size.
-pub struct Listed {
+pub struct Dated {
     pub name: Vec<u8>,
     pub file: bool,
     pub btime_ns: Option<i128>,
@@ -707,7 +707,7 @@ pub struct Listed {
 /// Every entry of the open directory `dir` with its times and size, many entries a call
 /// (`getattrlistbulk`): no call per entry. `None` where the platform has no such call.
 #[cfg(target_os = "macos")]
-pub fn listed(dir: RawFd) -> Option<Result<Vec<Listed>, Errno>> {
+pub fn listed(dir: RawFd) -> Option<Result<Vec<Dated>, Errno>> {
     const VREG: u32 = 1;
     let mut list = libc::attrlist {
         bitmapcount: libc::ATTR_BIT_MAP_COUNT,
@@ -759,7 +759,7 @@ pub fn listed(dir: RawFd) -> Option<Result<Vec<Listed>, Errno>> {
             let name_at = 24 + u32_at(e, 24) as usize;
             let name_len = (u32_at(e, 28) as usize).saturating_sub(1);
             let valid = |bit: u32| common & bit != 0;
-            out.push(Listed {
+            out.push(Dated {
                 name: e[name_at..name_at + name_len].to_vec(),
                 file: valid(libc::ATTR_CMN_OBJTYPE) && u32_at(e, 32) == VREG,
                 btime_ns: valid(libc::ATTR_CMN_CRTIME).then(|| time_at(e, 36)),
@@ -777,7 +777,7 @@ pub fn listed(dir: RawFd) -> Option<Result<Vec<Listed>, Errno>> {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn listed(_dir: RawFd) -> Option<Result<Vec<Listed>, Errno>> {
+pub fn listed(_dir: RawFd) -> Option<Result<Vec<Dated>, Errno>> {
     None
 }
 
