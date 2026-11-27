@@ -111,6 +111,16 @@ export type ManifestEntry = { path: string; fingerprint: Fingerprint; size: numb
 export type ThingAt = { path: LibraryPath; kind: ThingKind | 'folder' | 'other' | 'none'; entry: Description | null }
 
 /**
+ * A registered thing as the plugin that keeps the register has it: where it is (in the content or
+ * the archive), a file or a directory thing, the state token on record (null while unknown), and
+ * whether its content's fingerprint is known.
+ */
+export type RegisteredThing = { place: LibraryPath; kind: ThingKind; token: string | null; fingerprinted: boolean }
+
+/** A page of the register, by the bytes of the places, after the `after` asked; `total`: how many things are registered, when the keeper can say. */
+export type RegisteredPage = { things: RegisteredThing[]; more: { after: string } | null; total: number | null }
+
+/**
  * The kernel's helpers a plugin needs, bound to the operation's library so no call takes the root.
  * They are the running kernel's own code: what a bundle counts, how find splits and ranks never drift
  * from a plugin's copy. Paths are library paths unless named absolute. Storage is looked at only where
@@ -140,6 +150,12 @@ export interface PluginTools {
   readonly sentenceHits: number
   /** A put through the agent face, as the operation's actor and session, so every plugin hears it and it sends its event. */
   put(req: PutRequest): Promise<PutResult>
+  /**
+   * What is registered in the library, a page at a time by the bytes of the places (500 a page, at
+   * most 1000), as the plugin that keeps the register answers: the first installed one with
+   * `registered`. With no such plugin the page is empty and `keeper` is null.
+   */
+  registered(opts?: { after?: string; limit?: number }): Promise<RegisteredPage & { keeper: PluginName | null }>
   /** Storage, where the plugin's records point: looking at places, content when asked, writes with expectations, its own record place. */
   readonly storage: PluginStorage
 }
@@ -566,12 +582,25 @@ export interface Plugin {
    * do first. `plugin remove <name> --anyway` removes it all the same, and the answer repeats the sentence.
    */
   readonly onRemove?: (ctx: PluginContext) => Promise<void | { refuse: string }>
+  /**
+   * One page of what was registered before it was added, as `tools.registered` gives it: what it would
+   * have learned from the puts it did not hear. The kernel's catching up calls it page after page, on
+   * `plugin add` of a library that has registered things and on `plugin catch-up`; a page may come
+   * again after an interruption, so learning one twice must change nothing.
+   */
+  readonly catchUp?: (things: readonly RegisteredThing[], ctx: PluginContext) => Promise<void>
 
   /**
    * The directories its records make open: each holds, at some depth, something registered. The kernel
    * adds the root; the management UI's change poll looks at these and at no other directory.
    */
   readonly openDirs?: (ctx: PluginContext) => Promise<LibraryPath[]>
+  /**
+   * It keeps the register: a page of what is registered, by the bytes of the places after `after`, at
+   * most `limit` things. The kernel asks the first installed plugin that has it whenever a plugin calls
+   * `tools.registered`.
+   */
+  readonly registered?: (req: { after: string | null; limit: number }, ctx: PluginContext) => Promise<RegisteredPage>
 
   /** The views it adds to the management UI. Each id starts with `<name>.`. */
   readonly views?: readonly ViewDecl[]

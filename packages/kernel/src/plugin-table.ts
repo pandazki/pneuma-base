@@ -189,6 +189,8 @@ const HOOKS: Record<Hook, true> = {
   onPurged: true,
   onAdd: true,
   onRemove: true,
+  catchUp: true,
+  registered: true,
   onView: true,
   onItemView: true,
 }

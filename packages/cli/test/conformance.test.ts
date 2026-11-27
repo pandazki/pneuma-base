@@ -64,7 +64,7 @@ describe('conformance over plugins that break the rules', () => {
   it('names each rule a loaded plugin breaks, with what is wrong and the rule', async () => {
     const r = await conformance(fixture('rule-breaker'), { cli })
     const failed = Object.fromEntries(r.checks.filter((c) => !c.ok).map((c) => [c.name, c.problems.join('\n')]))
-    expect(Object.keys(failed).sort()).toEqual(['blocks', 'cache', 'cognition', 'examples', 'hooks', 'remove', 'writes'])
+    expect(Object.keys(failed).sort()).toEqual(['blocks', 'cache', 'catchup', 'cognition', 'examples', 'hooks', 'remove', 'writes'])
     expect(failed.cognition).toContain('不是「## <它带来什么>：<怎么用>」这样的标题')
     expect(failed.cognition).toContain('用了占位 {{库}}')
     expect(failed.cognition).toContain('--include-archived')
@@ -77,6 +77,8 @@ describe('conformance over plugins that break the rules', () => {
     expect(failed.writes).toContain('主人命令 rule-breaker drop时，dropped.txt 多了出来')
     expect(failed.writes).not.toContain('rule-breaker drop时，它自己目录里已有的')
     expect(failed.cache).toContain('find 符合性')
+    // What it knows comes from its cache of the puts it heard, so in a library it is added to later it knows nothing.
+    expect(failed.catchup).toContain('后装上、补上之后，find 符合性早先 的答复和装着它时放进来的不一样')
     expect(failed.blocks).toContain('missing.html')
     expect(failed.blocks).toContain('custom 块指向 silent.html：页没有载入 /plugin-kit/frame.js')
     expect(failed.blocks).toContain('custom 块指向 silent.html：页的脚本没有调用 pneuma.onData')
@@ -104,6 +106,13 @@ describe('conformance over plugins that break the rules', () => {
     expect(failed.bounded).toContain('check时，它探查了没人登记过的目录 conformance-heap：conformance-heap/below')
     expect(failed.bounded).toContain('check时，它读了没人登记过的目录 conformance-heap：conformance-heap/0.txt')
     expect(failed.bounded?.filter((p) => p.endsWith('：conformance-heap'))).toEqual([])
+  })
+
+  it('names a plugin that learns what is registered from puts and does not catch up', async () => {
+    const r = await conformance(fixture('forgetful'), { cli })
+    const failed = Object.fromEntries(r.checks.filter((c) => !c.ok).map((c) => [c.name, c.problems]))
+    expect(Object.keys(failed), r.text).toEqual(['catchup'])
+    expect(failed.catchup).toContain('后装上、补上之后，条目面板 conformance/early.md 的答复和装着它时放进来的不一样')
   })
 
   it('stops at loading a plugin written against contract 1', async () => {

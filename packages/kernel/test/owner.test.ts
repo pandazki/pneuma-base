@@ -123,7 +123,7 @@ describe('the owner face’s one entry', () => {
     })
     const f = await fixture([shadow])
     const names = ownerFace.commands(f.library.plugins).map((c) => `${c.by}:${c.name}`)
-    const kernel = ['grant issue', 'grant revoke', 'plugin add', 'plugin remove', 'skill install', 'archive purge', 'plugin install', 'plugin uninstall', 'plugin list', 'secret set', 'secret list', 'secret remove', 'agent detect', 'agent connect', 'agent disconnect', 'agent list', 'launcher install', 'request list', 'request approve', 'request decline', 'pair list', 'pair allow', 'pair decline', 'noise list', 'noise add', 'noise remove', 'storage list', 'storage install', 'storage remove', 'storage update']
+    const kernel = ['grant issue', 'grant revoke', 'plugin add', 'plugin remove', 'plugin catch-up', 'skill install', 'archive purge', 'plugin install', 'plugin uninstall', 'plugin list', 'secret set', 'secret list', 'secret remove', 'agent detect', 'agent connect', 'agent disconnect', 'agent list', 'launcher install', 'request list', 'request approve', 'request decline', 'pair list', 'pair allow', 'pair decline', 'noise list', 'noise add', 'noise remove', 'storage list', 'storage install', 'storage remove', 'storage update']
     expect(names).toEqual([...kernel.map((n) => `kernel:${n}`), 'shadow:shadow list'])
     expect(await ownerFace.dispatch(call(f), 'shadow list', NO_ARGS)).toMatchObject({ outcome: 'done', text: 'listed' })
     expect(await ownerFace.dispatch(call(f, { confirm: async () => false }), 'archive purge', NO_ARGS)).toMatchObject({ outcome: 'refused', reason: 'not-confirmed' })

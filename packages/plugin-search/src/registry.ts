@@ -1,7 +1,7 @@
 // What the search plugin knows of the library: the things it heard registered, from facts in its record
 // place, and what it read of each, in rows derived from them. The facts are the body; the rows are a
 // cache storage keeps, derived from the facts after a cursor and saved with it in one commit (STORAGE.md
-// section 5). A thing registered before the plugin was added is unknown to it until it is put again.
+// section 5). What was registered before the plugin was added it learns by catching up, from the register.
 //
 //   things   each registered thing by its path: a file, or a directory thing (`bundle`)
 //   pending  the things to read: heard of, or changed, and not read since

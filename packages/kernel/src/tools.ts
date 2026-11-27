@@ -1,6 +1,7 @@
 // The kernel's helpers on a plugin's context, `PluginContext.tools`, bound to the operation's library:
 // storage in its own words, at the places a plugin's records point, through the one door.
 import { type Context, type LibraryPath, type Pass, type Place, type PlaceStore, type PluginName, type PluginStorage, type PluginTools, type WriteSource } from '@pneuma-base/sdk'
+import { registerPage } from './catch-up.js'
 import { changesWithin } from './changes.js'
 import { archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
 import { PLACE as REQUESTS } from './requests.js'
@@ -104,6 +105,7 @@ export function pluginTools(ctx: Context, name: PluginName, heard?: StorageHeard
       const { agentFace } = await import('./agent.js')
       return agentFace.put(req, ctx)
     },
+    registered: (opts = {}) => registerPage(ctx, opts),
     storage: loggedStorage(pluginStorage(store, name, ctx.library.config.plugins, heard), name),
   }
 }
