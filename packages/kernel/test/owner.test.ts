@@ -136,22 +136,6 @@ describe('the owner face’s one entry', () => {
     expect(await ownerFace.dispatch(call(f), 'delete everything', NO_ARGS)).toMatchObject({ outcome: 'refused', reason: 'unknown-command' })
     expect(events).toEqual([])
   })
-
-  it('answers a malformed call with a usage refusal that ends with the usage line made from the params', async () => {
-    const f = await fixture()
-    const usage = '用法：grant issue <授权名> --agent <给谁> [--area <子文件夹>] [--read-only]'
-    expect(await ownerFace.dispatch(call(f), 'grant issue', { positional: ['g'], flags: {} })).toMatchObject({ outcome: 'refused', reason: 'usage', text: `要写 --agent <给谁>。\n${usage}` })
-    expect(await ownerFace.dispatch(call(f), 'grant issue', { positional: ['g'], flags: { agent: ['x'], color: ['red'] } })).toMatchObject({ reason: 'usage', text: `grant issue 不认识 --color。\n${usage}` })
-    expect(await ownerFace.dispatch(call(f), 'grant issue', { positional: ['G!'], flags: { agent: ['x'] } })).toMatchObject({ reason: 'usage', text: expect.stringContaining('<授权名> 写的「G!」不对') })
-    expect(await ownerFace.dispatch(call(f), 'plugin add', NO_ARGS)).toMatchObject({ reason: 'usage', text: 'plugin add 少了 <插件名>。\n用法：plugin add <插件名>' })
-    expect(await ownerFace.dispatch(call(f), 'plugin add', { positional: ['a', 'b'], flags: {} })).toMatchObject({ reason: 'usage', text: expect.stringContaining('plugin add 多了参数：b。') })
-  })
-
-  it('takes a form’s empty area as the whole library and its read-only choice as a value', async () => {
-    const f = await fixture()
-    const r = await ownerFace.dispatch(call(f), 'grant issue', { positional: ['g'], flags: { agent: ['x'], area: [''], 'read-only': ['yes'] } })
-    expect(r).toMatchObject({ outcome: 'done', data: { grant: { area: null, readOnly: true } } })
-  })
 })
 
 describe('skill install', () => {

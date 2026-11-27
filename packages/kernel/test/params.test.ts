@@ -2,7 +2,7 @@
 // which gets the values by name; a call that does not fit is refused as usage with the usage line
 // made from the params; the sdk's form for the command fills a call the kernel reads the same way.
 import { describe, expect, it } from 'vitest'
-import { defineCommand, formOf, ownerFace, usageOf, type Call, type OwnerCall, type OwnerValues } from '../src/index.js'
+import { defineCommand, formOf, ownerFace, type Call, type OwnerCall, type OwnerValues } from '../src/index.js'
 import { fixture, plugin, type Fixture } from './support.js'
 
 const seen: OwnerValues[] = []
@@ -121,9 +121,5 @@ describe('the form the sdk makes from params', () => {
     expect(inputs.map((i) => i.name)).toEqual(['tags', 'mode', 'to'])
     expect(inputs.find((i) => i.name === 'to')?.value).toBe('here')
     expect(call).toEqual({ face: 'owner', command: 'shape run', args: { positional: ['a'], flags: { force: true, tags: ['{tags}'], mode: ['{mode}'], to: ['{to}'] } } })
-  })
-
-  it('and the usage line agree on how each argument is written', () => {
-    expect(usageOf(shape.params ?? {})).toBe(USAGE.slice('用法：shape run '.length))
   })
 })

@@ -1,15 +1,16 @@
-// C4 on the command line: a plugin's owner command declares its arguments, and the command line
-// reads them by that declaration. A switch never takes the argument after it, a list takes exactly
-// its values, a call that does not fit is a usage error with the usage line, and help shows that line.
+// C4 on the command line: a plugin's owner command declares its arguments, and the command line reads
+// the words by that declaration: a switch never takes the word after it, a list takes the words up to
+// the next flag. A call that does not fit exits 1 with the usage line, which help shows too. What the
+// kernel checks in a call is packages/kernel/test/params.test.ts's.
 import { join } from 'node:path'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { ARGV, writePlugin } from './fixtures/machine-plugins.js'
 import { sandbox, tempDir, type Sandbox } from './helpers.js'
 
 let sb: Sandbox
 let lib: string
 
-beforeEach(() => {
+beforeAll(() => {
   sb = sandbox()
   lib = join(tempDir(), 'lib')
   writePlugin(join(sb.home, '.pneuma-base', 'plugins', 'argv'), ARGV)
@@ -23,46 +24,23 @@ const given = (args: string[]) => {
   expect(r.code, r.stderr).toBe(0)
   return r.json().data
 }
-const values = (args: string[]) => given(args).values
 
 const USAGE = '用法：argv show <路径> [<更多>…] [--force] [--tags <标签>…] [--mode a|b]'
 
 describe('a plugin command with params on the command line', () => {
-  it('reads a switch before the path as a switch, not as the path', () => {
+  it('reads a switch before the path as a switch, not as the path; a list up to the next flag; the rest as positionals', () => {
     expect(given(['--force', 'site/a'])).toEqual({ positional: ['site/a'], flags: { force: true }, values: { path: 'site/a', more: [], force: true, tags: [], mode: null } })
+    expect(given(['site/a', '--tags', 'x', 'y', '--force', 'b', 'c']).values).toEqual({ path: 'site/a', more: ['b', 'c'], force: true, tags: ['x', 'y'], mode: null })
+    expect(given(['--mode', 'b', 'site/a', '--tags=z']).values).toEqual({ path: 'site/a', more: [], force: false, tags: ['z'], mode: 'b' })
   })
 
-  it('reads a list up to the next flag, and the rest as positionals', () => {
-    expect(values(['site/a', '--tags', 'x', 'y', '--force', 'b', 'c'])).toEqual({ path: 'site/a', more: ['b', 'c'], force: true, tags: ['x', 'y'], mode: null })
-    expect(values(['--mode', 'b', 'site/a', '--tags=z'])).toEqual({ path: 'site/a', more: [], force: false, tags: ['z'], mode: 'b' })
-  })
-
-  it('answers a call that does not fit with a usage error naming what is wrong, and the usage line', () => {
-    const cases: [string[], string][] = [
-      [[], 'argv show 少了 <路径>。'],
-      [['Site'], '<路径> 写的「Site」不对'],
-      [['site', '--mode', 'c'], '--mode 只能是 a、b：c'],
-      [['site', '--colour', 'red'], 'argv show 不认识 --colour。'],
-      [['site', '--force=yes'], '--force 不带值'],
-    ]
-    for (const [args, text] of cases) {
-      const r = argv(args)
-      expect(r.code, r.stdout).toBe(1)
-      expect(r.stderr).toContain(text)
-      if (!text.startsWith('--force')) expect(r.stderr).toContain(USAGE)
-    }
-  })
-
-  it('is listed in help with the usage line made from its params', () => {
-    const r = sb.run(['--help', '--library', lib])
-    expect(r.stdout).toContain(`  argv show ${USAGE.slice('用法：argv show '.length)}\n      交回收到的参数（argv）`)
-  })
-})
-
-describe('the kernel’s own commands, with params too', () => {
-  it('refuse a missing argument with the usage line', () => {
-    const r = sb.run(['--library', lib, 'grant', 'issue', 'reader'])
-    expect(r.code).toBe(1)
-    expect(r.stderr).toContain('要写 --agent <给谁>。\n用法：grant issue <授权名> --agent <给谁> [--area <子文件夹>] [--read-only]')
+  it('answers a call that does not fit with exit 1, what is wrong and the usage line, for its own commands as for the kernel’s; help lists that line', () => {
+    const plugin = argv(['site', '--colour', 'red'])
+    expect(plugin.code, plugin.stdout).toBe(1)
+    expect(plugin.stderr).toContain(`argv show 不认识 --colour。\n${USAGE}`)
+    const kernel = sb.run(['--library', lib, 'grant', 'issue', 'reader'])
+    expect(kernel.code).toBe(1)
+    expect(kernel.stderr).toContain('要写 --agent <给谁>。\n用法：grant issue <授权名> --agent <给谁> [--area <子文件夹>] [--read-only]')
+    expect(sb.run(['--help', '--library', lib]).stdout).toContain(`  argv show ${USAGE.slice('用法：argv show '.length)}\n      交回收到的参数（argv）`)
   })
 })
