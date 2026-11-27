@@ -864,7 +864,7 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 
 一个名字在一条命令里只出现一次。`run` 收到的值：必填的是文字，可省的可能是 `null`，`list` 和 `many` 是列表，`boolean` 是 `true` 或 `false`。值去掉两头空白，空的算没给，所以表单里留空的一项等于没写。少了、多了、不认识、格式不对、不在可选的值里，内核都以 `usage` 拒绝。
 
-内核自己的命令 `KERNEL_COMMAND_NAMES` 是 `grant issue`、`grant revoke`、`plugin add`、`plugin remove`、`plugin catch-up`、`skill install`、`archive purge`、`plugin install`、`plugin uninstall`、`plugin list`、`secret set`、`secret list`、`secret remove`、`agent detect`、`agent connect`、`agent disconnect`、`agent list`、`launcher install`、`request list`、`request approve`、`request decline`、`noise list`、`noise add`、`noise remove`、`storage list`、`storage install`、`storage remove`、`storage update`。
+内核自己的命令 `KERNEL_COMMAND_NAMES` 是 `grant issue`、`grant revoke`、`plugin add`、`plugin remove`、`plugin catch-up`、`skill install`、`archive purge`、`plugin install`、`plugin uninstall`、`plugin list`、`secret set`、`secret list`、`secret remove`、`agent detect`、`agent connect`、`agent disconnect`、`agent list`、`launcher install`、`request list`、`request approve`、`request decline`、`noise list`、`noise add`、`noise remove`、`storage list`、`storage install`、`storage remove`、`storage update`、`pair list`、`pair allow`、`pair decline`。
 
 ### 4.4 块
 
@@ -1385,7 +1385,7 @@ pneuma-base plugin uninstall marks
 | --- | --- |
 | `index.js` | 在目录里，载入不抛错，缺省导出一个对象 |
 | `contract` | 写了，是 `CONTRACT`，即 `2`。写 `1` 的，原因指向第 10 节「从第 1 版到第 2 版」 |
-| `name` | 合 `PLUGIN_NAME`：小写字母开头，只用小写字母、数字、连字符，最长 41 个字符；装到本机之后和目录名相同；不是 `RESERVED_PLUGIN_NAMES` 里的词：`tmp`、`requests`、`kernel`、`trash`、`holds`、`ask`、`request`、`start`、`show`、`find`、`inspect`、`put`、`say`、`check`、`archive`、`unarchive`、`init`、`view`、`help`、`grant`、`plugin`、`skill`、`secret`、`agent`、`launcher`、`noise`、`storage`、`cache`（命令行的词、内核命令的头一个词、和插件记录处并排的内核的记录处与存储自己的几处） |
+| `name` | 合 `PLUGIN_NAME`：小写字母开头，只用小写字母、数字、连字符，最长 41 个字符；装到本机之后和目录名相同；不是 `RESERVED_PLUGIN_NAMES` 里的词：`tmp`、`requests`、`kernel`、`trash`、`holds`、`ask`、`request`、`start`、`show`、`find`、`inspect`、`put`、`say`、`check`、`archive`、`unarchive`、`init`、`view`、`help`、`grant`、`plugin`、`skill`、`secret`、`agent`、`launcher`、`noise`、`storage`、`cache`、`pair`、`guide`、`mcp`（命令行的词、内核命令的头一个词、和插件记录处并排的内核的记录处与存储自己的几处） |
 | `version`、`summary` | 没有，或是文字 |
 | `keeps` | 没有，或是 `every`、`some` |
 | `cognition` | `null`，或 `{ title, text }`，两样都是文字 |

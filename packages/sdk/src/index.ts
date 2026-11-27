@@ -59,6 +59,9 @@ export const KERNEL_COMMAND_NAMES = [
   'storage install',
   'storage remove',
   'storage update',
+  'pair list',
+  'pair allow',
+  'pair decline',
 ] as const
 
 /**
@@ -95,6 +98,9 @@ export const RESERVED_PLUGIN_NAMES: readonly string[] = [
   'noise',
   'storage',
   'cache',
+  'pair',
+  'guide',
+  'mcp',
 ]
 
 /** The name of a secret a plugin declares; it is also a file name under `$PNEUMA_BASE_HOME/secrets/<plugin>/`. */

@@ -4,7 +4,8 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { PNEUMA_BASE_VERSION } from '@pneuma-base/kernel'
+import { KERNEL_COMMAND_NAMES, ownerFace, PNEUMA_BASE_VERSION, RESERVED_PLUGIN_NAMES } from '@pneuma-base/kernel'
+import { COMMAND_LINE_WORDS } from '../src/main.js'
 import { sandbox, tempDir } from './helpers.js'
 
 describe('plugin new', () => {
@@ -70,6 +71,13 @@ describe('plugin new', () => {
     expect(r.stdout).toContain('--packages <两个包文件所在的目录>')
     expect(r.stdout).not.toMatch(toRepository)
     expect(JSON.parse(readFileSync(join(project, 'package.json'), 'utf8')).devDependencies['pneuma-base']).toBe(`^${PNEUMA_BASE_VERSION}`)
+  })
+
+  it('leaves no plugin a name the command line or the kernel answers to, the sdk naming every kernel command', () => {
+    const kernel = ownerFace.commands([]).map((c) => c.name)
+    expect(kernel.filter((name) => !KERNEL_COMMAND_NAMES.includes(name as never))).toEqual([])
+    const words = [...COMMAND_LINE_WORDS, ...kernel.map((name) => name.split(' ')[0] as string)]
+    expect(words.filter((w) => !RESERVED_PLUGIN_NAMES.includes(w))).toEqual([])
   })
 
   it('refuses before writing anything: a directory that is not empty, package files that are not there, a name or kind that cannot be', () => {

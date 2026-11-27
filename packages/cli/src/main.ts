@@ -406,6 +406,9 @@ const SPECS: Spec[] = [
   },
 ]
 
+/** The first word of each of the command line's own commands. */
+export const COMMAND_LINE_WORDS: readonly string[] = [...new Set(SPECS.map((s) => s.words[0] as string))]
+
 function matchSpec(typed: readonly string[]): Spec | null {
   let best: Spec | null = null
   for (const spec of SPECS) {
