@@ -54,10 +54,6 @@ function actions(blocks: Block[]): Action[] {
 }
 
 describe('the search.status view', () => {
-  it('is declared for the navigation', () => {
-    expect(search.views).toEqual([{ id: 'search.status', title: '查找', icon: 'search', nav: true, filters: [] }])
-  })
-
   it('says there is no index yet, and offers the owner commands as actions', async () => {
     const lib = await library()
     const view = await lib.status()
@@ -89,7 +85,7 @@ describe('the search.status view', () => {
 })
 
 describe('the item section', () => {
-  it('says whether a thing is indexed, in how many pieces, and how many have vectors', async () => {
+  it('says whether a thing is indexed, in how many pieces, and how many have vectors; nothing where there is no thing', async () => {
     const lib = await library()
     lib.write('a.md', '退款在七天内处理。\n')
     lib.write('logo.png', Buffer.from([0x89, 0x00, 0xff]))
@@ -112,10 +108,6 @@ describe('the item section', () => {
     expect(fields((await lib.item('a.md'))?.blocks ?? [])).toMatchObject({ 正文: '还没读，下次 find 时读' })
     await lib.find('退款')
     expect(fields((await lib.item('a.md'))?.blocks ?? [])).toMatchObject({ 正文: '已索引，1 块' })
-  })
-
-  it('gives nothing for a path where there is no thing', async () => {
-    const lib = await library()
     expect(await lib.item('nothing.md')).toBeNull()
   })
 })

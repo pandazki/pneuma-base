@@ -18,49 +18,40 @@ const planOf = (local: Record<string, string>, target: Record<string, string>, b
   plan({ local: files(local), target: files(target), base: files(base), deleted }, namer)
 const gone = (path: string, content: string): Deletion => ({ path: p(path), fingerprint: fp(content) })
 
-describe('decide: each cell of the table, base present', () => {
-  const cases: [string, Fingerprint | null, Fingerprint | null, ReturnType<typeof decide>][] = [
-    ['unchanged / unchanged: nothing', A, A, 'keep'],
-    ['changed / unchanged: push', B, A, 'push'],
-    ['unchanged / changed: pull', A, B, 'pull'],
-    ['changed / changed, the same: nothing (base moves on)', B, B, 'keep'],
-    ['changed / changed, different: conflict', B, C, 'conflict'],
-    ['deleted / unchanged: drop the target copy', null, A, 'drop'],
-    ['unchanged / deleted: drop the local copy', A, null, 'drop'],
-    ['deleted / changed: pull', null, B, 'pull'],
-    ['changed / deleted: push', B, null, 'push'],
-    ['deleted / deleted: nothing', null, null, 'keep'],
-  ]
-  for (const [name, local, target, expected] of cases) it(name, () => expect(decide(local, target, A)).toBe(expected))
-})
-
-describe('decide: no base (first sync, or the baseline was lost)', () => {
-  it('present on one side only: copy it to the other', () => {
-    expect(decide(A, null, null)).toBe('push')
-    expect(decide(null, A, null)).toBe('pull')
+describe('decide', () => {
+  it('answers each cell of the table, with the base and without it (first sync, or the baseline was lost)', () => {
+    const cases: [string, Fingerprint | null, Fingerprint | null, Fingerprint | null, ReturnType<typeof decide>][] = [
+      ['unchanged / unchanged: nothing', A, A, A, 'keep'],
+      ['changed / unchanged: push', B, A, A, 'push'],
+      ['unchanged / changed: pull', A, B, A, 'pull'],
+      ['changed / changed, the same: nothing (base moves on)', B, B, A, 'keep'],
+      ['changed / changed, different: conflict', B, C, A, 'conflict'],
+      ['deleted / unchanged: drop the target copy', null, A, A, 'drop'],
+      ['unchanged / deleted: drop the local copy', A, null, A, 'drop'],
+      ['deleted / changed: pull', null, B, A, 'pull'],
+      ['changed / deleted: push', B, null, A, 'push'],
+      ['deleted / deleted: nothing', null, null, A, 'keep'],
+      ['no base, here only: copy it there', A, null, null, 'push'],
+      ['no base, there only: copy it here', null, A, null, 'pull'],
+      ['no base, on both, equal: nothing', A, A, null, 'keep'],
+      ['no base, on both, different: conflict, keep both', A, B, null, 'conflict'],
+    ]
+    for (const [name, local, target, base, expected] of cases) expect(decide(local, target, base), name).toBe(expected)
   })
-  it('present on both, equal: nothing', () => expect(decide(A, A, null)).toBe('keep'))
-  it('present on both, different: conflict, keep both', () => expect(decide(A, B, null)).toBe('conflict'))
 })
 
 const kinds = (r: Plan) => r.steps.map((s) => (s.kind === 'keep' ? `keep ${s.from}:${s.path} -> ${s.to} (${s.as})` : s.kind === 'copy' ? `copy ${s.from}:${s.path}` : `remove ${s.side}:${s.path}`))
 
 describe('plan: what would vanish is kept', () => {
-  it('a move on this side removes the old path on the target and pushes the new one', () => {
+  it('a move on either side removes the old path on the other and copies the new one there', () => {
     expect(kinds(planOf({ 'b.md': 'x' }, { 'a.md': 'x' }, { 'a.md': 'x' }))).toEqual(['copy local:b.md', 'remove target:a.md'])
-  })
-
-  it('a move on the other side removes the old path here and pulls the new one', () => {
     expect(kinds(planOf({ 'a.md': 'x' }, { 'b.md': 'x' }, { 'a.md': 'x' }))).toEqual(['copy target:b.md', 'remove local:a.md'])
   })
 
-  it('deleted here with no other copy: the target copy goes to _archive/ on both sides', () => {
+  it('deleted on either side with no other copy: the remaining copy goes to _archive/ on both sides', () => {
     const r = planOf({}, { 'n/a.md': 'x' }, { 'n/a.md': 'x' })
     expect(kinds(r)).toEqual(['keep target:n/a.md -> _archive/n/a.md (archive)', 'remove target:n/a.md'])
     expect([...r.end]).toEqual([[p('_archive/n/a.md'), fp('x')]])
-  })
-
-  it('deleted on the target with no other copy: the local copy goes to _archive/', () => {
     expect(kinds(planOf({ 'a.md': 'x' }, {}, { 'a.md': 'x' }))).toEqual(['keep local:a.md -> _archive/a.md (archive)', 'remove local:a.md'])
   })
 
@@ -69,11 +60,8 @@ describe('plan: what would vanish is kept', () => {
     expect(kinds(r)).toEqual(['keep target:a.md -> _archive/a.md (archive)', 'remove target:a.md', 'remove target:b.md'])
   })
 
-  it('a push over content that survives nowhere else archives the overwritten content first', () => {
+  it('a push archives the overwritten content first when it survives nowhere else, and not when it is kept elsewhere (a held copy that goes along)', () => {
     expect(kinds(planOf({ 'a.md': 'new' }, { 'a.md': 'old' }, { 'a.md': 'old' }))).toEqual(['keep target:a.md -> _archive/a.md (archive)', 'copy local:a.md'])
-  })
-
-  it('a push over content kept elsewhere (a held copy that goes along) archives nothing', () => {
     const r = planOf({ 'a.md': 'new', '.pneuma-base/ledger/held/i/a.md': 'old' }, { 'a.md': 'old' }, { 'a.md': 'old' })
     expect(kinds(r)).toEqual(['copy local:.pneuma-base/ledger/held/i/a.md', 'copy local:a.md'])
   })
@@ -110,14 +98,11 @@ describe('plan: what the owner deleted on purpose goes', () => {
   const base = { 'n/a.md': 'x', '_archive/old.md': 'o', [held]: 'h' }
   const all = [gone('n/a.md', 'x'), gone('_archive/old.md', 'o'), gone(held, 'h')]
 
-  it('deleted here: the target copies are removed, in the content, the archive and the records alike, and nothing is kept', () => {
+  it('deleted on either side: the copies on the other are removed, in the content, the archive and the records alike, and nothing is kept', () => {
     const r = planOf({}, base, base, all)
     expect(kinds(r)).toEqual([`remove target:${held}`, 'remove target:_archive/old.md', 'remove target:n/a.md'])
     expect(r.steps.map((s) => s.kind === 'remove' && s.as)).toEqual(['deleted', 'deleted', 'deleted'])
     expect([...r.end]).toEqual([])
-  })
-
-  it('deleted on the other side: the copies here are removed', () => {
     expect(kinds(planOf(base, {}, base, all))).toEqual([`remove local:${held}`, 'remove local:_archive/old.md', 'remove local:n/a.md'])
   })
 
