@@ -99,8 +99,8 @@ function Section({ title, tools, children }: { title: string; tools?: ReactNode;
 function InBrowser() {
   const choice = useSchemeChoice()
   return (
-    <Section title="外观">
-      <Row icon={Palette} name="外观" note="记在这个浏览器里">
+    <Section title="这个浏览器">
+      <Row icon={Palette} name="外观">
         <Appearance value={choice} onChange={chooseScheme} />
       </Row>
     </Section>
