@@ -405,7 +405,11 @@ html[data-window='inactive'] .fresh {
   background: var(--panel);
   transition: box-shadow 140ms ease;
 }
+/* Content scrolled under the head: the head floats over it, in glass. */
 .main[data-scrolled] .page-head {
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
   box-shadow: 0 0.5px 0 var(--line);
 }
 .page-head > h1 {
