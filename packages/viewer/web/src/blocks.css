@@ -172,22 +172,98 @@
   align-items: center;
   gap: 8px;
 }
-/* In the panel, the actions that close the blocks stay in one row at the bottom while the rest scrolls. */
-.detail-body .blocks > .actions:last-child {
-  position: sticky;
-  bottom: -20px;
-  z-index: 2;
-  margin: 0 -16px -20px;
-  padding: 12px 16px 16px;
-  background: var(--surface);
-  box-shadow: 0 -0.5px 0 var(--line);
-  gap: 6px;
+/* A region's actions: icons and the 「···」 as quiet squares, then its one main action. */
+.actions .icon-btn {
+  width: 28px;
+  height: 28px;
 }
-.detail-body .blocks > .actions:last-child > .btn {
-  flex: none;
+/* A row that opens something shows its actions while the pointer or the focus is on it, or it is the open one. */
+.row-actions {
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+tr:is(:hover, :focus-within, [aria-selected='true']) .row-actions,
+.row-actions:has([aria-expanded='true']) {
+  opacity: 1;
+}
+@media (hover: none) {
+  .row-actions {
+    opacity: 1;
+  }
+}
+
+/* What a section is for: a quiet ⓘ beside its title, the words in its tooltip. */
+.about {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: var(--ink-4);
+  cursor: help;
+}
+.about:hover {
+  color: var(--ink-2);
+}
+.section-head h3 .about svg {
+  width: 14px;
+  height: 14px;
+  color: inherit;
+}
+
+/* Values that explain themselves, in one line: who, when, where, a dot between them. */
+.fields-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 20px;
+}
+.fields-line-value {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+}
+.fields-line-value + .fields-line-value::before {
+  content: '·';
+  padding: 0 6px;
+  color: var(--ink-4);
+}
+.fields-line .cell {
+  min-width: 0;
+}
+
+/* An action of one sentence, written in place: a field, the arrow once something is typed. */
+.inline-action {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.inline-action > .field {
+  width: 100%;
+  height: 32px;
+  padding-right: 36px;
+}
+.inline-action[data-busy] > .field {
+  opacity: 0.6;
+}
+.inline-send {
+  position: absolute;
+  right: 3px;
+  width: 26px;
   height: 26px;
-  padding: 0 8px;
-  font-size: 12.5px;
+  border-radius: var(--radius-control);
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.inline-send:hover:not(:disabled) {
+  background: var(--primary-hover);
+  color: var(--on-primary);
 }
 
 /* A tree first: folders at the left of what is in them; one above the other where there is no room. */
@@ -267,6 +343,34 @@
 .table-card tr:focus-visible {
   outline-offset: -2px;
   border-radius: var(--radius-control);
+}
+/* Rows of a group under its heading: the folder they share, said once. */
+.table-card .group-row th {
+  height: 32px;
+  padding: 6px 12px 2px 16px;
+  border-top: 0.5px solid var(--line);
+  color: var(--ink-3);
+  font-weight: 400;
+  vertical-align: bottom;
+}
+.table-card tbody > .group-row:first-child th {
+  border-top: 0;
+}
+.group-name {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.group-name svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+.table-card[data-grouped] .group-row + tr > td {
+  border-top: 0;
 }
 
 /* Fields: a label column and the values, each row at least 28px. */
@@ -364,11 +468,39 @@
   width: 1px;
   background: var(--line);
 }
-.timeline-meta {
+.timeline > li[data-actor] {
+  padding-left: 28px;
+}
+.timeline > li[data-actor]::before {
+  display: none;
+}
+.timeline > li[data-actor]:not(:last-child)::after {
+  top: 24px;
+  left: 8.5px;
+}
+.timeline-mark {
+  position: absolute;
+  top: 1px;
+  left: 0;
+}
+.timeline-head {
   display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.timeline-title {
+  display: flex;
+  min-width: 0;
+  flex: 1;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 20px;
+}
+.timeline-meta {
+  flex: none;
   color: var(--ink-3);
   font-size: 12px;
   line-height: 20px;
@@ -737,4 +869,27 @@ button.drop:hover {
   border-radius: var(--radius-field);
   background: var(--tray);
   box-shadow: inset 0 0 0 0.5px var(--line);
+}
+
+/* Lines that say who, when and where follow each other closely, as one sentence would. */
+.blocks > .fields-line + .fields-line {
+  margin-top: -18px;
+}
+.fields-line .link {
+  color: inherit;
+}
+.fields-line .link:hover {
+  color: var(--ink);
+}
+/* In a line of fields a long value wraps after its icon, not under it. */
+.fields-line .cell {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+.fields-line .cell > svg {
+  flex: none;
+  margin-top: 3px;
+}
+.fields-line .link {
+  text-align: left;
 }

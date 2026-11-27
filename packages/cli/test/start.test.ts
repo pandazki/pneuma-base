@@ -58,7 +58,7 @@ describe('「开始」 on the home page', () => {
     run(['init', lib])
     run(['--library', lib, 'agent', 'connect', 'claude-code'])
     expect(states(stepsOf(home()))).toEqual(['connect:已接上 Claude Code', 'first:todo', 'say:todo'])
-    expect(stepsOf(home())?.[0]?.blocks).toMatchObject([{ kind: 'list', items: [{ cell: { text: 'Claude Code', tag: { text: '已接上' } }, actions: [] }] }])
+    expect(stepsOf(home())?.[0]?.blocks).toMatchObject([{ kind: 'list', items: [{ cell: { text: 'Claude Code' }, note: '已接上 · 技能 · 授权 claude-code', actions: [] }] }])
 
     writeFileSync(join(work, 'paper.pdf'), '%PDF')
     run(['--library', lib, 'put', join(work, 'paper.pdf'), '--to', 'inbox/paper.pdf', '--brought', '--by', 'owner'])
@@ -98,7 +98,7 @@ describe('「开始」 on the home page', () => {
     expect(agents().map((b) => b.title)).not.toContain('让 agent 自己接上')
 
     await record(lib)
-    const item = { kind: 'list', items: [{ cell: { text: expect.stringContaining(sentence), copy: true }, note: expect.stringContaining('点「允许」'), actions: [] }] }
+    const item = { kind: 'list', items: [{ cell: { text: expect.stringContaining(sentence), copy: true, icon: 'message-square-plus' }, note: expect.stringContaining('核对配对码后'), actions: [] }] }
     expect(connect().blocks).toEqual(expect.arrayContaining([item]))
     expect(agents().find((b) => b.title === '让 agent 自己接上')?.blocks).toEqual([item])
     expect(run(['--library', lib, 'show', 'home']).stdout).toContain(sentence)
@@ -108,7 +108,7 @@ describe('「开始」 on the home page', () => {
     run(['init', lib])
     run(['--library', lib, 'agent', 'connect', 'claude-code'])
     const text = run(['--library', lib, 'show', 'home']).stdout
-    expect(text).toContain('## 开始\n做完了 1 步，还有 2 步。\n[✓] 接上你的 agent：已接上 Claude Code\n')
+    expect(text).toContain('## 开始\n1 / 3\n[✓] 接上你的 agent：已接上 Claude Code\n')
     expect(text).toContain('[ ] 放进第一样东西\n')
     expect(text).toContain(`    $ pneuma-base put <文件或文件夹> --to inbox/<名字> --brought --by owner --library ${lib}\n`)
     expect(text).toContain('[ ] 对你的 agent 说一句\n    - 看看我的 Pneuma Base 库里有什么。\n')

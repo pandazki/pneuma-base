@@ -663,7 +663,7 @@ describe('what a target shows', () => {
     }
     await l.cmd('fake on', [P])
     const board = await plugin.onView?.({ view: 'fake.board', params: {} }, l.pctx())
-    expect(board).toMatchObject({ title: '看板', subtitle: '1 样在线，共 2 样' })
+    expect(board).toMatchObject({ title: '看板', subtitle: '1 样在线' })
     const custom = board?.blocks[0]
     expect(custom?.kind).toBe('custom')
     if (custom?.kind !== 'custom') return
@@ -676,7 +676,8 @@ describe('what a target shows', () => {
     expect(page?.blocks[0]).toEqual({ kind: 'text', tone: 'info', text: '在最前面' })
     const rows = tableOf(page?.blocks ?? [])?.rows ?? []
     expect(Object.values(custom.actions)).toEqual(rows.map((row) => row.actions[0]))
-    expect(rows.map((row) => row.cells.state?.tag)).toEqual([STATUS.online, STATUS.offline])
+    // The same states as the target's own blocks; offline, where a thing rests, is left unsaid on the kit's page.
+    expect(rows.map((row) => row.cells.state?.tag ?? row.cells.state)).toEqual([STATUS.online, { text: STATUS.offline.text, muted: true, normal: true }])
   })
 
   it('makes its pages ask again every 30 seconds when it reports what it serves, or as often as it says', async () => {

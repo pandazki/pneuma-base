@@ -184,15 +184,19 @@ function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: 
   switch (block.kind) {
     case 'section': {
       const heading = `${'#'.repeat(depth)} ${block.title}${block.count === null ? '' : `（${block.count}）`}`
-      return ['', heading, ...(block.note === null ? [] : [block.note]), ...actions(block.actions), ...block.blocks.flatMap((b) => blockLines(b, commands, depth + 1, indent, req)), '']
+      return ['', heading, ...(block.about === undefined ? [] : [`（${block.about}）`]), ...(block.note === null ? [] : [block.note]), ...actions(block.actions), ...block.blocks.flatMap((b) => blockLines(b, commands, depth + 1, indent, req)), '']
     }
     case 'table': {
       if (block.rows.length === 0) return [`${indent}${block.empty}`, ...pageLines(block.page, indent)]
-      const linked = block.rows.some((r) => r.link !== null)
+      // Rows of a group together under it, in the order of each group's first row, as the page draws them.
+      const groups = [...new Set(block.rows.map((r) => r.group ?? ''))]
+      const rows = groups.flatMap((g) => block.rows.filter((r) => (r.group ?? '') === g))
+      const linked = rows.some((r) => r.link !== null)
       const header = [...block.columns.map((c) => c.label), ...(linked ? ['打开'] : [])]
-      const cells = block.rows.map((r) => [...block.columns.map((c) => (r.cells[c.key] ? cellText(r.cells[c.key] as Cell, r.link) : '')), ...(linked ? [r.link === null ? '' : `→ ${linkCommand(r.link)}`] : [])])
+      const cells = rows.map((r) => [...block.columns.map((c) => (r.cells[c.key] ? cellText(r.cells[c.key] as Cell, r.link) : '')), ...(linked ? [r.link === null ? '' : `→ ${linkCommand(r.link)}`] : [])])
       const lines = aligned([header, ...cells], indent)
-      return [lines[0] as string, ...block.rows.flatMap((r, i) => [lines[i + 1] as string, ...actions(r.actions, more)]), ...pageLines(block.page, indent)]
+      const heading = (r: (typeof rows)[number], i: number) => (r.group !== undefined && r.group !== '' && r.group !== rows[i - 1]?.group ? [`${indent}${r.group}/`] : [])
+      return [lines[0] as string, ...rows.flatMap((r, i) => [...heading(r, i), lines[i + 1] as string, ...actions(r.actions, more)]), ...pageLines(block.page, indent)]
     }
     case 'fields':
       return block.fields.map((f) => `${indent}${f.label}：${cellText(f.value)}`)
@@ -201,7 +205,7 @@ function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: 
     case 'timeline':
       return [
         ...block.entries.flatMap((e) => [
-          `${indent}- ${[minute(e.at), cellText(e.title), ...(e.tag === null ? [] : [`[${e.tag.text}]`])].filter((p) => p !== '').join('  ')}`,
+          `${indent}- ${[minute(e.at), ...(e.actor === undefined ? [] : [whoText(e.actor)]), cellText(e.title), ...(e.tag === null ? [] : [`[${e.tag.text}]`])].filter((p) => p !== '').join('  ')}`,
           ...e.lines.map((l) => `${more}${l}`),
           ...actions(e.actions ?? [], more),
         ]),
@@ -277,13 +281,22 @@ export function pageText(r: Shown, commands: readonly OwnerCommandInfo[], req: V
   return [...lines, ...problemLines(r)]
 }
 
-/** The views of a library: each one's id, title and who gives it, its filters as flags, and whether it is the owner's or only reached by a link. */
+/**
+ * The views of a library: each one's id, title and who gives it, its filters as flags, and whether it is
+ * the owner's, shares a navigation entry with another view of the list (`with`), or is only reached by a link.
+ */
 export function viewListText(list: ViewList): string[] {
+  const shares = (v: ViewList['views'][number]) => v.nav && v.with !== undefined && list.views.some((o) => o.id === v.with)
   const rows = list.views.map((v) => [
     v.id,
     v.title,
     v.by,
-    [...v.filters.map((f) => `[--${f.name} ${f.options.flatMap((o) => (o.value === '' ? [] : [o.value])).join('|')}]`), ...(v.ownerOnly === true ? ['只给主人'] : []), ...(v.nav ? [] : ['从别的页的链接打开'])].join(' '),
+    [
+      ...v.filters.map((f) => `[--${f.name} ${f.options.flatMap((o) => (o.value === '' ? [] : [o.value])).join('|')}]`),
+      ...(v.ownerOnly === true ? ['只给主人'] : []),
+      ...(shares(v) ? [`和 ${v.with} 一个入口`] : []),
+      ...(v.nav ? [] : ['从别的页的链接打开']),
+    ].join(' '),
   ])
   return ['这个库的页，pneuma-base show <编号> 打开一页：', ...aligned(rows, '  '), ...problemLines(list)]
 }

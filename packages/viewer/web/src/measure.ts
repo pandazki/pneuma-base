@@ -1,6 +1,7 @@
 // How wide texts and table columns are. A column gets its natural width when the table has room;
 // when it has not, prose gives way before paths, and short columns never shrink.
-import type { Block, Cell } from '@pneuma-base/kernel'
+import type { Action, Block, Cell } from '@pneuma-base/kernel'
+import { placeActions } from './actions'
 import { shortTime } from './time'
 
 type Table = Extract<Block, { kind: 'table' }>
@@ -64,6 +65,7 @@ const PADDING = 24 // a cell's 12px each side
 const FIRST_PADDING = 28 // the first cell's 16px on the left
 const BUTTON_PADDING = 16 // a small button's 8px each side
 const SLACK = 4 // rounding and font fallback
+const SQUARE = 28 // an icon button, or the 「···」
 
 /** What a cell draws besides its text: who did it, its icon, its tag and its copy button, with their gaps. */
 function extras(cell: Cell, text: boolean): number {
@@ -104,7 +106,9 @@ function momentWidth(text: string, font: string, seen: Map<string, number>): num
 }
 
 function cellWidth(cell: Cell, first: boolean, moments: Map<string, number>): number {
-  const text = cell.at ? shortTime(cell.at) : cell.text === '' && cell.actor ? cell.actor.name : cell.text
+  // A cell that says who is its mark alone in a table (cells.tsx).
+  const markOnly = cell.actor !== undefined && (cell.text === '' || cell.text === cell.actor.name)
+  const text = cell.at ? shortTime(cell.at) : markOnly ? '' : cell.text
   const font = cellFont(cell, first)
   const w = text === '' ? 0 : cell.at ? momentWidth(text, font, moments) : textWidth(text, font)
   return w + extras(cell, text !== '')
@@ -119,19 +123,28 @@ const MIN: Record<Exclude<Give, 'fixed'>, number> = { text: 120, mono: 180 }
 /** Narrower still, only so the table never scrolls sideways: a few characters and the … stay. */
 const FLOOR: Record<Exclude<Give, 'fixed'>, number> = { text: 56, mono: 72 }
 
-/** Each column's natural width and how it may give, the actions column last when there is one. */
-export function naturalColumns(block: Table, withActions: boolean): Column[] {
+/** How wide a row's actions are as the page draws them: icons and the 「···」 square, the main one as a small button. */
+function actionsWidth(actions: readonly Action[]): number {
+  const placed = placeActions(actions)
+  const squares = placed.icons.length + (placed.menu.length > 0 ? 1 : 0)
+  const main = placed.main ? textWidth(placed.main.label, pageFonts().small) + BUTTON_PADDING + (placed.main.icon ? ICON : 0) : 0
+  const parts = squares + (placed.main ? 1 : 0)
+  return squares * SQUARE + main + Math.max(0, parts - 1) * GAP
+}
+
+/** Each column's natural width and how it may give, the actions column last when there is one; `headers` false leaves the headers' widths out. */
+export function naturalColumns(block: Table, withActions: boolean, headers = true): Column[] {
   // Measured anew each time: the fonts may have come in since.
   const moments = new Map<string, number>()
   const columns = block.columns.map((c, i): Column => {
     const cells = block.rows.flatMap((r) => r.cells[c.key] ?? [])
-    const content = Math.max(textWidth(c.label, pageFonts().head), ...cells.map((cell) => cellWidth(cell, i === 0, moments)))
+    const content = Math.max(headers ? textWidth(c.label, pageFonts().head) : 0, ...cells.map((cell) => cellWidth(cell, i === 0, moments)))
     const natural = Math.ceil(content) + SLACK + (i === 0 ? FIRST_PADDING : PADDING)
     const give: Give = cells.some((cell) => cell.mono && cell.text !== '') ? 'mono' : cells.some((cell) => cell.text !== '' && !cell.at) ? 'text' : 'fixed'
     return { natural, give, optional: c.optional === true }
   })
   if (!withActions) return columns
-  const buttons = Math.max(0, ...block.rows.map((r) => r.actions.reduce((sum, a, i) => sum + textWidth(a.label, pageFonts().small) + BUTTON_PADDING + (i > 0 ? GAP : 0), 0)))
+  const buttons = Math.max(0, ...block.rows.map((r) => actionsWidth(r.actions)))
   return [...columns, { natural: Math.ceil(buttons) + SLACK + PADDING, give: 'fixed', optional: false }]
 }
 

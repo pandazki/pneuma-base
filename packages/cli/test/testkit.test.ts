@@ -40,7 +40,8 @@ describe('the sandbox', () => {
       const deploy = await viewer.item('sites/shop', { plugin: 'deploy' })
       expect(deploy).toMatchObject({ outcome: 'shown', title: '部署', problems: [] })
       const fields = deploy.outcome === 'shown' ? deploy.blocks.find((b) => b.kind === 'fields') : undefined
-      expect(fields?.kind === 'fields' && fields.fields.find((f) => f.label === '状态')?.value.tag?.text).toBe('离线')
+      // Offline is where a thing rests: unsaid on the page, still in the value the text form prints.
+      expect(fields?.kind === 'fields' && fields.fields.find((f) => f.label === '状态')?.value).toEqual({ text: '离线', muted: true, normal: true })
 
       expect(await viewer.item('sites/shop', { plugin: 'search' })).toMatchObject({ outcome: 'shown', blocks: [], problems: [] })
     } finally {

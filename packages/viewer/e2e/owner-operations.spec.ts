@@ -4,7 +4,7 @@
 // the command line then reports those that changed content or capabilities.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, tempDir, test, write } from './support.ts'
+import { expect, fromMenu, openShared, tempDir, test, write } from './support.ts'
 
 test('every owner operation from the page leaves a trace an agent sees in check', async ({ page, pb }) => {
   const lib = join(tempDir(), 'lib')
@@ -36,10 +36,11 @@ test('every owner operation from the page leaves a trace an agent sees in check'
   await dialog.getByRole('button', { name: '取回到新路径' }).click()
   await expect(status).toContainText('取回到 doc.first.md')
   expect(readFileSync(join(lib, 'doc.first.md'), 'utf8')).toBe('first version\n')
-  await expect(main.getByRole('row', { name: /^doc\.first\.md/ })).toContainText('带进来的，主人给的')
+  await expect(main.getByRole('row', { name: /^doc\.first\.md/ })).toContainText('带进来的')
+  await expect(main.getByRole('row', { name: /^doc\.first\.md/ }).getByRole('img', { name: /^主人/ })).toBeVisible()
 
-  // Give dropped.md its provenance, from the standing page.
-  await nav.getByRole('button', { name: '状况' }).click()
+  // Give dropped.md its provenance, from the standing page, which shares the library's entry.
+  await openShared(page, '库', '状况')
   await panel.getByRole('button', { name: '关闭详情' }).click()
   const unowned = main.getByRole('region', { name: '没人登记过的' })
   await unowned.getByRole('listitem').filter({ hasText: 'dropped.md' }).getByRole('button', { name: '记为带进来的' }).click()
@@ -47,8 +48,8 @@ test('every owner operation from the page leaves a trace an agent sees in check'
   await dialog.getByRole('button', { name: '记为带进来的' }).click()
   await expect(status).toContainText('已放好 dropped.md')
 
-  // summary.md was made from two things of the library: one path per line.
-  await unowned.getByRole('listitem').filter({ hasText: 'summary.md' }).getByRole('button', { name: '记为做出来的' }).click()
+  // summary.md was made from two things of the library: one path per line. The second answer is in the row's menu.
+  await fromMenu(unowned.getByRole('listitem').filter({ hasText: 'summary.md' }), '记为做出来的')
   await dialog.getByLabel('依据库里的哪些').fill('doc.md\ndoc.first.md')
   await dialog.getByLabel('库外的依据').fill('主人在对话里口述的提纲')
   await dialog.getByRole('button', { name: '记为做出来的' }).click()
@@ -56,11 +57,11 @@ test('every owner operation from the page leaves a trace an agent sees in check'
   await expect(unowned).toHaveCount(0)
   await nav.getByRole('button', { name: '库' }).click()
   await main.getByRole('row', { name: /^summary\.md/ }).click()
-  const basis = panel.getByRole('region', { name: '怎么来的', exact: true })
+  const basis = panel.getByRole('region', { name: '依据', exact: true })
   await expect(basis.getByRole('listitem')).toHaveCount(3)
   await expect(basis).toContainText('doc.first.md')
   await expect(basis).toContainText('主人在对话里口述的提纲')
-  await nav.getByRole('button', { name: '状况' }).click()
+  await openShared(page, '库', '状况')
   await panel.getByRole('button', { name: '关闭详情' }).click()
 
   // Accept the direct change to notes.md.
@@ -74,7 +75,7 @@ test('every owner operation from the page leaves a trace an agent sees in check'
   await plugins.getByRole('row', { name: /pager/ }).getByRole('button', { name: '装上' }).click()
   await expect(status).toContainText('已装上插件 pager')
   await expect(nav.getByRole('button', { name: '块的样例' })).toBeVisible()
-  await plugins.getByRole('row', { name: /pager/ }).getByRole('button', { name: '卸下' }).click()
+  await fromMenu(plugins.getByRole('row', { name: /pager/ }), '卸下')
   await expect(status).toContainText('已卸下插件 pager')
   await expect(nav.getByRole('button', { name: '块的样例' })).toHaveCount(0)
 
@@ -85,14 +86,14 @@ test('every owner operation from the page leaves a trace an agent sees in check'
   await dialog.getByLabel('给谁').fill('codex')
   await dialog.getByRole('button', { name: '发授权' }).click()
   await expect(status).toContainText('已发授权 codex 给 codex')
-  await grants.getByRole('row', { name: /^codex/ }).getByRole('button', { name: '撤回' }).click()
+  await fromMenu(grants.getByRole('row', { name: /^codex/ }), '撤回')
   await expect(dialog).toContainText('撤回后')
   await dialog.getByRole('button', { name: '撤回' }).click()
   await expect(status).toContainText('已撤回授权 codex')
   await expect(grants.getByRole('row', { name: /^codex/ })).toHaveCount(0)
 
   // Generate a skill into a directory the owner types.
-  await grants.getByRole('row', { name: /^claude/ }).getByRole('button', { name: '为 Claude 生成技能' }).click()
+  await fromMenu(grants.getByRole('row', { name: /^claude/ }), '为 Claude 生成技能')
   await dialog.getByLabel('放技能的目录').fill(skills)
   await dialog.getByRole('button', { name: '为 Claude 生成技能' }).click()
   await expect(status).toContainText('已为 claude 写好技能')
@@ -101,9 +102,9 @@ test('every owner operation from the page leaves a trace an agent sees in check'
   // The activity page lists every one of them.
   await nav.getByRole('button', { name: '活动' }).click()
   for (const command of ['ledger held restore', 'plugin add', 'plugin remove', 'grant issue', 'grant revoke', 'skill install']) {
-    await expect(main.getByRole('listitem').filter({ hasText: `主人面的操作 ${command}` }).first()).toContainText('主人做的')
+    await expect(main.getByRole('listitem').filter({ hasText: `主人面的操作 ${command}` }).first().getByRole('img', { name: '主人' })).toBeVisible()
   }
-  await expect(main.getByRole('listitem').filter({ hasText: '认了 notes.md 的直接改动' })).toContainText('主人做的')
+  await expect(main.getByRole('listitem').filter({ hasText: '认了 notes.md 的直接改动' }).getByRole('img', { name: '主人' })).toBeVisible()
 
   // An agent's check reports what changed content or capabilities, not the grant or the skill.
   const news = agent(['check']).stdout
@@ -130,13 +131,14 @@ test('removing a plugin that refuses offers 仍然卸下, which asks with the pl
   const status = page.getByRole('status')
   await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '配置' }).click()
   const deploy = main.getByRole('region', { name: '插件' }).getByRole('row', { name: /^deploy/ })
-  await deploy.getByRole('button', { name: '卸下' }).click()
+  await fromMenu(deploy, '卸下')
   await expect(status).toContainText('插件 deploy 没有卸下，它说：还有 1 样在线')
   await status.getByRole('button', { name: '仍然卸下' }).click()
   await expect(dialog).toContainText('插件 deploy 说：还有 1 样在线')
   await dialog.getByRole('button', { name: '仍然卸下' }).click()
   await expect(status).toContainText('已卸下插件 deploy')
   await expect(status.getByRole('button', { name: '仍然卸下' })).toHaveCount(0)
-  await expect(deploy).toContainText('没装')
+  // Taken off: its row offers to install it again.
+  await expect(deploy.getByRole('button', { name: '装上' })).toBeVisible()
   expect(JSON.parse(readFileSync(join(lib, '.pneuma-base', 'config.json'), 'utf8')).plugins).toEqual(['ledger'])
 })

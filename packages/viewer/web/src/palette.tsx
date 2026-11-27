@@ -109,7 +109,7 @@ export function Palette({ leaving, views, groupOf, actions, onClose, onPage, onO
       .map((v) => ({ id: `page-${v.id}`, icon: <ViewIcon name={v.icon} />, name: v.title, hint: groupOf(v) ?? undefined, choose: close(() => onPage(v.id)) }))
     const own: Entry[] = actions
       .filter((a) => lower === '' || a.label.toLowerCase().includes(lower))
-      .map((a, i) => ({ id: `action-${i}`, icon: <Play />, name: a.label, choose: close(() => onAction(a)) }))
+      .map((a, i) => ({ id: `action-${i}`, icon: a.icon ? <ViewIcon name={a.icon} /> : <Play />, name: a.label, hint: a.key?.toUpperCase(), choose: close(() => onAction(a)) }))
     const local: Group[] = [
       { label: '前往', about: [], entries: pages },
       { label: '这一页的动作', about: [], entries: own },
@@ -202,14 +202,17 @@ export function Palette({ leaving, views, groupOf, actions, onClose, onPage, onO
             <span ref={pill} className="palette-pill" aria-hidden />
             {groups.map((g) => (
               <div key={g.label} role="group" aria-label={g.label}>
-                <div className="palette-label" aria-hidden>
+                {/* What a group of hits is about is said on hover; a group with nothing to choose says it in full. */}
+                <div className="palette-label" aria-hidden title={g.entries.length > 0 && g.about.length > 0 ? g.about.join('\n') : undefined}>
                   {g.label}
                 </div>
-                {g.about.map((line, i) => (
-                  <p key={i} className="palette-about">
-                    {line}
-                  </p>
-                ))}
+                {g.entries.length === 0
+                  ? g.about.map((line, i) => (
+                      <p key={i} className="palette-about">
+                        {line}
+                      </p>
+                    ))
+                  : null}
                 {g.entries.map((entry) => {
                   const i = ++index
                   return (

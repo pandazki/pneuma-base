@@ -1,13 +1,15 @@
 // What happened, in groups under a heading such as a day or a scene; a heading with a link opens what
-// it names. A row is two lines: one sentence, and under it a grey line of who, whose act it was when
-// that is not an agent's own, and the row's cells. Its moment stands in a column at the left; where
+// it names. A row is two lines: one sentence, and under it a grey line of whose act it was when the
+// mark does not say it (one the owner approved, one only seen), and the row's cells but those in their
+// usual state. The mark says who, its name and grant in its tooltip. Its moment stands in a column at the left; where
 // the feed is narrow, as in the panel, the moment opens the grey line instead and the sentence wraps
 // rather than being cut. A row with a link opens it on a click or Enter, in a tab of its own with ⌘.
 // At its right, one quiet action, or a grey word saying how it ended.
 import type { Block, FeedGroup, FeedRow, Link } from '@pneuma-base/kernel'
 import { ChevronRight } from 'lucide-react'
 import type { KeyboardEvent, MouseEvent } from 'react'
-import { ActionButton, CellView, Moment, wantsTab } from '../cells'
+import { ActionButton } from '../actions'
+import { CellView, Moment, wantsTab } from '../cells'
 import { useEnv } from '../env'
 import { columnTime } from '../time'
 import { ActorBadge } from './actor'
@@ -15,8 +17,8 @@ import { Pager, turns } from './pager'
 
 type Feed = Extract<Block, { kind: 'feed' }>
 
-/** The words for whose act a row was; an agent's own, the ordinary case, says nothing. */
-const WHOSE: Record<NonNullable<FeedRow['whose']>, string | null> = { agent: null, owner: '主人做的', approved: '主人批准的', observed: '看到的' }
+/** The words for whose act a row was; an agent's own and the owner's own say nothing more than the mark. */
+const WHOSE: Record<NonNullable<FeedRow['whose']>, string | null> = { agent: null, owner: null, approved: '主人批准的', observed: '看到的' }
 
 /** What following a link takes from a click or a key: a tab of its own with ⌘ or Ctrl, or the middle button. */
 function useOpen(link: Link | null | undefined) {
@@ -45,7 +47,7 @@ function Head({ group }: { group: FeedGroup }) {
   const inner = (
     <>
       <span className="feed-head-title">{group.title}</span>
-      {group.count !== null ? <span className="feed-count">{group.count}</span> : null}
+      {group.count !== null && (group.count > 1 || !group.link) ? <span className="feed-count">{group.count}</span> : null}
     </>
   )
   return (
@@ -72,7 +74,7 @@ function Row({ row }: { row: FeedRow }) {
       <span className="feed-time">
         <Moment at={row.at} format={columnTime} />
       </span>
-      <ActorBadge actor={row.actor} size={24} />
+      <ActorBadge actor={row.actor} size={24} titled />
       <div className="feed-main">
         {open ? (
           <span role="link" tabIndex={0} className="feed-line" aria-current={current || undefined} onKeyDown={open.onKeyDown}>
@@ -85,17 +87,18 @@ function Row({ row }: { row: FeedRow }) {
           <span className="feed-meta-time">
             <Moment at={row.at} />
           </span>
-          <span className="feed-who">{typeof row.actor === 'string' ? row.actor : row.actor.name}</span>
           {whose ? (
             <span className="feed-whose" data-whose={row.whose}>
               {whose}
             </span>
           ) : null}
-          {row.meta.map((cell, i) => (
-            <span key={i} className="feed-cell">
-              <CellView cell={cell} />
-            </span>
-          ))}
+          {row.meta
+            .filter((cell) => cell.normal !== true)
+            .map((cell, i) => (
+              <span key={i} className="feed-cell">
+                <CellView cell={cell} />
+              </span>
+            ))}
         </span>
       </div>
       {row.action ? (

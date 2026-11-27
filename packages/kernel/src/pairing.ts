@@ -299,5 +299,5 @@ export async function pairingAsks(home: string, env: Env, library: Library, now:
 /** The one sentence the owner says to any agent, to copy, and how it goes on from there. `where`: where the owner allows it. */
 export const sentenceBlock = (url: string, where: string): Block => ({
   kind: 'list',
-  items: [{ cell: { text: sentenceFor(url), copy: true }, note: `任何 agent 都能这样自己接上：把这句话发给它，它读了说明会请求接入；你核对它给出的配对码，在${where}点「允许」。`, actions: [] }],
+  items: [{ cell: { text: sentenceFor(url), copy: true, icon: 'message-square-plus' }, note: `发给任何 agent，它会请求接入；核对配对码后在${where}允许。`, actions: [] }],
 })

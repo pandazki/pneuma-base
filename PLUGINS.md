@@ -397,8 +397,8 @@ export default definePlugin({
 
 管理界面是 `pneuma-base view <库>` 打开的网页。看用视图，改用两个面：一个视图答一页带类型的块，界面只渲染块，不知道块来自哪个插件。命令行是全部本事的准绳，界面是它的一面：每一页也是一条只读的命令，`pneuma-base show <视图编号> [--<参数> <值>…]` 把它印成字，`--json` 给出界面拿到的同一个答复；agent 带着授权或 `--as` 也能看，和 `inspect` 一样什么都不改、不发事件。插件有两处可以放块：
 
-- 自己的页：在 `views` 里声明，在 `onView` 里答 `{ title, subtitle, blocks, refresh?, open? }`。`open` 是一个开在面板里的链接（`target: 'panel'`），比如列表的第一行：界面打开这一页、面板关着、窗口放得下页和面板时，在面板里打开它，每到这一页一次；`show` 不印它。不是开在面板里的链接被去掉，记成问题。`id` 必须以 `<插件名>.` 开头（检查：`names`）。`icon` 是 sdk 的 `IconName`（4.4），别的名字画成拼图。`nav: false` 的页只能经链接到达。没给的筛选取它的 `default`，界面和 `show` 一样。管理用的页声明 `ownerOnly: true`：在 agent 的会话里以 `agent-session` 拒绝，话和只给主人的命令被拒时一样；别的页两边一样。
-- 条目面板里的一节：一样东西在右侧面板打开时，内核按配置次序调每个插件的 `onItemView(路径, ctx, 面板)`，`面板` 是 `{ params, size }`：面板的参数和一页几行，节里的长列表按它分页（`Paging`，`target: 'panel'`，各用一个 `name`）；把答的 `{ title, blocks, actions? }` 盖上插件名，排在「它是什么」那一行之后、文件的事实之前；`actions` 是对这样东西的动作，不放在节里，并进面板底下那一行，排在归档和挪之后。答 `null` 就没有这一节。路径上没有东西也调；只在归档区的东西，路径是 `_archive/…`；内核自己的文件不调。带标记的目录里的每个文件也有自己的面板：目录的面板列出里面的文件，点一个就打开它的面板。这时 `onItemView` 拿到那个文件的库内路径，比如 `site/index.html`，不是目录的；面板里没有归档按钮，因为目录只能整个归档。
+- 自己的页：在 `views` 里声明，在 `onView` 里答 `{ title, subtitle, blocks, refresh?, open? }`。`open` 是一个开在面板里的链接（`target: 'panel'`），比如列表的第一行：界面打开这一页、面板关着、窗口放得下页和面板时，在面板里打开它，每到这一页一次；`show` 不印它。不是开在面板里的链接被去掉，记成问题。`id` 必须以 `<插件名>.` 开头（检查：`names`）。`icon` 是 sdk 的 `IconName`（4.4），别的名字画成拼图。`nav: false` 的页只能经链接到达。`with: '<另一页的编号>'` 的页不单占导航的一项，和那一页共用一项：那几页的页头有一排图标在它们之间切换，命令面板的「前往」照样列出它，`show` 的页列表标出它和谁一个入口；写的编号不在时它自己占一项。导航短，人才找得到东西：一个插件的几页，除了主页都该 `with` 到主页或内核的某一页（比如设置一类的 `with: 'config'`）。没给的筛选取它的 `default`，界面和 `show` 一样。管理用的页声明 `ownerOnly: true`：在 agent 的会话里以 `agent-session` 拒绝，话和只给主人的命令被拒时一样；别的页两边一样。
+- 条目面板里的一节：一样东西在右侧面板打开时，内核按配置次序调每个插件的 `onItemView(路径, ctx, 面板)`，`面板` 是 `{ params, size }`：面板的参数和一页几行，节里的长列表按它分页（`Paging`，`target: 'panel'`，各用一个 `name`）；把答的 `{ title, blocks, actions? }` 盖上插件名，排在内核的头一行之后、文件的内容和事实之前；`actions` 是对这样东西的动作，不放在节里，并进面板的头，排在归档和挪之后：标了 `as: 'icon'` 的画成图标，别的进头上的「···」，标了 `as: 'primary'` 的是面板唯一的主按钮（4.4 的 `Action`）。答 `null` 就没有这一节。路径上没有东西也调；只在归档区的东西，路径是 `_archive/…`；内核自己的文件不调。带标记的目录里的每个文件也有自己的面板：目录的面板列出里面的文件，点一个就打开它的面板。这时 `onItemView` 拿到那个文件的库内路径，比如 `site/index.html`，不是目录的；面板里没有归档按钮，因为目录只能整个归档。
 
 - 首页：视图声明 `home: true`，它的块就放在首页上，在「等你决定」之后，按配置次序，用每个筛选的默认值。它可以同时 `nav: false`，只在首页出现。首页是界面打开时的那一页，所以只放主人一来就该看到的：发生了什么、哪里要留意，用 `feed`、`list`、`stats` 这些块。首页视图答复里的 `steps` 块例外：它不在原处画，它的步骤接在内核的「接上你的 agent」「放进第一样东西」后面，并进首页最上面的「开始」；有一步没做，「开始」就在，都做完了就没了。一步做没做完由插件每次按库的状态算，不要记标记。记账插件这样给出「对你的 agent 说一句」。
 - 问主人：`onAsks(ctx)` 答此刻只有主人能定的事，`PluginAsk[]`，每件 `{ key, text, about, actions, suggested?, command? }`：`key` 在这个插件里不重复，`text` 是一句问话，`about` 是关于的库内路径或 `null`，`actions` 是几个回答（只给主人的命令也行），`suggested` 是推荐的那个回答在 `actions` 里的位置，`command` 是这件事说到的一条命令行，照原样印在问话下面。它们出现在首页最上面的「等你决定」里（署插件的认知段标题），也在 agent 的 `check` 里。agent 请主人做的事（`ask`）和你的一个回答调的是同一条主人命令、同样的参数时，请求代替你这一件：请求在等时只出现请求，带着它的为什么；主人拒绝之后，这一件也不再出现；批准就跑了那条命令，你之后还问的是新的事。所以回答要写全参数（不留输入），请求才认得出它。`onAsks` 只读，首页每次显示、`check` 每次答都会问：插件按自己的记录答，主人回答之后记录变了，就不再问这一件。界面里回答之后，那一件在原处折成一行回执。不合的一件（不是一件、回答调不到、推荐的不在回答里）去掉，列进问题。
@@ -870,14 +870,14 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 
 | 种类 | 必需的字段 | 可选的字段 | 用处 |
 | --- | --- | --- | --- |
-| `section` | `title`、`note`（文字或 `null`）、`count`（数字或 `null`）、`blocks`、`actions` | `collapse`：`open` 或 `closed`，可以折起来，值是开始时的样子 | 分节；里面的块逐个核对 |
-| `table` | `columns`（每列 `{ key, label }`）、`rows`（每行 `{ key, cells, link, actions }`，`cells` 按列的 `key` 给 `Cell`，`link` 可以是 `null`）、`empty` | 列的 `optional`：放不下时这一列先让开，后面的先让；`page`：见下面的 `Paging` | 记录表；没有行时只显示 `empty` |
-| `fields` | `fields`（每项 `{ label, value }`，`value` 是 `Cell`） | | 字段组 |
+| `section` | `title`、`note`（文字或 `null`）、`count`（数字或 `null`）、`blocks`、`actions` | `collapse`：`open` 或 `closed`，可以折起来，值是开始时的样子；`about`：这一节是做什么的，给第一次来的人，界面放在标题旁的 ⓘ 里，悬停或聚焦时显示，`show` 印在标题下的括号里；`normal: true`：这一节此刻没有要人看的（没有要决定的、没有要留意的），界面整节不画，`show` 照印 | 分节；里面的块逐个核对。`note` 留给这一节此刻的内容（比如「你还没看过，这是最近的」），说明这一节是什么的话放 `about`。节的 `actions` 画在标题那一行：图标、「···」、一个安静的按钮（见 `Action`）；`as: 'inline'` 的动作画成节里第一行的输入框 |
+| `table` | `columns`（每列 `{ key, label }`）、`rows`（每行 `{ key, cells, link, actions }`，`cells` 按列的 `key` 给 `Cell`，`link` 可以是 `null`）、`empty` | 列的 `optional`：放不下时这一列先让开，后面的先让；行的 `group`：同组的行排在一起，组名是它们上面的一行小标题，格里只写组名之后的部分（比如按文件夹分组，格里只写名字），有组时表头只给读屏；`page`：见下面的 `Paging` | 记录表；没有行时只显示 `empty`。一列的格全是 `normal` 时整列让开。有 `link` 的行，动作在悬停或聚焦时才出现 |
+| `fields` | `fields`（每项 `{ label, value }`，`value` 是 `Cell`） | `line: true`：几个字段说成一行，不带标签，标签进悬停，`show` 照印标签；适合谁、何时、在哪次会话这类一看就懂的值 | 字段组；`normal` 的字段不画 |
 | `list` | `items`（每项 `{ cell, note, actions }`，`note` 可以是 `null`） | `page` | 列表；窄处要路径完整时用它，不用表格 |
-| `timeline` | `entries`（每条 `{ at, title, lines, tag }`，`title` 是 `Cell`，`tag` 可以是 `null`） | 条目的 `actions`；`page` | 时间线 |
+| `timeline` | `entries`（每条 `{ at, title, lines, tag }`，`title` 是 `Cell`，`tag` 可以是 `null`） | 条目的 `actions`、`actor`（谁做的，`ActorMark` 或名字：界面在线上画它的记号，名字进悬停，`show` 印名字）；`page` | 时间线 |
 | `text` | `text`、`tone` | | 一段字 |
 | `preview` | `path`（库内路径） | | 一个文件的预览 |
-| `actions` | `actions` | | 一排按钮 |
+| `actions` | `actions` | `head: true`：这一排是对整页说的，画在页头（条目面板里画在面板的头），按键在页上就做 | 一排动作 |
 | `empty` | `title`、`hint`（文字或 `null`） | | 空的状态 |
 | `embed` | `url`（http 或 https）、`title`、`height` | | 库外的一个页面，放在沙箱框架里，带「在新标签页打开」 |
 | `custom` | `entry`、`height`、`text`、`actions` | `data` | 插件自己画的页，见 4.5；`text` 是这一块用字说的同样的事 |
@@ -891,16 +891,16 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 
 | 类型 | 字段 |
 | --- | --- |
-| `Cell` | `text`；可选 `mono`、`muted`、`tag`、`link`、`actor`（`ActorMark`，谁做的：文字前画它的记号，`text` 空时显示名字）、`at`（这一格是一个时刻，界面按看的人的本地时间显示，近的写「N 分钟前」「今天 15:34」）、`icon`（`IconName`）、`href`（http 或 https 的地址，新标签页打开，放不下时从中间截短）、`copy: true`（复制 `href`，没有就复制 `text`） |
-| `Tag` | `{ text, tone }`，`tone` 是 `neutral`、`good`、`warn`、`bad`、`info`。正常的状态写成灰字（`muted` 的 `Cell`），不要给它标签；标签留给偏离正常的 |
+| `Cell` | `text`；可选 `normal: true`（这是常态的值，比如「一致」「读写」「离线」：页面不画它，一列全是常态就整列让开，`show` 照印）、`mono`、`muted`、`tag`、`link`、`actor`（`ActorMark`，谁做的：文字前画它的记号，`text` 空时显示名字）、`at`（这一格是一个时刻，界面按看的人的本地时间显示，近的写「N 分钟前」「今天 15:34」）、`icon`（`IconName`）、`href`（http 或 https 的地址，新标签页打开，放不下时从中间截短）、`copy: true`（复制 `href`，没有就复制 `text`） |
+| `Tag` | `{ text, tone }`，`tone` 是 `neutral`、`good`、`warn`、`bad`、`info`。正常的状态给 `normal: true`，不要给它标签；标签留给偏离正常的 |
 | `ActorMark` | `{ kind: 'agent' \| 'owner', name, grant? }`：agent 画成名字里取的两个字母，底色由名字定，同一个名字总是同一个颜色；主人画成一个灰圆。字母：头两个词的首字母（claude-code 是 CC），一个词的取头两个字母（codex 是 Co），汉字一个就是记号；屏上两个名字的字母一样时，各取首字母加第一个和对方同位不同的字母（codex 和 copilot 是 Cd 和 Cp）。所以不靠颜色也分得开。`grant` 是它凭的授权名 |
 | `FilterOption` | `{ value, label, count? }`：筛选的一个选项，`count` 是选它时有几条。视图答复可以带 `filters: { name, options }[]`，给它声明了的筛选这一次的选项和数目（比如出现过的 agent），界面和 `show` 用它代替声明里的选项；只有一个选项的筛选界面不画 |
 | `Link` | `{ view, params, target }`：打开一个视图，`target` 是 `main`（主区）或 `panel`（右侧面板）。条目面板是视图 `item`，参数 `path` |
 | `Paging` | `{ first, shown, total, atLeast?, prev, next }`：这些行是一个长列表的一页，从第 `first` 行起，共 `shown` 行；整个列表 `total` 行，`atLeast` 时是至少这么多；`prev`、`next` 是前一页和后一页的 `Link`，到头是 `null`。页的位置在视图的参数里（`after` 和 `back`），所以在地址里。sdk 的 `pagingOf` 从参数生成它，`pageAt` 读出这一页从哪个游标往后，`rowsOf(请求)` 是一页几行：界面 50，`show` 20；一页里几个列表各用一个 `name` 前缀。界面在列表下画「51–100，共 523 项」和前后两个按钮，`show` 印这一句和翻页的命令 |
-| `Action` | `{ label, tone, confirm, inputs, call }`：`tone` 是 `default` 或 `danger`。`confirm` 是点了之后先问的一句话，人点了确认就是破坏性命令要的当面确认。`confirm` 为 `null` 的动作不问：没有输入时点了就做，算没有当面确认，所以破坏性的命令以 `not-confirmed` 拒绝；有输入时先出表单 |
+| `Action` | `{ label, tone, confirm, inputs, call }`：`tone` 是 `default` 或 `danger`。`confirm` 是点了之后先问的一句话，人点了确认就是破坏性命令要的当面确认。`confirm` 为 `null` 的动作不问：没有输入时点了就做，算没有当面确认，所以破坏性的命令以 `not-confirmed` 拒绝；有输入时先出表单。可选 `icon`（`IconName`）、`key`（一个键：提示和菜单里写出它，所在的区域有焦点时按它就做）、`as`：`primary`（区域里唯一的主按钮，实心）、`icon`（只画图标，`label` 和键进提示；要有 `icon`）、`menu`（进区域的「···」）、`inline`（只有一个文字输入的动作，画成就地写的输入框，回车就做）。不写 `as` 时，区域里第一个画成安静的文字按钮，其余进「···」。`danger` 的总在「···」的最后，隔一条线，照样先问 `confirm`。一个区域（页头、一节、一行）最多一个文字按钮：常用的给图标和键，少用的进菜单。`show` 每个动作照样印成命令 |
 | `ActionInput` | `{ name, label, placeholder, value, options }`；可选 `multiple`（一行一个值）、`pattern` 和 `hint`（不匹配时表单不提交，`hint` 变红）、`secret: true`（输入时不显示） |
 | `Call` | `{ face: 'agent', verb, request }`，`request` 是那个动词的请求；或 `{ face: 'owner', command, args: { positional, flags }, stdin? }`。字符串里的 `{输入名}` 换成那个输入的值；正好是 `{输入名}` 的列表元素，`multiple` 的输入一行换成一个元素。带参数的主人命令的表单用 sdk 的 `formOf(命令, { fixed, values, choices })` 生成：每个参数一个输入，`fixed` 里的不问，直接写进 `Call` |
-| `IconName` | `activity`、`archive`、`bookmark`、`box`、`chart-column`、`clock`、`cloud`、`cloud-off`、`cloud-upload`、`code`、`corner-left-up`、`database`、`download`、`eye`、`file`、`file-text`、`flask-conical`、`folder`、`folder-dot`、`gauge`、`git-branch`、`globe`、`hard-drive`、`history`、`house`、`image`、`key`、`layers`、`layout-grid`、`link`、`list`、`package`、`refresh-cw`、`rocket`、`scroll-text`、`search`、`server`、`settings`、`shield`、`tag`、`terminal`、`triangle-alert`、`upload`、`users`（lucide 的图标名，sdk 的 `ICON_NAMES`）。界面把别的名字画成拼图 |
+| `IconName` | `activity`、`archive`、`archive-restore`、`arrow-down-to-line`、`bookmark`、`box`、`chart-column`、`check`、`circle-alert`、`clock`、`cloud`、`cloud-off`、`cloud-upload`、`code`、`corner-left-up`、`database`、`download`、`ellipsis`、`eye`、`file`、`file-text`、`flask-conical`、`folder`、`folder-dot`、`folder-input`、`folder-plus`、`gauge`、`git-branch`、`globe`、`hard-drive`、`history`、`house`、`image`、`info`、`key`、`layers`、`layout-grid`、`link`、`link-2`、`list`、`list-plus`、`lock`、`message-square-plus`、`package`、`pencil`、`plus`、`power`、`refresh-cw`、`rocket`、`scale`、`scan-search`、`scroll-text`、`search`、`server`、`settings`、`shield`、`sparkles`、`tag`、`terminal`、`trash-2`、`triangle-alert`、`unplug`、`upload`、`users`（lucide 的图标名，sdk 的 `ICON_NAMES`）。界面把别的名字画成拼图 |
 
 内核核对每一块：种类不认识、缺了必需的字段、类型不对、`feed` 的一行同时有 `action` 和 `settled`、`asks` 的 `suggested` 不在回答里、`ActorMark` 的 `kind` 不是 `agent` 或 `owner`、`embed` 的地址不是 http 或 https、`custom` 的 `entry` 爬出 `ui` 目录或插件没有 `ui`、`chart` 的系列不是 1 到 4 个、某个系列的数和 `x` 不一样多、叠起来的柱有负数、输入的 `pattern` 不是正则、动作调的不是一个动词或这个库里在的主人命令、参数不合那条命令的参数表、「说」的种类没有插件听、`call` 写了动作没有的输入，都算不合。
 
@@ -1053,7 +1053,7 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `unreachable` | 读不到目标时的原因 |
 | `detail` | `serving` 对它的站点说的 `detail`：先取它正在其下服务的站点，再取它的路径有的、归档的东西曾有的站点名。所以归档了的、待下线的东西也有。在页和面板之外是 `null` |
 
-`switchAction(插件名, look)` 是表格里的那个开关：`{ label: '打开' 或 '关上', tone: 'default', confirm: null, inputs: [], call: { face: 'owner', command: '<插件名> on' 或 '<插件名> off', args: { positional: [路径], flags: {} } } }`；归档了又关着的东西没有开关，答 `null`。
+`switchAction(插件名, look)` 是表格里的那个开关：`{ label: '打开' 或 '关上', tone: 'default', confirm: null, inputs: [], call: { face: 'owner', command: '<插件名> on' 或 '<插件名> off', args: { positional: [路径], flags: {} } }, as: 'icon', icon: 'power' }`，画成一个电源图标，`label` 进提示；归档了又关着的东西没有开关，答 `null`。
 
 PneumaSpace 插件（`space`）就是一个部署插件，带两种目标：一台机器上的 PneumaSpace（`--kind machine`）和 Cloudflare 上的 PneumaSpace（`--kind cloudflare`）。前一种用 PneumaSpace 的管理接口发布，`identify` 用上传的包的 sha256 作内容编号，`serving` 问 PneumaSpace 真在服务什么，令牌是可选的密钥，表格和面板里加了版本这些格，另有一页「看板」。下面是这一种的代码，省掉了两处：它打的是字节只由文件决定的 tar 包，这里把文件依次连起来；站点的地址它从 PneumaSpace 的入口算，这里从管理地址算。后一种以主人的账户登录控制台接口，用 `configure` 的 `note` 说账户密钥从哪里来，用 `close` 在一次运行结束时退出登录。
 

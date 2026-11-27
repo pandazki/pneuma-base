@@ -32,11 +32,17 @@ test('开始 walks the owner from a new library to an agent at work, each step f
   const { url } = await pb.view(lib, { env: noAgentPath() })
   await page.goto(url)
   const start = page.getByRole('main').getByRole('region', { name: '开始' })
-  await expect(start).toContainText('做完了 0 步，还有 3 步。')
+  await expect(start).toContainText('0 / 3')
   const connect = start.getByRole('listitem', { name: /第 1 步，接上你的 agent，在做/ })
-  await expect(connect.getByRole('listitem').filter({ hasText: 'Claude Code' })).toContainText('技能：~/.claude/skills/pneuma-base-claude-code/SKILL.md')
-  await expect(start.getByRole('listitem', { name: /第 2 步，放进第一样东西，还没做/ })).toContainText(`pneuma-base put <文件或文件夹> --to inbox/<名字> --brought --by owner --library '${lib}'`)
-  await expect(start.getByRole('listitem', { name: /第 3 步，对你的 agent 说一句/ })).toContainText('看看我的 Pneuma Base 库里有什么。')
+  await expect(connect.getByRole('listitem').filter({ hasText: 'Claude Code' }).getByRole('button', { name: '接上' })).toBeVisible()
+  // Only the current step shows what to do; the others are one line each and open on a click.
+  const second = start.getByRole('listitem', { name: /第 2 步，放进第一样东西，还没做/ })
+  await expect(second).not.toContainText('pneuma-base put')
+  await second.getByRole('button', { name: /放进第一样东西/ }).click()
+  await expect(second).toContainText(`pneuma-base put <文件或文件夹> --to inbox/<名字> --brought --by owner --library '${lib}'`)
+  const third = start.getByRole('listitem', { name: /第 3 步，对你的 agent 说一句/ })
+  await third.getByRole('button', { name: /对你的 agent 说一句/ }).click()
+  await expect(third).toContainText('看看我的 Pneuma Base 库里有什么。')
 
   // One click: no form, the same agent connect the agents page runs.
   await connect.getByRole('listitem').filter({ hasText: 'Claude Code' }).getByRole('button', { name: '接上' }).click()
@@ -53,11 +59,12 @@ test('开始 walks the owner from a new library to an agent at work, each step f
   writeFileSync(paper, '%PDF')
   pb.run(['--library', lib, 'put', paper, '--to', 'inbox/paper.pdf', '--brought', '--by', 'owner'], { env: noAgentPath() })
   await expect(start.getByRole('listitem', { name: /第 2 步，放进第一样东西，做完了/ })).toContainText('库的根目录里有 1 样东西')
-  await expect(start).toContainText('做完了 2 步，还有 1 步。')
+  await expect(start).toContainText('2 / 3')
 
   pb.run(['@claude-code', 'start', '看看库里有什么'], { env: noAgentPath() })
   await expect(page.getByRole('main').getByRole('region', { name: '开始' })).toHaveCount(0)
-  await expect(page.getByRole('main').getByRole('region', { name: '等你决定' })).toBeVisible()
+  // The home page goes on without it: nothing to decide is not drawn, what the agent did since is.
+  await expect(page.getByRole('main').getByRole('region', { name: '自上次以来' })).toBeVisible()
 })
 
 test('in the app the drop area chooses files for the app to put into inbox/; in a browser it shows the command', async ({ page, pb }) => {
@@ -66,6 +73,7 @@ test('in the app the drop area chooses files for the app to put into inbox/; in 
   const sent = await catchShell(page)
   await page.goto(`${url}&shell=mac`)
   const start = page.getByRole('main').getByRole('region', { name: '开始' })
+  await start.getByRole('button', { name: /放进第一样东西/ }).click()
   const drop = start.getByRole('button', { name: /把文件或文件夹拖到这里，或 选择…/ })
   await expect(drop).toContainText('放进 inbox/，记成你带进来的')
   await expect(start).not.toContainText('pneuma-base put')
@@ -82,7 +90,8 @@ test('in the app, the page shows what the app says it did and opens the links th
   await tell({ notice: { tone: 'good', text: '已放进 inbox/paper.pdf，记成你带进来的' } })
   await expect(page.getByText('已放进 inbox/paper.pdf，记成你带进来的')).toBeVisible()
   await tell({ link: { view: 'agents', params: {}, target: 'main' } })
-  await expect(page.getByRole('main').getByRole('region', { name: '接上的 agent', exact: true })).toBeVisible()
+  await expect(page.getByRole('main').getByRole('heading', { level: 1, name: 'Agent' })).toBeVisible()
+  await expect(page.getByRole('main').getByRole('region', { name: '这台机器上找到的' })).toBeVisible()
 })
 
 test('the menu bar panel: the library, what waits for the owner decided right there, the latest rows, and the two buttons', async ({ page, pb }) => {

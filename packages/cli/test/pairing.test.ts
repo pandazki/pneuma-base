@@ -176,12 +176,14 @@ describe('on the pages', () => {
     const section = page.blocks.find((b) => b.title === '让 agent 自己接上')
     const list = section?.blocks.find((b) => b.kind === 'list')
     const items = list?.kind === 'list' ? list.items : []
-    expect(items.map((i) => [i.cell.actor?.name, i.cell.tag?.text])).toEqual([
+    // Only the waiting one is marked; a settled one says how it ended first in its line.
+    expect(items.map((i) => [i.cell.actor?.name, i.cell.tag?.text ?? i.note?.split(' · ')[0]])).toEqual([
       ['other-agent', '等你决定'],
       ['my-agent', '已过期'],
       ['codex', '已拒绝'],
       ['claude-code', '已接上'],
     ])
+    expect(items.slice(1).map((i) => i.cell.tag)).toEqual([undefined, undefined, undefined])
     expect(items[0]?.note).toContain(waiting.code)
     expect(items[0]?.actions.map((a) => a.label)).toEqual(['允许', '拒绝'])
     expect(items[3]?.actions).toEqual([])

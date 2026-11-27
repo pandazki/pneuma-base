@@ -110,7 +110,7 @@ export function usePresence<T>(value: T | null, ms: number): { shown: T | null; 
   return value !== null ? { shown: value, leaving: false } : { shown: held, leaving: held !== null }
 }
 
-export type MenuEntry = { label: string; icon?: ReactNode; keys?: string; onSelect(): void } | 'separator'
+export type MenuEntry = { label: string; icon?: ReactNode; keys?: string; danger?: boolean; onSelect(): void } | 'separator'
 
 /**
  * A menu under its trigger. Nothing is lit until the pointer or a key says so; a soft highlight glides
@@ -210,6 +210,7 @@ export function Menu({ label, entries, trigger }: { label: string; entries: Menu
                   tabIndex={-1}
                   className="menu-item"
                   data-lit={i === lit || undefined}
+                  data-danger={entry.danger || undefined}
                   onPointerMove={() => setLit(i)}
                   onClick={() => choose(i)}
                 >

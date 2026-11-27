@@ -217,8 +217,11 @@ const noteTail = (note: string | undefined) => (note ? `：${note}` : '')
 /** The items a fact names, to read their rows before telling it. */
 export const itemsOf = (f: Fact): ItemId[] => ('item' in f ? [f.item] : f.kind === 'said' && f.about !== null ? [f.about] : [])
 
-/** One fact as one line of text, paths as they are now where they moved since. */
-export function factLine(lookup: Lookup, f: Fact): string {
+/**
+ * One fact as one line of text, paths as they are now where they moved since. `quiet`, for a page:
+ * a thing made and put by its maker, the usual way in, goes without saying how it came.
+ */
+export function factLine(lookup: Lookup, f: Fact, quiet = false): string {
   const now = (id: ItemId, then: LibraryPath) => {
     const path = pathOf(lookup, id)
     return path === then ? then : `${then}（现在在 ${path}）`
@@ -227,6 +230,7 @@ export function factLine(lookup: Lookup, f: Fact): string {
     case 'said':
       return `${SAID_LABEL[f.flavor]}：${f.text}${f.about !== null ? `（关于 ${pathOf(lookup, f.about)}）` : ''}`
     case 'item.enter':
+      if (quiet && f.origin.kind === 'made' && f.how !== 'observed') return `放入 ${now(f.item, f.path)}${noteTail(f.note)}`
       return `放入 ${now(f.item, f.path)}（${originLabel(f.origin.kind === 'made' ? { kind: 'made' } : f.origin, f.how)}）${noteTail(f.note)}`
     case 'items.enter':
       return `一次登记了 ${f.items.length} 样没人登记过的东西（${originLabel(f.origin.kind === 'made' ? { kind: 'made' } : f.origin, f.how)}）`

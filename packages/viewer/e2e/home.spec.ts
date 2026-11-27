@@ -31,7 +31,7 @@ test('the app opens on the home page: what waits on the owner, what agents did s
   writeFileSync(join(lib, 'payments/sources/stripe-pricing.html'), '<html>Stripe pricing: 3.4% now</html>')
   const { url } = await pb.view(lib)
   await page.goto(url)
-  expect((await navTitles(page)).slice(0, 5)).toEqual(['首页', '库', '活动', '统计', '场景'])
+  expect((await navTitles(page)).slice(0, 5)).toEqual(['首页', '库', '活动', '文件', 'Agent'])
   const main = page.getByRole('main')
   await expect(main.getByRole('heading', { level: 1, name: '首页' })).toBeVisible()
 
@@ -42,7 +42,8 @@ test('the app opens on the home page: what waits on the owner, what agents did s
   const since = main.getByRole('region', { name: '自上次以来' })
   await expect(since.getByRole('button', { name: DOING })).toBeVisible()
   await expect(since.getByRole('button', { name: '把支付服务接进电子书小店' })).toBeVisible()
-  await expect(since.getByRole('listitem').filter({ hasText: '放入 payments/integration-notes.md' })).toContainText('codex')
+  // Who is the row's mark; its name is in the mark's tooltip, not repeated in the row.
+  await expect(since.getByRole('listitem').filter({ hasText: '放入 payments/integration-notes.md' }).getByRole('img', { name: /^codex/ })).toBeVisible()
   // The heading says what the scene was doing; the same sentence is not a row under it as well.
   await expect(since.getByRole('listitem').filter({ hasText: `在做：${DOING}` })).toHaveCount(0)
 

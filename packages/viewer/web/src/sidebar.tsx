@@ -13,33 +13,43 @@ import { clockTime } from './time'
 /** How often the page asks whether the library changed. */
 export const POLL_MS = 2000
 
-/** A group of pages under its label; the first has none. */
-export type NavGroup = { label: string | null; views: ListedView[] }
+/** A group of entries in the navigation, set apart from the one above it by a line. */
+export type NavGroup = { views: ListedView[] }
+
+/** The view whose entry a view shares, when it names one in the navigation; else none. */
+const rootOf = (views: readonly ListedView[], v: ListedView): ListedView | null => {
+  const root = v.with === undefined ? undefined : views.find((r) => r.id === v.with && r.nav && r.with === undefined)
+  return root ?? null
+}
+
+/** The views of the entry `view` belongs to: the one in the navigation first, then those that share it, in the server's order. */
+export function entryOf(views: readonly ListedView[], view: string | null): ListedView[] {
+  const v = views.find((x) => x.id === view)
+  if (!v || !v.nav) return []
+  const root = rootOf(views, v) ?? v
+  return [root, ...views.filter((x) => x.nav && x !== root && rootOf(views, x) === root)]
+}
 
 /**
- * The pages in the navigation: the home page and the first plugin's on top, the other plugins' under
- * 插件, the rest of the kernel's under 库, and the configuration at the bottom, each in the order the
- * server lists them.
+ * The entries of the navigation: the home page, the first plugin's pages and the kernel's on top; the
+ * other plugins' below a line; the configuration at the bottom. A view that shares another's entry
+ * has none of its own. Each in the order the server lists them.
  */
 export function navGroups(views: ListedView[]): { groups: NavGroup[]; foot: ListedView[] } {
-  const shown = views.filter((v) => v.nav)
+  const shown = views.filter((v) => v.nav && rootOf(views, v) === null)
   const kernel = (id: string) => (v: ListedView) => v.by === 'kernel' && v.id === id
   const foot = shown.filter(kernel('config'))
   const home = shown.filter(kernel('home'))
   const rest = shown.filter((v) => !foot.includes(v) && !home.includes(v))
   const first = rest.find((v) => v.by !== 'kernel')?.by
-  const parts: [string | null, ListedView[]][] = [
-    [null, [...home, ...rest.filter((v) => v.by === first)]],
-    ['插件', rest.filter((v) => v.by !== first && v.by !== 'kernel')],
-    ['库', rest.filter((v) => v.by === 'kernel')],
-  ]
-  return { groups: parts.filter(([, vs]) => vs.length > 0).map(([label, vs], i) => ({ label: i === 0 ? null : label, views: vs })), foot }
+  const parts = [[...home, ...rest.filter((v) => v.by === first), ...rest.filter((v) => v.by === 'kernel')], rest.filter((v) => v.by !== first && v.by !== 'kernel')]
+  return { groups: parts.filter((vs) => vs.length > 0).map((vs) => ({ views: vs })), foot }
 }
 
-/** The pages in the navigation, top to bottom, as one list: the palette goes to them in this order. */
+/** Every page the navigation reaches, top to bottom, each entry's own views after it: the palette goes to them in this order. */
 export const navOrder = (views: ListedView[]): ListedView[] => {
   const { groups, foot } = navGroups(views)
-  return [...groups.flatMap((g) => g.views), ...foot]
+  return [...groups.flatMap((g) => g.views), ...foot].flatMap((v) => entryOf(views, v.id))
 }
 
 /** The page the app opens on: the first in the navigation. */
@@ -62,7 +72,8 @@ export function Sidebar({ state, current, rail, down, changedAt, onSelect, onSea
   const name = root.split('/').filter(Boolean).at(-1) ?? root
   const { groups, foot } = navGroups(state.views)
   const listed = [...groups.flatMap((g) => g.views), ...foot]
-  const tabbable = listed.some((v) => v.id === current) ? current : (listed[0]?.id ?? null)
+  const here = entryOf(state.views, current)[0]?.id ?? current
+  const tabbable = listed.some((v) => v.id === here) ? here : (listed[0]?.id ?? null)
   const fresh = down ? '连不上服务' : changedAt ? `自动更新 · ${clockTime(changedAt)} 有变化` : `自动更新：每 ${POLL_MS / 1000} 秒看一次库有没有变`
 
   // ↑ ↓ Home End move between the pages; only the current one is in the Tab order.
@@ -79,7 +90,7 @@ export function Sidebar({ state, current, rail, down, changedAt, onSelect, onSea
       key={v.id}
       type="button"
       className="nav-item"
-      aria-current={v.id === current ? 'page' : undefined}
+      aria-current={v.id === here ? 'page' : undefined}
       tabIndex={v.id === tabbable ? 0 : -1}
       data-tip={rail ? v.title : undefined}
       onClick={() => onSelect(v.id)}
@@ -131,12 +142,7 @@ export function Sidebar({ state, current, rail, down, changedAt, onSelect, onSea
         </button>
         <nav ref={nav} aria-label="导航" className="side-nav" onKeyDown={onNavKey}>
           {groups.map((g, i) => (
-            <div key={g.label ?? i} className="nav-group" role={g.label ? 'group' : undefined} aria-label={g.label ?? undefined}>
-              {g.label ? (
-                <div className="nav-label" aria-hidden>
-                  {g.label}
-                </div>
-              ) : null}
+            <div key={i} className="nav-group">
               {g.views.map(item)}
             </div>
           ))}

@@ -20,6 +20,9 @@ const archiveAction = (kind: 'archive' | 'unarchive', path: LibraryPath): Action
   confirm: null,
   inputs: [],
   call: { face: 'agent', verb: 'archive', request: { kind, path } },
+  as: 'icon',
+  icon: kind === 'archive' ? 'archive' : 'archive-restore',
+  key: 'e',
 })
 
 /** Fetching a placeholder's content to this machine: inspect asked for the content with fetch. */
@@ -38,6 +41,9 @@ const moveAction = (path: LibraryPath): Action => ({
   confirm: null,
   inputs: [field('to', '新的库内路径', { value: path })],
   call: { face: 'agent', verb: 'put', request: { kind: 'move', from: path, to: '{to}' } },
+  as: 'icon',
+  icon: 'folder-input',
+  key: 'm',
 })
 
 /** For an `_archive/…` path with no file: the file taken back to its original path, if there is one. */
@@ -112,11 +118,9 @@ export function facetFields(facets: Record<string, unknown> | undefined, modifie
   return out
 }
 
-/** What a thing is, in one line: a file or a bundle, its size, and whether it is archived or part of a bundle. */
-function whatItIs(facts: FileFacts, bundle: LibraryPath | null): Block {
-  const kind = facts.kind === 'bundle' ? '一样东西（带标记的目录）' : `文件 · ${sizeText(facts.size ?? 0)}`
-  const where = facts.archived ? ' · 已归档' : bundle !== null ? ` · ${bundle} 的一部分` : ''
-  return { kind: 'text', tone: 'neutral', text: `${kind}${where}` }
+/** What sets a thing apart from the usual, in one line: that it is archived. What kind of thing it is, the panel's icon says. */
+function departure(facts: FileFacts): Block[] {
+  return facts.archived ? [{ kind: 'text', tone: 'neutral', text: '已归档：取回之后才能改动。' }] : []
 }
 
 /**
@@ -126,7 +130,7 @@ function whatItIs(facts: FileFacts, bundle: LibraryPath | null): Block {
  */
 async function levelSection(ctx: Context, dir: LibraryPath, params: Record<string, string>, rows: number, inThing: boolean): Promise<Block> {
   const level = await levelPage(ctx.library.root, dir, params, rows, 'item', new Set(), 'panel')
-  if (level === null) return section('第一层', [{ kind: 'text', tone: 'warn', text: '读不了这个目录的这一层。' }])
+  if (level === null) return section('里面', [{ kind: 'text', tone: 'warn', text: '读不了这个目录的这一层。' }])
   const tableRows: TableRow[] = level.listed.map(({ entry, kind }) => {
     const name = nameOf(entry.place)
     const path = entry.place as LibraryPath
@@ -145,7 +149,7 @@ async function levelSection(ctx: Context, dir: LibraryPath, params: Record<strin
   const count = level.paging.atLeast ? null : level.paging.total
   return {
     kind: 'section',
-    title: '第一层',
+    title: '里面',
     note: null,
     count,
     blocks: [{ kind: 'table', columns: [{ key: 'path', label: '名字' }, { key: 'size', label: '大小' }], rows: tableRows, empty: '这个目录是空的。', page: level.paging }],
@@ -153,27 +157,31 @@ async function levelSection(ctx: Context, dir: LibraryPath, params: Record<strin
   }
 }
 
-/** The thing's own facts and facets, then a file's preview, which folds, or a bundle's first level, a page at a time. */
+/**
+ * The thing's content, then its file facts: a bundle's first level, a page at a time, or a file's
+ * preview, which folds; then its facts: where it was downloaded from and its tags, which say
+ * something of it, and the record, its kind, size, when it changed, its fingerprint and the bundle it
+ * is part of, folded unless there is such a facet.
+ */
 async function thingSections(ctx: Context, facts: FileFacts, bundle: LibraryPath | null, params: Record<string, string>, rows: number): Promise<Block[]> {
   const [glanced] = await storageOf(ctx.library.root).glance([facts.path], ['macos'])
   const facets = glanced !== undefined && isDescribed(glanced) ? glanced.facets : undefined
-  const fields: Block = {
+  const told = facetFields(facets, facts.modifiedAt)
+  const record: Block = {
     kind: 'fields',
     fields: [
-      { label: '路径', value: { text: facts.path, mono: true, ...(facts.archived ? { tag: { text: '已归档', tone: 'neutral' as const } } : {}) } },
       ...(bundle !== null ? [{ label: '在', value: { text: bundle, mono: true, icon: 'package' as const, link: itemLink(bundle) } }] : []),
       { label: '种类', value: { text: facts.kind === 'bundle' ? '一样东西（带标记的目录）' : '文件' } },
       ...(facts.size !== null ? [{ label: '大小', value: { text: sizeText(facts.size) } }] : []),
       { label: '改于', value: modified(facts.modifiedAt) },
-      ...facetFields(facets, facts.modifiedAt),
       ...(facts.fingerprint !== null ? [{ label: '指纹', value: { text: facts.fingerprint.slice(0, 16), mono: true, muted: true } }] : []),
     ],
   }
-  const partOf: Block[] = bundle === null ? [] : [{ kind: 'text', tone: 'neutral', text: `它是 ${bundle} 的一部分。${bundle} 是一样东西，只能整个一起放、挪、归档。` }]
-  const own = section('文件', [fields, ...partOf])
-  if (facts.kind === 'bundle') return [own, await levelSection(ctx, facts.path, params, rows, true)]
-  const preview: Block[] = facets?.placeholder !== undefined ? [{ kind: 'actions', actions: [fetchAction(facts.path)] }] : [{ kind: 'preview', path: facts.path }]
-  return [own, { kind: 'section', title: '预览', note: null, count: null, blocks: preview, actions: [], collapse: 'open' }]
+  // Folded unless storage told something worth reading, such as where it was downloaded from.
+  const facts_: Block[] = [{ kind: 'section', title: '文件', note: null, count: null, blocks: [...(told.length > 0 ? [{ kind: 'fields' as const, fields: told }] : []), record], actions: [], collapse: told.length > 0 ? 'open' : 'closed' }]
+  if (facts.kind === 'bundle') return [await levelSection(ctx, facts.path, params, rows, true), ...facts_]
+  const preview: Block[] = facets?.placeholder !== undefined ? [{ kind: 'actions', actions: [{ ...fetchAction(facts.path), as: 'primary' }] }] : [{ kind: 'preview', path: facts.path }]
+  return [{ kind: 'section', title: '预览', note: null, count: null, blocks: preview, actions: [], collapse: 'open' }, ...facts_]
 }
 
 /**
@@ -205,9 +213,9 @@ async function placePanel(ctx: Context, path: LibraryPath, params: Record<string
 }
 
 /**
- * One thing of the library, in a fixed order: what it is in one line; what each plugin knows about
- * it; its own facts and facets, and a bundle's first level or a file's preview; then what can be done
- * with it, in one row at the bottom: archive or take back and move, then each plugin's actions. A
+ * One thing of the library, in a fixed order: what can be done with it, in the panel's head: archive
+ * or take back and move, then each plugin's actions; that it is archived, when it is; what each plugin
+ * knows about it; a bundle's first level or a file's preview, its facets, and its record, folded. A
  * file inside a bundle names the bundle and offers no archive: the bundle changes only as a whole. A
  * directory that is no thing gets its own panel.
  */
@@ -217,16 +225,16 @@ export async function itemPage(params: Record<string, string>, { ctx }: ViewerCa
   const facts = target === '' ? null : ((await fileFacts(root, target)) ?? (await takenBack(root, target)))
   const path = facts?.path ?? parseLibraryPath(root, target)
   const known = path === null || regionOf(path) === 'kernel' ? { blocks: [], actions: [], problems: [] } : await pluginSections(ctx, path, callableIn(ctx.library), { params, size: rows })
-  const bottom = (own: Action[]): Block[] => (own.length + known.actions.length > 0 ? [{ kind: 'actions', actions: [...own, ...known.actions] }] : [])
+  const head = (own: Action[]): Block[] => (own.length + known.actions.length > 0 ? [{ kind: 'actions', actions: [...own, ...known.actions], head: true }] : [])
   if (!facts) {
     const place = path === null || regionOf(path) !== 'content' ? null : await placePanel(ctx, path, params, rows, known)
     if (place !== null) return place
     const missing: Block = { kind: 'text', tone: 'warn', text: `${target || '这个路径'} 上没有文件：不在，或已经除掉了。` }
-    return shown(posix.basename(target) || '一样东西', target || null, [missing, ...known.blocks, ...bottom([])], known.problems)
+    return shown(posix.basename(target) || '一样东西', target || null, [...head([]), missing, ...known.blocks], known.problems)
   }
   const original = facts.archived ? (originalPath(facts.path) ?? facts.path) : facts.path
   const bundle = facts.kind === 'file' ? await enclosingBundle(storageOf(root), facts.path) : null
   const own = bundle !== null ? [] : facts.archived ? [archiveAction('unarchive', facts.path)] : [archiveAction('archive', original), moveAction(original)]
   const icon = facts.kind === 'bundle' ? 'package' : IMAGE.test(original) ? 'image' : 'file'
-  return { ...shown(posix.basename(original), facts.path, [whatItIs(facts, bundle), ...known.blocks, ...(await thingSections(ctx, facts, bundle, params, rows)), ...bottom(own)], known.problems), icon }
+  return { ...shown(posix.basename(original), facts.path, [...head(own), ...departure(facts), ...known.blocks, ...(await thingSections(ctx, facts, bundle, params, rows))], known.problems), icon }
 }

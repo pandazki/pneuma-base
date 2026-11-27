@@ -6,7 +6,6 @@ import { command, done, refused, type KernelCommand, type Outcome } from './kern
 import type { OwnerCall } from './owner.js'
 import { candidateOf, fetchManifest, installCandidate, parseRelease, RELEASE, type Candidate, type Refusal } from './provider-install.js'
 import { installedProvider, librariesUsing, machineProviders, officialProviders, platformKey, providerOf, removeInstalled, type OfficialProvider, type Provider } from './providers.js'
-import { storageOf } from './storage.js'
 
 const NAME = { name: 'name', hint: '提供者的名字', required: true } as const
 const CHECKSUM = { name: 'checksum', hint: '看过、认下的程序的 sha256', kind: 'value', pattern: '(sha256:)?[0-9a-f]{64}' } as const
@@ -213,29 +212,23 @@ export async function storageSection(ctx: Context, inside: Block[] = []): Promis
   } catch {
     used = null
   }
-  let facets: string[] | null = null
-  try {
-    const described = await storageOf(ctx.library.root).describe()
-    facets = Array.isArray(described.facets) ? described.facets.map(String) : null
-  } catch {
-    facets = null
-  }
   const rows: TableRow[] = providers.map((p) => ({
     key: p.name,
     cells: {
       name: { text: p.name, mono: true },
       version: { text: p.version, mono: true },
       addresses: { text: formsText(p.addresses) },
-      facets: p.name === used && facets !== null ? { text: facets.join('、') || '—', mono: true, muted: true } : dash,
-      state: { text: cameText(p), muted: true, ...(p.name === used ? { tag: { text: '这个库在用', tone: 'good' as const } } : {}) },
+      came: { text: cameText(p), muted: true },
+      // Only the one this library uses says something here.
+      state: p.name === used ? { text: '这个库在用', icon: 'check' } : { text: '', normal: true },
     },
     link: null,
     actions:
       p.origin.kind === 'built-in'
         ? []
         : [
-            { label: '换新版本', tone: 'default', confirm: null, inputs: [], call: ownerForm('storage update', UPDATE_PARAMS, { name: p.name }) },
-            { label: '卸掉', tone: 'danger', confirm: `卸掉存储提供者 ${p.name}？用它的库在这台机器上打不开，直到再装上。`, inputs: [], call: ownerForm('storage remove', { positional: [NAME] }, { name: p.name }) },
+            { label: '换新版本', tone: 'default', confirm: null, inputs: [], call: ownerForm('storage update', UPDATE_PARAMS, { name: p.name }), as: 'menu', icon: 'arrow-down-to-line' },
+            { label: '卸掉', tone: 'danger', confirm: `卸掉存储提供者 ${p.name}？用它的库在这台机器上打不开，直到再装上。`, inputs: [], call: ownerForm('storage remove', { positional: [NAME] }, { name: p.name }), icon: 'trash-2' },
           ],
   }))
   const official: TableRow[] = notInstalled(providers).map((o) => ({
@@ -243,19 +236,20 @@ export async function storageSection(ctx: Context, inside: Block[] = []): Promis
     cells: {
       name: { text: o.name, mono: true },
       version: o.version === null ? dash : { text: o.version, mono: true },
-      addresses: { text: formsText(o.addresses) },
-      facets: dash,
-      state: { text: `官方，没装：${o.repository}`, muted: true },
+      addresses: { text: formsText(o.addresses), muted: true },
+      came: { text: `官方，没装：${o.repository}`, muted: true },
+      state: { text: '', normal: true },
     },
     link: null,
-    actions: [{ label: '装上', tone: 'default', confirm: null, inputs: [], call: ownerForm('storage install', INSTALL_PARAMS, { repository: o.repository }) }],
+    actions: [{ label: '装上', tone: 'default', confirm: null, inputs: [], call: ownerForm('storage install', INSTALL_PARAMS, { repository: o.repository }), as: 'icon', icon: 'plus' }],
   }))
   const { inputs, call } = formOf({ name: 'storage install', params: INSTALL_PARAMS })
-  const other: Action = { label: '安装别的存储…', tone: 'default', confirm: null, inputs: inputs.filter((i) => i.name === 'repository'), call: { ...call, args: { positional: call.args.positional, flags: {} } } }
+  const other: Action = { label: '安装别的存储…', tone: 'default', confirm: null, inputs: inputs.filter((i) => i.name === 'repository'), call: { ...call, args: { positional: call.args.positional, flags: {} } }, as: 'icon', icon: 'folder-plus' }
   return {
     kind: 'section',
     title: '存储',
-    note: '存储提供者以主人的身份运行，看得到库里的全部内容。库用哪一个，记在这台机器上。',
+    note: null,
+    about: '存储提供者以主人的身份运行，看得到库里的全部内容。库用哪一个，记在这台机器上。',
     count: providers.length,
     blocks: [
       {
@@ -263,9 +257,9 @@ export async function storageSection(ctx: Context, inside: Block[] = []): Promis
         columns: [
           { key: 'name', label: '提供者' },
           { key: 'version', label: '版本', optional: true },
-          { key: 'addresses', label: '地址的写法' },
-          { key: 'facets', label: '给得出的面', optional: true },
-          { key: 'state', label: '状态' },
+          { key: 'addresses', label: '地址' },
+          { key: 'came', label: '来历', optional: true },
+          { key: 'state', label: '' },
         ],
         rows: [...rows, ...official],
         empty: '',

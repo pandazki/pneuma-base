@@ -97,7 +97,8 @@ const link = shape({ view: string, params: recordOf(string), target: oneOf('main
 const actorMark = shape({ kind: oneOf('agent', 'owner'), name: string, 'grant?': string })
 /** Who, as a block says it: a name, or an actor whose mark the page draws. */
 const who: Check = (v, at) => (typeof v === 'string' ? null : actorMark(v, at))
-const cell = shape({ text: string, 'mono?': boolean, 'muted?': boolean, 'tag?': tag, 'link?': link, 'at?': string, 'icon?': string, 'href?': string, 'copy?': boolean, 'actor?': actorMark })
+const truth: Check = (v, at) => (v === true ? null : `${at} 只能是 true`)
+const cell = shape({ text: string, 'mono?': boolean, 'muted?': boolean, 'tag?': tag, 'link?': link, 'at?': string, 'icon?': string, 'href?': string, 'copy?': boolean, 'actor?': actorMark, 'normal?': truth })
 const paging = shape({ first: number, shown: number, total: number, 'atLeast?': boolean, prev: nullable(link), next: nullable(link) })
 
 const call: Check = (v, at) => {
@@ -113,9 +114,9 @@ const input = shape({
   'multiple?': boolean,
   'pattern?': pattern,
   'hint?': string,
-  'secret?': (v, at) => (v === true ? null : `${at} 只能是 true`),
+  'secret?': truth,
 })
-const action = shape({ label: string, tone: oneOf('default', 'danger'), confirm: nullable(string), inputs: listOf(input), call })
+const action = shape({ label: string, tone: oneOf('default', 'danger'), confirm: nullable(string), inputs: listOf(input), call, 'as?': oneOf('primary', 'icon', 'menu', 'inline'), 'icon?': string, 'key?': string })
 const actions = listOf(action)
 
 /** Both checks, the first fault first. */
@@ -153,19 +154,19 @@ const chart = both(
 
 /** The fields each kind of block requires; a section's own blocks are checked one by one. */
 const KINDS: Record<Block['kind'], Check> = {
-  section: shape({ title: string, note: nullable(string), count: nullable(number), blocks: listOf(anything), actions, 'collapse?': oneOf('open', 'closed') }),
+  section: shape({ title: string, note: nullable(string), count: nullable(number), blocks: listOf(anything), actions, 'collapse?': oneOf('open', 'closed'), 'about?': string, 'normal?': truth }),
   table: shape({
     columns: listOf(shape({ key: string, label: string, 'optional?': boolean })),
-    rows: listOf(shape({ key: string, cells: recordOf(cell), link: nullable(link), actions })),
+    rows: listOf(shape({ key: string, cells: recordOf(cell), link: nullable(link), actions, 'group?': string })),
     empty: string,
     'page?': paging,
   }),
-  fields: shape({ fields: listOf(shape({ label: string, value: cell })) }),
+  fields: shape({ fields: listOf(shape({ label: string, value: cell })), 'line?': truth }),
   list: shape({ items: listOf(shape({ cell, note: nullable(string), actions })), 'page?': paging }),
-  timeline: shape({ entries: listOf(shape({ at: string, title: cell, lines: listOf(string), tag: nullable(tag), 'actions?': actions })), 'page?': paging }),
+  timeline: shape({ entries: listOf(shape({ at: string, title: cell, lines: listOf(string), tag: nullable(tag), 'actions?': actions, 'actor?': who })), 'page?': paging }),
   text: shape({ text: string, tone }),
   preview: shape({ path: string }),
-  actions: shape({ actions }),
+  actions: shape({ actions, 'head?': truth }),
   empty: shape({ title: string, hint: nullable(string) }),
   embed: shape({ url: httpUrl, title: string, height: number }),
   custom: shape({ entry, height: number, text: string, 'data?': anything, actions: recordOf(action) }),

@@ -642,8 +642,11 @@ export type ActorMark = { kind: 'agent' | 'owner'; name: string; grant?: string 
  * before the text, such as `folder`, `file` or `package` for a bundle. `href`: an outside address the
  * cell opens in a new tab; only http and https are links. `copy`: a button that copies `href`, else
  * `text`. `actor`: the cell says who; the page draws the mark before `text`, which is the name.
+ * `normal`: the value is the usual state, such as a thing being as recorded. The page leaves it out
+ * (a table column whose every cell is normal steps aside, a field with a normal value is not shown),
+ * so only a departure from it catches the eye; the text form still prints it.
  */
-export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; link?: Link; at?: Instant; icon?: IconName; href?: string; copy?: true; actor?: ActorMark }
+export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; link?: Link; at?: Instant; icon?: IconName; href?: string; copy?: true; actor?: ActorMark; normal?: true }
 
 /**
  * What a button does: one verb of the agent face, or one owner command. Strings may hold `{input}`,
@@ -670,10 +673,27 @@ export type ActionInput = {
   hint?: string
   secret?: true
 }
-/** `confirm`: a question the person answers before the call; the answer is the in-person confirmation a destructive command needs. */
-export type Action = { label: string; tone: 'default' | 'danger'; confirm: string | null; inputs: ActionInput[]; call: Call }
+/**
+ * `confirm`: a question the person answers before the call; the answer is the in-person confirmation a
+ * destructive command needs.
+ *
+ * How the page draws it, in the region it stands in (a page's or a section's head, a row): `as`
+ * `primary`, the region's one main action, a filled button; `icon`, a button that is only its `icon`,
+ * the label its tooltip; `menu`, an entry of the region's 「···」 menu; `inline`, for an action of one
+ * text input, the input written in place (in a timeline, the line where one more entry is written),
+ * run with Enter. Left out, the first such action of a region is a quiet text button and the rest go
+ * to the menu; a `danger` one always goes to the menu. `icon`: one of `ICON_NAMES`, before the label
+ * or alone. `key`: one letter that runs it while its region holds the focus, named in its tooltip and
+ * menu entry. The text form prints every action as its command, wherever the page draws it.
+ */
+export type Action = { label: string; tone: 'default' | 'danger'; confirm: string | null; inputs: ActionInput[]; call: Call; as?: 'primary' | 'icon' | 'menu' | 'inline'; icon?: IconName; key?: string }
 
-export type TableRow = { key: string; cells: Record<string, Cell>; link: Link | null; actions: Action[] }
+/**
+ * `group`: rows with the same group stand together under it as a heading, in the order of the first
+ * row of each, so a long prefix they share, such as their folder, is said once; the cells then hold
+ * only what comes after it. A row with a link shows its actions while the pointer or the focus is on it.
+ */
+export type TableRow = { key: string; cells: Record<string, Cell>; link: Link | null; actions: Action[]; group?: string }
 /**
  * Where one page of a long list stands: `first`, the place of its first row counted from 1, and
  * `shown`, how many rows it shows; `total`, how many rows the whole list has, or with `atLeast` how
@@ -728,9 +748,14 @@ export type PluginAsk = Omit<Ask, 'by'>
 export type Step = { key: string; title: string; done: boolean; summary: string | null; blocks: Block[] }
 
 /**
- * A section with `collapse` can be folded by the viewer; the value is how it starts. A section of the
- * item panel carries `plugin`, the plugin whose part it is, stamped by the kernel. `embed`: an
- * outside http or https page in a sandboxed frame. `custom`: a page of the plugin's own, `entry`
+ * A section with `collapse` can be folded by the viewer; the value is how it starts. `about`: what the
+ * section is for, for someone new to it, shown on demand beside its title; `note` is what it says now.
+ * `normal`: nothing in it needs the person now, such as no question waiting; the page leaves the
+ * section out and the text form prints it. A section of the item panel carries `plugin`, the plugin
+ * whose part it is, stamped by the kernel. `fields` with `line`: values that explain themselves, such
+ * as who, when and in which scene, said as one line without their labels, which stay in the text form
+ * and in each value's tooltip. `actions` with `head`: what can be done with what the whole page
+ * shows, drawn in its head beside the title. `embed`: an outside http or https page in a sandboxed frame. `custom`: a page of the plugin's own, `entry`
  * relative to its `ui` directory, sent `data` and the names of `actions`, which it may ask to run;
  * `text` says in words what the frame shows, for the command line, screen readers and the page
  * that failed to load; `plugin` is stamped by the kernel. `feed`, `asks`: `empty` is the one grey
@@ -744,18 +769,19 @@ export type Step = { key: string; title: string; done: boolean; summary: string 
  * axis in `unit` (such as 样 or 次); `text` is the one sentence that says what it shows, the chart's
  * caption on the page; `show` prints the sentence and a table of the numbers. At most
  * `CHART_SERIES_MAX` series, each with a value for every `x` label; stacked values are not negative.
+ * `timeline`: an entry's `actor`, who did it, is drawn as its mark on the line, the text form prints the name.
  * `page` on a table, a list, a timeline or a feed: its rows are one page of a longer list, the page
  * drawn under them with the total and the way to the pages before and after.
  */
 export type Block =
-  | { kind: 'section'; title: string; note: string | null; count: number | null; blocks: Block[]; actions: Action[]; collapse?: 'open' | 'closed'; plugin?: PluginName }
+  | { kind: 'section'; title: string; note: string | null; count: number | null; blocks: Block[]; actions: Action[]; collapse?: 'open' | 'closed'; plugin?: PluginName; about?: string; normal?: true }
   | { kind: 'table'; columns: TableColumn[]; rows: TableRow[]; empty: string; page?: Paging }
-  | { kind: 'fields'; fields: { label: string; value: Cell }[] }
+  | { kind: 'fields'; fields: { label: string; value: Cell }[]; line?: true }
   | { kind: 'list'; items: { cell: Cell; note: string | null; actions: Action[] }[]; page?: Paging }
-  | { kind: 'timeline'; entries: { at: Instant; title: Cell; lines: string[]; tag: Tag | null; actions?: Action[] }[]; page?: Paging }
+  | { kind: 'timeline'; entries: { at: Instant; title: Cell; lines: string[]; tag: Tag | null; actions?: Action[]; actor?: ActorMark | string }[]; page?: Paging }
   | { kind: 'text'; text: string; tone: Tone }
   | { kind: 'preview'; path: LibraryPath }
-  | { kind: 'actions'; actions: Action[] }
+  | { kind: 'actions'; actions: Action[]; head?: true }
   | { kind: 'empty'; title: string; hint: string | null }
   | { kind: 'embed'; url: string; title: string; height: number }
   | { kind: 'custom'; entry: string; height: number; text: string; data: unknown; actions: Record<string, Action>; plugin?: PluginName }
@@ -769,14 +795,21 @@ export type Block =
 
 /** `count`: how many things the view shows with this option, given by its answer. */
 export type FilterOption = { value: string; label: string; count?: number }
-export type ViewFilter = { name: string; label: string; options: FilterOption[]; default: string }
+/**
+ * A filter of the page's head. The page shows its options as tabs, an option counted 0 left out
+ * unless chosen, and `label` only to screen readers and the text form; `as` `menu` makes it one
+ * button that opens the options, for a choice among many, such as which agent.
+ */
+export type ViewFilter = { name: string; label: string; options: FilterOption[]; default: string; as?: 'tabs' | 'menu' }
 /**
  * `icon` is one of `ICON_NAMES`. A view with `nav` false is reached only through links, as a detail.
  * `ownerOnly`: a page of management, refused in an agent's session as an owner-only command is.
  * `home`: the view is also a part of the home page: its blocks stand there, after what waits on the
- * owner, in configuration order.
+ * owner, in configuration order. `with`: the id of the view whose entry in the navigation this one
+ * shares, such as the statistics of the activity: it leaves the navigation, and the head of each view
+ * of the entry switches between them; while that view is not there, it has an entry of its own.
  */
-export type ViewDecl = { id: string; title: string; icon: IconName; nav: boolean; filters: ViewFilter[]; ownerOnly?: boolean; home?: boolean }
+export type ViewDecl = { id: string; title: string; icon: IconName; nav: boolean; filters: ViewFilter[]; ownerOnly?: boolean; home?: boolean; with?: string }
 /** A view as the library lists it, with who gives it. */
 export type ListedView = ViewDecl & { by: PluginName | 'kernel' }
 /** `size`: how many rows a page of a long list holds, as the face asks: `PAGE_ROWS` on the page, `TEXT_ROWS` in the text form; absent, `PAGE_ROWS`. */

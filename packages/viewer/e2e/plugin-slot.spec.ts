@@ -3,7 +3,7 @@
 // knows its kind, renders as what it says; a plugin that throws in its view is the kernel's
 // (packages/kernel/test/viewer.test.ts) and the server's (packages/viewer/test/server.test.ts).
 import { join } from 'node:path'
-import { cutTexts, expect, navTitles, tempDir, test, write } from './support.ts'
+import { cutTexts, expect, fromMenu, navTitles, tempDir, test, write } from './support.ts'
 
 // The sample table's moment reads 11:11 here: the digit whose proportional and tabular widths differ most.
 test.use({ timezoneId: 'UTC' })
@@ -16,13 +16,13 @@ test('a plugin’s page appears when installed, renders each kind of block, and 
   await page.clock.setFixedTime(new Date('2026-11-25T12:00:00.000Z'))
   await page.goto(url)
   await expect(page.getByRole('heading', { level: 1, name: '首页' })).toBeVisible()
-  expect(await navTitles(page)).toEqual(['首页', '文件', '归档区', 'Agent', '配置'])
+  expect(await navTitles(page)).toEqual(['首页', '文件', 'Agent', '配置'])
 
   // Installed from outside the UI: the page shows up by itself, after the home page and before the kernel's other pages.
   pb.run(['plugin', 'add', 'pager', '--library', lib], { testPlugins: true })
   const nav = page.getByRole('navigation', { name: '导航' })
   await expect(nav.getByRole('button', { name: '块的样例' })).toBeVisible({ timeout: 5_000 })
-  expect(await navTitles(page)).toEqual(['首页', '块的样例', '新的块', '文件', '归档区', 'Agent', '配置'])
+  expect(await navTitles(page)).toEqual(['首页', '块的样例', '新的块', '文件', 'Agent', '配置'])
 
   await nav.getByRole('button', { name: '块的样例' }).click()
   const main = page.getByRole('main')
@@ -51,8 +51,8 @@ test('a plugin’s page appears when installed, renders each kind of block, and 
 
   // Removed from the config page: the page is gone.
   await nav.getByRole('button', { name: '配置' }).click()
-  await page.getByRole('region', { name: '插件' }).getByRole('row', { name: /pager/ }).getByRole('button', { name: '卸下' }).click()
+  await fromMenu(page.getByRole('region', { name: '插件' }).getByRole('row', { name: /pager/ }), '卸下')
   await expect(page.getByRole('status')).toContainText('已卸下插件 pager')
   await expect(nav.getByRole('button', { name: '块的样例' })).toHaveCount(0)
-  expect(await navTitles(page)).toEqual(['首页', '文件', '归档区', 'Agent', '配置'])
+  expect(await navTitles(page)).toEqual(['首页', '文件', 'Agent', '配置'])
 })

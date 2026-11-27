@@ -32,7 +32,7 @@ export function switchAction(plugin: string, l: Look): Action | null {
   if (!l.thing.on && l.status === 'archived') return null
   const on = !l.thing.on
   const { inputs, call } = formOf({ name: switchName(plugin, on), params: SWITCH_PARAMS }, { fixed: { path: l.thing.path } })
-  return action(on ? '打开' : '关上', call, inputs)
+  return { ...action(on ? '打开' : '关上', call, inputs), as: 'icon', icon: 'power' }
 }
 
 const switchActions = (kit: Kit, l: Look): Action[] => [switchAction(kit.name, l)].filter((a) => a !== null)
@@ -44,17 +44,25 @@ function refreshOf(run: Run): { refresh?: number } {
   return refresh === null ? {} : { refresh }
 }
 
-const subtitleOf = (all: readonly Look[]) => `${all.filter((l) => l.status === 'online').length} 样在线，共 ${all.length} 样`
+/** How many are online, when any is: the rest are offline, which goes unsaid. */
+const subtitleOf = (all: readonly Look[]) => {
+  const online = all.filter((l) => l.status === 'online').length
+  return online === 0 ? null : `${online} 样在线`
+}
 
-const stateCell = (l: Look): Cell => ({ text: '', tag: STATUS[l.status] })
+/** Offline is where a thing rests until the owner turns it on: the page leaves it unsaid, the text form says it. */
+const stateCell = (l: Look): Cell => (l.status === 'offline' ? { text: STATUS.offline.text, muted: true, normal: true } : { text: '', tag: STATUS[l.status] })
 /** The address opens in a new tab when it is a web address, and can always be copied. */
-const addressCell = (l: Look): Cell => (l.url ? { text: l.url, mono: true, ...(/^https?:\/\//.test(l.url) ? { href: l.url } : {}), copy: true } : { text: '—', muted: true })
+const addressCell = (l: Look): Cell => (l.url ? { text: l.url, mono: true, ...(/^https?:\/\//.test(l.url) ? { href: l.url } : {}), copy: true } : { text: '—', muted: true, normal: true })
 
-/** One button per kind of target, asking for that kind's flags of `<name> target set`. */
-function setTargetActions(kit: Kit): Action[] {
-  return kit.targets.map((t) => {
+/**
+ * One action per kind of target, asking for that kind's flags of `<name> target set`: with no target
+ * yet, the first is the page's main action; once one is set, changing it is rare and in the menu.
+ */
+function setTargetActions(kit: Kit, set: boolean): Action[] {
+  return kit.targets.map((t, i) => {
     const { inputs, call } = formOf({ name: targetSetName(kit), params: { flags: [kindFlag(kit), ...t.params] } }, { fixed: { kind: t.kind } })
-    return action(onlyTarget(kit) ? '设部署目标' : `设为${t.label}`, call, inputs)
+    return { ...action(onlyTarget(kit) ? '设部署目标' : `设为${t.label}`, call, inputs), icon: 'pencil', as: set ? 'menu' : i === 0 ? 'primary' : 'menu' }
   })
 }
 
@@ -69,10 +77,10 @@ export async function sitesPage(run: Run): Promise<ViewAnswer> {
     note: null,
     count: null,
     blocks: [
-      configured ? { kind: 'fields', fields: [{ label: '目标', value: { text: configured.label, mono: true } }] } : { kind: 'text', tone: 'warn', text: '还没配部署目标。开关打开的东西要等配了目标才发布。' },
+      configured ? { kind: 'fields', line: true, fields: [{ label: '目标', value: { text: configured.label, mono: true } }] } : { kind: 'text', tone: 'warn', text: '还没配部署目标。开关打开的东西要等配了目标才发布。' },
       ...(unreachable ? [{ kind: 'text' as const, tone: 'bad' as const, text: `读不到目标：${unreachable}` }] : []),
     ],
-    actions: setTargetActions(kit),
+    actions: setTargetActions(kit, configured !== null),
   }
   const rows: TableRow[] = all.map((l) => ({
     key: l.thing.id,
@@ -83,10 +91,11 @@ export async function sitesPage(run: Run): Promise<ViewAnswer> {
   const things: Block = {
     kind: 'section',
     title: '可部署的东西',
-    note: 'agent 用 say deployable 声明；在不在线由开关决定，开着的东西跟着库里当前的内容。',
+    note: null,
+    about: 'agent 用 say deployable 声明；在不在线由开关决定，开着的东西跟着库里当前的内容。',
     count: all.length,
     blocks: [{ kind: 'table', columns: [{ key: 'path', label: '路径' }, { key: 'state', label: '状态' }, { key: 'address', label: '地址' }, ...(view?.columns ?? [])], rows, empty: '还没有声明过可以部署的东西' }],
-    actions: [action('对一遍', { face: 'owner', command: `${kit.name} sync`, args: { positional: [], flags: {} } })],
+    actions: [{ ...action('对一遍', { face: 'owner', command: `${kit.name} sync`, args: { positional: [], flags: {} } }), as: 'icon', icon: 'refresh-cw' }],
   }
   return { title: kit.title, subtitle: subtitleOf(all), blocks: [...(view?.before?.(all) ?? []), target, things, ...(view?.page?.(all) ?? [])], ...refreshOf(run) }
 }
@@ -115,7 +124,7 @@ export async function itemSection(run: Run, path: LibraryPath): Promise<ItemSect
   const view = run.target?.view
   const fields: Extract<Block, { kind: 'fields' }>['fields'] = [
     { label: '状态', value: stateCell(l) },
-    { label: '开关', value: { text: l.thing.on ? '开' : '关' } },
+    { label: '开关', value: { text: l.thing.on ? '开' : '关', ...(l.thing.on ? {} : { normal: true as const }) } },
     { label: '地址', value: addressCell(l) },
     ...(l.site ? [{ label: '站点名', value: { text: l.site, mono: true } }] : []),
     ...(view?.fields?.(l) ?? []),

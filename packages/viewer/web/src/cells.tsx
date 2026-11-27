@@ -1,5 +1,5 @@
 // The small pieces every block draws with: a moment, a tag, a cell, an action's button.
-import type { Action, Cell, Tag, Tone } from '@pneuma-base/kernel'
+import type { Cell, Tag, Tone } from '@pneuma-base/kernel'
 import { Check, Copy } from 'lucide-react'
 import { useEffect, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { outsideUrl } from './api'
@@ -65,7 +65,9 @@ export function CellView({ cell, line = false, first = false, room }: { cell: Ce
   const style = `${cell.mono ? 'font-mono text-[12.5px]' : ''} ${cell.muted ? (line ? 'text-ink-3' : 'text-ink-2') : ''}`
   const href = outsideUrl(cell.href)
   const fitted = href && line && room !== undefined ? fitMiddle(cell.text, cellFont(cell, first), room) : cell.text
-  const words = cell.text === '' && cell.actor ? cell.actor.name : cell.text
+  // In a table a cell that says who is the mark alone, its name in the tooltip: the marks tell the agents apart.
+  const markOnly = line && cell.actor !== undefined && (cell.text === '' || cell.text === cell.actor.name)
+  const words = markOnly ? '' : cell.text === '' && cell.actor ? cell.actor.name : cell.text
   // On one line, a path-like text is cut in its folders, so its last part stays readable.
   const cut = line && cell.mono ? words.lastIndexOf('/') : -1
   const text = cell.at ? (
@@ -99,7 +101,7 @@ export function CellView({ cell, line = false, first = false, room }: { cell: Ce
   )
   const content = (
     <span className="cell" data-line={line || undefined} title={line && words !== '' && !cell.at ? words : undefined}>
-      {cell.actor ? <ActorBadge actor={cell.actor} /> : null}
+      {cell.actor ? markOnly ? <ActorBadge actor={cell.actor} titled /> : <ActorBadge actor={cell.actor} /> : null}
       {cell.icon ? <ViewIcon name={cell.icon} /> : null}
       {text}
       {cell.copy ? <CopyButton value={href ?? cell.text} /> : null}
@@ -123,22 +125,6 @@ export function CellView({ cell, line = false, first = false, room }: { cell: Ce
       }}
     >
       {content}
-    </button>
-  )
-}
-
-export function ActionButton({ action, small = false }: { action: Action; small?: boolean }) {
-  const { onAction } = useEnv()
-  return (
-    <button
-      type="button"
-      className={`btn ${small ? 'btn-sm' : ''} ${action.tone === 'danger' ? 'btn-danger' : ''}`}
-      onClick={(e) => {
-        e.stopPropagation()
-        void onAction(action)
-      }}
-    >
-      {action.label}
     </button>
   )
 }
