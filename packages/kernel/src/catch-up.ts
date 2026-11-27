@@ -100,7 +100,7 @@ export const catchingUpLine = (c: CatchingUp): string => `${catchingUpCount(c)}�
 export function caughtUpText(name: string, r: CaughtUp, keeper: boolean): string {
   if (r.nothing) return keeper ? '库里还没有登记过的东西。' : '这个库没装记着登记的插件。'
   if (r.finished) return `${name} 补上了装上之前登记的 ${r.done} 样。`
-  return `${name} 补了装上之前登记的 ${r.done}${r.total === null ? '' : ` / ${r.total}`} 样，停在这里；接着补：${COMMAND(name)}`
+  return `${name} 补了装上之前登记的 ${r.done}${r.total === null ? '' : ` / ${r.total}`} 样；接着补：${COMMAND(name)}`
 }
 
 /**

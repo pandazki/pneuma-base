@@ -73,7 +73,7 @@ describe('a plugin added to a library already in use', () => {
       })
       child.on('close', () => done())
     })
-    expect(stdout).toMatch(/search 补了装上之前登记的 \d+ \/ 2001 样，停在这里；接着补：pneuma-base plugin catch-up search/)
+    expect(stdout).toMatch(/search 补了装上之前登记的 \d+ \/ 2001 样；接着补：pneuma-base plugin catch-up search/)
     const found = run(lib, ['find', 'word1998']).stdout
     expect(found).toMatch(/装上之前登记的 2001 样补了 \d+ 样；接着补：pneuma-base plugin catch-up search/)
 

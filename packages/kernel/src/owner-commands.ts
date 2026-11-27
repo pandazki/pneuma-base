@@ -413,7 +413,7 @@ async function caughtUp(ctx: Context, plugin: Plugin | undefined, how: 'fresh' |
     if (r === null || (how === 'fresh' && r.nothing)) return { text: null, problems: [] }
     return { text: caughtUpText(plugin.name, r, r.keeper), data: { catchUp: { done: r.done, total: r.total, finished: r.finished } }, problems: [] }
   } catch (error) {
-    return { text: `${plugin.name} 补上装上之前登记的东西时出错，停在出错的那一页；接着补：pneuma-base plugin catch-up ${plugin.name}`, problems: [{ plugin: plugin.name, message: messageOf(error) }] }
+    return { text: `${plugin.name} 补上装上之前登记的东西时出错；接着补：pneuma-base plugin catch-up ${plugin.name}`, problems: [{ plugin: plugin.name, message: messageOf(error) }] }
   }
 }
 
