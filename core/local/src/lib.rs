@@ -7,6 +7,7 @@ mod area;
 #[cfg(target_os = "macos")]
 mod changelog;
 mod declaration;
+mod deep;
 mod facets;
 mod facts;
 mod fingerprint;
@@ -130,14 +131,20 @@ impl LocalFolder {
     /// After its own change, a write waits out a short racy window before it describes what it
     /// placed, so the token it answers can vouch for itself (a millisecond on APFS).
     pub fn settle(&self, stat: &sys::Stat) -> bool {
-        let wait = stat.last_change_ns() + self.racy_ns - Time::now().nanos();
-        if wait <= 0 {
-            return false;
-        }
+        let pending = stat.last_change_ns() + self.racy_ns > Time::now().nanos();
+        pending && self.wait_past(stat.last_change_ns())
+    }
+
+    /// Waits until a change at `change_ns` is past the racy window, when that is at most 25 ms
+    /// away (perhaps already past); false, without waiting, when it is further.
+    pub fn wait_past(&self, change_ns: i128) -> bool {
+        let wait = change_ns + self.racy_ns - Time::now().nanos();
         if wait > SETTLE_MAX_NS {
             return false;
         }
-        std::thread::sleep(std::time::Duration::from_nanos(wait as u64 + 1));
+        if wait > 0 {
+            std::thread::sleep(std::time::Duration::from_nanos(wait as u64 + 1));
+        }
         true
     }
 }
@@ -243,9 +250,10 @@ impl Storage for LocalFolder {
                 (Items::Read(items), Some(LookPage { compared, more }))
             }
         };
+        let deep = req.deep.as_ref();
         let mut answer = match self.view(&req.area, false)? {
-            Some(view) => view.look_places(items.as_slice(), ctx)?,
-            None => absent::look(items.as_slice()),
+            Some(view) => view.look_places(items.as_slice(), deep, ctx)?,
+            None => absent::look(items.as_slice(), deep),
         };
         answer.page = page;
         Ok(answer)

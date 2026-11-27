@@ -119,6 +119,49 @@ impl Token {
     }
 }
 
+/// A directory's deep token: `d1;n=<files>;h=<sha256 hex>`, one mark for the states of every file
+/// a content rule counts under the directory, as a deep `look` takes them. `;!r` says some state
+/// was taken too soon after its change to vouch for itself: such a token never compares the same.
+/// It compares only with a deep token, by its whole text; a level token is never one.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct DeepToken(String);
+
+impl DeepToken {
+    pub fn build(files: u64, hash: &str, racy: bool) -> DeepToken {
+        let mut text = format!("d1;n={files};h={hash}");
+        if racy {
+            text.push_str(";!r");
+        }
+        DeepToken(text)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Whether `text` is written as a deep token.
+    pub fn is_deep(text: &str) -> bool {
+        let Some(rest) = text.strip_prefix("d1;n=") else {
+            return false;
+        };
+        let rest = rest.strip_suffix(";!r").unwrap_or(rest);
+        let Some((files, hash)) = rest.split_once(";h=") else {
+            return false;
+        };
+        !files.is_empty()
+            && files.bytes().all(|b| b.is_ascii_digit())
+            && hash.len() == 64
+            && hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    }
+
+    /// Whether `remembered` stands for the same files in the same states: the same text, and
+    /// neither side racy.
+    pub fn same_as(&self, remembered: &str) -> bool {
+        !self.0.ends_with(";!r") && self.0 == remembered
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,5 +223,22 @@ mod tests {
             Token::build([("s", "3".to_owned())], [("r", String::new())]).as_str(),
             "v1;s=3;!r"
         );
+    }
+
+    #[test]
+    fn deep_tokens_compare_only_with_deep_tokens_and_never_when_racy() {
+        let hash = "ab".repeat(32);
+        let settled = DeepToken::build(3, &hash, false);
+        let racy = DeepToken::build(3, &hash, true);
+        assert_eq!(settled.as_str(), format!("d1;n=3;h={hash}"));
+        assert!(DeepToken::is_deep(settled.as_str()) && DeepToken::is_deep(racy.as_str()));
+        assert!(settled.same_as(settled.as_str()));
+        assert!(!settled.same_as(racy.as_str()));
+        assert!(!racy.same_as(racy.as_str()));
+        assert!(!settled.same_as(&format!("d1;n=4;h={hash}")));
+        for text in ["v1;s=1;m=2", "d1;n=;h=00", "d1;n=3;h=AB", "empty", ""] {
+            assert!(!DeepToken::is_deep(text), "{text}");
+            assert!(!settled.same_as(text), "{text}");
+        }
     }
 }

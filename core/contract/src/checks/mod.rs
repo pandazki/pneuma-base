@@ -5,6 +5,7 @@ pub mod areas;
 pub mod basics;
 pub mod changes;
 pub mod concurrency;
+pub mod deep;
 pub mod failures;
 pub mod interruption;
 pub mod local;

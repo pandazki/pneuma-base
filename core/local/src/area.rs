@@ -8,7 +8,7 @@ use std::ops::Deref;
 use std::os::fd::AsRawFd;
 
 use pneuma_base_storage::{
-    Area, Changed, ContentAnswer, ContentRequest, Description, Expect, Facets, Failure,
+    Area, Changed, ContentAnswer, ContentRequest, DeepLook, Description, Expect, Facets, Failure,
     GlanceAnswer, GlanceRequest, Kind, LookAnswer, LookItem, Manifest, MoveRequest, OverviewAnswer,
     OverviewRequest, Place, PlaceArg, PlaceFailure, Present, ReadRequest, Reason, RecordPlace,
     RemoveRequest, Seen, Time, Token, WriteRequest,
@@ -16,7 +16,7 @@ use pneuma_base_storage::{
 use serde_json::{Value, json};
 
 use crate::fingerprint::manifest_fingerprint;
-use crate::{LocalFolder, RECORD_AREA, io_failure, sys};
+use crate::{LocalFolder, RECORD_AREA, deep, io_failure, sys};
 
 /// A record place's facts, kept out of its own area.
 pub const FACTS: &str = "facts";
@@ -167,8 +167,10 @@ pub mod absent {
         })
     }
 
-    pub fn look(items: &[LookItem]) -> LookAnswer {
+    /// A deep look sees the empty root as a directory with no files in it.
+    pub fn look(items: &[LookItem], deep: Option<&DeepLook>) -> LookAnswer {
         let mut answer = LookAnswer::default();
+        let no_files = deep.map(|_| deep::token_of(&[], false));
         for item in items {
             let failed = |failure| PlaceFailure {
                 place: item.place.text().to_owned(),
@@ -182,12 +184,19 @@ pub mod absent {
                 answer.changed.push(Changed {
                     place: root.place.clone(),
                     entry: root,
+                    deep: no_files.clone(),
                 })
             };
             match (at(place), &item.expect) {
                 (Err(failure), _) => answer.failed.push(failed(failure)),
                 (Ok(None), Some(Expect::Empty)) => answer.same += 1,
                 (Ok(None), _) => answer.gone.push(place.clone()),
+                (Ok(Some(root)), expect) if let Some(token) = &no_files => match expect {
+                    Some(Expect::Token(remembered)) if token.same_as(remembered.as_str()) => {
+                        answer.same += 1
+                    }
+                    _ => changed(&mut answer, root),
+                },
                 (Ok(Some(root)), Some(Expect::Token(token))) => {
                     match root.token.changed_since(token) {
                         None => answer.failed.push(failed(Failure::bad_request())),

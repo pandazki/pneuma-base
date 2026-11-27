@@ -4,7 +4,7 @@ use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 use serde_json::{Map, Value};
 
-use crate::{Place, Time, Token};
+use crate::{DeepToken, Place, Time, Token};
 
 /// The fixed reasons of contract section 8.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -269,6 +269,9 @@ pub struct ProbeAnswer {
 pub struct Changed {
     pub place: Place,
     pub entry: Description,
+    /// A directory a deep look compared: its deep token now.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deep: Option<DeepToken>,
 }
 
 #[derive(Debug, Default, Serialize)]
