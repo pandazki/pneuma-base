@@ -164,6 +164,17 @@ describe('ten sites, four switched on, to a dir target', () => {
     expect(ok(agent(['check'])).sections.find((s: any) => s.plugin === 'deploy')).toBeUndefined()
   })
 
+  it('reads only the facts after those its rows were folded from: none when nothing happened since', () => {
+    ok(agent(['check']))
+    const log = join(tempDir(), 'tools.jsonl')
+    writeFileSync(log, '')
+    ok(owner(['check'], { PNEUMA_BASE_TOOL_LOG: log }))
+    const calls = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l) as { plugin: string; tool: string; entries?: number })
+    const read = calls.filter((c) => c.plugin === 'deploy' && c.tool === 'since')
+    expect(read.length).toBeGreaterThan(0)
+    expect(read.reduce((n, c) => n + (c.entries ?? 0), 0)).toBe(0)
+  })
+
   it('deploy list and inspect tell each site’s state and address', () => {
     const list = ok(owner(['deploy', 'list']))
     expect(list.text).toMatch(/sites\/s0\s+在线\s+file:/)

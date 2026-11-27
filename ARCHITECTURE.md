@@ -953,7 +953,7 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 | `config.json` | 目标 `{ format: 1, target: { kind, … } }`，经 `configFile` 带预期整份写，冲突重试最多 3 次，后写的算数 |
 | `facts/` | 经 `recordStore` 写：`declare`、`switch`、`move`、`remove`、`publish`、`unpublish`；读不懂的原样留着，`check` 里列出 |
 
-不报告的目标，「上面有什么」来自对当前目标（按 `key`）的发布与下线记录；换目标后开着的都成待发布。每次钩子、命令和页面都把全部事实读一遍再折（`recordStore` 的 `read`），除 `identified` 外没有行。
+不报告的目标，「上面有什么」来自对当前目标（按 `key`）的发布与下线记录；换目标后开着的都成待发布。事实折成行（`folded.ts`）：`things` 是声明了的，`alias` 是两台机器各声明一次的同一路径，`sites` 是每个目标上的每个站，`fold` 记着折到的最后一个事实的 id 和读不懂的行。每次钩子、命令和页面从行取，只折游标之后的新事实；折按事实的 id 排，新事实里有排在已折的之前的（同步带来的别的机器的），就从头折一遍。行另有 `identified`。
 
 ### 查找
 
