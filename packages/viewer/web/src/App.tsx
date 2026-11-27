@@ -2,20 +2,21 @@
 // one with a tab for each thing open. It keeps no state of its own beyond what is open, which the
 // address holds, and its widths; every view comes from the server, fetched again when the library
 // changed, after an action, and every `refresh` seconds when its answer asks for that.
-import type { Action, FilterOption, Link, PluginProblem, ViewDecl, ViewRequest, ViewResult } from '@pneuma-base/kernel'
-import { LoaderCircle, Unplug } from 'lucide-react'
+import type { Action, Block, FilterOption, Link, ListedView, PluginProblem, ViewDecl, ViewRequest, ViewResult } from '@pneuma-base/kernel'
+import { Check, ChevronDown, LoaderCircle, Unplug } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { api, ApiError, type State, type Tone } from './api'
 import { Blocks, sameLink } from './blocks'
-import { ActionDialog, fill } from './chrome'
-import { Choice, Resizer, TipLayer, usePresence } from './controls'
+import { ActionBar, useActionKeys } from './actions'
+import { ActionDialog, fill, ViewIcon } from './chrome'
+import { Choice, Menu, Resizer, TipLayer, usePresence } from './controls'
 import { DetailPanel } from './detail'
 import { BlockEnvContext, type BlockEnv, type Done } from './env'
 import { pageActions, Palette } from './palette'
 import { PANEL, SIDE, usePrefs } from './prefs'
 import { activate, back, closeAll, closeTab, follow, retop, shownOf, useRoute } from './route'
 import { IN_SHELL } from './shell'
-import { firstPage, navOrder, POLL_MS, Sidebar } from './sidebar'
+import { entryOf, firstPage, navOrder, POLL_MS, Sidebar } from './sidebar'
 import { localMoments } from './time'
 import { Toaster, useToasts } from './toasts'
 
@@ -123,23 +124,71 @@ function Loading() {
   )
 }
 
+/** A filter of many options as one button: the option in effect, and a menu of all of them with their counts. */
+function FilterMenu({ label, options, value, onChange }: { label: string; options: FilterOption[]; value: string; onChange(value: string): void }) {
+  const current = options.find((o) => o.value === value) ?? options[0]
+  return (
+    <Menu
+      label={label}
+      entries={options.map((o) => ({ label: o.label, icon: o.value === value ? <Check strokeWidth={2} /> : <span className="menu-blank" />, keys: o.count === undefined ? undefined : String(o.count), onSelect: () => onChange(o.value) }))}
+      trigger={({ ref, open, toggle, onKeyDown }) => (
+        <button ref={ref} type="button" className="btn btn-quiet filter-menu" aria-haspopup="menu" aria-expanded={open} aria-label={`${label}：${current?.label ?? ''}`} onClick={toggle} onKeyDown={onKeyDown}>
+          {current?.label}
+          <ChevronDown strokeWidth={2} aria-hidden />
+        </button>
+      )}
+    />
+  )
+}
+
 /**
- * The view's filters, each with the options the answer saw, with their counts, when it gave them; a
- * filter with one option or none has nothing to choose and is left out.
+ * The view's filters, each with the options the answer saw, with their counts, when it gave them. An
+ * option counted 0 is left out unless it is the one in effect; a filter left with one option or none
+ * has nothing to choose and is left out. Their labels are for screen readers: the options say it.
  */
 function Filters({ decl, answered, params, onChange }: { decl: ViewDecl | undefined; answered: { name: string; options: FilterOption[] }[] | undefined; params: Record<string, string>; onChange(name: string, value: string): void }) {
-  const filters = (decl?.filters ?? []).map((f) => ({ ...f, options: answered?.find((a) => a.name === f.name)?.options ?? f.options })).filter((f) => f.options.length > 1)
+  const filters = (decl?.filters ?? [])
+    .map((f) => {
+      const value = params[f.name] ?? f.default
+      const options = (answered?.find((a) => a.name === f.name)?.options ?? f.options).filter((o) => o.count !== 0 || o.value === value)
+      return { ...f, value, options }
+    })
+    .filter((f) => f.options.length > 1)
   if (filters.length === 0) return null
   return (
     <div className="filters" role="toolbar" aria-label="过滤">
-      {filters.map((f) => (
-        <div key={f.name} className="filter">
-          <span aria-hidden>{f.label}</span>
-          <Choice label={f.label} options={f.options} value={params[f.name] ?? f.default} onChange={(value) => onChange(f.name, value)} />
-        </div>
-      ))}
+      {filters.map((f) =>
+        f.as === 'menu' ? (
+          <FilterMenu key={f.name} label={f.label} options={f.options} value={f.value} onChange={(value) => onChange(f.name, value)} />
+        ) : (
+          <Choice key={f.name} label={f.label} options={f.options} value={f.value} onChange={(value) => onChange(f.name, value)} />
+        ),
+      )}
     </div>
   )
+}
+
+/** The views that share one entry of the navigation, as icons at the right of the page's head, the one shown pressed. */
+function ViewSwitch({ entry, current, onSelect }: { entry: ListedView[]; current: string; onSelect(view: string): void }) {
+  if (entry.length < 2) return null
+  return (
+    <nav className="view-switch" aria-label="这一组的页">
+      {entry.map((v) => (
+        <button key={v.id} type="button" className="icon-btn" aria-label={v.title} aria-current={v.id === current ? 'page' : undefined} data-tip={v.title} onClick={() => onSelect(v.id)}>
+          <ViewIcon name={v.icon} />
+        </button>
+      ))}
+    </nav>
+  )
+}
+
+/** The actions a page gives for the whole of what it shows: its `head` action blocks, at the top level. */
+export const headActions = (blocks: readonly Block[]): Action[] => blocks.flatMap((b) => (b.kind === 'actions' && b.head ? b.actions : []))
+
+/** The page's head actions, with their keys while nothing else has the focus. */
+function HeadActions({ actions }: { actions: Action[] }) {
+  useActionKeys(actions)
+  return <ActionBar actions={actions} small={false} className="head-actions" />
 }
 
 function Shown({ result, failed }: { result: ViewResult | null; failed: boolean }) {
@@ -380,8 +429,8 @@ export function App() {
     [go],
   )
   const onAction = useCallback(
-    (action: Action, values: Record<string, string> = {}): Promise<Done | null> =>
-      action.inputs.length > 0 || action.confirm !== null ? new Promise((resolve) => setPending({ id: ++asked.current, action, values, resolve })) : run(action, values, false),
+    (action: Action, values: Record<string, string> = {}, filled = false): Promise<Done | null> =>
+      (action.inputs.length > 0 && !filled) || action.confirm !== null ? new Promise((resolve) => setPending({ id: ++asked.current, action, values, resolve })) : run(action, values, false),
     [run],
   )
   const selected = useCallback((link: Link | null) => link !== null && link.target === 'panel' && sameLink(link, top), [top])
@@ -443,7 +492,12 @@ export function App() {
 
   const data = state.data
   const result = shown.data?.outcome === 'shown' ? shown.data : null
-  const groupOf = (v: (typeof views)[number]) => (v.by === 'kernel' ? (v.id === 'home' ? null : '库') : (data.available.find((p) => p.name === v.by)?.title ?? v.by))
+  const groupOf = (v: (typeof views)[number]) => {
+    const root = entryOf(views, v.id)[0]
+    return root !== undefined && root.id !== v.id ? root.title : null
+  }
+  const entry = entryOf(views, current?.view ?? null)
+  const detailShown = detail.data?.outcome === 'shown' ? detail.data : null
   const style = { '--side-w': `${prefs.side}px`, '--panel-w': `${panelWidth}px`, '--rail': `${RAIL}px` } as CSSProperties
   return (
     <BlockEnvContext.Provider value={env}>
@@ -473,6 +527,10 @@ export function App() {
               <h1>{result?.title ?? decl?.title ?? ''}</h1>
               {result?.subtitle ? <p>{localMoments(result.subtitle)}</p> : null}
               <Filters decl={decl} answered={result?.filters} params={request?.params ?? {}} onChange={onMainParam} />
+              <div className="page-tools">
+                {result ? <HeadActions actions={headActions(result.blocks)} /> : null}
+                <ViewSwitch entry={entry} current={current?.view ?? ''} onSelect={(view) => go((r) => ({ ...r, main: { view, params: {} } }))} />
+              </div>
             </header>
             <div className="page-body">
               <Problems problems={data.problems} />
@@ -488,6 +546,7 @@ export function App() {
                 labelOf={(req) => titles.current.get(keyOf(req) as string) ?? fallbackLabel(req, views.find((v) => v.id === req.view))}
                 iconOf={(req) => views.find((v) => v.id === req.view)?.icon ?? 'file'}
                 result={detail.data}
+                actions={detailShown ? headActions(detailShown.blocks) : []}
                 onActivate={(i) => go((r) => activate(r, i))}
                 onClose={(i) => go((r) => closeTab(r, i))}
                 onCloseAll={() => go(closeAll)}

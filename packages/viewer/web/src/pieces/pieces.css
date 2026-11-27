@@ -714,3 +714,47 @@
     opacity: 0.35;
   }
 }
+/* A row with nothing for its grey line to say is one line; in a narrow feed the line carries the moment. */
+.feed-meta:not(:has(> .feed-cell, > .feed-whose)) {
+  display: none;
+}
+@container feed (max-width: 520px) {
+  .feed-meta:not(:has(> .feed-cell, > .feed-whose)) {
+    display: flex;
+  }
+}
+/* The moment alone on the grey line has nothing to be set apart from. */
+.feed-meta-time:last-child::after {
+  content: none;
+}
+/* The first thing the grey line says needs no dot before it. */
+.feed-meta-time + .feed-cell::before {
+  content: none;
+}
+.feed-meta-time + .feed-cell {
+  margin-left: 0;
+}
+/* A heading that opens what it names, such as a scene, is a quiet line over its rows, not a bar: its count only where more than one row stands under it. */
+.feed-head > button {
+  min-height: 28px;
+  padding: 0 4px;
+  background: transparent;
+  color: var(--ink-2);
+  font-weight: 400;
+}
+.feed-head > button:hover {
+  background: var(--wash);
+  color: var(--ink);
+}
+.feed-head > button .feed-count {
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+.feed-head > button .feed-head-chev {
+  margin-left: 0;
+}
+/* A row whose grey line has nothing to say is one line high. */
+.feed-row:not(:has(.feed-meta > .feed-cell, .feed-meta > .feed-whose)) {
+  min-height: 40px;
+}

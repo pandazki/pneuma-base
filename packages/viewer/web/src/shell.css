@@ -429,18 +429,43 @@ html[data-window='inactive'] .fresh {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 16px;
+  gap: 6px 12px;
   margin-left: 6px;
 }
-.filter {
+.filter-menu > svg {
+  width: 14px;
+  height: 14px;
+  color: var(--ink-3);
+}
+/* The right end of the page's head: what can be done with the whole page, then the switch between the views of its entry. */
+.page-tools {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-left: auto;
 }
-.filter > span {
-  color: var(--ink-3);
-  font-size: 13px;
-  line-height: 20px;
+.page-tools:empty {
+  display: none;
+}
+.view-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: calc(var(--radius-control) + 2px);
+  background: var(--wash);
+}
+.view-switch > .icon-btn {
+  width: 28px;
+  height: 24px;
+}
+.view-switch > .icon-btn[aria-current='page'] {
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  color: var(--ink);
+}
+.head-actions {
+  flex-wrap: nowrap;
+  gap: 4px;
 }
 .page-body {
   container-type: inline-size;
@@ -827,4 +852,8 @@ html[data-panel='tray'] body {
   margin: 2px -12px -10px;
   padding: 10px 12px;
   box-shadow: inset 0 0.5px 0 var(--line);
+}
+.detail-title .head-actions {
+  flex: none;
+  margin-top: 2px;
 }

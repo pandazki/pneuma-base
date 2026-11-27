@@ -1,8 +1,9 @@
 // The detail panel: a grey tray with a tab for each thing open, and the front one on white paper
 // below. ← → Home End move between tabs, Delete closes one; Escape closes the front one (App).
-import type { ViewRequest, ViewResult } from '@pneuma-base/kernel'
+import type { Action, ViewRequest, ViewResult } from '@pneuma-base/kernel'
 import { ArrowLeft, PanelRightClose, X } from 'lucide-react'
 import { useRef, type KeyboardEvent, type ReactNode } from 'react'
+import { ActionBar, useActionKeys } from './actions'
 import { ViewIcon } from './chrome'
 import { topOf, type Tab } from './route'
 import { localMoments } from './time'
@@ -31,6 +32,8 @@ type Props = {
   /** The icon of a tab's view. */
   iconOf(req: ViewRequest): string
   result: ViewResult | null
+  /** What can be done with what the front tab shows, drawn beside its title. */
+  actions: Action[]
   children: ReactNode
   onActivate(i: number): void
   onClose(i: number): void
@@ -38,9 +41,18 @@ type Props = {
   onBack(): void
 }
 
-export function DetailPanel({ tabs, active, labelOf, iconOf, result, children, onActivate, onClose, onCloseAll, onBack }: Props) {
+/** A subtitle that ends with the title, as a path ends with its name, says only the folder before it; one that is the title says nothing. */
+function subtitleOf(title: string, subtitle: string | null): string | null {
+  if (subtitle === null || subtitle === title) return null
+  return subtitle.endsWith(`/${title}`) ? subtitle.slice(0, subtitle.length - title.length) : subtitle
+}
+
+export function DetailPanel({ tabs, active, labelOf, iconOf, result, actions, children, onActivate, onClose, onCloseAll, onBack }: Props) {
   const strip = useRef<HTMLDivElement | null>(null)
+  const panel = useRef<HTMLElement | null>(null)
   const shown = result?.outcome === 'shown' ? result : null
+  useActionKeys(actions, panel)
+  const subtitle = shown ? subtitleOf(shown.title, shown.subtitle) : null
   const front = tabs[active]
   const focusTab = (i: number) => strip.current?.querySelectorAll<HTMLElement>('[role=tab]')[i]?.focus()
   const onKeyDown = (e: KeyboardEvent) => {
@@ -57,7 +69,7 @@ export function DetailPanel({ tabs, active, labelOf, iconOf, result, children, o
     }
   }
   return (
-    <aside aria-label="详情" className="detail">
+    <aside ref={panel} aria-label="详情" className="detail">
       <div className="detail-head" data-drag data-chrome>
         <div ref={strip} role="tablist" aria-label="打开的详情" className="tabs" onKeyDown={onKeyDown}>
           {tabs.map((tab, i) => {
@@ -102,10 +114,11 @@ export function DetailPanel({ tabs, active, labelOf, iconOf, result, children, o
               <ViewIcon name={shown?.icon ?? iconOf(topOf(front))} />
             </span>
           ) : null}
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h2 data-testid="panel-title">{shown?.title ?? ''}</h2>
-            {shown?.subtitle ? <p>{localMoments(shown.subtitle)}</p> : null}
+            {subtitle ? <p title={shown?.subtitle ?? undefined}>{localMoments(subtitle)}</p> : null}
           </div>
+          <ActionBar actions={actions} small={false} className="head-actions" />
         </div>
         {children}
       </div>
