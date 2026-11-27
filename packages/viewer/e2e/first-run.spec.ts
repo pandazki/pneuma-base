@@ -118,9 +118,9 @@ test('the menu bar panel: the library, what waits for the owner decided right th
   const decide = panel.getByRole('region', { name: '等你决定' })
   await expect(decide.locator('.asks-row')).toHaveCount(3)
   await expect(decide.getByRole('link', { name: '还有 1 件，在窗口里看' })).toBeVisible()
-  // What happened: the newest eight, one line each, the thing by its name with its folder grey.
+  // What happened: one line each, the thing by its name; that a deployable site was declared is not a row.
   const latest = panel.getByRole('region', { name: '自上次以来' })
-  await expect(latest.getByRole('listitem')).toHaveCount(8)
+  await expect(latest.getByRole('listitem')).toHaveCount(6)
   await expect(latest.getByRole('listitem').first().locator('.feed-name')).toHaveText('b.md')
   expect(Math.max(...(await latest.getByRole('listitem').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height))))).toBeLessThanOrEqual(34)
   await expect.poll(sent).toContainEqual({ type: 'waiting', count: 4 })

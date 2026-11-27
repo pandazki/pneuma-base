@@ -296,7 +296,7 @@
   .feed-row > .feed-time {
     display: none;
   }
-  .feed-meta-time {
+  .feed-meta > .feed-meta-time {
     display: inline-flex;
   }
   .feed-meta:has(> .feed-meta-time) {
@@ -308,6 +308,7 @@
     color: var(--ink-4);
   }
   .feed-line:not(:has(.feed-act)),
+  .feed-name[data-said],
   .feed-meta:has(> .feed-note),
   .feed-note {
     overflow: visible;

@@ -127,7 +127,9 @@ function Line({ row, folder, dense }: { row: FeedRow; folder: string | null; den
           {grey ? <span className="feed-folder">{grey}</span> : null}
         </>
       ) : (
-        <span className="feed-name">{row.note ?? row.text}</span>
+        <span className="feed-name" data-said="">
+          {row.note ?? row.text}
+        </span>
       )}
     </>
   )

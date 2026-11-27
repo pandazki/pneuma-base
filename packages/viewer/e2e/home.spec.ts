@@ -102,7 +102,7 @@ test('都看过了 empties 自上次以来, says when the owner last looked and 
   await since.getByRole('button', { name: '都看过了' }).click()
   await expect(since).toContainText('上次看过：刚刚')
   await expect(since).toContainText('那之后还没有谁做过什么。')
-  await expect(since.getByRole('listitem').filter({ has: page.getByRole('img', { name: '放入' }) })).toHaveCount(0)
+  await expect(since.getByRole('listitem').filter({ has: page.getByRole('img', { name: /^(放入|带进来)$/ }) })).toHaveCount(0)
   await expect(since.getByRole('button', { name: '都看过了' })).toHaveCount(0)
   await since.getByRole('button', { name: '看全部活动' }).click()
   await expect(main.getByRole('heading', { level: 1, name: '活动' })).toBeVisible()
