@@ -78,7 +78,7 @@ Each facet comes from one source; the sources are composed in one list (`local/s
 
 | Facet | Fields | When |
 | --- | --- | --- |
-| `fs` | `inode`, `device`, `created` (`null` without a birth time), `mode` | always, for `file`, `dir` and `other` |
+| `fs` | `inode`, `device`, `created` (`null` without a birth time), `mode`; `path`, the place's absolute path on this machine (the library folder's real path joined with the place), only when asked for by name (`"facets": ["fs.path"]`) | always, for `file`, `dir` and `other` |
 | `macos` | `where_from` (download address list), `quarantine` (a string: the program that brought it in), `tags` (Finder tag names) | macOS, only when asked for by name (`"facets": ["macos"]` in `glance` or `overview`), and only the attributes present |
 | `placeholder` | `provider` (when recognised by folder: `icloud` under `Library/Mobile Documents/`; under `Library/CloudStorage/`, the folder's name up to its first `-`, lowercased, such as `dropbox` or `googledrive`), `size_elsewhere` | macOS, a file or directory a sync service keeps only as a placeholder (`SF_DATALESS`) |
 

@@ -26,24 +26,25 @@ test('a bare library: four pages, folders, text and image preview, archive and t
   await expect(page.getByRole('heading', { level: 1, name: '文件' })).toBeVisible()
 
   // Into a folder, and a text preview in the panel.
-  await page.getByRole('button', { name: 'notes/' }).click()
+  const up = page.getByRole('navigation', { name: '位置' }).getByRole('button', { name: '文件', exact: true })
+  await page.getByRole('row', { name: /^notes\// }).dblclick()
   await expect(page.getByRole('main').getByText('notes', { exact: true })).toBeVisible()
   await page.getByRole('row', { name: /hello\.md/ }).click()
   const panel = page.getByRole('complementary', { name: '详情' })
   await expect(panel.getByTestId('panel-title')).toHaveText('hello.md')
   await expect(panel.getByRole('figure', { name: '预览' })).toContainText('一段笔记，写给以后的自己。')
 
-  // Back up, into another folder, and an image preview.
-  await page.getByRole('button', { name: '..' }).click()
-  await page.getByRole('button', { name: 'pics/' }).click()
+  // Back up from the path bar, into another folder, and an image preview.
+  await up.click()
+  await page.getByRole('row', { name: /^pics\// }).dblclick()
   await page.getByRole('row', { name: /dot\.png/ }).click()
   const image = panel.getByRole('img', { name: 'pics/dot.png' })
   await expect(image).toBeVisible()
   expect(await image.evaluate((img: HTMLImageElement) => [img.naturalWidth, img.naturalHeight])).toEqual([48, 32])
 
   // Archive from the panel: the file moves into _archive/.
-  await page.getByRole('button', { name: '..' }).click()
-  await page.getByRole('button', { name: 'notes/' }).click()
+  await up.click()
+  await page.getByRole('row', { name: /^notes\// }).dblclick()
   await page.getByRole('row', { name: /hello\.md/ }).click()
   await panel.getByRole('button', { name: '归档', exact: true }).click()
   await expect(page.getByRole('status')).toContainText('已归档：notes/hello.md → _archive/notes/hello.md')
@@ -53,7 +54,7 @@ test('a bare library: four pages, folders, text and image preview, archive and t
 
   // The archive page lists one level at a time: the folder, then in it the file; taking it back returns it to its path.
   await openShared(page, '文件', '归档区')
-  await page.getByRole('main').getByRole('row', { name: /^notes\// }).click()
+  await page.getByRole('main').getByRole('row', { name: /^notes\// }).dblclick()
   const row = page.getByRole('main').getByRole('row', { name: /notes\/hello\.md/ })
   await expect(row).toBeVisible()
   await row.getByRole('button', { name: '取回' }).click()

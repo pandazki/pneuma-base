@@ -1,5 +1,5 @@
 // A plugin's views and the page one of them gives, for the viewer face and the home page alike.
-import { checkBlocks, checkFilters, checkOpen, checkRefresh, callableIn } from './blocks.js'
+import { checkBlocks, checkFilters, checkOpen, checkRefresh, checkTrail, callableIn } from './blocks.js'
 import { catchingUp, catchingUpCount } from './catch-up.js'
 import { messageOf, pluginContext } from './pipeline.js'
 import { kernelAction } from './view-parts.js'
@@ -46,8 +46,10 @@ export async function pluginPage(plugin: Plugin, decl: ViewDecl, req: ViewReques
     const { refresh, problems: refreshProblems } = checkRefresh((answer as ViewAnswer).refresh, plugin)
     const { filters, problems: filterProblems } = checkFilters((answer as ViewAnswer).filters, decl, plugin)
     const { open, problems: openProblems } = checkOpen((answer as ViewAnswer).open, plugin)
+    const { trail, problems: trailProblems } = checkTrail((answer as ViewAnswer).trail, plugin)
     return {
-      ...shown(answer.title, answer.subtitle ?? null, blocks, [...problems, ...refreshProblems, ...filterProblems, ...openProblems]),
+      ...shown(answer.title, answer.subtitle ?? null, blocks, [...problems, ...refreshProblems, ...filterProblems, ...openProblems, ...trailProblems]),
+      ...(trail === undefined ? {} : { trail }),
       ...(refresh === undefined ? {} : { refresh }),
       ...(filters === undefined ? {} : { filters }),
       ...(open === undefined ? {} : { open }),

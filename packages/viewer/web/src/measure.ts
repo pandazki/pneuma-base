@@ -105,12 +105,17 @@ function momentWidth(text: string, font: string, seen: Map<string, number>): num
   return width
 }
 
+/** The forms a moment of today goes through while the page stays open: it is given the widest of them, so its own clock does not cut it. */
+const TODAY = /^(刚刚|\d+ 分钟前|今天 )/
+const TODAY_SHAPES = ['00 分钟前', '今天 00:00']
+
 function cellWidth(cell: Cell, first: boolean, moments: Map<string, number>): number {
   // A cell that says who is its mark alone in a table (cells.tsx).
   const markOnly = cell.actor !== undefined && (cell.text === '' || cell.text === cell.actor.name)
   const text = cell.at ? shortTime(cell.at) : markOnly ? '' : cell.text
   const font = cellFont(cell, first)
-  const w = text === '' ? 0 : cell.at ? momentWidth(text, font, moments) : textWidth(text, font)
+  const moment = (shapes: string[]) => Math.max(...shapes.map((shape) => momentWidth(shape, font, moments)))
+  const w = text === '' ? 0 : cell.at ? moment(TODAY.test(text) ? [text, ...TODAY_SHAPES] : [text]) : textWidth(text, font)
   return w + extras(cell, text !== '')
 }
 

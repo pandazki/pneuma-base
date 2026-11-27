@@ -644,9 +644,34 @@ export type ActorMark = { kind: 'agent' | 'owner'; name: string; grant?: string 
  * `text`. `actor`: the cell says who; the page draws the mark before `text`, which is the name.
  * `normal`: the value is the usual state, such as a thing being as recorded. The page leaves it out
  * (a table column whose every cell is normal steps aside, a field with a normal value is not shown),
- * so only a departure from it catches the eye; the text form still prints it.
+ * so only a departure from it catches the eye; the text form still prints it. `reopen`: the cell names
+ * a scene whose conversation is on this machine; in the Mac app the page offers to open it again
+ * beside the cell.
  */
-export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; link?: Link; at?: Instant; icon?: IconName; href?: string; copy?: true; actor?: ActorMark; normal?: true }
+export type Cell = { text: string; mono?: boolean; muted?: boolean; tag?: Tag; link?: Link; at?: Instant; icon?: IconName; href?: string; copy?: true; actor?: ActorMark; normal?: true; reopen?: Reopen }
+
+/**
+ * How the Mac app opens a scene's conversation again on this machine, the first way it can: `url`,
+ * when an application of this machine handles it; `run`, a command run in the default terminal in
+ * `cwd`; `reveal`, the conversation's file shown in Finder. Paths are absolute. Given only while the
+ * file is on this machine, as the product's rule in the kernel's products table says.
+ */
+export type Reopen = { url: string | null; run: { command: string; cwd: string } | null; reveal: string }
+
+/**
+ * The place of the library a table row stands for, so the page can treat the row as a file: select
+ * it, preview, open and drag it, draw it as a tile. `kind`: a file, a directory thing, a folder with
+ * something registered in it (`open`), a folder with nothing registered in it (`closed`). `token`:
+ * storage's state token, which the page keeps only as the key of what it made of the file, such as
+ * a thumbnail. `elsewhere`: only a placeholder is on this machine.
+ */
+export type RowPlace = { path: LibraryPath; kind: 'file' | 'bundle' | 'open' | 'closed'; token: string | null; elsewhere?: true }
+
+/** What a table that lists places can be sorted by. */
+export type SortKey = 'name' | 'modified' | 'kind' | 'size'
+
+/** One folder of a path bar: its name and the link that shows it. */
+export type Crumb = { label: string; link: Link }
 
 /**
  * What a button does: one verb of the agent face, or one owner command. Strings may hold `{input}`,
@@ -692,8 +717,9 @@ export type Action = { label: string; tone: 'default' | 'danger'; confirm: strin
  * `group`: rows with the same group stand together under it as a heading, in the order of the first
  * row of each, so a long prefix they share, such as their folder, is said once; the cells then hold
  * only what comes after it. A row with a link shows its actions while the pointer or the focus is on it.
+ * `place`: the place of the library the row stands for.
  */
-export type TableRow = { key: string; cells: Record<string, Cell>; link: Link | null; actions: Action[]; group?: string }
+export type TableRow = { key: string; cells: Record<string, Cell>; link: Link | null; actions: Action[]; group?: string; place?: RowPlace }
 /**
  * Where one page of a long list stands: `first`, the place of its first row counted from 1, and
  * `shown`, how many rows it shows; `total`, how many rows the whole list has, or with `atLeast` how
@@ -722,8 +748,8 @@ export type FeedRow = {
   settled?: string
   link: Link | null
 }
-/** Rows under a heading, such as a day or a scene; `link` opens what the heading names. */
-export type FeedGroup = { title: string; count: number | null; link?: Link; rows: FeedRow[] }
+/** Rows under a heading, such as a day or a scene; `link` opens what the heading names; `reopen`, the scene's conversation, as a cell's. */
+export type FeedGroup = { title: string; count: number | null; link?: Link; rows: FeedRow[]; reopen?: Reopen }
 /** One figure: a label, a number or a short text, and a grey sentence about it. */
 export type Stat = { label: string; value: string; note: string | null }
 /** The most series a chart draws: each takes the next colour of one small palette, the same in every chart. */
@@ -772,10 +798,16 @@ export type Step = { key: string; title: string; done: boolean; summary: string 
  * `timeline`: an entry's `actor`, who did it, is drawn as its mark on the line, the text form prints the name.
  * `page` on a table, a list, a timeline or a feed: its rows are one page of a longer list, the page
  * drawn under them with the total and the way to the pages before and after.
+ * A table whose rows carry places: `sorted`, how it is sorted now; it sorts again by the view's
+ * parameter `sort` (a `SortKey`, with a leading `-` for the reverse), and its columns named like a
+ * `SortKey` sort by it. `each`: what can be done with any of its things (places of kind `file` or
+ * `bundle`), said once for all of them:
+ * `actions`, in which `{path}` is the place and `{in}` its folder with a slash (empty at the root);
+ * `rename`, an action whose one input `name` is written in place over the row's name.
  */
 export type Block =
   | { kind: 'section'; title: string; note: string | null; count: number | null; blocks: Block[]; actions: Action[]; collapse?: 'open' | 'closed'; plugin?: PluginName; about?: string; normal?: true }
-  | { kind: 'table'; columns: TableColumn[]; rows: TableRow[]; empty: string; page?: Paging }
+  | { kind: 'table'; columns: TableColumn[]; rows: TableRow[]; empty: string; page?: Paging; sorted?: { by: SortKey; desc: boolean }; each?: { actions: Action[]; rename: Action | null } }
   | { kind: 'fields'; fields: { label: string; value: Cell }[]; line?: true }
   | { kind: 'list'; items: { cell: Cell; note: string | null; actions: Action[] }[]; page?: Paging }
   | { kind: 'timeline'; entries: { at: Instant; title: Cell; lines: string[]; tag: Tag | null; actions?: Action[]; actor?: ActorMark | string }[]; page?: Paging }
@@ -821,8 +853,10 @@ export type ViewRequest = { view: string; params: Record<string, string>; size?:
  * options of declared filters as this answer sees them, such as the agents there are, with counts.
  * `open`: what the page shows in the detail panel when it opens with the panel closed and the window
  * has room for both, such as a list's first row; a panel link. The text form leaves it out.
+ * `trail`: the folders from the library's root to the one the page shows, the last being it; the page
+ * draws them as a path bar in place of the title and the subtitle.
  */
-export type ViewAnswer = { title: string; subtitle: string | null; blocks: Block[]; refresh?: number; filters?: { name: string; options: FilterOption[] }[]; open?: Link }
+export type ViewAnswer = { title: string; subtitle: string | null; blocks: Block[]; refresh?: number; filters?: { name: string; options: FilterOption[] }[]; open?: Link; trail?: Crumb[] }
 export type ViewResult =
   /** `icon`: the kernel's item panel gives the icon of the kind of thing it shows, instead of the view's. */
   | ({ outcome: 'shown' } & ViewAnswer & { problems: PluginProblem[]; icon?: IconName })

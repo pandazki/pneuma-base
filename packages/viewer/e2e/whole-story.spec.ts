@@ -110,9 +110,9 @@ test('the whole story in the UI: every plugin’s page, the deploy switch, a sit
 
   // Bundles on the files and archive pages: each site is one row.
   await nav.getByRole('button', { name: '文件' }).click()
-  await main.getByRole('row', { name: /^sites/ }).click()
+  await main.getByRole('row', { name: /^sites/ }).dblclick()
   await expect(main.getByRole('row', { name: /coffee/ })).toContainText('1 项')
   await openShared(page, '文件', '归档区')
-  await main.getByRole('row', { name: /^sites\// }).click()
-  await expect(main.getByRole('row')).toHaveCount(5) // the header, .. and the three archived sites
+  await main.getByRole('row', { name: /^sites\// }).dblclick()
+  await expect(main.getByRole('row')).toHaveCount(4) // the header and the three archived sites
 })

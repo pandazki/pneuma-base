@@ -1,7 +1,7 @@
 // One renderer per kind of block. A block draws itself from its data alone; links, actions and
 // parameters go to the shell through the environment.
-import type { Block, Cell, Link, Paging, TableRow, Tone } from '@pneuma-base/kernel'
-import { ChevronRight, CircleAlert, CircleCheck, CircleHelp, ExternalLink, Folder, Inbox, Info, TriangleAlert, type LucideIcon } from 'lucide-react'
+import type { Block, Cell, Link, Paging, SortKey, TableRow, Tone } from '@pneuma-base/kernel'
+import { ArrowDown, ArrowUp, ChevronRight, CircleAlert, CircleCheck, CircleHelp, ExternalLink, Folder, Inbox, Info, TriangleAlert, type LucideIcon } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { api, outsideUrl } from './api'
 import { ActorBadge } from './pieces/actor'
@@ -15,6 +15,7 @@ import { ActionBar, InlineAction, placeActions } from './actions'
 import { CellView, Moment, TagView, wantsTab } from './cells'
 import { ViewIcon } from './chrome'
 import { useEnv } from './env'
+import { IconGrid, placed, RenameField, useFiles } from './files'
 import { CustomView } from './frame'
 import { fitColumns, naturalColumns, textRoom } from './measure'
 import { DropView, StepsView } from './steps'
@@ -122,12 +123,22 @@ function drawn(block: Extract<Block, { kind: 'table' }>): Extract<Block, { kind:
  * shows its actions while the pointer or the focus is on it. Grouped rows stand under their group's
  * heading, and read as a list, without the column headers.
  */
+/** The keys a table of places sorts by from its column heads, and which way each goes first: names A to Z, the newest and the largest first. */
+const SORTS: Record<string, { key: SortKey; desc: boolean }> = { name: { key: 'name', desc: false }, modified: { key: 'modified', desc: true }, kind: { key: 'kind', desc: false }, size: { key: 'size', desc: true } }
+
+/** The value of the view's `sort` after a click on the head of column `key`: its own first way, or the other way when it sorts by it already. */
+export function sortAfter(sorted: { by: SortKey; desc: boolean }, key: SortKey): string {
+  const desc = sorted.by === key ? !sorted.desc : (SORTS[key]?.desc ?? false)
+  return `${desc ? '-' : ''}${key}`
+}
+
 function TableView({ block: given }: { block: Extract<Block, { kind: 'table' }> }) {
-  const { onLink, selected } = useEnv()
+  const { onLink, selected, look, onParam } = useEnv()
   const [measure, available] = useWidth()
   const fonts = useFontsReady()
   const [cursor, setCursor] = useState<string | null>(null)
   const block = useMemo(() => drawn(given), [given])
+  const files = useFiles(block)
   const grouped = block.rows.some((r) => (r.group ?? '') !== '')
   const withActions = block.rows.some((r) => r.actions.length > 0)
   // `fonts` is a dependency so the columns are measured again once the fonts are in.
@@ -153,8 +164,10 @@ function TableView({ block: given }: { block: Extract<Block, { kind: 'table' }> 
   }
   // An empty table is its message alone: headers over nothing say less than the message does.
   if (block.rows.length === 0) return <EmptyMessage text={block.empty} page={block.page} />
+  if (files && look === 'icons') return <IconGrid block={block} files={files} pager={turns(block.page) ? <Pager page={block.page} /> : null} />
+  const sorted = block.sorted
   return (
-    <div className="card table-card" data-grouped={grouped || undefined}>
+    <div className="card table-card" data-grouped={grouped || undefined} data-files-table={files ? '' : undefined}>
       <div ref={measure} className="table-scroll">
       <table style={widths ? { tableLayout: 'fixed', width: widths.reduce((a, b) => a + b, 0) } : { width: '100%' }}>
         {widths ? (
@@ -166,15 +179,31 @@ function TableView({ block: given }: { block: Extract<Block, { kind: 'table' }> 
         ) : null}
         <thead className={grouped ? 'sr-only' : undefined}>
           <tr>
-            {shownColumns.map((c) => (
-              <th key={c.key} scope="col">
-                {c.label}
-              </th>
-            ))}
+            {shownColumns.map((c) => {
+              const by = sorted && SORTS[c.key] ? (SORTS[c.key] as { key: SortKey }).key : null
+              if (!sorted || by === null)
+                return (
+                  <th key={c.key} scope="col">
+                    {c.label}
+                  </th>
+                )
+              const on = sorted.by === by
+              // By name from A, as storage lists a folder, is the usual order: no arrow says it.
+              const usual = sorted.by === 'name' && !sorted.desc
+              const Arrow = sorted.desc ? ArrowDown : ArrowUp
+              return (
+                <th key={c.key} scope="col" aria-sort={on ? (sorted.desc ? 'descending' : 'ascending') : undefined}>
+                  <button type="button" className="sort-head" data-on={(on && !usual) || undefined} onClick={() => onParam('sort', sortAfter(sorted, by))}>
+                    {c.label}
+                    {on && !usual ? <Arrow strokeWidth={2} aria-hidden /> : null}
+                  </button>
+                </th>
+              )
+            })}
             {withActions ? <th scope="col" aria-label="动作" /> : null}
           </tr>
         </thead>
-        <tbody onKeyDown={onKeyDown}>
+        <tbody onKeyDown={files ? (e) => files.onKeyDown(e) : onKeyDown} data-files={files ? '' : undefined}>
           {block.rows.map((row, r) => {
             const group = row.group ?? ''
             const heading =
@@ -188,8 +217,31 @@ function TableView({ block: given }: { block: Extract<Block, { kind: 'table' }> 
                   </th>
                 </tr>
               ) : null
+            const own = files && placed(row) ? files.itemProps(row) : null
             return [
               heading,
+              own && placed(row) ? (
+                <tr key={row.key} data-link={row.link ? '' : undefined} {...own} aria-selected={own['aria-selected'] || undefined}>
+                  {shownColumns.map((c, i) => {
+                    const cell = row.cells[c.key]
+                    const width = widths?.[i]
+                    if (i === 0 && files?.renaming === row.key)
+                      return (
+                        <td key={c.key}>
+                          <RenameField name={row.place.path.slice(row.place.path.lastIndexOf('/') + 1)} onDone={files.rename} />
+                        </td>
+                      )
+                    // The row opens on a double-click; its name is no link of its own.
+                    const shown = cell && i === 0 ? { ...cell, link: undefined } : cell
+                    return <td key={c.key}>{shown ? <CellView cell={shown} line first={i === 0} room={shown.href && width !== undefined ? textRoom(shown, width, i === 0) : undefined} /> : null}</td>
+                  })}
+                  {withActions ? (
+                    <td>
+                      <ActionBar actions={row.actions} className="row-actions" />
+                    </td>
+                  ) : null}
+                </tr>
+              ) : (
               <tr
                 key={row.key}
                 data-key={row.key}
@@ -229,13 +281,15 @@ function TableView({ block: given }: { block: Extract<Block, { kind: 'table' }> 
                     <ActionBar actions={row.actions} className={row.link ? 'row-actions' : 'justify-end'} />
                   </td>
                 ) : null}
-              </tr>,
+              </tr>
+              ),
             ]
           })}
         </tbody>
       </table>
       </div>
       {turns(block.page) ? <Pager page={block.page} /> : null}
+      {files?.overlay}
     </div>
   )
 }

@@ -8,8 +8,10 @@ import { conformance } from '@pneuma-base/sdk/testkit'
 const cli = fileURLToPath(new URL('../dist/bin.js', import.meta.url))
 const fixture = (name: string) => fileURLToPath(new URL(`./fixtures/breakers/${name}/`, import.meta.url))
 
-// The tests run concurrently (vitest's maxConcurrency at a time): the kit keeps no process state, and each check works in temporary libraries of its own.
-describe.concurrent('conformance over plugins that break the rules', () => {
+// The tests run concurrently where there are cores for it (vitest's maxConcurrency at a time): the kit keeps no process state, and
+// each check works in temporary libraries of its own. On CI's two cores they run one after another, each with room to finish.
+const together = process.env.CI ? describe : describe.concurrent
+together('conformance over plugins that break the rules', { timeout: 180_000 }, () => {
   it('names each rule a loaded plugin breaks, with what is wrong and the rule', async () => {
     const r = await conformance(fixture('rule-breaker'), { cli })
     const failed = Object.fromEntries(r.checks.filter((c) => !c.ok).map((c) => [c.name, c.problems.join('\n')]))

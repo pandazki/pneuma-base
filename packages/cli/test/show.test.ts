@@ -54,11 +54,19 @@ describe('pneuma-base show', () => {
     expect(inside.stdout.trimEnd().split('\n')).toEqual([
       '# 归档区',
       '_archive/notes',
-      ...head,
       '.. → show archive',
+      ...head,
       expect.stringMatching(/^notes\/old\.md +4 B +\d{4}-\d\d-\d\d \d\d:\d\dZ +→ show item --path _archive\/notes\/old\.md$/),
       '  $ unarchive _archive/notes/old.md  # 取回',
     ])
+  })
+
+  it('says once under a folder’s table what can be done with each thing in it, as commands taking its path, and the folder above it', () => {
+    const r = agent(['show', 'files', '--dir', 'notes'])
+    expect(r.code, r.stderr).toBe(0)
+    const lines = r.stdout.trimEnd().split('\n')
+    expect(lines.slice(0, 3)).toEqual(['# 文件', 'notes', '.. → show files'])
+    expect(lines.slice(-3)).toEqual(['其中每一样东西：', '  $ archive <库内路径>  # 归档', '  $ put <库内路径> --to <新的库内路径>  # 挪到'])
   })
 
   it('opens the item panel of a path with every plugin’s section', () => {
