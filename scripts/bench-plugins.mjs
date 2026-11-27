@@ -38,9 +38,9 @@ function measure(perRun) {
   let rss = 0
   let failed = null
   for (let i = 0; i <= runs; i++) {
-    const { env, args, input } = perRun(i)
+    const { env, args, input, cwd } = perRun(i)
     const t = performance.now()
-    const run = spawnSync('/usr/bin/time', ['-l', process.execPath, bin, ...args], { env, input: input ?? '', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 1 << 30 })
+    const run = spawnSync('/usr/bin/time', ['-l', process.execPath, bin, ...args], { env, cwd, input: input ?? '', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 1 << 30 })
     const ms = performance.now() - t
     const err = String(run.stderr)
     if (run.status !== 0 && run.status !== 3) failed ??= `exit ${run.status}: ${(String(run.stdout) + err).split('\n').find((l) => l.trim() !== '')?.slice(0, 120) ?? ''}`
@@ -67,8 +67,9 @@ function prepare(name, lib, fill) {
 }
 
 async function bench(name, lib, env, owner) {
-  const agent = (i, tag, args, input) => ({ env: { ...env, CLAUDE_CODE_SESSION_ID: `bench-${tag}-${i}` }, args: ['--library', lib, ...args], input })
-  const quiet = (args, input) => spawnSync(process.execPath, [bin, '--library', lib, ...args], { env: { ...env, CLAUDE_CODE_SESSION_ID: 'bench-setup' }, input: input ?? '', stdio: ['pipe', 'ignore', 'ignore'] })
+  // An agent works in the library: a relative path it types names a place there.
+  const agent = (i, tag, args, input) => ({ env: { ...env, CLAUDE_CODE_SESSION_ID: `bench-${tag}-${i}` }, args: ['--library', lib, ...args], input, cwd: lib })
+  const quiet = (args, input) => spawnSync(process.execPath, [bin, '--library', lib, ...args], { env: { ...env, CLAUDE_CODE_SESSION_ID: 'bench-setup' }, cwd: lib, input: input ?? '', stdio: ['pipe', 'ignore', 'ignore'] })
   const note = '# 一页笔记\n\n用来量放入、查找和版本。\n'
   quiet(['put', '-', '--to', 'bench/known.md', '--made', '--note', '一页笔记'], note)
   for (let i = 0; i <= runs; i++) quiet(['put', '-', '--to', `bench/versioned-${i}.md`, '--made'], `${note}${i}\n`)
@@ -78,7 +79,9 @@ async function bench(name, lib, env, owner) {
   quiet(['put', site, '--to', 'bench/site', '--made'])
   quiet(['say', 'deployable', 'bench/site'])
   owner('deploy', 'on', 'bench/site')
-  const first = measure(() => ({ env, args: ['--library', lib, 'sync', 'now'] }))
+  const t = performance.now()
+  const once = spawnSync(process.execPath, [bin, '--library', lib, 'sync', 'now'], { env, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', maxBuffer: 1 << 26 })
+  const first = { ms: performance.now() - t, files: filesUnder(join(scratch, `outside-${name}`, 'sync')), failed: once.status === 0 || once.status === 3 ? null : `exit ${once.status}: ${once.stdout.slice(0, 120)}` }
   const rows = {
     'put one file': measure((i) => agent(i, 'put', ['put', '-', '--to', `bench/put-${i}-${Date.now()}.md`, '--made'], note)),
     find: measure((i) => agent(i, 'find', ['find', '笔记'])),
@@ -89,6 +92,11 @@ async function bench(name, lib, env, owner) {
     'sync now, nothing changed': measure(() => ({ env, args: ['--library', lib, 'sync', 'now'] })),
   }
   return { name, rows, first }
+}
+
+/** How many files are under `dir`, its own record folder left out: what a sync carried to its target. */
+function filesUnder(dir) {
+  return readdirSync(dir, { recursive: true, withFileTypes: true }).filter((e) => e.isFile() && !e.parentPath.includes('.pneuma-sync')).length
 }
 
 /** The directories of a library that hold files, outside its record area and its archive, for the puts that register them. */
@@ -109,7 +117,10 @@ function synthetic(lib, env) {
   const made = writeHistory(lib, { days: 760, sessions: 14, talk: 5.2, seed: 7 })
   const t = performance.now()
   const dirs = dirsWithFiles(lib)
-  for (const dir of dirs) execFileSync(process.execPath, [bin, '--library', lib, 'put', dir, '--made'], { env: { ...env, CLAUDE_CODE_SESSION_ID: 'bench-register' }, stdio: 'ignore' })
+  for (const dir of dirs) {
+    const put = spawnSync(process.execPath, [bin, '--library', lib, 'put', dir, '--made'], { env: { ...env, CLAUDE_CODE_SESSION_ID: 'bench-register' }, cwd: lib, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', maxBuffer: 1 << 26 })
+    if (put.status !== 0 && put.status !== 3) throw new Error(`put ${dir} exited ${put.status}:\n${put.stdout.slice(-2000)}\n${put.stderr.slice(-4000)}`)
+  }
   console.log(`synthetic: ${made.things} things, ${made.facts} facts; ${dirs.length} directories put in ${((performance.now() - t) / 1000).toFixed(1)} s`)
   const closed = join(lib, 'exports')
   for (let d = 0; d < 60; d++) {
@@ -139,7 +150,7 @@ if (!flag('--no-synthetic')) {
 const mb = (n) => `${(n / 1024 / 1024).toFixed(0)} MB`
 console.log('| library | command | time | peak memory |\n| --- | --- | --- | --- |')
 for (const r of results) {
-  console.log(`| ${r.name} | first sync now | ${r.first.ms.toFixed(0)} ms | ${mb(r.first.rss)} |${r.first.failed ? ` failed: ${r.first.failed.replaceAll('|', '/')} |` : ''}`)
+  console.log(`| ${r.name} | first sync now, once (${r.first.files} files at the target after it) | ${r.first.ms.toFixed(0)} ms | |${r.first.failed ? ` failed: ${r.first.failed.replaceAll('|', '/')} |` : ''}`)
   for (const [cmd, m] of Object.entries(r.rows)) console.log(`| ${r.name} | ${cmd} | ${m.ms.toFixed(0)} ms | ${mb(m.rss)} |${m.failed ? ` failed: ${m.failed.replaceAll('|', '/')} |` : ''}`)
 }
 for (const r of results.filter((x) => x.closed)) {
