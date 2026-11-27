@@ -3,6 +3,7 @@
 // package, the examples under plugins/ and the scaffold's templates included, and leaves alone the files
 // eslint.config.js lists as touching only what is no library's, a package reading its own files, tests
 // and scripts.
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ESLint } from 'eslint'
@@ -96,5 +97,28 @@ describe('the storage door', () => {
     for (const file of ['packages/cli/test/a.test.ts', 'packages/plugin-sync/test/story.test.ts', 'plugins/space/scripts/build.mjs', 'scripts/bench-line.mjs']) {
       expect(await doorFaults(stat, file), file).toEqual([])
     }
+  })
+
+  it('leaves the Mac app no look at a library but through storage: each line that reaches files itself reaches what is no library’s', () => {
+    const sources = join(root, 'app/Sources/PneumaBase')
+    const reaches = /FileManager\.default\.\w+\(|\bfm\.\w+\(|getxattr\(|listxattr\(|contentsOf:|FileHandle\(for|opendir\(|downloadAddress\(of:/
+    const mayReach: [file: string, line: RegExp][] = [
+      // The app's own Node and command line, its preferences and log under $PNEUMA_BASE_HOME/app.
+      ['Config.swift', /atPath: (node|cli)\)|Data\(contentsOf: url\(config\)\)|at: config\.appDir|FileHandle\(forWritingTo: url\)/],
+      // The link to the launcher in a folder on PATH.
+      ['Settings.swift', /./],
+      ['MainWindow.swift', /Bundle\.main/],
+      // A file dropped from outside, before it comes in.
+      ['App.swift', /getxattr\(url\.path|downloadAddress\(of: url\)/],
+      // The provider's input.
+      ['Watcher.swift', /input\.write\(contentsOf:/],
+    ]
+    const direct = readdirSync(sources).flatMap((file) =>
+      readFileSync(join(sources, file), 'utf8')
+        .split('\n')
+        .map((line, i) => ({ at: `${file}:${i + 1}`, file, line: line.trim() }))
+        .filter(({ file, line }) => !line.startsWith('//') && reaches.test(line) && !mayReach.some(([f, ok]) => f === file && ok.test(line))),
+    )
+    expect(direct.map(({ at, line }) => `${at} ${line}`)).toEqual([])
   })
 })

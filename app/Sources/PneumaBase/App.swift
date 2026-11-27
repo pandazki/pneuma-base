@@ -55,8 +55,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     guard config.complete else { return alert("这份 Pneuma Base 不完整", detail: "应用里缺少它自带的 Node 或命令行，什么都做不了。重新下载一份，或用 app/build.sh 重新构建。") }
     if Config.translocated { warnTranslocated() }
     Task { await installLauncher() }
-    switchTo(current)
-    if !hasLibrary { Task { await showWelcome() } } else if CommandLine.arguments.contains("--open") { openWindow() }
+    Task {
+      await switchTo(current)
+      if !hasLibrary { await showWelcome() } else if CommandLine.arguments.contains("--open") { openWindow() }
+    }
   }
 
   /// Points the launcher at this app's own Node and command line, at every launch: what connected
@@ -118,7 +120,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
   // MARK: Current library
 
-  private var hasLibrary: Bool { current.map(isLibrary) ?? false }
+  /// The current library, as storage confirmed it when the app switched to it.
+  private var hasLibrary = false
 
   private func remember(_ dir: URL) {
     let path = dir.standardizedFileURL.path
@@ -127,15 +130,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     prefs.save(config)
   }
 
-  /// One server and one watcher, for the current library only.
-  private func switchTo(_ library: URL?) {
+  /// One server and one watcher, for the current library only, once storage says the folder is one.
+  private func switchTo(_ library: URL?) async {
     if server?.library == library { return }
     watcher?.stop()
     server?.stop()
     watcher = nil
     server = nil
+    hasLibrary = false
     setWaiting(0)
-    guard let library, isLibrary(library) else { return tray.forget() }
+    guard let library, await isLibrary(library, config: config) else { return tray.forget() }
+    // Another switch may have come while storage was asked.
+    guard current?.standardizedFileURL.path == library.standardizedFileURL.path, server == nil else { return }
+    hasLibrary = true
     let server = Server(library: library, config: config)
     server.onAddress = { [weak self] url in
       self?.window.serverReady(url)
@@ -151,13 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   /// The watcher of the current library: the provider it uses, as `storage list` names it, started in
   /// its long-lived mode and subscribed from the cursor kept for this library.
   private func watch(_ library: URL) async {
-    let r = await runCli(["storage", "list", "--library", library.path, "--json"], in: library, config: config)
-    let data = r.json?["data"] as? [String: Any]
-    let used = (data?["library"] as? [String: Any])?["provider"] as? String
-    let providers = data?["providers"] as? [[String: Any]] ?? []
-    guard let program = providers.first(where: { $0["name"] as? String == used })?["executable"] as? String else {
-      return Log.line("watcher: no provider for \(library.lastPathComponent): \(r.err.prefix(200)) \(String(decoding: r.out.prefix(200), as: UTF8.self))")
-    }
+    guard let program = await providerProgram(for: library, config: config) else { return }
     guard server?.library == library, watcher == nil else { return }
     let watcher = Watcher(library: library, config: config, provider: program, cursor: prefs.cursors?[library.standardizedFileURL.path], recordsOwnerFiles: prefs.watchesOwnerFiles)
     watcher.onRecorded = { [weak self] registered, seen in self?.recorded(registered, seen) }
@@ -315,7 +316,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   /// A folder the owner chose: made a library if it is not one, kept by `provider` when one was chosen,
   /// then the main window on its home page.
   private func open(_ dir: URL, provider: String? = nil) async {
-    if !isLibrary(dir) {
+    if !(await isLibrary(dir, config: config)) {
       let r = await runCli(["init", dir.path, "--json"] + (provider.map { ["--provider", $0] } ?? []), in: dir.deletingLastPathComponent(), config: config)
       guard r.json?["outcome"] as? String == "done" else { return alert("没能把这个文件夹建成库", detail: (r.json?["text"] as? String) ?? r.err) }
       Log.line("app: made \(dir.lastPathComponent) a library with \((r.json?["data"] as? [String: Any])?["provider"] as? String ?? "?")")
@@ -323,7 +324,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     if window.isOpen, current != dir { window.close() }
     if current != dir { window.forgetRoute() }
     remember(dir)
-    switchTo(dir)
+    await switchTo(dir)
     welcome.close()
     openWindow()
   }
@@ -345,7 +346,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     Task {
       var placed: [String] = []
       for url in urls {
-        let r = await runCli(bringArgs(url, to: freePath(for: url.lastPathComponent, in: folder, of: library), in: library), in: library, config: config)
+        let r = await runCli(bringArgs(url, to: await freePath(for: url.lastPathComponent, in: folder, of: library), in: library), in: library, config: config)
         if r.json?["outcome"] as? String == "accepted", let path = r.json?["path"] as? String { placed.append(path) } else { Log.line("drop: \(url.lastPathComponent) not placed: \(r.err.prefix(200)) \(String(decoding: r.out.prefix(300), as: UTF8.self))") }
       }
       Log.line("drop (\(place)): placed \(placed)")
@@ -362,16 +363,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             "--brought", "--by", "owner", "--source", source, "--note", "拖进来的", "--json"]
   }
 
-  /// `<folder>/<name>`, or `<folder>/<name> 2.<ext>` and so on when that is taken, as Finder names copies.
-  private func freePath(for name: String, in folder: String, of library: URL) -> String {
-    let dir = library.appendingPathComponent(folder)
+  /// `<folder>/<name>`, or `<folder>/<name> 2.<ext>` and so on when that is taken, as Finder names copies:
+  /// the first that storage says holds nothing, asked a page of names at a time. Without an answer, the
+  /// name itself, and the put says what is there.
+  private func freePath(for name: String, in folder: String, of library: URL) async -> String {
     let base = (name as NSString).deletingPathExtension, ext = (name as NSString).pathExtension
-    var candidate = name, n = 2
-    while FileManager.default.fileExists(atPath: dir.appendingPathComponent(candidate).path) {
-      candidate = ext.isEmpty ? "\(base) \(n)" : "\(base) \(n).\(ext)"
-      n += 1
+    let named = { (n: Int) in "\(folder)/\(n == 1 ? name : ext.isEmpty ? "\(base) \(n)" : "\(base) \(n).\(ext)")" }
+    for first in stride(from: 1, to: 1000, by: Self.namesAsked) {
+      let places = (first..<first + Self.namesAsked).map(named)
+      guard let entries = await glance(places, in: library)?["entries"] as? [[String: Any]] else { break }
+      if let free = entries.first(where: { $0["kind"] as? String == "none" })?["place"] as? String { return free }
     }
-    return "\(folder)/\(candidate)"
+    return named(1)
+  }
+
+  /// How many names one look at a dropped file's place asks storage about.
+  private static let namesAsked = 50
+
+  /// Storage's `glance` of these places: through the watcher's provider when it runs, else a run of the provider's program.
+  private func glance(_ places: [String], in library: URL) async -> [String: Any]? {
+    if watcher?.library == library, let answer = await watcher?.ask("glance", ["places": places]) { return answer }
+    return await askStorage("glance", ["places": places], of: library, config: config)
   }
 
   /// Files or folders the owner picks after the page's 选择….
@@ -717,4 +729,21 @@ func processAge() -> TimeInterval {
   guard sysctl(&mib, 4, &info, &size, nil, 0) == 0 else { return 0 }
   let start = info.kp_proc.p_starttime
   return Date().timeIntervalSince1970 - (Double(start.tv_sec) + Double(start.tv_usec) / 1_000_000)
+}
+
+/// The address macOS recorded when a file outside the library was downloaded, read before it is
+/// brought in: the first entry of `com.apple.metadata:kMDItemWhereFroms`, a property list of strings,
+/// or plain text if written as such.
+func downloadAddress(of url: URL) -> String? {
+  let name = "com.apple.metadata:kMDItemWhereFroms"
+  let size = getxattr(url.path, name, nil, 0, 0, 0)
+  guard size > 0 else { return nil }
+  var data = Data(count: size)
+  let read = data.withUnsafeMutableBytes { getxattr(url.path, name, $0.baseAddress, size, 0, 0) }
+  guard read > 0 else { return nil }
+  if let list = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String] {
+    return list.first { !$0.isEmpty }
+  }
+  let text = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+  return text.isEmpty ? nil : text
 }

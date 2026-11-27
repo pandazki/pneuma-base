@@ -49,8 +49,7 @@ final class Watcher {
 
   init(library: URL, config: Config, provider: String, cursor: String?, recordsOwnerFiles: Bool) {
     self.library = library
-    // The kernel speaks to storage at the real path of the folder, so the watcher does too.
-    self.root = realpath(library.path, nil).map { p in defer { free(p) }; return String(cString: p) } ?? library.path
+    self.root = realPath(library)
     self.config = config
     self.provider = provider
     self.cursor = cursor
@@ -246,7 +245,7 @@ final class Watcher {
     var registered: [String] = [], seen: [String] = []
     for path in unowned.sorted() + small {
       var args = ["--library", library.path, "--session", config.session, "put", path, "--brought", "--by", "owner", "--observed", "--note", "自动登记", "--json"]
-      if let from = downloadAddress(of: URL(fileURLWithPath: root + "/" + path)) { args += ["--source", from] }
+      if let from = await whereFrom(path) { args += ["--source", from] }
       let r = await runCli(args, in: library, config: config)
       // Someone registered it between the look and this put: the ledger keeps their record and only notes ours.
       let notes = (r.json?["notes"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }
@@ -263,6 +262,13 @@ final class Watcher {
     if !touched.isEmpty { schedule(after: Self.quiet) }
   }
 
+  /// The address macOS recorded when a file in the library was downloaded, as storage's `macos` facet gives it.
+  private func whereFrom(_ place: String) async -> String? {
+    let entries = await ask("glance", ["places": [place], "facets": ["macos"]])?["entries"] as? [[String: Any]]
+    let macos = (entries?.first?["facets"] as? [String: Any])?["macos"] as? [String: Any]
+    return (macos?["where_from"] as? [String])?.first { !$0.isEmpty }
+  }
+
   /// The paths a section of the ledger's standing page lists: each entry opens the thing's panel.
   private static func paths(_ blocks: [[String: Any]], titled title: String) -> [String] {
     blocks.filter { $0["kind"] as? String == "section" && $0["title"] as? String == title }
@@ -273,20 +279,4 @@ final class Watcher {
         return ((cell?["link"] as? [String: Any])?["params"] as? [String: Any])?["path"] as? String ?? cell?["text"] as? String
       }
   }
-}
-
-/// The address macOS recorded when the file was downloaded: the first entry of
-/// `com.apple.metadata:kMDItemWhereFroms`, a property list of strings, or plain text if written as such.
-func downloadAddress(of url: URL) -> String? {
-  let name = "com.apple.metadata:kMDItemWhereFroms"
-  let size = getxattr(url.path, name, nil, 0, 0, 0)
-  guard size > 0 else { return nil }
-  var data = Data(count: size)
-  let read = data.withUnsafeMutableBytes { getxattr(url.path, name, $0.baseAddress, size, 0, 0) }
-  guard read > 0 else { return nil }
-  if let list = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String] {
-    return list.first { !$0.isEmpty }
-  }
-  let text = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-  return text.isEmpty ? nil : text
 }
