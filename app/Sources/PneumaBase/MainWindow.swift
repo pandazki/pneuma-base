@@ -231,9 +231,37 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
       webView?.setRegions(drag: rects(body["drag"]), noDrag: rects(body["nodrag"]))
     case "glass":
       glass.place(body["panes"], postedAt: body["at"] as? Double)
+    case "confirm":
+      guard let id = body["id"] as? Int, let text = body["text"] as? String, let act = body["act"] as? String else { return }
+      confirm(id: id, text: text, act: act, danger: body["danger"] as? Bool ?? false)
     default:
       onPageMessage?(body)
     }
+  }
+
+  /// The page's question before an act it cannot undo, as the system's sheet on the window. Return
+  /// does not do a dangerous act; Escape and 取消 do nothing. The page hears `{ confirmed: { id, ok } }`.
+  private func confirm(id: Int, text: String, act: String, danger: Bool) {
+    guard let window else { return tell(["confirmed": ["id": id, "ok": false]]) }
+    let alert = NSAlert()
+    alert.messageText = text
+    let button = alert.addButton(withTitle: act)
+    alert.addButton(withTitle: "取消").keyEquivalent = "\u{1b}"
+    if danger {
+      button.hasDestructiveAction = true
+      button.keyEquivalent = ""
+    }
+    Log.line("sheet: \(text) | \(act)\(danger ? " (danger)" : "") | 取消")
+    alert.beginSheetModal(for: window) { [weak self] response in
+      self?.tell(["confirmed": ["id": id, "ok": response == .alertFirstButtonReturn]])
+    }
+  }
+
+  /// The test hooks' click on the sheet's `n`-th button, from 0.
+  func answerSheet(_ n: Int) {
+    guard let window, let sheet = window.attachedSheet else { return Log.line("sheet: none to answer") }
+    window.endSheet(sheet, returnCode: NSApplication.ModalResponse(rawValue: NSApplication.ModalResponse.alertFirstButtonReturn.rawValue + n))
+    Log.line("sheet: answered \(n)")
   }
 
   private func rects(_ value: Any?) -> [CGRect] {

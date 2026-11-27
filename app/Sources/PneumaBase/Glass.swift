@@ -1,10 +1,6 @@
 import AppKit
 import WebKit
 
-/// Whether the system's glass is drawn. It is not when the owner's settings reduce transparency or
-/// raise contrast, or a test hook says so; the window and the menu bar panel then fall back to
-/// opaque grounds with a border, and their pages too (`data-transparency`, because this WebKit does
-/// not answer prefers-reduced-transparency).
 extension WKWebView {
   /// Stops the web view drawing its own ground, so the system's glass under it shows where the page
   /// draws nothing. This is WebKit's private `drawsBackground` key (KVC reaches `_setDrawsBackground:`):
@@ -18,6 +14,10 @@ extension WKWebView {
   }
 }
 
+/// Whether the system's glass is drawn. It is not when the owner's settings reduce transparency or
+/// raise contrast, or a test hook says so; the window and the menu bar panel then fall back to
+/// opaque grounds with a border, and their pages too (`data-transparency`, because this WebKit does
+/// not answer prefers-reduced-transparency).
 @MainActor
 enum Transparency {
   /// The test hooks' stand-in for the system's setting, which they must not change.
@@ -397,17 +397,20 @@ private func glassReport(_ glass: GlassContainer, tray: TrayFrame, to url: URL) 
 }
 
 /// A picture of one of the app's own windows as the screen shows it, glass and all: the window server
-/// composites the glass, so a view's own drawing cannot show it. `CGWindowListCreateImage` is marked
-/// obsolete in the SDK for ScreenCaptureKit, which lists windows only with the screen-recording
-/// permission; for the app's own window this call needs none, so it is looked up by name.
+/// composites the glass, so a view's own drawing cannot show it. `CGWindowListCreateImageFromArray`
+/// is marked obsolete in the SDK for ScreenCaptureKit, which lists windows only with the
+/// screen-recording permission; for the app's own windows this call needs none, so it is looked up by name.
 @MainActor
 func captureWindow(_ window: NSWindow?, to url: URL) {
-  typealias Create = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
-  guard let window, window.isVisible, let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage") else {
+  typealias Create = @convention(c) (CGRect, CFArray, UInt32) -> Unmanaged<CGImage>?
+  guard let window, window.isVisible, let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImageFromArray") else {
     return Log.line("capture: no window")
   }
-  // This window alone (including-window), without its shadow, at the screen's resolution.
-  let image = unsafeBitCast(symbol, to: Create.self)(.null, 1 << 3, UInt32(window.windowNumber), 1 << 0 | 1 << 3)?.takeRetainedValue()
+  // This window and its sheet, if it has one: the app's own windows only, nothing else on screen.
+  var ids = [window, window.attachedSheet].compactMap { $0 }.map { UnsafeRawPointer(bitPattern: UInt($0.windowNumber)) }
+  let list = ids.withUnsafeMutableBufferPointer { CFArrayCreate(nil, $0.baseAddress, $0.count, nil) }
+  // Without the shadow, at the screen's resolution.
+  let image = list.flatMap { unsafeBitCast(symbol, to: Create.self)(.null, $0, 1 << 0 | 1 << 3)?.takeRetainedValue() }
   guard let image, let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { return Log.line("capture: failed") }
   try? png.write(to: url)
   Log.line("capture: wrote \(url.lastPathComponent)")

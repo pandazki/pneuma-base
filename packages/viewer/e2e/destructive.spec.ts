@@ -1,5 +1,6 @@
 // C6: purging the archive asks first; cancelling, by the button or Escape, changes nothing; confirmed,
-// the archive is emptied and the purge is recorded. The dialog keeps the keyboard inside it while open.
+// the archive is emptied and the purge is recorded. The dialog keeps the keyboard inside it while open;
+// in the app the question is the system's sheet instead.
 // That a server started in an agent session refuses it is packages/viewer/test/server.test.ts's.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -54,4 +55,34 @@ test('purging the archive asks first; cancelled, nothing changes; confirmed, it 
   expect(existsSync(join(lib, '_archive'))).toBe(false)
   await nav.getByRole('button', { name: '活动' }).click()
   await expect(main.getByRole('listitem').filter({ hasText: '主人面的操作 archive purge' }).getByRole('img', { name: '主人' })).toBeVisible()
+})
+
+test('in the app the question is the system’s sheet: 取消 changes nothing, the act empties the archive', async ({ page, pb }) => {
+  const lib = archivedLibrary(pb)
+  const { url } = await pb.view(lib)
+  await page.addInitScript(() => {
+    const sent: unknown[] = []
+    ;(window as unknown as { sent: unknown[] }).sent = sent
+    ;(window as unknown as { webkit: unknown }).webkit = { messageHandlers: { shell: { postMessage: (m: unknown) => sent.push(m) } } }
+  })
+  await page.goto(`${url}&shell=mac`)
+  const main = page.getByRole('main')
+  const head = main.locator('.page-tools')
+  const asked = () => page.evaluate(() => (window as unknown as { sent: { type: string }[] }).sent.filter((m) => m.type === 'confirm'))
+  const answer = (id: number, ok: boolean) => page.evaluate(([id, ok]) => window.dispatchEvent(new CustomEvent('pneuma-shell', { detail: { confirmed: { id, ok } } })), [id, ok] as const)
+  await openShared(page, '文件', '归档区')
+  await expect(main.getByRole('row', { name: /^drafts\// })).toBeVisible()
+
+  await fromMenu(head, '清空归档区')
+  await expect.poll(asked).toEqual([{ type: 'confirm', id: 1, text: '归档区里的东西会全部被删掉，不能撤回。', act: '清空归档区', danger: true }])
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await answer(1, false)
+  await expect(main.getByRole('row', { name: /^drafts\// })).toBeVisible()
+  expect(readFileSync(join(lib, '_archive/drafts/old.md'), 'utf8')).toBe('一份不要了的草稿\n')
+
+  await fromMenu(head, '清空归档区')
+  await expect.poll(async () => (await asked()).length).toBe(2)
+  await answer(2, true)
+  await expect(main.getByText('归档区是空的')).toBeVisible()
+  expect(existsSync(join(lib, '_archive'))).toBe(false)
 })

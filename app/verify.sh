@@ -314,11 +314,37 @@ grep -qx "window: opaque" "$work/glass-4.txt" && grep -q "^pane: .* hidden$" "$w
 hook glass:normal; sleep 1
 glass_report glass-5.txt >/dev/null
 grep -qx "window: clear" "$work/glass-5.txt" && grep -qx "tray: glass r20" "$work/glass-5.txt" && grep -q "^page glass: blur" "$work/glass-5.txt" && glass_follows glass-5.txt && ok "back to glass: $(sed -n 's/^page glass: //p' "$work/glass-5.txt")" || fail "back to glass: $(cat "$work/glass-5.txt")"
+# A question before an act that cannot be undone is the system's sheet on the window: 断开 an agent, then 取消.
+hook "route:view=agents"; sleep 1
+agents_before=$(pb --library "$lib" agent list 2>&1)
+mark
+# 断开 is in a row's 「···」: open each until one holds it, and choose it.
+page_eval '(async () => { const wait = (ms) => new Promise((r) => setTimeout(r, ms)); window.__pbAsked = "none"; for (const more of document.querySelectorAll("main [aria-label=更多]")) { more.click(); await wait(200); const item = [...document.querySelectorAll("[role=menuitem]")].find((m) => m.textContent.includes("断开")); if (item) { item.click(); window.__pbAsked = "asked"; return } more.click(); await wait(100) } })(), "started"' >/dev/null
+sleep 2
+asked=$(page_eval 'window.__pbAsked')
+if [ "$asked" = asked ] && logged "sheet: " && since_mark | grep -q "sheet: 断开后，.* | 断开 (danger) | 取消$"; then
+  ok "断开 asks with the system's sheet: $(since_mark | sed -n 's/^.*sheet: //p' | head -1)"
+else
+  fail "断开's sheet ($asked): $(since_mark | grep 'sheet:' | tail -2)"
+fi
+if [ -n "$shots" ]; then
+  mkdir -p "$shots"
+  hook glass:backdrop
+  for look in light dark; do hook "$look"; sleep 1.2; hook "glass:capture:$shots/glass-sheet-$look.png"; wait_for "capture: wrote glass-sheet-$look.png" 5 || echo "     (no picture glass-sheet-$look)"; done; hook system
+  hook glass:backdrop:off
+fi
+hook "sheet:1"
+logged "sheet: answered 1" && sleep 1.5 && [ "$(pb --library "$lib" agent list 2>&1)" = "$agents_before" ] && ok "取消 on the sheet: nothing changed, agent list is as it was" || fail "取消 on the sheet: $(since_mark | grep 'sheet:' | tail -2) $(pb --library "$lib" agent list 2>&1 | head -5)"
+hook "route:"; sleep 1
+
 if [ -n "$shots" ]; then
   mkdir -p "$shots"
   # $1 the picture's name, $2 the hook (capture or capture-tray), $3 what to do in the page before, $4 after.
   shoot() { for look in light dark; do hook "$look"; [ -n "${3:-}" ] && page_eval "$3" >/dev/null; sleep 1.2; hook "glass:$2:$shots/glass-$1-$look.png"; wait_for "capture: wrote glass-$1-$look.png" 5 || echo "     (no picture glass-$1-$look)"; [ -n "${4:-}" ] && page_eval "$4" >/dev/null; sleep 0.4; done; hook system; }
+  # The icon's click toggles the panel, which closes whenever another window takes the keyboard.
+  open_tray() { mark; hook tray; logged "tray: shown" 2 || { sleep 0.5; hook tray; logged "tray: shown" 3; }; sleep 0.5; }
   hook glass:backdrop; sleep 0.5
+  open_tray
   shoot tray capture-tray
   shoot window capture
   page_eval 'document.querySelector("[aria-label=收起侧栏]").click(), "folded"' >/dev/null; sleep 1
@@ -333,6 +359,7 @@ if [ -n "$shots" ]; then
   hook "route:"; sleep 1
   hook glass:reduce; sleep 0.5
   shoot reduced capture
+  open_tray
   shoot tray-reduced capture-tray
   hook glass:normal
   hook glass:backdrop:off
