@@ -129,7 +129,9 @@ describe('ledger export', () => {
     const r = ok(owner(['ledger', 'export', '--to', to]))
     expect(r.stdout).toContain('导出到')
     const rows = readFileSync(to, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l) as Record<string, string>)
-    expect(rows.map((x) => [x.id, x.at, x.text, x.whose])).toEqual(shown.map((x) => [x.key, x.at, x.text, x.whose]))
+    // The same sentence as the activity's row, but a record spells out the usual origin the page leaves unsaid.
+    expect(rows.map((x) => [x.id, x.at, x.text?.replace('（做出来的）', ''), x.whose])).toEqual(shown.map((x) => [x.key, x.at, x.text, x.whose]))
+    expect(rows.filter((x) => x.kind === 'item.enter' && x.text?.includes('（做出来的）')).length).toBeGreaterThan(0)
     expect(Object.keys(rows[0] as object)).toEqual(['id', 'at', 'actor', 'actor_kind', 'grant', 'session', 'kind', 'path', 'text', 'whose', 'request'])
     const put = rows.find((x) => x.kind === 'item.enter' && x.path === 'pay/integration.md')
     expect(put).toMatchObject({ actor: 'codex', actor_kind: 'agent', grant: 'codex', session: 'session-b', whose: 'agent', request: '' })
