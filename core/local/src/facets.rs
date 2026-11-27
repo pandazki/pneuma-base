@@ -42,7 +42,9 @@ pub trait Source: Sync {
     /// asked for.
     fn components(&self, _at: &At, _out: &mut Vec<(&'static str, String)>) {}
 
-    fn facet(&self, at: &At) -> Option<Value>;
+    /// `wanted` is the facets asked for, which may name a field given only on request as
+    /// `<facet>.<field>`.
+    fn facet(&self, at: &At, wanted: &[String]) -> Option<Value>;
 }
 
 pub const SOURCES: [&dyn Source; 3] = [&FsSource, &MacosSource, &PlaceholderSource];
@@ -71,7 +73,7 @@ pub fn describe(
         {
             continue;
         }
-        if let Some(facet) = source.facet(at) {
+        if let Some(facet) = source.facet(at, wanted) {
             facets.push(source.name(), facet);
         }
     }
@@ -121,13 +123,19 @@ impl Source for FsSource {
         out.extend(at.stat.components());
     }
 
-    fn facet(&self, at: &At) -> Option<Value> {
-        Some(json!({
+    fn facet(&self, at: &At, wanted: &[String]) -> Option<Value> {
+        let mut facet = json!({
             "inode": at.stat.inode,
             "device": at.stat.device,
             "created": at.stat.created(),
             "mode": at.stat.mode,
-        }))
+        });
+        if wanted.iter().any(|w| w == "fs.path")
+            && let Some(path) = at.folder.path_of(at.place).to_str()
+        {
+            facet["path"] = json!(path);
+        }
+        Some(facet)
     }
 }
 
@@ -149,7 +157,7 @@ impl Source for MacosSource {
     }
 
     #[cfg(target_os = "macos")]
-    fn facet(&self, at: &At) -> Option<Value> {
+    fn facet(&self, at: &At, _wanted: &[String]) -> Option<Value> {
         let path = at.c_path();
         let names = crate::sys::xattr_names(&path);
         let has = |name: &str| names.iter().any(|n| n == name.as_bytes());
@@ -175,7 +183,7 @@ impl Source for MacosSource {
     }
 
     #[cfg(not(target_os = "macos"))]
-    fn facet(&self, _at: &At) -> Option<Value> {
+    fn facet(&self, _at: &At, _wanted: &[String]) -> Option<Value> {
         None
     }
 }
@@ -216,7 +224,7 @@ impl Source for PlaceholderSource {
         cfg!(target_os = "macos")
     }
 
-    fn facet(&self, at: &At) -> Option<Value> {
+    fn facet(&self, at: &At, _wanted: &[String]) -> Option<Value> {
         if !at.stat.dataless() {
             return None;
         }

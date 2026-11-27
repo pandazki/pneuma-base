@@ -1,0 +1,374 @@
+/* ---- files: the path bar, list or icons, the tiles, renaming in place, the browser's own preview ---- */
+
+/* The path bar takes the title's place: back and forward, then the folders from the root, the last one the title. */
+.path-bar {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 6px;
+}
+.path-steps {
+  display: inline-flex;
+  flex: none;
+  margin-left: -6px;
+}
+.path-steps > .icon-btn {
+  width: 24px;
+  height: 24px;
+}
+.path-steps > .icon-btn:disabled {
+  opacity: 0.35;
+}
+.path-crumbs {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+.path-crumbs > li {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+}
+/* The folder shown gives way last: the folders above it are cut first. */
+.path-crumbs > li:last-child {
+  min-width: 3em;
+  flex-shrink: 0.15;
+}
+.path-crumb {
+  min-width: 0;
+  overflow: hidden;
+  padding: 1px 4px;
+  border-radius: var(--radius-item);
+  color: var(--ink-3);
+  font-size: 15px;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+.path-crumb:hover {
+  background: var(--chip);
+  color: var(--ink);
+}
+.path-sep {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--ink-4);
+}
+.path-crumbs h1 {
+  overflow: hidden;
+  padding: 1px 4px;
+  color: var(--ink-strong);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html[data-window='inactive'] .path-crumbs h1 {
+  color: var(--ink-2);
+}
+
+/* List or icons, and the sort: a quiet icon, then the two-icon switch, as the view switch is drawn. */
+.look-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.look-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: calc(var(--radius-control) + 2px);
+  background: var(--wash);
+}
+.look-switch > .icon-btn {
+  width: 28px;
+  height: 24px;
+}
+.look-switch > .icon-btn[aria-checked='true'] {
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  color: var(--ink);
+}
+
+/* A column head that sorts: its label, an arrow beside the one in effect. */
+.sort-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: -2px -4px;
+  padding: 2px 4px;
+  border-radius: var(--radius-item);
+  color: inherit;
+  font: inherit;
+  transition: background-color 120ms ease;
+}
+.sort-head:hover {
+  background: var(--chip);
+}
+.sort-head[data-on] {
+  color: var(--ink-2);
+}
+.sort-head > svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* A file list's rows are selected rather than followed: no pointer hand, and the selection a soft pill. */
+.table-card[data-files-table] tr[data-key] {
+  cursor: default;
+}
+.table-card[data-files-table] tr[data-key]:hover td {
+  background: var(--row-hover);
+}
+.table-card[data-files-table] tr[aria-selected='true'] td {
+  background: var(--select);
+}
+.table-card[data-files-table] tbody {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ---- the icons ---- */
+
+.icons-card {
+  padding: 4px 0 0;
+}
+.icons {
+  position: relative;
+  padding: 10px 10px 12px;
+  outline: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.icons-group + .icons-group {
+  margin-top: 8px;
+}
+.icons-group-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 8px 4px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 18px;
+}
+.icons-group-name > svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.icons-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 4px;
+}
+.tile {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px 8px;
+  border-radius: var(--radius-card);
+  outline: none;
+  transition: background-color 120ms ease;
+}
+.tile[data-inert] {
+  opacity: 0.55;
+}
+.tile[aria-selected='true'] {
+  background: var(--select);
+}
+.tile:focus-visible {
+  box-shadow: 0 0 0 2px var(--focus);
+}
+.tile-art {
+  display: grid;
+  width: 96px;
+  height: 96px;
+  place-items: center;
+}
+.tile-art > img {
+  max-width: 96px;
+  max-height: 96px;
+  border-radius: 3px;
+  object-fit: contain;
+  pointer-events: none;
+}
+/* An image of the browser's own, or a thumbnail of the system's: a hairline so a white page shows its edge. */
+.tile-art[data-kind='file'] > img {
+  box-shadow: 0 0 0 0.5px var(--line-strong);
+}
+.tile-icon {
+  width: 56px;
+  height: 56px;
+  color: var(--ink-3);
+}
+.tile-art[data-kind='bundle'] .tile-icon {
+  color: var(--ink-2);
+}
+.tile-name {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 1px 6px;
+  border-radius: var(--radius-item);
+  color: var(--ink);
+  font-size: 12.5px;
+  line-height: 17px;
+  text-align: center;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.tile[aria-selected='true'] .tile-name {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+html[data-window='inactive'] .tile[aria-selected='true'] .tile-name {
+  background: var(--select);
+  color: var(--ink);
+}
+/* A state that is not the usual one: a dot of its tone at the art's corner; content kept elsewhere, a cloud. */
+.tile-badge {
+  position: absolute;
+  top: 12px;
+  right: calc(50% - 50px);
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--ink-3);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.tile-badge[data-tone='warn'] {
+  background: var(--warn);
+}
+.tile-badge[data-tone='bad'] {
+  background: var(--bad);
+}
+.tile-badge[data-tone='good'] {
+  background: var(--good);
+}
+.tile-badge[data-tone='info'] {
+  background: var(--info);
+}
+.tile-cloud {
+  position: absolute;
+  top: 82px;
+  right: calc(50% - 52px);
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  color: var(--ink-2);
+}
+.tile-cloud > svg {
+  width: 12px;
+  height: 12px;
+}
+.sweep {
+  position: absolute;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--focus) 12%, transparent);
+  box-shadow: inset 0 0 0 1px var(--focus);
+  pointer-events: none;
+}
+
+/* ---- renaming in place ---- */
+
+.rename-field {
+  width: 100%;
+  min-width: 80px;
+  margin: -3px 0;
+  padding: 2px 6px;
+  border-radius: var(--radius-item);
+  background: var(--surface);
+  box-shadow: var(--ring-field-focus);
+  color: var(--ink);
+  font-size: 12.5px;
+  line-height: 18px;
+  outline: none;
+}
+.tile .rename-field {
+  text-align: center;
+}
+
+/* ---- opening a conversation again: an icon after what names the scene ---- */
+
+.reopen.icon-btn {
+  width: 22px;
+  height: 22px;
+  margin: -3px 0 -3px 2px;
+  vertical-align: middle;
+}
+.reopen.icon-btn > svg {
+  width: 14px;
+  height: 14px;
+}
+.feed-row .reopen {
+  opacity: 0;
+}
+.feed-row:is(:hover, :focus-within) .reopen {
+  opacity: 1;
+}
+
+/* ---- the browser's own preview: the file in front, on a scrim, Space or Escape to close ---- */
+
+.quick-view {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 48px;
+  background: var(--scrim);
+}
+.quick-view-card {
+  display: flex;
+  width: min(880px, 100%);
+  max-height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-dialog);
+  background: var(--overlay);
+  box-shadow: var(--shadow-dialog);
+}
+.quick-view-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 16px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+.quick-view-head > span {
+  flex: 1;
+}
+.quick-view-body {
+  display: grid;
+  min-height: 160px;
+  overflow: auto;
+  padding: 0 16px 16px;
+  place-items: center;
+}
+.quick-view-body > * {
+  width: 100%;
+}
+.quick-view-body .tile-icon {
+  width: 96px;
+  height: 96px;
+}

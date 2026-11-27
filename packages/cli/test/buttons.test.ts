@@ -108,7 +108,7 @@ describe('the buttons that give each verb and command a place', () => {
     await press(held, '取回到新路径')
     expect(existsSync(join(sb.library, to))).toBe(true)
     await press(held, '清掉全部留存')
-    expect(await viewer.view('ledger.held')).toMatchObject({ subtitle: '0 份' })
+    expect(await viewer.view('ledger.held')).toMatchObject({ blocks: [{ kind: 'section', title: '换下的旧内容', count: 0 }] })
   })
 
   it('the config page installs a plugin on this machine from a directory, and uninstalls it', async () => {

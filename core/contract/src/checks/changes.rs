@@ -81,11 +81,14 @@ pub(super) fn changes_until(
 /// `cannot_say` for a period the system's journal cannot vouch for (events dropped under load),
 /// but not every time.
 fn reliably<T>(mut attempt: impl FnMut(usize) -> Option<T>) -> T {
-    const ATTEMPTS: usize = 5;
+    // Spread over about ten seconds: on a loaded machine the journal can be unsettled for a few
+    // seconds at a stretch, and attempts made back to back would all fall inside one such stretch.
+    const ATTEMPTS: usize = 8;
     for k in 0..ATTEMPTS {
         if let Some(done) = attempt(k) {
             return done;
         }
+        std::thread::sleep(std::time::Duration::from_millis(100 << k.min(5)));
     }
     panic!("cannot_say {ATTEMPTS} times in a row, from a provider whose describe says cursor: true")
 }

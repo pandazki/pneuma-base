@@ -5,31 +5,33 @@
 // first, the owner's acts marked and an agent's own not, with filters that count what they keep.
 import { renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DECIDED, DOING, expect, navTitles, relay, test, write } from './support.ts'
+import { DECIDED, DOING, expect, navTitles, openShared, relay, test, write } from './support.ts'
 
 test('scenes, standing and activity: what happened and what needs attention', async ({ page, pb }) => {
   const lib = relay(pb)
   const { url } = await pb.view(lib)
   await page.goto(url)
-  expect(await navTitles(page)).toEqual(['首页', '库', '活动', '统计', '场景', '状况', '留存', '文件', '归档区', 'Agent', '配置'])
+  expect(await navTitles(page)).toEqual(['首页', '库', '活动', '文件', 'Agent', '配置'])
   const nav = page.getByRole('navigation', { name: '导航' })
   const main = page.getByRole('main')
   const panel = page.getByRole('complementary', { name: '详情' })
   const title = panel.getByTestId('panel-title')
 
   // Scenes: each session with who, what it was doing and how many things; a row opens its page.
-  await nav.getByRole('button', { name: '场景' }).click()
+  await openShared(page, '活动', '场景')
   await expect(main.getByRole('heading', { level: 1, name: '场景' })).toBeVisible()
   const sceneRow = (text: string) => main.getByRole('listitem').filter({ hasText: text })
-  await expect(sceneRow(DOING)).toContainText('claude-code')
+  await expect(sceneRow(DOING).getByRole('img', { name: /^claude-code/ })).toBeVisible()
   await expect(sceneRow(DOING)).toContainText('放入 6 样')
-  await expect(sceneRow('把支付服务接进电子书小店')).toContainText('codex')
+  await expect(sceneRow('把支付服务接进电子书小店').getByRole('img', { name: /^codex/ })).toBeVisible()
   await expect(sceneRow('主人面的操作')).toContainText('grant issue')
   await sceneRow(DOING).getByRole('link').click()
   await expect(title).toHaveText(DOING)
-  for (const label of ['时长', '放入', '依据', '决定']) await expect(panel.getByText(label, { exact: true })).toBeVisible()
+  // Only the figures that are not nothing; a session of under a minute does not say how long it took.
+  for (const label of ['放入', '依据', '决定']) await expect(panel.getByText(label, { exact: true })).toBeVisible()
   await expect(panel.locator('.stat').filter({ hasText: '放入' })).toContainText('6')
-  const happened = panel.getByRole('region', { name: '这次会话里发生的' })
+  // The page is the scene, so what happened in it needs no heading of its own.
+  const happened = panel.locator('.feed')
   await expect(happened).toContainText(DECIDED)
   await expect(happened.getByRole('listitem').filter({ hasText: '放入' })).toHaveCount(6)
   await happened.getByRole('listitem').filter({ hasText: '放入 payments/comparison.md' }).getByRole('link').click()
@@ -38,7 +40,7 @@ test('scenes, standing and activity: what happened and what needs attention', as
   await expect(title).toHaveText(DOING)
 
   // Standing: nothing yet; a file edited in place in the Finder appears at the page's next fetch.
-  await nav.getByRole('button', { name: '状况' }).click()
+  await openShared(page, '库', '状况')
   await panel.getByRole('button', { name: '关闭详情' }).click()
   await expect(main.getByText('没有要处理的事')).toBeVisible()
   writeFileSync(join(lib, 'payments/sources/stripe-pricing.html'), '<html>Stripe pricing: 3.4% now</html>')
@@ -65,8 +67,8 @@ test('scenes, standing and activity: what happened and what needs attention', as
   await panel.getByRole('button', { name: '关闭详情' }).click()
   const rows = main.getByRole('listitem')
   await expect(rows.first()).toContainText('payments/integration-notes.md')
-  await expect(rows.first()).toContainText('codex')
-  await expect(rows.filter({ hasText: '主人面的操作 grant issue' }).first()).toContainText('主人做的')
+  await expect(rows.first().getByRole('img', { name: /^codex/ })).toBeVisible()
+  await expect(rows.filter({ hasText: '主人面的操作 grant issue' }).first().getByRole('img', { name: '主人' })).toBeVisible()
   // An agent acting on its own is the ordinary case, and goes unmarked.
   await expect(main.getByText('自己做的')).toHaveCount(0)
   const who = main.getByRole('radiogroup', { name: '谁做的' })

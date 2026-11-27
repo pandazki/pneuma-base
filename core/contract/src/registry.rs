@@ -501,6 +501,7 @@ pub const CHECKS: &[Check] = &[
     ),
     // The local folder's facets and token
     check!(local::the_fs_facet_is_always_there, ["7.fs"]),
+    check!(local::the_fs_path_comes_when_asked, ["7.fs.path", "3.9.2"]),
     check!(local::the_macos_facet_reads_its_attributes, ["7.macos"]),
     check!(
         local::the_token_moves_with_size_mtime_ctime_and_inode,

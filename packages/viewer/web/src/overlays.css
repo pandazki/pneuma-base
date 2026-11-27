@@ -369,6 +369,14 @@
 .menu-item[data-lit] {
   color: var(--ink);
 }
+.menu-item[data-danger],
+.menu-item[data-danger] > svg {
+  color: var(--bad);
+}
+.menu-blank {
+  width: 15px;
+  flex: none;
+}
 .menu-item[data-lit] > svg {
   color: var(--ink);
 }

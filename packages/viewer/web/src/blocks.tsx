@@ -1,18 +1,21 @@
 // One renderer per kind of block. A block draws itself from its data alone; links, actions and
 // parameters go to the shell through the environment.
-import type { Action, Block, Link, Paging, TableRow, Tone } from '@pneuma-base/kernel'
-import { ChevronRight, CircleAlert, CircleCheck, CircleHelp, ExternalLink, Inbox, Info, TriangleAlert, type LucideIcon } from 'lucide-react'
+import type { Block, Cell, Link, Paging, SortKey, TableRow, Tone } from '@pneuma-base/kernel'
+import { ArrowDown, ArrowUp, ChevronRight, CircleAlert, CircleCheck, CircleHelp, ExternalLink, Folder, Inbox, Info, TriangleAlert, type LucideIcon } from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { api, outsideUrl } from './api'
+import { ActorBadge } from './pieces/actor'
 import { AsksView } from './pieces/asks'
 import { ChartView } from './pieces/chart'
 import { FeedView } from './pieces/feed'
 import { Pager, turns } from './pieces/pager'
 import { StatsView } from './pieces/stats'
 import { TreeView } from './pieces/tree'
-import { ActionButton, CellView, Moment, TagView, wantsTab } from './cells'
+import { ActionBar, InlineAction, placeActions } from './actions'
+import { CellView, Moment, TagView, wantsTab } from './cells'
 import { ViewIcon } from './chrome'
 import { useEnv } from './env'
+import { IconGrid, placed, RenameField, useFiles } from './files'
 import { CustomView } from './frame'
 import { fitColumns, naturalColumns, textRoom } from './measure'
 import { DropView, StepsView } from './steps'
@@ -21,20 +24,30 @@ import { localMoments } from './time'
 export const sameLink = (a: Link | null, b: { view: string; params: Record<string, string> } | null) =>
   a !== null && b !== null && a.view === b.view && JSON.stringify(Object.entries(a.params).sort()) === JSON.stringify(Object.entries(b.params).sort())
 
-function ActionRow({ actions, small = false }: { actions: Action[]; small?: boolean }) {
-  if (actions.length === 0) return null
+/** What a section is for, on demand: an ⓘ beside its title that says it in a tooltip, and to a screen reader as the section's description. */
+function About({ text, title }: { text: string; title: string }) {
   return (
-    <div className="actions">
-      {actions.map((a, i) => (
-        <ActionButton key={`${a.label}-${i}`} action={a} small={small} />
-      ))}
-    </div>
+    <span className="about" role="img" tabIndex={0} aria-label={`${title}：${text}`} data-tip={text}>
+      <Info strokeWidth={2} aria-hidden />
+    </span>
   )
 }
 
+/**
+ * A section: its title with its count and, on demand, what it is for; its actions in its head, but an
+ * action of one sentence written in place, before its blocks. One that has nothing for the person now
+ * is not drawn, unless it was on screen when it came to have nothing: what was just done there, such
+ * as an answer folded into a receipt, stays in sight until the page is left.
+ */
 function SectionView({ block }: { block: Extract<Block, { kind: 'section' }> }) {
   const [open, setOpen] = useState(block.collapse !== 'closed')
+  // The title it was last drawn with: the same place on another page is another section.
+  const shownAs = useRef(block.normal ? null : block.title)
+  if (!block.normal) shownAs.current = block.title
+  if (block.normal && shownAs.current !== block.title) return null
   const count = block.count !== null ? <span className="count">{block.count}</span> : null
+  const { inline } = placeActions(block.actions)
+  const headed = block.actions.filter((a) => !inline.includes(a))
   return (
     <section className="section" aria-label={block.title}>
       <div className="section-head">
@@ -45,16 +58,19 @@ function SectionView({ block }: { block: Extract<Block, { kind: 'section' }> }) 
               {block.title}
             </button>
             {count}
+            {block.about ? <About text={block.about} title={block.title} /> : null}
           </h3>
         ) : (
           <h3>
             {block.title}
             {count}
+            {block.about ? <About text={block.about} title={block.title} /> : null}
           </h3>
         )}
-        <ActionRow actions={block.actions} small />
+        <ActionBar actions={headed} />
       </div>
       {open && block.note ? <p className="section-note">{localMoments(block.note)}</p> : null}
+      {open ? inline.map((a, i) => <InlineAction key={`${a.label}-${i}`} action={a} />) : null}
       {open ? <Blocks blocks={block.blocks} /> : null}
     </section>
   )
@@ -83,24 +99,55 @@ function useFontsReady(): boolean {
   return ready
 }
 
+/** A cell with something to show: not empty, and not the usual state, which goes unsaid. */
+const says = (cell: Cell | undefined) => cell !== undefined && cell.normal !== true && (cell.text !== '' || cell.tag !== undefined || cell.actor !== undefined || cell.at !== undefined || cell.icon !== undefined)
+
+/**
+ * The table as the page draws it: a cell in its usual state left empty, a column with nothing else in
+ * it left out, and rows of a group brought together under it, in the order of each group's first row.
+ */
+function drawn(block: Extract<Block, { kind: 'table' }>): Extract<Block, { kind: 'table' }> {
+  const columns = block.columns.filter((c) => block.rows.some((r) => says(r.cells[c.key])))
+  const blank = (cell: Cell) => (cell.normal ? { text: '' } : cell)
+  const rows = block.rows.map((r) => ({ ...r, cells: Object.fromEntries(Object.entries(r.cells).map(([k, c]) => [k, blank(c)])) }))
+  const order = [...new Set(rows.map((r) => r.group ?? ''))]
+  const grouped = order.length > 1 || (order[0] ?? '') !== '' ? order.flatMap((g) => rows.filter((r) => (r.group ?? '') === g)) : rows
+  return { ...block, columns: columns.length > 0 ? columns : block.columns.slice(0, 1), rows: grouped }
+}
+
 /**
  * A table whose columns take their natural width when it fits, so nothing is cut while there is
  * room; when the card is narrower, optional columns step aside and prose is cut before paths. A row
  * with a link opens it on click, Enter or Space, in a tab of its own with ⌘. ↑ ↓ Home End move
- * between those rows; only one of them is in the Tab order, the open one when it is here.
+ * between those rows; only one of them is in the Tab order, the open one when it is here. Such a row
+ * shows its actions while the pointer or the focus is on it. Grouped rows stand under their group's
+ * heading, and read as a list, without the column headers.
  */
-function TableView({ block }: { block: Extract<Block, { kind: 'table' }> }) {
-  const { onLink, selected } = useEnv()
+/** The keys a table of places sorts by from its column heads, and which way each goes first: names A to Z, the newest and the largest first. */
+const SORTS: Record<string, { key: SortKey; desc: boolean }> = { name: { key: 'name', desc: false }, modified: { key: 'modified', desc: true }, kind: { key: 'kind', desc: false }, size: { key: 'size', desc: true } }
+
+/** The value of the view's `sort` after a click on the head of column `key`: its own first way, or the other way when it sorts by it already. */
+export function sortAfter(sorted: { by: SortKey; desc: boolean }, key: SortKey): string {
+  const desc = sorted.by === key ? !sorted.desc : (SORTS[key]?.desc ?? false)
+  return `${desc ? '-' : ''}${key}`
+}
+
+function TableView({ block: given }: { block: Extract<Block, { kind: 'table' }> }) {
+  const { onLink, selected, look, onParam } = useEnv()
   const [measure, available] = useWidth()
   const fonts = useFontsReady()
   const [cursor, setCursor] = useState<string | null>(null)
+  const block = useMemo(() => drawn(given), [given])
+  const files = useFiles(block)
+  const grouped = block.rows.some((r) => (r.group ?? '') !== '')
   const withActions = block.rows.some((r) => r.actions.length > 0)
   // `fonts` is a dependency so the columns are measured again once the fonts are in.
-  const columns = useMemo(() => naturalColumns(block, withActions), [block, withActions, fonts])
+  const columns = useMemo(() => naturalColumns(block, withActions, !grouped), [block, withActions, grouped, fonts])
   const fitted = available > 0 ? fitColumns(columns, available) : null
   // The data columns shown, and every column's width in the same order, actions last.
   const shownColumns = block.columns.filter((_, i) => fitted?.[i] !== null)
   const widths = fitted?.filter((w) => w !== null) ?? null
+  const span = shownColumns.length + (withActions ? 1 : 0)
   const linked = block.rows.filter((r) => r.link)
   const roving = linked.find((r) => r.key === cursor)?.key ?? linked.find((r) => selected(r.link))?.key ?? linked[0]?.key
   const open = (row: TableRow, newTab: boolean) => row.link && onLink(row.link, newTab)
@@ -117,8 +164,10 @@ function TableView({ block }: { block: Extract<Block, { kind: 'table' }> }) {
   }
   // An empty table is its message alone: headers over nothing say less than the message does.
   if (block.rows.length === 0) return <EmptyMessage text={block.empty} page={block.page} />
+  if (files && look === 'icons') return <IconGrid block={block} files={files} pager={turns(block.page) ? <Pager page={block.page} /> : null} />
+  const sorted = block.sorted
   return (
-    <div className="card table-card">
+    <div className="card table-card" data-grouped={grouped || undefined} data-files-table={files ? '' : undefined}>
       <div ref={measure} className="table-scroll">
       <table style={widths ? { tableLayout: 'fixed', width: widths.reduce((a, b) => a + b, 0) } : { width: '100%' }}>
         {widths ? (
@@ -128,75 +177,140 @@ function TableView({ block }: { block: Extract<Block, { kind: 'table' }> }) {
             ))}
           </colgroup>
         ) : null}
-        <thead>
+        <thead className={grouped ? 'sr-only' : undefined}>
           <tr>
-            {shownColumns.map((c) => (
-              <th key={c.key} scope="col">
-                {c.label}
-              </th>
-            ))}
+            {shownColumns.map((c) => {
+              const by = sorted && SORTS[c.key] ? (SORTS[c.key] as { key: SortKey }).key : null
+              if (!sorted || by === null)
+                return (
+                  <th key={c.key} scope="col">
+                    {c.label}
+                  </th>
+                )
+              const on = sorted.by === by
+              // By name from A, as storage lists a folder, is the usual order: no arrow says it.
+              const usual = sorted.by === 'name' && !sorted.desc
+              const Arrow = sorted.desc ? ArrowDown : ArrowUp
+              return (
+                <th key={c.key} scope="col" aria-sort={on ? (sorted.desc ? 'descending' : 'ascending') : undefined}>
+                  <button type="button" className="sort-head" data-on={(on && !usual) || undefined} onClick={() => onParam('sort', sortAfter(sorted, by))}>
+                    {c.label}
+                    {on && !usual ? <Arrow strokeWidth={2} aria-hidden /> : null}
+                  </button>
+                </th>
+              )
+            })}
             {withActions ? <th scope="col" aria-label="动作" /> : null}
           </tr>
         </thead>
-        <tbody onKeyDown={onKeyDown}>
-          {block.rows.map((row) => (
-            <tr
-              key={row.key}
-              data-key={row.key}
-              data-link={row.link ? '' : undefined}
-              aria-selected={selected(row.link) || undefined}
-              tabIndex={row.link ? (row.key === roving ? 0 : -1) : undefined}
-              onFocus={row.link ? () => setCursor(row.key) : undefined}
-              onMouseDown={
-                row.link
-                  ? (e) => {
-                      // A press focuses the row; the card stays where it was rather than scrolling sideways to it.
-                      const card = e.currentTarget.closest('.table-scroll')
-                      const left = card?.scrollLeft ?? 0
-                      requestAnimationFrame(() => card && (card.scrollLeft = left))
-                    }
-                  : undefined
-              }
-              onClick={row.link ? (e) => open(row, wantsTab(e)) : undefined}
-              onAuxClick={row.link ? (e) => e.button === 1 && open(row, true) : undefined}
-              onKeyDown={
-                row.link
-                  ? (e) => {
-                      if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return
-                      e.preventDefault()
-                      open(row, wantsTab(e))
-                    }
-                  : undefined
-              }
-            >
-              {shownColumns.map((c, i) => {
-                const cell = row.cells[c.key]
-                const width = widths?.[i]
-                return <td key={c.key}>{cell ? <CellView cell={cell} line first={i === 0} room={cell.href && width !== undefined ? textRoom(cell, width, i === 0) : undefined} /> : null}</td>
-              })}
-              {withActions ? (
-                <td>
-                  <div className="flex flex-nowrap justify-end gap-2">
-                    {row.actions.map((a, i) => (
-                      <ActionButton key={`${a.label}-${i}`} action={a} small />
-                    ))}
-                  </div>
-                </td>
-              ) : null}
-            </tr>
-          ))}
+        <tbody onKeyDown={files ? (e) => files.onKeyDown(e) : onKeyDown} data-files={files ? '' : undefined}>
+          {block.rows.map((row, r) => {
+            const group = row.group ?? ''
+            const heading =
+              grouped && group !== (block.rows[r - 1]?.group ?? null) && group !== '' ? (
+                <tr key={`group-${group}`} className="group-row">
+                  <th colSpan={span} scope="colgroup">
+                    <span className="group-name">
+                      <Folder strokeWidth={1.75} aria-hidden />
+                      <span className="truncate">{group}</span>
+                    </span>
+                  </th>
+                </tr>
+              ) : null
+            const own = files && placed(row) ? files.itemProps(row) : null
+            return [
+              heading,
+              own && placed(row) ? (
+                <tr key={row.key} data-link={row.link ? '' : undefined} {...own} aria-selected={own['aria-selected'] || undefined}>
+                  {shownColumns.map((c, i) => {
+                    const cell = row.cells[c.key]
+                    const width = widths?.[i]
+                    if (i === 0 && files?.renaming === row.key)
+                      return (
+                        <td key={c.key}>
+                          <RenameField name={row.place.path.slice(row.place.path.lastIndexOf('/') + 1)} onDone={files.rename} />
+                        </td>
+                      )
+                    // The row opens on a double-click; its name is no link of its own.
+                    const shown = cell && i === 0 ? { ...cell, link: undefined } : cell
+                    return <td key={c.key}>{shown ? <CellView cell={shown} line first={i === 0} room={shown.href && width !== undefined ? textRoom(shown, width, i === 0) : undefined} /> : null}</td>
+                  })}
+                  {withActions ? (
+                    <td>
+                      <ActionBar actions={row.actions} className="row-actions" />
+                    </td>
+                  ) : null}
+                </tr>
+              ) : (
+              <tr
+                key={row.key}
+                data-key={row.key}
+                data-link={row.link ? '' : undefined}
+                aria-selected={selected(row.link) || undefined}
+                tabIndex={row.link ? (row.key === roving ? 0 : -1) : undefined}
+                onFocus={row.link ? () => setCursor(row.key) : undefined}
+                onMouseDown={
+                  row.link
+                    ? (e) => {
+                        // A press focuses the row; the card stays where it was rather than scrolling sideways to it.
+                        const card = e.currentTarget.closest('.table-scroll')
+                        const left = card?.scrollLeft ?? 0
+                        requestAnimationFrame(() => card && (card.scrollLeft = left))
+                      }
+                    : undefined
+                }
+                onClick={row.link ? (e) => open(row, wantsTab(e)) : undefined}
+                onAuxClick={row.link ? (e) => e.button === 1 && open(row, true) : undefined}
+                onKeyDown={
+                  row.link
+                    ? (e) => {
+                        if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return
+                        e.preventDefault()
+                        open(row, wantsTab(e))
+                      }
+                    : undefined
+                }
+              >
+                {shownColumns.map((c, i) => {
+                  const cell = row.cells[c.key]
+                  const width = widths?.[i]
+                  return <td key={c.key}>{cell ? <CellView cell={cell} line first={i === 0} room={cell.href && width !== undefined ? textRoom(cell, width, i === 0) : undefined} /> : null}</td>
+                })}
+                {withActions ? (
+                  <td>
+                    <ActionBar actions={row.actions} className={row.link ? 'row-actions' : 'justify-end'} />
+                  </td>
+                ) : null}
+              </tr>
+              ),
+            ]
+          })}
         </tbody>
       </table>
       </div>
       {turns(block.page) ? <Pager page={block.page} /> : null}
+      {files?.overlay}
     </div>
   )
 }
 
+/** Fields, each with its label; a field in its usual state left out; with `line`, the values in one line, each label in its tooltip. */
 function FieldsView({ block }: { block: Extract<Block, { kind: 'fields' }> }) {
+  const fields = block.fields.filter((f) => f.value.normal !== true)
+  if (fields.length === 0) return null
+  if (block.line)
+    return (
+      <p className="fields-line">
+        {fields.map((f, i) => (
+          <span key={`${f.label}-${i}`} className="fields-line-value" title={f.value.at ? undefined : f.label}>
+            <CellView cell={f.value} />
+          </span>
+        ))}
+      </p>
+    )
   return (
     <dl className="fields">
-      {block.fields.map((f, i) => (
+      {fields.map((f, i) => (
         <div key={`${f.label}-${i}`} className="contents">
           <dt>{f.label}</dt>
           <dd>
@@ -217,7 +331,7 @@ function ListView({ block }: { block: Extract<Block, { kind: 'list' }> }) {
             <CellView cell={item.cell} />
             {item.note ? <p className="list-note">{localMoments(item.note)}</p> : null}
           </div>
-          <ActionRow actions={item.actions} small />
+          <ActionBar actions={item.actions} />
         </li>
       ))}
     </ul>
@@ -247,24 +361,27 @@ function TimelineEntries({ block }: { block: Extract<Block, { kind: 'timeline' }
   return (
     <ol className="timeline">
       {block.entries.map((e, i) => (
-        <li key={`${e.at}-${i}`}>
-          <div className="timeline-meta">
-            <Moment at={e.at} />
-            {e.tag ? <TagView tag={e.tag} /> : null}
-          </div>
-          <div>
-            <CellView cell={e.title} />
+        <li key={`${e.at}-${i}`} data-actor={e.actor !== undefined || undefined}>
+          {e.actor !== undefined ? (
+            <span className="timeline-mark">
+              <ActorBadge actor={e.actor} titled />
+            </span>
+          ) : null}
+          <div className="timeline-head">
+            <span className="timeline-title">
+              <CellView cell={e.title} />
+              {e.tag ? <TagView tag={e.tag} /> : null}
+            </span>
+            <span className="timeline-meta">
+              <Moment at={e.at} />
+            </span>
           </div>
           {e.lines.map((line, j) => (
             <p key={j} className="timeline-line">
               {localMoments(line)}
             </p>
           ))}
-          {e.actions && e.actions.length > 0 ? (
-            <div className="mt-2">
-              <ActionRow actions={e.actions} small />
-            </div>
-          ) : null}
+          {e.actions && e.actions.length > 0 ? <ActionBar actions={e.actions} className="mt-2" /> : null}
         </li>
       ))}
     </ol>
@@ -419,7 +536,8 @@ export function BlockView({ block }: { block: Block }) {
     case 'preview':
       return <PreviewView block={block} />
     case 'actions':
-      return <ActionRow actions={block.actions} />
+      // Actions for the whole page stand in its head, which draws them.
+      return block.head ? null : <ActionBar actions={block.actions} small={false} />
     case 'feed':
       return <FeedView block={block} />
     case 'stats':

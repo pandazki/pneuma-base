@@ -5,7 +5,7 @@
 // render.
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, navTitles, tempDir, test, write, type Cli } from './support.ts'
+import { expect, navTitles, openShared, tempDir, test, write, type Cli } from './support.ts'
 
 const SITES: Record<string, string> = {
   coffee: '手冲咖啡：豆子、水温和研磨度',
@@ -62,7 +62,7 @@ test('the whole story in the UI: every plugin’s page, the deploy switch, a sit
   const panel = page.getByRole('complementary', { name: '详情' })
 
   // Every plugin's page is in the navigation: the home page, the plugins' in configuration order, then the kernel's.
-  expect(await navTitles(page)).toEqual(['首页', '库', '活动', '统计', '场景', '状况', '留存', '有版本的东西', '部署', '同步', '查找', '文件', '归档区', 'Agent', '配置'])
+  expect(await navTitles(page)).toEqual(['首页', '库', '活动', '文件', 'Agent', '有版本的东西', '部署', '配置'])
 
   // The deploy page: the ten sites and their states.
   await nav.getByRole('button', { name: '部署' }).click()
@@ -70,7 +70,8 @@ test('the whole story in the UI: every plugin’s page, the deploy switch, a sit
   await expect(sites.getByRole('row')).toHaveCount(11)
   const state = (name: string) => sites.getByRole('row', { name: new RegExp(`^(_archive/)?sites/${name}\\b`) })
   for (const name of ['coffee', 'hiking', 'books']) await expect(state(name)).toContainText('在线')
-  for (const name of ['pets', 'cycling', 'recipes', 'photo']) await expect(state(name)).toContainText('离线')
+  // Offline is where a site rests until the owner turns it on: its row says no state.
+  for (const name of ['pets', 'cycling', 'recipes', 'photo']) await expect(state(name)).not.toContainText(/在线|已归档|待发布/)
   for (const name of ['plants', 'music', 'camping']) await expect(state(name)).toContainText('已归档')
 
   // Turn pets on from the page: the target gets it, and an agent's check reports the owner's operation.
@@ -99,19 +100,19 @@ test('the whole story in the UI: every plugin’s page, the deploy switch, a sit
   await panel.getByRole('button', { name: '关闭详情' }).click()
 
   // The sync and search pages render.
-  await nav.getByRole('button', { name: '同步' }).click()
+  await openShared(page, '配置', '同步')
   await expect(main.getByRole('heading', { name: '同步', exact: true })).toBeVisible()
   await expect(main).toContainText('sync-target')
   await expect(main.getByRole('button', { name: '现在同步' })).toBeVisible()
-  await nav.getByRole('button', { name: '查找' }).click()
+  await openShared(page, '配置', '查找')
   await expect(main.getByRole('heading', { name: '查找', exact: true })).toBeVisible()
   await expect(main).toContainText('hash')
 
   // Bundles on the files and archive pages: each site is one row.
   await nav.getByRole('button', { name: '文件' }).click()
-  await main.getByRole('row', { name: /^sites/ }).click()
+  await main.getByRole('row', { name: /^sites/ }).dblclick()
   await expect(main.getByRole('row', { name: /coffee/ })).toContainText('1 项')
-  await nav.getByRole('button', { name: '归档区' }).click()
-  await main.getByRole('row', { name: /^sites\// }).click()
-  await expect(main.getByRole('row')).toHaveCount(5) // the header, .. and the three archived sites
+  await openShared(page, '文件', '归档区')
+  await main.getByRole('row', { name: /^sites\// }).dblclick()
+  await expect(main.getByRole('row')).toHaveCount(4) // the header and the three archived sites
 })

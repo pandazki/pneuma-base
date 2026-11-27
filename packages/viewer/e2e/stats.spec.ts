@@ -4,7 +4,7 @@
 import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { writeHistory } from './month.ts'
-import { expect, tempDir, test, type Cli } from './support.ts'
+import { expect, openShared, tempDir, test, type Cli } from './support.ts'
 
 function month(pb: Cli): string {
   const lib = join(tempDir(), 'lib')
@@ -19,7 +19,7 @@ test('the statistics page answers the four questions for a month of use, by the 
   const { url } = await pb.view(lib)
   await page.goto(url)
   const main = page.getByRole('main')
-  await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '统计' }).click()
+  await openShared(page, '活动', '统计')
   await expect(main.getByRole('heading', { level: 1, name: '统计' })).toBeVisible()
   const section = (name: string) => main.getByRole('region', { name, exact: true })
   for (const name of ['用起来了吗', '以前的东西被接着用了吗', '谁做了什么', '库收拾得怎么样']) await expect(section(name)).toBeVisible()

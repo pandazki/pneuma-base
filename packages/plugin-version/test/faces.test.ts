@@ -202,14 +202,15 @@ describe('the page of versioned things', () => {
     const rows = async (archived: string) => {
       const page = await version.onView?.({ view: 'version.things', params: { archived } }, plugin())
       const table = only(page?.blocks ?? [], 'table')
-      return table?.rows.map((r) => [r.cells.path?.text, r.cells.versions?.text, r.cells.state?.tag?.text]).sort()
+      // Each state, and whether it is the usual one the page leaves unsaid: every change written down.
+      return table?.rows.map((r) => [r.cells.path?.text, r.cells.versions?.text, r.cells.state?.tag?.text ?? r.cells.state?.text, r.cells.state?.normal === true]).sort()
     }
     expect(await rows('hide')).toEqual([
-      ['a.md', '2 版', '已记下'],
-      ['b.md', '1 版', '有没记下的改动'],
-      ['d.md', '1 版', '不在'],
+      ['a.md', '2 版', '已记下', true],
+      ['b.md', '1 版', '有没记下的改动', false],
+      ['d.md', '1 版', '不在', false],
     ])
-    expect(await rows('show')).toContainEqual(['_archive/c.md', '1 版', '已归档'])
+    expect(await rows('show')).toContainEqual(['_archive/c.md', '1 版', '已归档', false])
   })
 
   it('lists the versioned things a page at a time, with the way to the next page', async () => {

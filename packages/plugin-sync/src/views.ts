@@ -4,7 +4,7 @@ import { formOf, TEXT_ROWS, type Action, type Block, type ItemSection, type Libr
 import { TARGET_SET } from './commands.js'
 import { conflictCopies, countsText, notReadyText, pendingOf, status, when, type Prepared } from './sync.js'
 
-export const STATUS_VIEW: ViewDecl = { id: 'sync.status', title: '同步', icon: 'refresh-cw', nav: true, filters: [] }
+export const STATUS_VIEW: ViewDecl = { id: 'sync.status', title: '同步', icon: 'refresh-cw', nav: true, filters: [], with: 'config' }
 
 const owner = (command: string) => ({ face: 'owner' as const, command, args: { positional: [], flags: {} } })
 
@@ -54,7 +54,7 @@ export async function statusView(ctx: PluginContext): Promise<ViewAnswer> {
       subtitle: null,
       blocks: [
         { kind: 'empty', title: '还没设同步目标', hint: '设一个本机上的目录作同步目标。同步不合并内容，也不让任何内容找不回。' },
-        { kind: 'actions', actions: [setTarget(null)] },
+        { kind: 'actions', head: true, actions: [{ ...setTarget(null), as: 'primary' }] },
       ],
     }
   }
@@ -62,22 +62,23 @@ export async function statusView(ctx: PluginContext): Promise<ViewAnswer> {
     last === null
       ? { text: '这台机器还没同步过', muted: true }
       : last.outcome === 'done'
-        ? { text: `${when(last.at)} · ${countsText(last.counts)}`, tag: { text: '完成', tone: 'good' as const } }
+        ? { text: `${when(last.at)} · ${countsText(last.counts)}` }
         : { text: `${when(last.at)} · ${last.message ?? ''}`, tag: { text: '中断', tone: 'bad' as const } }
   const fields: Block = {
     kind: 'fields',
     fields: [
-      { label: '目标', value: { text: record.target.path, mono: true, ...(prepared.kind === 'target-missing' ? { tag: { text: '这台机器上没有', tone: 'warn' as const } } : {}) } },
-      { label: '设于', value: { text: `机器 ${record.machine} · ${when(record.at)}`, muted: true } },
       { label: '上次同步', value: lastCell },
+      { label: '设于', value: { text: `机器 ${record.machine} · ${when(record.at)}`, muted: true } },
     ],
   }
   const pendingSection = pendingBlock(prepared, ctx.session.machine)
   const conflictSection: Block = {
     kind: 'section',
     title: '冲突副本',
-    note: copies.length > 0 ? `两边都改过同一个文件，另一边的那份放在旁边。${RESOLVE}` : null,
+    note: null,
+    about: `两边都改过同一个文件，另一边的那份放在旁边。${RESOLVE}`,
     count: copies.length,
+    ...(copies.length === 0 ? { normal: true as const } : {}),
     blocks: [
       copies.length === 0
         ? { kind: 'empty', title: '没有冲突副本', hint: null }
@@ -88,7 +89,9 @@ export async function statusView(ctx: PluginContext): Promise<ViewAnswer> {
     ],
     actions: [],
   }
-  return { title: '同步', subtitle: `目录 ${record.target.path}`, blocks: [fields, pendingSection, conflictSection, { kind: 'actions', actions: [setTarget(record.target.path)] }] }
+  // The target is the page's subtitle; changing it is rare and in the head's menu. A target missing here
+  // is said once, by what a sync would do.
+  return { title: '同步', subtitle: `目录 ${record.target.path}`, blocks: [{ kind: 'actions', head: true, actions: [{ ...setTarget(record.target.path), as: 'menu', icon: 'pencil' }] }, fields, pendingSection, conflictSection] }
 }
 
 /** For a conflict copy, the file it was made for; for a file or a bundle with conflict copies, those copies. Null otherwise. */

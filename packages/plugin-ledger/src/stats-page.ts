@@ -164,7 +164,8 @@ export function statsAnswer(s: Stats): ViewAnswer {
     const hint = 'agent 放东西、说在做什么，主人做操作，都会算进这里：用起来了吗，以前的东西被接着用了吗，谁做了什么，库收拾得怎么样。'
     return { title: '统计', subtitle: null, blocks: [{ kind: 'empty', title: '还没有可以统计的记录', hint }], filters }
   }
-  return { title: '统计', subtitle: `${sinceDay(s)} 到今天`, blocks: [used(s), builtOn(s), whoDid(s), inOrder(s)], filters }
+  // The period is the chosen tab, and each chart's axis says its days.
+  return { title: '统计', subtitle: null, blocks: [used(s), builtOn(s), whoDid(s), inOrder(s)], filters }
 }
 
 function linesOf(block: Block, depth: number): string[] {

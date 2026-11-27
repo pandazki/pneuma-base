@@ -1,6 +1,8 @@
 // The viewer face on a library with no plugin (K2): the kernel's three pages and the item panel,
 // given as blocks; showing a view changes nothing and sends no event. How a page prints, and a view the
 // library does not have, are packages/cli/test/show.test.ts's.
+import { utimesSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { agentFace, viewerFace, type Action, type Block, type Event, type ViewResult } from '../src/index.js'
 import { saveConnection } from '../src/connections.js'
@@ -52,7 +54,7 @@ describe('the views of a library with no plugin', () => {
     for (const [view, params] of [['files', {}], ['archive', {}], ['item', { path: 'a.md' }]] as const) expect((await show(f, view, params)).outcome).toBe('shown')
   })
 
-  it('files lists one folder: folders first, then files that open the item panel; the kernel’s files and the archive stay out', async () => {
+  it('files lists one folder by name: a folder opens in the page, a file the item panel; the kernel’s files and the archive stay out', async () => {
     const f = await fixture()
     f.write('notes/a.md', 'a')
     f.write('top.txt', 't')
@@ -64,11 +66,11 @@ describe('the views of a library with no plugin', () => {
 
     expect(shown(await show(f, 'files', { dir: 'notes' })).blocks[0]).toMatchObject({
       kind: 'actions',
+      head: true,
       actions: [{ label: '从这台机器放进来', inputs: [{ name: 'from' }, { name: 'to', value: 'notes/' }, { name: 'source' }], call: { verb: 'put', request: { kind: 'place', from: { kind: 'file', path: '{from}' }, to: '{to}' } } }],
     })
     const notes = tableOf(await show(f, 'files', { dir: 'notes' }))
-    expect(notes.rows.map((r) => r.key)).toEqual(['..', 'notes/a.md'])
-    expect(notes.rows[0]?.cells.name?.link).toEqual({ view: 'files', params: {}, target: 'main' })
+    expect(notes.rows.map((r) => r.key)).toEqual(['notes/a.md'])
     expect(shown(await show(f, 'files', { dir: '../outside' })).blocks).toMatchObject([{ kind: 'empty' }])
     expect(shown(await show(f, 'files', { dir: '.pneuma-base' })).blocks).toMatchObject([{ kind: 'empty' }])
   })
@@ -77,12 +79,87 @@ describe('the views of a library with no plugin', () => {
     const f = await fixture()
     f.write('_archive/d/old.md', 'o')
     const r = shown(await show(f, 'archive'))
-    expect(tableOf(r).rows).toMatchObject([{ key: '_archive/d', cells: { original: { text: 'd/', icon: 'folder' } }, link: { view: 'archive', params: { dir: '_archive/d' } } }])
+    expect(tableOf(r).rows).toMatchObject([{ key: '_archive/d', cells: { name: { text: 'd/', icon: 'folder' } }, link: { view: 'archive', params: { dir: '_archive/d' } } }])
     const inner = tableOf(await show(f, 'archive', { dir: '_archive/d' }))
-    expect(inner.rows.slice(1)).toMatchObject([
-      { key: '_archive/d/old.md', cells: { original: { text: 'd/old.md' } }, actions: [{ label: '取回', call: { face: 'agent', verb: 'archive', request: { kind: 'unarchive', path: '_archive/d/old.md' } } }] },
+    expect(inner.rows).toMatchObject([
+      { key: '_archive/d/old.md', cells: { name: { text: 'd/old.md' } }, actions: [{ label: '取回', call: { face: 'agent', verb: 'archive', request: { kind: 'unarchive', path: '_archive/d/old.md' } } }] },
     ])
-    expect(r.blocks[0]).toMatchObject({ kind: 'section', actions: [{ tone: 'danger', confirm: expect.stringContaining('不能撤回'), call: { face: 'owner', command: 'archive purge' } }] })
+    expect(r.blocks[0]).toMatchObject({ kind: 'actions', head: true, actions: [{ tone: 'danger', confirm: expect.stringContaining('不能撤回'), call: { face: 'owner', command: 'archive purge' } }] })
+  })
+
+  it('files and archive say where they stand as a trail from their root, each folder above a link to it, the last the page itself', async () => {
+    const f = await fixture()
+    f.write('notes/deep/a.md', 'a')
+    f.write('_archive/d/e/old.md', 'o')
+    expect(shown(await show(f, 'files')).trail).toEqual([{ label: '文件', link: { view: 'files', params: {}, target: 'main' } }])
+    expect(shown(await show(f, 'files', { dir: 'notes/deep' })).trail).toEqual([
+      { label: '文件', link: { view: 'files', params: {}, target: 'main' } },
+      { label: 'notes', link: { view: 'files', params: { dir: 'notes' }, target: 'main' } },
+      { label: 'deep', link: { view: 'files', params: { dir: 'notes/deep' }, target: 'main' } },
+    ])
+    expect(shown(await show(f, 'archive', { dir: '_archive/d/e' })).trail?.map((c) => [c.label, c.link.params.dir ?? null])).toEqual([
+      ['归档区', null],
+      ['d', '_archive/d'],
+      ['e', '_archive/d/e'],
+    ])
+  })
+
+  it('each row of files stands for its place: a file, a directory thing or a folder, with its state token; the table offers archive, move and rename for each thing', async () => {
+    const f = await fixture()
+    f.write('site/.pneuma-item', '{"format":1}\n')
+    f.write('site/index.html', '<h1>hi</h1>')
+    f.write('notes/a.md', 'a')
+    f.write('top.txt', 't')
+    const table = tableOf(await show(f, 'files'))
+    expect(table.rows.map((r) => [r.key, r.place?.kind])).toEqual([
+      ['notes', 'open'],
+      ['site', 'bundle'],
+      ['top.txt', 'file'],
+    ])
+    expect(table.rows[2]?.place).toEqual({ path: 'top.txt', kind: 'file', token: expect.any(String) })
+    expect(table.each?.actions.map((a) => [a.label, a.call.face === 'agent' ? a.call.request : null])).toEqual([
+      ['归档', { kind: 'archive', path: '{path}' }],
+      ['挪到', { kind: 'move', from: '{path}', to: '{to}' }],
+    ])
+    expect(table.each?.rename?.call).toMatchObject({ verb: 'put', request: { kind: 'move', from: '{path}', to: '{in}{name}' } })
+    // The names in the archive are places too, and their rows keep their own take-back.
+    f.write('_archive/old.md', 'o')
+    expect(tableOf(await show(f, 'archive')).rows[0]?.place).toMatchObject({ path: '_archive/old.md', kind: 'file' })
+  })
+
+  it('files sorts a folder by name, by when it changed, by kind or by size, either way, and says how it is sorted; a sort it does not know is by name', async () => {
+    const f = await fixture()
+    f.write('b.md', 'bb')
+    f.write('c.txt', 'c')
+    f.write('a.png', 'aaaa')
+    f.write('z/inner.md', 'z')
+    const day = 86_400
+    const now = Date.now() / 1000
+    for (const [path, ago] of [['a.png', 3], ['b.md', 1], ['c.txt', 2]] as const) utimesSync(join(f.root, path), now - ago * day, now - ago * day)
+    const order = async (sort?: string) => tableOf(await show(f, 'files', sort === undefined ? {} : { sort })).rows.map((r) => r.key)
+    // By name, as storage lists a level: folders and things mixed.
+    expect(await order()).toEqual(['a.png', 'b.md', 'c.txt', 'z'])
+    expect(await order('-name')).toEqual(['z', 'c.txt', 'b.md', 'a.png'])
+    expect(await order('-modified')).toEqual(['z', 'b.md', 'c.txt', 'a.png'])
+    expect(await order('modified')).toEqual(['a.png', 'c.txt', 'b.md', 'z'])
+    expect(await order('kind')).toEqual(['z', 'b.md', 'a.png', 'c.txt'])
+    expect(await order('-size')).toEqual(['a.png', 'b.md', 'c.txt', 'z'])
+    expect(await order('sideways')).toEqual(['a.png', 'b.md', 'c.txt', 'z'])
+    expect(tableOf(await show(f, 'files', { sort: '-modified' })).sorted).toEqual({ by: 'modified', desc: true })
+    expect(tableOf(await show(f, 'files')).sorted).toEqual({ by: 'name', desc: false })
+  })
+
+  it('a sorted folder longer than a page still comes 50 at a time, each page following the sort', async () => {
+    const f = await fixture()
+    for (let i = 0; i < 70; i++) f.write(`n${String(i).padStart(2, '0')}.md`, 'x'.repeat(i + 1))
+    const first = shown(await show(f, 'files', { sort: '-size' }))
+    const rows = tableOf(first).rows
+    expect(rows).toHaveLength(50)
+    expect(rows[0]?.key).toBe('n69.md')
+    const next = tableOf(first).page?.next
+    expect(next).toBeTruthy()
+    const second = tableOf(await show(f, 'files', next?.params ?? {})).rows
+    expect(second.map((r) => r.key)).toEqual(Array.from({ length: 20 }, (_, i) => `n${String(19 - i).padStart(2, '0')}.md`))
   })
 
   it('config shows the library, every plugin it knows with 装上 or 卸下, the grants with skill generation, and the storage providers', async () => {
@@ -93,30 +170,34 @@ describe('the views of a library with no plugin', () => {
       ['bare', plugin('bare')],
     ])
     const r = shown(await viewerFace.show({ view: 'config', params: {} }, { ctx: f.ctx, table, env: {}, viaGrant: false }))
+    // The library's location in one line; its id in the folded record at the end.
+    expect(r.blocks[0]).toMatchObject({ kind: 'fields', line: true, fields: [{ label: '位置', value: { text: f.root, copy: true } }] })
     const sections = r.blocks.filter((b) => b.kind === 'section')
-    expect(sections.map((s) => s.kind === 'section' && s.title)).toEqual(['插件', '授权与技能', '存储'])
+    expect(sections.map((s) => s.kind === 'section' && s.title)).toEqual(['插件', '授权与技能', '存储', '记录'])
+    expect(sections[3]).toMatchObject({ collapse: 'closed', blocks: [{ kind: 'fields', fields: [{ label: '库标识', value: { text: f.library.config.id } }, { label: '说明' }] }] })
     const plugins = tableOf({ outcome: 'shown', title: '', subtitle: null, blocks: [sections[0] as Block], problems: [] })
     // Its version and what it brings, as plugin list shows them: the summary, else the cognition's title.
-    expect(plugins.columns.map((c) => c.label)).toEqual(['名字', '版本', '做什么', '状态'])
+    // One not installed is grey, with the one icon that installs it.
+    expect(plugins.columns.map((c) => c.label)).toEqual(['名字', '版本', '做什么'])
     expect(plugins.rows).toMatchObject([
       {
         key: 'ledger',
-        cells: { name: { text: 'ledger' }, version: { text: '—', muted: true }, title: { text: '记账与对账' }, state: { tag: { text: '没装' } } },
-        actions: [{ label: '装上', call: { face: 'owner', command: 'plugin add', args: { positional: ['ledger'] } } }],
+        cells: { name: { text: 'ledger', muted: true }, version: { text: '—', muted: true }, title: { text: '记账与对账', muted: true } },
+        actions: [{ label: '装上', as: 'icon', icon: 'plus', call: { face: 'owner', command: 'plugin add', args: { positional: ['ledger'] } } }],
       },
       { key: 'pager', cells: { version: { text: '0.2.0' }, title: { text: '一页字' } }, actions: [{ label: '装上', call: { command: 'plugin add', args: { positional: ['pager'] } } }] },
       { key: 'bare', cells: { version: { text: '—', muted: true }, title: { text: '—', muted: true } } },
     ])
     expect(sections[1]).toMatchObject({ actions: [{ label: '发授权', call: { command: 'grant issue' } }] })
     expect(JSON.stringify(sections[1])).toContain('codex --add-dir')
-    // Storage: the built-in local folder, the one this library uses with the facets it gives, a form to
-    // install another from a repository, and the library's noise inside it.
+    // Storage: the built-in local folder, the one this library uses, a form to install another from a
+    // repository, and the library's noise inside it.
     const storage = sections[2]
     if (storage?.kind !== 'section') throw new Error('no storage section')
     expect(storage).toMatchObject({ actions: [{ label: '安装别的存储…', call: { command: 'storage install' } }] })
     expect(storage.blocks[0]).toMatchObject({
       kind: 'table',
-      rows: [{ key: 'local-folder', cells: { name: { text: 'local-folder' }, addresses: { text: '本机路径' }, facets: { text: expect.stringContaining('fs') }, state: { text: '随 pneuma-base 带着', tag: { text: '这个库在用' } } }, actions: [] }],
+      rows: [{ key: 'local-folder', cells: { name: { text: 'local-folder' }, addresses: { text: '本机路径' }, came: { text: '随 pneuma-base 带着' }, state: { text: '这个库在用', icon: 'check' } }, actions: [] }],
     })
     expect(storage.blocks[1]).toMatchObject({ kind: 'section', title: '噪音' })
 
@@ -125,29 +206,32 @@ describe('the views of a library with no plugin', () => {
     const config = { ...installed.library.config, plugins: [...installed.library.config.plugins, 'gone' as never] }
     const ctx = { ...installed.ctx, library: { ...installed.library, config, unavailable: ['gone' as never] } }
     const listed = shown(await viewerFace.show({ view: 'config', params: {} }, { ctx, table: new Map([['ledger', plugin('ledger')], ['pager', plugin('pager')]]), env: {}, viaGrant: false }))
-    expect(tableOf(listed).rows).toMatchObject([
-      { key: 'ledger', cells: { state: { tag: { text: '已装' } } }, actions: [{ label: '卸下', call: { command: 'plugin remove', args: { positional: ['ledger'] } } }] },
-      { key: 'gone', cells: { state: { tag: { text: '这个 pneuma-base 里没有' } } }, actions: [{ label: '卸下' }] },
-      { key: 'pager', actions: [{ label: '装上' }] },
+    const rows = tableOf(listed).rows
+    expect(rows).toMatchObject([
+      { key: 'ledger', cells: { name: { text: 'ledger' } }, actions: [{ label: '卸下', as: 'menu', call: { command: 'plugin remove', args: { positional: ['ledger'] } } }] },
+      { key: 'gone', cells: { name: { tag: { text: '这个 pneuma-base 里没有' } } }, actions: [{ label: '卸下' }] },
+      { key: 'pager', cells: { name: { muted: true } }, actions: [{ label: '装上' }] },
     ])
+    expect(rows[0]?.cells.name?.muted).toBeUndefined()
   })
 
   it('item gives the archive and move actions, the file’s facts and a preview that folds; with no file there it says so', async () => {
     const f = await fixture()
     f.write('a.md', 'hello')
     const r = shown(await show(f, 'item', { path: 'a.md' }))
-    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['text', 'section:文件', 'section:预览', 'actions'])
-    expect(r.icon).toBe('file')
-    expect(r.blocks[0]).toMatchObject({ kind: 'text', tone: 'neutral', text: '文件 · 5 B' })
-    expect(r.blocks[3]).toMatchObject({
+    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['actions', 'section:预览', 'section:文件'])
+    expect(r).toMatchObject({ icon: 'file', title: 'a.md', subtitle: 'a.md' })
+    // Archive and move are the panel's head, each an icon with its key.
+    expect(r.blocks[0]).toMatchObject({
+      head: true,
       actions: [
-        { label: '归档', call: { verb: 'archive', request: { kind: 'archive', path: 'a.md' } } },
-        { label: '挪到', inputs: [{ name: 'to', value: 'a.md' }], call: { verb: 'put', request: { kind: 'move', from: 'a.md', to: '{to}' } } },
+        { label: '归档', as: 'icon', key: 'e', call: { verb: 'archive', request: { kind: 'archive', path: 'a.md' } } },
+        { label: '挪到', as: 'icon', key: 'm', inputs: [{ name: 'to', value: 'a.md' }], call: { verb: 'put', request: { kind: 'move', from: 'a.md', to: '{to}' } } },
       ],
     })
-    // The panel reads no content: no fingerprint until something asks for one.
-    expect(r.blocks[1]).toMatchObject({ blocks: [{ kind: 'fields', fields: [{ label: '路径', value: { text: 'a.md' } }, { label: '种类', value: { text: '文件' } }, { label: '大小' }, { label: '改于', value: { at: expect.any(String) } }] }] })
-    expect(r.blocks[2]).toMatchObject({ collapse: 'open', blocks: [{ kind: 'preview', path: 'a.md' }] })
+    expect(r.blocks[1]).toMatchObject({ collapse: 'open', blocks: [{ kind: 'preview', path: 'a.md' }] })
+    // The file's facts, folded. The panel reads no content: no fingerprint until something asks for one.
+    expect(r.blocks[2]).toMatchObject({ collapse: 'closed', blocks: [{ kind: 'fields', fields: [{ label: '种类', value: { text: '文件' } }, { label: '大小', value: { text: '5 B' } }, { label: '改于', value: { at: expect.any(String) } }] }] })
     expect(shown(await show(f, 'item', { path: 'gone.md' })).blocks).toMatchObject([{ kind: 'text', tone: 'warn' }])
   })
 
@@ -156,12 +240,14 @@ describe('the views of a library with no plugin', () => {
     f.write('_archive/a.md', 'a')
     for (const path of ['a.md', '_archive/a.md']) {
       const r = shown(await show(f, 'item', { path }))
-      expect(r.blocks[0]).toMatchObject({ kind: 'text', text: '文件 · 1 B · 已归档' })
-      expect(r.blocks.at(-1)).toMatchObject({ actions: [{ label: '取回', call: { request: { kind: 'unarchive', path: '_archive/a.md' } } }] })
+      expect(r.blocks.slice(0, 2)).toMatchObject([
+        { kind: 'actions', head: true, actions: [{ label: '取回', call: { request: { kind: 'unarchive', path: '_archive/a.md' } } }] },
+        { kind: 'text', text: '已归档：取回之后才能改动。' },
+      ])
     }
     f.write('b.md', 'b')
-    const facts = flat(shown(await show(f, 'item', { path: '_archive/b.md' })).blocks).find((b) => b.kind === 'fields')
-    expect(facts?.kind === 'fields' && facts.fields[0]?.value.text).toBe('b.md')
+    const back = shown(await show(f, 'item', { path: '_archive/b.md' }))
+    expect([back.title, back.subtitle]).toEqual(['b.md', 'b.md'])
   })
 })
 
@@ -185,7 +271,7 @@ describe('bundles in the views', () => {
     expect(rows[0]).toMatchObject({ cells: { name: { icon: 'folder' } }, link: { view: 'files', params: { dir: 'notes' } }, actions: [] })
     expect(rows[1]).toMatchObject({ cells: { name: { text: 'site', icon: 'package', tag: { text: '3 项' } } }, link: { view: 'item', params: { path: 'site' }, target: 'panel' } })
     expect(rows[2]?.cells.name).toMatchObject({ icon: 'file' })
-    expect(tableOf(await show(f, 'archive')).rows).toMatchObject([{ key: '_archive/old', cells: { original: { text: 'old', icon: 'package', tag: { text: '3 项' } } } }])
+    expect(tableOf(await show(f, 'archive')).rows).toMatchObject([{ key: '_archive/old', cells: { name: { text: 'old', icon: 'package', tag: { text: '3 项' } } } }])
   })
 
   it('with a plugin keeping records, a folder with nothing registered in it is one row: what a look found, the kernel’s two answers, and it still opens', async () => {
@@ -206,7 +292,7 @@ describe('bundles in the views', () => {
     // Its panel says the same, with the icon of a folder nobody looked into, and lists its first level.
     const panel = shown(await show(f, 'item', { path: 'proj' }))
     expect(panel).toMatchObject({ title: 'proj/', icon: 'folder-dot' })
-    expect(panel.blocks.slice(0, 3)).toMatchObject([{ kind: 'text', tone: 'warn', text: '没登记。2 个文件，像一个项目（package.json）。' }, { kind: 'actions' }, { kind: 'section', title: '第一层' }])
+    expect(panel.blocks.slice(0, 3)).toMatchObject([{ kind: 'text', tone: 'warn', text: '没登记。2 个文件，像一个项目（package.json）。' }, { kind: 'actions' }, { kind: 'section', title: '里面' }])
     const kept = shown(await show(f, 'item', { path: 'kept' }))
     expect([kept.icon, kept.blocks[0]]).toMatchObject(['folder', { kind: 'text', text: '文件夹，里面有登记过的东西。' }])
   })
@@ -216,10 +302,10 @@ describe('bundles in the views', () => {
     site(f)
     const r = shown(await show(f, 'item', { path: 'site' }))
     expect(r.icon).toBe('package')
-    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['text', 'section:文件', 'section:第一层', 'actions'])
-    const facts = r.blocks[1]?.kind === 'section' ? r.blocks[1].blocks[0] : undefined
-    expect(facts?.kind === 'fields' && facts.fields.map((x) => `${x.label}:${x.value.text}`)).toEqual(['路径:site', '种类:一样东西（带标记的目录）', expect.stringMatching(/^改于:/)])
-    const inner = tableOf({ outcome: 'shown', title: '', subtitle: null, blocks: [r.blocks[2] as Block], problems: [] })
+    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['actions', 'section:里面', 'section:文件'])
+    const facts = r.blocks[2]?.kind === 'section' ? r.blocks[2].blocks[0] : undefined
+    expect(facts?.kind === 'fields' && facts.fields.map((x) => `${x.label}:${x.value.text}`)).toEqual(['种类:一样东西（带标记的目录）', expect.stringMatching(/^改于:/)])
+    const inner = tableOf({ outcome: 'shown', title: '', subtitle: null, blocks: [r.blocks[1] as Block], problems: [] })
     expect(inner.rows.map((row) => [row.cells.path?.text, row.link?.view, row.link?.params.path ?? row.link?.params.dir])).toEqual([
       ['css/', 'files', 'site/css'],
       ['index.html', 'item', 'site/index.html'],
@@ -231,12 +317,11 @@ describe('bundles in the views', () => {
     const f = await fixture()
     site(f)
     const r = shown(await show(f, 'item', { path: 'site/index.html' }))
-    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['text', 'section:文件', 'section:预览'])
-    expect(r.blocks[0]).toMatchObject({ kind: 'text', text: '文件 · 11 B · site 的一部分' })
+    // No head of actions: the bundle changes only as a whole.
+    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['section:预览', 'section:文件'])
     const facts = r.blocks[1]?.kind === 'section' ? r.blocks[1].blocks : []
     expect(facts).toMatchObject([
       { kind: 'fields', fields: expect.arrayContaining([expect.objectContaining({ label: '在', value: expect.objectContaining({ text: 'site', icon: 'package', link: { view: 'item', params: { path: 'site' }, target: 'panel' } }) })]) },
-      { kind: 'text' },
     ])
   })
 
@@ -246,7 +331,7 @@ describe('bundles in the views', () => {
     site(f)
     const r = shown(await show(f, 'item', { path: 'site/css/main.css' }))
     expect(asked).toEqual(['site/css/main.css'])
-    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['text', 'section:知道的', 'section:文件', 'section:预览'])
+    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['section:知道的', 'section:预览', 'section:文件'])
   })
 })
 
@@ -300,7 +385,7 @@ describe('the view slot', () => {
     const f = await fixture([thrower, pager])
     f.write('a.md', 'a')
     const r = shown(await show(f, 'item', { path: 'a.md' }))
-    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['text', 'section:插件 thrower', 'section:测试插件知道的', 'section:文件', 'section:预览', 'actions'])
+    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['actions', 'section:插件 thrower', 'section:测试插件知道的', 'section:预览', 'section:文件'])
     expect(r.blocks[2]).toMatchObject({ blocks: [{ text: 'pager knows a.md' }] })
     expect(r.problems).toEqual([{ plugin: 'thrower', message: 'thrower failed in onItemView' }])
     const gone = shown(await show(f, 'item', { path: 'gone.md' }))
@@ -439,6 +524,35 @@ describe('what a plugin’s view answers is checked (D7)', () => {
   })
 })
 
+describe('what a plugin says of files is checked too (D7)', () => {
+  const answering = (name: string, answer: unknown) => plugin(name, { views: [{ id: `${name}.page`, title: '一页', icon: 'triangle-alert', nav: true, filters: [] }], onView: async () => answer as never })
+  const archive = (path: string) => ({ label: '归档', tone: 'default', confirm: null, inputs: [], call: { face: 'agent', verb: 'archive', request: { kind: 'archive', path } } })
+  const table = (extra: object) => ({ kind: 'table', columns: [{ key: 'name', label: '名字' }], rows: [{ key: 'a.md', cells: { name: { text: 'a.md' } }, link: null, actions: [], place: { path: 'a.md', kind: 'file', token: null } }], empty: '', ...extra })
+
+  it('lets a table’s each actions take {path} and {in} and no other input it does not ask for; a row’s place and a cell’s reopen must have their shape', async () => {
+    const f = await fixture([
+      answering('fine', { title: '一页', subtitle: null, blocks: [table({ each: { actions: [archive('{path}')], rename: { ...archive('{in}{name}'), inputs: [{ name: 'name', label: '名字', placeholder: null, value: null, options: null }] } } })] }),
+      answering('stray', { title: '一页', subtitle: null, blocks: [table({ each: { actions: [archive('{where}')], rename: null } })] }),
+      answering('placeless', { title: '一页', subtitle: null, blocks: [{ ...table({}), rows: [{ key: 'a', cells: {}, link: null, actions: [], place: { path: 'a.md' } }] }] }),
+      answering('reopener', { title: '一页', subtitle: null, blocks: [{ kind: 'fields', fields: [{ label: '场景', value: { text: 's', reopen: { url: 1 } } }] }] }),
+    ])
+    expect(shown(await show(f, 'fine.page')).blocks[0]?.kind).toBe('table')
+    for (const [view, words] of [['stray.page', '{where}'], ['placeless.page', 'place'], ['reopener.page', 'reopen']] as const) {
+      const r = shown(await show(f, view))
+      expect([r.blocks[0]?.kind, r.problems.map((p) => p.message).join('\n')]).toEqual(['text', expect.stringContaining(words)])
+    }
+  })
+
+  it('keeps a trail of names and links, and drops one that is not as a problem', async () => {
+    const crumb = { label: '根', link: { view: 'files', params: {}, target: 'main' } }
+    const f = await fixture([answering('trailing', { title: '一页', subtitle: null, blocks: [], trail: [crumb] }), answering('lost', { title: '一页', subtitle: null, blocks: [], trail: [{ label: '根' }] })])
+    expect(shown(await show(f, 'trailing.page')).trail).toEqual([crumb])
+    const lost = shown(await show(f, 'lost.page'))
+    expect(lost.trail).toBeUndefined()
+    expect(lost.problems).toMatchObject([{ plugin: 'lost', message: expect.stringContaining('trail') }])
+  })
+})
+
 describe('the new blocks are checked too (D7)', () => {
   const answering = (name: string, answer: unknown) =>
     plugin(name, { views: [{ id: `${name}.page`, title: '一页', icon: 'triangle-alert', nav: true, filters: [{ name: 'who', label: '谁', options: [{ value: '', label: '全部' }], default: '' }] }], onView: async () => answer as never })
@@ -546,12 +660,12 @@ describe('the home page', () => {
     const r = shown(await show(f, 'home'))
     expect(r.problems).toEqual([])
     expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['section:开始', 'section:等你决定', 'text'])
-    expect(r.blocks[0]).toMatchObject({ note: '做完了 0 步，还有 3 步。', blocks: [{ kind: 'steps', steps: [{ key: 'connect', done: false }, { key: 'first', done: false }, { key: 'one', title: 'one 这一步', blocks: [{ text: 'one 的一步' }] }] }] })
+    expect(r.blocks[0]).toMatchObject({ note: '0 / 3', blocks: [{ kind: 'steps', steps: [{ key: 'connect', done: false }, { key: 'first', done: false }, { key: 'one', title: 'one 这一步', blocks: [{ text: 'one 的一步' }] }] }] })
     expect(r.blocks[2]).toMatchObject({ text: 'one 的部分' })
 
     const g = await fixture([stepper('one', true)])
     g.write('a.md', 'a')
-    expect(shown(await show(g, 'home')).blocks[0]).toMatchObject({ title: '开始', note: '做完了 2 步，还有 1 步。' })
+    expect(shown(await show(g, 'home')).blocks[0]).toMatchObject({ title: '开始', note: '2 / 3' })
     await saveConnection(g.home, { format: 1, grant: 'claude-code', grantId: 'g', product: 'claude-code', library: g.root, way: 'skill', at: g.ctx.now, wrote: { kind: 'skill', file: `${g.home}/SKILL.md`, fingerprint: 'x', dirs: [] }, command: null })
     expect(shown(await show(g, 'home')).blocks.map((b) => (b.kind === 'section' ? b.title : b.kind))).toEqual(['等你决定', 'text'])
   })

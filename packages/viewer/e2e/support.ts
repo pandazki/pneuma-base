@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { deflateSync, crc32 } from 'node:zlib'
-import { test as base, type Locator, type Page } from '@playwright/test'
+import { test as base, expect, type Locator, type Page } from '@playwright/test'
 
 const BIN = fileURLToPath(new URL('../../cli/dist/bin.js', import.meta.url))
 const BIN_WITH_TEST_PLUGINS = fileURLToPath(new URL('../../cli/test/fixtures/bin-with-test-plugins.ts', import.meta.url))
@@ -131,6 +131,19 @@ export async function navTitles(page: Page): Promise<string[]> {
   const buttons = page.getByRole('navigation', { name: '导航' }).getByRole('button')
   await buttons.first().waitFor()
   return buttons.allInnerTexts()
+}
+
+/** Opens a page that shares a navigation entry: the entry first, then the page from the head's switch. */
+export async function openShared(page: Page, entry: string, view: string): Promise<void> {
+  await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: entry, exact: true }).click()
+  await page.getByRole('navigation', { name: '这一组的页' }).getByRole('button', { name: view, exact: true }).click()
+  await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toHaveText(new RegExp(`^${view}`))
+}
+
+/** Chooses `action` from the 「···」 menu inside `region`. */
+export async function fromMenu(region: Locator, action: string): Promise<void> {
+  await region.getByRole('button', { name: '更多' }).first().click()
+  await region.page().getByRole('menu').getByRole('menuitem', { name: action }).click()
 }
 
 /** The texts inside `table` matching `cells` that are cut short on screen. */

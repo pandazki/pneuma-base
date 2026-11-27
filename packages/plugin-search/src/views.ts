@@ -70,32 +70,35 @@ export async function statusView(ctx: PluginContext): Promise<ViewAnswer> {
   const index: Block = {
     kind: 'section',
     title: '索引',
-    note: '登记过的东西进索引；索引在库外的缓存目录里，删了能重建',
+    note: null,
+    about: `登记过的东西进索引；索引在库外的缓存目录里（${s.cacheDir}），删了能重建。`,
     count: null,
     blocks: [
       {
         kind: 'fields',
+        // Nothing waiting to be read is the usual state; how many pieces the text was cut into is the index's business.
         fields: s.indexed
           ? [
               field('文件', filesText(s)),
-              field('块', String(s.chunks)),
-              field('待读', pendingText(s)),
+              ...(s.pending === 0 ? [] : [field('待读', pendingText(s))]),
               ...(s.tooMany > 0 ? [field('太大的目录', tooManyText(s))] : []),
               field('建于', when(s.builtAt ?? '')),
-              field('缓存', s.cacheDir, true),
+              { label: '块', value: { text: String(s.chunks), normal: true as const } },
+              { label: '缓存', value: { text: s.cacheDir, mono: true, normal: true as const } },
             ]
-          : [field('文件', '还没有索引'), field('缓存', s.cacheDir, true)],
+          : [field('文件', '还没有索引')],
       },
     ],
-    actions: [action('重建索引', owner('search rebuild'))],
+    actions: [{ ...action('重建索引', owner('search rebuild')), as: 'icon', icon: 'refresh-cw' }],
   }
   const meaning: Block = {
     kind: 'section',
     title: '按意思找',
-    note: s.embedder === null ? '配了嵌入器，find 才按意思找' : null,
+    note: null,
+    about: '配了嵌入器，find 才按意思找。',
     count: null,
     blocks: [{ kind: 'fields', fields: [field('嵌入器', embedderLabel(s.embedder, s.key)), ...(s.embedder && s.indexed ? [field('向量', vectorsText(s))] : [])] }],
-    actions: [setAction(s.embedder), ...(s.embedder ? [action('清除嵌入器', owner('search embedder clear'))] : [])],
+    actions: [{ ...setAction(s.embedder), icon: 'pencil', ...(s.embedder ? { as: 'icon' as const } : {}) }, ...(s.embedder ? [{ ...action('清除嵌入器', owner('search embedder clear')), as: 'menu' as const }] : [])],
   }
   return { title: '查找', subtitle: null, blocks: [index, meaning] }
 }

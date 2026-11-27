@@ -174,6 +174,7 @@ describe('a running UI server', () => {
     expect(JSON.stringify(reply)).not.toContain('tok-from-the-page')
     expect(statSync(join(home, 'secrets', 'vault', 'token')).mode & 0o777).toBe(0o600)
     expect(sb.run(['--library', lib, 'vault', 'show', '--json']).json().data.token).toBe('tok-from-the-page')
-    expect((await section()).blocks[0].rows[0].cells.state.tag.text).toBe('已设')
+    // Set is the usual state: the page leaves it unsaid, the text form says it.
+    expect((await section()).blocks[0].rows[0].cells.state).toEqual({ text: '已设', muted: true, normal: true })
   })
 })

@@ -1,8 +1,8 @@
 // The ledger's pages that tell what happened, each a feed of facts read from the log a page at a
 // time: the home page's part (since the owner last looked, and what needs looking at), the activity
 // page, the scenes and one scene.
-import { FIRST_WORDS, pageAt, pagingOf, PAGE_ROWS, shortDir, type Action, type Block, type Cell, type FeedGroup, type FeedRow, type Grant, type Instant, type Stat, type ViewAnswer } from '@pneuma-base/kernel'
-import type { Conversation } from './conversation.js'
+import { FIRST_WORDS, pageAt, pagingOf, PAGE_ROWS, shortDir, type Action, type Block, type Cell, type FeedGroup, type FeedRow, type Grant, type Instant, type Reopen, type Stat, type ViewAnswer } from '@pneuma-base/kernel'
+import { reopenFor, type Conversation } from './conversation.js'
 import type { Fact, FactActor, SceneId } from './facts.js'
 import { archived, type SceneRow } from './model.js'
 import { counters, lookupOf } from './queries.js'
@@ -81,8 +81,10 @@ function askedBy(f: Fact, grants: readonly Grant[]): Cell[] {
 /** One fact as a feed row: when, who, the sentence check says, who asked for it, in which scene and by which grant, and what can still be done. */
 function factRow(lookup: Lookup, f: Fact, grants: readonly Grant[], withScene: boolean): FeedRow {
   const grant = grantCell(f.actor, grants)
-  const meta: Cell[] = [...askedBy(f, grants), ...(withScene ? [sceneCell(lookup, f.scene)] : []), ...(grant ? [grant] : [])]
-  return { key: f.id, at: f.at, actor: actorMark(f.actor, grants), text: factLine(lookup, f), meta, whose: whoseOf(f), link: factLink(lookup, f), ...endOf(lookup, f) }
+  // Saying what a scene is doing names the scene already.
+  const scene = withScene && !(f.kind === 'said' && f.flavor === 'doing')
+  const meta: Cell[] = [...askedBy(f, grants), ...(scene ? [sceneCell(lookup, f.scene)] : []), ...(grant ? [grant] : [])]
+  return { key: f.id, at: f.at, actor: actorMark(f.actor, grants), text: factLine(lookup, f, true), meta, whose: whoseOf(f), link: factLink(lookup, f), ...endOf(lookup, f) }
 }
 
 // ---- home ----
@@ -110,7 +112,9 @@ export async function homeAnswer(records: Read, lists: readonly StandingList[], 
     // The sentence that heads the group is not a row of it as well, unless it is all the group tells.
     const heading = (f: Fact) => f.kind === 'said' && f.flavor === 'doing' && f.text === title
     const rows = (members.every(heading) ? members : members.filter((f) => !heading(f))).map((f) => factRow(lookup, f, grants, false))
-    return { title, count: rows.length, link: sceneLink(scene), rows }
+    const reopen = lookup.scenes.get(scene)
+    const again = reopen === undefined ? null : reopenFor(reopen)
+    return { title, count: rows.length, link: sceneLink(scene), rows, ...(again === null ? {} : { reopen: again }) }
   })
   const done = groups.reduce((n, g) => n + g.rows.length, 0)
   const actors = actorNames(facts.map((f) => f.actor))
@@ -137,8 +141,9 @@ export async function homeAnswer(records: Read, lists: readonly StandingList[], 
     blocks:
       kinds.length === 0
         ? [{ kind: 'text', tone: 'neutral', text: '没有要留意的：登记过的东西都和记录的一样。' }]
-        : [{ kind: 'list', items: kinds.map((k) => ({ cell: { text: `${k.atLeast ? '至少 ' : ''}${k.count} 样${k.title}`, link: { view: STANDING_VIEW, params: { kind: k.kind }, target: 'main' } }, note: k.note, actions: [] })) }],
+        : [{ kind: 'list', items: kinds.map((k) => ({ cell: { text: `${k.atLeast ? '至少 ' : ''}${k.count} 样${k.title}`, icon: 'triangle-alert' as const, link: { view: STANDING_VIEW, params: { kind: k.kind }, target: 'main' } }, note: k.note, actions: [] })) }],
     actions: [],
+    ...(kinds.length === 0 ? { normal: true as const } : {}),
   }
   return { title: '自上次以来', subtitle: since === null ? null : `你上次看是 ${when(since)}`, blocks: [sayStep(agents), sinceSection, attention] }
 }
@@ -185,7 +190,8 @@ export async function activityAnswer(records: Read, params: Record<string, strin
   const groups = grouped(facts, (f) => dayTitle(f.at, now)).map(({ title, members }) => ({ title, count: members.length, rows: members.map((f) => factRow(lookup, f, grants, true)) }))
   const shown = n(who, agent)
   const paging = pagingOf({ view: ACTIVITY_VIEW, params, rows: size, shown: facts.length, next: page.more?.after ?? null, total: shown })
-  return { title: '活动', subtitle: `${shown} 条`, blocks: [exportBlock(now), { kind: 'feed', groups, empty: '没有符合条件的记录。', page: paging }], filters }
+  // How many: the tabs say it.
+  return { title: '活动', subtitle: null, blocks: [exportBlock(now), { kind: 'feed', groups, empty: '没有符合条件的记录。', page: paging }], filters }
 }
 
 /**
@@ -218,7 +224,6 @@ export async function scenesAnswer(records: Read, params: Record<string, string>
     const touched = scene.touched - scene.puts
     const meta: Cell[] = [
       { text: scene.puts > 0 ? `放入 ${scene.puts} 样` : touched > 0 ? `动了 ${touched} 样` : '没放东西', muted: true },
-      ...(scene.cwds.length > 0 ? [{ text: scene.cwds.map((d) => shortDir(d, 24)).join('、'), mono: true, muted: true }] : []),
       ...(others ? [{ text: `还有 ${others}`, muted: true }] : []),
     ]
     return { key: scene.id, at: scene.first, actor: actorMark(lead, grants), text: sceneDoing(scene) ?? `场景 ${shortScene(scene.id)}`, meta, link: sceneLink(scene.id) }
@@ -228,7 +233,7 @@ export async function scenesAnswer(records: Read, params: Record<string, string>
   const paging = pagingOf({ view: SCENES_VIEW, params, rows: size, shown: scenes.length, next: page.more?.after ?? null, total })
   // The newest scene opens in the panel when the window has room for both, as a click on its row would open it.
   const open = after === undefined && scenes[0] ? { open: sceneLink(scenes[0].id) } : {}
-  return { title: '场景', subtitle: `${total} 次会话`, blocks: [{ kind: 'feed', groups, empty: '', page: paging }], ...open }
+  return { title: '场景', subtitle: null, blocks: [{ kind: 'feed', groups, empty: '', page: paging }], ...open }
 }
 
 /** A length of time in words: 不到 1 分钟, 12 分钟, 2 小时 5 分, 3 天. */
@@ -244,40 +249,56 @@ export function durationText(ms: number): string {
 const CONVERSATION_TONE = { here: 'neutral', gone: 'warn', elsewhere: 'neutral' } as const
 
 /** The conversation's file, to copy, with whether it is here; the command that resumes it, only when it is. */
-function conversationFields(c: Conversation | null): { label: string; value: Cell }[] {
+function conversationFields(c: Conversation | null, reopen: Reopen | null): { label: string; value: Cell }[] {
   if (c === null) return []
-  const file = { label: '对话', value: { text: c.path, mono: true, copy: true as const, tag: { text: whereConversation(c), tone: CONVERSATION_TONE[c.status] } } }
+  const file = { label: '对话', value: { text: c.path, mono: true, copy: true as const, tag: { text: whereConversation(c), tone: CONVERSATION_TONE[c.status] }, ...(reopen === null ? {} : { reopen }) } }
   return c.status === 'here' && c.resume ? [file, { label: '接着聊', value: { text: c.resume, mono: true, copy: true } }] : [file]
 }
 
 /**
- * One scene: four figures (how long, how many things put, how many sources they rest on, how many
- * decisions), its conversation and where, then what happened in it, newest first, a page at a time.
+ * One scene: its figures that are not nothing (how long, how many things put, how many sources they
+ * rest on, how many decisions), as figures when there are a few, else one line; its conversation; what
+ * happened in it, newest first, a page at a time; then, folded, where it worked and its id.
  */
 export async function sceneAnswer(records: Read, scene: SceneRow, conversation: Conversation | null, grants: readonly Grant[], params: Record<string, string> = {}, size = PAGE_ROWS): Promise<ViewAnswer> {
   const { after } = pageAt(params)
+  const long = Date.parse(scene.last) - Date.parse(scene.first)
   const stats: Stat[] = [
-    { label: '时长', value: durationText(Date.parse(scene.last) - Date.parse(scene.first)), note: `${when(scene.first)} 开始` },
-    { label: '放入', value: String(scene.puts), note: scene.puts === 0 ? null : `带进来 ${scene.brought} 样，做出来 ${scene.puts - scene.brought} 样` },
-    { label: '依据', value: String(scene.sources.length + scene.outside.length), note: scene.outside.length === 0 ? null : `库外 ${scene.outside.length} 句` },
-    { label: '决定', value: String(scene.decided), note: scene.lastDecided },
+    ...(long >= 60_000 ? [{ label: '时长', value: durationText(long), note: `${when(scene.first)} 开始` }] : []),
+    ...(scene.puts > 0 ? [{ label: '放入', value: String(scene.puts), note: scene.brought === 0 ? '都是做出来的' : scene.brought === scene.puts ? '都是带进来的' : `带进来 ${scene.brought} 样，做出来 ${scene.puts - scene.brought} 样` }] : []),
+    ...(scene.sources.length + scene.outside.length > 0 ? [{ label: '依据', value: String(scene.sources.length + scene.outside.length), note: scene.outside.length === 0 ? null : `库外 ${scene.outside.length} 句` }] : []),
+    ...(scene.decided > 0 ? [{ label: '决定', value: String(scene.decided), note: scene.lastDecided }] : []),
   ]
+  // A figure or two read better as words in a line than as cards.
+  const figures: Block[] =
+    stats.length >= 3 ? [{ kind: 'stats', stats }] : stats.length > 0 ? [{ kind: 'fields', line: true, fields: stats.map((s) => ({ label: s.label, value: { text: `${s.label} ${s.value}${s.note === null ? '' : `（${s.note}）`}`, muted: true } })) }] : []
   const page = await records.where<Fact>('log', 'scene', scene.id, { limit: size, ...(after === undefined ? {} : { after }) })
   const facts = page.rows.map((r) => r.value)
   const lookup = await lookupOf(records, facts, { scenes: [scene.id] })
   const count = page.more === null && after === undefined ? facts.length : await records.count('log', 'scene', scene.id)
   const paging = pagingOf({ view: SCENE_VIEW, params: { ...params, scene: scene.id }, rows: size, shown: facts.length, next: page.more?.after ?? null, total: count, target: 'panel' })
-  const feed: Block = { kind: 'feed', groups: [{ title: '这次会话里发生的', count, rows: facts.map((f) => factRow(lookup, f, grants, false)) }], empty: '这次会话里还没有发生什么。', page: paging }
-  const fields: Block = {
-    kind: 'fields',
-    fields: [
-      ...conversationFields(conversation),
-      { label: '谁', value: { text: actorNames(scene.actors) } },
-      ...(scene.cwds.length > 0 ? [{ label: '在哪', value: { text: scene.cwds.map((d) => shortDir(d, 36)).join('、'), mono: true, muted: true } }] : []),
-      { label: '场景号', value: { text: scene.id, mono: true, muted: true } },
+  // The page is the scene: its rows need no heading of their own.
+  const feed: Block = { kind: 'feed', groups: [{ title: '', count: null, rows: facts.map((f) => factRow(lookup, f, grants, false)) }], empty: '这次会话里还没有发生什么。', page: paging }
+  const talk = conversationFields(conversation, reopenFor(scene))
+  const record: Block = {
+    kind: 'section',
+    title: '记录',
+    note: null,
+    count: null,
+    collapse: 'closed',
+    actions: [],
+    blocks: [
+      {
+        kind: 'fields',
+        fields: [
+          { label: '谁', value: { text: actorNames(scene.actors) } },
+          ...(scene.cwds.length > 0 ? [{ label: '在哪', value: { text: scene.cwds.map((d) => shortDir(d, 36)).join('、'), mono: true, muted: true } }] : []),
+          { label: '场景号', value: { text: scene.id, mono: true, muted: true } },
+        ],
+      },
     ],
   }
-  return { title: sceneDoing(scene) ?? `场景 ${shortScene(scene.id)}`, subtitle: `${actorNames(scene.actors)} · ${when(scene.first)}`, blocks: [{ kind: 'stats', stats }, fields, feed] }
+  return { title: sceneDoing(scene) ?? `场景 ${shortScene(scene.id)}`, subtitle: `${actorNames(scene.actors)} · ${when(scene.first)}`, blocks: [...figures, ...(talk.length > 0 ? [{ kind: 'fields' as const, fields: talk }] : []), feed, record] }
 }
 
 /** The answer when no single scene has the id or prefix asked for. */

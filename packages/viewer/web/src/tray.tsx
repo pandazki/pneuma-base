@@ -3,7 +3,7 @@
 // rows of what agents did since the owner last looked; then 打开窗口 and 退出. It draws the same blocks the home page answers and
 // knows no view of any plugin: the asks are every asks block, the rows every feed block's, newest first.
 import type { Action, Ask, Block, FeedRow, Link, ViewResult } from '@pneuma-base/kernel'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, Power } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, type State } from './api'
 import { AsksView } from './pieces/asks'
@@ -79,6 +79,8 @@ export function Tray() {
 
   const blocks = useMemo(() => everyBlock(home?.outcome === 'shown' ? home.blocks : []), [home])
   const asks: Ask[] = blocks.flatMap((b) => (b.kind === 'asks' ? b.asks : []))
+  const hadAsks = useRef(false)
+  if (asks.length > 0) hadAsks.current = true
   const feeds = blocks.filter((b) => b.kind === 'feed')
   const rows: FeedRow[] = feeds.flatMap((b) => b.groups.flatMap((g) => g.rows)).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
   const quiet = feeds.find((b) => b.empty !== '')?.empty ?? '还没有谁做过什么。'
@@ -121,10 +123,13 @@ export function Tray() {
     () => ({
       tick,
       onLink: (link: Link) => tellShell({ type: 'open', link }),
-      onAction: (action: Action) => (action.inputs.length > 0 || action.confirm !== null ? new Promise((resolve) => setPending({ id: ++asked.current, action, resolve })) : run(action, {}, false)),
+      onAction: (action: Action, values: Record<string, string> = {}, filled = false) =>
+        (action.inputs.length > 0 && !filled) || action.confirm !== null ? new Promise((resolve) => setPending({ id: ++asked.current, action, resolve })) : run(action, values, false),
       onParam: () => undefined,
       onPage: (link: Link) => tellShell({ type: 'open', link }),
       selected: () => false,
+      look: 'list' as const,
+      root: null,
     }),
     [tick, run],
   )
@@ -149,15 +154,18 @@ export function Tray() {
             <ChevronRight strokeWidth={2} aria-hidden />
           </button>
         ) : null}
-        <section className="tray-part" aria-label="等你决定">
-          <h2>等你决定</h2>
-          <AsksView block={{ kind: 'asks', asks: asks.slice(0, ASKS), empty: '没有要你决定的事。' }} />
-          {asks.length > ASKS ? (
-            <button type="button" className="tray-more" onClick={openHome}>
-              还有 {asks.length - ASKS} 件，在窗口里看
-            </button>
-          ) : null}
-        </section>
+        {/* Nothing to decide is not said; once something was, the part stays, so an answer's receipt is seen. */}
+        {hadAsks.current ? (
+          <section className="tray-part" aria-label="等你决定">
+            <h2>等你决定</h2>
+            <AsksView block={{ kind: 'asks', asks: asks.slice(0, ASKS), empty: '没有要你决定的事。' }} />
+            {asks.length > ASKS ? (
+              <button type="button" className="tray-more" onClick={openHome}>
+                还有 {asks.length - ASKS} 件，在窗口里看
+              </button>
+            ) : null}
+          </section>
+        ) : null}
         <section className="tray-part" aria-label="自上次以来">
           <h2>自上次以来</h2>
           <FeedView block={{ kind: 'feed', groups: rows.length > 0 ? [{ title: '', count: null, rows: rows.slice(0, ROWS) }] : [], empty: quiet }} />
@@ -166,8 +174,8 @@ export function Tray() {
           <button type="button" className="btn btn-sm" onClick={open}>
             打开窗口
           </button>
-          <button type="button" className="btn btn-sm btn-quiet" onClick={() => tellShell({ type: 'quit' })}>
-            退出
+          <button type="button" className="icon-btn" aria-label="退出" data-tip="退出" onClick={() => tellShell({ type: 'quit' })}>
+            <Power strokeWidth={2} aria-hidden />
           </button>
         </footer>
       </div>

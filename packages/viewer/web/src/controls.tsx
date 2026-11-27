@@ -110,27 +110,44 @@ export function usePresence<T>(value: T | null, ms: number): { shown: T | null; 
   return value !== null ? { shown: value, leaving: false } : { shown: held, leaving: held !== null }
 }
 
-export type MenuEntry = { label: string; icon?: ReactNode; keys?: string; onSelect(): void } | 'separator'
+export type MenuEntry = { label: string; icon?: ReactNode; keys?: string; danger?: boolean; onSelect(): void } | 'separator'
 
 /**
- * A menu under its trigger. Nothing is lit until the pointer or a key says so; a soft highlight glides
- * to the lit item. Arrow keys, Home and End move, Enter or Space chooses, Escape and Tab close and
- * give the focus back. It enters with a short scale from its corner and leaves at once.
+ * A menu under its trigger, or at a point of the page (`at`, as a context menu, open from the start;
+ * `onClose` says when it went). Nothing is lit until the pointer or a key says so; a soft highlight
+ * glides to the lit item. Arrow keys, Home and End move, Enter or Space chooses, Escape and Tab close
+ * and give the focus back. It enters with a short scale from its corner and leaves at once.
  */
-export function Menu({ label, entries, trigger }: { label: string; entries: MenuEntry[]; trigger(props: { ref(el: HTMLElement | null): void; open: boolean; toggle(): void; onKeyDown(e: KeyboardEvent): void }): ReactNode }) {
-  const [open, setOpen] = useState(false)
+export function Menu({
+  label,
+  entries,
+  trigger,
+  at: point,
+  onClose,
+}: {
+  label: string
+  entries: MenuEntry[]
+  trigger?(props: { ref(el: HTMLElement | null): void; open: boolean; toggle(): void; onKeyDown(e: KeyboardEvent): void }): ReactNode
+  at?: { left: number; top: number }
+  onClose?(): void
+}) {
+  const [open, setOpen] = useState(point !== undefined)
   const [lit, setLit] = useState(-1)
   const anchor = useRef<HTMLElement | null>(null)
   const panel = useRef<HTMLDivElement | null>(null)
   const glow = useRef<HTMLSpanElement | null>(null)
-  const [at, setAt] = useState({ left: 0, top: 0 })
+  const [at, setAt] = useState(() => (point ? { left: Math.max(8, Math.min(point.left, window.innerWidth - 240)), top: Math.max(8, Math.min(point.top, window.innerHeight - 40 - 32 * entries.length)) } : { left: 0, top: 0 }))
   const items = entries.filter((e): e is Exclude<MenuEntry, 'separator'> => e !== 'separator')
 
-  const close = useCallback((refocus: boolean) => {
-    setOpen(false)
-    setLit(-1)
-    if (refocus) anchor.current?.focus()
-  }, [])
+  const close = useCallback(
+    (refocus: boolean) => {
+      setOpen(false)
+      setLit(-1)
+      if (refocus) anchor.current?.focus()
+      onClose?.()
+    },
+    [onClose],
+  )
   const show = (first: number) => {
     const r = anchor.current?.getBoundingClientRect()
     if (r) setAt({ left: Math.max(8, Math.min(r.left, window.innerWidth - 240)), top: r.bottom + 6 })
@@ -194,7 +211,7 @@ export function Menu({ label, entries, trigger }: { label: string; entries: Menu
   let index = -1
   return (
     <>
-      {trigger({ ref: (el) => (anchor.current = el), open, toggle: () => (open ? close(false) : show(-1)), onKeyDown: onTriggerKey })}
+      {trigger?.({ ref: (el) => (anchor.current = el), open, toggle: () => (open ? close(false) : show(-1)), onKeyDown: onTriggerKey })}
       {open ? (
         <div ref={panel} role="menu" aria-label={label} tabIndex={-1} className="menu" style={at} onKeyDown={onPanelKey} data-chrome>
           <div className="menu-list" onPointerLeave={() => setLit(-1)}>
@@ -210,6 +227,7 @@ export function Menu({ label, entries, trigger }: { label: string; entries: Menu
                   tabIndex={-1}
                   className="menu-item"
                   data-lit={i === lit || undefined}
+                  data-danger={entry.danger || undefined}
                   onPointerMove={() => setLit(i)}
                   onClick={() => choose(i)}
                 >

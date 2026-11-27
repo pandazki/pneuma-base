@@ -35,6 +35,9 @@ describe('pneuma-base show', () => {
     expect(r.stdout).toMatch(/^ {2}ledger\.items +库 +ledger/m)
     expect(r.stdout).toMatch(/^ {2}config +配置 +kernel +只给主人$/m)
     expect(r.stdout).toMatch(/^ {2}item +一样东西 +kernel +从别的页的链接打开$/m)
+    // A view that shares a navigation entry says with which.
+    expect(r.stdout).toMatch(/^ {2}ledger\.standing +状况 +ledger +.*和 ledger\.items 一个入口$/m)
+    expect(r.stdout).toMatch(/^ {2}archive +归档区 +kernel +和 files 一个入口$/m)
     const list = owner(['show', '--json']).json()
     expect(list.views.find((v: { id: string }) => v.id === 'ledger.scenes')).toMatchObject({ title: '场景', by: 'ledger', nav: true })
     expect(list.views.find((v: { id: string }) => v.id === 'config')).toMatchObject({ by: 'kernel', ownerOnly: true })
@@ -44,29 +47,26 @@ describe('pneuma-base show', () => {
   it('prints a page in words, every button as the command that does the same, marked when only the owner may and with the question it asks', () => {
     const r = owner(['show', 'archive'])
     expect(r.code, r.stderr).toBe(0)
-    const head = [
-      '## 归档的东西',
-      '归档的东西不删；默认的找和查不带它们。',
-      '$ archive purge  # 清空归档区（只给主人）；先问：归档区里的东西会全部被删掉，不能撤回。',
-      expect.stringMatching(/^原来的路径 +在归档区的位置 +大小 +改于 +打开$/),
-    ]
-    expect(r.stdout.trimEnd().split('\n')).toEqual([
-      '# 归档区',
-      '',
-      ...head,
-      expect.stringMatching(/^notes\/ +_archive\/notes +→ show archive --dir _archive\/notes$/),
-    ])
+    const head = ['$ archive purge  # 清空归档区（只给主人）；先问：归档区里的东西会全部被删掉，不能撤回。', expect.stringMatching(/^原来的路径 +大小 +改于 +打开$/)]
+    expect(r.stdout.trimEnd().split('\n')).toEqual(['# 归档区', ...head, expect.stringMatching(/^notes\/ +→ show archive --dir _archive\/notes$/)])
     const inside = owner(['show', 'archive', '--dir', '_archive/notes'])
     expect(inside.code, inside.stderr).toBe(0)
     expect(inside.stdout.trimEnd().split('\n')).toEqual([
       '# 归档区',
       '_archive/notes',
-      '',
-      ...head,
       '.. → show archive',
-      expect.stringMatching(/^notes\/old\.md +_archive\/notes\/old\.md +4 B +\d{4}-\d\d-\d\d \d\d:\d\dZ +→ show item --path _archive\/notes\/old\.md$/),
+      ...head,
+      expect.stringMatching(/^notes\/old\.md +4 B +\d{4}-\d\d-\d\d \d\d:\d\dZ +→ show item --path _archive\/notes\/old\.md$/),
       '  $ unarchive _archive/notes/old.md  # 取回',
     ])
+  })
+
+  it('says once under a folder’s table what can be done with each thing in it, as commands taking its path, and the folder above it', () => {
+    const r = agent(['show', 'files', '--dir', 'notes'])
+    expect(r.code, r.stderr).toBe(0)
+    const lines = r.stdout.trimEnd().split('\n')
+    expect(lines.slice(0, 3)).toEqual(['# 文件', 'notes', '.. → show files'])
+    expect(lines.slice(-3)).toEqual(['其中每一样东西：', '  $ archive <库内路径>  # 归档', '  $ put <库内路径> --to <新的库内路径>  # 挪到'])
   })
 
   it('opens the item panel of a path with every plugin’s section', () => {
@@ -74,7 +74,7 @@ describe('pneuma-base show', () => {
     expect(r.code, r.stderr).toBe(0)
     expect(r.stdout).toContain('$ archive notes/a.md  # 归档')
     expect(r.stdout).toContain('\n## 来历\n')
-    expect(r.stdout).toContain('\n## 文件\n路径：notes/a.md\n')
+    expect(r.stdout).toContain('\n## 文件\n种类：文件\n')
     expect(r.stdout).toContain('预览：notes/a.md')
   })
 

@@ -18,9 +18,18 @@ function notes(pb: Cli): string {
   return lib
 }
 
-/** Each row's line, or who, and the letters of its mark. */
-const marksOf = (rows: Locator, by: '.feed-line' | '.feed-who') =>
-  rows.evaluateAll((els, sel) => Object.fromEntries(els.map((el) => [el.querySelector(sel)?.textContent ?? '', el.querySelector('.actor')?.textContent ?? ''])), by)
+/** Each row's line, or who its mark says it is (the mark's name, before the grant), and the letters of its mark. */
+const marksOf = (rows: Locator, by: '.feed-line' | 'who') =>
+  rows.evaluateAll(
+    (els, key) =>
+      Object.fromEntries(
+        els.map((el) => {
+          const mark = el.querySelector('.actor')
+          return [key === 'who' ? (mark?.getAttribute('aria-label') ?? '').split(' · ')[0] : (el.querySelector(key)?.textContent ?? ''), mark?.textContent ?? '']
+        }),
+      ),
+    by,
+  )
 
 test('agents get marks that tell them apart: two from the name, or the first later letter that sets them apart, the same on every page', async ({ page, pb }) => {
   const lib = join(tempDir(), 'lib')
@@ -37,7 +46,7 @@ test('agents get marks that tell them apart: two from the name, or the first lat
   await page.goto(`${url}#view=home`)
   const since = page.getByRole('main').getByRole('region', { name: '自上次以来' }).locator('.feed-row')
   await expect(since).toHaveCount(4)
-  expect(await marksOf(since, '.feed-who')).toMatchObject({ codex: 'Cd', copilot: 'Cp', 'claude-code': 'CC', gemini: 'Ge' })
+  expect(await marksOf(since, 'who')).toMatchObject({ codex: 'Cd', copilot: 'Cp', 'claude-code': 'CC', gemini: 'Ge' })
 })
 
 // The two tests that only look at it share one, built once per worker.

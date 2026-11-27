@@ -4,8 +4,8 @@ A single ribbon lifts like a breath and settles onto a flat foot. Following the 
 
 ## Artwork
 
-- `AppIcon.icon` is the editable Icon Composer document. Its two 1024 px SVG layers trace an original generated study. `Assets/Return.svg` shapes the teal underside and foot. `Assets/Fold.svg` carries the pale front face and citron edge. The document defines the background, glass material and appearance colors.
-- `Return.xcassets` represents the same layered design as an asset catalog. The day and night stacks use different teal backgrounds. The monochrome stack uses two gray values so the turn stays visible under a system tint. The catalog references the same two SVGs. When editing colors, stacking or material settings, update both the catalog and the Composer document.
+- `AppIcon.icon` is the editable Icon Composer document. Its two 1024 px SVG layers trace an original generated study. `Assets/Return.svg` shapes the darker underside and foot. `Assets/Fold.svg` carries the lighter front face and its edge. The document defines the background, glass material and appearance colors.
+- `Return.xcassets` represents the same layered design as an asset catalog. The day and night stacks use different graphite backgrounds: charcoal by day, ink at night. The monochrome stack uses two gray values so the turn stays visible under a system tint. The catalog references the same two SVGs. When editing colors, stacking or material settings, update both the catalog and the Composer document.
 - `MenuBar.xcassets` contains the 18 pt `Tray` and `TrayWaiting` vector templates. Both share the wide opening and flat foot. The waiting template adds a separate upper-left dot. AppKit supplies the foreground color.
 
 ## Build

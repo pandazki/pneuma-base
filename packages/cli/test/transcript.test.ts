@@ -41,9 +41,10 @@ describe('a scene’s conversation', () => {
     const data = ok(sb.run(['--library', lib, 'inspect', id, '--json'])).json().sections[0].data
     expect(data.conversation).toEqual({ path, resume, machine: expect.any(String), status: 'here' })
 
-    const fields = (ok(sb.run(['--library', lib, 'show', 'ledger.scene', '--scene', id, '--json'])).json().blocks as any[]).find((b) => b.kind === 'fields').fields as any[]
+    const fields = (ok(sb.run(['--library', lib, 'show', 'ledger.scene', '--scene', id, '--json'])).json().blocks as any[]).filter((b) => b.kind === 'fields').flatMap((b) => b.fields) as any[]
     expect(fields).toEqual(expect.arrayContaining([
-      { label: '对话', value: { text: path, mono: true, copy: true, tag: { text: '在这台机器上', tone: 'neutral' } } },
+      // The page, not the verb, says how the Mac app opens it again: Claude Code's resume in the directory it ran in.
+      { label: '对话', value: { text: path, mono: true, copy: true, tag: { text: '在这台机器上', tone: 'neutral' }, reopen: { url: null, run: { command: `claude --resume ${id}`, cwd: project }, reveal: file } } },
       { label: '接着聊', value: { text: resume, mono: true, copy: true } },
     ]))
 

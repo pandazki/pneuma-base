@@ -283,25 +283,35 @@ describe('agent connect --via mcp-http', () => {
 
 describe('the agents page', () => {
   type Item = { cell: { text: string; actor?: { name: string; grant?: string }; tag?: { text: string } }; note: string | null; actions: { label: string; call: { command: string } }[] }
-  const sections = () => {
-    const page = ok(run(['--library', lib, 'show', 'agents', '--json'])).json() as { blocks: { kind: string; title: string; blocks: { kind: string; items?: Item[]; text?: string; title?: string }[] }[]; problems: unknown[] }
-    expect(page.problems).toEqual([])
-    return Object.fromEntries(page.blocks.map((b) => [b.title, b.blocks]))
+  type Page = { blocks: { kind: string; title: string; about?: string; normal?: true; blocks: { kind: string; items?: Item[]; text?: string; title?: string }[] }[]; problems: unknown[] }
+  const page = () => {
+    const shown = ok(run(['--library', lib, 'show', 'agents', '--json'])).json() as Page
+    expect(shown.problems).toEqual([])
+    return shown
   }
+  const sections = () => Object.fromEntries(page().blocks.map((b) => [b.title, b.blocks]))
+  const section = (title: string) => page().blocks.find((b) => b.title === title)
 
   it('has a row per connected agent: its mark, how it is connected, what the grant reaches, when it was last here, 断开; and the products found here with 接上', () => {
     put('.claude/x', '')
     put('.cursor/x', '')
-    expect(sections()['接上的 agent']).toEqual([{ kind: 'empty', title: '还没有接上任何 agent', hint: '在下面找到的产品那一行点「接上」。' }])
+    // None connected yet: one quiet line, which the page leaves out; the products below say what to do.
+    expect(section('接上的 agent')).toMatchObject({ normal: true, blocks: [{ kind: 'text', tone: 'neutral', text: '还没有接上任何 agent。' }] })
     ok(run(['agent', 'connect', 'claude-code', '--library', lib, '--area', 'notes', '--read-only']))
-    let page = sections()
-    expect(page['接上的 agent']).toMatchObject([{ kind: 'list', items: [{ cell: { text: 'Claude Code', actor: { name: 'claude-code', grant: 'claude-code' } }, note: '技能 · 区域 notes/ · 只读 · 写在 ~/.claude/skills/pneuma-base-claude-code/SKILL.md · 还没在这里做过事', actions: [{ label: '断开', call: { command: 'agent disconnect' } }] }] }])
-    expect(page['这台机器上找到的']).toMatchObject([{ kind: 'list', items: [{ cell: { text: 'Cursor', actor: { name: 'cursor' } }, actions: [{ label: '接上', call: { command: 'agent connect' } }] }] }, { kind: 'text', text: expect.stringContaining('没找到：Codex') }])
-    expect(Object.keys(page)).toEqual(['接上的 agent', '这台机器上找到的', '接上的 agent 能做什么'])
+    let shown = sections()
+    // What the grant reaches: the area in the note, read-only as the one mark.
+    expect(shown['接上的 agent']).toMatchObject([
+      { kind: 'list', items: [{ cell: { text: 'Claude Code', actor: { name: 'claude-code', grant: 'claude-code' }, tag: { text: '只读' } }, note: '技能 · 区域 notes/ · 写在 ~/.claude/skills/pneuma-base-claude-code/SKILL.md · 还没在这里做过事', actions: [{ label: '断开', call: { command: 'agent disconnect' } }] }] },
+    ])
+    expect(section('接上的 agent')?.normal).toBeUndefined()
+    expect(shown['这台机器上找到的']).toMatchObject([{ kind: 'list', items: [{ cell: { text: 'Cursor', actor: { name: 'cursor' } }, actions: [{ label: '接上', call: { command: 'agent connect' } }] }] }])
+    // What was looked for and not found is there on demand.
+    expect(section('这台机器上找到的')?.about).toContain('没找到：Codex')
+    expect(Object.keys(shown)).toEqual(['接上的 agent', '这台机器上找到的', '接上的 agent 能做什么'])
 
     ok(run(['@claude-code', 'start', '整理笔记'], { PNEUMA_BASE_SESSION: 'one' }))
-    page = sections()
-    expect(page['接上的 agent']?.[0]?.items?.[0]?.note).toMatch(/ · 最近来过：\d{4}-\d\d-\d\d \d\d:\d\dZ；1 次会话，放进 0 样东西$/)
+    shown = sections()
+    expect(shown['接上的 agent']?.[0]?.items?.[0]?.note).toMatch(/ · 最近来过：\d{4}-\d\d-\d\d \d\d:\d\dZ；1 次会话，放进 0 样东西$/)
 
     rmSync(join(sb.home, '.claude/skills/pneuma-base-claude-code/SKILL.md'))
     expect(sections()['接上的 agent']?.[0]?.items?.[0]?.cell.tag).toEqual({ text: '接上时写的不在了', tone: 'warn' })

@@ -61,7 +61,7 @@ pub fn a_dir_size_is_its_entry_count(env: &Env) -> Outcome {
 /// The fields section 7 gives each facet it names.
 fn section_7_fields(name: &str) -> Option<&'static [&'static str]> {
     match name {
-        "fs" => Some(&["inode", "device", "created", "mode"]),
+        "fs" => Some(&["inode", "device", "created", "mode", "path"]),
         "macos" => Some(&["where_from", "quarantine", "tags"]),
         "placeholder" => Some(&["provider", "size_elsewhere"]),
         _ => None,

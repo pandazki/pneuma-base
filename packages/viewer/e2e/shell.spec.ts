@@ -3,9 +3,10 @@
 // remembered width, and both colour schemes without a reload.
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
-import { expect, tempDir, test, write, type Cli } from './support.ts'
+import { expect, openShared, tempDir, test, write, type Cli } from './support.ts'
 
-const row = (page: Page, path: string) => page.getByRole('main').getByRole('row', { name: new RegExp(`^${path.replaceAll('.', '\\.')}\\b`) })
+// The library's rows stand under their folder and name the thing alone.
+const row = (page: Page, path: string) => page.getByRole('main').getByRole('row', { name: new RegExp(`^${path.slice(path.lastIndexOf('/') + 1).replaceAll('.', '\\.')}\\b`) })
 const hashOf = (page: Page) => new URLSearchParams(new URL(page.url()).hash.slice(1))
 
 test('several things open at once as tabs, kept in the address; Escape closes the front one', async ({ page, relayUrl: url }) => {
@@ -19,8 +20,8 @@ test('several things open at once as tabs, kept in the address; Escape closes th
   await expect(tabs).toHaveCount(1)
   expect(hashOf(page).get('panel.path')).toBe('payments/comparison.md')
 
-  // ⌘-click opens a second tab in front; the address names both and which one is in front.
-  await row(page, 'payments/recommendation.md').click({ modifiers: ['ControlOrMeta'] })
+  // A middle click opens a second tab in front (⌘-click adds to the selection, as among files); the address names both and which one is in front.
+  await row(page, 'payments/recommendation.md').click({ button: 'middle' })
   await expect(title).toHaveText('recommendation.md')
   await expect(tabs).toHaveCount(2)
   await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true')
@@ -64,9 +65,8 @@ test('the palette finds a thing by its text and opens it, and with nothing typed
   await page.keyboard.press('ControlOrMeta+k')
   await expect(palette).toBeVisible()
   const pages = palette.getByRole('group', { name: '前往' })
-  await expect(pages.getByRole('option')).toHaveText(['首页', '库', '活动', '统计', '场景', '状况', '留存', '文件', '归档区', 'Agent', '配置'].map((t) => new RegExp(`^${t}`)))
-  await page.keyboard.press('ArrowDown')
-  await page.keyboard.press('ArrowDown')
+  await expect(pages.getByRole('option')).toHaveText(['首页', '库', '状况', '留存', '活动', '统计', '场景', '文件', '归档区', 'Agent', '配置'].map((t) => new RegExp(`^${t}`)))
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown')
   await expect(pages.getByRole('option', { name: /^活动/ })).toHaveAttribute('aria-selected', 'true')
   await page.keyboard.press('Enter')
   await expect(palette).toHaveCount(0)
@@ -95,7 +95,8 @@ test('the palette finds a thing by its text and opens it, and with nothing typed
 test('in a table the arrow keys move between rows, one row in the Tab order, and Enter opens it', async ({ page, relayUrl: url }) => {
   await page.goto(`${url}#view=ledger.items`)
   const rows = page.getByRole('main').getByRole('table').getByRole('row')
-  await expect(rows).toHaveCount(8)
+  // The header, the two folders' headings and the seven things.
+  await expect(rows).toHaveCount(10)
   const body = rows.filter({ has: page.locator('td') })
   await expect(body.and(page.locator('[tabindex="0"]'))).toHaveCount(1)
 
@@ -167,7 +168,7 @@ test('the sidebar’s width is kept across a reload, and the sidebar folds to a 
   await page.getByRole('button', { name: '收起侧栏' }).click()
   await expect(handle).toHaveCount(0)
   // The pages stay in the navigation, by icon.
-  await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '状况' }).click()
+  await openShared(page, '库', '状况')
   await expect(page.getByRole('heading', { level: 1, name: '状况' })).toBeVisible()
   await page.getByRole('button', { name: '展开侧栏' }).click()
   await expect(handle).toHaveAttribute('aria-valuenow', String(width + 32))

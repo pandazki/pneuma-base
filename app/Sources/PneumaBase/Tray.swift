@@ -86,7 +86,8 @@ final class TrayPanel: NSObject, NSPopoverDelegate, WKScriptMessageHandler, WKNa
   }
 
   func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-    guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
+    // Only the app's own page speaks to the shell: a plugin's view runs in a frame of it, and must not open files or run a terminal.
+    guard message.frameInfo.isMainFrame, let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
     if type == "height", let height = body["height"] as? Double {
       let room = (NSScreen.main?.visibleFrame.height ?? 800) - 60
       popover.contentSize = NSSize(width: Self.width, height: min(max(CGFloat(height), 120), min(room, 640)))

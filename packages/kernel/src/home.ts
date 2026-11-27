@@ -29,6 +29,7 @@ export async function homePage(_params: Record<string, string>, call: ViewerCall
     count: asks.length > 0 ? asks.length : null,
     blocks: [{ kind: 'asks', asks, empty: '没有要你决定的事。' }],
     actions: [],
+    ...(asks.length === 0 ? { normal: true as const } : {}),
   }
   const parts = pluginViews(ctx.library).views.filter((v) => v.decl.home === true)
   const problems = [...asked.problems]

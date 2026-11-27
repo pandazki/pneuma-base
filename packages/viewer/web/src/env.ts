@@ -8,19 +8,24 @@ export type Done = { tone: 'good' | 'warn' | 'bad'; text: string }
 /**
  * What a block can do besides showing itself: follow a link, start an action, set a parameter of the
  * view it is in, and know what the panel shows. `values` fills an action's inputs before the person
- * sees them, as a plugin's own page asks. `newTab` opens a panel link in a tab of its own, as ⌘-click
- * and a middle click ask. `onAction` comes to what the action answered, or null when the person
- * cancelled its dialog.
+ * sees them, as a plugin's own page asks; with `filled` they are the person's answer, typed in place,
+ * and the action runs without its dialog unless it asks to be confirmed. `newTab` opens a panel link
+ * in a tab of its own, as ⌘-click and a middle click ask. `onAction` comes to what the action
+ * answered, or null when the person cancelled its dialog.
  */
 export type BlockEnv = {
   onLink(link: Link, newTab?: boolean): void
-  onAction(action: Action, values?: Record<string, string>): Promise<Done | null>
+  onAction(action: Action, values?: Record<string, string>, filled?: boolean): Promise<Done | null>
   onParam(name: string, value: string): void
   /** Turns a long list to the page `link` names, in place of the one shown: in the main panel, or in the panel's front tab. */
   onPage(link: Link): void
   selected(link: Link | null): boolean
   /** Changes whenever the library changed, so blocks that load on their own load again. */
   tick: number
+  /** How a table of files shows them here: a list, or icons; the panel always lists. */
+  look: 'list' | 'icons'
+  /** The library's folder on the server's machine, for a path to copy; null when unknown. */
+  root: string | null
 }
 
 export const BlockEnvContext = createContext<BlockEnv | null>(null)

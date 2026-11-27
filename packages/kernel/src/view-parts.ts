@@ -68,3 +68,15 @@ export function elsewhereWords(provider: string | null, size: number | null): st
   const where = provider === null ? null : (PROVIDERS[provider] ?? provider)
   return [where === null ? '内容不在这台机器上' : `内容在 ${where} 上`, size === null ? null : sizeText(size)].filter((s) => s !== null).join('，')
 }
+
+/**
+ * What can be done with any thing a table lists, said once for the table: archive it, move it, and
+ * rename it in place, which is a move within its folder. `{path}` is the thing, `{in}` its folder.
+ */
+export const placeActions = (): { actions: Action[]; rename: Action } => ({
+  actions: [
+    { label: '归档', tone: 'default', confirm: null, inputs: [], call: { face: 'agent', verb: 'archive', request: { kind: 'archive', path: '{path}' } }, icon: 'archive', key: 'e' },
+    { label: '挪到', tone: 'default', confirm: null, inputs: [field('to', '新的库内路径', { value: '{path}' })], call: { face: 'agent', verb: 'put', request: { kind: 'move', from: '{path}', to: '{to}' } }, icon: 'folder-input', key: 'm' },
+  ],
+  rename: { label: '重新命名', tone: 'default', confirm: null, inputs: [field('name', '新的名字')], call: { face: 'agent', verb: 'put', request: { kind: 'move', from: '{path}', to: '{in}{name}' } }, icon: 'pencil' },
+})

@@ -2,20 +2,21 @@
 // one with a tab for each thing open. It keeps no state of its own beyond what is open, which the
 // address holds, and its widths; every view comes from the server, fetched again when the library
 // changed, after an action, and every `refresh` seconds when its answer asks for that.
-import type { Action, FilterOption, Link, PluginProblem, ViewDecl, ViewRequest, ViewResult } from '@pneuma-base/kernel'
-import { LoaderCircle, Unplug } from 'lucide-react'
+import type { Action, Block, Crumb, FilterOption, Link, ListedView, PluginProblem, SortKey, ViewDecl, ViewRequest, ViewResult } from '@pneuma-base/kernel'
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronDown, ChevronLeft, ChevronRight, LayoutGrid, List, LoaderCircle, Unplug } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { api, ApiError, type State, type Tone } from './api'
-import { Blocks, sameLink } from './blocks'
-import { ActionDialog, fill } from './chrome'
-import { Choice, Resizer, TipLayer, usePresence } from './controls'
+import { Blocks, sameLink, sortAfter } from './blocks'
+import { ActionBar, useActionKeys } from './actions'
+import { ActionDialog, fill, ViewIcon } from './chrome'
+import { Choice, Menu, Resizer, TipLayer, usePresence } from './controls'
 import { DetailPanel } from './detail'
 import { BlockEnvContext, type BlockEnv, type Done } from './env'
 import { pageActions, Palette } from './palette'
-import { PANEL, SIDE, usePrefs } from './prefs'
+import { PANEL, SIDE, useFileLook, usePrefs, type FileLook } from './prefs'
 import { activate, back, closeAll, closeTab, follow, retop, shownOf, useRoute } from './route'
-import { IN_SHELL } from './shell'
-import { firstPage, navOrder, POLL_MS, Sidebar } from './sidebar'
+import { IN_SHELL, type ShellCommand } from './shell'
+import { entryOf, firstPage, navOrder, POLL_MS, Sidebar } from './sidebar'
 import { localMoments } from './time'
 import { Toaster, useToasts } from './toasts'
 
@@ -76,10 +77,86 @@ const unpaged = (key: string) => {
 /** A view's own pace: the seconds its answer gave as `refresh`, for state from outside the library. */
 const refreshOf = (r: ViewResult) => (r.outcome === 'shown' ? r.refresh : undefined)
 
-/** The view's parameters with each filter's default filled in. */
-function withDefaults(req: ViewRequest, decl: ViewDecl | undefined): ViewRequest {
+/** The view's parameters with each filter's default filled in, and the sort last chosen on this page when none is asked for. */
+function withDefaults(req: ViewRequest, decl: ViewDecl | undefined, sort: string | null = null): ViewRequest {
   const defaults = Object.fromEntries((decl?.filters ?? []).map((f) => [f.name, f.default]))
-  return { view: req.view, params: { ...defaults, ...req.params } }
+  return { view: req.view, params: { ...defaults, ...(sort === null ? {} : { sort }), ...req.params } }
+}
+
+/** The first table of a page whose rows stand for places: a list of files, which the page's head shows as a list or as icons. */
+const filesTable = (blocks: readonly Block[]) => blocks.find((b): b is Extract<Block, { kind: 'table' }> => b.kind === 'table' && b.rows.some((r) => r.place !== undefined)) ?? null
+
+/**
+ * Where a page of folders stands: back and forward, as ⌘[ and ⌘] do, then each folder from the root,
+ * the last being this one, the page's title.
+ */
+function PathBar({ trail, onGo }: { trail: Crumb[]; onGo(link: Link): void }) {
+  const nav = (window as unknown as { navigation?: { canGoBack?: boolean; canGoForward?: boolean } }).navigation
+  const last = trail.length - 1
+  return (
+    <nav className="path-bar" aria-label="位置">
+      <span className="path-steps">
+        <button type="button" className="icon-btn" aria-label="后退" data-tip="后退 ⌘[" disabled={nav?.canGoBack === false} onClick={() => window.history.back()}>
+          <ChevronLeft strokeWidth={2} aria-hidden />
+        </button>
+        <button type="button" className="icon-btn" aria-label="前进" data-tip="前进 ⌘]" disabled={nav?.canGoForward === false} onClick={() => window.history.forward()}>
+          <ChevronRight strokeWidth={2} aria-hidden />
+        </button>
+      </span>
+      <ol className="path-crumbs">
+        {trail.map((c, i) =>
+          i === last ? (
+            <li key={i}>
+              <h1 aria-current="page">{c.label}</h1>
+            </li>
+          ) : (
+            <li key={i}>
+              <button type="button" className="path-crumb" onClick={() => onGo(c.link)}>
+                {c.label}
+              </button>
+              <ChevronRight className="path-sep" strokeWidth={2} aria-hidden />
+            </li>
+          ),
+        )}
+      </ol>
+    </nav>
+  )
+}
+
+const SORT_LABELS: Record<SortKey, string> = { name: '名字', modified: '修改时间', kind: '种类', size: '大小' }
+
+/** A page of files: list or icons (⌘1, ⌘2), and the sort, as a small menu whose current key, chosen again, turns it round. */
+function LookTools({ look, sorted, onLook, onSort }: { look: FileLook['look']; sorted: { by: SortKey; desc: boolean } | undefined; onLook(look: FileLook['look']): void; onSort(sort: string): void }) {
+  const looks = [
+    { value: 'list' as const, label: '列表', keys: '⌘1', Icon: List },
+    { value: 'icons' as const, label: '图标', keys: '⌘2', Icon: LayoutGrid },
+  ]
+  return (
+    <div className="look-tools">
+      {sorted ? (
+        <Menu
+          label="排序"
+          entries={(Object.keys(SORT_LABELS) as SortKey[]).map((key) => ({
+            label: SORT_LABELS[key],
+            icon: sorted.by === key ? sorted.desc ? <ArrowDown strokeWidth={2} /> : <ArrowUp strokeWidth={2} /> : <span className="menu-blank" />,
+            onSelect: () => onSort(sortAfter(sorted, key)),
+          }))}
+          trigger={({ ref, open, toggle, onKeyDown }) => (
+            <button ref={ref} type="button" className="icon-btn" aria-haspopup="menu" aria-expanded={open} aria-label={`排序：${SORT_LABELS[sorted.by]}`} data-tip={`排序：${SORT_LABELS[sorted.by]}`} onClick={toggle} onKeyDown={onKeyDown}>
+              <ArrowUpDown strokeWidth={2} aria-hidden />
+            </button>
+          )}
+        />
+      ) : null}
+      <div className="look-switch" role="radiogroup" aria-label="显示方式">
+        {looks.map(({ value, label, keys, Icon }) => (
+          <button key={value} type="button" role="radio" className="icon-btn" aria-checked={look === value} aria-label={label} data-tip={`${label} ${keys}`} aria-keyshortcuts={value === 'list' ? 'Meta+1' : 'Meta+2'} onClick={() => onLook(value)}>
+            <Icon strokeWidth={2} aria-hidden />
+          </button>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 const keyOf = (req: ViewRequest | null) => (req === null ? null : JSON.stringify([req.view, Object.entries(req.params).sort()]))
@@ -123,23 +200,71 @@ function Loading() {
   )
 }
 
+/** A filter of many options as one button: the option in effect, and a menu of all of them with their counts. */
+function FilterMenu({ label, options, value, onChange }: { label: string; options: FilterOption[]; value: string; onChange(value: string): void }) {
+  const current = options.find((o) => o.value === value) ?? options[0]
+  return (
+    <Menu
+      label={label}
+      entries={options.map((o) => ({ label: o.label, icon: o.value === value ? <Check strokeWidth={2} /> : <span className="menu-blank" />, keys: o.count === undefined ? undefined : String(o.count), onSelect: () => onChange(o.value) }))}
+      trigger={({ ref, open, toggle, onKeyDown }) => (
+        <button ref={ref} type="button" className="btn btn-quiet filter-menu" aria-haspopup="menu" aria-expanded={open} aria-label={`${label}：${current?.label ?? ''}`} onClick={toggle} onKeyDown={onKeyDown}>
+          {current?.label}
+          <ChevronDown strokeWidth={2} aria-hidden />
+        </button>
+      )}
+    />
+  )
+}
+
 /**
- * The view's filters, each with the options the answer saw, with their counts, when it gave them; a
- * filter with one option or none has nothing to choose and is left out.
+ * The view's filters, each with the options the answer saw, with their counts, when it gave them. An
+ * option counted 0 is left out unless it is the one in effect; a filter left with one option or none
+ * has nothing to choose and is left out. Their labels are for screen readers: the options say it.
  */
 function Filters({ decl, answered, params, onChange }: { decl: ViewDecl | undefined; answered: { name: string; options: FilterOption[] }[] | undefined; params: Record<string, string>; onChange(name: string, value: string): void }) {
-  const filters = (decl?.filters ?? []).map((f) => ({ ...f, options: answered?.find((a) => a.name === f.name)?.options ?? f.options })).filter((f) => f.options.length > 1)
+  const filters = (decl?.filters ?? [])
+    .map((f) => {
+      const value = params[f.name] ?? f.default
+      const options = (answered?.find((a) => a.name === f.name)?.options ?? f.options).filter((o) => o.count !== 0 || o.value === value)
+      return { ...f, value, options }
+    })
+    .filter((f) => f.options.length > 1)
   if (filters.length === 0) return null
   return (
     <div className="filters" role="toolbar" aria-label="过滤">
-      {filters.map((f) => (
-        <div key={f.name} className="filter">
-          <span aria-hidden>{f.label}</span>
-          <Choice label={f.label} options={f.options} value={params[f.name] ?? f.default} onChange={(value) => onChange(f.name, value)} />
-        </div>
-      ))}
+      {filters.map((f) =>
+        f.as === 'menu' ? (
+          <FilterMenu key={f.name} label={f.label} options={f.options} value={f.value} onChange={(value) => onChange(f.name, value)} />
+        ) : (
+          <Choice key={f.name} label={f.label} options={f.options} value={f.value} onChange={(value) => onChange(f.name, value)} />
+        ),
+      )}
     </div>
   )
+}
+
+/** The views that share one entry of the navigation, as icons at the right of the page's head, the one shown pressed. */
+function ViewSwitch({ entry, current, onSelect }: { entry: ListedView[]; current: string; onSelect(view: string): void }) {
+  if (entry.length < 2) return null
+  return (
+    <nav className="view-switch" aria-label="这一组的页">
+      {entry.map((v) => (
+        <button key={v.id} type="button" className="icon-btn" aria-label={v.title} aria-current={v.id === current ? 'page' : undefined} data-tip={v.title} onClick={() => onSelect(v.id)}>
+          <ViewIcon name={v.icon} />
+        </button>
+      ))}
+    </nav>
+  )
+}
+
+/** The actions a page gives for the whole of what it shows: its `head` action blocks, at the top level. */
+export const headActions = (blocks: readonly Block[]): Action[] => blocks.flatMap((b) => (b.kind === 'actions' && b.head ? b.actions : []))
+
+/** The page's head actions, with their keys while nothing else has the focus. */
+function HeadActions({ actions }: { actions: Action[] }) {
+  useActionKeys(actions)
+  return <ActionBar actions={actions} small={false} className="head-actions" />
 }
 
 function Shown({ result, failed }: { result: ViewResult | null; failed: boolean }) {
@@ -296,7 +421,8 @@ export function App() {
   const firstNav = firstPage(views)
   const current = route.main !== null && views.some((v) => v.id === route.main?.view) ? route.main : firstNav === null ? null : { view: firstNav, params: {} }
   const decl = views.find((v) => v.id === current?.view)
-  const request = current === null ? null : withDefaults(current, decl)
+  const [fileLook, setFileLook] = useFileLook(state.data?.library?.id ?? null, current?.view ?? null)
+  const request = current === null ? null : withDefaults(current, decl, fileLook.sort)
   const shown = useLoad(keyOf(request), tick, () => api.view(request as ViewRequest), refreshOf)
   const top = shownOf(route)
   const detail = useLoad(keyOf(top), tick, () => api.view(top as ViewRequest), refreshOf)
@@ -336,10 +462,34 @@ export function App() {
     else setPrefs({ rail: true })
   }, [prefs.rail, crowded, tight, setPrefs])
 
+  // A page of files: list or icons, and up to the folder above, from the app's menus or, in a browser, ⌘1, ⌘2 and ⌘↑.
+  const trail = shown.data?.outcome === 'shown' ? shown.data.trail : undefined
+  const onLinkRef = useRef<((link: Link) => void) | null>(null)
+  const lookCommand = useCallback(
+    (c: ShellCommand) => {
+      if (c === 'list' || c === 'icons') setFileLook({ look: c })
+      else if (c === 'up' && trail && trail.length > 1) onLinkRef.current?.((trail[trail.length - 2] as Crumb).link)
+    },
+    [setFileLook, trail],
+  )
+  useEffect(() => {
+    if (!IN_SHELL) return
+    const heard = (e: Event) => {
+      const c = (e as CustomEvent<{ command?: ShellCommand }>).detail?.command
+      if (c) lookCommand(c)
+    }
+    window.addEventListener('pneuma-shell', heard)
+    return () => window.removeEventListener('pneuma-shell', heard)
+  }, [lookCommand])
+
   // Escape closes the front tab; ⌘K opens the palette; ⌃⌘S folds the sidebar. A dialog or the palette takes Escape first.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') go((r) => closeTab(r, r.active))
+      const typing = (e.target as HTMLElement | null)?.closest?.('input, textarea, [contenteditable]')
+      if (!IN_SHELL && e.metaKey && !typing && (e.key === '1' || e.key === '2' || e.key === 'ArrowUp')) {
+        e.preventDefault()
+        lookCommand(e.key === '1' ? 'list' : e.key === '2' ? 'icons' : 'up')
+      } else if (e.key === 'Escape') go((r) => closeTab(r, r.active))
       else if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         if (pending === null) setPalette((open) => !open)
@@ -350,7 +500,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [go, pending, toggleSide])
+  }, [go, pending, toggleSide, lookCommand])
 
   const run = useCallback(
     async (action: Action, values: Record<string, string>, confirmed: boolean): Promise<Done> => {
@@ -379,16 +529,21 @@ export function App() {
     },
     [go],
   )
+  onLinkRef.current = onLink
   const onAction = useCallback(
-    (action: Action, values: Record<string, string> = {}): Promise<Done | null> =>
-      action.inputs.length > 0 || action.confirm !== null ? new Promise((resolve) => setPending({ id: ++asked.current, action, values, resolve })) : run(action, values, false),
+    (action: Action, values: Record<string, string> = {}, filled = false): Promise<Done | null> =>
+      (action.inputs.length > 0 && !filled) || action.confirm !== null ? new Promise((resolve) => setPending({ id: ++asked.current, action, values, resolve })) : run(action, values, false),
     [run],
   )
   const selected = useCallback((link: Link | null) => link !== null && link.target === 'panel' && sameLink(link, top), [top])
   // A parameter set from a block, such as a folder chosen in a tree, changes the view the block is in.
+  // The sort chosen on a page is remembered for the page, on this machine.
   const onMainParam = useCallback(
-    (name: string, value: string) => current && go((r) => ({ ...r, main: { view: current.view, params: { ...current.params, [name]: value } } })),
-    [current, go],
+    (name: string, value: string) => {
+      if (name === 'sort') setFileLook({ sort: value })
+      if (current) go((r) => ({ ...r, main: { view: current.view, params: { ...current.params, [name]: value } } }))
+    },
+    [current, go, setFileLook],
   )
   const onPanelParam = useCallback((name: string, value: string) => top && go((r) => retop(r, { view: top.view, params: { ...top.params, [name]: value } })), [top, go])
   // The app opens a link it was given, from the menu bar panel, and says what a drop or its watcher did.
@@ -414,8 +569,9 @@ export function App() {
     },
     [go],
   )
-  const env: BlockEnv = useMemo(() => ({ tick, onLink, onAction, onParam: onMainParam, onPage, selected }), [tick, onLink, onAction, onMainParam, onPage, selected])
-  const panelEnv: BlockEnv = useMemo(() => ({ ...env, onParam: onPanelParam }), [env, onPanelParam])
+  const root = state.data?.library?.root ?? null
+  const env: BlockEnv = useMemo(() => ({ tick, onLink, onAction, onParam: onMainParam, onPage, selected, look: fileLook.look, root }), [tick, onLink, onAction, onMainParam, onPage, selected, fileLook.look, root])
+  const panelEnv: BlockEnv = useMemo(() => ({ ...env, onParam: onPanelParam, look: 'list' as const }), [env, onPanelParam])
   const dialog = usePresence(pending, 200)
   const paletteShown = usePresence(palette ? true : null, 150)
 
@@ -443,7 +599,13 @@ export function App() {
 
   const data = state.data
   const result = shown.data?.outcome === 'shown' ? shown.data : null
-  const groupOf = (v: (typeof views)[number]) => (v.by === 'kernel' ? (v.id === 'home' ? null : '库') : (data.available.find((p) => p.name === v.by)?.title ?? v.by))
+  const placedTable = result ? filesTable(result.blocks) : null
+  const groupOf = (v: (typeof views)[number]) => {
+    const root = entryOf(views, v.id)[0]
+    return root !== undefined && root.id !== v.id ? root.title : null
+  }
+  const entry = entryOf(views, current?.view ?? null)
+  const detailShown = detail.data?.outcome === 'shown' ? detail.data : null
   const style = { '--side-w': `${prefs.side}px`, '--panel-w': `${panelWidth}px`, '--rail': `${RAIL}px` } as CSSProperties
   return (
     <BlockEnvContext.Provider value={env}>
@@ -470,9 +632,20 @@ export function App() {
               </div>
             ) : null}
             <header className="page-head" data-drag>
-              <h1>{result?.title ?? decl?.title ?? ''}</h1>
-              {result?.subtitle ? <p>{localMoments(result.subtitle)}</p> : null}
+              {result?.trail && result.trail.length > 0 ? (
+                <PathBar trail={result.trail} onGo={onLink} />
+              ) : (
+                <>
+                  <h1>{result?.title ?? decl?.title ?? ''}</h1>
+                  {result?.subtitle ? <p>{localMoments(result.subtitle)}</p> : null}
+                </>
+              )}
               <Filters decl={decl} answered={result?.filters} params={request?.params ?? {}} onChange={onMainParam} />
+              <div className="page-tools">
+                {placedTable ? <LookTools look={fileLook.look} sorted={placedTable.sorted} onLook={(look) => setFileLook({ look })} onSort={(sort) => onMainParam('sort', sort)} /> : null}
+                {result ? <HeadActions actions={headActions(result.blocks)} /> : null}
+                <ViewSwitch entry={entry} current={current?.view ?? ''} onSelect={(view) => go((r) => ({ ...r, main: { view, params: {} } }))} />
+              </div>
             </header>
             <div className="page-body">
               <Problems problems={data.problems} />
@@ -488,6 +661,7 @@ export function App() {
                 labelOf={(req) => titles.current.get(keyOf(req) as string) ?? fallbackLabel(req, views.find((v) => v.id === req.view))}
                 iconOf={(req) => views.find((v) => v.id === req.view)?.icon ?? 'file'}
                 result={detail.data}
+                actions={detailShown ? headActions(detailShown.blocks) : []}
                 onActivate={(i) => go((r) => activate(r, i))}
                 onClose={(i) => go((r) => closeTab(r, i))}
                 onCloseAll={() => go(closeAll)}

@@ -1,6 +1,6 @@
 // What the management UI shows, in the kernel's block types only: a thing's section of the item
 // panel, and the page of every versioned thing. Pure.
-import { formOf, type Action, type Block, type ItemSection, type LibraryPath, type Link, type Paging, type Tag, type TableRow, type ViewAnswer, type ViewDecl } from '@pneuma-base/kernel'
+import { formOf, type Action, type Block, type Cell, type ItemSection, type LibraryPath, type Link, type Paging, type Tag, type TableRow, type ViewAnswer, type ViewDecl } from '@pneuma-base/kernel'
 import { VERSION_EXPORT, VERSION_PRUNE, VERSION_RESTORE } from './commands.js'
 import { latest, type Thing, type Version } from './model.js'
 import { aboutVersion, archived, minute, whoText } from './text.js'
@@ -11,14 +11,15 @@ export const THINGS_VIEW: ViewDecl = {
   title: '有版本的东西',
   icon: 'git-branch',
   nav: true,
-  filters: [{ name: 'archived', label: '归档的', options: [{ value: 'hide', label: '不显示' }, { value: 'show', label: '也显示' }], default: 'hide' }],
+  filters: [{ name: 'archived', label: '归档的', options: [{ value: 'hide', label: '在用的' }, { value: 'show', label: '含归档的' }], default: 'hide' }],
 }
 
 const itemLink = (path: string): Link => ({ view: 'item', params: { path }, target: 'panel' })
 
 function versionTag(thing: Thing, v: Version, state: DiskState): Tag | null {
   if (v.pruned) return { text: '已清掉', tone: 'neutral' }
-  if (v === latest(thing) && state === 'current') return { text: '当前', tone: 'good' }
+  // The latest is the current one: said only where there are others to tell it from.
+  if (v === latest(thing) && state === 'current') return thing.versions.length > 1 ? { text: '当前', tone: 'neutral' } : null
   if (v.via === 'outside') return { text: '工具外改的', tone: 'warn' }
   return null
 }
@@ -98,6 +99,12 @@ function stateTag(thing: Thing, state: DiskState): Tag {
   return state === 'changed' ? { text: '有没记下的改动', tone: 'warn' } : { text: '已记下', tone: 'good' }
 }
 
+/** Every change written down is the usual state: the page leaves it unsaid, the text form says it. */
+const stateCell = (thing: Thing, state: DiskState): Cell => {
+  const tag = stateTag(thing, state)
+  return state !== 'missing' && state !== 'changed' && !archived(thing) ? { text: tag.text, muted: true, normal: true } : { text: '', tag }
+}
+
 /** A page of the things declared versioned that are in the library. */
 export function thingsPage(things: { thing: Thing; state: DiskState }[], page: Paging): ViewAnswer {
   const rows: TableRow[] = things.map(({ thing, state }) => {
@@ -106,10 +113,11 @@ export function thingsPage(things: { thing: Thing; state: DiskState }[], page: P
       key: thing.id,
       cells: {
         path: { text: thing.path, mono: true, link: itemLink(thing.path) },
-        versions: { text: `${thing.versions.length} 版` },
-        latest: { text: last ? `第 ${last.n} 版 · ${minute(last.at)} · ${whoText(last.by)}` : '', muted: true },
+        versions: { text: `${thing.versions.length} 版`, muted: true },
         note: { text: last?.note ?? '', muted: true },
-        state: { text: '', tag: stateTag(thing, state) },
+        by: { text: last ? whoText(last.by) : '', muted: true },
+        latest: last ? { text: minute(last.at), at: last.at, muted: true } : { text: '' },
+        state: stateCell(thing, state),
       },
       link: itemLink(thing.path),
       actions: [],
@@ -118,10 +126,11 @@ export function thingsPage(things: { thing: Thing; state: DiskState }[], page: P
   const columns = [
     { key: 'path', label: '路径' },
     { key: 'versions', label: '版本' },
-    { key: 'latest', label: '最近一版' },
-    { key: 'note', label: '说明' },
+    { key: 'note', label: '最近一版的说明' },
+    { key: 'by', label: '谁' },
+    { key: 'latest', label: '时间' },
     { key: 'state', label: '状态' },
   ]
   const empty = '还没有声明有版本的东西。agent 用 say versioned <库内路径> 声明。'
-  return { title: THINGS_VIEW.title, subtitle: `${page.total} 样`, blocks: [{ kind: 'table', columns, rows, empty, page }] }
+  return { title: THINGS_VIEW.title, subtitle: null, blocks: [{ kind: 'table', columns, rows, empty, page }] }
 }

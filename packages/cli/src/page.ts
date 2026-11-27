@@ -1,7 +1,7 @@
 // A page of the management UI as the command line prints it: the same typed blocks in words, so an
 // agent reading it knows what the person sees, and every button written as the command line that
 // does the same thing. ARCHITECTURE.md「`show` 的文字」.
-import { commandLine, quote, usageOf, type Action, type ActorMark, type Block, type Call, type Cell, type FeedRow, type FlagParam, type Link, type OwnerCommandInfo, type Paging, type PositionalParam, type TreeNode, type ViewDecl, type ViewList, type ViewRequest, type ViewResult } from '@pneuma-base/kernel'
+import { commandLine, quote, usageOf, type Action, type ActorMark, type Block, type Call, type Cell, type Crumb, type FeedRow, type FlagParam, type Link, type OwnerCommandInfo, type Paging, type PositionalParam, type TreeNode, type ViewDecl, type ViewList, type ViewRequest, type ViewResult } from '@pneuma-base/kernel'
 
 type Shown = Extract<ViewResult, { outcome: 'shown' }>
 type OwnerCall = Extract<Call, { face: 'owner' }>
@@ -167,6 +167,14 @@ function treeLines(nodes: readonly TreeNode[], block: Extract<Block, { kind: 'tr
   ])
 }
 
+/** What a table says can be done with any of its things, once for all of them: `{path}` written as the path to give, `{in}` left to the person. */
+/** What the table offers for each of its things, as commands taking the thing's path; renaming in place is a move, which 挪到 already says. */
+function eachLines(each: Extract<Block, { kind: 'table' }>['each'], commands: readonly OwnerCommandInfo[], indent: string): string[] {
+  if (each === undefined || each.actions.length === 0) return []
+  const given = (a: Action): Action => ({ ...a, inputs: [...a.inputs, { name: 'path', label: '库内路径', placeholder: null, value: null, options: null }] })
+  return [`${indent}其中每一样东西：`, ...each.actions.map((a) => actionLine(given(a), commands, `${indent}  `))]
+}
+
 /** Where one page of a long list stands, and the commands that show the pages after and before it. */
 function pageLines(page: Paging | undefined, indent: string): string[] {
   if (page === undefined || (page.prev === null && page.next === null)) return []
@@ -184,15 +192,19 @@ function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: 
   switch (block.kind) {
     case 'section': {
       const heading = `${'#'.repeat(depth)} ${block.title}${block.count === null ? '' : `（${block.count}）`}`
-      return ['', heading, ...(block.note === null ? [] : [block.note]), ...actions(block.actions), ...block.blocks.flatMap((b) => blockLines(b, commands, depth + 1, indent, req)), '']
+      return ['', heading, ...(block.about === undefined ? [] : [`（${block.about}）`]), ...(block.note === null ? [] : [block.note]), ...actions(block.actions), ...block.blocks.flatMap((b) => blockLines(b, commands, depth + 1, indent, req)), '']
     }
     case 'table': {
       if (block.rows.length === 0) return [`${indent}${block.empty}`, ...pageLines(block.page, indent)]
-      const linked = block.rows.some((r) => r.link !== null)
+      // Rows of a group together under it, in the order of each group's first row, as the page draws them.
+      const groups = [...new Set(block.rows.map((r) => r.group ?? ''))]
+      const rows = groups.flatMap((g) => block.rows.filter((r) => (r.group ?? '') === g))
+      const linked = rows.some((r) => r.link !== null)
       const header = [...block.columns.map((c) => c.label), ...(linked ? ['打开'] : [])]
-      const cells = block.rows.map((r) => [...block.columns.map((c) => (r.cells[c.key] ? cellText(r.cells[c.key] as Cell, r.link) : '')), ...(linked ? [r.link === null ? '' : `→ ${linkCommand(r.link)}`] : [])])
+      const cells = rows.map((r) => [...block.columns.map((c) => (r.cells[c.key] ? cellText(r.cells[c.key] as Cell, r.link) : '')), ...(linked ? [r.link === null ? '' : `→ ${linkCommand(r.link)}`] : [])])
       const lines = aligned([header, ...cells], indent)
-      return [lines[0] as string, ...block.rows.flatMap((r, i) => [lines[i + 1] as string, ...actions(r.actions, more)]), ...pageLines(block.page, indent)]
+      const heading = (r: (typeof rows)[number], i: number) => (r.group !== undefined && r.group !== '' && r.group !== rows[i - 1]?.group ? [`${indent}${r.group}/`] : [])
+      return [lines[0] as string, ...rows.flatMap((r, i) => [...heading(r, i), lines[i + 1] as string, ...actions(r.actions, more)]), ...eachLines(block.each, commands, indent), ...pageLines(block.page, indent)]
     }
     case 'fields':
       return block.fields.map((f) => `${indent}${f.label}：${cellText(f.value)}`)
@@ -201,7 +213,7 @@ function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: 
     case 'timeline':
       return [
         ...block.entries.flatMap((e) => [
-          `${indent}- ${[minute(e.at), cellText(e.title), ...(e.tag === null ? [] : [`[${e.tag.text}]`])].filter((p) => p !== '').join('  ')}`,
+          `${indent}- ${[minute(e.at), ...(e.actor === undefined ? [] : [whoText(e.actor)]), cellText(e.title), ...(e.tag === null ? [] : [`[${e.tag.text}]`])].filter((p) => p !== '').join('  ')}`,
           ...e.lines.map((l) => `${more}${l}`),
           ...actions(e.actions ?? [], more),
         ]),
@@ -268,22 +280,32 @@ function filterLines(r: Shown, req: ViewRequest, decl: ViewDecl | undefined): st
   })
 }
 
-/** A shown page in words: its title, its filters with their counts, then each block as the page shows it, then what went wrong. */
+/** A shown page in words: its title, the folder above it when it stands in a trail, its filters with their counts, then each block as the page shows it, then what went wrong. */
 export function pageText(r: Shown, commands: readonly OwnerCommandInfo[], req: ViewRequest, decl?: ViewDecl): string[] {
-  const head = [`# ${r.title}`, ...(r.subtitle === null ? [] : [r.subtitle]), ...filterLines(r, req, decl)]
+  const up = r.trail && r.trail.length > 1 ? (r.trail[r.trail.length - 2] as Crumb) : null
+  const head = [`# ${r.title}`, ...(r.subtitle === null ? [] : [r.subtitle]), ...(up === null ? [] : [`.. → ${linkCommand(up.link)}`]), ...filterLines(r, req, decl)]
   const body = [...head, ...r.blocks.flatMap((b) => blockLines(b, commands, 2, '', req))]
   // A section opens and closes with a blank line, so where it ends shows; one blank line is enough.
   const lines = body.filter((l, i) => l !== '' || (body[i - 1] !== '' && i < body.length - 1))
   return [...lines, ...problemLines(r)]
 }
 
-/** The views of a library: each one's id, title and who gives it, its filters as flags, and whether it is the owner's or only reached by a link. */
+/**
+ * The views of a library: each one's id, title and who gives it, its filters as flags, and whether it is
+ * the owner's, shares a navigation entry with another view of the list (`with`), or is only reached by a link.
+ */
 export function viewListText(list: ViewList): string[] {
+  const shares = (v: ViewList['views'][number]) => v.nav && v.with !== undefined && list.views.some((o) => o.id === v.with)
   const rows = list.views.map((v) => [
     v.id,
     v.title,
     v.by,
-    [...v.filters.map((f) => `[--${f.name} ${f.options.flatMap((o) => (o.value === '' ? [] : [o.value])).join('|')}]`), ...(v.ownerOnly === true ? ['只给主人'] : []), ...(v.nav ? [] : ['从别的页的链接打开'])].join(' '),
+    [
+      ...v.filters.map((f) => `[--${f.name} ${f.options.flatMap((o) => (o.value === '' ? [] : [o.value])).join('|')}]`),
+      ...(v.ownerOnly === true ? ['只给主人'] : []),
+      ...(shares(v) ? [`和 ${v.with} 一个入口`] : []),
+      ...(v.nav ? [] : ['从别的页的链接打开']),
+    ].join(' '),
   ])
   return ['这个库的页，pneuma-base show <编号> 打开一页：', ...aligned(rows, '  '), ...problemLines(list)]
 }
