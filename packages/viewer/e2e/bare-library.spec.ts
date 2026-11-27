@@ -63,15 +63,17 @@ test('a bare library: four pages, folders, text and image preview, archive and t
   expect(readFileSync(join(lib, 'notes/hello.md'), 'utf8')).toContain('一段笔记')
   expect(existsSync(join(lib, '_archive/notes/hello.md'))).toBe(false)
 
-  // The config page of a bare library.
+  // The config page of a bare library: settings, no column heads. Nothing installed; the ledger this
+  // pneuma-base knows is a row whose switch is off, its whole text behind an ⓘ, nothing else to do.
   await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '配置' }).click()
-  // Nothing installed; the ledger this pneuma-base knows is offered.
-  // Not installed: its row's one action is the icon that installs it, nothing to take off.
-  const ledger = page.getByRole('region', { name: '插件' }).getByRole('row', { name: /ledger/ })
-  await expect(ledger.getByRole('button', { name: '装上' })).toBeVisible()
+  await expect(page.getByRole('main').getByRole('columnheader')).toHaveCount(0)
+  const ledger = page.getByRole('region', { name: '插件' }).getByRole('listitem').filter({ hasText: '记账' })
+  await expect(ledger.getByRole('switch', { name: '记账' })).toHaveAttribute('aria-checked', 'false')
+  await expect(ledger.getByRole('img', { name: /^记账：.*命令行里叫 ledger。$/ })).toBeVisible()
   await expect(ledger.getByRole('button', { name: '更多' })).toHaveCount(0)
-  // What Codex needs is said on demand, beside the section's title.
-  await expect(page.getByRole('region', { name: '授权与技能' }).getByRole('img', { name: /codex --add-dir/ })).toBeVisible()
+  // What Codex needs is said on demand, beside the title of the Agent page's first section.
+  await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: 'Agent' }).click()
+  await expect(page.getByRole('region', { name: '接上的 agent' }).getByRole('img', { name: /codex --add-dir/ })).toBeVisible()
 })
 
 test('when the server stops, the page says it cannot reach it and keeps what it showed', async ({ page, pb }) => {

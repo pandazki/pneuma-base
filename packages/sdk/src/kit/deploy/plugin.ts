@@ -14,7 +14,7 @@ import { cognitionText, followed, lookText, skippedText, staysOnline, unsettledT
 import { itemSection, sitesPage, sitesView, targetPage, targetPages, viewDecls } from './views.js'
 
 export type DeployOptions = {
-  /** The plugin's title for people: in the description, on its page and its item section. Defaults to 部署. */
+  /** The plugin's title for people: in the description, on its page, its item section and the configuration page. Defaults to 部署. */
   readonly title?: string
   /** The heading of its cognition section, `<what>：<how>`. Defaults to 上线：主人开关. */
   readonly heading?: string
@@ -24,6 +24,7 @@ export type DeployOptions = {
   readonly icon?: IconName
   readonly version?: string
   readonly summary?: string
+  readonly about?: string
   /** The directory of the plugin's own pages, for `custom` blocks a target adds. */
   readonly ui?: string
 }
@@ -65,7 +66,9 @@ export function deployPlugin(name: string, targets: TargetAdapter | readonly Tar
     contract: CONTRACT,
     name: kit.name,
     ...(options.version === undefined ? {} : { version: options.version }),
+    title: kit.title,
     ...(options.summary === undefined ? {} : { summary: options.summary }),
+    ...(options.about === undefined ? {} : { about: options.about }),
     ...(options.ui === undefined ? {} : { ui: options.ui }),
     cognition: { title: kit.title, text: cognitionText(kit, options.heading ?? '上线：主人开关', options.cognition ?? null) },
     storage: [{ dir: '.', kind: 'body' }],

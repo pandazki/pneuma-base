@@ -9,7 +9,6 @@ import { noiseSection } from './noise-commands.js'
 import { DESCRIPTION_FILE } from './paths.js'
 import { machineDirOf } from './plugin-table.js'
 import { pluginPage, pluginViews, shown, type KernelPage, type Shown } from './plugin-views.js'
-import { codexHint } from './products.js'
 import { secretNames } from './secrets.js'
 import { storageSection } from './storage-commands.js'
 import { agentSign, ownerOnlyRefusal, OWNER_DECIDES, type Env } from './session.js'
@@ -19,13 +18,12 @@ import {
   type Action,
   type ActionInput,
   type Block,
-  type Cell,
   type Context,
   type Library,
   type ListedView,
+  type ListItem,
   type PluginProblem,
   type PluginTable,
-  type TableRow,
   type Tag,
   type ViewDecl,
   type ViewList,
@@ -40,9 +38,9 @@ import {
  */
 export type ViewerCall = { ctx: Context; table: PluginTable; env: Env; viaGrant: boolean }
 
-/** The secrets each installed plugin declares, whether this machine has each, and a form to set it: the value goes to the command as its standard input. */
+/** The secrets each installed plugin declares, a row each: set is the usual state and goes unsaid; 设 or, once set, 换一个 and 删掉. The value goes to the command as its standard input. */
 async function secretsSection(ctx: Context): Promise<Block | null> {
-  const rows: TableRow[] = []
+  const items: ListItem[] = []
   for (const plugin of ctx.library.plugins) {
     const set = await secretNames(ctx.home, plugin.name)
     for (const secret of plugin.secrets ?? []) {
@@ -51,15 +49,11 @@ async function secretsSection(ctx: Context): Promise<Block | null> {
       const value: ActionInput = { name: 'value', label: '值', placeholder: null, value: null, options: null, secret: true }
       const form = kernelForm('secret set', { fixed })
       const setter: Action = { label: has ? '换一个' : '设', tone: 'default', confirm: null, inputs: [...form.inputs, value], call: { ...form.call, stdin: '{value}' }, ...(has ? { as: 'menu' as const } : {}) }
-      rows.push({
-        key: `${plugin.name}/${secret.name}`,
-        cells: {
-          plugin: { text: plugin.name, mono: true },
-          name: { text: secret.name, mono: true },
-          description: { text: secret.description },
-          state: has ? { text: '已设', muted: true, normal: true } : secret.optional === true ? { text: '', tag: { text: '没设（可选）', tone: 'neutral' } } : { text: '', tag: { text: '没设', tone: 'warn' } },
-        },
-        link: null,
+      const tag: Tag | null = has ? null : secret.optional === true ? { text: '没设（可选）', tone: 'neutral' } : { text: '没设', tone: 'warn' }
+      items.push({
+        cell: { text: secret.name, icon: 'key', ...(tag ? { tag } : {}) },
+        note: plugin.title ?? plugin.name,
+        about: secret.description,
         actions: [
           setter,
           ...(has ? [kernelAction('secret remove', '删掉', { fixed, tone: 'danger', confirm: `删掉后，插件 ${plugin.name} 在这台机器上读不到 ${secret.name}，要用时得再设。` })] : []),
@@ -67,28 +61,71 @@ async function secretsSection(ctx: Context): Promise<Block | null> {
       })
     }
   }
-  if (rows.length === 0) return null
+  if (items.length === 0) return null
   return {
     kind: 'section',
     title: '密钥',
     note: null,
     about: `插件用的凭证，只存在这台机器上（${join(ctx.home, 'secrets')}），不进库，不会同步，界面和命令行都不显示它的值。`,
-    count: rows.length,
-    blocks: [{ kind: 'table', columns: [{ key: 'plugin', label: '插件' }, { key: 'name', label: '密钥' }, { key: 'description', label: '做什么用' }, { key: 'state', label: '' }], rows, empty: '' }],
+    count: null,
+    blocks: [{ kind: 'list', items }],
     actions: [],
   }
 }
 
 /**
- * Where the library is, in one line; the installed plugins, the grants, the skills, the plugins'
- * secrets and storage, each with the owner commands that change them; then, folded, the library's id
- * and the file that describes it.
+ * Every plugin this pneuma-base knows and every one the library has installed, a row each in a stable
+ * order: the name a person says, opening the plugin's page when it has one; a short line; the whole
+ * text with the identifier behind an ⓘ; a switch that installs or removes it. A plugin installed on
+ * this machine from elsewhere says its version; the built-in ones are the app's version.
  */
-async function configPage(_params: Record<string, string>, { ctx, table }: ViewerCall): Promise<Shown> {
-  const { library } = ctx
-  const { root, config } = library
+function pluginsSection({ library }: Context, table: PluginTable): Block {
+  const { config } = library
+  const pages = pluginViews(library).views.filter((v) => v.decl.nav)
+  const item = (name: string): ListItem => {
+    const here = config.plugins.some((p) => p === name)
+    const known = table.get(name)
+    const p = library.plugins.find((q) => q.name === name) ?? known
+    const title = p?.title ?? name
+    const fromMachine = known !== undefined && machineDirOf(known) !== null
+    const note = [p?.summary ?? p?.cognition?.title ?? null, fromMachine ? (p?.version ?? null) : null].filter((s) => s !== null).join(' · ')
+    const about = [p?.about ?? '', title === name ? '' : `命令行里叫 ${name}。`].join('')
+    const page = here ? pages.find((v) => v.plugin.name === name) : undefined
+    const remove = kernelAction('plugin remove', '卸下', { fixed: { plugin: name, anyway: false } })
+    const add = kernelAction('plugin add', '装上', { fixed: { plugin: name } })
+    return {
+      cell: {
+        text: title,
+        icon: p?.views?.[0]?.icon ?? 'package',
+        ...(page ? { link: { view: page.decl.id, params: {}, target: 'main' as const } } : {}),
+        ...(p === undefined ? { tag: { text: '这个 pneuma-base 里没有', tone: 'warn' as const } } : {}),
+      },
+      note: note === '' ? null : note,
+      ...(about === '' ? {} : { about }),
+      toggle: { on: here, action: here ? remove : add },
+      actions: [
+        // A plugin that learns what is registered from puts can catch up on what was registered before it, again at any time.
+        ...(here && p?.catchUp !== undefined ? [{ ...kernelAction('plugin catch-up', '补上装上之前登记的', { fixed: { plugin: name } }), as: 'menu' as const, icon: 'history' as const }] : []),
+        // One installed on this machine leaves it once no library here uses it.
+        ...(!here && fromMachine ? [kernelAction('plugin uninstall', '从这台机器卸掉', { fixed: { plugin: name }, tone: 'danger', confirm: `从这台机器卸掉插件 ${name}？这台机器上别的库装着它的，会报它不可用。` })] : []),
+      ],
+    }
+  }
+  const names = [...table.keys(), ...config.plugins.filter((name) => !table.has(name))]
+  return {
+    kind: 'section',
+    title: '插件',
+    note: null,
+    about: '打开一个插件，库就多了它的本事和它的页；关上时，它名下的目录原样留着。',
+    count: null,
+    blocks: names.length > 0 ? [{ kind: 'list', items: names.map(item) }] : [{ kind: 'text', tone: 'neutral', text: '这个 pneuma-base 不认识任何插件。库照样能放、找、看、归档。' }],
+    actions: [{ ...kernelAction('plugin install', '从目录装一个插件到这台机器'), as: 'icon', icon: 'folder-plus' }],
+  }
+}
 
-  const where: Block = { kind: 'fields', line: true, fields: [{ label: '位置', value: { text: root, mono: true, muted: true, copy: true, icon: 'folder' } }] }
+/** Settings: the plugins, their secrets, where the library is kept with its noise; then, folded, the library's id and the file that describes it. */
+async function configPage(_params: Record<string, string>, { ctx, table }: ViewerCall): Promise<Shown> {
+  const { root, config } = ctx.library
   const record: Block = {
     kind: 'section',
     title: '记录',
@@ -106,100 +143,8 @@ async function configPage(_params: Record<string, string>, { ctx, table }: Viewe
       },
     ],
   }
-
-  // Every plugin this pneuma-base knows, and every one the library has installed: the installed first, its
-  // actions in the row's menu; the rest grey, each with the one icon that installs it. A row of a plugin
-  // with a page of its own opens that page. Its version and what it brings, as plugin list shows them:
-  // the summary, else its cognition's title.
-  const dash: Cell = { text: '—', muted: true }
-  const pages = pluginViews(library).views.filter((v) => v.decl.nav)
-  const pluginRow = (name: string, here: boolean, problem: Tag | null, actions: Action[]): TableRow => {
-    const p = library.plugins.find((q) => q.name === name) ?? table.get(name)
-    const summary = p?.summary ?? p?.cognition?.title
-    const page = here ? pages.find((v) => v.plugin.name === name) : undefined
-    return {
-      key: name,
-      cells: {
-        name: { text: name, mono: true, ...(here ? {} : { muted: true }), ...(problem ? { tag: problem } : {}) },
-        version: p?.version === undefined ? dash : { text: p.version, mono: true, muted: true },
-        title: summary === undefined ? dash : { text: summary, ...(here ? {} : { muted: true }) },
-      },
-      link: page === undefined ? null : { view: page.decl.id, params: {}, target: 'main' },
-      actions,
-    }
-  }
-  // A plugin that learns what is registered from puts can catch up on what was registered before it, again at any time.
-  const catchUp = (name: string): Action[] =>
-    library.plugins.some((p) => p.name === name && p.catchUp !== undefined) ? [{ ...kernelAction('plugin catch-up', '补上装上之前登记的', { fixed: { plugin: name } }), as: 'menu' as const, icon: 'history' as const }] : []
-  const installed = config.plugins.map((name) =>
-    pluginRow(name, true, library.plugins.some((p) => p.name === name) ? null : { text: '这个 pneuma-base 里没有', tone: 'warn' }, [
-      ...catchUp(name),
-      { ...kernelAction('plugin remove', '卸下', { fixed: { plugin: name, anyway: false } }), as: 'menu', icon: 'unplug' },
-    ]),
-  )
-  // A plugin installed on this machine, not built in, can also leave the machine once no library here uses it.
-  const uninstall = (name: string): Action[] => {
-    const p = table.get(name)
-    if (p === undefined || machineDirOf(p) === null) return []
-    return [kernelAction('plugin uninstall', '从这台机器卸掉', { fixed: { plugin: name }, tone: 'danger', confirm: `从这台机器卸掉插件 ${name}？这台机器上别的库装着它的，会报它不可用。` })]
-  }
-  const addable = [...table.keys()].filter((name) => !config.plugins.some((p) => p === name))
-  const offered = addable.map((name) => pluginRow(name, false, null, [{ ...kernelAction('plugin add', '装上', { fixed: { plugin: name } }), as: 'icon', icon: 'plus' }, ...uninstall(name)]))
-  const plugins: Block = {
-    kind: 'section',
-    title: '插件',
-    note: null,
-    about: '装上一个插件，库就多了它的本事和它的页；卸下时，它名下的目录原样留着。灰的是这台机器上有、这个库还没装的。',
-    count: config.plugins.length,
-    blocks: [
-      {
-        kind: 'table',
-        columns: [{ key: 'name', label: '名字' }, { key: 'version', label: '版本', optional: true }, { key: 'title', label: '做什么' }],
-        rows: [...installed, ...offered],
-        empty: '这个 pneuma-base 不认识任何插件。库照样能放、找、看、归档。',
-      },
-    ],
-    actions: [{ ...kernelAction('plugin install', '从目录装一个插件到这台机器'), as: 'icon', icon: 'folder-plus' }],
-  }
-
-  const skillAction = (grant: string, agent: 'claude' | 'codex', dir: string): Action => ({
-    ...kernelAction('skill install', agent === 'claude' ? '为 Claude 生成技能' : '为 Codex 生成技能', { fixed: { grant, agent }, values: { dir } }),
-    as: 'menu',
-    icon: 'sparkles',
-  })
-  const grantRows: TableRow[] = config.grants.map((g) => ({
-    key: g.id,
-    cells: {
-      name: { text: g.name, mono: true },
-      agent: { text: g.agent },
-      area: g.area === null ? { text: '整个库', muted: true } : { text: g.area, mono: true },
-      access: g.readOnly ? { text: '', tag: { text: '只读', tone: 'neutral' } } : { text: '读写', muted: true, normal: true },
-    },
-    link: null,
-    actions: [
-      skillAction(g.name, 'claude', '~/.claude/skills'),
-      skillAction(g.name, 'codex', '~/.agents/skills'),
-      { ...kernelAction('grant revoke', '撤回', { fixed: { name: g.name }, tone: 'danger', confirm: `撤回后，拿着授权 ${g.name} 的 agent 就不能再用这个库。` }), icon: 'trash-2' },
-    ],
-  }))
-  const grants: Block = {
-    kind: 'section',
-    title: '授权与技能',
-    note: null,
-    about: `没发任何授权时，谁都能用整个库；区域留空也是整个库。技能是一个指向说明的短文件，在授权那一行的「···」里为 Claude 或 Codex 生成。${codexHint(root)}`,
-    count: config.grants.length,
-    blocks: [
-      {
-        kind: 'table',
-        columns: [{ key: 'name', label: '授权名' }, { key: 'agent', label: '给谁' }, { key: 'area', label: '区域' }, { key: 'access', label: '权限' }],
-        rows: grantRows,
-        empty: '还没发授权。按「＋」给一个 agent 一份，再在它那一行为它生成技能。',
-      },
-    ],
-    actions: [{ ...kernelAction('grant issue', '发授权'), as: 'icon', icon: 'plus' }],
-  }
   const secrets = await secretsSection(ctx)
-  return shown('配置', null, [where, plugins, grants, ...(secrets ? [secrets] : []), await storageSection(ctx, [await noiseSection(root)]), record])
+  return shown('配置', null, [pluginsSection(ctx, table), ...(secrets ? [secrets] : []), await storageSection(ctx, [await noiseSection(root)]), record])
 }
 
 // ---- the face ----

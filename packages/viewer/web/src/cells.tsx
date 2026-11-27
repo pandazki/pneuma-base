@@ -1,6 +1,6 @@
 // The small pieces every block draws with: a moment, a tag, a cell, an action's button.
 import type { Cell, Tag, Tone } from '@pneuma-base/kernel'
-import { Check, Copy } from 'lucide-react'
+import { Check, Copy, FolderSearch } from 'lucide-react'
 import { useEffect, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { outsideUrl } from './api'
 import { ActorBadge } from './pieces/actor'
@@ -8,6 +8,7 @@ import { ViewIcon } from './chrome'
 import { useEnv } from './env'
 import { ReopenButton } from './files'
 import { cellFont, fitMiddle } from './measure'
+import { IN_SHELL, tellShell } from './shell'
 import { fullTime, shortTime, useNow } from './time'
 
 /** A moment in the viewer's local time, short and relative for the recent past, the whole of it on hover. */
@@ -56,13 +57,52 @@ function CopyButton({ value }: { value: string }) {
   )
 }
 
+/** In the Mac app, shows a path of this machine selected in Finder. */
+function RevealButton({ path }: { path: string }) {
+  if (!IN_SHELL) return null
+  return (
+    <button
+      type="button"
+      className="copy"
+      aria-label="在访达中显示"
+      data-tip="在访达中显示"
+      onClick={(e) => {
+        e.stopPropagation()
+        tellShell({ type: 'reveal-local', path })
+      }}
+    >
+      <FolderSearch strokeWidth={2} aria-hidden />
+    </button>
+  )
+}
+
+/** A path of this machine by its last part, the whole of it in the tooltip and to a screen reader, with a way to copy it and, in the Mac app, to show it in Finder. */
+function LocalPath({ cell }: { cell: Cell }) {
+  const path = cell.text.replace(/\/+$/, '')
+  const last = path.slice(path.lastIndexOf('/') + 1) || cell.text
+  return (
+    <span className="cell">
+      {cell.icon ? <ViewIcon name={cell.icon} /> : null}
+      <span className={`min-w-0 truncate ${cell.muted ? 'text-ink-2' : ''}`} data-tip={cell.text}>
+        <span className="sr-only">{cell.text}</span>
+        <span aria-hidden>{last}</span>
+      </span>
+      <CopyButton value={cell.text} />
+      <RevealButton path={cell.text} />
+      {cell.tag ? <TagView tag={cell.tag} /> : null}
+    </span>
+  )
+}
+
 /**
  * One cell. In a table it stays on one line, its text cut short with the whole of it on hover; elsewhere
  * it wraps. An outside address is a link to a new tab; given `room`, it is cut in the middle to fit.
  * Muted text is one step quieter than the text around it. A cell that says who starts with the mark.
+ * A path of this machine shows its last part.
  */
 export function CellView({ cell, line = false, first = false, room }: { cell: Cell; line?: boolean; first?: boolean; room?: number }) {
   const { onLink } = useEnv()
+  if (cell.local) return <LocalPath cell={cell} />
   const style = `${cell.mono ? 'font-mono text-[12.5px]' : ''} ${cell.muted ? (line ? 'text-ink-3' : 'text-ink-2') : ''}`
   const href = outsideUrl(cell.href)
   const fitted = href && line && room !== undefined ? fitMiddle(cell.text, cellFont(cell, first), room) : cell.text

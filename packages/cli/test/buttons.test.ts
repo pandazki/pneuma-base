@@ -28,7 +28,7 @@ function actionsIn(blocks: readonly Block[]): Action[] {
       case 'table':
         return b.rows.flatMap((r) => r.actions)
       case 'list':
-        return b.items.flatMap((i) => i.actions)
+        return b.items.flatMap((i) => [...i.actions, ...(i.toggle ? [i.toggle.action] : [])])
       case 'custom':
         return Object.values(b.actions)
       default:

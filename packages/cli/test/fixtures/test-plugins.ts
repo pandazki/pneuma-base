@@ -184,7 +184,13 @@ export const pager: Plugin = {
             { kind: 'fields', fields: [{ label: '字段', value: { text: '字段的值' } }] },
           ],
         },
-        { kind: 'list', items: [{ cell: { text: '列表的一项' }, note: '一项的说明', actions: [] }] },
+        {
+          kind: 'list',
+          items: [
+            { cell: { text: '列表的一项' }, note: '一项的说明', actions: [] },
+            { cell: { text: '一个开关', icon: 'power' }, note: '开着的设置', about: '拨它就打个招呼。', toggle: { on: true, action: ping('关上') }, actions: [] },
+          ],
+        },
         { kind: 'timeline', entries: [{ at: '2026-11-25T01:00:00.000Z' as Instant, title: { text: '时间线的一条' }, lines: ['一条的说明'], tag: { text: '标签', tone: 'warn' } }] },
         { kind: 'preview', path: 'pager.md' as LibraryPath },
         { kind: 'actions', actions: [ping('再打个招呼')] },

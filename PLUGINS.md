@@ -994,11 +994,11 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 
 | 选项 | 是什么 | 缺省 |
 | --- | --- | --- |
-| `title` | 给人看的名字：说明、页面、条目面板里的一节 | 部署 |
+| `title` | 给人看的名字：说明、页面、条目面板里的一节，也是插件对象的 `title`，配置页写它 | 部署 |
 | `heading` | 认知段的标题，`<它带来什么>：<怎么用>` | 上线：主人开关 |
 | `cognition` | 加在它写的认知段后面的一段，说这个目标 agent 该知道的 | 没有 |
 | `icon` | 页面的 `IconName` | `globe` |
-| `version`、`summary` | 同插件对象的 | 没有 |
+| `version`、`summary`、`about` | 同插件对象的 | 没有 |
 | `ui` | 插件的 `ui` 目录，目标加 `custom` 块时要 | 没有 |
 
 ### 写一种新的目标
@@ -1191,7 +1191,8 @@ export default deployPlugin('space', spaceTarget, {
   heading: '上线到 PneumaSpace：主人开关',
   cognition: '在线的网站是 PneumaSpace 上的一个应用，地址在 `/apps/<应用名>/` 下面，所以网站里的链接要写相对路径；目录里要有 `index.html`。',
   icon: 'cloud-upload',
-  summary: '声明了可以部署的东西由主人开关上线，作为 PneumaSpace 上的应用。',
+  summary: '把网站发到 PneumaSpace 上',
+  about: '声明了可以部署的东西由主人开关上线，作为 PneumaSpace 上的应用。',
   ui: fileURLToPath(new URL('./ui/', import.meta.url)),
 })
 ```

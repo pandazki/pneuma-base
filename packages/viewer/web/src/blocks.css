@@ -186,6 +186,7 @@
   transition: opacity 120ms ease;
 }
 tr:is(:hover, :focus-within, [aria-selected='true']) .row-actions,
+.list > li:is(:hover, :focus-within) .row-actions,
 .row-actions:has([aria-expanded='true']) {
   opacity: 1;
 }
@@ -428,6 +429,27 @@ tr:is(:hover, :focus-within, [aria-selected='true']) .row-actions,
 }
 .list > li:only-child {
   border-radius: var(--radius-card);
+}
+/* A row with something to do answers to the pointer; its cell and the ⓘ of its long text stand on one line. */
+.list > li[data-acts]:hover {
+  background: var(--row-hover);
+}
+.list-cell {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+.list-cell .about svg {
+  width: 14px;
+  height: 14px;
+}
+/* Under a cell that leads with an icon or a mark, the note starts where the cell's words do. */
+.list > li[data-lead='icon'] .list-note {
+  padding-left: 24px;
+}
+.list > li[data-lead='mark'] .list-note {
+  padding-left: 26px;
 }
 .list-note {
   margin-top: 2px;

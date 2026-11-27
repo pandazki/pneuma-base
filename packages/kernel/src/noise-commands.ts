@@ -4,7 +4,7 @@
 import { command, done, refused, type KernelCommand } from './kernel-command.js'
 import { parseLibraryPath, regionOf } from './paths.js'
 import { storageOf } from './storage.js'
-import { formOf, type Action, type Block, type FixedValue, type LibraryPath, type TableRow } from '@pneuma-base/sdk'
+import { formOf, type Action, type Block, type FixedValue, type LibraryPath, type ListItem } from '@pneuma-base/sdk'
 
 const PATH = { name: 'path', hint: '库内路径：这个目录或文件，和它里面的一切' } as const
 const NAME = { name: 'name', hint: '名字：任何一层叫这个名字的都算，比如 node_modules', kind: 'value' } as const
@@ -69,24 +69,23 @@ const formFor = (name: string, label: string, fixed: Record<string, FixedValue>,
   return { label, tone, confirm: null, ...formOf(c, { fixed }) }
 }
 
-/** The configuration page's part for noise: each declared name and path, a button to take it out, and a form to add one. */
+/** The configuration page's part for noise, folded: each declared name and path a row with 去掉 in its 「···」, and 加一条 in its head. */
 export async function noiseSection(root: string): Promise<Block> {
   const n = await storageOf(root).noise.list()
-  const row = (kind: 'name' | 'path', value: string): TableRow => ({
-    key: `${kind}:${value}`,
-    cells: { value: { text: value, mono: true }, kind: { text: kind === 'name' ? '名字，任何一层' : '库内路径' } },
-    link: null,
-    actions: [{ ...formFor('noise remove', '去掉', kind === 'name' ? { name: value, path: false } : { path: value, name: false }, 'danger'), icon: 'trash-2' }],
+  const item = (value: string, fixed: Record<string, FixedValue>, note: string | null): ListItem => ({
+    cell: { text: value },
+    note,
+    actions: [{ ...formFor('noise remove', '去掉', fixed, 'danger'), icon: 'trash-2' }],
   })
-  const rows = [...n.names.map((v) => row('name', v)), ...n.paths.map((v) => row('path', v))]
+  const items = [...n.names.map((v) => item(v, { name: v, path: false }, null)), ...n.paths.map((v) => item(v, { path: v, name: false }, '库内路径'))]
   return {
     kind: 'section',
     title: '噪音',
     note: null,
-    about: `库不报告、不进入的名字和路径，${n.declared ? '记在库根上，跟着库走' : '现在是默认的那份'}。`,
-    count: rows.length,
+    about: `库不报告、不进入的名字和路径：名字在任何一层都算，库内路径只算那一处。${n.declared ? '记在库根上，跟着库走。' : '现在是默认的那份。'}`,
+    count: items.length,
     collapse: 'closed',
-    blocks: [{ kind: 'table', columns: [{ key: 'value', label: '名字或路径' }, { key: 'kind', label: '按什么算' }], rows, empty: '没有噪音：库里的一切都会被报告。' }],
+    blocks: items.length > 0 ? [{ kind: 'list', items }] : [{ kind: 'text', tone: 'neutral', text: '没有噪音：库里的一切都会被报告。' }],
     actions: [{ label: '加一条', tone: 'default', confirm: null, ...formOf(NOISE_COMMANDS.find((x) => x.name === 'noise add') as KernelCommand), as: 'icon', icon: 'plus' }],
   }
 }

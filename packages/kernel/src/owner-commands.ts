@@ -283,7 +283,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
   }),
   command({
     name: 'plugin list',
-    summary: '这台机器能装的插件：自带的和装上来的，各自的版本、契约和一句说明；带 --library 时标出这个库装了哪些',
+    summary: '这台机器能装的插件：自带的和装上来的，各自的版本、契约、名字和说明；带 --library 时标出这个库装了哪些',
     params: {},
     destructive: false,
     ownerOnly: false,
@@ -293,7 +293,8 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       const plugins = await machineListing(call.ctx.home, call.table, call.ctx.library)
       const lines = plugins.map((p) => {
         const state = p.failed !== null ? `没能加载：${p.failed}` : [`契约 ${p.contract}`, p.origin === 'built-in' ? '自带' : '装上来的', ...(p.installed ? ['这个库装了'] : [])].join(' · ')
-        return `${p.name} ${p.version ?? '—'}  ${state}${p.summary === null ? '' : `\n    ${p.summary}`}`
+        const line = p.title === null ? p.summary : `${p.title}${p.summary === null ? '' : `：${p.summary}`}`
+        return [`${p.name} ${p.version ?? '—'}  ${state}`, ...[line, p.about].flatMap((l) => (l === null ? [] : [`    ${l}`]))].join('\n')
       })
       return done(lines.join('\n') || '这台机器没有任何插件。', { plugins })
     },
@@ -379,7 +380,10 @@ export type MachinePlugin = {
   name: string
   version: string | null
   contract: number | null
+  /** The name a person says, its short line (else its cognition's title) and its whole text. */
+  title: string | null
   summary: string | null
+  about: string | null
   origin: 'built-in' | 'machine'
   /** Whether the library given has it installed; null when none was given. */
   installed: boolean | null
@@ -395,11 +399,11 @@ async function machineListing(home: string, table: PluginTable, library: Library
     const p = table.get(name)
     const installed = library === null ? null : library.config.plugins.includes(name as PluginName)
     if (!p) {
-      out.push({ name, version: null, contract: null, summary: null, origin: 'machine', installed, failed: (await whyNotLoaded(home, name)) ?? '没能加载' })
+      out.push({ name, version: null, contract: null, title: null, summary: null, about: null, origin: 'machine', installed, failed: (await whyNotLoaded(home, name)) ?? '没能加载' })
       continue
     }
     const summary = p.summary ?? p.cognition?.title ?? null
-    out.push({ name, version: p.version ?? null, contract: p.contract, summary, origin: machineDirOf(p) === null ? 'built-in' : 'machine', installed, failed: null })
+    out.push({ name, version: p.version ?? null, contract: p.contract, title: p.title ?? null, summary, about: p.about ?? null, origin: machineDirOf(p) === null ? 'built-in' : 'machine', installed, failed: null })
   }
   return out
 }

@@ -431,7 +431,9 @@ export const ledger: Plugin = {
   contract: CONTRACT,
   name: pluginName('ledger'),
   version: PNEUMA_BASE_VERSION,
-  summary: '记下每样东西是哪次会话、哪个 agent 为了什么放进来的，依据了什么，谁读过、改过它。',
+  title: '记账',
+  summary: '记下每样东西从哪来、谁经手过',
+  about: '记下每样东西是哪次会话、哪个 agent 为了什么放进来的，依据了什么，谁读过、改过它。',
   cognition: { title: '记账与对账', text: COGNITION },
   keeps: 'every',
   storage: [

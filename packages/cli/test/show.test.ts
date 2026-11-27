@@ -115,7 +115,7 @@ describe('pneuma-base show', () => {
 })
 
 describe('the words of each kind of block', () => {
-  it('a section with its note and count, a table with its header and tags, fields, a list, a timeline in UTC, a preview, an empty state, a plugin’s own block by its text', () => {
+  it('a section with its note and count, a table with its header and tags, fields, a list with a switch and its whole text, a timeline in UTC, a preview, an empty state, a plugin’s own block by its text', () => {
     const home = tempDir('pb-show-')
     const lib2 = join(home, 'lib')
     const run = (args: string[]) => sb.runWithTestPlugins(args, { cwd: home })
@@ -137,6 +137,10 @@ describe('the words of each kind of block', () => {
       '',
       '- 列表的一项',
       '  一项的说明',
+      '- 一个开关',
+      '  开着的设置',
+      '  （拨它就打个招呼。）',
+      '  开着  $ pager ping  # 关上',
       '- 2026-11-25 01:00Z  时间线的一条  [标签]',
       '  一条的说明',
       '预览：pager.md',

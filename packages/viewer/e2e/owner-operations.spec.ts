@@ -1,6 +1,6 @@
 // C5: each owner operation, done from the page: take back a held version, give a file nobody
-// registered its provenance, accept a direct change, install and remove a plugin, issue and revoke a
-// grant, generate a skill into a directory the owner types. Each leaves a fact; an agent's check from
+// registered its provenance, accept a direct change, install and remove a plugin from its switch,
+// issue and revoke a grant on the Agent page, generate a skill into a directory the owner types. Each leaves a fact; an agent's check from
 // the command line then reports those that changed content or capabilities.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -69,31 +69,37 @@ test('every owner operation from the page leaves a trace an agent sees in check'
   await expect(status).toContainText('已认下 notes.md 的直接改动')
   await expect(main.getByText('没有要处理的事')).toBeVisible()
 
-  // Install a plugin offered on the config page, then remove it.
+  // Turn a plugin on from its switch on the config page, then off again by the keyboard.
   await nav.getByRole('button', { name: '配置' }).click()
-  const plugins = main.getByRole('region', { name: '插件' })
-  await plugins.getByRole('row', { name: /pager/ }).getByRole('button', { name: '装上' }).click()
+  const pager = main.getByRole('region', { name: '插件' }).getByRole('switch', { name: 'pager' })
+  await expect(pager).toHaveAttribute('aria-checked', 'false')
+  await pager.click()
   await expect(status).toContainText('已装上插件 pager')
+  await expect(pager).toHaveAttribute('aria-checked', 'true')
   await expect(nav.getByRole('button', { name: '块的样例' })).toBeVisible()
-  await fromMenu(plugins.getByRole('row', { name: /pager/ }), '卸下')
+  await pager.focus()
+  await page.keyboard.press('Space')
   await expect(status).toContainText('已卸下插件 pager')
+  await expect(pager).toHaveAttribute('aria-checked', 'false')
   await expect(nav.getByRole('button', { name: '块的样例' })).toHaveCount(0)
 
-  // Issue a grant, then revoke it after confirming.
-  const grants = main.getByRole('region', { name: '授权与技能' })
-  await grants.getByRole('button', { name: '发授权' }).click()
+  // Issue a grant from the Agent page, then revoke it after confirming.
+  await nav.getByRole('button', { name: 'Agent' }).click()
+  const agents = main.getByRole('region', { name: '接上的 agent' })
+  const agentRow = (text: string | RegExp) => agents.getByRole('listitem').filter({ hasText: text })
+  await agents.getByRole('button', { name: '发授权' }).click()
   await dialog.getByLabel('授权名').fill('codex')
   await dialog.getByLabel('给谁').fill('codex')
   await dialog.getByRole('button', { name: '发授权' }).click()
   await expect(status).toContainText('已发授权 codex 给 codex')
-  await fromMenu(grants.getByRole('row', { name: /^codex/ }), '撤回')
+  await fromMenu(agentRow('Codex'), '撤回')
   await expect(dialog).toContainText('撤回后')
   await dialog.getByRole('button', { name: '撤回' }).click()
   await expect(status).toContainText('已撤回授权 codex')
-  await expect(grants.getByRole('row', { name: /^codex/ })).toHaveCount(0)
+  await expect(agentRow('Codex')).toHaveCount(0)
 
   // Generate a skill into a directory the owner types.
-  await fromMenu(grants.getByRole('row', { name: /^claude/ }), '为 Claude 生成技能')
+  await fromMenu(agentRow('凭授权 claude'), '为 Claude 生成技能')
   await dialog.getByLabel('放技能的目录').fill(skills)
   await dialog.getByRole('button', { name: '为 Claude 生成技能' }).click()
   await expect(status).toContainText('已为 claude 写好技能')
@@ -130,15 +136,18 @@ test('removing a plugin that refuses offers 仍然卸下, which asks with the pl
   const dialog = page.getByRole('dialog')
   const status = page.getByRole('status')
   await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '配置' }).click()
-  const deploy = main.getByRole('region', { name: '插件' }).getByRole('row', { name: /^deploy/ })
-  await fromMenu(deploy, '卸下')
+  const deploy = main.getByRole('region', { name: '插件' }).getByRole('switch', { name: '部署' })
+  await deploy.click()
   await expect(status).toContainText('插件 deploy 没有卸下，它说：还有 1 样在线')
+  // Refused: the switch stands where it was.
+  await expect(deploy).toHaveAttribute('aria-checked', 'true')
   await status.getByRole('button', { name: '仍然卸下' }).click()
   await expect(dialog).toContainText('插件 deploy 说：还有 1 样在线')
   await dialog.getByRole('button', { name: '仍然卸下' }).click()
   await expect(status).toContainText('已卸下插件 deploy')
   await expect(status.getByRole('button', { name: '仍然卸下' })).toHaveCount(0)
-  // Taken off: its row offers to install it again.
-  await expect(deploy.getByRole('button', { name: '装上' })).toBeVisible()
+  // Taken off: its switch is off, and turning it on installs it again.
+  await expect(deploy).toHaveAttribute('aria-checked', 'false')
+  await expect(deploy).toHaveAttribute('data-tip', '装上')
   expect(JSON.parse(readFileSync(join(lib, '.pneuma-base', 'config.json'), 'utf8')).plugins).toEqual(['ledger'])
 })

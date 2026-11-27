@@ -87,7 +87,7 @@ function actionsOf(b: Block): Action[] {
     case 'table':
       return b.rows.flatMap((r) => r.actions)
     case 'list':
-      return b.items.flatMap((i) => i.actions)
+      return b.items.flatMap((i) => [...i.actions, ...(i.toggle ? [i.toggle.action] : [])])
     case 'timeline':
       return b.entries.flatMap((e) => e.actions ?? [])
     case 'custom':
