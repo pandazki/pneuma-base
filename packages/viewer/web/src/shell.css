@@ -363,6 +363,7 @@ html[data-shell] .shell[data-side='rail'] .side-inner {
   translate: 18px 0;
 }
 html[data-shell] .shell[data-side='rail'] .side-top .side-toggle {
+  margin-left: 0;
   translate: 0 33px;
 }
 /* The window behind another: the system dims its sidebar; so does the page. */
