@@ -1,16 +1,18 @@
 // C12: processes writing facts to one session at the same time lose none, and no file is written
 // by two of them. The ledger rows of the invariants and failure semantics: a fact file never
 // changes once written; a writer killed midway leaves no half fact; a minted session says so.
+// One library for the file, its tests in order: the writer killed midway, which leaves a temporary
+// file behind on purpose, is last.
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { sandbox, tempDir, type Sandbox } from './helpers.js'
 
 let sb: Sandbox
 let lib: string
 let outside: string
 
-beforeEach(() => {
+beforeAll(() => {
   sb = sandbox()
   lib = join(tempDir(), 'lib')
   outside = tempDir('pb-outside-')
@@ -89,6 +91,14 @@ describe('fact files', () => {
     expect(after.size).toBeGreaterThan(before.size)
   })
 
+  it('a call with no session id gets one minted, grouped by agent and day, and the facts say it was minted', () => {
+    const r = sb.run(['--library', lib, '--as', 'claude-code', 'say', 'note', '没有会话标识'], { cwd: outside })
+    expect(r.code, r.stderr).toBe(0)
+    const day = new Date().toISOString().slice(0, 10)
+    const facts = filesOf(`adhoc-claude-code-${day}`).flatMap(([, text]) => parse(text))
+    expect(facts).toMatchObject([{ kind: 'said', text: '没有会话标识', where: { sessionSource: 'minted' } }])
+  })
+
   it('a writer killed midway leaves no half fact, and a leftover temporary file is ignored', async () => {
     for (const delay of [0, 5, 10, 20, 30, 40, 50, 60, 80, 120]) {
       const child = sb.start(['--library', lib, '--as', 'claude-code', '--session', 'killed', 'say', 'note', `n${delay}`])
@@ -104,13 +114,5 @@ describe('fact files', () => {
     const r = agent(['check', '--json'])
     expect(r.code, r.stderr).toBe(0)
     expect(r.json().problems).toEqual([])
-  })
-
-  it('a call with no session id gets one minted, grouped by agent and day, and the facts say it was minted', () => {
-    const r = sb.run(['--library', lib, '--as', 'claude-code', 'say', 'note', '没有会话标识'], { cwd: outside })
-    expect(r.code, r.stderr).toBe(0)
-    const day = new Date().toISOString().slice(0, 10)
-    const facts = filesOf(`adhoc-claude-code-${day}`).flatMap(([, text]) => parse(text))
-    expect(facts).toMatchObject([{ kind: 'said', text: '没有会话标识', where: { sessionSource: 'minted' } }])
   })
 })

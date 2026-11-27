@@ -1,39 +1,28 @@
-// C6: each row of the sync rule table (design.md 五) through the real command line. The library here
-// registers what it holds; the other side's changes to a path the sync knows are made directly in
-// the target directory, and a path new there is registered by a second library through the same
-// target, whose facts make it known. After every sync, every content either side held before it is
-// still somewhere, both sides hold the same things, and a second sync does nothing.
+// C6: one row of the sync rule table (design.md 五) per kind of step, through the real command line
+// on real storage: a push, a pull, each archiving what it replaced on its side; a conflict copy; an old
+// path removed after a move; an emptied target; a run that fails midway. rules.test.ts walks the whole
+// table. The library registers what it holds; the other side's changes are made directly in the target
+// directory. One library, each row on paths of its own. After every sync, every content either side
+// held before it is still somewhere, both sides hold the same things, and a second sync does nothing.
 import { chmodSync, existsSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { contents, machine, ok, read, tempDir, write } from './support.js'
 
 let m: ReturnType<typeof machine>
-let root: string
 let lib: string
 let target: string
 
-const owner = (args: string[], dir = lib) => m.run([...args, '--library', dir])
-const put = (path: string, content: string, dir = lib) => ok(m.run(['--library', dir, '--as', 'claude-code', '--session', 's-rows', 'put', '-', '--to', path, '--made'], { input: content }))
+const owner = (args: string[]) => m.run([...args, '--library', lib])
+const agent = (args: string[], input?: string) => ok(m.run(['--library', lib, '--as', 'claude-code', '--session', 's-rows', ...args], input === undefined ? {} : { input }))
+const put = (path: string, content: string) => agent(['put', '-', '--to', path, '--made'], content)
 const local = {
   write: (path: string, content: string) => write(lib, path, content),
-  remove: (path: string) => rmSync(join(lib, path)),
   read: (path: string) => read(lib, path),
 }
 const remote = {
   write: (path: string, content: string) => write(target, path, content),
-  remove: (path: string) => rmSync(join(target, path)),
   read: (path: string) => read(target, path),
-}
-
-/** A second library with the sync plugin and the same target, synced once. */
-function there(): string {
-  const dir = join(root, 'there')
-  ok(m.run(['init', dir, '--bare']))
-  ok(owner(['plugin', 'add', 'sync'], dir))
-  ok(owner(['sync', 'target', 'set', '--kind', 'dir', '--to', target], dir))
-  ok(owner(['sync', 'now'], dir))
-  return dir
 }
 
 /** Runs sync now and checks the properties every row must keep. Returns the run's record. */
@@ -51,157 +40,68 @@ function sync(): any {
 
 const counts = (partial: Record<string, number>) => ({ pushed: 0, pulled: 0, removed: 0, deleted: 0, kept: 0, conflicts: 0, skipped: 0, ...partial })
 
-beforeEach(() => {
+beforeAll(() => {
   m = machine()
-  root = tempDir()
-  lib = join(root, 'lib')
+  lib = join(tempDir(), 'lib')
   target = join(tempDir(), 'target')
   ok(m.run(['init', lib, '--bare']))
   ok(owner(['plugin', 'add', 'sync']))
   ok(owner(['sync', 'target', 'set', '--kind', 'dir', '--to', target]))
-  put('a.md', 'base')
+  // Every content written here is its own, so that no row's content is already kept at another row's path.
+  for (const name of ['push', 'pull', 'conflict', 'move']) put(`${name}.md`, `${name} base`)
   sync()
 })
 
-describe('the rule table, one test per row', () => {
-  it('unchanged / unchanged: nothing moves', () => {
-    const r = ok(owner(['sync', 'now']))
-    expect(r.stdout).toContain('两边一样，什么都没动')
-    expect(remote.read('a.md')).toBe('base')
+describe('one row per kind of step', () => {
+  it('unchanged / unchanged: nothing moves, and sync now says so', () => {
+    expect(ok(owner(['sync', 'now'])).stdout).toContain('两边一样，什么都没动')
+    expect(remote.read('push.md')).toBe('push base')
   })
 
   it('changed here / unchanged there: pushed; the replaced content, kept nowhere else, goes to _archive/', () => {
-    local.write('a.md', 'mine')
+    local.write('push.md', 'push mine')
     expect(sync().counts).toEqual(counts({ pushed: 1, kept: 1 }))
-    expect(remote.read('a.md')).toBe('mine')
-    expect(remote.read('_archive/a.md')).toBe('base')
-  })
-
-  it('new here / absent there: pushed', () => {
-    put('notes/new.md', 'new')
-    expect(sync().counts).toEqual(counts({ pushed: 1 }))
-    expect(remote.read('notes/new.md')).toBe('new')
+    expect(remote.read('push.md')).toBe('push mine')
+    expect(remote.read('_archive/push.md')).toBe('push base')
   })
 
   it('unchanged here / changed there: pulled; the replaced content goes to _archive/', () => {
-    remote.write('a.md', 'theirs')
+    remote.write('pull.md', 'pull theirs')
     expect(sync().counts).toEqual(counts({ pulled: 1, kept: 1 }))
-    expect(local.read('a.md')).toBe('theirs')
-    expect(local.read('_archive/a.md')).toBe('base')
-  })
-
-  it('absent here / new there: pulled', () => {
-    const other = there()
-    put('notes/new.md', 'new', other)
-    ok(owner(['sync', 'now'], other))
-    expect(sync().counts).toEqual(counts({ pulled: 1 }))
-    expect(local.read('notes/new.md')).toBe('new')
-  })
-
-  it('changed / changed to the same content: nothing moves, and the base moves on', () => {
-    local.write('a.md', 'same')
-    remote.write('a.md', 'same')
-    expect(sync().counts).toEqual(counts({}))
-    local.write('a.md', 'later')
-    expect(sync().counts).toEqual(counts({ pushed: 1, kept: 1 }))
-    expect(remote.read('a.md')).toBe('later')
+    expect(local.read('pull.md')).toBe('pull theirs')
+    expect(local.read('_archive/pull.md')).toBe('pull base')
   })
 
   it('changed / changed differently: both kept, the local one in place, the target one as a conflict copy, reported', () => {
-    local.write('a.md', 'mine')
-    remote.write('a.md', 'theirs')
+    local.write('conflict.md', 'conflict mine')
+    remote.write('conflict.md', 'conflict theirs')
     const r = sync()
     expect(r.counts.conflicts).toBe(1)
     const [conflict] = r.conflicts
-    expect(conflict.path).toBe('a.md')
-    expect(conflict.copy).toMatch(/^a\.conflict-[A-Za-z0-9-]+-\d{8}T\d{6}Z\.md$/)
-    expect(local.read('a.md')).toBe('mine')
-    expect(local.read(conflict.copy)).toBe('theirs')
-    expect(remote.read('a.md')).toBe('mine')
-    expect(remote.read(conflict.copy)).toBe('theirs')
+    expect(conflict.path).toBe('conflict.md')
+    expect(conflict.copy).toMatch(/^conflict\.conflict-[A-Za-z0-9-]+-\d{8}T\d{6}Z\.md$/)
+    expect(local.read('conflict.md')).toBe('conflict mine')
+    expect(local.read(conflict.copy)).toBe('conflict theirs')
+    expect(remote.read('conflict.md')).toBe('conflict mine')
+    expect(remote.read(conflict.copy)).toBe('conflict theirs')
   })
 
   it('deleted here / unchanged there, moved here: the old path goes from the target', () => {
-    ok(m.run(['--library', lib, '--as', 'claude-code', '--session', 's-rows', 'put', 'a.md', '--to', 'b.md']))
+    agent(['put', 'move.md', '--to', 'moved.md'])
     expect(sync().counts).toEqual(counts({ pushed: 1, removed: 1 }))
-    expect(existsSync(join(target, 'a.md'))).toBe(false)
-    expect(remote.read('b.md')).toBe('base')
-  })
-
-  it('deleted here / unchanged there, kept nowhere else: the target copy goes to _archive/', () => {
-    local.remove('a.md')
-    expect(sync().counts).toEqual(counts({ removed: 1, kept: 1 }))
-    expect(existsSync(join(target, 'a.md'))).toBe(false)
-    expect(remote.read('_archive/a.md')).toBe('base')
-    expect(local.read('_archive/a.md')).toBe('base')
-  })
-
-  it('unchanged here / deleted there, moved there: the old path goes from here', () => {
-    const other = there()
-    ok(m.run(['--library', other, '--as', 'claude-code', '--session', 's-rows', 'put', 'a.md', '--to', 'b.md']))
-    ok(owner(['sync', 'now'], other))
-    expect(sync().counts).toEqual(counts({ pulled: 1, removed: 1 }))
-    expect(existsSync(join(lib, 'a.md'))).toBe(false)
-    expect(local.read('b.md')).toBe('base')
-  })
-
-  it('unchanged here / deleted there, kept nowhere else: the local copy goes to _archive/', () => {
-    remote.remove('a.md')
-    expect(sync().counts).toEqual(counts({ removed: 1, kept: 1 }))
-    expect(existsSync(join(lib, 'a.md'))).toBe(false)
-    expect(local.read('_archive/a.md')).toBe('base')
-  })
-
-  it('deleted here / changed there: pulled', () => {
-    local.remove('a.md')
-    remote.write('a.md', 'theirs')
-    expect(sync().counts).toEqual(counts({ pulled: 1 }))
-    expect(local.read('a.md')).toBe('theirs')
-  })
-
-  it('changed here / deleted there: pushed', () => {
-    local.write('a.md', 'mine')
-    remote.remove('a.md')
-    expect(sync().counts).toEqual(counts({ pushed: 1 }))
-    expect(remote.read('a.md')).toBe('mine')
+    expect(existsSync(join(target, 'move.md'))).toBe(false)
+    expect(remote.read('moved.md')).toBe('move base')
   })
 })
 
-describe('no base: the baseline was lost, or the target is new', () => {
-  const loseBaseline = () => rmSync(join(m.home, '.pneuma-base', 'cache'), { recursive: true, force: true })
-
-  it('present on both and different: conflict, both kept; one side only: copied; equal: nothing', () => {
-    const other = there()
-    put('only-there.md', 't', other)
-    put('same.md', 's', other)
-    ok(owner(['sync', 'now'], other))
-    put('only-here.md', 'h')
-    put('same.md', 's')
-    local.write('a.md', 'mine')
-    remote.write('a.md', 'theirs')
-    loseBaseline()
-    const r = sync()
-    expect(r.counts).toMatchObject({ conflicts: 1, kept: 0, removed: 0 })
-    expect(local.read('a.md')).toBe('mine')
-    expect(local.read(r.conflicts[0].copy)).toBe('theirs')
-    expect(remote.read('only-here.md')).toBe('h')
-    expect(local.read('only-there.md')).toBe('t')
-  })
-
-  it('a file deleted on one side comes back from the other instead of being deleted there', () => {
-    local.remove('a.md')
-    loseBaseline()
-    expect(sync().counts).toEqual(counts({ pulled: 1 }))
-    expect(local.read('a.md')).toBe('base')
-  })
-
+describe('no base', () => {
   it('an emptied target is a new target: everything is pushed again, nothing archived', () => {
     rmSync(target, { recursive: true })
     write(target, 'stray.txt', 'x')
     rmSync(join(target, 'stray.txt'))
     expect(sync().counts).toMatchObject({ kept: 0, removed: 0 })
-    expect(remote.read('a.md')).toBe('base')
-    expect(local.read('a.md')).toBe('base')
+    expect(remote.read('push.md')).toBe('push mine')
+    expect(local.read('push.md')).toBe('push mine')
   })
 })
 

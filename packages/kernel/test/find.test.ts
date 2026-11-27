@@ -7,18 +7,13 @@ const request = (text: string, match: FindRequest['match'], filters: Record<stri
 const paths = (r: { hits: { path: string | null }[] }) => r.hits.map((h) => h.path)
 
 describe('searchTerms', () => {
-  it('keeps the words of a sentence that are two characters or longer, or Latin', () => {
+  it('keeps the words of a sentence that are two characters or longer, or Latin, joining adjacent single Chinese characters into two-character terms; in terms mode it keeps the text as written', () => {
     expect(searchTerms('给电子书小店选支付服务', 'words')).toEqual(['电子', '小店', '支付', '服务'])
     expect(searchTerms('对比 Stripe 和 Paddle', 'words')).toEqual(['对比', 'stripe', 'paddle'])
-  })
-
-  it('joins adjacent single Chinese characters into two-character terms, since the segmenter cuts some words apart', () => {
+    // The segmenter cuts some words apart.
     expect(searchTerms('看看下单进展', 'words')).toEqual(['看看', '下单', '进展'])
     expect(searchTerms('我们下单了吗', 'words')).toEqual(['我们', '下单', '单了', '了吗'])
     expect(searchTerms('下 单', 'words')).toEqual([])
-  })
-
-  it('keeps the text as written in terms mode', () => {
     expect(searchTerms('支付服务 Stripe', 'terms')).toEqual(['支付服务', 'stripe'])
   })
 })
@@ -28,18 +23,12 @@ describe('ranking for find in words mode', () => {
   // the kernel's rankHits, handed to it as tools.rankHits.
   const rank = (names: string[], sentence: string) => rankHits(names.map((n) => ({ hit: n, haystack: n.toLowerCase() })), searchTerms(sentence, 'words'), 'words')
 
-  it('ranks names by how many distinct words they match and gives the best five', () => {
+  it('ranks names by how many distinct words they match and gives the best five; finds an earlier 下单 from the sentence 看看下单进展; matches nothing when the sentence has no word to match', () => {
     const r = rank(['支付-小店.md', '支付-1.md', '支付-2.md', '支付-3.md', '支付-4.md', '支付-5.md', '其他.md'], '给小店接上支付')
     expect(r).toHaveLength(5)
     expect(r[0]).toBe('支付-小店.md')
     expect(r).not.toContain('其他.md')
-  })
-
-  it('finds an earlier 下单 from the sentence 看看下单进展', () => {
     expect(rank(['下单流程.md'], '看看下单进展')).toEqual(['下单流程.md'])
-  })
-
-  it('matches nothing when the sentence has no word to match', () => {
     expect(rank(['a.md'], '做')).toEqual([])
   })
 })

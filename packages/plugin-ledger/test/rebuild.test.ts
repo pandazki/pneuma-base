@@ -48,17 +48,14 @@ const TABLES = ['items', 'paths', 'dirs', 'history', 'log', 'scenes', 'sceneOrde
 afterEach(() => vi.restoreAllMocks())
 
 describe('rows derived again from nothing', () => {
-  it('say that they are being derived, from how many facts files, and when they are done', async () => {
+  it('say that they are being derived, from how many facts files, and when they are done; with few facts, not a word', async () => {
     const records = await appendedAlone(many(5000))
     const lines = await said(() => foldAll(recordsContext(records)))
     expect(lines[0]).toBe('正在从事实重建记账的行：至少 5000 条。')
     expect(lines.at(-1)).toMatch(/^记账的行已重建：5000 条事实，\d+\.\d 秒。$/)
     expect(lines.slice(1, -1).every((l) => /^已推出 \d+ \/ 5000$/.test(l))).toBe(true)
-  })
-
-  it('pass without a word when there are few facts', async () => {
-    const records = await appendedAlone(many(300))
-    expect(await said(() => foldAll(recordsContext(records)))).toEqual([])
+    const few = await appendedAlone(many(300))
+    expect(await said(() => foldAll(recordsContext(few)))).toEqual([])
   })
 
   it('are derived once when two processes start at once, and both answer the same cursor', async () => {

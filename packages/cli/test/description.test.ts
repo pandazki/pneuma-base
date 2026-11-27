@@ -33,33 +33,10 @@ describe('the description', () => {
     expect(text).toContain('你的授权名在你的技能文件里')
   })
 
-  it('of a default library carries the ledger section and lists the plugin; the ledger keeps every replaced thing, so the every sentence', () => {
-    const lib = join(root, 'default')
-    expect(sb.run(['init', lib]).code).toBe(0)
-    const text = description(lib)
-    expect(text).toContain(LEDGER_SECTION)
-    expect(text).toContain('- `ledger`：记账与对账')
-    expect(text).toContain(SAME_NAME_EVERY)
-    expect(text).not.toContain(SAME_NAME_BARE)
-    expect(text).not.toContain('没有装任何插件')
-    expect(JSON.parse(readFileSync(join(lib, '.pneuma-base/config.json'), 'utf8')).plugins).toEqual(['ledger'])
-  })
-
-  it('gains the ledger section on plugin add and loses it on plugin remove', () => {
-    const lib = join(root, 'lib')
-    sb.run(['init', lib, '--bare'])
-    const bare = description(lib)
-    const add = sb.run(['plugin', 'add', 'ledger', '--library', lib])
-    expect(add.code, add.stderr).toBe(0)
-    expect(description(lib)).toContain(LEDGER_SECTION)
-    const remove = sb.run(['plugin', 'remove', 'ledger', '--library', lib])
-    expect(remove.code, remove.stderr).toBe(0)
-    expect(description(lib)).toBe(bare)
-  })
-
-  it('says what happens to replaced content: refused with no plugin that revises, some kept, or every one kept (K6)', () => {
+  it('says what happens to replaced content as the plugins change: refused with no plugin that revises, some kept, or every one kept (K6); plugin add brings a plugin’s section and lists it, plugin remove takes both away', () => {
     const lib = join(root, 'lib')
     sb.runWithTestPlugins(['init', lib, '--bare'])
+    const bare = description(lib)
     const sentence = () => [SAME_NAME_BARE, SAME_NAME_SOME, SAME_NAME_EVERY].filter((s) => description(lib).includes(s))
     expect(sentence()).toEqual([SAME_NAME_BARE])
     // A plugin that revises without saying what it keeps keeps only some, as far as the description promises.
@@ -71,9 +48,11 @@ describe('the description', () => {
     expect(sentence()).toEqual([SAME_NAME_SOME])
     expect(sb.run(['plugin', 'add', 'ledger', '--library', lib]).code).toBe(0)
     expect(sentence()).toEqual([SAME_NAME_EVERY])
-    sb.run(['plugin', 'remove', 'ledger', '--library', lib])
-    sb.run(['plugin', 'remove', 'version', '--library', lib])
-    expect(sentence()).toEqual([SAME_NAME_BARE])
+    expect(description(lib)).toContain(LEDGER_SECTION)
+    expect(description(lib)).toContain('- `ledger`：记账与对账')
+    expect(sb.run(['plugin', 'remove', 'ledger', '--library', lib]).code).toBe(0)
+    expect(sb.run(['plugin', 'remove', 'version', '--library', lib]).code).toBe(0)
+    expect(description(lib)).toBe(bare)
   })
 
   it('with only the version plugin, an undeclared thing is refused as the description says, and the answer says why', () => {
@@ -92,26 +71,17 @@ describe('the description', () => {
 })
 
 describe('plugin add and remove', () => {
-  it('refuses an unknown plugin and removing one not installed, with exit 2', () => {
-    const lib = join(root, 'lib')
-    sb.run(['init', lib, '--bare'])
-    expect(sb.run(['plugin', 'add', 'nope', '--library', lib]).stdout).toContain('unknown-plugin')
-    expect(sb.run(['plugin', 'add', 'nope', '--library', lib]).code).toBe(2)
-    expect(sb.run(['plugin', 'remove', 'ledger', '--library', lib]).code).toBe(2)
-  })
-
-  it('adding twice is accepted and changes nothing', () => {
+  it('refuses an unknown plugin and removing one not installed, with exit 2; adding twice changes nothing; removing keeps the directory under the plugin name', () => {
     const lib = join(root, 'lib')
     sb.run(['init', lib])
+    const unknown = sb.run(['plugin', 'add', 'nope', '--library', lib])
+    expect(unknown.code).toBe(2)
+    expect(unknown.stdout).toContain('unknown-plugin')
     expect(sb.run(['plugin', 'add', 'ledger', '--library', lib]).code).toBe(0)
     expect(JSON.parse(readFileSync(join(lib, '.pneuma-base/config.json'), 'utf8')).plugins).toEqual(['ledger'])
-  })
-
-  it('removing keeps the directory under the plugin name', () => {
-    const lib = join(root, 'lib')
-    sb.run(['init', lib])
-    sb.run(['plugin', 'remove', 'ledger', '--library', lib])
+    expect(sb.run(['plugin', 'remove', 'ledger', '--library', lib]).code).toBe(0)
     expect(readFileSync(join(lib, '.pneuma-base/config.json'), 'utf8')).toContain('"plugins": []')
     expect(() => readFileSync(join(lib, '.pneuma-base/ledger'))).toThrow(/EISDIR/)
+    expect(sb.run(['plugin', 'remove', 'ledger', '--library', lib]).code).toBe(2)
   })
 })

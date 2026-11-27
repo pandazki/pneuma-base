@@ -1,14 +1,10 @@
 // The page 统计: a month of use by three agents and the owner, answered as four questions, each a
 // sentence with its numbers over a chart; the period changes what is counted; a chart gives every
 // series' value on hover and from the keyboard; and the page says what `ledger stats` says.
-import { mkdirSync, rmSync } from 'node:fs'
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { writeHistory } from './month.ts'
 import { expect, tempDir, test, type Cli } from './support.ts'
-
-/** Where these screenshots go: $PNEUMA_BASE_SHOTS, else tmp/run-6/s1-shots/. */
-const SHOTS = process.env.PNEUMA_BASE_SHOTS ?? fileURLToPath(new URL('../../../tmp/run-6/s1-shots/', import.meta.url))
 
 function month(pb: Cli): string {
   const lib = join(tempDir(), 'lib')
@@ -47,21 +43,12 @@ test('the statistics page answers the four questions for a month of use, by the 
   expect(last).toMatch(/^\d+月\d+日$/)
   await expect(tip).toContainText(/带进来的\s*\d+ 样/)
 
-  for (const [w, h] of [[1440, 900], [900, 700]] as const) {
-    await page.setViewportSize({ width: w, height: h })
-    await page.keyboard.press('Escape')
-    await main.click({ position: { x: 5, y: 5 } })
-    await shoot(page, `stats__30d`, w)
-  }
-  await page.setViewportSize({ width: 1440, height: 900 })
-
   // The period: 7 days and all change what is counted, and the address keeps it.
   const period = main.getByRole('radiogroup', { name: '时间' })
   await period.getByRole('radio', { name: '7 天' }).click()
   await expect(main.locator('figcaption').first()).toHaveText(/^这 7 天放进/)
   expect(page.url()).toContain('view.period=7d')
   expect(pb.run(['--library', lib, 'ledger', 'stats', '--period', '7d']).stdout).toContain(await main.locator('figcaption').first().innerText())
-  await shoot(page, 'stats__7d', 1440)
   await period.getByRole('radio', { name: '全部' }).click()
   await expect(main.locator('figcaption').first()).toHaveText(/以来放进/)
   await page.reload()
@@ -89,13 +76,3 @@ test('a library with nothing recorded says so in one sentence; a week with nothi
   await main.getByRole('radiogroup', { name: '时间' }).getByRole('radio', { name: '全部' }).click()
   await expect(main.locator('.chart')).toHaveCount(4)
 })
-
-async function shoot(page: import('@playwright/test').Page, name: string, width: number): Promise<void> {
-  mkdirSync(SHOTS, { recursive: true })
-  for (const scheme of ['light', 'dark'] as const) {
-    await page.emulateMedia({ colorScheme: scheme })
-    await page.waitForTimeout(150)
-    await page.screenshot({ path: join(SHOTS, `${name}__${scheme}__w${width}.png`) })
-  }
-  await page.emulateMedia({ colorScheme: 'light' })
-}

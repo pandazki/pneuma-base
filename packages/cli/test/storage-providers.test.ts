@@ -3,7 +3,8 @@
 // is refused, leaving nothing installed, when its checksum is wrong, its contract version does not fit,
 // the owner has not accepted the trust statement, or the download breaks off; init chooses the provider
 // by the address's form and records it on this machine. Releases come from a stand-in host on this
-// machine. Installs that run the whole contract suite are in storage-providers.slow.test.ts.
+// machine. Installs that run the whole contract suite are in storage-providers.slow.test.ts; the
+// configuration page's storage section is packages/kernel/test/viewer.test.ts's.
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -29,7 +30,7 @@ function machine() {
 const coreSha = () => sha256(readFileSync(CORE))
 
 describe('storage list', () => {
-  it('shows the provider this installation carries, with no step taken: the local folder, its program and checksum', async () => {
+  it('shows the provider this installation carries, with no step taken: the local folder, its program and checksum; and the official providers not installed, each with the command that installs it', async () => {
     const m = machine()
     const r = await m.run(['storage', 'list'])
     expect(r.code, r.stderr).toBe(0)
@@ -39,10 +40,7 @@ describe('storage list', () => {
     const data = (await m.run(['storage', 'list', '--json'])).json().data
     expect(data.providers).toEqual([expect.objectContaining({ name: 'local-folder', addresses: ['path'], contract: 1, executable: CORE, sha256: coreSha(), origin: { kind: 'built-in' }, official: true })])
     expect(data.official).toEqual([])
-  })
 
-  it('shows the official providers not installed, each with the command that installs it', async () => {
-    const m = machine()
     const list = join(m.home, 'official.json')
     writeFileSync(
       list,
@@ -54,23 +52,23 @@ describe('storage list', () => {
         ],
       }),
     )
-    const r = await m.run(['storage', 'list'], { PNEUMA_BASE_OFFICIAL_PROVIDERS: list })
-    expect(r.stdout).toContain('官方的、没装的：')
-    expect(r.stdout).toContain('cloud-folder v2.0.0 · 地址：cloud · pneuma-base storage install example/cloud-folder')
+    const official = await m.run(['storage', 'list'], { PNEUMA_BASE_OFFICIAL_PROVIDERS: list })
+    expect(official.stdout).toContain('官方的、没装的：')
+    expect(official.stdout).toContain('cloud-folder v2.0.0 · 地址：cloud · pneuma-base storage install example/cloud-folder')
   })
 
-  it('names the provider the library at hand uses', async () => {
+  it('is the owner’s, as are storage install and init: each is refused in an agent’s session; install is not one an agent may ask for, and init makes nothing', async () => {
     const m = machine()
-    const lib = join(m.home, 'lib')
-    expect((await m.run(['init', lib, '--bare'])).code).toBe(0)
-    expect((await m.run(['storage', 'list', '--library', lib])).stdout).toMatch(/^local-folder .* · 这个库在用$/m)
-    expect((await m.run(['storage', 'list', '--library', lib, '--json'])).json().data.library).toEqual({ address: lib, provider: 'local-folder' })
-  })
-
-  it('is the owner’s: refused in an agent’s session', async () => {
-    const r = await machine().run(['storage', 'list'], { CLAUDE_CODE_SESSION_ID: 'agent-session' })
-    expect(r.code).toBe(2)
-    expect(r.stdout).toContain('拒绝（agent-session）')
+    const agent = { CLAUDE_CODE_SESSION_ID: 'agent-session' }
+    const list = await m.run(['storage', 'list'], agent)
+    expect(list.code).toBe(2)
+    expect(list.stdout).toContain('拒绝（agent-session）')
+    const install = await m.run(['storage', 'install', 'acme/alpha-folder'], agent)
+    expect(install.stdout).toContain('拒绝（agent-session）')
+    expect(install.stdout).not.toContain('pneuma-base ask')
+    const init = await m.run(['init', join(m.home, 'lib')], agent)
+    expect(init.stdout).toContain('拒绝（agent-session）')
+    expect(existsSync(join(m.home, 'lib'))).toBe(false)
   })
 })
 
@@ -120,7 +118,7 @@ describe('storage install', () => {
     expect((await m.run(['storage', 'list', '--json'])).json().data.providers.map((p: { name: string }) => p.name)).toEqual(['local-folder'])
   })
 
-  it('refuses a provider of a newer contract version before taking its executable', async () => {
+  it('refuses a provider of another contract version: a newer one in its manifest before taking its executable, and a program whose describe says another than its manifest', async () => {
     const m = machine()
     publish('acme/delta-folder', { name: 'delta-folder', version: 'v3.0.0', manifestContract: 2 })
     const r = await m.run(['storage', 'install', 'acme/delta-folder'])
@@ -128,13 +126,9 @@ describe('storage install', () => {
     expect(r.stdout).toContain('delta-folder 讲的是存储契约第 2 版，这个 pneuma-base 讲第 1 版。')
     expect(host.asked).not.toContain('/acme/delta-folder/releases/download/v3.0.0/delta-folder')
     expect(m.installedNothing('delta-folder')).toBe(true)
-  })
 
-  it('refuses a program whose describe says another contract version than its manifest', async () => {
-    const m = machine()
     const { sha } = publish('acme/eta-folder', { name: 'eta-folder', version: 'v1.0.0', contract: 2 })
-    const r = await m.run(['storage', 'install', 'acme/eta-folder', '--checksum', sha])
-    expect(r.stdout).toContain('拒绝（contract-version）')
+    expect((await m.run(['storage', 'install', 'acme/eta-folder', '--checksum', sha])).stdout).toContain('拒绝（contract-version）')
     expect(m.installedNothing('eta-folder')).toBe(true)
   })
 
@@ -154,53 +148,26 @@ describe('storage install', () => {
     expect(r.stdout).toContain('拒绝（no-release）')
     expect(r.stdout).toContain('acme/nothing-here 没有最新的发布')
   })
-
-  it('is the owner’s alone: refused in an agent’s session, and not one an agent may ask for', async () => {
-    const r = await machine().run(['storage', 'install', 'acme/alpha-folder'], { CLAUDE_CODE_SESSION_ID: 'agent-session' })
-    expect(r.stdout).toContain('拒绝（agent-session）')
-    expect(r.stdout).not.toContain('pneuma-base ask')
-  })
 })
 
 describe('init <地址>', () => {
-  it('a path is the local folder, recorded on this machine as the provider the library uses', async () => {
+  it('a path is the local folder, recorded on this machine as the provider the library uses, which storage list names', async () => {
     const m = machine()
     const lib = join(m.home, 'lib')
     const r = await m.run(['init', lib, '--bare', '--json'])
     expect(r.json().data).toEqual({ root: lib, provider: 'local-folder' })
     const records = readdirSync(join(m.pbHome, 'storage/libraries')).map((f) => JSON.parse(readFileSync(join(m.pbHome, 'storage/libraries', f), 'utf8')))
     expect(records).toEqual([{ address: lib, provider: 'local-folder' }])
+    expect((await m.run(['storage', 'list', '--library', lib])).stdout).toMatch(/^local-folder .* · 这个库在用$/m)
+    expect((await m.run(['storage', 'list', '--library', lib, '--json'])).json().data.library).toEqual({ address: lib, provider: 'local-folder' })
   })
 
-  it('an address no provider here answers is refused, naming its form', async () => {
+  it('refuses an address no provider here answers, naming its form, and a provider named that does not answer the address', async () => {
     const m = machine()
     const r = await m.run(['init', 'cloud://bucket/lib', '--bare'])
     expect(r.code).toBe(2)
     expect(r.stdout).toContain('拒绝（no-provider）：这台机器上没有答 cloud 这种地址的存储提供者。')
     expect(existsSync(join(m.pbHome, 'storage/libraries'))).toBe(false)
-  })
-
-  it('a provider named that does not answer the address is refused', async () => {
-    const m = machine()
     expect((await m.run(['init', join(m.home, 'lib'), '--provider', 'cloud-folder'])).stdout).toContain('拒绝（no-such-provider）')
-  })
-
-  it('is the owner’s: refused in an agent’s session, before anything is made', async () => {
-    const m = machine()
-    const r = await m.run(['init', join(m.home, 'lib')], { CLAUDE_CODE_SESSION_ID: 'agent-session' })
-    expect(r.stdout).toContain('拒绝（agent-session）')
-    expect(existsSync(join(m.home, 'lib'))).toBe(false)
-  })
-})
-
-describe('the configuration page', () => {
-  it('has a section for storage: the providers, the one this library uses, and 安装别的存储…', async () => {
-    const m = machine()
-    const lib = join(m.home, 'lib')
-    await m.run(['init', lib, '--bare'])
-    const page = (await m.run(['show', 'config', '--library', lib])).stdout
-    expect(page).toContain('## 存储')
-    expect(page).toMatch(/local-folder .*随 pneuma-base 带着 \[这个库在用\]/)
-    expect(page).toContain('$ storage install <owner/repo[@版本]>  # 安装别的存储…')
   })
 })

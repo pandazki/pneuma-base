@@ -62,14 +62,10 @@ describe('the period and its buckets', () => {
     expect((await statsOf(facts, '30d', NOW)).put.byBucket.brought.slice(-8)).toEqual([1, 1, 0, 0, 0, 0, 0, 1])
   })
 
-  it('counts one day of facts as one bucket for all', async () => {
-    const facts = [on('2026-11-26 08:00', enter('i_a', 'a.md', 'a')), on('2026-11-26 09:00', enter('i_b', 'b.md', 'b', made([['i_a', 'a']])))]
-    const all = await statsOf(facts, 'all', NOW)
-    expect(all.buckets).toEqual(['11月26日'])
-    expect(all.put).toMatchObject({ brought: 1, made: 1, byBucket: { brought: [1], made: [1] } })
-  })
-
-  it('counts years by month and a couple of months by week, the bars adding up to the totals', async () => {
+  it('counts all of one day as one bucket, a couple of months by week and years by month, the bars adding up to the totals', async () => {
+    const day = await statsOf([on('2026-11-26 08:00', enter('i_a', 'a.md', 'a')), on('2026-11-26 09:00', enter('i_b', 'b.md', 'b', made([['i_a', 'a']])))], 'all', NOW)
+    expect(day.buckets).toEqual(['11月26日'])
+    expect(day.put).toMatchObject({ brought: 1, made: 1, byBucket: { brought: [1], made: [1] } })
     const years = Array.from({ length: 40 }, (_, i) => on(`${2023 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}-15 12:00`, enter(`i_${i}`, `n/${i}.md`, `${i}`), { scene: `s${i}` }))
     const all = await statsOf(years.filter((f) => f.at <= NOW), 'all', NOW)
     expect(all.grain).toBe('month')
@@ -130,10 +126,13 @@ describe('is earlier work built on', () => {
     on('2026-11-23 09:30', enter('i_e', 'e.md', 'e', made([], ['主人说的'])), { scene: 's3', actor: codex }),
   ]
 
-  it('says how many things made were made from the library, from another session, from another agent', async () => {
+  it('says how many things made in the period were made from the library, from another session, from another agent', async () => {
     const s = await statsOf(facts, '7d', NOW)
     expect(s.reuse).toMatchObject({ made: 4, fromLibrary: 3, otherSession: 2, otherAgent: 1 })
     expect(s.reuse.byBucket).toEqual({ otherSession: [0, 0, 1, 1, 0, 0, 0], rest: [0, 1, 0, 1, 0, 0, 0] })
+    // Three days later, the 21st and the 22nd have left the period.
+    const later = await statsOf(facts, '7d', new Date('2026-11-29T10:00:00+08:00').toISOString() as Instant)
+    expect(later.reuse).toMatchObject({ made: 2, fromLibrary: 1, otherSession: 1, otherAgent: 1 })
   })
 
   it('counts a source given later with say from, and never the thing itself', async () => {
@@ -147,11 +146,6 @@ describe('is earlier work built on', () => {
       { item: 'i_b', path: 'b.md', uses: 1, by: ['claude-code'] },
       { item: 'i_c', path: 'c.md', uses: 1, by: ['codex'] },
     ])
-  })
-
-  it('counts only what was made in the period', async () => {
-    const s = await statsOf(facts, '7d', new Date('2026-11-29T10:00:00+08:00').toISOString() as Instant)
-    expect(s.reuse).toMatchObject({ made: 2, fromLibrary: 1, otherSession: 1, otherAgent: 1 })
   })
 })
 
@@ -207,7 +201,7 @@ describe('is it kept in order', () => {
     on('2026-11-25 09:02', { kind: 'item.move', item: id('i_x'), from: p('x.md'), to: p('_archive/x.md'), archive: 'in' }),
   ]
 
-  it('counts what needs looking at as recorded at the end of each day, and now', async () => {
+  it('counts what needs looking at as recorded at the end of each day, and now, starting from how things stood when the period began', async () => {
     const s = await statsOf(facts, '7d', NOW)
     expect(s.order.byBucket.map((o) => [o.stale, o.changed, o.unknown, o.archived])).toEqual([
       [0, 0, 0, 0],
@@ -221,14 +215,11 @@ describe('is it kept in order', () => {
     expect(s.order.start).toEqual({ stale: 0, changed: 0, unknown: 0, archived: 0 })
     expect(s.order.now).toEqual({ stale: 0, changed: 0, unknown: 0, archived: 1 })
     expect(s.order).toMatchObject({ archived: 2, takenBack: 1, purged: 0, changes: 2 })
+    expect((await statsOf(facts.slice(0, 6), '7d', new Date('2026-11-30T10:00:00+08:00').toISOString() as Instant)).order.start).toEqual({ stale: 1, changed: 1, unknown: 1, archived: 0 })
   })
 
   it('counts a thing whose source is gone as possibly out of date, and leaves out what was removed', async () => {
     const gone = [...facts.slice(0, 4), on('2026-11-23 09:00', { kind: 'item.remove', item: id('i_s') })]
     expect((await statsOf(gone, '7d', NOW)).order.now).toMatchObject({ stale: 1, unknown: 1 })
-  })
-
-  it('starts from how things stood when the period began', async () => {
-    expect((await statsOf(facts.slice(0, 6), '7d', new Date('2026-11-30T10:00:00+08:00').toISOString() as Instant)).order.start).toEqual({ stale: 1, changed: 1, unknown: 1, archived: 0 })
   })
 })

@@ -51,7 +51,7 @@ describe('the assembled description with every plugin installed', () => {
     expect(readFileSync(join(ledgerOnly, 'PNEUMA-BASE.md'), 'utf8').split('\n').length - 1).toBeLessThanOrEqual(116)
   })
 
-  it('gives each plugin one section, in configuration order, each opening with the same sentence and a heading that names what it gives', () => {
+  it('gives each plugin one section, in configuration order, each opening with the same sentence and a heading that names what it gives; says 版本 only in the version plugin’s section, and each rule once', () => {
     const titles = ['记账与对账', '版本', '部署', '同步', '查找']
     const opens = titles.map((t) => text.indexOf(`这个库装了**${t}**插件。`))
     expect(opens.every((at) => at > 0)).toBe(true)
@@ -59,9 +59,7 @@ describe('the assembled description with every plugin installed', () => {
     expect(text.match(/这个库装了\*\*/g)).toHaveLength(titles.length)
     for (const at of opens) expect(text.slice(text.lastIndexOf('\n## ', at), at)).toMatch(/^\n## \S+：\S+/)
     expect(text).not.toContain('这个插件还带来')
-  })
 
-  it('says 版本 only in the version plugin’s section, and each rule once', () => {
     const version = text.slice(text.indexOf('\n## 版本：'), text.indexOf('\n## ', text.indexOf('\n## 版本：') + 1))
     const config = text.slice(text.indexOf('\n## 这个库现在的配置'))
     const rest = text.replace(version, '').replace(config, '')

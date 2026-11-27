@@ -58,12 +58,11 @@ const tableIn = (blocks: Block[]) => blocks.find((b): b is Extract<Block, { kind
 const ownerCall = (action: Action | undefined) => (action?.call.face === 'owner' ? { command: action.call.command, positional: action.call.args.positional } : null)
 
 describe('the deploy.sites view', () => {
-  it('is declared for the navigation', () => {
+  it('is in the navigation, shows the target, lists each declared thing with its state, its address and a switch, and offers to reconcile', async () => {
     expect(deploy.views).toEqual([expect.objectContaining({ id: 'deploy.sites', nav: true })])
-  })
-
-  it('lists each declared thing with its state, its address and a switch, and offers to reconcile', async () => {
     const view = await deploy.onView?.({ view: 'deploy.sites', params: {} }, pctx)
+    const target = sections(view?.blocks ?? []).find((s) => s.title === '目标')
+    expect(JSON.stringify(target?.blocks)).toContain('www')
     const things = sections(view?.blocks ?? []).find((s) => s.title === '可部署的东西')
     expect(things?.count).toBe(3)
     const rows = tableIn(things?.blocks ?? [])?.rows ?? []
@@ -81,12 +80,6 @@ describe('the deploy.sites view', () => {
     expect(byPath['sites/s1']?.link).toEqual({ view: 'item', params: { path: 'sites/s1' }, target: 'panel' })
     expect(things?.actions.map(ownerCall)).toContainEqual({ command: 'deploy sync', positional: [] })
   })
-
-  it('shows the target', async () => {
-    const view = await deploy.onView?.({ view: 'deploy.sites', params: {} }, pctx)
-    const target = sections(view?.blocks ?? []).find((s) => s.title === '目标')
-    expect(JSON.stringify(target?.blocks)).toContain('www')
-  })
 })
 
 describe('the deploy section of the item panel', () => {
@@ -100,14 +93,10 @@ describe('the deploy section of the item panel', () => {
     expect(ownerCall(actions[0])).toEqual({ command: 'deploy off', positional: ['sites/s1'] })
   })
 
-  it('for an archived declared thing, under its archive path', async () => {
+  it('for an archived declared thing, under its archive path, with no "turn on" while its switch is off', async () => {
     const section = await deploy.onItemView?.('_archive/sites/s2' as LibraryPath, pctx)
     const fields = section?.blocks.find((b): b is Extract<Block, { kind: 'fields' }> => b.kind === 'fields')?.fields ?? []
     expect(fields.find((f) => f.label === '状态')?.value.tag?.text).toBe('已归档')
-  })
-
-  it('offers no "turn on" for an archived thing whose switch is off', async () => {
-    const section = await deploy.onItemView?.('_archive/sites/s2' as LibraryPath, pctx)
     expect(section?.blocks.some((b) => b.kind === 'actions')).toBe(false)
   })
 

@@ -1,15 +1,17 @@
 // C1, K2: with no plugin, each of the six verbs gives the answer in ARCHITECTURE "没有任何插件时的答复".
+// What init --bare writes is description.test.ts's.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { sandbox, tempDir, type Sandbox } from './helpers.js'
 
+// One library for the file; each test works on paths of its own.
 describe('a library with no plugin', () => {
   let sb: Sandbox
   let lib: string
   let outside: string
 
-  beforeEach(() => {
+  beforeAll(() => {
     sb = sandbox()
     lib = join(tempDir(), 'lib')
     outside = tempDir('pb-outside-')
@@ -20,25 +22,14 @@ describe('a library with no plugin', () => {
   const agent = (args: string[], opts?: { input?: string; cwd?: string }) =>
     sb.run(['--library', lib, '--as', 'claude-code', ...args, '--json'], { cwd: opts?.cwd ?? outside, ...opts })
 
-  it('init --bare writes the description and a configuration with no plugin', () => {
-    expect(existsSync(join(lib, 'PNEUMA-BASE.md'))).toBe(true)
-    const config = JSON.parse(readFileSync(join(lib, '.pneuma-base', 'config.json'), 'utf8'))
-    expect(config.plugins).toEqual([])
-    expect(config.format).toBe(1)
-    expect(typeof config.id).toBe('string')
-  })
-
-  it('put copies the file in and accepts with no notes', () => {
+  it('put copies a file in, or takes the content from standard input, and accepts with no notes', () => {
     writeFileSync(join(outside, 'stripe.html'), '<html>stripe</html>')
     const r = agent(['put', 'stripe.html', '--to', 'payments/sources/stripe.html', '--brought', '--source', 'https://stripe.com'])
     expect(r.code, r.stderr).toBe(0)
     expect(r.json()).toMatchObject({ outcome: 'accepted', path: 'payments/sources/stripe.html', copied: true, notes: [], problems: [] })
     expect(readFileSync(join(lib, 'payments/sources/stripe.html'), 'utf8')).toBe('<html>stripe</html>')
-  })
-
-  it('put takes content from standard input', () => {
-    const r = agent(['put', '-', '--to', 'notes/idea.md', '--made'], { input: '# idea\n' })
-    expect(r.code, r.stderr).toBe(0)
+    const stdin = agent(['put', '-', '--to', 'notes/idea.md', '--made'], { input: '# idea\n' })
+    expect(stdin.code, stdin.stderr).toBe(0)
     expect(readFileSync(join(lib, 'notes/idea.md'), 'utf8')).toBe('# idea\n')
   })
 
@@ -61,10 +52,13 @@ describe('a library with no plugin', () => {
     expect(agent(['inspect', 'a.md', '--content']).json().file.fingerprint).toBe('2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824')
   })
 
-  it('say is not heard, with the named reason and the fixed sentence', () => {
+  it('say is not heard, with the named reason and the fixed sentence, in the readable output too', () => {
     const r = agent(['say', 'decided', '主人决定用 Paddle'])
     expect(r.code, r.stderr).toBe(0)
     expect(r.json()).toEqual({ outcome: 'not-heard', reason: 'no-plugin-for-kind', note: '这个库没配能记下这句话的插件', problems: [] })
+    const text = sb.run(['--library', lib, 'say', 'note', 'x'], { cwd: outside })
+    expect(text.code).toBe(0)
+    expect(text.stdout).toContain('这个库没配能记下这句话的插件')
   })
 
   it('check reports no sections', () => {
@@ -92,11 +86,5 @@ describe('a library with no plugin', () => {
     // Finding asks the plugins' records (ARCHITECTURE.md「找、看、说、查、归档」), and a library with no plugin keeps none.
     expect(out.find.hits).toEqual([])
     expect(agent(['find', 'payments']).json().hits).toEqual([])
-  })
-
-  it('prints short Chinese text without --json', () => {
-    const r = sb.run(['--library', lib, 'say', 'note', 'x'], { cwd: outside })
-    expect(r.code).toBe(0)
-    expect(r.stdout).toContain('这个库没配能记下这句话的插件')
   })
 })

@@ -1,6 +1,7 @@
 // B3, B4, D9: a plugin is a directory (index.js, what it imports, an optional ui/) the owner installs
 // on this machine, replaces, lists and uninstalls; a running UI server uses a changed plugin on its
-// next request, and sets a plugin's secret from the page into the store the command line reads.
+// next request, and sets a plugin's secret from the page into the store the command line reads. That
+// these are the owner's alone is packages/kernel/test/owner.test.ts's.
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -21,32 +22,10 @@ beforeEach(() => {
 })
 
 const source = (files: Record<string, string>) => writePlugin(join(tempDir('pb-src-'), 'dist'), files)
-const install = (dir: string, env: Record<string, string> = {}) => sb.run(['plugin', 'install', dir, '--json'], { env })
-
-describe('an outside plugin whose command declares no params', () => {
-  const LOOSE = {
-    'package.json': '{ "type": "module" }\n',
-    'index.js': `export default { contract: 2, name: 'loose', cognition: null, storage: [], statements: [], ownerCommands: [
-  { name: 'loose go', summary: '', destructive: false, ownerOnly: false, run: async () => ({ outcome: 'done', text: '' }) },
-] }\n`,
-  }
-
-  it('is refused at install, and at add when put in place by hand, saying every command declares its arguments', () => {
-    const installed = install(source(LOOSE))
-    expect(installed.json()).toMatchObject({ outcome: 'refused', reason: 'plugin-failed-to-load' })
-    expect(installed.json().text).toContain('主人命令「loose go」没有 params：每条命令都声明它的参数，什么都不带的写 params: {}')
-    expect(existsSync(join(home, 'plugins', 'loose'))).toBe(false)
-
-    writePlugin(join(home, 'plugins', 'loose'), LOOSE)
-    const added = sb.run(['plugin', 'add', 'loose', '--library', lib, '--json'])
-    expect(added.json()).toMatchObject({ outcome: 'refused', reason: 'plugin-failed-to-load' })
-    expect(added.json().text).toContain('主人命令「loose go」没有 params')
-    expect(JSON.parse(readFileSync(join(lib, '.pneuma-base', 'config.json'), 'utf8')).plugins).toEqual(['ledger'])
-  })
-})
+const install = (dir: string) => sb.run(['plugin', 'install', dir, '--json'])
 
 describe('plugin install', () => {
-  it('copies a plugin directory, with the modules it imports and its ui, onto this machine, and says its version', () => {
+  it('copies a plugin directory, with the modules it imports and its ui, onto this machine, and says its version; over an installed one it replaces it and says which version replaced which', () => {
     const r = install(source(pager('第一版', '0.1.0')))
     expect(r.code, r.stderr).toBe(0)
     expect(r.json()).toMatchObject({ outcome: 'done', data: { name: 'pager', version: '0.1.0', replaced: null } })
@@ -56,18 +35,15 @@ describe('plugin install', () => {
     expect(existsSync(join(dir, 'ui', 'page.html'))).toBe(true)
     expect(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))).toEqual({ type: 'module' })
     expect(sb.run(['plugin', 'add', 'pager', '--library', lib]).code).toBe(0)
+
+    const again = install(source(pager('第二版', '0.2.0')))
+    expect(again.code, again.stderr).toBe(0)
+    expect(again.json()).toMatchObject({ data: { version: '0.2.0', replaced: '0.1.0' } })
+    expect(again.json().text).toContain('pager 0.2.0 装到这台机器上，换掉了原来的 0.1.0')
+    expect(readFileSync(join(dir, 'lib', 'words.js'), 'utf8')).toContain('第二版')
   })
 
-  it('over an installed one replaces it and says which version replaced which', () => {
-    install(source(pager('第一版', '0.1.0')))
-    const r = install(source(pager('第二版', '0.2.0')))
-    expect(r.code, r.stderr).toBe(0)
-    expect(r.json()).toMatchObject({ data: { version: '0.2.0', replaced: '0.1.0' } })
-    expect(r.json().text).toContain('pager 0.2.0 装到这台机器上，换掉了原来的 0.1.0')
-    expect(readFileSync(join(home, 'plugins', 'pager', 'lib', 'words.js'), 'utf8')).toContain('第二版')
-  })
-
-  it('refuses a name a built-in plugin holds, and a directory that is no plugin, leaving the installed one as it was', () => {
+  it('refuses a name a built-in plugin holds, a directory that is no plugin, and a command that declares no params, at add too when put in place by hand, leaving the installed one as it was', () => {
     install(source(pager('第一版', '0.1.0')))
     const builtIn = install(source({ 'index.js': "export default { contract: 2, name: 'ledger', cognition: null, storage: [], statements: [], ownerCommands: [] }\n" }))
     expect(builtIn.json()).toMatchObject({ outcome: 'refused', reason: 'built-in-name' })
@@ -84,12 +60,22 @@ describe('plugin install', () => {
     expect(install(join(tempDir('pb-empty-'))).json()).toMatchObject({ outcome: 'refused', reason: 'plugin-failed-to-load' })
     expect(readFileSync(join(home, 'plugins', 'pager', 'lib', 'words.js'), 'utf8')).toContain('第一版')
     expect(existsSync(join(home, 'plugins', 'odd'))).toBe(false)
-  })
 
-  it('is the owner’s alone', () => {
-    const r = install(source(pager('第一版', '0.1.0')), { CODEX_THREAD_ID: 't' })
-    expect(r.json()).toMatchObject({ outcome: 'refused', reason: 'agent-session' })
-    expect(existsSync(join(home, 'plugins', 'pager'))).toBe(false)
+    const LOOSE = {
+      'package.json': '{ "type": "module" }\n',
+      'index.js': `export default { contract: 2, name: 'loose', cognition: null, storage: [], statements: [], ownerCommands: [
+  { name: 'loose go', summary: '', destructive: false, ownerOnly: false, run: async () => ({ outcome: 'done', text: '' }) },
+] }\n`,
+    }
+    const loose = install(source(LOOSE))
+    expect(loose.json()).toMatchObject({ outcome: 'refused', reason: 'plugin-failed-to-load' })
+    expect(loose.json().text).toContain('主人命令「loose go」没有 params：每条命令都声明它的参数，什么都不带的写 params: {}')
+    expect(existsSync(join(home, 'plugins', 'loose'))).toBe(false)
+    writePlugin(join(home, 'plugins', 'loose'), LOOSE)
+    const added = sb.run(['plugin', 'add', 'loose', '--library', lib, '--json'])
+    expect(added.json()).toMatchObject({ outcome: 'refused', reason: 'plugin-failed-to-load' })
+    expect(added.json().text).toContain('主人命令「loose go」没有 params')
+    expect(JSON.parse(readFileSync(join(lib, '.pneuma-base', 'config.json'), 'utf8')).plugins).toEqual(['ledger'])
   })
 })
 
@@ -113,7 +99,7 @@ describe('plugin list', () => {
 })
 
 describe('plugin uninstall', () => {
-  it('refuses while the library given still has it, then removes it; a library that has it reports it unavailable', () => {
+  it('refuses while the library given still has it, then removes it, and a library that has it reports it unavailable; refuses a built-in plugin and one this machine does not have', () => {
     install(source(pager('第一版', '0.1.0')))
     sb.run(['plugin', 'add', 'pager', '--library', lib])
     const held = sb.run(['plugin', 'uninstall', 'pager', '--library', lib, '--json'])
@@ -124,9 +110,6 @@ describe('plugin uninstall', () => {
     expect(existsSync(join(home, 'plugins', 'pager'))).toBe(false)
     const find = sb.run(['--library', lib, 'find', '--json'])
     expect(find.json().problems).toContainEqual(expect.objectContaining({ plugin: 'pager' }))
-  })
-
-  it('refuses a built-in plugin and one this machine does not have', () => {
     expect(sb.run(['plugin', 'uninstall', 'ledger', '--json']).json()).toMatchObject({ outcome: 'refused', reason: 'built-in' })
     expect(sb.run(['plugin', 'uninstall', 'nobody', '--json']).json()).toMatchObject({ outcome: 'refused', reason: 'not-on-machine' })
   })

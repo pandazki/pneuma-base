@@ -5,7 +5,7 @@
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
-import { expect, PRESENTATION_SHOTS, shoot, tempDir, test, write, type Cli } from './support.ts'
+import { expect, frames, tempDir, test, write, type Cli } from './support.ts'
 
 test.use({ timezoneId: 'UTC' })
 
@@ -131,7 +131,7 @@ test('a plugin’s own page gets its data and the scheme, runs a declared action
   // An action the block did not declare, and a message from somewhere else, do nothing.
   await frame.getByRole('button', { name: '做没声明的事' }).click()
   await page.evaluate(() => window.postMessage({ pneuma: 1, type: 'run', name: 'bump' }, '*'))
-  await page.waitForTimeout(500)
+  await frames(page)
   await expect(page.getByRole('dialog')).toHaveCount(0)
   expect(calls).toEqual([])
 
@@ -161,22 +161,24 @@ test('a plugin’s page that never says it is ready shows a message naming the p
   const local = await site()
   try {
     const url = await pagerLibrary(pb, { PAGER_EMBED: local.url })
+    // The page's clock, so the time a frame has to say it is ready passes at once.
+    await page.clock.install()
     await page.goto(`${url}#view=pager.new`)
-    const failed = page.getByRole('main').getByRole('alert').filter({ hasText: '插件 pager 的页没能打开' })
-    await expect(failed).toBeVisible({ timeout: 10_000 })
-    await expect(failed).toContainText('missing.html')
-    await expect(page.locator('main').frameLocator(FRAME).first().locator('#count')).toHaveText('0')
-    await expect(page.getByRole('main').getByText('第 2 版')).toBeVisible()
+    const counter = page.locator('main').frameLocator(FRAME).first().locator('#count')
+    await expect(counter).toHaveText('0')
     await expect(page.frameLocator('iframe[title="站点预览"]').getByText('脚本运行了')).toBeVisible()
-    await page.setViewportSize({ width: 1440, height: 1240 })
-    await shoot(page, 'new-blocks', PRESENTATION_SHOTS)
+    await page.clock.runFor(5_000)
+    const failed = page.getByRole('main').getByRole('alert').filter({ hasText: '插件 pager 的页没能打开' })
+    await expect(failed).toBeVisible()
+    await expect(failed).toContainText('missing.html')
+    await expect(counter).toHaveText('0')
+    await expect(page.getByRole('main').getByText('第 2 版')).toBeVisible()
 
     // In its section of the item panel.
     await page.getByRole('region', { name: '站点' }).getByRole('row', { name: /短地址/ }).getByRole('cell').first().click()
     const panel = page.getByRole('complementary', { name: '详情' })
     await expect(panel.getByTestId('panel-title')).toHaveText('pager.md')
     await expect(panel.frameLocator(FRAME).locator('#note')).toHaveText('面板里的 pager.md')
-    await shoot(page, 'new-blocks-panel', PRESENTATION_SHOTS)
   } finally {
     await local.close()
   }
@@ -218,14 +220,25 @@ test('a reload keeps the open view and panel, a pasted address opens them, and b
 test('a view without refresh is not asked for again while nothing changes; one with refresh is, at its pace', async ({ page, pb }) => {
   const url = await pagerLibrary(pb)
   const asked: string[] = []
+  let polled = 0
   page.on('request', (r) => {
     const u = new URL(r.url())
     if (u.pathname === '/api/view') asked.push(u.searchParams.get('view') ?? '')
   })
+  page.on('response', (r) => {
+    if (new URL(r.url()).pathname === '/api/rev') polled++
+  })
+  // The page's clock, so seven seconds pass at once: the shortest pace a view may ask for is five.
+  await page.clock.install()
   await page.goto(`${url}#view=pager.still&panel=pager.ticking`)
   await expect(page.getByRole('heading', { level: 1, name: '不自己更新的页' })).toBeVisible()
   await expect(page.getByRole('complementary', { name: '详情' }).getByTestId('panel-title')).toHaveText('自己更新的页')
-  await page.waitForTimeout(7_000)
+  await expect.poll(() => polled).toBeGreaterThanOrEqual(1)
+  const before = polled
+  await page.clock.runFor(7_000)
+  // The page asked three times in those seconds whether the library changed, and had its answers.
+  await expect.poll(() => polled).toBeGreaterThanOrEqual(before + 3)
+  await frames(page)
   expect(asked.filter((v) => v === 'pager.still')).toHaveLength(1)
   expect(asked.filter((v) => v === 'pager.ticking').length).toBeGreaterThanOrEqual(2)
 })

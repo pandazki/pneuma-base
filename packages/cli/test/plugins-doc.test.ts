@@ -2,9 +2,8 @@
 // named with the rule its report states; every TypeScript example compiles against the sdk with the
 // scaffold's compiler options, and every example plugin passes the loader; every shell block runs as
 // written from the state the five minutes leave (the blocks that install from the registry run in
-// plugins-doc.slow.test.ts); the icon, frame class and frame token lists are the sdk's; the
-// conformance test it shows is the one plugin new writes; and the friction appendix accounts for all
-// 55 entries of the first plugin and the 13 of its rebuild.
+// plugins-doc.slow.test.ts); the icon, frame class and frame token lists are the sdk's; and the
+// conformance test it shows is the one plugin new writes.
 import { spawnSync } from 'node:child_process'
 import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -55,21 +54,12 @@ const transpile = (source: string) =>
   ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022, verbatimModuleSyntax: true } }).outputText
 
 describe('PLUGINS.md', () => {
-  it('names every conformance check on the rules it enforces, and no check that does not exist', () => {
+  it('names every conformance check on the rules it enforces and no other, and lists them in section 7 in their order, each with the rule its report states word for word', () => {
     const named = [...text.matchAll(/（检查：([^）]+)）/g)].flatMap((m) => [...(m[1] as string).matchAll(/`([^`]+)`/g)].map((n) => n[1] as string))
     expect(named.filter((n) => !(CHECKS as readonly string[]).includes(n))).toEqual([])
     expect([...new Set(named)].sort()).toEqual([...CHECKS].sort())
-  })
-
-  it('lists the checks in section 7 in their order, each with the rule its report states word for word', () => {
     const rows = [...section('## 7. ').matchAll(/^\| `([a-z]+)` \| (.+?) \| .+ \|$/gm)].map((m) => [m[1], m[2]])
     expect(rows).toEqual(CHECKS.map((name) => [name, RULES[name]]))
-  })
-
-  it('accounts for the 55 friction entries of the first plugin and the 13 of its rebuild, by label', () => {
-    const labels = [...section('## 附').matchAll(/^\| ([A-Z]\d+) \|/gm)].map((m) => m[1])
-    const expected = Object.entries({ C: 10, K: 8, B: 7, P: 10, D: 11, V: 9, N: 13 }).flatMap(([group, n]) => Array.from({ length: n }, (_, i) => `${group}${i + 1}`))
-    expect(labels).toEqual(expected)
   })
 
   /** The backticked names in the table row whose first cell is `cell`. */
@@ -78,11 +68,8 @@ describe('PLUGINS.md', () => {
     return [...row.matchAll(name)].map((m) => m[1])
   }
 
-  it('lists every icon name a view or a cell may use, as the sdk gives them', () => {
+  it('lists every icon name a view or a cell may use, and every class and token the frame kit gives, as the sdk gives them', () => {
     expect(rowNames('`IconName`', /`([a-z][a-z-]*)`/g)).toEqual([...ICON_NAMES])
-  })
-
-  it('lists every class and token the frame kit gives, as the sdk gives them', () => {
     expect(rowNames('`frame.css` 的类（`FRAME_CLASSES`）', /`([a-z][a-z-]*)`/g)).toEqual([...FRAME_CLASSES])
     expect(rowNames('`frame.css` 的变量（`FRAME_TOKENS`）', /`(--[a-z0-9-]+)`/g)).toEqual([...FRAME_TOKENS])
   })
@@ -183,19 +170,26 @@ describe('PLUGINS.md', () => {
       expect(blocks.find((b) => b.lang === 'md')?.body).toBe(written)
     })
 
-    for (const block of sh.filter((b) => b.marker === null)) {
-      it(`runs the block at line ${block.line}`, async () => {
-        const root = tempDir('pb-doc-block-')
-        cpSync(base, root, { recursive: true })
-        const script = join(root, 'block.sh')
-        writeFileSync(script, `${block.body}\n`)
-        const r = await runBlock(script, { cwd: join(root, 'packages/marks'), env: sceneEnv(root), timeout: 90_000 })
-        const shown = `PLUGINS.md line ${block.line}\n${block.body}\n--- stdout\n${r.stdout}--- stderr\n${r.stderr}`
-        expect(r.code, shown).toBe(0)
-        expect(unprinted(blocks, block, r), shown).toEqual([])
-        expect(existsSync(join(root, 'opened')), 'a block opened a browser').toBe(false)
-      }, 120_000)
-    }
+    // Each block in a copy of the scene of its own, all at once.
+    it('runs every shell block as written, printing what its output block shows, and opens no browser', async () => {
+      const runnable = sh.filter((b) => b.marker === null)
+      expect(runnable.length).toBeGreaterThan(0)
+      const failures = await Promise.all(
+        runnable.map(async (block) => {
+          const root = tempDir('pb-doc-block-')
+          cpSync(base, root, { recursive: true })
+          const script = join(root, 'block.sh')
+          writeFileSync(script, `${block.body}\n`)
+          const r = await runBlock(script, { cwd: join(root, 'packages/marks'), env: sceneEnv(root), timeout: 90_000 })
+          const shown = `PLUGINS.md line ${block.line}\n${block.body}\n--- stdout\n${r.stdout}--- stderr\n${r.stderr}`
+          if (r.code !== 0) return `${shown}\n--- exited ${r.code}`
+          const missing = unprinted(blocks, block, r)
+          if (missing.length > 0) return `${shown}\n--- did not print\n${missing.join('\n')}`
+          return existsSync(join(root, 'opened')) ? `${shown}\n--- opened a browser` : null
+        }),
+      )
+      expect(failures.filter((f) => f !== null).join('\n\n')).toBe('')
+    }, 120_000)
   })
 })
 

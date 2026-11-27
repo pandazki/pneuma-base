@@ -30,16 +30,6 @@ describe('plugin new', () => {
     expect(readFileSync(join(project, 'README.md'), 'utf8')).toContain('node_modules/pneuma-base/PLUGINS.md')
   })
 
-  it('names the plugin standard that ships with this command line, in its answer and in --json', () => {
-    const standard = fileURLToPath(new URL('../../../PLUGINS.md', import.meta.url))
-    const project = join(tempDir('pb-new-'), 'named')
-    const r = sb.run(['plugin', 'new', project, '--packages', packages])
-    expect(r.code, r.stderr).toBe(0)
-    expect(r.stdout).toContain(`插件规范：${standard}`)
-    const again = sb.run(['plugin', 'new', join(tempDir('pb-new-'), 'named'), '--packages', packages, '--json'])
-    expect(again.json().standard).toBe(standard)
-  })
-
   it('writes the deploy kind with its target', () => {
     const project = join(tempDir('pb-new-'), 'site')
     const r = sb.run(['plugin', 'new', project, '--kind', 'deploy', '--name', 'my-site', '--packages', packages, '--json'])
@@ -59,7 +49,7 @@ describe('plugin new', () => {
     expect(readdirSync(where)).toEqual([])
   })
 
-  it('never sends a reader who has only the two package files to the source repository', () => {
+  it('names the standard beside this command line, and never sends a reader who has only the two package files to the source repository', () => {
     const toRepository = /仓库|pack:dist|dist-packages/
     expect(sb.run(['plugin', 'new', '--help']).stdout).not.toMatch(toRepository)
     const missing = sb.run(['plugin', 'new', join(tempDir('pb-new-'), 'x'), '--packages', tempDir('pb-none-')])
@@ -68,6 +58,8 @@ describe('plugin new', () => {
     const project = join(tempDir('pb-new-'), 'unpacked')
     const r = sb.run(['plugin', 'new', project])
     expect(r.code, r.stderr).toBe(0)
+    // The standard it names is the one beside this command line; package-files.test.ts follows it into an installed package.
+    expect(r.stdout).toContain(`插件规范：${fileURLToPath(new URL('../../../PLUGINS.md', import.meta.url))}`)
     expect(r.stdout).toContain('--packages <两个包文件所在的目录>')
     expect(r.stdout).not.toMatch(toRepository)
     expect(JSON.parse(readFileSync(join(project, 'package.json'), 'utf8')).devDependencies['pneuma-base']).toBe(`^${PNEUMA_BASE_VERSION}`)

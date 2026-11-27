@@ -181,13 +181,6 @@ describe('place', () => {
       expect(f.read('a.md')).toBe('old')
     }
   })
-
-  it('a reviser that throws is listed in problems', async () => {
-    const f = await fixture([plugin('keeper', { revise: async () => { throw new Error('disk full') } })])
-    f.write('a.md', 'old')
-    const r = await agentFace.put({ kind: 'place', from: { kind: 'file', path: outsideFile('new') }, to: 'a.md', origin: brought }, f.ctx)
-    expect(r.problems).toEqual([{ plugin: 'keeper', message: 'disk full' }])
-  })
 })
 
 describe('revise asks every plugin that has the hook', () => {

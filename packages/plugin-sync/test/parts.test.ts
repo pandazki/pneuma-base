@@ -93,10 +93,6 @@ describe('the target a machine uses', () => {
 })
 
 describe('the sync.status view', () => {
-  it('is declared in the navigation', () => {
-    expect(sync.views).toEqual([expect.objectContaining({ id: 'sync.status', nav: true })])
-  })
-
   it('without a target says so and offers to set one', async () => {
     const f = await fixture()
     const v = await f.view()

@@ -1,32 +1,17 @@
 // The configuration page's storage section, with the commands behind its buttons: the providers this
-// machine has, the one the library uses marked, and installing a third-party one from a repository,
-// which is refused until the owner accepts what a provider is, then vetted and listed with its own
-// buttons. The release comes from a stand-in for GitHub on this machine; installing runs the contract suite.
+// machine has, the one the library uses marked; installing a third-party one from a repository, which
+// is refused until the owner accepts what a provider is, then asks with the checksum; and removing an
+// installed one. The release comes from a stand-in for GitHub on this machine. Installing for real runs
+// the contract suite on the program, about half a minute, which packages/cli/test/storage-providers.slow.test.ts
+// does; here the page goes as far as that question, and the provider it removes is one whose registry
+// entry the test writes, as storage install writes it last (packages/cli/test/pages.test.ts does the same).
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { expect, tempDir, test } from './support.ts'
+import { expect, tempDir, test, write } from './support.ts'
 
-const CORE = process.env.PNEUMA_BASE_CORE ?? fileURLToPath(new URL('../../../core/target/release/pneuma-base-core', import.meta.url))
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
-
-/** A test-only provider: the local folder's own program, describing itself as `name`, answering addresses of the form `form`. */
-const providerScript = (name: string, form: string) =>
-  Buffer.from(
-    [
-      '#!/bin/sh',
-      `core='${CORE}'`,
-      'if [ "$1" = describe ]; then',
-      '  shift',
-      `  "$core" describe "$@" | sed -e 's/"name":"local-folder"/"name":"${name}"/' -e 's/"addresses":\\["path"\\]/"addresses":["${form}"]/'`,
-      '  exit 0',
-      'fi',
-      'exec "$core" "$@"',
-      '',
-    ].join('\n'),
-  )
 
 /** One release of `repository`, laid out as GitHub serves it: its manifest and the program for this machine. */
 async function releaseOf(repository: string, version: string, name: string, form: string, bytes: Buffer) {
@@ -48,13 +33,19 @@ async function releaseOf(repository: string, version: string, name: string, form
   return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, close: () => new Promise<void>((done) => server.close(() => done())) }
 }
 
-test('storage on the configuration page: the provider in use, and installing and removing another through its buttons', async ({ page, pb }) => {
-  test.setTimeout(180_000)
-  const bytes = providerScript('alpha-folder', 'alpha')
+test('storage on the configuration page: the provider in use, installing another through its buttons, and removing one', async ({ page, pb }) => {
+  const bytes = Buffer.from('#!/bin/sh\n')
   const host = await releaseOf('acme/alpha-folder', 'v1.0.0', 'alpha-folder', 'alpha', bytes)
   try {
     const lib = join(tempDir(), 'lib')
     pb.run(['init', lib, '--bare'])
+    const providers = join(pb.home, '.pneuma-base/storage/providers')
+    write(providers, 'beta-folder/v1.0.0/beta-folder', '#!/bin/sh\n')
+    write(
+      providers,
+      'beta-folder/provider.json',
+      JSON.stringify({ format: 1, name: 'beta-folder', version: 'v1.0.0', contract: 1, addresses: ['beta'], executable: 'v1.0.0/beta-folder', sha256: '0'.repeat(64), official: false, installed: '2026-11-27T00:00:00.000Z', from: { repository: 'acme/beta-folder', tag: 'v1.0.0' } }),
+    )
     const { url } = await pb.view(lib, { env: { PNEUMA_BASE_RELEASE_HOST: host.url } })
     await page.goto(`${url}#view=config`)
     const storage = page.getByRole('main').getByRole('region', { name: '存储', exact: true })
@@ -63,6 +54,10 @@ test('storage on the configuration page: the provider in use, and installing and
     await expect(builtIn).toContainText('随 pneuma-base 带着')
     await expect(builtIn).toContainText('这个库在用')
     await expect(storage.getByRole('region', { name: '噪音' })).toBeVisible()
+    const beta = storage.getByRole('row', { name: /^beta-folder/ })
+    await expect(beta).toContainText('来自 acme/beta-folder')
+    await expect(beta).not.toContainText('这个库在用')
+    await expect(beta.getByRole('button', { name: '换新版本' })).toBeVisible()
 
     // Another from a repository: refused at first, the refusal saying what a provider is, with the checksum.
     await storage.getByRole('button', { name: '安装别的存储…' }).click()
@@ -71,22 +66,19 @@ test('storage on the configuration page: the provider in use, and installing and
     await form.getByRole('button', { name: '安装别的存储…' }).click()
     const notices = page.getByRole('status')
     await expect(notices).toContainText(`存储提供者是一个以你的身份运行的程序，看得到库里的全部内容。要装的是 acme/alpha-folder 的 v1.0.0，校验和 sha256:${sha256(bytes)}。`)
-    // Accepting it runs the same command with that checksum; the contract suite vets the program first.
+    // Accepting it asks for the same command with that checksum; cancelled, nothing is installed.
     await notices.getByRole('button', { name: '安装' }).click()
     await expect(page.getByRole('dialog')).toContainText(`sha256:${sha256(bytes)}`)
-    await page.getByRole('dialog').getByRole('button', { name: '安装' }).click()
-    await expect(notices).toContainText('已装上存储提供者 alpha-folder v1.0.0', { timeout: 120_000 })
-    const alpha = storage.getByRole('row', { name: /^alpha-folder/ })
-    await expect(alpha).toContainText('来自 acme/alpha-folder')
-    await expect(alpha).not.toContainText('这个库在用')
-    await expect(alpha.getByRole('button', { name: '换新版本' })).toBeVisible()
+    await page.getByRole('dialog').getByRole('button', { name: '取消' }).click()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await expect(storage.getByRole('row', { name: /^alpha-folder/ })).toHaveCount(0)
 
-    // Removing it asks first, then it is gone from the list.
-    await alpha.getByRole('button', { name: '卸掉' }).click()
-    await expect(page.getByRole('dialog')).toContainText('卸掉存储提供者 alpha-folder？')
+    // Removing one asks first, then it is gone from the list.
+    await beta.getByRole('button', { name: '卸掉' }).click()
+    await expect(page.getByRole('dialog')).toContainText('卸掉存储提供者 beta-folder？')
     await page.getByRole('dialog').getByRole('button', { name: '卸掉' }).click()
-    await expect(notices).toContainText('已卸下存储提供者 alpha-folder v1.0.0。')
-    await expect(alpha).toHaveCount(0)
+    await expect(notices).toContainText('已卸下存储提供者 beta-folder v1.0.0。')
+    await expect(beta).toHaveCount(0)
   } finally {
     await host.close()
   }

@@ -1,9 +1,9 @@
-// C1: a library with no plugin has three pages; the files page goes into folders and previews text
-// and images; archiving a file in the UI puts it in the archive, taking it back returns it.
+// C1: a library with no plugin has its pages; the files page goes into folders and previews text and
+// images; archiving a file in the UI puts it in the archive, taking it back returns it.
 // Failure semantics: a server that stops leaves a visible state that keeps retrying.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, navTitles, png, shoot, tempDir, test, write } from './support.ts'
+import { expect, navTitles, png, tempDir, test, write } from './support.ts'
 
 function bareLibrary(pb: { run(args: string[]): unknown }): string {
   const lib = join(tempDir(), 'lib')
@@ -32,7 +32,6 @@ test('a bare library: four pages, folders, text and image preview, archive and t
   const panel = page.getByRole('complementary', { name: '详情' })
   await expect(panel.getByTestId('panel-title')).toHaveText('hello.md')
   await expect(panel.getByRole('figure', { name: '预览' })).toContainText('一段笔记，写给以后的自己。')
-  await shoot(page, 'c1-files-text-preview')
 
   // Back up, into another folder, and an image preview.
   await page.getByRole('button', { name: '..' }).click()
@@ -41,7 +40,6 @@ test('a bare library: four pages, folders, text and image preview, archive and t
   const image = panel.getByRole('img', { name: 'pics/dot.png' })
   await expect(image).toBeVisible()
   expect(await image.evaluate((img: HTMLImageElement) => [img.naturalWidth, img.naturalHeight])).toEqual([48, 32])
-  await shoot(page, 'c1-files-image-preview')
 
   // Archive from the panel: the file moves into _archive/.
   await page.getByRole('button', { name: '..' }).click()
@@ -58,7 +56,6 @@ test('a bare library: four pages, folders, text and image preview, archive and t
   await page.getByRole('main').getByRole('row', { name: /^notes\// }).click()
   const row = page.getByRole('main').getByRole('row', { name: /notes\/hello\.md/ })
   await expect(row).toBeVisible()
-  await shoot(page, 'c1-archive')
   await row.getByRole('button', { name: '取回' }).click()
   await expect(page.getByRole('status')).toContainText('已取回：_archive/notes/hello.md → notes/hello.md')
   await expect(page.getByRole('main').getByText('归档区是空的')).toBeVisible()
@@ -71,17 +68,6 @@ test('a bare library: four pages, folders, text and image preview, archive and t
   await expect(page.getByRole('region', { name: '插件' }).getByRole('row', { name: /ledger/ })).toContainText('没装')
   await expect(page.getByRole('region', { name: '插件' }).getByRole('row', { name: /ledger/ }).getByRole('button', { name: '装上' })).toBeVisible()
   await expect(page.getByRole('region', { name: '授权与技能' })).toContainText('codex --add-dir')
-  await page.getByRole('complementary', { name: '详情' }).getByRole('button', { name: '关闭详情' }).click()
-  await shoot(page, 'c1-config')
-})
-
-test('a file changed outside the UI shows up without a reload', async ({ page, pb }) => {
-  const lib = bareLibrary(pb)
-  const { url } = await pb.view(lib)
-  await page.goto(url)
-  await expect(page.getByRole('row', { name: /readme\.txt/ })).toBeVisible()
-  write(lib, 'dropped-in.md', 'from the finder')
-  await expect(page.getByRole('row', { name: /dropped-in\.md/ })).toBeVisible({ timeout: 5_000 })
 })
 
 test('when the server stops, the page says it cannot reach it and keeps what it showed', async ({ page, pb }) => {

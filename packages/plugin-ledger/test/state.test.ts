@@ -38,13 +38,13 @@ const itemsOf = (rows: Awaited<ReturnType<typeof folded>>) =>
 const TABLES = ['items', 'paths', 'dirs', 'alias', 'left', 'history', 'log', 'scenes', 'sceneOrder', 'actors', 'held', 'find', 'bytime', 'marks', 'stats']
 
 describe('the rows however the facts arrive', () => {
-  for (const size of [4, 1]) {
-    it(`are the same when the facts come ${size === 1 ? 'one at a time' : `${size} at a time`}`, async () => {
-      const whole = await folded(HISTORY)
+  it('are the same when the facts come 4 at a time or one at a time', async () => {
+    const whole = await folded(HISTORY)
+    for (const size of [4, 1]) {
       const parts = await folded(HISTORY, size)
-      for (const table of TABLES) expect([table, parts.all(table)]).toEqual([table, whole.all(table)])
-    })
-  }
+      for (const table of TABLES) expect([size, table, parts.all(table)]).toEqual([size, table, whole.all(table)])
+    }
+  })
 
   it('say where each item is and whether it counts', async () => {
     const rows = await folded(HISTORY)

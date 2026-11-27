@@ -5,8 +5,9 @@
 // then say what they did; a thing's panel says its state in words, whether its content was read, and
 // what storage's facets tell of it.
 import { execFileSync } from 'node:child_process'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, tempDir, test, write, type Cli } from './support.ts'
+import { expect, frames, tempDir, test, write, type Cli } from './support.ts'
 
 const pad = (i: number) => String(i).padStart(3, '0')
 
@@ -126,9 +127,13 @@ test('a directory with nothing registered in it is one row: what a look found, a
 })
 
 test('a named pass says what it will read, shows how far it is with a way to stop, then says what it did', async ({ page, pb }) => {
+  // More files than a look reads within its budget, and enough that reading them all takes seconds.
   const lib = join(tempDir(), 'lib')
-  for (let i = 0; i < 40000; i++) write(lib, `big/d${Math.floor(i / 2000)}/f${i}.txt`, `${i}\n`)
+  for (let d = 0; d < 10; d++) mkdirSync(join(lib, `big/d${d}`), { recursive: true })
+  for (let i = 0; i < 20000; i++) writeFileSync(join(lib, `big/d${Math.floor(i / 2000)}/f${i}.txt`), `${i}\n`)
   const url = await ledgerLibrary(pb, lib)
+  // The page's clock, so the time a notice usually shows passes at once.
+  await page.clock.install()
   await page.goto(`${url}#view=files`)
   const main = page.getByRole('main')
   const notices = page.getByRole('status')
@@ -137,23 +142,27 @@ test('a named pass says what it will read, shows how far it is with a way to sto
   await main.getByRole('row', { name: /^big\// }).getByRole('button', { name: '登记里面的文件' }).click()
   await expect(page.getByRole('dialog')).toContainText(/要登记 big\/ 里任意深处的全部文件：至少 \d+ 个，不含噪音。/)
   await page.getByRole('dialog').getByRole('button', { name: '登记里面的文件' }).click()
-  await expect(notices).toContainText('已把 big/里的 40000 个文件记为主人带进来的。', { timeout: 30_000 })
+  await expect(notices).toContainText('已把 big/里的 20000 个文件记为主人带进来的。')
 
   // Reading every registered thing's content: how many first, how far it is, and a stop that keeps what was read.
   await page.goto(`${url}#view=ledger.standing`)
   await main.getByRole('button', { name: '按内容查' }).click()
-  await expect(page.getByRole('dialog')).toContainText('要按内容读整个库：40000 样登记过的东西。')
+  await expect(page.getByRole('dialog')).toContainText('要按内容读整个库：20000 样登记过的东西。')
   await page.getByRole('dialog').getByRole('button', { name: '按内容查' }).click()
   const bar = notices.getByRole('progressbar', { name: '进度' })
   await expect(bar).toBeVisible()
-  await expect(bar).toHaveAttribute('aria-valuemax', '40000')
-  await expect(notices).toContainText(/已查 \d+ \/ 40000 样/)
+  await expect(bar).toHaveAttribute('aria-valuemax', '20000')
+  await expect(notices).toContainText(/已查 \d+ \/ 20000 样/)
   await notices.getByRole('button', { name: '停下' }).click()
   await expect(notices.getByRole('button', { name: '正在停下…' })).toBeDisabled()
-  await expect(notices).toContainText(/停下了：按内容查了整个库的 \d+ \/ 40000 样。/, { timeout: 30_000 })
+  await expect(notices).toContainText(/停下了：按内容查了整个库的 \d+ \/ 20000 样。/)
   await expect(bar).toHaveCount(0)
-  // What it did stays past the time a notice usually shows, until it is closed.
-  await page.waitForTimeout(5_000)
+  // What it did stays past the time a notice usually shows, until it is closed; nothing holds the
+  // notices meanwhile, as the pointer or the keyboard on them would.
+  await page.mouse.move(1, 1)
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  await page.clock.runFor(5_000)
+  await frames(page)
   await expect(notices).toContainText('停下了')
 })
 

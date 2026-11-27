@@ -1,10 +1,11 @@
-// C4: the scenes page lists each session and opens its page; the standing page lists what needs
-// looking at, by kind, and a file added, removed or moved outside the UI shows up there within five
-// seconds without a reload (a file edited in place, on the page's next fetch: ARCHITECTURE.md「界面的服务」, the poll looks
-// at the facts and the open directories only); the activity page lists recent facts, newest first.
+// C4: the scenes page lists each session and opens its page, with its figures; the standing page lists
+// what needs looking at, by kind, and a file added, removed or moved outside the UI shows up there
+// within five seconds without a reload (a file edited in place, on the page's next fetch: ARCHITECTURE.md「界面的服务」, the
+// poll looks at the facts and the open directories only); the activity page lists recent facts, newest
+// first, the owner's acts marked and an agent's own not, with filters that count what they keep.
 import { renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DECIDED, DOING, expect, navTitles, relay, shoot, test, write } from './support.ts'
+import { DECIDED, DOING, expect, navTitles, relay, test, write } from './support.ts'
 
 test('scenes, standing and activity: what happened and what needs attention', async ({ page, pb }) => {
   const lib = relay(pb)
@@ -26,6 +27,8 @@ test('scenes, standing and activity: what happened and what needs attention', as
   await expect(sceneRow('主人面的操作')).toContainText('grant issue')
   await sceneRow(DOING).getByRole('link').click()
   await expect(title).toHaveText(DOING)
+  for (const label of ['时长', '放入', '依据', '决定']) await expect(panel.getByText(label, { exact: true })).toBeVisible()
+  await expect(panel.locator('.stat').filter({ hasText: '放入' })).toContainText('6')
   const happened = panel.getByRole('region', { name: '这次会话里发生的' })
   await expect(happened).toContainText(DECIDED)
   await expect(happened.getByRole('listitem').filter({ hasText: '放入' })).toHaveCount(6)
@@ -33,7 +36,6 @@ test('scenes, standing and activity: what happened and what needs attention', as
   await expect(title).toHaveText('comparison.md')
   await panel.getByRole('button', { name: '返回' }).click()
   await expect(title).toHaveText(DOING)
-  await shoot(page, 'c4-scenes')
 
   // Standing: nothing yet; a file edited in place in the Finder appears at the page's next fetch.
   await nav.getByRole('button', { name: '状况' }).click()
@@ -55,7 +57,6 @@ test('scenes, standing and activity: what happened and what needs attention', as
   await expect(section('不在了的')).toContainText('payments/sources/lemonsqueezy-pricing.html')
   await expect(section('来源不在')).toContainText('payments/comparison.md')
   await expect(section('上游有标记')).toContainText('payments/recommendation.md')
-  await shoot(page, 'c4-standing')
   await section('被直接改过的').getByRole('button', { name: 'payments/sources/stripe-pricing.html' }).click()
   await expect(title).toHaveText('stripe-pricing.html')
 
@@ -66,10 +67,12 @@ test('scenes, standing and activity: what happened and what needs attention', as
   await expect(rows.first()).toContainText('payments/integration-notes.md')
   await expect(rows.first()).toContainText('codex')
   await expect(rows.filter({ hasText: '主人面的操作 grant issue' }).first()).toContainText('主人做的')
+  // An agent acting on its own is the ordinary case, and goes unmarked.
+  await expect(main.getByText('自己做的')).toHaveCount(0)
   const who = main.getByRole('radiogroup', { name: '谁做的' })
-  await who.getByRole('radio', { name: /^主人做的/ }).click()
+  const owner = who.getByRole('radio', { name: /^主人做的/ })
+  await owner.click()
   await expect(rows.filter({ hasText: 'integration-notes.md' })).toHaveCount(0)
   await expect(rows.filter({ hasText: '主人面的操作 grant issue' })).toHaveCount(2)
-  await who.getByRole('radio', { name: /^全部/ }).click()
-  await shoot(page, 'c4-activity')
+  await expect(owner).toHaveText(`主人做的${await rows.count()}`)
 })

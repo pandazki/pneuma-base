@@ -2,10 +2,10 @@
 // the page. Every plugin's page is in the navigation; the deploy page lists the ten sites with their
 // states and its switch puts one online, which an agent then sees in check; a site's panel gathers
 // the ledger's provenance, the version timeline and the deploy section; the sync and search pages
-// render. Screenshots in both schemes go to tmp/run-3/shots/.
+// render.
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, navTitles, shoot, STORY_SHOTS, tempDir, test, write, type Cli } from './support.ts'
+import { expect, navTitles, tempDir, test, write, type Cli } from './support.ts'
 
 const SITES: Record<string, string> = {
   coffee: '手冲咖啡：豆子、水温和研磨度',
@@ -20,7 +20,7 @@ const SITES: Record<string, string> = {
   camping: '露营装备：帐篷和睡袋',
 }
 
-/** The story up to the owner's switches, through the command line: ten sites, three online, three archived, one changed, synced. */
+/** The story up to the owner's switches, through the command line: ten sites, three online, three archived, one versioned and changed, synced. */
 function storyLibrary(pb: Cli): { lib: string; www: string } {
   const root = tempDir('pb-e2e-story-')
   const lib = join(root, 'lib')
@@ -38,8 +38,9 @@ function storyLibrary(pb: Cli): { lib: string; www: string } {
     write(root, `made/${name}/index.html`, `<!doctype html><title>${text}</title><h1>${text}</h1>\n`)
     agent('claude-code', ['put', join(root, 'made', name), '--to', `sites/${name}`, '--made'])
     agent('claude-code', ['say', 'deployable', `sites/${name}`])
-    agent('claude-code', ['say', 'versioned', `sites/${name}`])
   }
+  // The coffee site's panel shows its versions.
+  agent('claude-code', ['say', 'versioned', 'sites/coffee'])
   for (const name of ['coffee', 'hiking', 'books']) pb.run(['--library', lib, 'deploy', 'on', `sites/${name}`])
   for (const name of ['plants', 'music', 'camping']) pb.run(['--library', lib, 'archive', `sites/${name}`])
   agent('codex', ['start', '把手冲咖啡那个网站的配色改一下'])
@@ -81,7 +82,6 @@ test('the whole story in the UI: every plugin’s page, the deploy switch, a sit
   const check = pb.run(['--library', lib, '--as', 'claude-code', '--session', 'claude-code-2', 'check']).stdout
   expect(check).toMatch(/主人面的操作 deploy on：已打开 sites\/pets：在线/)
   await page.getByRole('status').getByRole('button', { name: '关闭' }).click()
-  await shoot(page, 'deploy-page', STORY_SHOTS)
 
   // A site's panel: the ledger's provenance, the version timeline and the deploy section together.
   await state('coffee').click()
@@ -96,9 +96,6 @@ test('the whole story in the UI: every plugin’s page, the deploy switch, a sit
   const deploy = panel.getByRole('region', { name: '部署', exact: true })
   await expect(deploy).toContainText('在线')
   await expect(deploy).toContainText('sites-coffee')
-  await shoot(page, 'site-panel', STORY_SHOTS)
-  await deploy.scrollIntoViewIfNeeded()
-  await shoot(page, 'site-panel-versions-deploy', STORY_SHOTS)
   await panel.getByRole('button', { name: '关闭详情' }).click()
 
   // The sync and search pages render.
@@ -106,19 +103,15 @@ test('the whole story in the UI: every plugin’s page, the deploy switch, a sit
   await expect(main.getByRole('heading', { name: '同步', exact: true })).toBeVisible()
   await expect(main).toContainText('sync-target')
   await expect(main.getByRole('button', { name: '现在同步' })).toBeVisible()
-  await shoot(page, 'sync-page', STORY_SHOTS)
   await nav.getByRole('button', { name: '查找' }).click()
   await expect(main.getByRole('heading', { name: '查找', exact: true })).toBeVisible()
   await expect(main).toContainText('hash')
-  await shoot(page, 'search-page', STORY_SHOTS)
 
   // Bundles on the files and archive pages: each site is one row.
   await nav.getByRole('button', { name: '文件' }).click()
   await main.getByRole('row', { name: /^sites/ }).click()
   await expect(main.getByRole('row', { name: /coffee/ })).toContainText('1 项')
-  await shoot(page, 'files-page', STORY_SHOTS)
   await nav.getByRole('button', { name: '归档区' }).click()
   await main.getByRole('row', { name: /^sites\// }).click()
   await expect(main.getByRole('row')).toHaveCount(5) // the header, .. and the three archived sites
-  await shoot(page, 'archive-page', STORY_SHOTS)
 })

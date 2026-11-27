@@ -2,11 +2,9 @@
 // each thing's path, origin, who, what was being done and its state; a made thing's panel gives its
 // provenance, basis with states, dependents, decisions and versions; following the basis links leads
 // back to the brought-in sources.
-import { cutTexts, DECIDED, DOING, expect, relay, shoot, SOURCES, test } from './support.ts'
+import { cutTexts, DECIDED, DOING, expect, SOURCES, test } from './support.ts'
 
-test('the items page and the provenance chain of a relayed library', async ({ page, pb }) => {
-  const lib = relay(pb)
-  const { url } = await pb.view(lib)
+test('the items page and the provenance chain of a relayed library', async ({ page, relayUrl: url }) => {
   await page.goto(url)
 
   // The app opens on the home page; the ledger's library page is next in the navigation.
@@ -51,7 +49,6 @@ test('the items page and the provenance chain of a relayed library', async ({ pa
   await expect(row('payments/comparison.md')).toHaveAttribute('aria-selected', 'true')
   // With the panel open, the paths keep their width; other columns give way.
   expect(await cutTexts(items, 'td:first-child')).toEqual([])
-  await shoot(page, 'c3-items-with-detail')
 
   await basis.getByRole('button', { name: /payments\/sources\/stripe-pricing\.html/ }).click()
   await expect(title).toHaveText('stripe-pricing.html')
@@ -72,7 +69,6 @@ test('the items page and the provenance chain of a relayed library', async ({ pa
   await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '配置' }).click()
   await expect(page.getByRole('region', { name: '授权与技能' }).getByRole('row', { name: /codex/ })).toBeVisible()
   await panel.getByRole('button', { name: '关闭详情' }).click()
-  await shoot(page, 'c3-config')
 
   // By keyboard: a row opens its panel with Enter; Escape closes it.
   await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '库' }).click()

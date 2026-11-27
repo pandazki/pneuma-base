@@ -17,6 +17,8 @@ const TABLES = [THINGS, ALIAS, SITES] as const
 const PAGE = 10_000
 
 type SiteRow = OnTarget & { target: TargetKey; site: SiteName }
+/** A declared thing, with the id of the fact that declared it, which orders the things. */
+type ThingRow = Declared & { order: string }
 type Tables = Record<(typeof TABLES)[number], Map<string, unknown>>
 
 const siteKey = (target: string, site: string) => `${target}\n${site}`
@@ -32,11 +34,13 @@ async function allRows<V>(records: RecordPlace, table: string): Promise<Row<V>[]
 }
 
 async function loaded(records: RecordPlace): Promise<Deployments> {
-  const [things, alias, sites] = await Promise.all([allRows<Declared>(records, THINGS), allRows<ThingId>(records, ALIAS), allRows<SiteRow>(records, SITES)])
-  const d: Deployments = { things: new Map(), byPath: new Map(), sites: new Map(), alias: new Map() }
-  for (const { value } of things) {
-    d.things.set(value.id, value)
-    d.byPath.set(value.path, value.id)
+  const [things, alias, sites] = await Promise.all([allRows<ThingRow>(records, THINGS), allRows<ThingId>(records, ALIAS), allRows<SiteRow>(records, SITES)])
+  const d: Deployments = { things: new Map(), byPath: new Map(), sites: new Map(), alias: new Map(), declaration: new Map() }
+  for (const { value } of things.sort((a, b) => (a.value.order < b.value.order ? -1 : a.value.order > b.value.order ? 1 : 0))) {
+    const { order, ...thing } = value
+    d.things.set(thing.id, thing)
+    d.byPath.set(thing.path, thing.id)
+    d.declaration.set(thing.id, order)
   }
   for (const { key, value } of alias) d.alias.set(key as ThingId, value)
   for (const { value } of sites) {
@@ -51,7 +55,7 @@ async function loaded(records: RecordPlace): Promise<Deployments> {
 function tablesOf(d: Deployments): Tables {
   const sites = new Map<string, unknown>()
   for (const [target, held] of d.sites) for (const [site, on] of held) sites.set(siteKey(target, site), { ...on, target, site })
-  return { [THINGS]: new Map([...d.things].map(([id, t]) => [id, { ...t }])), [ALIAS]: new Map(d.alias), [SITES]: sites }
+  return { [THINGS]: new Map([...d.things].map(([id, t]) => [id, { ...t, order: d.declaration.get(id) ?? '' }])), [ALIAS]: new Map(d.alias), [SITES]: sites }
 }
 
 /** The rows that differ between two folds; a row gone is written as null. */

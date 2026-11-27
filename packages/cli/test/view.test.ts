@@ -27,14 +27,18 @@ async function stateOf(url: string): Promise<any> {
 }
 
 describe('view', () => {
-  it('serves the library on 127.0.0.1 with a token until stopped', async () => {
+  // The guide and MCP at the address it prints are the endpoint story's and mcp-http.test.ts's; the sentence's words are guide.test.ts's.
+  it('serves the library on 127.0.0.1 with a token, and prints the sentence for an agent with its address, until stopped', async () => {
     const sb = sandbox()
     const lib = join(tempDir(), 'lib')
     expect(sb.run(['init', lib, '--bare']).code).toBe(0)
     const child = sb.start(['view', lib, '--no-open', '--port', '0'])
+    let out = ''
+    child.stdout.on('data', (chunk: Buffer) => void (out += chunk.toString('utf8')))
     const url = await address(child)
     expect((await stateOf(url)).library.root).toBe(lib)
     expect((await fetch(new URL(url).origin + '/api/state')).status).toBe(401)
+    await expect.poll(() => out).toContain(`${new URL(url).origin}/guide`)
     const done = exited(child)
     child.kill('SIGINT')
     expect(await done).toBe(0)
@@ -46,25 +50,6 @@ describe('view', () => {
     const child = sb.start([dir, '--no-open', '--port', '0'])
     const url = await address(child)
     expect(await stateOf(url)).toMatchObject({ dir, library: null, available: expect.arrayContaining([expect.objectContaining({ name: 'ledger' })]) })
-    const done = exited(child)
-    child.kill('SIGINT')
-    expect(await done).toBe(0)
-  })
-
-  it('prints the sentence for an agent, whose address serves the guide and MCP over HTTP', async () => {
-    const sb = sandbox()
-    const lib = join(tempDir(), 'lib')
-    expect(sb.run(['init', lib, '--bare']).code).toBe(0)
-    const child = sb.start(['view', lib, '--no-open', '--port', '0'])
-    let out = ''
-    child.stdout.on('data', (chunk: Buffer) => void (out += chunk.toString('utf8')))
-    const { origin } = new URL(await address(child))
-    await expect.poll(() => out).toContain(`读一下 ${origin}/guide，接上我的 Pneuma Base 库。`)
-    expect((await fetch(`${origin}/guide`)).status).toBe(200)
-    const initialize = { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 't', version: '0' } } }
-    const mcp = await fetch(`${origin}/mcp/claude`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify(initialize) })
-    expect(mcp.status).toBe(200)
-    expect(mcp.headers.get('mcp-session-id')).toBeTruthy()
     const done = exited(child)
     child.kill('SIGINT')
     expect(await done).toBe(0)

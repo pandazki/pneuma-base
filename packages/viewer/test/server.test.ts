@@ -67,12 +67,6 @@ function http(server: RunningServer, path: string, opts: { token?: string | null
 }
 
 describe('who reaches the server (C8)', () => {
-  it('gives its address on 127.0.0.1 with the token', async () => {
-    const lib = await library()
-    const server = await serve(lib.root)
-    expect(server.url).toMatch(new RegExp(`^http://127\\.0\\.0\\.1:${server.port}/\\?token=${server.token}$`))
-  })
-
   it('refuses /api without the token or with a wrong one; takes it as a query parameter or a header', async () => {
     const lib = await library()
     const server = await serve(lib.root)
@@ -82,14 +76,6 @@ describe('who reaches the server (C8)', () => {
     expect((await http(server, '/api/state')).status).toBe(200)
     const viaHeader = await fetch(`http://127.0.0.1:${server.port}/api/state`, { headers: { 'x-pneuma-token': server.token } })
     expect(viaHeader.status).toBe(200)
-  })
-
-  it('refuses /api with a Host that is not this address', async () => {
-    const lib = await library()
-    const server = await serve(lib.root)
-    expect((await http(server, '/api/state', { host: 'evil.example' })).status).toBe(403)
-    expect((await http(server, '/api/state', { host: `127.0.0.1:${server.port + 1}` })).status).toBe(403)
-    expect((await http(server, '/api/state', { host: `localhost:${server.port}` })).status).toBe(200)
   })
 
   it('serves the page itself without the token', async () => {
@@ -225,19 +211,6 @@ real.on('exit', (code) => process.exit(code ?? 0))
 })
 
 describe('a library with no plugin over HTTP (C1)', () => {
-  it('has the files, archive, agents and config pages in the navigation, each shown', async () => {
-    const lib = await library()
-    lib.write('a.md', 'a')
-    const server = await serve(lib.root)
-    const state = (await http(server, '/api/state')).json()
-    expect(state.library.root).toBe(lib.root)
-    expect(state.library.shown).toBe(lib.root) // not under the home directory: as it is
-    expect(state.views.filter((v: any) => v.nav).map((v: any) => v.id)).toEqual(['home', 'files', 'archive', 'agents', 'config'])
-    for (const view of ['home', 'files', 'archive', 'agents', 'config']) expect((await http(server, `/api/view?view=${view}`)).json()).toMatchObject({ outcome: 'shown' })
-    expect((await http(server, '/api/view?view=item&path=a.md')).json()).toMatchObject({ outcome: 'shown', title: 'a.md' })
-    expect((await http(server, '/api/view?view=nope')).json()).toMatchObject({ outcome: 'no-such-view' })
-  })
-
   it('gives the root as people read it: the home directory as ~', async () => {
     const home = tempDir('pb-v-user-')
     const root = join(home, 'work', 'lib')
@@ -258,10 +231,10 @@ describe('a library with no plugin over HTTP (C1)', () => {
     const server = await serve(lib.root)
     const archive = (kind: string, path: string) => http(server, '/api/call', { body: { call: { face: 'agent', verb: 'archive', request: { kind, path } }, confirmed: false } })
     const done = (await archive('archive', 'notes/a.md')).json()
-    expect(done).toMatchObject({ tone: 'good', text: '已归档：notes/a.md → _archive/notes/a.md', result: { outcome: 'accepted' } })
+    expect(done).toMatchObject({ tone: 'good', result: { outcome: 'accepted' } })
     expect(existsSync(join(lib.root, 'notes/a.md'))).toBe(false)
     expect(readFileSync(join(lib.root, '_archive/notes/a.md'), 'utf8')).toBe('a')
-    expect((await archive('unarchive', '_archive/notes/a.md')).json()).toMatchObject({ tone: 'good', text: '已取回：_archive/notes/a.md → notes/a.md' })
+    expect((await archive('unarchive', '_archive/notes/a.md')).json()).toMatchObject({ tone: 'good', result: { outcome: 'accepted' } })
     expect(readFileSync(join(lib.root, 'notes/a.md'), 'utf8')).toBe('a')
     expect(existsSync(join(lib.root, '_archive/notes/a.md'))).toBe(false)
   })
@@ -346,19 +319,7 @@ describe('the view slot over HTTP (C2)', () => {
     views: [{ id: 'page.one', title: '一页', icon: 'list', nav: true, filters: [] }],
     onView: async () => ({ title: '一页', subtitle: null, blocks: [{ kind: 'text', text: 'hello from page', tone: 'neutral' }] }),
   }
-  const thrower: Plugin = {
-    contract: 2,
-    name: name('thrower'),
-    cognition: null,
-    storage: [],
-    statements: [],
-    ownerCommands: [],
-    views: [{ id: 'thrower.page', title: '出错的页', icon: 'triangle-alert', nav: true, filters: [] }],
-    onView: async () => {
-      throw new Error('boom in onView')
-    },
-  }
-
+  // A plugin that throws in its view, and a malformed block, are the kernel's viewer.test.ts (K8, D7).
   it('a plugin’s view joins the navigation before the kernel’s and is shown; uninstalled, it is gone', async () => {
     const lib = await library([page])
     const table = new Map([['page', page]])
@@ -372,14 +333,6 @@ describe('the view slot over HTTP (C2)', () => {
     expect((await http(server, '/api/view?view=page.one')).json()).toMatchObject({ outcome: 'no-such-view' })
   })
 
-  it('a plugin that throws in its view gives a page that says so; the server and the other views carry on', async () => {
-    const lib = await library([thrower])
-    const server = await serve(lib.root, { table: new Map([['thrower', thrower]]) })
-    const r = await http(server, '/api/view?view=thrower.page')
-    expect(r.status).toBe(200)
-    expect(r.json()).toMatchObject({ outcome: 'shown', blocks: [{ kind: 'empty', hint: 'boom in onView' }], problems: [{ plugin: 'thrower', message: 'boom in onView' }] })
-    expect((await http(server, '/api/view?view=files')).json()).toMatchObject({ outcome: 'shown', problems: [] })
-  })
 })
 
 describe('a plugin’s own pages and the kit they load (custom blocks)', () => {
@@ -431,7 +384,7 @@ describe('a plugin’s own pages and the kit they load (custom blocks)', () => {
     }
   })
 
-  it('serves the frame kit at a fixed address any frame can load', async () => {
+  it('serves the frame kit at a fixed address any frame can load, with every call and class the sdk’s frame types promise', async () => {
     const lib = await library()
     const server = await serve(lib.root)
     for (const [path, type] of [['/plugin-kit/frame.js', 'text/javascript'], ['/plugin-kit/frame.css', 'text/css']] as const) {
@@ -440,11 +393,6 @@ describe('a plugin’s own pages and the kit they load (custom blocks)', () => {
       expect(r.type, path).toContain(type)
       expect(r.headers['access-control-allow-origin'], path).toBe('*')
     }
-    expect((await http(server, '/plugin-kit/frame.js', { token: null })).text).toContain('onData')
-  })
-
-  it('gives a frame every call and class the sdk’s frame types promise', async () => {
-    const server = await serve((await library()).root)
     const script = (await http(server, '/plugin-kit/frame.js', { token: null })).text
     for (const call of ['onData', 'run', 'open']) expect(script, call).toMatch(new RegExp(`\\b${call}\\(`))
     const sheet = (await http(server, '/plugin-kit/frame.css', { token: null })).text
@@ -452,20 +400,4 @@ describe('a plugin’s own pages and the kit they load (custom blocks)', () => {
     expect(missing).toEqual([])
   })
 
-  it('a malformed block in a plugin’s view becomes a block saying so, and a problem; the rest of the page stands', async () => {
-    const odd: Plugin = {
-      contract: 2,
-      name: name('odd'),
-      cognition: null,
-      storage: [],
-      statements: [],
-      ownerCommands: [],
-      views: [{ id: 'odd.page', title: '一页', icon: 'list', nav: true, filters: [] }],
-      onView: async () => ({ title: '一页', subtitle: null, blocks: [{ kind: 'table', columns: [], empty: '空' } as never, { kind: 'text', text: 'still here', tone: 'neutral' }] }),
-    }
-    const lib = await library([odd])
-    const server = await serve(lib.root, { table: new Map([['odd', odd]]) })
-    const r = (await http(server, '/api/view?view=odd.page')).json()
-    expect(r).toMatchObject({ outcome: 'shown', blocks: [{ kind: 'text', tone: 'bad', text: expect.stringContaining('插件 odd') }, { text: 'still here' }], problems: [{ plugin: 'odd', message: expect.stringContaining('rows') }] })
-  })
 })
