@@ -283,7 +283,7 @@ type SayResult =
   | { outcome: 'not-heard'; reason: 'no-plugin-for-kind' | 'refused' | 'plugin-failed'; note: string; problems: PluginProblem[] }
 
 type CheckRequest = { since: Instant | 'last' | null; includeArchived: boolean; deep?: { dir: LibraryPath | null } }   // deep：深查，dir 为 null 是整个库
-type CheckResult = { sections: Section[]; asks: Ask[]; requests: { ended: OwnerRequest[]; pending: number }; problems: PluginProblem[] }
+type CheckResult = { sections: Section[]; asks: Ask[]; requests: { ended: OwnerRequest[]; pending: number; more?: number }; problems: PluginProblem[] }   // ended：前 20 个，more 个下次说
 
 type ArchiveRequest = { kind: 'archive' | 'unarchive'; path: string }
 type ArchiveResult =   // moved：false 时请求本来就已满足
@@ -625,9 +625,11 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 | 一览：目录的一层 | 200 条，多的说「至少还有 M 条」 | `things.ts` 的 `LEVEL` |
 | 探查 | 预算 500 条 | 存储的缺省 |
 | 一个带标记的目录 | 5000 个文件；放入、深看、取内容到了就停，答「至少」 | `things.ts` 的 `THING_FILES` |
-| 命令行里的任何清单 | 前 20 条，加总数和看下一页的命令 | sdk 的 `TEXT_ROWS` |
+| 命令行里的任何清单，和 agent 的结构化答复（`--json`、MCP 的结构化内容）里的 | 前 20 条，加总数和看其余的命令；字里和 JSON 里一样 | sdk 的 `TEXT_ROWS` |
 | 页面里的任何清单 | 一页 50 条 | sdk 的 `PAGE_ROWS` |
-| agent 的 `start` 和 `check` | 输出不超过 8 KB；再多就停，最后一行说后面的在哪看 | `packages/cli/src/format.ts` 的 `AGENT_TEXT_LIMIT` |
+| agent 的 `start` 和 `check` | 字不超过 8 KB，JSON 不超过 32 KB；两种形式在同一处停，说少了什么、在哪看 | `packages/cli/src/format.ts` 的 `AGENT_TEXT_LIMIT`、`AGENT_JSON_LIMIT` |
+| agent 的 `find` | 一页 20 样，多了说一共几样和下一页的命令 | `format.ts` 的 `FIND_ROWS` |
+| `check` 里你提的请求的结果 | 前 20 个，其余的下次 `check` 说 | `requests.ts` |
 | 「看」给的全文 | 256 KB 的 UTF-8 文字 | `content.ts` 的 `CONTENT_LIMIT` |
 | 一次性的命令问「变了什么」 | 预算 5 毫秒；一次超过一万个位置算说不出 | `changes.ts` |
 | 存储拿行比令牌 | 一页一万行 | `STORAGE.md` 的 `look` |
@@ -1051,7 +1053,13 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 
 `show [<视图编号> [--<参数> <值>…]]` 印管理界面的一页，只读，也不是动词（「页面和块」）。不写编号列出这个库的页；没有这一页是用法错误。
 
-`start` 和 `check` 印的字最多 8 KB（`format.ts` 的 `bounded`）。再多就停，最后一行说后面的没有印出，状况的全部在 `show ledger.standing`，要主人做的在首页的「等你决定」。库再大，这两个答复也放得进 agent 的上下文。`--json` 不截。`inspect` 印一个目录的一层时只列前 20 项，后面写总数和 `show files --dir <目录>`。
+`start` 和 `check` 的上限属于答复，不属于印法（`format.ts` 的 `checkAnswer`、`startAnswer`），所以命令行的字、`--json` 和 MCP 的结构化内容是同一份答复：
+
+- 每张清单带前 20 条、总数和看其余的命令，节的 `data` 里和字里一样（记账插件的 `{ count, shown, more }`）。
+- 整份的字不超过 8 KB，JSON（照 `--json` 印的算）不超过 32 KB。JSON 用字段给字里一行说的东西，一件要主人做的事还带着各个回答的表单，所以是字的四倍。
+- 答复按字印的次序一部分一部分地放：各节、你提的请求、各件要主人做的、可能相关的各样东西。放下一部分会越过任何一个上限时就停：它和它后面的，两种形式都不带；`cut` 说少了哪几种、各几个、全部在哪看（状况在 `show ledger.standing`，要主人做的在首页的「等你决定」，可能相关的用 `find`），字的最后一行说同样的话。
+
+库再大，这两个答复也放得进 agent 的上下文。`find` 一页 20 样（同一路径的几条命中算一样），多了答一共几样和下一页的命令（`--page`）。`inspect` 印一个目录的一层时只列前 20 项，后面写总数和 `show files --dir <目录>`，JSON 带一览的 200 项。`show` 的每一页按「分页」分页。
 
 ### 页面和块
 

@@ -9,6 +9,7 @@ import { checkArgs } from './params.js'
 import { storageOf } from './storage.js'
 import {
   formOf,
+  TEXT_ROWS,
   type Action,
   type Actor,
   type Ask,
@@ -313,9 +314,11 @@ export async function requestsFor(ctx: Context): Promise<CheckResult['requests']
   await caughtUp(ctx.library.root)
   const rows = (await storageOf(ctx.library.root).records(PLACE).where<RequestRow>('requests', 'asker', askerKey(by), { limit: 10_000 })).rows
   const mine = rows.flatMap(({ value }) => requestOf(value) ?? []).filter((r) => sameAsker(r.by, by))
-  const ended = mine.filter((r) => (r.status.kind === 'approved' || r.status.kind === 'declined') && !r.seen)
+  const decided = mine.filter((r) => (r.status.kind === 'approved' || r.status.kind === 'declined') && !r.seen)
+  // Only the ones told are seen; the rest wait for the next check.
+  const ended = decided.slice(0, TEXT_ROWS)
   if (ended.length > 0) await storageOf(ctx.library.root).records(PLACE).append(ended.map((r) => ({ request: r.id, kind: 'seen', at: ctx.now })))
-  return { ended, pending: mine.filter(isPending).length }
+  return { ended, pending: mine.filter(isPending).length, ...(decided.length > ended.length ? { more: decided.length - ended.length } : {}) }
 }
 
 // ---- the owner's side ----

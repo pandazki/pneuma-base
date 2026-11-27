@@ -3,6 +3,7 @@ import {
   CONTRACT,
   PNEUMA_BASE_VERSION,
   pluginName,
+  TEXT_ROWS,
   type Event,
   type LibraryPath,
   type Plugin,
@@ -189,11 +190,17 @@ export const version: Plugin = {
     })
     await commit(w)
     if (recorded.length === 0 && missing.length === 0) return []
+    // Each list names its first TEXT_ROWS, then how many and the page that lists every versioned thing.
+    const rest = (n: number, shown: number) => (n > shown ? [`  ……共 ${n} 样，看全部：show ${THINGS_VIEW.id}`] : [])
     const lines = [
-      ...recorded.map((r) => `${r.path} 在工具之外被改过，已记为第 ${r.version} 版`),
-      ...missing.map((path) => `${path} 不在了；它的每一版都还在，version restore ${path} --version <n> 能放回来`),
+      ...recorded.slice(0, TEXT_ROWS).map((r) => `${r.path} 在工具之外被改过，已记为第 ${r.version} 版`),
+      ...rest(recorded.length, TEXT_ROWS),
+      ...missing.slice(0, TEXT_ROWS).map((path) => `${path} 不在了；它的每一版都还在，version restore ${path} --version <n> 能放回来`),
+      ...rest(missing.length, TEXT_ROWS),
     ]
-    return [{ title: '有版本的东西', body: lines.join('\n'), data: { recorded, missing } }]
+    const more = recorded.length > TEXT_ROWS || missing.length > TEXT_ROWS ? { more: `show ${THINGS_VIEW.id}` } : {}
+    const data = { recorded: recorded.slice(0, TEXT_ROWS), missing: missing.slice(0, TEXT_ROWS), count: { recorded: recorded.length, missing: missing.length }, ...more }
+    return [{ title: '有版本的东西', body: lines.join('\n'), data }]
   },
 
   async onInspect(req, ctx) {
