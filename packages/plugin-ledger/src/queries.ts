@@ -6,7 +6,7 @@ import { actorKey, inOrder, type Fact, type FactActor, type ItemId, type SceneId
 import { archived, stateOfRow, type ActorRow, type HeldRow, type HistoryRow, type ItemRow, type MarkRow, type SceneRow, type SeenRow } from './model.js'
 import { pagesOf, wherePages, type Records } from './rows.js'
 import { basisMarks } from './settle.js'
-import { doingAt, itemsOf, LIST_LIMIT, SINCE_LIMIT, STANDING_ORDER, type BasisView, type ItemView, type Lookup, type StandingKind, type StandingList, type Version } from './views.js'
+import { doingAt, itemsOf, LIST_LIMIT, SINCE_LIMIT, STANDING_ORDER, type BasisView, type ItemView, type LastLook, type Lookup, type StandingKind, type StandingList, type Version } from './views.js'
 
 type Read = Pick<Records, 'get' | 'under' | 'where' | 'count'>
 
@@ -93,6 +93,7 @@ export async function itemViewOf(records: Read, item: ItemRow): Promise<ItemView
   const held = await heldOf(records, item.id)
   const absorbedInto = bundle?.path ?? null
   const scene = await tx.get<SceneRow>('scenes', item.entered.scene)
+  const looked = item.bundle ? ((await tx.get<LastLook>('meta', 'looked')) ?? null) : null
   return {
     kind: 'item',
     item: item.id,
@@ -113,6 +114,7 @@ export async function itemViewOf(records: Read, item: ItemRow): Promise<ItemView
     absorbedInto,
     unknownOrigin: item.unknownOrigin,
     bundle: item.bundle,
+    looked,
   }
 }
 

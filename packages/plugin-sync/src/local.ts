@@ -20,6 +20,8 @@ export const localMap = (): LocalMap => ({ files: new Map(), expects: new Map(),
 /** How many reads of content go to storage at once. */
 const AT_ONCE = 16
 const LOOK_PAGE = 100000
+/** How many places one look of things not compared yet names. */
+const LOOK_AT_ONCE = 1000
 const LEVEL_PAGE = 1000
 const MANIFEST_PAGE = 10000
 
@@ -31,17 +33,24 @@ async function eachAtMost<T>(list: readonly T[], f: (t: T) => Promise<void>): Pr
   await Promise.all(Array.from({ length: Math.min(AT_ONCE, list.length) }, worker))
 }
 
-/** The places of a table whose kept token storage says is not what is there now, a page at a time. */
-async function differences(store: PlaceStore, table: string) {
-  const changed = new Set<Place>()
+/**
+ * The places of a table whose kept token storage says is not what is there now, a page at a time. With
+ * `deep`, a directory's every file's state is compared, and a changed one comes with its deep token; one
+ * with more files than storage counts is changed, without one.
+ */
+async function differences(store: PlaceStore, table: string, deep = false) {
+  const changed = new Map<Place, string | undefined>()
   const gone = new Set<Place>()
   const skip = new Set<Place>()
   let after: string | undefined
   for (;;) {
-    const page = await store.lookRows(table, 'token', { limit: LOOK_PAGE, ...(after === undefined ? {} : { after }) })
-    for (const c of page.changed) changed.add(c.place)
+    const page = await store.lookRows(table, 'token', { limit: LOOK_PAGE, ...(after === undefined ? {} : { after }), ...(deep ? { deep: true } : {}) })
+    for (const c of page.changed) changed.set(c.place, c.deep)
     for (const g of page.gone) gone.add(g)
-    for (const f of page.failed) skip.add(f.place)
+    for (const f of page.failed) {
+      if (deep && f.reason === 'too_many') changed.set(f.place, undefined)
+      else skip.add(f.place)
+    }
     for (const h of page.held) skip.add(h)
     if (page.more === null) return { changed, gone, skip }
     after = page.more.after
@@ -51,7 +60,9 @@ async function differences(store: PlaceStore, table: string) {
 /**
  * The registered things here, and the keys of the baseline that are no registered thing any more (moved
  * away, purged), into `map`. `rows` reads the things table, with the facts a status has not pulled
- * folded on top, whose things storage has not compared; `out` takes what was read, for the rows.
+ * folded on top, whose things storage has not compared; `out` takes what was read, for the rows. A
+ * directory thing is compared by the state of every file in it (its deep token, taken before its
+ * content is read), so a change deep inside it is read even when its own level is as it was.
  */
 export async function localThings(ctx: PluginContext, rows: Change, base: Iterable<Key>, out: Change, map: LocalMap): Promise<void> {
   const store = ctx.tools.storage
@@ -59,7 +70,7 @@ export async function localThings(ctx: PluginContext, rows: Change, base: Iterab
   const known = new Map<Key, Row<ThingRow>>()
   for await (const r of rows.all<ThingRow>(THINGS)) if (carried(r.key as Key)) known.set(r.key as Key, r)
   for (const key of known.keys()) if (!overlaid.has(key)) map.tracked.add(key)
-  const d = await differences(store, THINGS)
+  const d = await differences(store, THINGS, true)
   const absent = (key: Key) => {
     map.expects.set(key, 'empty')
     const row = known.get(key)
@@ -75,8 +86,15 @@ export async function localThings(ctx: PluginContext, rows: Change, base: Iterab
     else if (row.value.fp === null) map.expects.set(key, 'empty')
     else {
       map.files.set(key, row.value.fp)
-      map.expects.set(key, token)
+      map.expects.set(key, row.value.level ?? token)
     }
+  }
+  const deepOf = new Map<Key, string>()
+  for (const [place, deep] of d.changed) if (deep !== undefined) deepOf.set(place as Key, deep)
+  const unlooked = toRead.filter((key) => !d.changed.has(key))
+  for (let i = 0; i < unlooked.length; i += LOOK_AT_ONCE) {
+    const looked = await store.look(unlooked.slice(i, i + LOOK_AT_ONCE).map((place) => ({ place, token: 'empty' })), { deep: true })
+    for (const c of looked.changed) if (c.deep !== undefined) deepOf.set(c.place as Key, c.deep)
   }
   await eachAtMost(toRead, async (key) => {
     const c = await store.content(key)
@@ -87,7 +105,8 @@ export async function localThings(ctx: PluginContext, rows: Change, base: Iterab
     }
     map.files.set(key, c.fingerprint)
     map.expects.set(key, c.token)
-    if (map.tracked.has(key)) out.set(THINGS, key, { fields: { token: c.token }, value: { fp: c.fingerprint } })
+    const deep = c.kind === 'dir' ? deepOf.get(key) : undefined
+    if (map.tracked.has(key)) out.set(THINGS, key, { fields: { token: deep ?? c.token }, value: { fp: c.fingerprint, ...(c.kind === 'dir' ? { level: c.token } : {}) } })
   })
 }
 
@@ -133,7 +152,7 @@ export async function localOwn(ctx: PluginContext, place: string, caches: readon
       rows.delete(own)
     }
     for (const own of d.skip) map.skip.add(ownKey(place, own))
-    for (const own of d.changed) {
+    for (const own of d.changed.keys()) {
       const row = rows.get(own)
       if (row !== undefined && 'dir' in row.value) await list(own)
       else toRead.push(own)

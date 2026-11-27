@@ -3,13 +3,14 @@
 // `gone` the path it had when the owner deleted it. `tokens`: one row per thing in the library, keyed by
 // its current path, so storage can compare them all (`lookRows`); field `token` is what storage said was
 // there when its latest version was recorded or checked, absent until then and after the fold changed
-// its path or its versions.
+// its path or its versions; a directory thing's row may keep in its value the deep token storage gave
+// then (every file's state), which a version taken of it compares.
 import type { Place, PluginContext, RecordPlace, Row } from '@pneuma-base/kernel'
 import { parseFact, type Fact, type ThingId } from './facts.js'
 import { fold, type Thing } from './model.js'
 
 type Records = PluginContext['tools']['storage']['records']
-export type TokenRow = { thing: ThingId }
+export type TokenRow = { thing: ThingId; deep?: string }
 /** A token observed at a thing's path. */
 export type Seen = TokenRow & { token: string }
 
@@ -70,7 +71,7 @@ export async function syncRows(records: Records, seen: ReadonlyMap<Place, Seen> 
     const facts = page.facts.flatMap(({ fact }) => parseFact(fact) ?? [])
     if (facts.length === 0 && page.cursor === cursor && !page.more && seen.size === 0) return
     const { things, tokens } = await folded(records, facts)
-    if (!page.more) for (const [key, { thing, token }] of seen) tokens.set(key, { key, fields: { token }, value: { thing } satisfies TokenRow })
+    if (!page.more) for (const [key, { thing, token, deep }] of seen) tokens.set(key, { key, fields: { token }, value: { thing, ...(deep === undefined ? {} : { deep }) } satisfies TokenRow })
     const tables: Record<string, Row[]> = { things, tokens: [...tokens.values()] }
     if (cursor === null) tables.meta = [{ key: 'version', value: ROWS_VERSION }]
     const put = await records.put(tables, { cursor: page.cursor, expect: cursor })
@@ -80,9 +81,10 @@ export async function syncRows(records: Records, seen: ReadonlyMap<Place, Seen> 
   }
 }
 
-/** The token on record at a thing's path; null when none is. */
-export async function tokenAt(records: Records, path: Place): Promise<string | null> {
-  return (await records.get('tokens', [path])).rows[0]?.fields?.token ?? null
+/** The token on record at a thing's path, and a directory thing's deep token; null when none is. */
+export async function tokensAt(records: Records, path: Place): Promise<{ token: string | null; deep: string | null }> {
+  const row = (await records.get<TokenRow>('tokens', [path])).rows[0]
+  return { token: row?.fields?.token ?? null, deep: row?.value.deep ?? null }
 }
 
 /** The thing whose current path is `path`, of those in the library (`path`) or deleted from it (`gone`). */

@@ -93,7 +93,16 @@ export type ItemView = {
   absorbedInto: LibraryPath | null // the bundle it is part of now
   unknownOrigin: boolean // adopted, and nobody said where it came from since
   bundle: boolean
+  looked: LastLook | null // a bundle's: how deep the last look went
 }
+
+/**
+ * How the last look saw directory-things: `log`, the change log named places at any depth in them;
+ * `level`, storage could not say what changed and their own level and first level were compared.
+ */
+export type LastLook = { how: 'log' | 'level'; at: Instant }
+
+const LOOKED_TEXT: Record<LastLook['how'], string> = { log: '按变化日志，到任意深处', level: '到第一层' }
 
 export const SAID_LABEL: Record<SaidRow['flavor'], string> = { doing: '在做', decided: '决定', note: '备注' }
 
@@ -119,6 +128,7 @@ export function itemText(v: ItemView): string {
   const state = v.state.kind === 'moved' ? `已搬到 ${v.state.to}` : v.absorbedInto !== null ? `并入了 ${v.absorbedInto}，是它的一部分` : STATE_LABEL[v.state.kind]
   const changed = v.versions.length > 1 ? `内容换过 ${v.versions.length - 1} 次，` : ''
   lines.push(`现状：${state}${v.archived ? ' · 已归档' : ''} · ${changed}${v.held.length} 份留存 · 条目 ${v.item}`)
+  if (v.looked !== null) lines.push(`上次看：${when(v.looked.at)}，${LOOKED_TEXT[v.looked.how]}`)
   if (v.versions.length > 1 || v.versions.some((ver) => ver.note !== null)) {
     for (const ver of v.versions) {
       const claimed = claimText(ver)

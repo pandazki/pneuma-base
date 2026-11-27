@@ -57,6 +57,31 @@ export async function enclosingBundle(store: Storage, path: LibraryPath): Promis
   return at === -1 ? null : (above[at] as LibraryPath)
 }
 
+/** The bundles these places lie strictly inside, each the outermost: the markers above every place glanced at once, a page at a time. */
+export async function enclosingBundles(store: Storage, places: readonly Place[]): Promise<LibraryPath[]> {
+  const above = new Set<Place>()
+  for (const place of places) for (let i = place.indexOf('/'); i > 0; i = place.indexOf('/', i + 1)) above.add(place.slice(0, i))
+  const dirs = [...above]
+  const marked = new Set<Place>()
+  for (let i = 0; i < dirs.length; i += 1000) {
+    const page = dirs.slice(i, i + 1000)
+    const glanced = await store.glance(page.map(markerOf))
+    page.forEach((dir, j) => {
+      if (described(glanced[j])?.kind === 'file') marked.add(dir)
+    })
+  }
+  const out = new Set<LibraryPath>()
+  for (const place of places) {
+    for (let i = place.indexOf('/'); i > 0; i = place.indexOf('/', i + 1)) {
+      if (marked.has(place.slice(0, i))) {
+        out.add(place.slice(0, i) as LibraryPath)
+        break
+      }
+    }
+  }
+  return [...out]
+}
+
 /** Writes the marker into `dir`, making it a bundle; refused when one is there already. */
 export async function markBundle(store: Storage, dir: LibraryPath, hold?: string) {
   return store.write(markerOf(dir), { data: MARKER_TEXT }, 'empty', hold === undefined ? {} : { hold })
