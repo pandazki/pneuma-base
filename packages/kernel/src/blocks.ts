@@ -98,7 +98,8 @@ const actorMark = shape({ kind: oneOf('agent', 'owner'), name: string, 'grant?':
 /** Who, as a block says it: a name, or an actor whose mark the page draws. */
 const who: Check = (v, at) => (typeof v === 'string' ? null : actorMark(v, at))
 const truth: Check = (v, at) => (v === true ? null : `${at} 只能是 true`)
-const cell = shape({ text: string, 'mono?': boolean, 'muted?': boolean, 'tag?': tag, 'link?': link, 'at?': string, 'icon?': string, 'href?': string, 'copy?': boolean, 'actor?': actorMark, 'normal?': truth })
+const reopen = shape({ url: nullable(string), run: nullable(shape({ command: string, cwd: string })), reveal: string })
+const cell = shape({ text: string, 'mono?': boolean, 'muted?': boolean, 'tag?': tag, 'link?': link, 'at?': string, 'icon?': string, 'href?': string, 'copy?': boolean, 'actor?': actorMark, 'normal?': truth, 'reopen?': reopen })
 const paging = shape({ first: number, shown: number, total: number, 'atLeast?': boolean, prev: nullable(link), next: nullable(link) })
 
 const call: Check = (v, at) => {
@@ -129,7 +130,8 @@ const feedRow = both(
   shape({ key: string, at: string, actor: who, text: string, meta: listOf(cell), 'whose?': oneOf('agent', 'owner', 'approved', 'observed'), 'action?': action, 'settled?': string, link: nullable(link) }),
   (v, at) => ((v as Raw).action !== undefined && (v as Raw).settled !== undefined ? `${at} 不能同时有 action 和 settled` : null),
 )
-const feedGroup = shape({ title: string, count: nullable(number), 'link?': link, rows: listOf(feedRow) })
+const feedGroup = shape({ title: string, count: nullable(number), 'link?': link, rows: listOf(feedRow), 'reopen?': reopen })
+const rowPlace = shape({ path: string, kind: oneOf('file', 'bundle', 'open', 'closed'), token: nullable(string), 'elsewhere?': truth })
 const treeNode: Check = (v, at) => shape({ value: string, label: string, count: nullable(number), children: listOf(treeNode) })(v, at)
 const ask = both(
   shape({ key: string, by: who, text: string, 'command?': string, about: nullable(string), actions, 'suggested?': number }),
@@ -157,9 +159,11 @@ const KINDS: Record<Block['kind'], Check> = {
   section: shape({ title: string, note: nullable(string), count: nullable(number), blocks: listOf(anything), actions, 'collapse?': oneOf('open', 'closed'), 'about?': string, 'normal?': truth }),
   table: shape({
     columns: listOf(shape({ key: string, label: string, 'optional?': boolean })),
-    rows: listOf(shape({ key: string, cells: recordOf(cell), link: nullable(link), actions, 'group?': string })),
+    rows: listOf(shape({ key: string, cells: recordOf(cell), link: nullable(link), actions, 'group?': string, 'place?': rowPlace })),
     empty: string,
     'page?': paging,
+    'sorted?': shape({ by: oneOf('name', 'modified', 'kind', 'size'), desc: boolean }),
+    'each?': shape({ actions, rename: nullable(action) }),
   }),
   fields: shape({ fields: listOf(shape({ label: string, value: cell })), 'line?': truth }),
   list: shape({ items: listOf(shape({ cell, note: nullable(string), actions })), 'page?': paging }),
@@ -196,14 +200,17 @@ const PLACEHOLDER = /\{([^{}]+)\}/g
 const open = (value: string) => /\{[^{}]+\}/.test(value)
 const strings = (v: unknown): string[] => (typeof v === 'string' ? [v] : Array.isArray(v) ? v.flatMap(strings) : isObject(v) ? Object.values(v).flatMap(strings) : [])
 
+/** What a table's `each` actions may write besides their inputs: the row's place and its folder. */
+const EACH_GIVES = ['path', 'in']
+
 /**
  * What is wrong with an action of a well-formed block, or null when it resolves: its call is a verb,
  * or an owner command the library runs with arguments its `params` take, a `say` is of a kind some
- * plugin hears, and every `{input}` it writes is one of its inputs. An input's value is checked when
- * the person gives it.
+ * plugin hears, and every `{input}` it writes is one of its inputs, or of the names the block `gives`
+ * it. An input's value is checked when the person gives it.
  */
-export function actionFault(action: Action, callable: Callable): string | null {
-  const asked = new Set(action.inputs.map((i) => i.name))
+export function actionFault(action: Action, callable: Callable, gives: readonly string[] = []): string | null {
+  const asked = new Set([...action.inputs.map((i) => i.name), ...gives])
   const unasked = strings(action.call)
     .flatMap((s) => [...s.matchAll(PLACEHOLDER)].map((m) => m[1] as string))
     .find((name) => !asked.has(name))
@@ -257,6 +264,11 @@ function wrongWith(value: unknown, where: string, plugin: Plugin, callable: Call
     const fault = actionFault(action, callable)
     if (fault !== null) return `${where} 的${fault}`
   }
+  const each = kind === 'table' ? (value as Extract<Block, { kind: 'table' }>).each : undefined
+  for (const action of each === undefined ? [] : [...each.actions, ...(each.rename === null ? [] : [each.rename])]) {
+    const fault = actionFault(action, callable, EACH_GIVES)
+    if (fault !== null) return `${where}.each 的${fault}`
+  }
   return null
 }
 
@@ -304,6 +316,15 @@ export function checkFilters(filters: unknown, decl: ViewDecl, plugin: Plugin): 
     else problems.push({ plugin: plugin.name, message: wrong })
   }
   return { filters: kept, problems }
+}
+
+const crumbs = listOf(shape({ label: string, link }))
+
+/** A view's `trail`: folders, each a name and a link; one of the wrong shape is left out as the plugin's problem. */
+export function checkTrail(trail: unknown, plugin: Plugin): { trail?: NonNullable<ViewAnswer['trail']>; problems: PluginProblem[] } {
+  if (trail === undefined) return { problems: [] }
+  const wrong = crumbs(trail, 'trail')
+  return wrong === null ? { trail: trail as NonNullable<ViewAnswer['trail']>, problems: [] } : { problems: [{ plugin: plugin.name, message: wrong }] }
 }
 
 /** The shortest time, in seconds, after which a view is asked again on its own. */

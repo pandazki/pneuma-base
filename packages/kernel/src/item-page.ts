@@ -3,7 +3,7 @@
 import { posix } from 'node:path'
 import { fileFacts, noiseRule } from './agent.js'
 import { callableIn, checkBlocks, type Callable } from './blocks.js'
-import { closedAnswers, levelPage, thingName } from './files-page.js'
+import { closedAnswers, levelPage, rowPlace, thingName } from './files-page.js'
 import { originalPath, parseLibraryPath, regionOf } from './paths.js'
 import { messageOf, pluginContext } from './pipeline.js'
 import { keepsRecords, openDirectories, probeWords } from './places.js'
@@ -131,12 +131,15 @@ function departure(facts: FileFacts): Block[] {
 async function levelSection(ctx: Context, dir: LibraryPath, params: Record<string, string>, rows: number, inThing: boolean): Promise<Block> {
   const level = await levelPage(ctx.library.root, dir, params, rows, 'item', new Set(), 'panel')
   if (level === null) return section('里面', [{ kind: 'text', tone: 'warn', text: '读不了这个目录的这一层。' }])
-  const tableRows: TableRow[] = level.listed.map(({ entry, kind }) => {
+  const tableRows: TableRow[] = level.listed.map((listed) => {
+    const { entry, kind } = listed
     const name = nameOf(entry.place)
     const path = entry.place as LibraryPath
     const isDir = kind === 'folder' || kind === 'bundle'
     const placeholder = placeholderOf(entry)
+    const place = rowPlace(listed, true)
     return {
+      ...(place === null ? {} : { place }),
       key: path,
       cells: {
         path: kind === 'folder' ? { text: `${name}/`, mono: true, icon: 'folder' } : kind === 'other' ? { text: name, mono: true, muted: true } : thingName(name, kind),

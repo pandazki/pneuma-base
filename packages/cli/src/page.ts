@@ -1,7 +1,7 @@
 // A page of the management UI as the command line prints it: the same typed blocks in words, so an
 // agent reading it knows what the person sees, and every button written as the command line that
 // does the same thing. ARCHITECTURE.md「`show` 的文字」.
-import { commandLine, quote, usageOf, type Action, type ActorMark, type Block, type Call, type Cell, type FeedRow, type FlagParam, type Link, type OwnerCommandInfo, type Paging, type PositionalParam, type TreeNode, type ViewDecl, type ViewList, type ViewRequest, type ViewResult } from '@pneuma-base/kernel'
+import { commandLine, quote, usageOf, type Action, type ActorMark, type Block, type Call, type Cell, type Crumb, type FeedRow, type FlagParam, type Link, type OwnerCommandInfo, type Paging, type PositionalParam, type TreeNode, type ViewDecl, type ViewList, type ViewRequest, type ViewResult } from '@pneuma-base/kernel'
 
 type Shown = Extract<ViewResult, { outcome: 'shown' }>
 type OwnerCall = Extract<Call, { face: 'owner' }>
@@ -167,6 +167,14 @@ function treeLines(nodes: readonly TreeNode[], block: Extract<Block, { kind: 'tr
   ])
 }
 
+/** What a table says can be done with any of its things, once for all of them: `{path}` written as the path to give, `{in}` left to the person. */
+/** What the table offers for each of its things, as commands taking the thing's path; renaming in place is a move, which 挪到 already says. */
+function eachLines(each: Extract<Block, { kind: 'table' }>['each'], commands: readonly OwnerCommandInfo[], indent: string): string[] {
+  if (each === undefined || each.actions.length === 0) return []
+  const given = (a: Action): Action => ({ ...a, inputs: [...a.inputs, { name: 'path', label: '库内路径', placeholder: null, value: null, options: null }] })
+  return [`${indent}其中每一样东西：`, ...each.actions.map((a) => actionLine(given(a), commands, `${indent}  `))]
+}
+
 /** Where one page of a long list stands, and the commands that show the pages after and before it. */
 function pageLines(page: Paging | undefined, indent: string): string[] {
   if (page === undefined || (page.prev === null && page.next === null)) return []
@@ -196,7 +204,7 @@ function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: 
       const cells = rows.map((r) => [...block.columns.map((c) => (r.cells[c.key] ? cellText(r.cells[c.key] as Cell, r.link) : '')), ...(linked ? [r.link === null ? '' : `→ ${linkCommand(r.link)}`] : [])])
       const lines = aligned([header, ...cells], indent)
       const heading = (r: (typeof rows)[number], i: number) => (r.group !== undefined && r.group !== '' && r.group !== rows[i - 1]?.group ? [`${indent}${r.group}/`] : [])
-      return [lines[0] as string, ...rows.flatMap((r, i) => [...heading(r, i), lines[i + 1] as string, ...actions(r.actions, more)]), ...pageLines(block.page, indent)]
+      return [lines[0] as string, ...rows.flatMap((r, i) => [...heading(r, i), lines[i + 1] as string, ...actions(r.actions, more)]), ...eachLines(block.each, commands, indent), ...pageLines(block.page, indent)]
     }
     case 'fields':
       return block.fields.map((f) => `${indent}${f.label}：${cellText(f.value)}`)
@@ -272,9 +280,10 @@ function filterLines(r: Shown, req: ViewRequest, decl: ViewDecl | undefined): st
   })
 }
 
-/** A shown page in words: its title, its filters with their counts, then each block as the page shows it, then what went wrong. */
+/** A shown page in words: its title, the folder above it when it stands in a trail, its filters with their counts, then each block as the page shows it, then what went wrong. */
 export function pageText(r: Shown, commands: readonly OwnerCommandInfo[], req: ViewRequest, decl?: ViewDecl): string[] {
-  const head = [`# ${r.title}`, ...(r.subtitle === null ? [] : [r.subtitle]), ...filterLines(r, req, decl)]
+  const up = r.trail && r.trail.length > 1 ? (r.trail[r.trail.length - 2] as Crumb) : null
+  const head = [`# ${r.title}`, ...(r.subtitle === null ? [] : [r.subtitle]), ...(up === null ? [] : [`.. → ${linkCommand(up.link)}`]), ...filterLines(r, req, decl)]
   const body = [...head, ...r.blocks.flatMap((b) => blockLines(b, commands, 2, '', req))]
   // A section opens and closes with a blank line, so where it ends shows; one blank line is enough.
   const lines = body.filter((l, i) => l !== '' || (body[i - 1] !== '' && i < body.length - 1))

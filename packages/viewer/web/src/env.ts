@@ -22,6 +22,10 @@ export type BlockEnv = {
   selected(link: Link | null): boolean
   /** Changes whenever the library changed, so blocks that load on their own load again. */
   tick: number
+  /** How a table of files shows them here: a list, or icons; the panel always lists. */
+  look: 'list' | 'icons'
+  /** The library's folder on the server's machine, for a path to copy; null when unknown. */
+  root: string | null
 }
 
 export const BlockEnvContext = createContext<BlockEnv | null>(null)

@@ -6,6 +6,7 @@
 @import './blocks.css' layer(components);
 @import './overlays.css' layer(components);
 @import './pieces/pieces.css' layer(components);
+@import './files.css' layer(components);
 
 /*
  * The visual tokens, once (ARCHITECTURE.md「界面的样子」). Ink and washes are black or white at an opacity,

@@ -6,6 +6,7 @@ import { outsideUrl } from './api'
 import { ActorBadge } from './pieces/actor'
 import { ViewIcon } from './chrome'
 import { useEnv } from './env'
+import { ReopenButton } from './files'
 import { cellFont, fitMiddle } from './measure'
 import { fullTime, shortTime, useNow } from './time'
 
@@ -106,6 +107,7 @@ export function CellView({ cell, line = false, first = false, room }: { cell: Ce
       {text}
       {cell.copy ? <CopyButton value={href ?? cell.text} /> : null}
       {cell.tag ? <TagView tag={cell.tag} /> : null}
+      {cell.reopen ? <ReopenButton reopen={cell.reopen} /> : null}
     </span>
   )
   if (!cell.link || href) return content

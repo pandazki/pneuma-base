@@ -10,6 +10,7 @@ import { ChevronRight } from 'lucide-react'
 import type { KeyboardEvent, MouseEvent } from 'react'
 import { ActionButton } from '../actions'
 import { CellView, Moment, wantsTab } from '../cells'
+import { ReopenButton } from '../files'
 import { useEnv } from '../env'
 import { columnTime } from '../time'
 import { ActorBadge } from './actor'
@@ -60,6 +61,7 @@ function Head({ group }: { group: FeedGroup }) {
       ) : (
         <span>{inner}</span>
       )}
+      {group.reopen ? <ReopenButton reopen={group.reopen} /> : null}
     </h4>
   )
 }

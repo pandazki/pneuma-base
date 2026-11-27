@@ -4,8 +4,8 @@
 // behaviour is left out, and the product simply lacks that way of connecting. ARCHITECTURE.md「接上一个 agent」.
 import { readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { delimiter, dirname, join, resolve } from 'node:path'
-import type { Transcript } from '@pneuma-base/sdk'
+import { basename, delimiter, dirname, join, resolve } from 'node:path'
+import type { Reopen, Transcript } from '@pneuma-base/sdk'
 
 export type Env = Readonly<Record<string, string | undefined>>
 
@@ -43,6 +43,21 @@ export type AgentProduct = {
   readonly notice?: (root: string) => string
   /** What an agent of this product should know when it connects itself, for its guide (guide.ts). */
   readonly guide?: readonly string[]
+  /** How one of its conversations is opened again, from the file its transcript rule points at. */
+  readonly reopen?: Reopening
+}
+
+/**
+ * How a product's conversation is opened again, each way verified on a machine with the product
+ * installed; a way that could not be verified is left out. `id`: the session id a conversation file of
+ * this product names, null for another product's file. `url`: a link the product's application
+ * handles. `resume`: the command that continues it in a terminal; `anywhere`, it finds the
+ * conversation from any directory, so it runs in the home folder when the session's own is gone.
+ */
+export type Reopening = {
+  readonly id: (file: string) => string | null
+  readonly url?: (id: string) => string
+  readonly resume?: { readonly command: (id: string) => string; readonly anywhere: boolean }
 }
 
 /** One sentence the owner says to the agent once it is connected. */
@@ -82,6 +97,12 @@ export const AGENT_PRODUCTS: readonly AgentProduct[] = [
       '库按 CLAUDE_CODE_SESSION_ID 认出会话，所以这次对话就是一个场景；子代理带着主会话的会话号，算在同一个场景里。',
       '接上之后技能在当前会话里就出现；没出现就开一个新会话。',
     ],
+    // Resume: `claude --help` (2.1.332), "-r, --resume [value]  Resume a conversation by session ID";
+    // code.claude.com/docs/en/sessions: "You can run claude --resume <session-id> from any directory",
+    // looked for in the current project, then every other project on the machine. No link: Claude.app
+    // (7.37095) handles claude://resume?session=<id>, but it imports the session into the app, a copy
+    // and a take-over, not an opening.
+    reopen: { id: (file) => (basename(dirname(dirname(file))) === 'projects' ? sessionIdIn(basename(file), /^(.+)\.jsonl$/) : null), resume: { command: (id) => `claude --resume ${id}`, anywhere: true } },
   },
   {
     name: 'codex',
@@ -102,6 +123,12 @@ export const AGENT_PRODUCTS: readonly AgentProduct[] = [
     guide: [
       'Codex 的沙箱可能拦下 curl 访问 127.0.0.1（网络），也可能拦下命令行的那种（它要写 $PNEUMA_BASE_HOME）。被拦了，就请你的用户批准在沙箱外运行那一条命令。',
     ],
+    // Link: the Codex app (ChatGPT.app, com.openai.codex, 26.1111) registers the scheme codex in its
+    // Info.plist; learn.chatgpt.com/docs/reference/commands: "codex://threads/<thread-id>  A local chat.
+    // <thread-id> is its technical thread ID", which is CODEX_THREAD_ID, the id the file's name ends in.
+    // Resume: `codex resume --help` (codex-cli 0.167.0), "[SESSION_ID]  Session id (UUID) or session
+    // name"; its picker keeps to the current directory, and nothing says an id is found from another.
+    reopen: { id: (file) => sessionIdIn(basename(file), /^rollout-.+-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i), url: (id) => `codex://threads/${id}`, resume: { command: (id) => `codex resume ${id}`, anywhere: false } },
   },
   {
     name: 'claude-desktop',
@@ -228,6 +255,32 @@ function codexTranscript(id: string, look: Look): Transcript | null {
     }
   }
   return null
+}
+
+/** The session id a conversation file's name holds, when it is one a session can have. */
+function sessionIdIn(name: string, pattern: RegExp): string | null {
+  const id = pattern.exec(name)?.[1]
+  return id !== undefined && /^[A-Za-z0-9][A-Za-z0-9-]*$/.test(id) ? id : null
+}
+
+/**
+ * How the Mac app opens a scene's conversation again on this machine, from the file its facts point
+ * at and the directories the scene worked in: null when the file is not here. A product with a rule
+ * for it gives its link and its resume command, run in the newest of those directories still here
+ * (in the home folder when none is and the product finds it from anywhere, else not at all); any
+ * conversation file still here can be shown in Finder.
+ */
+export function reopenOf(file: string, cwds: readonly string[], home: string): Reopen | null {
+  const local = file.startsWith('~/') ? join(home, file.slice(2)) : file
+  if (!isFile(local)) return null
+  for (const product of AGENT_PRODUCTS) {
+    const rule = product.reopen
+    const id = rule?.id(local) ?? null
+    if (rule === undefined || id === null) continue
+    const cwd = [...cwds].reverse().find(isDir) ?? (rule.resume?.anywhere ? home : undefined)
+    return { url: rule.url?.(id) ?? null, run: rule.resume !== undefined && cwd !== undefined ? { command: rule.resume.command(id), cwd } : null, reveal: local }
+  }
+  return { url: null, run: null, reveal: local }
 }
 
 function names(dir: string): string[] {

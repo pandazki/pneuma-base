@@ -20,8 +20,8 @@ test('several things open at once as tabs, kept in the address; Escape closes th
   await expect(tabs).toHaveCount(1)
   expect(hashOf(page).get('panel.path')).toBe('payments/comparison.md')
 
-  // ⌘-click opens a second tab in front; the address names both and which one is in front.
-  await row(page, 'payments/recommendation.md').click({ modifiers: ['ControlOrMeta'] })
+  // A middle click opens a second tab in front (⌘-click adds to the selection, as among files); the address names both and which one is in front.
+  await row(page, 'payments/recommendation.md').click({ button: 'middle' })
   await expect(title).toHaveText('recommendation.md')
   await expect(tabs).toHaveCount(2)
   await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true')

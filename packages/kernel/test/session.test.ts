@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { identifyActor, identifySession, type GrantId } from '../src/index.js'
+import { identifyActor, identifySession, reopenOf, type GrantId } from '../src/index.js'
 
 const base = { cwd: '/w', machine: 'm' }
 const all = { PNEUMA_BASE_SESSION: 'p', CLAUDE_CODE_SESSION_ID: 'c', CODEX_THREAD_ID: 'x', ANTIGRAVITY_CONVERSATION_ID: 'a' }
@@ -69,6 +69,46 @@ describe('the conversation a session points back to', () => {
     expect(transcript({ CLAUDE_CODE_SESSION_ID: id }, project, id)).toBeNull()
     touch(join(home, '.claude/projects', `${id}.jsonl`))
     expect(transcript({ CLAUDE_CODE_SESSION_ID: `../${id}` }, project)).toBeNull()
+  })
+})
+
+// How the Mac app opens a scene's conversation again: the products' folders faked as above.
+describe('opening a conversation again', () => {
+  const id = '11111111-2222-4333-8444-555555555555'
+  let home: string
+  beforeEach(() => {
+    home = realpathSync(mkdtempSync(join(tmpdir(), 'pb-home-')))
+  })
+  const touch = (path: string) => {
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, '')
+  }
+
+  it('resumes a Claude Code conversation in the newest of its directories still here, or in the home folder when none is', () => {
+    const file = join(home, '.claude/projects/-w', `${id}.jsonl`)
+    touch(file)
+    const older = join(home, 'older')
+    const newer = join(home, 'newer')
+    mkdirSync(older)
+    mkdirSync(newer)
+    expect(reopenOf(`~/.claude/projects/-w/${id}.jsonl`, [older, newer], home)).toEqual({ url: null, run: { command: `claude --resume ${id}`, cwd: newer }, reveal: file })
+    expect(reopenOf(file, [older, join(home, 'gone')], home)?.run?.cwd).toBe(older)
+    expect(reopenOf(file, [join(home, 'gone')], home)?.run).toEqual({ command: `claude --resume ${id}`, cwd: home })
+  })
+
+  it('opens a Codex conversation by its link, and resumes it only in a directory of its still here', () => {
+    const file = join(home, '.codex/sessions/2026/11/26', `rollout-2026-11-26T01-00-00-${id}.jsonl`)
+    touch(file)
+    mkdirSync(join(home, 'w'))
+    expect(reopenOf(file, [join(home, 'w')], home)).toEqual({ url: `codex://threads/${id}`, run: { command: `codex resume ${id}`, cwd: join(home, 'w') }, reveal: file })
+    expect(reopenOf(file, [join(home, 'gone')], home)).toEqual({ url: `codex://threads/${id}`, run: null, reveal: file })
+  })
+
+  it('shows in Finder a conversation file no product’s rule knows, and offers nothing once the file is gone', () => {
+    const file = join(home, 'elsewhere', 'chat.jsonl')
+    touch(file)
+    expect(reopenOf(file, [], home)).toEqual({ url: null, run: null, reveal: file })
+    expect(reopenOf(join(home, '.claude/projects/-w/gone.jsonl'), [home], home)).toBeNull()
   })
 })
 

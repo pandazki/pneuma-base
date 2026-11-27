@@ -6,6 +6,7 @@ import {
   originalPath,
   pageOfList,
   pagingOf,
+  placeActions,
   probeWords,
   shortDir,
   withSuffix,
@@ -27,6 +28,7 @@ import {
   type ViewAnswer,
   type ViewDecl,
 } from '@pneuma-base/kernel'
+import { reopenFor } from './conversation.js'
 import type { FactActor, How, SceneId } from './facts.js'
 import { HELD_DROP, HELD_RESTORE, type heldCopies } from './held.js'
 import { archived, stateOfRow, type ItemRow, type MarkRow, type OriginLike, type SceneRow } from './model.js'
@@ -128,11 +130,12 @@ export function sceneDoing(scene: SceneRow): string | null {
   return commands.length > 0 ? `${prefix}：${commands.join('、')}` : null
 }
 
-/** A scene as a link: what it was doing, else its short id. */
+/** A scene as a link: what it was doing, else its short id; with how to open its conversation again while that is on this machine. */
 export function sceneCell(lookup: Lookup, id: SceneId): Cell {
   const scene = lookup.scenes.get(id)
   const doing = scene ? sceneDoing(scene) : null
-  return { text: doing ?? `场景 ${shortScene(id)}`, link: sceneLink(id) }
+  const reopen = scene ? reopenFor(scene) : null
+  return { text: doing ?? `场景 ${shortScene(id)}`, link: sceneLink(id), ...(reopen === null ? {} : { reopen }) }
 }
 
 // ---- the owner's operations: each a call to one of the two faces ----
@@ -324,6 +327,7 @@ export function itemsAnswer(page: ItemsPage, grants: readonly Grant[]): ViewAnsw
       link: itemLink(item.path),
       actions: [],
       ...(group === '' ? {} : { group: dir === '' ? group : `${dir}/${group}` }),
+      place: { path: item.path, kind: item.bundle ? 'bundle' : 'file', token: item.now?.token ?? item.token },
     }
   })
   const empty =
@@ -337,7 +341,8 @@ export function itemsAnswer(page: ItemsPage, grants: readonly Grant[]): ViewAnsw
   const exact = dir === '' ? shown : show === '' ? inFolder : undefined
   const at = { view: ITEMS_VIEW, params: page.params, rows: page.size, shown: rows.length, next: page.after }
   const paging = pagingOf(exact === undefined ? { ...at, total: rows.length + (page.after === null ? 0 : 1), atLeast: page.after !== null } : { ...at, total: exact })
-  const table: Block = { kind: 'table', columns: COLUMNS, rows, empty, page: paging }
+  // Archived things are taken back one by one, from their own panel.
+  const table: Block = { kind: 'table', columns: COLUMNS, rows, empty, page: paging, ...(show === 'archived' ? {} : { each: placeActions() }) }
   // How many: the tabs say it for the library, the tree for each folder.
   return { title: '库', subtitle: null, blocks: [tree, table, ...closedBlocks(page.closed)], filters: [{ name: 'show', options: SHOWS.map((o) => ({ ...o, count: page.counts[o.value] ?? 0 })) }] }
 }

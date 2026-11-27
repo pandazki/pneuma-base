@@ -128,6 +128,8 @@ export function Tray() {
       onParam: () => undefined,
       onPage: (link: Link) => tellShell({ type: 'open', link }),
       selected: () => false,
+      look: 'list' as const,
+      root: null,
     }),
     [tick, run],
   )

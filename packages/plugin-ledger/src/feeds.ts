@@ -2,7 +2,7 @@
 // time: the home page's part (since the owner last looked, and what needs looking at), the activity
 // page, the scenes and one scene.
 import { FIRST_WORDS, pageAt, pagingOf, PAGE_ROWS, shortDir, type Action, type Block, type Cell, type FeedGroup, type FeedRow, type Grant, type Instant, type Stat, type ViewAnswer } from '@pneuma-base/kernel'
-import type { Conversation } from './conversation.js'
+import { reopenFor, type Conversation } from './conversation.js'
 import type { Fact, FactActor, SceneId } from './facts.js'
 import { archived, type SceneRow } from './model.js'
 import { counters, lookupOf } from './queries.js'
@@ -112,7 +112,9 @@ export async function homeAnswer(records: Read, lists: readonly StandingList[], 
     // The sentence that heads the group is not a row of it as well, unless it is all the group tells.
     const heading = (f: Fact) => f.kind === 'said' && f.flavor === 'doing' && f.text === title
     const rows = (members.every(heading) ? members : members.filter((f) => !heading(f))).map((f) => factRow(lookup, f, grants, false))
-    return { title, count: rows.length, link: sceneLink(scene), rows }
+    const reopen = lookup.scenes.get(scene)
+    const again = reopen === undefined ? null : reopenFor(reopen)
+    return { title, count: rows.length, link: sceneLink(scene), rows, ...(again === null ? {} : { reopen: again }) }
   })
   const done = groups.reduce((n, g) => n + g.rows.length, 0)
   const actors = actorNames(facts.map((f) => f.actor))
@@ -249,7 +251,7 @@ const CONVERSATION_TONE = { here: 'neutral', gone: 'warn', elsewhere: 'neutral' 
 /** The conversation's file, to copy, with whether it is here; the command that resumes it, only when it is. */
 function conversationFields(c: Conversation | null): { label: string; value: Cell }[] {
   if (c === null) return []
-  const file = { label: '对话', value: { text: c.path, mono: true, copy: true as const, tag: { text: whereConversation(c), tone: CONVERSATION_TONE[c.status] } } }
+  const file = { label: '对话', value: { text: c.path, mono: true, copy: true as const, tag: { text: whereConversation(c), tone: CONVERSATION_TONE[c.status] }, ...(c.reopen === null ? {} : { reopen: c.reopen }) } }
   return c.status === 'here' && c.resume ? [file, { label: '接着聊', value: { text: c.resume, mono: true, copy: true } }] : [file]
 }
 
