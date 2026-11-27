@@ -77,6 +77,10 @@ describe('a plugin added to a library already in use', () => {
     const found = run(lib, ['find', 'word1998']).stdout
     expect(found).toMatch(/装上之前登记的 2001 样补了 \d+ 样；接着补：pneuma-base plugin catch-up search/)
 
+    const page = run(lib, ['show', 'search.status']).stdout
+    expect(page).toMatch(/装上之前登记的 2001 样补了 \d+ 样/)
+    expect(page).toContain('plugin catch-up search')
+
     const resumed = owner(lib, ['plugin', 'catch-up', 'search'])
     expect(resumed.stdout).toContain('search 补上了装上之前登记的 2001 样。')
     const after = run(lib, ['find', 'word1998']).stdout
