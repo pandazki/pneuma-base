@@ -47,15 +47,13 @@ describe('staging a bundle', () => {
     expect(readdirSync(root)).toEqual([])
   })
 
-  it('refuses, as changed, a file whose bytes are not those of its manifest entry', async () => {
-    const files = { 'index.html': '<h1>a</h1>', 'about.html': 'about' }
-    const staged = withStaged(storage(files, { served: { 'index.html': '<h1>b</h1>' } }), 'site' as LibraryPath, 'bundle', stageRoot(), async () => 'published')
-    await expect(staged).rejects.toThrow(new NotStaged('site 正在被改动，没有发布'))
-  })
-
-  it('refuses, as changed, a manifest whose pages were taken of different content', async () => {
-    const files = { 'a.html': 'a', 'b.html': 'b' }
-    const staged = withStaged(storage(files, { page: 1, fingerprints: ['first', 'second'] }), 'site' as LibraryPath, 'bundle', stageRoot(), async () => 'published')
-    await expect(staged).rejects.toThrow(new NotStaged('site 正在被改动，没有发布'))
+  it('refuses, as changed, a file whose bytes are not those of its manifest entry, or a manifest whose pages were taken of different content', async () => {
+    const changing: [string, PluginStorage][] = [
+      ['a file', storage({ 'index.html': '<h1>a</h1>', 'about.html': 'about' }, { served: { 'index.html': '<h1>b</h1>' } })],
+      ['the manifest', storage({ 'a.html': 'a', 'b.html': 'b' }, { page: 1, fingerprints: ['first', 'second'] })],
+    ]
+    for (const [what, store] of changing) {
+      await expect(withStaged(store, 'site' as LibraryPath, 'bundle', stageRoot(), async () => 'published'), what).rejects.toThrow(new NotStaged('site 正在被改动，没有发布'))
+    }
   })
 })

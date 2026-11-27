@@ -5,7 +5,7 @@ import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:chil
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { sandbox, tempDir, type Sandbox } from './helpers.js'
 
 const CORE = process.env.PNEUMA_BASE_CORE ?? fileURLToPath(new URL('../../../core/target/release/pneuma-base-core', import.meta.url))
@@ -74,9 +74,16 @@ const changedOutside = (lib: string): string[] => {
 }
 
 describe('a file three levels down in a directory thing, edited in place', () => {
-  it('is carried by sync now, kept by a version taken, and published by deploy sync', () => {
+  // One library for the file; each test starts from what the one before left and edits the file anew.
+  let lib: string
+  let synced: string
+  let deployed: string
+  beforeAll(() => {
     sb = sandbox()
-    const { lib, synced, deployed } = library()
+    ;({ lib, synced, deployed } = library())
+  })
+
+  it('is carried by sync now, kept by a version taken, and published by deploy sync', () => {
     writeFileSync(join(lib, DEEP), 'second, longer\n')
 
     owner(lib, ['sync', 'now'])
@@ -87,8 +94,6 @@ describe('a file three levels down in a directory thing, edited in place', () =>
   })
 
   it('is not read again by deploy sync while every file in it is as it was', () => {
-    sb = sandbox()
-    const { lib } = library()
     owner(lib, ['deploy', 'sync'])
     const log = join(tempDir(), 'tools.jsonl')
     writeFileSync(log, '')
@@ -100,24 +105,20 @@ describe('a file three levels down in a directory thing, edited in place', () =>
   })
 
   it('is not seen by check without a listener, and inspect says the last look went to the first level', () => {
-    sb = sandbox()
-    const { lib } = library()
     run(lib, ['check'])
-    writeFileSync(join(lib, DEEP), 'second, longer\n')
+    writeFileSync(join(lib, DEEP), 'third, longer still\n')
     expect(changedOutside(lib)).not.toContain('web/site')
     expect(run(lib, ['inspect', 'web/site'])).toMatch(/上次看：\d{4}-\d\d-\d\d \d\d:\d\dZ，到第一层/)
   })
 
   it.runIf(process.platform === 'darwin')('is seen by check with a listener, from the change log', async () => {
-    sb = sandbox()
-    const { lib } = library()
     const child = spawn(CORE, ['serve', '--root', lib], { stdio: ['pipe', 'pipe', 'pipe'] })
     child.stdin.write(`${JSON.stringify({ id: 'sub', op: 'subscribe' })}\n`)
     listeners.push(child)
     await until(() => (heard(lib, cursorOf(lib)) === null ? undefined : true))
     run(lib, ['check'])
     const from = cursorOf(lib)
-    writeFileSync(join(lib, DEEP), 'second, longer\n')
+    writeFileSync(join(lib, DEEP), 'fourth, the longest yet\n')
     await until(() => (heard(lib, from)?.includes(DEEP) ? true : undefined))
     expect(changedOutside(lib)).toContain('web/site')
     expect(run(lib, ['inspect', 'web/site'])).toMatch(/上次看：\d{4}-\d\d-\d\d \d\d:\d\dZ，按变化日志，到任意深处/)

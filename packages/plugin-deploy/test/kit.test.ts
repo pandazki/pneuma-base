@@ -1,9 +1,10 @@
-// The deploy kit through the real kernel, with a fake target kept in memory: the README's state ×
-// operation table cell by cell, a target that reports what it serves (a site removed behind the
-// plugin's back, a publish that crashed halfway, a target that cannot be read), a target's own
-// content id and site names, its additions to the page, and removing the plugin while sites are online.
+// The deploy kit through the real kernel, with a fake target kept in memory: a cell of the README's
+// state × operation table for each operation (the sdk's kit-model test walks every cell), a target
+// that reports what it serves (a site removed behind the plugin's back, a publish that crashed
+// halfway, a target that cannot be read), a target's own content id and site names, its additions to
+// the page, and removing the plugin while sites are online.
 import { createHash } from 'node:crypto'
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
@@ -150,7 +151,7 @@ async function library(plugin: Plugin, noTarget = false) {
   return lib0
 }
 
-// ---- the README's table, cell by cell ----
+// ---- the README's table: each operation reaches the model ----
 
 const P = 'c/a.html' as LibraryPath
 const Q = 'c/b.html' as LibraryPath
@@ -161,12 +162,6 @@ type Fake = ReturnType<typeof fakeTarget>['fake']
 const STATES: Record<string, (l: Lib, f: Fake) => Promise<unknown>> = {
   离线: async () => {},
   在线: (l) => l.cmd('fake on', [P]),
-  待发布: async (l, f) => {
-    await l.cmd('fake on', [P])
-    f.fail = true
-    await l.put(P, 'v2')
-  },
-  '已归档（开关关）': (l) => l.archive(P),
   '已归档（开关开）': async (l) => {
     await l.cmd('fake on', [P])
     await l.archive(P)
@@ -176,19 +171,6 @@ const STATES: Record<string, (l: Lib, f: Fake) => Promise<unknown>> = {
     f.fail = true
     await l.put(P, 'v2')
     await l.cmd('fake off', [P])
-  },
-  '待下线（已归档）': async (l, f) => {
-    await l.cmd('fake on', [P])
-    f.fail = true
-    await l.archive(P)
-  },
-  '待下线（不在）': async (l) => {
-    await l.cmd('fake on', [P])
-    rmSync(join(l.root, P))
-  },
-  不在: async (l) => {
-    rmSync(join(l.root, P))
-    await l.cmd('fake on', [P])
   },
 }
 
@@ -203,40 +185,16 @@ const OPS: Record<string, (l: Lib) => Promise<unknown>> = {
 
 type Cell = [state: string, op: string, ok: string, failed: string]
 
-// The applicable cells, as in test/kit-model.test.ts in the sdk.
+// One cell per operation, and one whose starting state only a failing target leaves behind; every
+// cell is in test/kit-model.test.ts in the sdk.
 const CELLS: Cell[] = [
   ['离线', '开', 'online', 'pending'],
-  ['离线', '关', 'offline', 'offline'],
-  ['离线', '内容变了', 'offline', 'offline'],
-  ['离线', '归档', 'archived', 'archived'],
-  ['离线', '挪', 'offline', 'offline'],
-  ['在线', '开', 'online', 'online'],
   ['在线', '关', 'offline', 'retiring'],
   ['在线', '内容变了', 'online', 'pending'],
   ['在线', '归档', 'archived', 'retiring'],
-  ['在线', '挪', 'online', 'pending'],
-  ['待发布', '开', 'online', 'pending'],
-  ['待发布', '关', 'offline', 'retiring'],
-  ['待发布', '内容变了', 'online', 'pending'],
-  ['待发布', '归档', 'archived', 'retiring'],
-  ['待发布', '挪', 'online', 'pending'],
-  ['已归档（开关关）', '开', 'archived', 'archived'],
-  ['已归档（开关开）', '关', 'archived', 'archived'],
   ['已归档（开关开）', '取回', 'online', 'pending'],
-  ['已归档（开关关）', '取回', 'offline', 'offline'],
+  ['在线', '挪', 'online', 'pending'],
   ['待下线（开关关）', '开', 'online', 'pending'],
-  ['待下线（开关关）', '关', 'offline', 'retiring'],
-  ['待下线（开关关）', '内容变了', 'offline', 'retiring'],
-  ['待下线（开关关）', '归档', 'archived', 'retiring'],
-  ['待下线（开关关）', '挪', 'offline', 'retiring'],
-  ['待下线（已归档）', '开', 'archived', 'retiring'],
-  ['待下线（已归档）', '关', 'archived', 'retiring'],
-  ['待下线（已归档）', '取回', 'online', 'online'],
-  ['待下线（不在）', '关', 'offline', 'retiring'],
-  ['待下线（不在）', '内容变了', 'online', 'pending'],
-  ['不在', '开', 'missing', 'missing'],
-  ['不在', '关', 'offline', 'offline'],
-  ['不在', '内容变了', 'online', 'pending'],
 ]
 
 /** A fresh library at the starting state, the target answering again, and what the target holds then. */
@@ -252,7 +210,7 @@ async function at(state: string) {
 
 const holds = (fake: Fake) => new Map([...fake.served].map(([site, s]) => [site, s.content]))
 
-describe('the state × operation table, through the plugin', () => {
+describe('the state × operation table, one cell per operation, through the plugin', () => {
   it.each(CELLS)('%s, %s: %s, or %s when the target fails', async (state, op, ok, failed) => {
     const done = await at(state)
     await OPS[op]?.(done.l)
@@ -340,36 +298,40 @@ describe('a target that reports what it serves', () => {
 // ---- what it copies and what it follows ----
 
 describe('what the kit reads of the library', () => {
-  it.each([false, true])('publishes a bundle as its content rule counts it, without the marker, what its .gitignore files leave out, or a link (identify: %s)', async (identify) => {
-    const { fake, adapter } = fakeTarget({ identify })
-    const l = await library(deployPlugin('fake', adapter))
-    await l.site('sites/shop', { 'index.html': '<h1>shop</h1>', '.gitignore': '*.env\nbuild/\n', 'keep/.gitignore': '!local.env\n' })
-    // Written in place after it was copied in, as an agent's build would: not its content by the rule.
-    l.write('sites/shop/secret.env', 'TOKEN=1')
-    l.write('sites/shop/build/out.js', 'built')
-    l.write('sites/shop/keep/local.env', 'kept')
-    symlinkSync('index.html', join(l.root, 'sites/shop/home.html'))
-    await l.say('sites/shop')
-    expect(await l.cmd('fake on', ['sites/shop'])).toMatchObject({ outcome: 'done' })
-    const held = fake.served.get(siteName('sites/shop' as LibraryPath))
-    expect(held?.files).toEqual(['.gitignore', 'index.html', 'keep/.gitignore', 'keep/local.env'])
-    if (!identify) expect(held?.content).toBe(await l.fingerprint('sites/shop'))
-    expect(await l.list()).toEqual([expect.objectContaining({ status: 'online' })])
+  it('publishes a bundle as its content rule counts it, without the marker, what its .gitignore files leave out, or a link, whether or not the target identifies content', async () => {
+    for (const identify of [false, true]) {
+      const { fake, adapter } = fakeTarget({ identify })
+      const l = await library(deployPlugin('fake', adapter))
+      await l.site('sites/shop', { 'index.html': '<h1>shop</h1>', '.gitignore': '*.env\nbuild/\n', 'keep/.gitignore': '!local.env\n' })
+      // Written in place after it was copied in, as an agent's build would: not its content by the rule.
+      l.write('sites/shop/secret.env', 'TOKEN=1')
+      l.write('sites/shop/build/out.js', 'built')
+      l.write('sites/shop/keep/local.env', 'kept')
+      symlinkSync('index.html', join(l.root, 'sites/shop/home.html'))
+      await l.say('sites/shop')
+      expect(await l.cmd('fake on', ['sites/shop'])).toMatchObject({ outcome: 'done' })
+      const held = fake.served.get(siteName('sites/shop' as LibraryPath))
+      expect(held?.files, `identify: ${identify}`).toEqual(['.gitignore', 'index.html', 'keep/.gitignore', 'keep/local.env'])
+      if (!identify) expect(held?.content).toBe(await l.fingerprint('sites/shop'))
+      expect(await l.list()).toEqual([expect.objectContaining({ status: 'online' })])
+    }
   })
 
-  it.each([false, true])('refuses to publish a bundle with more files than one thing takes, saying so, and takes nothing down (identify: %s)', async (identify) => {
-    const { fake, adapter } = fakeTarget({ identify })
-    const l = await library(deployPlugin('fake', adapter))
-    await l.site('sites/big', { 'index.html': 'v1' })
-    await l.say('sites/big')
-    expect(await l.cmd('fake on', ['sites/big'])).toMatchObject({ outcome: 'done' })
-    for (let i = 0; i < 5000; i++) l.write(`sites/big/pages/${i}.html`, String(i))
-    fake.calls.length = 0
-    const synced = await l.cmd('fake sync')
-    expect(synced).toMatchObject({ outcome: 'refused', reason: 'publish-failed' })
-    expect(synced.text).toContain('sites/big 至少有 5001 个文件，超过一样东西能有的 5000 个，没有发布')
-    expect(fake.calls).toEqual([])
-    expect(await l.list()).toEqual([expect.objectContaining({ path: 'sites/big', status: 'pending' })])
+  it('refuses to publish a bundle with more files than one thing takes, saying so, and takes nothing down, whether or not the target identifies content', async () => {
+    for (const identify of [false, true]) {
+      const { fake, adapter } = fakeTarget({ identify })
+      const l = await library(deployPlugin('fake', adapter))
+      await l.site('sites/big', { 'index.html': 'v1' })
+      await l.say('sites/big')
+      expect(await l.cmd('fake on', ['sites/big'])).toMatchObject({ outcome: 'done' })
+      for (let i = 0; i < 5000; i++) l.write(`sites/big/pages/${i}.html`, String(i))
+      fake.calls.length = 0
+      const synced = await l.cmd('fake sync')
+      expect(synced, `identify: ${identify}`).toMatchObject({ outcome: 'refused', reason: 'publish-failed' })
+      expect(synced.text).toContain('sites/big 至少有 5001 个文件，超过一样东西能有的 5000 个，没有发布')
+      expect(fake.calls).toEqual([])
+      expect(await l.list()).toEqual([expect.objectContaining({ path: 'sites/big', status: 'pending' })])
+    }
   })
 
   it('follows each declared file among the loose files of an open directory registered as one act', async () => {
@@ -421,6 +383,7 @@ describe('the plugin the kit makes', () => {
     await l.put(Q, 'v1')
     await l.say(P)
     await l.say(Q)
+    expect(await l.say('c/nope.html')).toMatchObject({ outcome: 'not-heard', reason: 'refused' })
     const asks = async () => (await l.check()).asks
     expect(await asks()).toEqual([
       {
@@ -473,8 +436,13 @@ describe('the plugin the kit makes', () => {
     expect(await l.list()).toEqual([])
   })
 
-  it('refuses to be removed while sites are online, saying how many; removed anyway, the answer lists what stays online', async () => {
+  it('refuses to be removed while sites are online, saying how many; removed anyway, the answer lists what stays online; with nothing online, removed without a word', async () => {
     const { adapter } = fakeTarget()
+    const quiet = await library(deployPlugin('fake', adapter))
+    await quiet.put(P, 'v1')
+    await quiet.say(P)
+    expect(await quiet.cmd('plugin remove', ['fake'])).toMatchObject({ outcome: 'done' })
+
     const l = await library(deployPlugin('fake', adapter))
     for (const path of ['a.html', 'b.html', 'c.html']) {
       await l.put(path, path)
@@ -490,14 +458,6 @@ describe('the plugin the kit makes', () => {
     const anyway = await l.cmd('plugin remove', ['fake'], { anyway: true })
     expect(anyway).toMatchObject({ outcome: 'done' })
     expect((anyway as { text: string }).text).toMatch(/它卸下前提醒过：还有 2 样在线：a\.html（https:\/\/.*）、b\.html（https:\/\/.*）/)
-  })
-
-  it('is removed without a word when nothing is online', async () => {
-    const { adapter } = fakeTarget()
-    const l = await library(deployPlugin('fake', adapter))
-    await l.put(P, 'v1')
-    await l.say(P)
-    expect(await l.cmd('plugin remove', ['fake'])).toMatchObject({ outcome: 'done' })
   })
 
   it('lists the facts it cannot read in check, one an earlier version wrote and one in its record place, and reads the rest', async () => {
@@ -735,7 +695,7 @@ describe('what a target shows', () => {
     }
   })
 
-  it('declares an optional secret as optional: target set mentions it without asking, and the target reads null until it is set', async () => {
+  it('declares an optional secret as optional: target set mentions it without asking, or says what configure says in its place, and the target reads null until it is set', async () => {
     const tokens: (string | null)[] = []
     const adapter = defineTarget({
       kind: 'open',
@@ -764,10 +724,9 @@ describe('what a target shows', () => {
     expect(await l.secret('token', 'tok-1')).toMatchObject({ outcome: 'done' })
     await l.put(P, 'v2')
     expect(tokens).toEqual([null, 'tok-1'])
-  })
 
-  it('lets configure say where the credentials come from, in place of the reminder of unset secrets', async () => {
-    const adapter = defineTarget({
+    // A target whose configure says where the credentials come from: that, in place of the reminder.
+    const keyed = defineTarget({
       kind: 'keyed',
       label: '要钥匙的目标',
       params: [],
@@ -775,8 +734,8 @@ describe('what a target shows', () => {
       configure: async () => ({ ok: true, config: {}, note: '钥匙从凭据文件读。' }),
       open: () => ({ key: 'keyed', label: '要钥匙的目标', publish: async (site) => ({ url: url(site) }), remove: async () => {} }),
     })
-    const l = await library(deployPlugin('keyed', adapter), true)
-    expect(await l.cmd('keyed target set')).toMatchObject({ outcome: 'done', text: '部署目标已设为 要钥匙的目标。钥匙从凭据文件读。' })
+    const k = await library(deployPlugin('keyed', keyed), true)
+    expect(await k.cmd('keyed target set')).toMatchObject({ outcome: 'done', text: '部署目标已设为 要钥匙的目标。钥匙从凭据文件读。' })
   })
 })
 
