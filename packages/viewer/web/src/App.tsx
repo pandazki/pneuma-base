@@ -267,6 +267,7 @@ function HeadActions({ actions }: { actions: Action[] }) {
   return <ActionBar actions={actions} small={false} className="head-actions" />
 }
 
+/** A view's answer. Keyed by its page where it is used: what a block keeps (a section folded, an answer) belongs to that page, not to the place. */
 function Shown({ result, failed }: { result: ViewResult | null; failed: boolean }) {
   if (result === null) return failed ? <p className="note" data-tone="bad">这一页没能取到。</p> : <Loading />
   if (result.outcome === 'no-such-view') return <p className="note">没有这一页。</p>
@@ -649,7 +650,7 @@ export function App() {
             </header>
             <div className="page-body">
               <Problems problems={data.problems} />
-              <Shown result={shown.data} failed={shown.failed} />
+              <Shown key={current?.view} result={shown.data} failed={shown.failed} />
             </div>
           </main>
           {hasTabs ? (
@@ -669,7 +670,7 @@ export function App() {
               >
                 <BlockEnvContext.Provider value={panelEnv}>
                   <div className="blocks">
-                    <Shown result={detail.data} failed={detail.failed} />
+                    <Shown key={keyOf(top)} result={detail.data} failed={detail.failed} />
                   </div>
                 </BlockEnvContext.Provider>
               </DetailPanel>
