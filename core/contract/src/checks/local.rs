@@ -105,6 +105,51 @@ pub fn the_fs_facet_is_always_there(env: &Env) -> Outcome {
     Ok(())
 }
 
+/// `fs.path` asked for by name gives the place's absolute path on this machine; asked for by no
+/// one, or with only other facets, it is not there.
+pub fn the_fs_path_comes_when_asked(env: &Env) -> Outcome {
+    if !env.facet("fs") {
+        return not_exercised("describe does not list the fs facet");
+    }
+    let lib = env.lib();
+    lib.write("d/f.txt", "x");
+    std::os::unix::fs::symlink("f.txt", lib.at("d/link")).unwrap();
+    let places = ["", "d", "d/f.txt", "d/link"];
+    for facets in [json!([]), json!(["fs", "macos", "placeholder"])] {
+        let plain = lib.run("glance", json!({ "places": places, "facets": facets }));
+        for entry in plain["entries"].as_array().unwrap() {
+            assert!(
+                entry["facets"]["fs"].get("path").is_none(),
+                "not asked for: {entry}"
+            );
+        }
+    }
+    let points_at = |place: &str, entry: &serde_json::Value| {
+        let path = entry["facets"]["fs"]["path"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{place}: asked for, a path: {entry}"));
+        assert!(Path::new(path).is_absolute(), "{place}: {path}");
+        assert!(
+            place.is_empty() || path.ends_with(&format!("/{place}")),
+            "{place}: {path}"
+        );
+        let (given, real) = (
+            fs::symlink_metadata(path),
+            fs::symlink_metadata(lib.at(place)),
+        );
+        assert_eq!(given.unwrap().ino(), real.unwrap().ino(), "{place}: {path}");
+    };
+    let asked = lib.run("glance", json!({ "places": places, "facets": ["fs.path"] }));
+    for (place, entry) in places.iter().zip(asked["entries"].as_array().unwrap()) {
+        points_at(place, entry);
+    }
+    let listed = lib.run("overview", json!({ "place": "d", "facets": ["fs.path"] }));
+    for entry in listed["entries"].as_array().unwrap() {
+        points_at(entry["place"].as_str().unwrap(), entry);
+    }
+    Ok(())
+}
+
 pub fn the_macos_facet_reads_its_attributes(env: &Env) -> Outcome {
     if !env.facet("macos") {
         return not_exercised("describe does not list the macos facet");

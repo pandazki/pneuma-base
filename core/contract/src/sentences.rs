@@ -176,7 +176,11 @@ pub const SENTENCES: &[Sentence] = &[
     ),
     checked("3.8.1", "取面守同样的规则：不下探、有界、"),
     checked("3.8.2", "不为了看一眼而走网络、不触发占位文件的下载。"),
-    checked("3.9", "代价更高的面要按名字单独要。"),
+    checked("3.9", "代价更高的面要按名字单独要；"),
+    checked(
+        "3.9.2",
+        "一个面里不是谁都要的字段也可以按名字单独要，写成 `<面>.<字段>`。",
+    ),
     outside(
         "3.10",
         "**令牌是组合键。** 实现把各来源给的分量拼成令牌。",
@@ -606,12 +610,26 @@ pub const SENTENCES: &[Sentence] = &[
     // 7. The local folder's facets and token
     checked("7.fs", "`fs` | `inode`、`device`、`created`、`mode` | 总有"),
     checked(
+        "7.fs.path",
+        "按名字要了 `fs.path` 时另有 `path`：这台机器上它的绝对路径",
+    ),
+    checked(
         "7.macos",
         "`macos` | `where_from`（下载来源的地址）、`quarantine`（由哪个程序带进来）、`tags` | macOS 上，位置带有这些属性时",
     ),
     checked(
         "7.placeholder",
         "`placeholder` | `provider`（能认出时）、`size_elsewhere` | 同步服务只在本机留了占位、内容不在本机时",
+    ),
+    outside(
+        "7.fs.path.who",
+        "`fs.path` 给要把文件交给这台机器上别的程序的调用方（Mac 应用的快速查看、打开、缩略图）。",
+        "says who asks for it and why, not what a provider answers",
+    ),
+    outside(
+        "7.fs.path.elsewhere",
+        "只有本机有文件的存储给得出它；没有本机文件的存储不给，调用方先用 `read` 把内容取到一个临时文件。",
+        "a store without local files gives no `fs` facet to ask a field of, and what the caller does then is the caller's",
     ),
     checked(
         "7.token.1",
