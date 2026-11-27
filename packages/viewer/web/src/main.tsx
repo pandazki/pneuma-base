@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
+import './scheme'
 import { followShell, IN_SHELL, IN_TRAY } from './shell'
 import { Tray } from './tray'
 import './theme.css'

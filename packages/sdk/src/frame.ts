@@ -7,7 +7,7 @@ import type { ActionInput, Link } from './types.js'
 
 /**
  * The classes /plugin-kit/frame.css gives, the ones the management UI draws with: `card` (a raised
- * surface); `glass` (a layer floating over the page's content, as the UI's menus and notices); `btn` (secondary), with `btn-primary` (near-black, the one main action), `btn-quiet` (no
+ * surface); `btn` (secondary), with `btn-primary` (near-black, the one main action), `btn-quiet` (no
  * ground until hovered), `btn-danger` (red as a tint) and `btn-sm` (24px high instead of 28);
  * `icon-btn` (an icon alone, named by `aria-label`); `field` (a text input), `field-area` (a
  * textarea); `select` (a wrapper around a `<select>`); `segmented` (buttons in a row, the checked one
@@ -18,7 +18,6 @@ import type { ActionInput, Link } from './types.js'
  */
 export const FRAME_CLASSES = [
   'card',
-  'glass',
   'btn',
   'btn-primary',
   'btn-quiet',
@@ -50,9 +49,7 @@ export const FRAME_CLASSES = [
  * chips, the selected pill and a table row's hover; lines; shadows for cards, popovers and dialogs,
  * and a field's rings; the near-black `--primary` with its hover and the ink on it; `--focus`, the
  * keyboard ring, the only blue besides `--info`; the scrim; the four states, each with its soft
- * ground; `--chart`, for a chart's line or a heat map's shade; the tooltip's ground and ink; the glass
- * of floating layers (`--glass`, its `--glass-filter` for `backdrop-filter`, its `--glass-edge` to put
- * before a shadow, and `--glass-border`, opaque and bordered when transparency is reduced); seven
+ * ground; `--chart`, for a chart's line or a heat map's shade; the tooltip's ground and ink; seven
  * radii; the motion curves; and the two font stacks.
  */
 export const FRAME_TOKENS = [
@@ -97,10 +94,6 @@ export const FRAME_TOKENS = [
   '--chart',
   '--tip-bg',
   '--tip-ink',
-  '--glass',
-  '--glass-filter',
-  '--glass-edge',
-  '--glass-border',
   '--radius-tag',
   '--radius-control',
   '--radius-field',

@@ -5,9 +5,10 @@
 import type { Action, Block, Link } from '@pneuma-base/kernel'
 import { FRAME_TOKENS } from '@pneuma-base/sdk/frame'
 import { PanelTop } from 'lucide-react'
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, outsideUrl } from './api'
 import { useEnv } from './env'
+import { useScheme } from './scheme'
 
 type Custom = Extract<Block, { kind: 'custom' }>
 
@@ -28,14 +29,6 @@ const tokens = (): Record<string, string> => {
   return Object.fromEntries(FRAME_TOKENS.map((name) => [name, style.getPropertyValue(name).trim()]))
 }
 
-const DARK = window.matchMedia('(prefers-color-scheme: dark)')
-const subscribe = (change: () => void) => {
-  DARK.addEventListener('change', change)
-  return () => DARK.removeEventListener('change', change)
-}
-function useScheme(): 'light' | 'dark' {
-  return useSyncExternalStore(subscribe, () => (DARK.matches ? 'dark' : 'light'))
-}
 
 type Raw = Record<string, unknown>
 const isObject = (v: unknown): v is Raw => typeof v === 'object' && v !== null && !Array.isArray(v)

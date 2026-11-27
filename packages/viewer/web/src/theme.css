@@ -11,11 +11,11 @@
 /*
  * The visual tokens, once (ARCHITECTURE.md「界面的样子」). Ink and washes are black or white at an opacity,
  * so they read the same on every surface; edges are rings drawn with box-shadow, never borders,
- * except the 1px line around the shell's two panels. Light follows the system's light scheme, dark
- * its dark scheme; the frame kit gets these same names (the sdk's FRAME_TOKENS).
+ * except the 1px line around the shell's two panels. Light by default; dark under `data-scheme="dark"`,
+ * which scheme.ts keeps to the owner's choice or the system's; the frame kit gets these same names (the sdk's FRAME_TOKENS).
  */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
   /* Ink, four levels and the strongest for titles. --ink-3 is for meta and icons, not for prose. */
   --ink-strong: #000;
@@ -80,18 +80,6 @@
   --tip-bg: rgba(24, 24, 27, 0.92);
   --tip-ink: #fcfcfc;
 
-  /*
-   * Glass: the one material of what floats above the page's own content (the palette, menus, dialogs,
-   * notices, a chart's tip, the main panel's head while content scrolls under it). The system's glass
-   * cannot go under a layer the page draws; this is its family in CSS: what is behind, blurred and
-   * saturated; a tint toward the scheme; a hairline of light along the top edge and a soft shade
-   * inside. With transparency reduced or contrast raised it is an opaque ground with a border.
-   */
-  --glass: rgba(250, 250, 252, 0.7);
-  --glass-filter: blur(28px) saturate(1.8);
-  --glass-edge: inset 0 0.5px 0 rgba(255, 255, 255, 0.95), inset 0 0 0 0.5px rgba(255, 255, 255, 0.4), inset 0 -10px 18px -14px rgba(0, 0, 0, 0.06), 0 0 0 0.5px rgba(0, 0, 0, 0.1);
-  --glass-border: var(--line-strong);
-
   /* Seven radii, each with its use. */
   --radius-tag: 5px;
   --radius-control: 6px;
@@ -110,87 +98,61 @@
   --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ink-strong: #fff;
-    --ink: rgba(255, 255, 255, 0.9);
-    --ink-2: rgba(255, 255, 255, 0.62);
-    --ink-3: rgba(255, 255, 255, 0.46);
-    --ink-4: rgba(255, 255, 255, 0.28);
+:root:where([data-scheme='dark']) {
+  color-scheme: dark;
 
-    --page: #0e0e10;
-    --panel: #141416;
-    --surface: #1b1b1e;
-    --overlay: #1c1c1e;
-    --tray: rgba(255, 255, 255, 0.03);
+  --ink-strong: #fff;
+  --ink: rgba(255, 255, 255, 0.9);
+  --ink-2: rgba(255, 255, 255, 0.62);
+  --ink-3: rgba(255, 255, 255, 0.46);
+  --ink-4: rgba(255, 255, 255, 0.28);
 
-    --wash: rgba(255, 255, 255, 0.05);
-    --chip: rgba(255, 255, 255, 0.06);
-    --select: rgba(255, 255, 255, 0.08);
-    --row-hover: rgba(255, 255, 255, 0.025);
+  --page: #0e0e10;
+  --panel: #141416;
+  --surface: #1b1b1e;
+  --overlay: #1c1c1e;
+  --tray: rgba(255, 255, 255, 0.03);
 
-    --line: rgba(255, 255, 255, 0.08);
-    --line-strong: rgba(255, 255, 255, 0.16);
+  --wash: rgba(255, 255, 255, 0.05);
+  --chip: rgba(255, 255, 255, 0.06);
+  --select: rgba(255, 255, 255, 0.08);
+  --row-hover: rgba(255, 255, 255, 0.025);
 
-    --shadow-card: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
-    --shadow-card-hover: 0 0 0 0.5px rgba(255, 255, 255, 0.16), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
-    --shadow-popover: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 12px 32px -8px rgba(0, 0, 0, 0.6);
-    --shadow-dialog: 0 0 0 0.5px rgba(255, 255, 255, 0.14), 0 24px 48px -12px rgba(0, 0, 0, 0.6);
-    --ring-field: 0 0 0 0.5px rgba(255, 255, 255, 0.14), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
-    --ring-field-hover: 0 0 0 0.5px rgba(255, 255, 255, 0.2), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
-    --ring-field-focus: 0 0 0 1px rgba(255, 255, 255, 0.3), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
-    --ring-field-error: 0 0 0 1px rgba(255, 107, 95, 0.5), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.16);
 
-    --primary: rgba(255, 255, 255, 0.9);
-    --primary-hover: rgba(255, 255, 255, 0.82);
-    --on-primary: #161618;
-    --focus: rgba(77, 141, 255, 0.8);
-    --scrim: rgba(0, 0, 0, 0.5);
+  --shadow-card: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-card-hover: 0 0 0 0.5px rgba(255, 255, 255, 0.16), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-popover: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 12px 32px -8px rgba(0, 0, 0, 0.6);
+  --shadow-dialog: 0 0 0 0.5px rgba(255, 255, 255, 0.14), 0 24px 48px -12px rgba(0, 0, 0, 0.6);
+  --ring-field: 0 0 0 0.5px rgba(255, 255, 255, 0.14), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --ring-field-hover: 0 0 0 0.5px rgba(255, 255, 255, 0.2), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --ring-field-focus: 0 0 0 1px rgba(255, 255, 255, 0.3), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --ring-field-error: 0 0 0 1px rgba(255, 107, 95, 0.5), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
 
-    --good: #7dcf9f;
-    --good-soft: rgba(125, 207, 159, 0.14);
-    --warn: #ffb35c;
-    --warn-soft: rgba(242, 161, 92, 0.14);
-    --bad: #ff8a7a;
-    --bad-soft: rgba(255, 107, 95, 0.14);
-    --bad-soft-hover: rgba(255, 107, 95, 0.2);
-    --info: #4fb0fe;
-    --info-soft: rgba(79, 176, 254, 0.14);
-    --chart: #4fb0fe;
-    --series-1: #3987e5;
-    --series-2: #d95926;
-    --series-3: #199e70;
-    --series-4: #c98500;
+  --primary: rgba(255, 255, 255, 0.9);
+  --primary-hover: rgba(255, 255, 255, 0.82);
+  --on-primary: #161618;
+  --focus: rgba(77, 141, 255, 0.8);
+  --scrim: rgba(0, 0, 0, 0.5);
 
-    --tip-bg: rgba(250, 250, 250, 0.94);
-    --tip-ink: #111113;
+  --good: #7dcf9f;
+  --good-soft: rgba(125, 207, 159, 0.14);
+  --warn: #ffb35c;
+  --warn-soft: rgba(242, 161, 92, 0.14);
+  --bad: #ff8a7a;
+  --bad-soft: rgba(255, 107, 95, 0.14);
+  --bad-soft-hover: rgba(255, 107, 95, 0.2);
+  --info: #4fb0fe;
+  --info-soft: rgba(79, 176, 254, 0.14);
+  --chart: #4fb0fe;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
 
-    --glass: rgba(34, 34, 38, 0.66);
-    --glass-edge: inset 0 0.5px 0 rgba(255, 255, 255, 0.2), inset 0 0 0 0.5px rgba(255, 255, 255, 0.06), inset 0 -10px 18px -14px rgba(0, 0, 0, 0.4), 0 0 0 0.5px rgba(255, 255, 255, 0.12);
-  }
-}
-
-/*
- * Glass falls back to an opaque ground with a border: in a browser by the system's settings; in the app
- * by the app, which tells the page (`data-transparency="reduced"`) because its WebKit does not answer
- * prefers-reduced-transparency. Raised contrast makes the border stronger.
- */
-@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
-  :root {
-    --glass: var(--overlay);
-    --glass-filter: none;
-    --glass-edge: 0 0 0 1px var(--glass-border);
-  }
-}
-@media (prefers-contrast: more) {
-  :root {
-    --glass-border: var(--ink-3);
-  }
-}
-html[data-transparency='reduced'] {
-  --glass: var(--overlay);
-  --glass-filter: none;
-  --glass-edge: 0 0 0 1px var(--glass-border);
+  --tip-bg: rgba(250, 250, 250, 0.94);
+  --tip-ink: #111113;
 }
 
 /* Inside the Mac app the page uses the system's faces, as the windows around it do. */

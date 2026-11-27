@@ -22,8 +22,6 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
   var onPageMessage: (([String: Any]) -> Void)?
   /// The controller of the system's Quick Look panel, taken by the web view while it has files to show.
   var quickLook: QuickLook?
-  /// The window's content: its ground, the system's glass under the page's sidebar, the page on top.
-  let glass = GlassContainer()
 
   var isOpen: Bool { window?.isVisible ?? false }
 
@@ -166,10 +164,8 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
     if let url = Bundle.main.url(forResource: "shell", withExtension: "js"), let source = try? String(contentsOf: url, encoding: .utf8) {
       content.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true))
     }
-    content.addUserScript(Transparency.userScript)
     content.add(WeakHandler(self), name: "shell")
     let web = ShellWebView(frame: window?.contentView?.bounds ?? .zero, configuration: config)
-    web.clearBackground()
     web.underPageBackgroundColor = pageColor
     web.allowsMagnification = false
     web.allowsBackForwardNavigationGestures = false
@@ -178,7 +174,7 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
     web.onFiles = { [weak self] urls in self?.onFiles?(urls) }
     web.dropTarget = { [weak self] in "\(self?.currentFolder ?? "inbox")/" }
     web.quickLook = quickLook
-    window?.contentView = glass.hosting(web)
+    window?.contentView = web
     // Made first responder now, while the window is not key: becoming key with no first responder
     // selects the first key view as Tab would, and WebKit then puts a focus ring on the first row.
     window?.makeFirstResponder(web)
@@ -219,7 +215,6 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
       ready = true
       show(reason: "ready")
       tellWindowState()
-      glass.tellPage()
       if let js = pendingScript {
         pendingScript = nil
         webView?.evaluateJavaScript(js)
@@ -229,8 +224,6 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
       requestedAt = nil
     case "regions":
       webView?.setRegions(drag: rects(body["drag"]), noDrag: rects(body["nodrag"]))
-    case "glass":
-      glass.place(body["panes"], postedAt: body["at"] as? Double)
     case "confirm":
       guard let id = body["id"] as? Int, let text = body["text"] as? String, let act = body["act"] as? String else { return }
       confirm(id: id, text: text, act: act, danger: body["danger"] as? Bool ?? false)
@@ -590,6 +583,53 @@ extension MainWindow {
       }
     }
   }
+}
+
+extension MainWindow {
+  /// The window's appearance as drawn, or nil before it was made.
+  var appearanceForTest: NSAppearance? { webView?.effectiveAppearance }
+
+  var windowForTest: NSWindow? { window }
+
+  func resizeForTest(width: CGFloat, height: CGFloat) {
+    guard let window else { return }
+    window.setFrame(NSRect(x: window.frame.minX, y: window.frame.maxY - height, width: width, height: height), display: true)
+    Log.line("window: resized to \(Int(width))x\(Int(height))")
+  }
+
+  func evaluateForTest(_ js: String, _ done: @escaping @MainActor (String) -> Void) { evaluate(webView, js, done) }
+}
+
+/// Runs `js` in a web view and hands back what it evaluated to, as text.
+@MainActor
+func evaluate(_ web: WKWebView?, _ js: String, _ done: @escaping @MainActor (String) -> Void) {
+  guard let web else { return done("none") }
+  web.evaluateJavaScript(js) { result, error in
+    MainActor.assumeIsolated {
+      if let error { return done("error: \(error.localizedDescription)") }
+      done(result as? String ?? (result.flatMap { try? JSONSerialization.data(withJSONObject: $0, options: .fragmentsAllowed) }).map { String(decoding: $0, as: UTF8.self) } ?? "undefined")
+    }
+  }
+}
+
+/// A picture of one of the app's own windows and its sheet as the screen shows them, the system's
+/// title bar buttons and sheet included, which a web view's own snapshot leaves out.
+/// `CGWindowListCreateImageFromArray` is marked obsolete in the SDK for ScreenCaptureKit, which lists
+/// windows only with the screen-recording permission; for the app's own windows this call needs none,
+/// so it is looked up by name.
+@MainActor
+func captureWindow(_ window: NSWindow?, to url: URL) {
+  typealias Create = @convention(c) (CGRect, CFArray, UInt32) -> Unmanaged<CGImage>?
+  guard let window, window.isVisible, let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImageFromArray") else {
+    return Log.line("capture: no window")
+  }
+  var ids = [window, window.attachedSheet].compactMap { $0 }.map { UnsafeRawPointer(bitPattern: UInt($0.windowNumber)) }
+  let list = ids.withUnsafeMutableBufferPointer { CFArrayCreate(nil, $0.baseAddress, $0.count, nil) }
+  // Without the shadow, at the screen's resolution.
+  let image = list.flatMap { unsafeBitCast(symbol, to: Create.self)(.null, $0, 1 << 0 | 1 << 3)?.takeRetainedValue() }
+  guard let image, let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { return Log.line("capture: failed") }
+  try? png.write(to: url)
+  Log.line("capture: wrote \(url.lastPathComponent)")
 }
 
 /// What a test hook writes of a web view: the page's visible text, or a picture of it.

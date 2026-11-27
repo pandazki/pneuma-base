@@ -1,4 +1,4 @@
-// The sidebar, on the page's ground (in the app, a pane over the system's glass): the library's name with a quiet sign of whether the page keeps
+// The sidebar, on the page's ground: the library's name with a quiet sign of whether the page keeps
 // up by itself, the search field that opens the palette, and the pages in groups. It folds to a
 // rail of icons and remembers its width.
 import type { ListedView } from '@pneuma-base/kernel'
@@ -106,7 +106,7 @@ export function Sidebar({ state, current, rail, down, changedAt, onSelect, onSea
   )
 
   return (
-    <div className="side" data-chrome data-glass={IN_SHELL || undefined}>
+    <div className="side" data-chrome>
       <div className="side-inner">
         {IN_SHELL ? (
           <div className="side-top" data-drag>

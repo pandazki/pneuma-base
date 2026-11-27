@@ -25,7 +25,7 @@ export const sameLink = (a: Link | null, b: { view: string; params: Record<strin
   a !== null && b !== null && a.view === b.view && JSON.stringify(Object.entries(a.params).sort()) === JSON.stringify(Object.entries(b.params).sort())
 
 /** What a section is for, on demand: an ⓘ beside its title that says it in a tooltip, and to a screen reader as the section's description. */
-function About({ text, title }: { text: string; title: string }) {
+export function About({ text, title }: { text: string; title: string }) {
   return (
     <span className="about" role="img" tabIndex={0} aria-label={`${title}：${text}`} data-tip={text}>
       <Info strokeWidth={2} aria-hidden />

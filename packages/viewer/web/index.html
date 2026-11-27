@@ -6,6 +6,15 @@
     <meta name="color-scheme" content="light dark" />
     <link rel="icon" href="data:," />
     <title>Pneuma Base</title>
+    <script>
+      // The scheme before the first frame, so a chosen one does not flash the other: scheme.ts keeps it after.
+      try {
+        var q = new URLSearchParams(location.search)
+        var m = document.cookie.match(/(?:^|; )pneuma-scheme=([^;]*)/)
+        var c = q.get('shell') === 'mac' || !m ? '' : m[1]
+        document.documentElement.dataset.scheme = c === 'light' || c === 'dark' ? c : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

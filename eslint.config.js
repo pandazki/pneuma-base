@@ -223,7 +223,7 @@ export default tseslint.config(
   {
     // The Mac app injects this script into the page it shows.
     files: ['app/Resources/shell.js'],
-    languageOptions: { globals: { window: 'readonly', document: 'readonly', requestAnimationFrame: 'readonly', MutationObserver: 'readonly', ResizeObserver: 'readonly', Element: 'readonly', getComputedStyle: 'readonly', performance: 'readonly' } },
+    languageOptions: { globals: { window: 'readonly', document: 'readonly', requestAnimationFrame: 'readonly', MutationObserver: 'readonly', Element: 'readonly' } },
   },
   {
     files: ['app/experiments/*.mjs'],

@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
   name: "PneumaBase",
-  platforms: [.macOS("26.0")],
+  platforms: [.macOS(.v14)],
   targets: [
     .executableTarget(name: "PneumaBase", path: "Sources/PneumaBase"),
   ]

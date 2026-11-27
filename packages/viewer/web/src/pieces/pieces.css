@@ -45,11 +45,9 @@
   box-shadow: none;
   color: var(--surface);
 }
-@media (prefers-color-scheme: dark) {
-  .actor[data-kind='agent'] {
-    background: oklch(0.34 0.06 var(--hue));
-    color: oklch(0.86 0.09 var(--hue));
-  }
+:where([data-scheme='dark']) .actor[data-kind='agent'] {
+  background: oklch(0.34 0.06 var(--hue));
+  color: oklch(0.86 0.09 var(--hue));
 }
 .actor-named {
   display: inline-flex;
@@ -654,10 +652,8 @@
   gap: 2px;
   padding: 8px 10px;
   border-radius: var(--radius-item);
-  background: var(--glass);
-  -webkit-backdrop-filter: var(--glass-filter);
-  backdrop-filter: var(--glass-filter);
-  box-shadow: var(--glass-edge), var(--shadow-popover);
+  background: var(--overlay);
+  box-shadow: var(--shadow-popover);
   font-size: 12px;
   line-height: 18px;
   pointer-events: none;

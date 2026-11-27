@@ -14,6 +14,7 @@ import { DetailPanel } from './detail'
 import { BlockEnvContext, type BlockEnv, type Done } from './env'
 import { pageActions, Palette } from './palette'
 import { PANEL, SIDE, useFileLook, usePrefs, type FileLook } from './prefs'
+import { MachineSettings } from './machine'
 import { activate, back, closeAll, closeTab, follow, retop, shownOf, useRoute } from './route'
 import { confirmInShell, IN_SHELL, type ShellCommand } from './shell'
 import { entryOf, firstPage, navOrder, POLL_MS, Sidebar } from './sidebar'
@@ -163,8 +164,8 @@ const keyOf = (req: ViewRequest | null) => (req === null ? null : JSON.stringify
 
 /** The main panel never gets narrower than this while the sidebar can step aside. */
 const MAIN_MIN = 520
-/** The folded sidebar; inside the Mac app its pane, 8px in from the window's edge, holds the window's buttons. */
-const RAIL = IN_SHELL ? 96 : 48
+/** The folded sidebar; inside the Mac app it leaves room for the window's buttons above it. */
+const RAIL = IN_SHELL ? 76 : 48
 
 function useWindowWidth(): number {
   const [width, setWidth] = useState(window.innerWidth)
@@ -654,6 +655,7 @@ export function App() {
             <div className="page-body">
               <Problems problems={data.problems} />
               <Shown key={current?.view} result={shown.data} failed={shown.failed} />
+              {current?.view === 'config' && shown.data?.outcome === 'shown' ? <MachineSettings /> : null}
             </div>
           </main>
           {hasTabs ? (

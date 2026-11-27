@@ -59,6 +59,8 @@ enum FileMessage {
   case drag([String])
   case selection(Int)
   case reopen(url: URL?, run: (command: String, cwd: String)?, reveal: String?)
+  /// An absolute path the page was given as a local cell: only the current library's folder or a place in it.
+  case revealLocal(String)
 
   init?(_ body: [String: Any]) {
     let paths = body["paths"] as? [String] ?? []
@@ -87,6 +89,8 @@ enum FileMessage {
         return (command, cwd)
       }
       self = .reopen(url: (body["url"] as? String).flatMap(URL.init(string:)), run: run, reveal: (body["reveal"] as? String).flatMap { $0.isEmpty ? nil : $0 })
+    case "reveal-local": guard let path = body["path"] as? String else { return nil }
+      self = .revealLocal(path)
     default: return nil
     }
   }
@@ -190,8 +194,17 @@ final class FileActions {
     case .drag(let paths): Task { drag(await resolve(paths)) }
     case .selection(let count): selection = count
     case .reopen(let url, let run, let reveal): reopen(url: url, run: run, reveal: reveal)
+    case .revealLocal(let path): revealLocal(path)
     }
     return true
+  }
+
+  /// Shows the library's folder, or a place in it, in Finder; a path anywhere else is refused.
+  private func revealLocal(_ path: String) {
+    guard let root = library()?.standardizedFileURL.path else { return Log.line("reveal-local: no library") }
+    let asked = URL(fileURLWithPath: path).standardizedFileURL.path
+    guard asked == root || asked.hasPrefix(root + "/") else { return Log.line("reveal-local: refused \(path)") }
+    opener.reveal([URL(fileURLWithPath: asked)])
   }
 
   /// Acts on the files these places are, when there are any.

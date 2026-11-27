@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import UserNotifications
 
 /// The menu bar item with its panel, the app's menus, the first-launch window, and the current
@@ -33,6 +34,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   }, library: { [weak self] in self?.current })
   /// Library places whose glance answers carry a `placeholder` facet (`fake-placeholder:`): a real placeholder cannot be made in a check.
   private var fakePlaceholders: Set<String> = []
+  /// Any change of this machine's settings, wherever made, reaches the configuration page's rows.
+  private var machineWatch: AnyCancellable?
+  /// With hooks the panel's menu is not popped up, being modal: it is kept for `menu-pick:`.
+  private var keptPanelMenu: NSMenu?
 
   private var current: URL? { prefs.current.map { URL(fileURLWithPath: $0, isDirectory: true) } }
 
@@ -40,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     Log.config = config
     Log.line("app: launched, home \(config.home.path), process age \(String(format: "%.0f", processAge() * 1000)) ms")
     prefs = Prefs.load(config)
+    NSApp.appearance = (prefs.appearance ?? .system).appearance
     makeSettings()
     if let dir = Config.argument("--library") { remember(URL(fileURLWithPath: (dir as NSString).expandingTildeInPath, isDirectory: true)) }
     NSApp.mainMenu = mainMenu()
@@ -94,7 +100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   }
 
   private func makeSettings() {
-    let model = MachineSettings(launcher: config.launcher, ownerFiles: prefs.watchesOwnerFiles, link: prefs.pathLink)
+    let model = MachineSettings(launcher: config.launcher, appearance: prefs.appearance ?? .system, ownerFiles: prefs.watchesOwnerFiles, link: prefs.pathLink)
+    model.onAppearance = { [weak self] choice in self?.setAppearance(choice) }
     model.onOwnerFiles = { [weak self] on in
       guard let self else { return }
       self.prefs.ownerFiles = on
@@ -113,9 +120,116 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
       NSApp.setActivationPolicy(.accessory)
     }
     settings = window
+    machineWatch = model.objectWillChange.sink { [weak self] _ in
+      DispatchQueue.main.async { MainActor.assumeIsolated { self?.tellMachine() } }
+    }
   }
 
   @objc func openSettings() { settings?.show() }
+
+  /// The owner chose how the app looks: the window, the panel, the sheets and menus and the pages follow at once, and the choice is kept.
+  private func setAppearance(_ choice: Appearance) {
+    prefs.appearance = choice == .system ? nil : choice
+    prefs.save(config)
+    NSApp.appearance = choice.appearance
+    tray.followAppearance()
+    if settings?.model.appearance != choice { settings?.model.appearance = choice }
+    Log.line("app: appearance \(choice.rawValue)")
+  }
+
+  /// This machine's settings as the configuration page's rows draw them.
+  private func machineState() -> [String: Any] {
+    guard let model = settings?.model else { return [:] }
+    return [
+      "appearance": model.appearance.rawValue,
+      "ownerFiles": model.ownerFiles,
+      "login": model.login == .enabled || model.login == .requiresApproval,
+      "loginNote": model.loginNote ?? NSNull(),
+      "pathLink": model.link ?? NSNull(),
+      "pathFolder": model.folder.isEmpty ? NSNull() : model.folder,
+      "launcherOnPath": model.launcherOnPath,
+    ]
+  }
+
+  private func tellMachine() { window.tell(["machine": machineState()]) }
+
+  /// A row of the configuration page changed a setting of this machine.
+  private func setMachine(_ key: String, _ value: Any?) {
+    guard let model = settings?.model else { return }
+    switch key {
+    case "appearance": if let word = value as? String, let choice = Appearance(rawValue: word) { model.appearance = choice }
+    case "ownerFiles": if let on = value as? Bool { model.ownerFiles = on }
+    case "login": if let on = value as? Bool { model.setLogin(on) }
+    case "pathLink":
+      // Turning it on needs a folder on the owner's PATH: with none known yet, the settings window chooses one.
+      if value as? Bool == true { if model.folder.isEmpty { openSettings() } else { model.link(in: model.folder) } } else { model.unlink() }
+    default: Log.line("machine: no setting \(key)")
+    }
+    tellMachine()
+  }
+
+  // MARK: Appearance and the panel's menu
+
+  private func appearanceItem() -> NSMenuItem {
+    let item = NSMenuItem(title: "外观", action: nil, keyEquivalent: "")
+    let menu = NSMenu()
+    let chosen = prefs.appearance ?? .system
+    for choice in Appearance.allCases {
+      let entry = NSMenuItem(title: choice.word, action: #selector(pickAppearance(_:)), keyEquivalent: "")
+      entry.target = self
+      entry.representedObject = choice.rawValue
+      entry.state = choice == chosen ? .on : .off
+      menu.addItem(entry)
+    }
+    item.submenu = menu
+    return item
+  }
+
+  @objc private func pickAppearance(_ item: NSMenuItem) {
+    guard let word = item.representedObject as? String, let choice = Appearance(rawValue: word) else { return }
+    setAppearance(choice)
+  }
+
+  private func librariesItem() -> NSMenuItem {
+    let item = NSMenuItem(title: "库", action: nil, keyEquivalent: "")
+    let menu = NSMenu()
+    for path in prefs.libraries {
+      let entry = NSMenuItem(title: (path as NSString).lastPathComponent, action: #selector(selectLibrary(_:)), keyEquivalent: "")
+      entry.target = self
+      entry.representedObject = path
+      entry.state = path == prefs.current ? .on : .off
+      entry.toolTip = (path as NSString).abbreviatingWithTildeInPath
+      menu.addItem(entry)
+    }
+    if !prefs.libraries.isEmpty { menu.addItem(.separator()) }
+    menu.addItem(withTitle: "新建或打开一个库…", action: #selector(chooseLibrary), keyEquivalent: "").target = self
+    item.submenu = menu
+    return item
+  }
+
+  /// The panel's 「···」: how the app looks, the libraries, the settings, quitting; at that point of the panel.
+  private func showPanelMenu(at point: CGPoint) {
+    let menu = NSMenu()
+    menu.addItem(appearanceItem())
+    menu.addItem(librariesItem())
+    menu.addItem(withTitle: "设置…", action: #selector(openSettings), keyEquivalent: ",").target = self
+    menu.addItem(.separator())
+    menu.addItem(withTitle: "退出 Pneuma Base", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+    if Config.hooksName != nil {
+      keptPanelMenu = menu
+      let titles = menu.items.flatMap { [$0] + ($0.submenu?.items ?? []) }.map(\.title).filter { !$0.isEmpty }
+      return Log.line("panel-menu: \(titles.joined(separator: " | "))")
+    }
+    tray.popUp(menu, at: point)
+  }
+
+  /// Performs the kept panel menu's entry with this title; false when there is none.
+  private func pickPanelMenu(_ title: String) -> Bool {
+    guard let menu = keptPanelMenu, let item = menu.items.flatMap({ [$0] + ($0.submenu?.items ?? []) }).first(where: { $0.title == title }), let action = item.action else { return false }
+    keptPanelMenu = nil
+    NSApp.sendAction(action, to: item.target, from: item)
+    return true
+  }
 
   func applicationWillTerminate(_ notification: Notification) {
     if let watcher, let cursor = watcher.cursor { keep(cursor, of: watcher.library) }
@@ -431,9 +545,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     case "open":
       openWindow()
       if let link = body["link"] as? [String: Any] { window.follow(link: link) }
-    case "libraries": showMenu()
-    case "quit": NSApp.terminate(nil)
     case "waiting": if let count = body["count"] as? Int { setWaiting(count) }
+    case "panel-menu": showPanelMenu(at: CGPoint(x: (body["x"] as? NSNumber)?.doubleValue ?? 0, y: (body["y"] as? NSNumber)?.doubleValue ?? 0))
+    case "machine":
+      settings?.model.refresh()
+      tellMachine()
+    case "machine-set": if let key = body["key"] as? String { setMachine(key, body["value"]) }
+    case "settings": openSettings()
     default: break
     }
   }
@@ -477,6 +595,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     menu.addItem(withTitle: "新建或打开一个库…", action: #selector(chooseLibrary), keyEquivalent: "").target = self
     menu.addItem(withTitle: "打开窗口", action: #selector(openWindow), keyEquivalent: "").target = self
     menu.addItem(.separator())
+    menu.addItem(appearanceItem())
     menu.addItem(ownerFilesItem())
     menu.addItem(withTitle: "设置…", action: #selector(openSettings), keyEquivalent: "").target = self
     menu.addItem(.separator())
@@ -704,12 +823,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
   /// Lets the measurements and checks drive the app without a person, only when it was started with
   /// `--hooks <name>`: a distributed notification named `Config.hooksName` with object `open`, `close`, `quit`, `pids`, `park` (moves the window
-  /// almost off the screen, still visible to WebKit), `dark`, `light` or `system` (the app's
-  /// appearance, as a change of the system's would set it), `hit:<x>,<y>`, `find:<text>`,
+  /// almost off the screen, still visible to WebKit), `dark`, `light` or `system` (外观, as the menu
+  /// chooses it, kept), `text-appearance:<file>` (the appearance as chosen, kept and seen by the app, the
+  /// window, the panel and both pages), `hit:<x>,<y>`, `find:<text>`,
   /// `library:<folder>` (as if chosen in the first-launch window or 新建或打开一个库…), `drop:<path>`
   /// and `drop-window:<path>` (through the same code as a file dropped on the menu bar item or the
   /// window), `route:<fragment>` (the page's address fragment), `tray` (a click on the icon), `text:<file>` and `text-tray:<file>` (the page's text),
   /// `snap:<file>`, `snap-tray:<file>`, `snap-welcome:<file>` and `snap-settings:<file>` (a picture of it), `text-welcome:<file>` (what the first-launch window offers),
+  /// `capture:<file>` and `capture-tray:<file>` (a picture of the window, its sheet included, or the
+  /// panel, as the screen shows them), `resize:<width>,<height>`, `panel-menu` (the panel's 「···」,
+  /// kept for `menu-pick:` as the context menu is), `tray-room:<points>` (the room under the menu bar,
+  /// as a small display gives it), `tray-fit:<file>` (whether every row of the panel can be seen),
+  /// `sheet:<n>` (a click on the sheet's n-th button),
   /// `settings` (the settings window), `path-link:<folder>` and `path-unlink` (as the 在终端里用
   /// pneuma-base switch does), `text-settings:<file>` (the settings in words), `eval:<js>` (runs it in the
   /// window's page and logs `eval: <the result as text>`; the checks post the page's messages with it),
@@ -748,22 +873,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         case "text-settings": try? self.settings?.model.text.write(to: file, atomically: true, encoding: .utf8)
         case "snap-settings": self.settings?.snapshotForTest(to: file)
         case "park": self.window.park()
-        case "dark", "light", "system":
-          NSApp.appearance = verb == "system" ? nil : NSAppearance(named: verb == "dark" ? .darkAqua : .aqua)
-          self.tray.followAppearance()
+        case "dark", "light", "system": Appearance(rawValue: verb).map(self.setAppearance)
+        case "text-appearance": self.appearanceForTest(to: file)
+        case "panel-menu": self.showPanelMenu(at: .zero)
+        case "tray-room": self.tray.roomForTest = Double(rest).map { CGFloat($0) }
+        case "tray-fit": self.tray.fitForTest(to: file)
         case "hit":
           let xy = rest.split(separator: ",").compactMap { Double($0) }
           if xy.count == 2 { self.window.hitForTest(x: xy[0], y: xy[1]) }
         case "find": self.window.findForTest(rest)
         case "eval": self.window.evalForTest(rest)
-        case "menu-pick": self.files.pick(rest)
+        case "menu-pick": if !self.pickPanelMenu(rest) { self.files.pick(rest) }
         case "fake-placeholder": self.fakePlaceholders.insert(rest)
         case "owner-files": self.settings?.model.ownerFiles = rest == "on"
-        case "glass": glassForTest(rest, window: self.window, tray: self.tray)
+        case "capture": captureWindow(self.window.windowForTest, to: file)
+        case "capture-tray": captureWindow(self.tray.windowForTest, to: file)
+        case "resize":
+          let wh = rest.split(separator: ",").compactMap { Double($0) }
+          if wh.count == 2 { self.window.resizeForTest(width: wh[0], height: wh[1]) }
         case "sheet": self.window.answerSheet(Int(rest) ?? 1)
         case "pids": Log.line("pids: app \(getpid()) server \(self.server?.pid ?? 0) web \(self.window.webContentPid ?? 0) storage \(self.watcher?.pid ?? 0)")
         default: break
         }
+      }
+    }
+  }
+}
+
+extension AppDelegate {
+  /// The appearance as chosen, kept, and seen by the app, the window, the panel and both pages, for verify.sh.
+  fileprivate func appearanceForTest(to file: URL) {
+    let name = { (a: NSAppearance?) in a.map { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? "dark" : "light" } ?? "none" }
+    var lines = [
+      "choice: \((prefs.appearance ?? .system).rawValue)",
+      "kept: \((Prefs.load(config).appearance ?? .system).rawValue)",
+      "app: \(name(NSApp.effectiveAppearance))",
+      "window: \(name(window.appearanceForTest))",
+      "tray: \(name(tray.appearanceForTest))",
+    ]
+    let scheme = "document.documentElement.dataset.scheme || 'none'"
+    window.evaluateForTest(scheme) { page in
+      lines.append("page: \(page)")
+      self.tray.evaluateForTest(scheme) { trayPage in
+        lines.append("tray page: \(trayPage)")
+        try? (lines.joined(separator: "\n") + "\n").write(to: file, atomically: true, encoding: .utf8)
+        Log.line("appearance: wrote \(file.lastPathComponent)")
       }
     }
   }
