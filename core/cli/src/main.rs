@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use pneuma_base_local::LocalFolder;
 use pneuma_base_storage::{Ctx, Failure, Op, Reason, Storage, failure_text, handle, with_first};
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 enum Mode {
     One { op: Op, request: Option<String> },
@@ -103,17 +103,27 @@ fn one(storage: &LocalFolder, op: Op, request: Option<String>) -> String {
         }
         Some(text) => text.to_owned(),
     };
-    match serde_json::from_str::<Value>(&text) {
-        Ok(Value::Object(request)) => handle(storage, op, &request, &ctx),
-        _ => failure_text(&Failure::bad_request()),
-    }
+    handle(storage, op, &text, &ctx)
 }
 
 struct Job {
     id: Value,
     op: Op,
-    request: Map<String, Value>,
+    /// The request's JSON text, parsed by the worker that runs it.
+    request: String,
     ctx: Ctx,
+}
+
+/// What the reading thread takes from a request line; the rest it leaves to the worker, so a
+/// large request does not hold up the lines behind it.
+#[derive(serde::Deserialize)]
+struct Envelope {
+    #[serde(default)]
+    id: Value,
+    #[serde(default)]
+    op: Option<String>,
+    #[serde(default)]
+    target: Option<Value>,
 }
 
 /// Requests not yet answered, by their id's JSON text, so `cancel` can reach them.
@@ -140,6 +150,17 @@ fn serve(storage: Arc<LocalFolder>) {
             let (storage, receiver, in_flight) =
                 (storage.clone(), receiver.clone(), in_flight.clone());
             std::thread::spawn(move || {
+                // A worker answers what a person or an agent is waiting for. At the default class
+                // macOS moves a thread that mostly waits on the file system to slower cores as soon
+                // as other work runs: a long read of facts took twice as long.
+                #[cfg(target_os = "macos")]
+                // SAFETY: sets the calling thread's own class; no pointers are involved.
+                unsafe {
+                    libc::pthread_set_qos_class_self_np(
+                        libc::qos_class_t::QOS_CLASS_USER_INITIATED,
+                        0,
+                    );
+                }
                 loop {
                     let job = match receiver.lock() {
                         Ok(receiver) => receiver.recv(),
@@ -157,20 +178,21 @@ fn serve(storage: Arc<LocalFolder>) {
         if line.trim().is_empty() {
             continue;
         }
-        let Ok(Value::Object(request)) = serde_json::from_str::<Value>(&line) else {
+        // An array would fill the envelope by position; only an object is a request.
+        let envelope = line
+            .trim_start()
+            .starts_with('{')
+            .then(|| serde_json::from_str::<Envelope>(&line));
+        let Some(Ok(Envelope { id, op, target })) = envelope else {
             print(&answer_line(
                 &Value::Null,
                 &failure_text(&Failure::bad_request()),
             ));
             continue;
         };
-        let id = request.get("id").cloned().unwrap_or(Value::Null);
-        let op_name = request
-            .get("op")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
+        let op_name = op.as_deref().unwrap_or_default();
         if op_name == "cancel" {
-            let target = request.get("target").map(id_key);
+            let target = target.as_ref().map(id_key);
             if let (Some(target), Ok(in_flight)) = (target, in_flight.lock())
                 && let Some(ctx) = in_flight.get(&target)
             {
@@ -195,7 +217,7 @@ fn serve(storage: Arc<LocalFolder>) {
             let job = Job {
                 id,
                 op,
-                request,
+                request: line,
                 ctx: ctx.clone(),
             };
             subscriptions.retain(|(_, thread)| !thread.is_finished());
@@ -209,7 +231,7 @@ fn serve(storage: Arc<LocalFolder>) {
             .send(Job {
                 id,
                 op,
-                request,
+                request: line,
                 ctx,
             })
             .is_err()

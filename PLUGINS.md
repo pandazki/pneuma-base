@@ -737,7 +737,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID -u CODEX_THREAD_ID -u ANTIGRAVITY_CO
 `records` 的：
 
 - `append(事实列表)`：把几条事实写成一次，答每条的次序号。写过的事实从不改写。
-- `since(游标, limit)`：游标之后的事实（`null` 是从头），按存储的次序，至多 `limit` 条（缺省 1000，最多 10000），答 `{ facts: [{ order, fact }], cursor, more }`；`more` 说下一页已经在了，拿 `cursor` 接着读。`limit` 是 0 时只答事实现在到哪。游标对不上那里的事实时（比如事实被删了）答 `null`：从 `null` 重来。早先的插件直接写在 `facts/` 下、和 `facts/` 下一层名字不是日期的子目录里的 jsonl 文件，`since` 照样读，和别的事实一起给。
+- `since(游标, limit)`：游标之后的事实（`null` 是从头），按存储的次序，至多 `limit` 条（缺省 1000，最多 10000），答 `{ facts: [{ order, fact }], cursor, more }`；`more` 说下一页已经在了，拿 `cursor` 接着读。从头读时存储还可带 `files`：事实文件的个数（一个文件放一条或几条）。`limit` 是 0 时只答事实现在到哪。游标对不上那里的事实时（比如事实被删了）答 `null`：从 `null` 重来。早先的插件直接写在 `facts/` 下、和 `facts/` 下一层名字不是日期的子目录里的 jsonl 文件，`since` 照样读，和别的事实一起给。
 - `put(表, { cursor, expect })`：在一次提交里写几张表的行，带 `cursor` 时一起存下这些行推到了哪个游标。带 `expect` 时只在存下的游标还是它时写，否则什么都不写，答存下的那个。
 - `get(表, 键列表)`：这些键的行，和存下的游标，`{ rows, cursor }`。
 - `under(表, 前缀, { limit, after })`、`where(表, 字段, 值, { limit, after })`：键以这个前缀开头的行、这个字段是这个值的行，一页 `{ rows, more }`，按键的字节序，至多 `limit` 行（缺省 100，最多 10000），`more` 是 `{ after }`，没有下一页时 `null`。`count(表, 字段, 值)` 只答个数。

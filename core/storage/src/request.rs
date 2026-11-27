@@ -266,10 +266,6 @@ impl<'a> Req<'a> {
         self.0.get(key).filter(|value| !value.is_null())
     }
 
-    fn raw(&self, key: &str) -> Option<&'a Value> {
-        self.0.get(key)
-    }
-
     fn string(&self, key: &str) -> Parsed<String> {
         self.opt_string(key)?.ok_or_else(Failure::bad_request)
     }
@@ -650,71 +646,73 @@ pub fn facts_since(req: &Req) -> Parsed<FactsSinceRequest> {
     })
 }
 
-fn row_change(value: &Value) -> Parsed<RowChange> {
-    let object = value.as_object().ok_or_else(Failure::bad_request)?;
-    let key = object
-        .get("key")
-        .and_then(Value::as_str)
-        .ok_or_else(Failure::bad_request)?
-        .to_owned();
-    let Some(row_value) = object.get("value") else {
-        return Err(Failure::bad_request());
-    };
-    if row_value.is_null() {
-        return Ok(RowChange::Delete(key));
-    }
-    let fields = match object.get("fields") {
-        None | Some(Value::Null) => BTreeMap::new(),
-        Some(Value::Object(fields)) => fields
-            .iter()
-            .map(|(name, v)| Some((name.clone(), v.as_str()?.to_owned())))
-            .collect::<Option<BTreeMap<_, _>>>()
-            .ok_or_else(Failure::bad_request)?,
-        Some(_) => return Err(Failure::bad_request()),
-    };
-    if fields.len() > MAX_FIELDS || fields.keys().any(String::is_empty) {
-        return Err(Failure::bad_request());
-    }
-    Ok(RowChange::Put(Row {
-        key,
-        fields,
-        value: row_value.clone(),
-    }))
+/// A `rows.put` as sent. A row's value stays the JSON text it came as: a large put is not built
+/// into a tree and written out again.
+#[derive(serde::Deserialize)]
+struct SentPut {
+    place: Option<String>,
+    table: Option<String>,
+    rows: Option<Vec<SentRow>>,
+    tables: Option<BTreeMap<String, Vec<SentRow>>>,
+    cursor: Option<String>,
+    #[serde(default, deserialize_with = "present")]
+    expect: Option<Option<String>>,
 }
 
-fn row_changes(values: &[Value]) -> Parsed<Vec<RowChange>> {
-    values.iter().map(row_change).collect()
+#[derive(serde::Deserialize)]
+struct SentRow {
+    key: String,
+    fields: Option<BTreeMap<String, String>>,
+    value: Box<serde_json::value::RawValue>,
 }
 
-pub fn rows_put(req: &Req) -> Parsed<RowsPutRequest> {
+/// A member that is there, `null` or not: told apart from one that is missing.
+fn present<'de, D: serde::Deserializer<'de>, T: serde::Deserialize<'de>>(
+    d: D,
+) -> Result<Option<T>, D::Error> {
+    T::deserialize(d).map(Some)
+}
+
+fn sent_rows(rows: Vec<SentRow>) -> Parsed<Vec<RowChange>> {
+    rows.into_iter()
+        .map(|row| {
+            if row.value.get() == "null" {
+                return Ok(RowChange::Delete(row.key));
+            }
+            let fields = row.fields.unwrap_or_default();
+            if fields.len() > MAX_FIELDS || fields.keys().any(String::is_empty) {
+                return Err(Failure::bad_request());
+            }
+            Ok(RowChange::Put(Row {
+                key: row.key,
+                fields,
+                value: row.value.get().to_owned(),
+            }))
+        })
+        .collect()
+}
+
+/// `rows.put` from the request's JSON text.
+pub fn rows_put(text: &str) -> Parsed<RowsPutRequest> {
+    let put: SentPut = serde_json::from_str(text).map_err(|_| Failure::bad_request())?;
     let mut tables = Vec::new();
-    match (req.opt_string("table")?, req.get("rows")) {
-        (Some(table), Some(Value::Array(rows))) => {
-            tables.push((non_empty(table)?, row_changes(rows)?))
-        }
+    match (put.table, put.rows) {
+        (Some(table), Some(rows)) => tables.push((non_empty(table)?, sent_rows(rows)?)),
         (None, None) => {}
         _ => return Err(Failure::bad_request()),
     }
-    match req.get("tables") {
-        None => {}
-        Some(Value::Object(map)) => {
-            for (table, rows) in map {
-                let rows = rows.as_array().ok_or_else(Failure::bad_request)?;
-                tables.push((non_empty(table.clone())?, row_changes(rows)?));
-            }
-        }
-        Some(_) => return Err(Failure::bad_request()),
+    for (table, rows) in put.tables.unwrap_or_default() {
+        tables.push((non_empty(table)?, sent_rows(rows)?));
     }
-    let expect = match req.raw("expect") {
+    let expect = match put.expect {
         None => CursorExpect::Unchecked,
-        Some(Value::Null) => CursorExpect::Cursor(None),
-        Some(Value::String(cursor)) => CursorExpect::Cursor(Some(cursor.clone())),
-        Some(_) => return Err(Failure::bad_request()),
+        Some(cursor) => CursorExpect::Cursor(cursor),
     };
+    let place = put.place.ok_or_else(Failure::bad_request)?;
     Ok(RowsPutRequest {
-        place: req.record_place()?,
+        place: RecordPlace::parse(&place).ok_or_else(Failure::bad_request)?,
         tables,
-        cursor: req.opt_string("cursor")?,
+        cursor: put.cursor,
         expect,
     })
 }

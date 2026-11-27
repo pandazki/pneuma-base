@@ -1,7 +1,7 @@
 //! Rows: a cache the record place's owner derives from its facts, one SQLite file per record
 //! place in the cache area. The saved cursor and the rows change in one transaction.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -58,6 +58,8 @@ pub(crate) fn create_db(path: &Path, schema: &str) -> Result<(), Failure> {
         SEQ.fetch_add(1, Ordering::Relaxed)
     ));
     let built = Connection::open(&temp).and_then(|conn| {
+        // Rows hold JSON of a kilobyte or more: larger pages keep them out of overflow chains.
+        conn.execute_batch("PRAGMA page_size = 16384")?;
         conn.query_row("PRAGMA journal_mode = WAL", [], |row| {
             row.get::<_, String>(0)
         })?;
@@ -213,6 +215,7 @@ impl LocalFolder {
             )));
         }
         for (table, changes) in &req.tables {
+            let mut names = HashSet::new();
             for change in changes {
                 let old_fields: Option<Option<String>> = tx
                     .prepare_cached("SELECT fields FROM rows WHERE tbl = ?1 AND key = ?2")
@@ -241,7 +244,7 @@ impl LocalFolder {
                             .and_then(|mut s| s.execute(params![table, key]))
                             .map_err(sql_failure)?;
                     }
-                    RowChange::Put(row) => put_row(&tx, table, row)?,
+                    RowChange::Put(row) => put_row(&tx, table, row, &mut names)?,
                 }
             }
             let names: i64 = tx
@@ -437,16 +440,21 @@ impl LocalFolder {
     }
 }
 
-fn put_row(tx: &rusqlite::Transaction, table: &str, row: &Row) -> Result<(), Failure> {
+/// Writes a row and its fields; `names` are the field names this put already declared for the table.
+fn put_row(
+    tx: &rusqlite::Transaction,
+    table: &str,
+    row: &Row,
+    names: &mut HashSet<String>,
+) -> Result<(), Failure> {
     let fields = (!row.fields.is_empty())
         .then(|| serde_json::to_string(&row.fields))
         .transpose()
         .map_err(|_| Failure::bad_request())?;
-    let value = serde_json::to_string(&row.value).map_err(|_| Failure::bad_request())?;
     tx.prepare_cached(
         "INSERT OR REPLACE INTO rows (tbl, key, fields, value) VALUES (?1, ?2, ?3, ?4)",
     )
-    .and_then(|mut s| s.execute(params![table, row.key, fields, value]))
+    .and_then(|mut s| s.execute(params![table, row.key, fields, row.value]))
     .map_err(sql_failure)?;
     let mut name_insert = tx
         .prepare_cached("INSERT OR IGNORE INTO table_fields (tbl, name) VALUES (?1, ?2)")
@@ -457,9 +465,11 @@ fn put_row(tx: &rusqlite::Transaction, table: &str, row: &Row) -> Result<(), Fai
         )
         .map_err(sql_failure)?;
     for (name, value) in &row.fields {
-        name_insert
-            .execute(params![table, name])
-            .map_err(sql_failure)?;
+        if names.insert(name.clone()) {
+            name_insert
+                .execute(params![table, name])
+                .map_err(sql_failure)?;
+        }
         field_insert
             .execute(params![table, name, value, row.key])
             .map_err(sql_failure)?;

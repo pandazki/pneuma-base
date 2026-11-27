@@ -238,10 +238,11 @@ impl Op {
     }
 }
 
-/// Runs one request against a storage and gives the whole answer object as JSON text, `outcome`
-/// first. The answer is written straight to text, so rows' stored values pass through unparsed.
-pub fn handle(storage: &dyn Storage, op: Op, request: &Map<String, Value>, ctx: &Ctx) -> String {
-    match run(storage, op, &Req(request), ctx) {
+/// Runs one request, given as JSON text, against a storage and gives the whole answer object as
+/// JSON text, `outcome` first. The answer is written straight to text, so rows' stored values pass
+/// through unparsed; a put keeps the values as sent.
+pub fn handle(storage: &dyn Storage, op: Op, request: &str, ctx: &Ctx) -> String {
+    match run(storage, op, request, ctx) {
         Ok(answer) => answer,
         Err(failure) => failure_text(&failure),
     }
@@ -266,8 +267,17 @@ fn done<T: Serialize>(answer: T) -> Result<String, Failure> {
     Ok(with_first("\"outcome\":\"done\"", &body))
 }
 
-fn run(storage: &dyn Storage, op: Op, req: &Req, ctx: &Ctx) -> Result<String, Failure> {
+fn run(storage: &dyn Storage, op: Op, text: &str, ctx: &Ctx) -> Result<String, Failure> {
     ctx.check()?;
+    // A put is read from the text itself, its rows' values kept as sent.
+    let object = match op {
+        Op::RowsPut => Map::new(),
+        _ => match serde_json::from_str::<Value>(text) {
+            Ok(Value::Object(object)) => object,
+            _ => return Err(Failure::bad_request()),
+        },
+    };
+    let req = &Req(&object);
     let empty = |()| json!({});
     match op {
         Op::Glance => done(storage.glance(&request::glance(req)?, ctx)?),
@@ -288,7 +298,7 @@ fn run(storage: &dyn Storage, op: Op, req: &Req, ctx: &Ctx) -> Result<String, Fa
         Op::Remove => done(storage.remove(&request::remove(req)?, ctx)?),
         Op::FactsAppend => done(storage.facts_append(&request::facts_append(req)?)?),
         Op::FactsSince => done(storage.facts_since(&request::facts_since(req)?, ctx)?),
-        Op::RowsPut => done(storage.rows_put(&request::rows_put(req)?).map(empty)?),
+        Op::RowsPut => done(storage.rows_put(&request::rows_put(text)?).map(empty)?),
         Op::RowsGet => done(storage.rows_get(&request::rows_get(req)?)?),
         Op::RowsUnder => done(storage.rows_under(&request::rows_under(req)?)?),
         Op::RowsWhere => done(storage.rows_where(&request::rows_where(req)?)?),

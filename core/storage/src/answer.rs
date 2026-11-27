@@ -385,6 +385,10 @@ pub struct FactsSinceAnswer {
     pub facts: Vec<Fact>,
     pub cursor: String,
     pub more: bool,
+    /// Read without a cursor: how many facts files there are, so a reader starting from nothing
+    /// knows how much it faces without reading it twice.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub files: Option<u64>,
 }
 
 /// A stored row. `fields` are the queryable string fields, at most four.
@@ -393,7 +397,8 @@ pub struct Row {
     pub key: String,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub fields: BTreeMap<String, String>,
-    pub value: Value,
+    /// The value as JSON text, as it is stored.
+    pub value: String,
 }
 
 /// A row as an answer gives it: the value is the JSON text as stored, passed on without being

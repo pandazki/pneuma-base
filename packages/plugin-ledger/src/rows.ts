@@ -1,7 +1,8 @@
 // One change to the ledger's rows: reads go to storage once and are kept, writes are kept until the
 // commit, which saves them with the fact cursor they were derived up to, in one put (STORAGE.md section
 // 5: the owner of a record place reads the facts after its cursor, folds them into its rows, and saves
-// the rows and the new cursor together). A read after a write in the same change sees the write.
+// the rows and the new cursor together). A read after a write in the same change sees the write. A
+// rebuild's change, too large for one put, is saved in parts (`commitInParts`).
 import type { RecordPlace, Row } from '@pneuma-base/kernel'
 
 export type Records = Pick<RecordPlace, 'get' | 'under' | 'where' | 'count' | 'put'>
@@ -35,13 +36,39 @@ export async function* wherePages<V>(records: Pick<RecordPlace, 'where'>, table:
   }
 }
 
+/** How many rows one put of a large change carries. */
+export const PUT_ROWS = 25_000
+
+const rowOf = ([key, kept]: [string, Kept]): Row => (kept === null ? { key, value: null } : { key, value: kept.value, ...(kept.fields ? { fields: kept.fields } : {}) })
+const byKey = (a: Row, b: Row) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)
+
 export class Tx {
   private readonly read = new Map<string, Map<string, Kept>>()
   private readonly writes = new Map<string, Map<string, Kept>>()
   private counts: Record<string, number> | null = null
   private countsChanged = false
+  /** Tables whose writes were taken out to be saved early (`takeOut`): this change no longer knows their rows. */
+  private readonly taken = new Set<string>()
 
-  constructor(readonly records: Records) {}
+  /**
+   * `alone`: storage holds none of the rows this change can reach (a rebuild from nothing that holds
+   * the claim to it), so a row this change has not written is not there, and nothing is read.
+   */
+  constructor(
+    readonly records: Records,
+    private readonly alone = false,
+  ) {}
+
+  /** How many rows this change keeps in memory. */
+  get size(): number {
+    let n = 0
+    for (const map of [this.read, this.writes]) for (const t of map.values()) n += t.size
+    return n
+  }
+
+  private knows(table: string): void {
+    if (this.taken.has(table)) throw new Error(`记账插件的行表 ${table} 已经先存下了，这次改动不再读它`)
+  }
 
   private kept(map: Map<string, Map<string, Kept>>, table: string): Map<string, Kept> {
     let t = map.get(table)
@@ -51,6 +78,8 @@ export class Tx {
 
   /** Reads these keys of a table from storage, those not read or written yet, in as few asks as it can. */
   async prefetch(table: string, keys: Iterable<string>): Promise<void> {
+    this.knows(table)
+    if (this.alone) return
     const read = this.kept(this.read, table)
     const written = this.writes.get(table)
     const missing = [...new Set(keys)].filter((k) => !read.has(k) && !written?.has(k))
@@ -63,6 +92,7 @@ export class Tx {
   }
 
   private now(table: string, key: string): Kept | undefined {
+    this.knows(table)
     const w = this.writes.get(table)?.get(key)
     return w !== undefined ? w : this.read.get(table)?.get(key)
   }
@@ -91,8 +121,9 @@ export class Tx {
 
   /** Every row whose key starts with `prefix`, this change's writes included, by key. For the fold's few range reads, each over what one fact touches. */
   async under<V>(table: string, prefix: string): Promise<Row<V>[]> {
+    this.knows(table)
     const out = new Map<string, Row<V>>()
-    for await (const page of pagesOf<V>(this.records, table, prefix)) for (const r of page) out.set(r.key, r)
+    if (!this.alone) for await (const page of pagesOf<V>(this.records, table, prefix)) for (const r of page) out.set(r.key, r)
     for (const [key, kept] of this.writes.get(table) ?? []) {
       if (!key.startsWith(prefix)) continue
       if (kept === null) out.delete(key)
@@ -103,8 +134,9 @@ export class Tx {
 
   /** Every row where a field has a value, this change's writes included. */
   async where<V>(table: string, field: string, value: string): Promise<Row<V>[]> {
+    this.knows(table)
     const out = new Map<string, Row<V>>()
-    for await (const page of wherePages<V>(this.records, table, field, value)) for (const r of page) out.set(r.key, r)
+    if (!this.alone) for await (const page of wherePages<V>(this.records, table, field, value)) for (const r of page) out.set(r.key, r)
     for (const [key, kept] of this.writes.get(table) ?? []) {
       if (kept === null || kept.fields?.[field] !== value) out.delete(key)
       else out.set(key, { key, value: kept.value as V, fields: kept.fields })
@@ -131,6 +163,27 @@ export class Tx {
     return this.counts as Record<string, number>
   }
 
+  /** How many rows this change has written to these tables. */
+  writtenTo(tables: readonly string[]): number {
+    return tables.reduce((n, table) => n + (this.writes.get(table)?.size ?? 0), 0)
+  }
+
+  /**
+   * Takes this change's writes to tables it only writes, never reads, to be saved before the rest
+   * (each table's rows by key); asking this change about those tables afterwards is an error.
+   */
+  takeOut(tables: readonly string[]): Record<string, Row[]> {
+    const out: Record<string, Row[]> = {}
+    for (const table of tables) {
+      this.taken.add(table)
+      const rows = this.writes.get(table)
+      if (!rows || rows.size === 0) continue
+      out[table] = [...rows].map(rowOf).sort(byKey)
+      this.writes.delete(table)
+    }
+    return out
+  }
+
   /** The rows to put, by table. */
   changes(): Record<string, Row[]> {
     if (this.countsChanged) this.set('meta', 'counts', this.counts)
@@ -138,7 +191,7 @@ export class Tx {
     const out: Record<string, Row[]> = {}
     for (const [table, rows] of this.writes) {
       if (rows.size === 0) continue
-      out[table] = [...rows].map(([key, kept]) => (kept === null ? { key, value: null } : { key, value: kept.value, ...(kept.fields ? { fields: kept.fields } : {}) }))
+      out[table] = [...rows].map(rowOf)
     }
     return out
   }
@@ -147,5 +200,28 @@ export class Tx {
   async commit(cursor: string, expect: string | null): Promise<boolean> {
     const put = await this.records.put(this.changes(), { cursor, expect })
     return put.written
+  }
+
+  /**
+   * Saves a change too large for one put: a put at a time, each only while the saved cursor is still
+   * `expect`, rows in key order so storage writes neighbours together; the last carries `meta` and
+   * saves `cursor`. Readers that find a rebuild under way do not read the rows in between.
+   */
+  async commitInParts(cursor: string, expect: string): Promise<boolean> {
+    const { meta = [], ...rest } = this.changes()
+    const rows = Object.keys(rest)
+      .sort()
+      .flatMap((table) => (rest[table] as Row[]).sort(byKey).map((row) => [table, row] as const))
+    // Each part is sent while storage writes the one before.
+    let before = Promise.resolve(true)
+    for (let i = 0; i < rows.length; i += PUT_ROWS) {
+      const part: Record<string, Row[]> = {}
+      for (const [table, row] of rows.slice(i, i + PUT_ROWS)) (part[table] ??= []).push(row)
+      const put = this.records.put(part, { expect }).then((a) => a.written)
+      if (!(await before)) return (await put) && false
+      before = put
+    }
+    if (!(await before)) return false
+    return (await this.records.put({ meta }, { cursor, expect })).written
   }
 }
