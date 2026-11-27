@@ -26,7 +26,11 @@ function connectAction(product: string): Action {
   return { label: '接上', tone: 'default', confirm: null, inputs, call }
 }
 
-/** Connect your agent: each product found on this machine, with 接上, or 已接上 and how; while an endpoint runs for this library, the sentence any agent connects itself by. */
+/**
+ * Connect your agent: each product found on this machine, with 接上, or 已接上 and how; while an
+ * endpoint runs for this library, the sentence any agent connects itself by. Done once an agent can
+ * use the library: a product connected, or a grant issued by hand, as the agents page lists both.
+ */
 async function connectStep({ ctx, table, env }: ViewerCall): Promise<Step> {
   const connections = await connectionFacts(ctx.home, env, table, ctx.library.root)
   const shown = CONNECTABLE.map((p) => ({ p, found: signsOf(p, env).length > 0, mine: connections.filter((c) => c.product === p.name) })).filter((x) => x.found || x.mine.length > 0)
@@ -47,8 +51,9 @@ async function connectStep({ ctx, table, env }: ViewerCall): Promise<Step> {
       : [{ kind: 'list', items }]
   const endpoint = await endpointOf(ctx.home, ctx.library.root)
   if (endpoint !== null) blocks.push(sentenceBlock(endpoint.url, '首页的「等你决定」里'))
-  const titles = [...new Set(connections.map((c) => c.title))]
-  return { key: 'connect', title: '接上你的 agent', done: connections.length > 0, summary: connections.length > 0 ? `已接上 ${titles.join('、')}` : null, blocks }
+  const byHand = ctx.library.config.grants.filter((g) => !connections.some((c) => c.grant === g.name)).map((g) => g.agent)
+  const titles = [...new Set([...connections.map((c) => c.title), ...byHand])]
+  return { key: 'connect', title: '接上你的 agent', done: titles.length > 0, summary: titles.length > 0 ? `已接上 ${titles.join('、')}` : null, blocks }
 }
 
 /** How many entries of the root the step looks at: it only asks whether anything is there. */

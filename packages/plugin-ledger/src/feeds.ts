@@ -1,7 +1,7 @@
 // The ledger's pages that tell what happened, each a feed of facts read from the log a page at a
 // time: the home page's part (since the owner last looked, and what needs looking at), the activity
 // page, the scenes and one scene.
-import { FIRST_WORDS, pageAt, pagingOf, PAGE_ROWS, shortDir, type Action, type Block, type Cell, type FeedGroup, type FeedRow, type Grant, type Instant, type Reopen, type Stat, type ViewAnswer } from '@pneuma-base/kernel'
+import { FIRST_WORDS, pageAt, pagingOf, PAGE_ROWS, shortDir, type Action, type Block, type Cell, type FeedAct, type FeedGroup, type FeedRow, type Grant, type Instant, type LibraryPath, type Reopen, type Stat, type ViewAnswer } from '@pneuma-base/kernel'
 import { reopenFor, type Conversation } from './conversation.js'
 import type { Fact, FactActor, SceneId } from './facts.js'
 import { archived, type SceneRow } from './model.js'
@@ -78,13 +78,47 @@ function askedBy(f: Fact, grants: readonly Grant[]): Cell[] {
   return [{ text: `应 ${f.request.by.name} 的请求 ${f.request.id}`, ...(typeof mark === 'string' ? {} : { actor: mark }) }]
 }
 
-/** One fact as a feed row: when, who, the sentence check says, who asked for it, in which scene and by which grant, and what can still be done. */
+const SAID_ACT: Record<Extract<Fact, { kind: 'said' }>['flavor'], FeedAct> = { doing: 'doing', decided: 'decision', note: 'note' }
+const where = (lookup: Lookup, id: Fact & { item: unknown }) => lookup.items.get(id.item as never)?.path ?? null
+
+/**
+ * The fact in parts, for a page that says less than its sentence: the kind of act, the path of the
+ * thing (where it is now; for an archive or a move, where the act left it or took it from), and the
+ * words its actor wrote with it. A fact a sentence says better, such as a request, has no parts.
+ */
+function partsOf(lookup: Lookup, f: Fact): Pick<FeedRow, 'act' | 'path' | 'note'> {
+  const note = (text: string | undefined) => (text ? { note: text } : {})
+  const at = (path: string | null) => (path === null ? {} : { path: path as LibraryPath })
+  switch (f.kind) {
+    case 'said':
+      return { act: SAID_ACT[f.flavor], ...at(f.about === null ? null : (lookup.items.get(f.about)?.path ?? null)), note: f.text }
+    case 'item.enter':
+      return { act: f.origin.kind === 'made' ? 'made' : 'brought', ...at(where(lookup, f) ?? f.path), ...note(f.note) }
+    case 'item.revise':
+      return { act: 'changed', ...at(where(lookup, f)), ...note(f.note) }
+    case 'item.move':
+      return { act: f.archive === 'in' ? 'archived' : f.archive === 'out' ? 'restored' : 'moved', ...at(f.archive === 'in' ? f.from : f.to) }
+    case 'item.basis':
+      return { act: 'basis', ...at(where(lookup, f)) }
+    case 'item.remove':
+      return { act: 'removed', ...at(where(lookup, f)) }
+    case 'owner.op':
+      return f.request || f.refused !== undefined ? {} : { act: 'command', note: f.summary }
+    default:
+      return {}
+  }
+}
+
+/**
+ * One fact as a feed row: when, who, the sentence check says and the same in parts, who asked for it,
+ * in which scene and by which grant, and what can still be done. `withScene`: the row names its scene,
+ * unless it is the scene saying what it is doing.
+ */
 function factRow(lookup: Lookup, f: Fact, grants: readonly Grant[], withScene: boolean): FeedRow {
   const grant = grantCell(f.actor, grants)
-  // Saying what a scene is doing names the scene already.
   const scene = withScene && !(f.kind === 'said' && f.flavor === 'doing')
   const meta: Cell[] = [...askedBy(f, grants), ...(scene ? [sceneCell(lookup, f.scene)] : []), ...(grant ? [grant] : [])]
-  return { key: f.id, at: f.at, actor: actorMark(f.actor, grants), text: factLine(lookup, f, true), meta, whose: whoseOf(f), link: factLink(lookup, f), ...endOf(lookup, f) }
+  return { key: f.id, at: f.at, actor: actorMark(f.actor, grants), text: factLine(lookup, f, true), meta, whose: whoseOf(f), link: factLink(lookup, f), ...partsOf(lookup, f), ...endOf(lookup, f) }
 }
 
 // ---- home ----
@@ -99,32 +133,41 @@ const sceneTitle = (lookup: Lookup, id: SceneId) => {
 const SEEN_ALL: Action = { label: '都看过了', tone: 'default', confirm: null, inputs: [], call: { face: 'agent', verb: 'check', request: { since: 'last', includeArchived: false } } }
 
 /**
- * The ledger's part of the home page: what others did since `me` last looked, by scene, each headed
- * by what it said it was doing, with 都看过了, which is `me` checking; then what needs looking at,
- * one line for each kind with how many, opening the standing page on that kind.
+ * The ledger's part of the home page: what others did since `me` last looked, by scene, with 都看过了,
+ * which is `me` checking; then what needs looking at, one line for each kind with how many, opening
+ * the standing page on that kind. A scene of several acts is headed by what it said it was doing; a
+ * scene of one act is that one row, naming its scene, and scenes of one act next to each other share
+ * one list without a heading.
  */
 export async function homeAnswer(records: Read, lists: readonly StandingList[], news: { since: Instant | null; facts: readonly Fact[] }, agents: readonly FactActor[], grants: readonly Grant[]): Promise<ViewAnswer> {
   const { since, facts } = news
   const lookup = await lookupOf(records, facts)
-  const groups: FeedGroup[] = grouped(facts, (f) => f.scene).map(({ members }) => {
+  const groups: FeedGroup[] = []
+  for (const { members } of grouped(facts, (f) => f.scene)) {
     const scene = (members[0] as Fact).scene
     const title = sceneTitle(lookup, scene)
     // The sentence that heads the group is not a row of it as well, unless it is all the group tells.
     const heading = (f: Fact) => f.kind === 'said' && f.flavor === 'doing' && f.text === title
-    const rows = (members.every(heading) ? members : members.filter((f) => !heading(f))).map((f) => factRow(lookup, f, grants, false))
+    const told = members.every(heading) ? members : members.filter((f) => !heading(f))
+    if (told.length === 1) {
+      const last = groups.at(-1)
+      const row = factRow(lookup, told[0] as Fact, grants, true)
+      if (last !== undefined && last.title === '') last.rows.push(row)
+      else groups.push({ title: '', count: null, rows: [row] })
+      continue
+    }
     const reopen = lookup.scenes.get(scene)
     const again = reopen === undefined ? null : reopenFor(reopen)
-    return { title, count: rows.length, link: sceneLink(scene), rows, ...(again === null ? {} : { reopen: again }) }
-  })
+    groups.push({ title, count: told.length, link: sceneLink(scene), rows: told.map((f) => factRow(lookup, f, grants, false)), ...(again === null ? {} : { reopen: again }) })
+  }
   const done = groups.reduce((n, g) => n + g.rows.length, 0)
-  const actors = actorNames(facts.map((f) => f.actor))
   // Nothing new since the last look: when that was, and the way to everything that ever happened.
   const looked = done === 0 && since !== null
   const sinceSection: Block = {
     kind: 'section',
     title: '自上次以来',
-    note: done > 0 ? `${since === null ? '你还没看过，这是最近的：' : ''}${actors} 做了 ${done} 件事` : looked ? `上次看过：${when(since)}` : null,
-    count: null,
+    note: looked ? `上次看过：${when(since)}` : null,
+    count: done > 0 ? done : null,
     blocks: [
       { kind: 'feed', groups, empty: looked ? '那之后还没有谁做过什么。' : '还没有谁做过什么。' },
       ...(looked ? [{ kind: 'list' as const, items: [{ cell: { text: '看全部活动', link: { view: ACTIVITY_VIEW, params: {}, target: 'main' as const } }, note: '每个 agent 和你做过的事，按天排着', actions: [] }] }] : []),
@@ -187,7 +230,9 @@ export async function activityAnswer(records: Read, params: Record<string, strin
   const page = agent !== '' ? (who === 'owner' ? { rows: [], more: null } : await records.where<Fact>('log', 'agent', agent, opts)) : who !== '' ? await records.where<Fact>('log', 'who', who, opts) : await records.under<Fact>('log', '', opts)
   const facts = page.rows.map((r) => r.value)
   const lookup = await lookupOf(records, facts)
-  const groups = grouped(facts, (f) => dayTitle(f.at, now)).map(({ title, members }) => ({ title, count: members.length, rows: members.map((f) => factRow(lookup, f, grants, true)) }))
+  // A scene whose own row on this page says what it is doing is named there, not again on each of its rows.
+  const named = new Set(facts.filter((f) => f.kind === 'said' && f.flavor === 'doing').map((f) => f.scene))
+  const groups = grouped(facts, (f) => dayTitle(f.at, now)).map(({ title, members }) => ({ title, count: members.length, rows: members.map((f) => factRow(lookup, f, grants, !named.has(f.scene))) }))
   const shown = n(who, agent)
   const paging = pagingOf({ view: ACTIVITY_VIEW, params, rows: size, shown: facts.length, next: page.more?.after ?? null, total: shown })
   // How many: the tabs say it.

@@ -343,18 +343,18 @@ describe('the standing view', () => {
 })
 
 describe('the activity page', () => {
-  it('has the facts newest first by day, owner operations included: who, the sentence, in which scene, by which grant; a fact about a thing opens it; it keeps the agents’ or the owner’s, or one agent’s, each option saying how many', async () => {
+  it('has the facts newest first by day, owner operations included: who, the act, the thing and the note, the sentence, by which grant; a scene whose doing is on the page is named there once; a fact about a thing opens it; it keeps the agents’ or the owner’s, or one agent’s, each option saying how many', async () => {
     const { show, codex } = await relayed()
     const rows = feedRows(shown(await show('ledger.activity')).blocks)
     // The library was made at the real time, after the test's session at 02:00Z, so its init is newest.
     expect(rows[0]).toMatchObject({ actor: { kind: 'owner', name: '主人' }, whose: 'owner', text: expect.stringContaining('主人面的操作 init') })
-    expect(rows.slice(1, 4).map((row) => [nameOf(row.actor), row.whose, row.text, ...row.meta.map((c) => c.text)])).toEqual([
-      ['claude-code', 'agent', '归档 old.md', '给小店选支付服务', '没带授权'],
-      ['claude-code', 'agent', '决定：用 Paddle（关于 comparison.md）', '给小店选支付服务', '没带授权'],
-      ['claude-code', 'agent', '放入 recommendation.md', '给小店选支付服务', '没带授权'],
+    expect(rows.slice(1, 4).map((row) => [nameOf(row.actor), row.whose, row.act, row.path, row.note, row.text, ...row.meta.map((c) => c.text)])).toEqual([
+      ['claude-code', 'agent', 'archived', 'old.md', undefined, '归档 old.md', '没带授权'],
+      ['claude-code', 'agent', 'decision', 'comparison.md', '用 Paddle', '决定：用 Paddle（关于 comparison.md）', '没带授权'],
+      ['claude-code', 'agent', 'made', 'recommendation.md', undefined, '放入 recommendation.md', '没带授权'],
     ])
     expect(rows[1]?.link).toEqual({ view: 'item', params: { path: '_archive/old.md' }, target: 'panel' })
-    expect(rows[1]?.meta[0]?.link).toEqual({ view: 'ledger.scene', params: { scene: 'sess-a' }, target: 'panel' })
+    expect(rows.find((row) => row.act === 'doing')).toMatchObject({ note: '给小店选支付服务', link: { view: 'ledger.scene', params: { scene: 'sess-a' }, target: 'panel' } })
     expect(rows[1]?.at).toMatch(/^2026-11-25T02:00:\d\d\.000Z$/)
 
     await agentFace.say({ kind: 'note', about: 'comparison.md', text: '看过了', args: {} }, codex())
@@ -392,12 +392,12 @@ describe('the ledger’s part of the home page', () => {
     expect(seen).toMatchObject({ actions: [], note: '上次看过：2026-11-25 02:00Z', blocks: [{ kind: 'feed', groups: [], empty: '那之后还没有谁做过什么。' }, { kind: 'list' }] })
     expect(listIn(seen).map((i) => [i.cell.text, i.cell.link])).toEqual([['看全部活动', { view: 'ledger.activity', params: {}, target: 'main' }]])
 
-    // A scene that only said what it was doing: that sentence is the group's row, and counts.
+    // A scene of one act is that row, in a list without a heading; the section counts it.
     await agentFace.say({ kind: 'doing', about: null, text: '整理首页文案', args: {} }, claudeIn('sess-c'))
     const doing = sectionNamed(shown(await asCodex()).blocks, '自上次以来')
     const doingFeed = doing.blocks[0]
-    expect(doingFeed?.kind === 'feed' && doingFeed.groups.map((g) => [g.title, g.count, g.rows.map((r) => r.text)])).toEqual([['整理首页文案', 1, ['在做：整理首页文案']]])
-    expect(doing.note).toBe('claude-code 做了 1 件事')
+    expect(doingFeed?.kind === 'feed' && doingFeed.groups.map((g) => [g.title, g.count, g.rows.map((r) => [r.act, r.note, r.text])])).toEqual([['', null, [['doing', '整理首页文案', '在做：整理首页文案']]]])
+    expect(doing).toMatchObject({ count: 1, note: null })
 
     writeFileSync(join(root, 'src/stripe.html'), 'stripe, new prices')
     const attention = sectionNamed(shown(await asCodex()).blocks, '需要留意')
