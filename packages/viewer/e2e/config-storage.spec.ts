@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
-import { expect, tempDir, test, write } from './support.ts'
+import { expect, fromMenu, tempDir, test, write } from './support.ts'
 
 const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
 
@@ -57,7 +57,10 @@ test('storage on the configuration page: the provider in use, installing another
     const beta = storage.getByRole('row', { name: /^beta-folder/ })
     await expect(beta).toContainText('来自 acme/beta-folder')
     await expect(beta).not.toContainText('这个库在用')
-    await expect(beta.getByRole('button', { name: '换新版本' })).toBeVisible()
+    // Its rare actions are in its row's menu.
+    await beta.getByRole('button', { name: '更多' }).click()
+    await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['换新版本', '卸掉'])
+    await page.keyboard.press('Escape')
 
     // Another from a repository: refused at first, the refusal saying what a provider is, with the checksum.
     await storage.getByRole('button', { name: '安装别的存储…' }).click()
@@ -74,7 +77,7 @@ test('storage on the configuration page: the provider in use, installing another
     await expect(storage.getByRole('row', { name: /^alpha-folder/ })).toHaveCount(0)
 
     // Removing one asks first, then it is gone from the list.
-    await beta.getByRole('button', { name: '卸掉' }).click()
+    await fromMenu(beta, '卸掉')
     await expect(page.getByRole('dialog')).toContainText('卸掉存储提供者 beta-folder？')
     await page.getByRole('dialog').getByRole('button', { name: '卸掉' }).click()
     await expect(notices).toContainText('已卸下存储提供者 beta-folder v1.0.0。')

@@ -76,15 +76,17 @@ export async function noiseSection(root: string): Promise<Block> {
     key: `${kind}:${value}`,
     cells: { value: { text: value, mono: true }, kind: { text: kind === 'name' ? '名字，任何一层' : '库内路径' } },
     link: null,
-    actions: [formFor('noise remove', '去掉', kind === 'name' ? { name: value, path: false } : { path: value, name: false }, 'danger')],
+    actions: [{ ...formFor('noise remove', '去掉', kind === 'name' ? { name: value, path: false } : { path: value, name: false }, 'danger'), icon: 'trash-2' }],
   })
   const rows = [...n.names.map((v) => row('name', v)), ...n.paths.map((v) => row('path', v))]
   return {
     kind: 'section',
     title: '噪音',
-    note: `库不报告、不进入的名字和路径，${n.declared ? '记在库根上，跟着库走' : '现在是默认的那份'}。`,
+    note: null,
+    about: `库不报告、不进入的名字和路径，${n.declared ? '记在库根上，跟着库走' : '现在是默认的那份'}。`,
     count: rows.length,
+    collapse: 'closed',
     blocks: [{ kind: 'table', columns: [{ key: 'value', label: '名字或路径' }, { key: 'kind', label: '按什么算' }], rows, empty: '没有噪音：库里的一切都会被报告。' }],
-    actions: [{ label: '加一条', tone: 'default', confirm: null, ...formOf(NOISE_COMMANDS.find((x) => x.name === 'noise add') as KernelCommand) }],
+    actions: [{ label: '加一条', tone: 'default', confirm: null, ...formOf(NOISE_COMMANDS.find((x) => x.name === 'noise add') as KernelCommand), as: 'icon', icon: 'plus' }],
   }
 }

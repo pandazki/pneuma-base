@@ -76,6 +76,9 @@ const placeAction = (dir: string | null): Action => ({
     field('source', '出处', { placeholder: '网址、书名或别的出处；不知道就留空' }),
   ],
   call: { face: 'agent', verb: 'put', request: { kind: 'place', from: { kind: 'file', path: '{from}' }, to: '{to}', origin: { kind: 'brought', source: '{source}', by: null } } },
+  as: 'icon',
+  icon: 'plus',
+  key: 'n',
 })
 
 // Where a row carries answers the name keeps its room: the size, or what a look found, gives way first.
@@ -139,7 +142,7 @@ export async function filesPage(params: Record<string, string>, { ctx }: ViewerC
     }
   }
   const table: Block = { kind: 'table', columns: FILE_COLUMNS, rows: tableRows, empty: '这个文件夹是空的。把文件放进这个文件夹，或者让 agent 用 put 放进来。', page: level.paging }
-  return shown('文件', dir ?? '库的根目录', [{ kind: 'actions', actions: [placeAction(dir)] }, table])
+  return shown('文件', dir, [{ kind: 'actions', head: true, actions: [placeAction(dir)] }, table])
 }
 
 /** One page of one folder of `_archive/`, each thing with the path it came from; to take back one, or to purge them all. */
@@ -159,36 +162,34 @@ export async function archivePage(params: Record<string, string>, { ctx }: Viewe
   if (dir !== ARCHIVE_DIR) {
     const parent = posix.dirname(dir)
     const link: Link = { view: 'archive', params: parent === ARCHIVE_DIR ? {} : { dir: parent }, target: 'main' }
-    tableRows.push({ key: '..', cells: { original: { text: '..', mono: true, icon: 'corner-left-up', link }, at: blank, size: blank, modified: blank }, link: null, actions: [] })
+    tableRows.push({ key: '..', cells: { original: { text: '..', mono: true, icon: 'corner-left-up', link }, size: blank, modified: blank }, link: null, actions: [] })
   }
   for (const { entry, kind } of listed) {
     const path = entry.place as LibraryPath
     if (kind === 'folder' || kind === 'other') {
       const link: Link = { view: 'archive', params: { dir: path }, target: 'main' }
-      tableRows.push({ key: path, cells: { original: { text: `${originalPath(path) ?? path}/`, mono: true, icon: 'folder', link }, at: { text: path, mono: true, muted: true }, size: blank, modified: blank }, link, actions: [] })
+      tableRows.push({ key: path, cells: { original: { text: `${originalPath(path) ?? path}/`, mono: true, icon: 'folder', link }, size: blank, modified: blank }, link, actions: [] })
       continue
     }
     tableRows.push({
       key: path,
       cells: {
         original: thingName(originalPath(path) ?? path, kind, kind === 'bundle' ? entriesOf(entry) : null),
-        at: { text: path, mono: true, muted: true },
         size: { text: kind === 'file' ? sizeText(entry.size ?? 0) : '', muted: true },
         modified: modified(entry.modified),
       },
       link: itemLink(path),
-      actions: [{ label: '取回', tone: 'default', confirm: null, inputs: [], call: { face: 'agent', verb: 'archive', request: { kind: 'unarchive', path } } }],
+      actions: [{ label: '取回', tone: 'default', confirm: null, inputs: [], call: { face: 'agent', verb: 'archive', request: { kind: 'unarchive', path } }, as: 'icon', icon: 'archive-restore' }],
     })
   }
   const any = listed.length > 0 || dir !== ARCHIVE_DIR
-  const purge = kernelAction('archive purge', '清空归档区', { tone: 'danger', confirm: '归档区里的东西会全部被删掉，不能撤回。' })
+  const purge = { ...kernelAction('archive purge', '清空归档区', { tone: 'danger', confirm: '归档区里的东西会全部被删掉，不能撤回。' }), icon: 'trash-2' as const }
+  // Where each lies in the archive is its old path under _archive/, so the old path alone is said.
   const columns = [
     { key: 'original', label: '原来的路径' },
-    { key: 'at', label: '在归档区的位置' },
-    { key: 'size', label: '大小' },
-    { key: 'modified', label: '改于' },
+    { key: 'size', label: '大小', optional: true },
+    { key: 'modified', label: '改于', optional: true },
   ]
-  const table: Block = { kind: 'table', columns, rows: tableRows, empty: '归档区是空的。在文件页或一样东西的详情里点「归档」，它会挪到这里，不会被删掉。', ...(level ? { page: level.paging } : {}) }
-  const section: Block = { kind: 'section', title: '归档的东西', note: '归档的东西不删；默认的找和查不带它们。', count: null, blocks: [table], actions: any ? [purge] : [] }
-  return shown('归档区', dir === ARCHIVE_DIR ? null : dir, [section])
+  const table: Block = { kind: 'table', columns, rows: tableRows, empty: '归档区是空的。归档的东西挪到这里，不会被删掉；默认的找和查不带它们。', ...(level ? { page: level.paging } : {}) }
+  return shown('归档区', dir === ARCHIVE_DIR ? null : dir, [...(any ? [{ kind: 'actions' as const, head: true as const, actions: [purge] }] : []), table])
 }

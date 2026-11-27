@@ -3,7 +3,7 @@
 // Failure semantics: a server that stops leaves a visible state that keeps retrying.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, navTitles, png, tempDir, test, write } from './support.ts'
+import { expect, navTitles, openShared, png, tempDir, test, write } from './support.ts'
 
 function bareLibrary(pb: { run(args: string[]): unknown }): string {
   const lib = join(tempDir(), 'lib')
@@ -21,7 +21,7 @@ test('a bare library: four pages, folders, text and image preview, archive and t
   await page.goto(url)
 
   await expect(page.getByRole('heading', { level: 1, name: '首页' })).toBeVisible()
-  expect(await navTitles(page)).toEqual(['首页', '文件', '归档区', 'Agent', '配置'])
+  expect(await navTitles(page)).toEqual(['首页', '文件', 'Agent', '配置'])
   await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '文件' }).click()
   await expect(page.getByRole('heading', { level: 1, name: '文件' })).toBeVisible()
 
@@ -52,7 +52,7 @@ test('a bare library: four pages, folders, text and image preview, archive and t
   await expect(page.getByRole('main').getByRole('row', { name: /hello\.md/ })).toHaveCount(0)
 
   // The archive page lists one level at a time: the folder, then in it the file; taking it back returns it to its path.
-  await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '归档区' }).click()
+  await openShared(page, '文件', '归档区')
   await page.getByRole('main').getByRole('row', { name: /^notes\// }).click()
   const row = page.getByRole('main').getByRole('row', { name: /notes\/hello\.md/ })
   await expect(row).toBeVisible()
@@ -65,9 +65,12 @@ test('a bare library: four pages, folders, text and image preview, archive and t
   // The config page of a bare library.
   await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '配置' }).click()
   // Nothing installed; the ledger this pneuma-base knows is offered.
-  await expect(page.getByRole('region', { name: '插件' }).getByRole('row', { name: /ledger/ })).toContainText('没装')
-  await expect(page.getByRole('region', { name: '插件' }).getByRole('row', { name: /ledger/ }).getByRole('button', { name: '装上' })).toBeVisible()
-  await expect(page.getByRole('region', { name: '授权与技能' })).toContainText('codex --add-dir')
+  // Not installed: its row's one action is the icon that installs it, nothing to take off.
+  const ledger = page.getByRole('region', { name: '插件' }).getByRole('row', { name: /ledger/ })
+  await expect(ledger.getByRole('button', { name: '装上' })).toBeVisible()
+  await expect(ledger.getByRole('button', { name: '更多' })).toHaveCount(0)
+  // What Codex needs is said on demand, beside the section's title.
+  await expect(page.getByRole('region', { name: '授权与技能' }).getByRole('img', { name: /codex --add-dir/ })).toBeVisible()
 })
 
 test('when the server stops, the page says it cannot reach it and keeps what it showed', async ({ page, pb }) => {

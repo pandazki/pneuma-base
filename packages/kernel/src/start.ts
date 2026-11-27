@@ -4,7 +4,7 @@
 // steps by answering a `steps` block, as the ledger does for whether an agent has worked here yet;
 // they join the kernel's in one part, which is gone once every step is done. ARCHITECTURE.md「首页（`home`）」.
 import { formOf, isFailure, type Action, type Block, type Step } from '@pneuma-base/sdk'
-import { connectionFacts, WAY_WORD, whereOf } from './agent-commands.js'
+import { connectionFacts, WAY_WORD } from './agent-commands.js'
 import { endpointOf } from './endpoint.js'
 import { KERNEL_COMMANDS } from './owner-commands.js'
 import { sentenceBlock } from './pairing.js'
@@ -34,8 +34,9 @@ async function connectStep({ ctx, table, env }: ViewerCall): Promise<Step> {
     const way = mine[0]?.way ?? (waysOf(p)[0] as Way)
     const connected = mine.length > 0
     return {
-      cell: { text: p.title, actor: { kind: 'agent' as const, name: p.name }, ...(connected ? { tag: { text: '已接上', tone: 'good' as const } } : {}) },
-      note: connected ? `${WAY_WORD[way]} · 授权 ${mine.map((c) => c.grant).join('、')}` : `${WAY_WORD[way]}：${whereOf(p, way, p.name, env)}`,
+      // Where 接上 writes is the agents page's to say; here, only whether it is done.
+      cell: { text: p.title, actor: { kind: 'agent' as const, name: p.name } },
+      note: connected ? `已接上 · ${WAY_WORD[way]} · 授权 ${mine.map((c) => c.grant).join('、')}` : null,
       actions: connected ? [] : [connectAction(p.name)],
     }
   })
@@ -88,6 +89,6 @@ export function startPart(own: readonly Step[], parts: readonly Block[]): { star
   const steps = [...own, ...given]
   const left = steps.filter((s) => !s.done).length
   if (left === 0) return { start: null, rest }
-  const note = `做完了 ${steps.length - left} 步，还有 ${left} 步。`
+  const note = `${steps.length - left} / ${steps.length}`
   return { start: { kind: 'section', title: '开始', note, count: null, blocks: [{ kind: 'steps', steps }], actions: [] }, rest }
 }

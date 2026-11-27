@@ -73,7 +73,9 @@ describe('the deploy.sites view', () => {
     expect(byPath['sites/s1']?.cells.address?.text).toMatch(/^file:.*\/www\/sites-s1\/$/)
     expect(ownerCall(byPath['sites/s1']?.actions[0])).toEqual({ command: 'deploy off', positional: ['sites/s1'] })
 
-    expect(byPath['sites/s3']?.cells.state?.tag).toEqual({ text: '离线', tone: 'neutral' })
+    // Offline is where a thing rests: the page leaves it unsaid, the text form still says it.
+    expect(byPath['sites/s3']?.cells.state).toEqual({ text: '离线', muted: true, normal: true })
+    expect(byPath['sites/s3']?.cells.address).toMatchObject({ normal: true })
     expect(ownerCall(byPath['sites/s3']?.actions[0])).toEqual({ command: 'deploy on', positional: ['sites/s3'] })
 
     expect(byPath['_archive/sites/s2']?.cells.state?.tag?.text).toBe('已归档')

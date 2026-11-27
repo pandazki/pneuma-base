@@ -67,7 +67,7 @@ export const search: Plugin = {
   statements: [],
   ownerCommands: searchCommands,
   secrets: [{ name: KEY_SECRET, description: 'http 嵌入服务的密钥，作 Bearer 令牌发给它；服务不要密钥就不用设' }],
-  views: [{ id: STATUS_VIEW, title: '查找', icon: 'search', nav: true, filters: [] }],
+  views: [{ id: STATUS_VIEW, title: '查找', icon: 'search', nav: true, filters: [], with: 'config' }],
 
   onPut,
   onArchive,

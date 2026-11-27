@@ -76,7 +76,10 @@ describe('the search.status view', () => {
     lib.write('logo.png', Buffer.from([0x89, 0x00, 0xff]))
     await lib.register('a.md')
     await lib.register('logo.png')
-    expect(fields((await lib.status())?.blocks ?? [])).toMatchObject({ 文件: '2 个，其中文本 1 个', 块: '1', 待读: '没有' })
+    // Nothing left to read is the usual state and goes unsaid.
+    const indexed = fields((await lib.status())?.blocks ?? [])
+    expect(indexed).toMatchObject({ 文件: '2 个，其中文本 1 个', 块: '1' })
+    expect(indexed).not.toHaveProperty('待读')
 
     expect((await lib.owner('search embedder set', { kind: ['hash'] })).outcome).toBe('done')
     await lib.find('退款')
