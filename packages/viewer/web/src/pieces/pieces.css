@@ -307,7 +307,9 @@
     margin-right: 6px;
     color: var(--ink-4);
   }
-  .feed-line:not(:has(.feed-act)) {
+  .feed-line:not(:has(.feed-act)),
+  .feed-meta:has(> .feed-note),
+  .feed-note {
     overflow: visible;
     overflow-wrap: anywhere;
     white-space: normal;

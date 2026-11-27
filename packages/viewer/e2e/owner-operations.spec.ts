@@ -108,7 +108,7 @@ test('every owner operation from the page leaves a trace an agent sees in check'
   // The activity page lists every one of them.
   await nav.getByRole('button', { name: '活动' }).click()
   for (const command of ['ledger held restore', 'plugin add', 'plugin remove', 'grant issue', 'grant revoke', 'skill install']) {
-    await expect(main.getByRole('listitem').filter({ hasText: `主人面的操作 ${command}` }).first().getByRole('img', { name: '主人' })).toBeVisible()
+    await expect(main.getByRole('listitem').filter({ hasText: command }).filter({ has: page.getByRole('img', { name: '执行' }) }).first().getByRole('img', { name: '主人' })).toBeVisible()
   }
   await expect(main.getByRole('listitem').filter({ hasText: '认了 notes.md 的直接改动' }).getByRole('img', { name: '主人' })).toBeVisible()
 

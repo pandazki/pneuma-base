@@ -42,8 +42,10 @@ test('the app opens on the home page: what waits on the owner, what agents did s
   const since = main.getByRole('region', { name: '自上次以来' })
   await expect(since.getByRole('button', { name: DOING })).toBeVisible()
   await expect(since.getByRole('button', { name: '把支付服务接进电子书小店' })).toBeVisible()
-  // Who is the row's mark; its name is in the mark's tooltip, not repeated in the row.
-  await expect(since.getByRole('listitem').filter({ hasText: '放入 payments/integration-notes.md' }).getByRole('img', { name: /^codex/ })).toBeVisible()
+  // Who is the row's mark; its name is in the mark's tooltip, not repeated in the row. The act is an icon, the thing its name, the whole sentence the tooltip.
+  const put = since.getByRole('listitem').filter({ hasText: 'integration-notes.md' }).filter({ has: page.getByRole('img', { name: '放入' }) })
+  await expect(put.getByRole('img', { name: /^codex/ })).toBeVisible()
+  await expect(put.locator('.feed-line')).toHaveAttribute('title', /^放入 payments\/integration-notes\.md/)
   // The heading says what the scene was doing; the same sentence is not a row under it as well.
   await expect(since.getByRole('listitem').filter({ hasText: `在做：${DOING}` })).toHaveCount(0)
 
@@ -100,14 +102,14 @@ test('都看过了 empties 自上次以来, says when the owner last looked and 
   await since.getByRole('button', { name: '都看过了' }).click()
   await expect(since).toContainText('上次看过：刚刚')
   await expect(since).toContainText('那之后还没有谁做过什么。')
-  await expect(since.getByRole('listitem').filter({ hasText: '放入' })).toHaveCount(0)
+  await expect(since.getByRole('listitem').filter({ has: page.getByRole('img', { name: '放入' }) })).toHaveCount(0)
   await expect(since.getByRole('button', { name: '都看过了' })).toHaveCount(0)
   await since.getByRole('button', { name: '看全部活动' }).click()
   await expect(main.getByRole('heading', { level: 1, name: '活动' })).toBeVisible()
   await page.goBack()
 
   pb.run(['@claude', 'put', 'later.md', '--to', 'notes/later.md', '--made'], { cwd: dir, env: { PNEUMA_BASE_SESSION: 'sess-c' } })
-  await expect(since.getByRole('listitem').filter({ hasText: '放入 notes/later.md' })).toBeVisible()
+  await expect(since.getByRole('listitem').filter({ hasText: 'later.md' })).toBeVisible()
 })
 
 test('the library page: choosing a folder in the tree shows what is in it, and the address keeps it', async ({ page, relayUrl: url }) => {

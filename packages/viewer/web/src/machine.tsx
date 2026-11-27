@@ -52,7 +52,7 @@ function useMachine(): Machine | null {
 
 function Row({ icon: Icon, name, note, about, children }: { icon: LucideIcon; name: string; note?: string | null; about?: string; children: ReactNode }) {
   return (
-    <li data-acts="">
+    <li data-acts="" data-lead="icon">
       <div className="min-w-0 flex-1">
         <div className="list-cell">
           <span className="cell">

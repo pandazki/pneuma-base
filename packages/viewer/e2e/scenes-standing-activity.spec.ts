@@ -33,8 +33,9 @@ test('scenes, standing and activity: what happened and what needs attention', as
   // The page is the scene, so what happened in it needs no heading of its own.
   const happened = panel.locator('.feed')
   await expect(happened).toContainText(DECIDED)
-  await expect(happened.getByRole('listitem').filter({ hasText: '放入' })).toHaveCount(6)
-  await happened.getByRole('listitem').filter({ hasText: '放入 payments/comparison.md' }).getByRole('link').click()
+  const puts = happened.getByRole('listitem').filter({ has: page.getByRole('img', { name: '放入' }) })
+  await expect(puts).toHaveCount(6)
+  await puts.filter({ hasText: 'comparison.md' }).getByRole('link').click()
   await expect(title).toHaveText('comparison.md')
   await panel.getByRole('button', { name: '返回' }).click()
   await expect(title).toHaveText(DOING)
