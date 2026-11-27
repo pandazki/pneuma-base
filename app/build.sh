@@ -62,7 +62,7 @@ for program in pneuma-base-core pneuma-base-contract; do [ -x "$kbin/$program" ]
 [ "$(cat "$kbin/platform")" = darwin-arm64 ] || { echo "storage's programs are built for $(cat "$kbin/platform"); the app is for darwin-arm64: build it on an Apple-silicon Mac" >&2; exit 1; }
 cp Resources/shell.js Resources/parent-watch.mjs "$contents/Resources/"
 sed -e "s|@VERSION@|$version|" Resources/Info.plist > "$contents/Info.plist"
-swift Tools/icon.swift "$contents/Resources/AppIcon.icns"
+sh Icon/compile.sh "$contents/Resources"
 # A node signed by its maker keeps that signature; one that is not gets an ad hoc one, as the app does.
 codesign --verify "$contents/MacOS/node" 2>/dev/null || codesign --force --sign - --timestamp=none "$contents/MacOS/node"
 codesign --force --sign - --timestamp=none "$app"

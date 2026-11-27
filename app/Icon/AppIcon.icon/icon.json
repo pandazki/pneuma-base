@@ -1,0 +1,94 @@
+{
+  "fill-specializations": [
+    {
+      "value": {
+        "linear-gradient": [
+          "srgb:0.211765,0.219608,0.231373,1",
+          "srgb:0.101961,0.105882,0.113725,1"
+        ]
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "linear-gradient": [
+          "srgb:0.090196,0.098039,0.109804,1",
+          "srgb:0.035294,0.039216,0.047059,1"
+        ]
+      }
+    },
+    {
+      "appearance": "tinted",
+      "value": {
+        "linear-gradient": [
+          "srgb:0.219608,0.219608,0.219608,1",
+          "srgb:0.090196,0.090196,0.090196,1"
+        ]
+      }
+    }
+  ],
+  "groups": [
+    {
+      "name": "Ribbon",
+      "lighting": "individual",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0
+      },
+      "specular": true,
+      "translucency": {
+        "enabled": false,
+        "value": 0.14
+      },
+      "layers": [
+        {
+          "name": "Return",
+          "glass": true,
+          "fill-specializations": [
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "srgb:0.490196,0.490196,0.490196,1"
+              }
+            }
+          ],
+          "image-name-specializations": [
+            {
+              "value": "Return.svg"
+            },
+            {
+              "appearance": "dark",
+              "value": "ReturnNight.svg"
+            }
+          ]
+        },
+        {
+          "name": "Fold",
+          "glass": true,
+          "fill-specializations": [
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "srgb:0.72549,0.72549,0.72549,1"
+              }
+            }
+          ],
+          "image-name-specializations": [
+            {
+              "value": "Fold.svg"
+            },
+            {
+              "appearance": "dark",
+              "value": "FoldNight.svg"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}
