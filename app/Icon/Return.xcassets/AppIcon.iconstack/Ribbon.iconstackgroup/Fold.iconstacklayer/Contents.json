@@ -21,7 +21,7 @@
         "icon-studio-localization": "unspecified",
         "value": {
           "type": "image-set",
-          "name": "Fold",
+          "name": "FoldNight",
           "matching-style": "fully-qualified-name"
         }
       },

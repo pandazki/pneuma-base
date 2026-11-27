@@ -1,19 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
     <linearGradient id="edge" x1="260" y1="917" x2="990" y2="338" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#d6ed94"/>
-      <stop offset=".35" stop-color="#f2f998"/>
-      <stop offset=".77" stop-color="#ffffaf"/>
-      <stop offset="1" stop-color="#e6fa90"/>
+      <stop offset="0" stop-color="#808285"/>
+      <stop offset=".35" stop-color="#B4B7BA"/>
+      <stop offset=".77" stop-color="#C5C9CC"/>
+      <stop offset="1" stop-color="#82868A"/>
     </linearGradient>
-    <linearGradient id="face" x1="568" y1="412" x2="880" y2="708" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#c3f0d3"/>
-      <stop offset=".28" stop-color="#9fd8ab"/>
-      <stop offset=".62" stop-color="#cbec96"/>
-      <stop offset="1" stop-color="#e8f67e"/>
+    <linearGradient id="face" x1="510" y1="378" x2="838" y2="694" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6B6E71"/>
+      <stop offset=".21" stop-color="#A6AAAD"/>
+      <stop offset=".39" stop-color="#B9BDC0"/>
+      <stop offset=".69" stop-color="#8A8D90"/>
+      <stop offset="1" stop-color="#737578"/>
     </linearGradient>
   </defs>
-  <g transform="translate(-13 -6) scale(.845)">
+  <g opacity=".93" transform="translate(-13 -6) scale(.845)">
     <path fill="url(#edge)" d="
       M 123,910 C 154,855 182,820 250,819 C 315,818 366,831 418,797
       C 449,692 454,560 519,440 C 588,313 693,251 814,262

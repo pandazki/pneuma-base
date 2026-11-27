@@ -21,7 +21,7 @@
         "icon-studio-localization": "unspecified",
         "value": {
           "type": "image-set",
-          "name": "Return",
+          "name": "ReturnNight",
           "matching-style": "fully-qualified-name"
         }
       },

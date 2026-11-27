@@ -1,19 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="glass" x1="854" y1="359" x2="700" y2="1018" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#448f7f"/>
-      <stop offset=".30" stop-color="#56ac98"/>
-      <stop offset=".72" stop-color="#76ceb9"/>
-      <stop offset="1" stop-color="#b1e6bd"/>
+    <linearGradient id="glass" x1="865" y1="362" x2="707" y2="1002" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#44474A"/>
+      <stop offset=".30" stop-color="#55585B"/>
+      <stop offset=".74" stop-color="#818489"/>
+      <stop offset="1" stop-color="#94979A"/>
     </linearGradient>
     <linearGradient id="foot" x1="209" y1="839" x2="828" y2="1068" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#b8e7bb"/>
-      <stop offset=".40" stop-color="#68c295"/>
-      <stop offset=".85" stop-color="#489f8e"/>
-      <stop offset="1" stop-color="#8edac2"/>
+      <stop offset="0" stop-color="#919497"/>
+      <stop offset=".40" stop-color="#828589"/>
+      <stop offset=".85" stop-color="#575A5C"/>
+      <stop offset="1" stop-color="#75787B"/>
     </linearGradient>
   </defs>
-  <g transform="translate(-13 -6) scale(.845)">
+  <g opacity=".89" transform="translate(-13 -6) scale(.845)">
     <path fill="url(#glass)" fill-rule="evenodd" d="
       M 123,910 C 154,855 182,820 250,819
       C 315,818 366,831 418,797 C 449,692 454,560 519,440
