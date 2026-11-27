@@ -8,7 +8,7 @@
 @import './pieces/pieces.css' layer(components);
 
 /*
- * The visual tokens, once (ARCHITECTURE section 6). Ink and washes are black or white at an opacity,
+ * The visual tokens, once (ARCHITECTURE.md「界面的样子」). Ink and washes are black or white at an opacity,
  * so they read the same on every surface; edges are rings drawn with box-shadow, never borders,
  * except the 1px line around the shell's two panels. Light follows the system's light scheme, dark
  * its dark scheme; the frame kit gets these same names (the sdk's FRAME_TOKENS).

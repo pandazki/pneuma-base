@@ -9,7 +9,7 @@ const BIN_WITH_TEST_PLUGINS = fileURLToPath(new URL('./fixtures/bin-with-test-pl
 
 /**
  * Every fact a plugin's records hold, as written: every .jsonl file under its facts/, in the dated
- * layout storage writes (tmp/run-7 STORAGE.md) and the layout by scene it still reads.
+ * layout storage writes (STORAGE.md「放记录的地方：操作」) and the layout by scene it still reads.
  */
 export function factsOf(lib: string, plugin = 'ledger'): any[] {
   const dir = join(lib, '.pneuma-base', plugin, 'facts')

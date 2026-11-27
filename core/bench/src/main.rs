@@ -1,4 +1,4 @@
-//! Times the real `pneuma-base-core` binary against the storage targets (architecture 9.3), one
+//! Times the real `pneuma-base-core` binary against the storage targets (ARCHITECTURE.md「性能目标和基准」), one
 //! process per operation and through `serve`. Builds its fixtures in its own temporary folder;
 //! with `--library <path>` it also times the operations that only read on a real library, and
 //! changes nothing there. Always exits 0: it reports, it does not gate.

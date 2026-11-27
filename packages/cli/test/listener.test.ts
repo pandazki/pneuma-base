@@ -1,4 +1,4 @@
-// Whoever stays listens, whoever runs once compares (tmp/run-7 step 3b): `check` says the same about
+// Whoever stays listens, whoever runs once compares (ARCHITECTURE.md「变化由谁来学」): `check` says the same about
 // the same outside changes whether a long-lived process listens to the library or nobody does. With a
 // listener, `check` learns what changed from the log it keeps; without one, storage cannot say within
 // the command's budget and `check` compares the state of what it looks after.

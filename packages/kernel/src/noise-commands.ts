@@ -1,5 +1,5 @@
 // The owner's side of noise: the names and paths declared at the library's root that storage never
-// reports or enters (tmp/run-7 architecture.md section 4, 「噪音」). Answering 「不用管」 to a directory
+// reports or enters (ARCHITECTURE.md「噪音」). Answering 「不用管」 to a directory
 // nobody looked into adds it here.
 import { command, done, refused, type KernelCommand } from './kernel-command.js'
 import { parseLibraryPath, regionOf } from './paths.js'

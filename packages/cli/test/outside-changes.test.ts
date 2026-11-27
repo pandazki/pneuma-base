@@ -136,7 +136,7 @@ describe('staleness (C5)', () => {
     expect(section(sections, '来源不在')).toMatchObject([{ path: 'made/a.md', sources: [{ path: 'sources/s.md' }] }])
     expect(ok(agent(['inspect', 'made/a.md'])).stdout).toMatch(/sources\/s\.md\s+不在 ← 来源不在/)
 
-    // tmp/run-7: a file whose row has a fingerprint, written back as it was, is taken as the new
+    // ARCHITECTURE.md「没经过库的改动」: a file whose row has a fingerprint, written back as it was, is taken as the new
     // baseline silently: not changed directly, and no mark comes from it.
     byHand('sources/s.md', ORIGINAL)
     sections = check()

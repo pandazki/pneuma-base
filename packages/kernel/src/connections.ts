@@ -1,6 +1,6 @@
 // What `agent connect` wrote into other programs' folders and files, recorded on this machine under
 // `$PNEUMA_BASE_HOME/connections/<grant name>/`, and how to tell whether it is still there and take it
-// out again. Machine state, not the library's. ARCHITECTURE.md section 6.
+// out again. Machine state, not the library's. ARCHITECTURE.md「接上一个 agent」.
 import { createHash, randomUUID } from 'node:crypto'
 import { chmod, copyFile, mkdir, readdir, readFile, realpath, rename, rm, rmdir, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'

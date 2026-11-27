@@ -50,7 +50,7 @@ describe('a plugin that throws in every hook (C10)', () => {
       expect(r.code, args.join(' ')).toBe(3)
       expect(thrown(r.json().problems), args.join(' ')).toEqual(expected)
     }
-    // Hits come only from plugins' indexes (tmp/run-7); this library's one plugin threw, so there are none.
+    // Hits come only from plugins' indexes (ARCHITECTURE.md「找、看、说、查、归档」); this library's one plugin threw, so there are none.
     expect(agent(['find', 'a']).json().hits).toEqual([])
     expect(agent(['say', 'boom', 'x']).json()).toMatchObject({ outcome: 'not-heard', reason: 'plugin-failed' })
     const start = agent(['start', 'a'])

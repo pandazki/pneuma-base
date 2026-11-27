@@ -1,4 +1,4 @@
-// Catching up (ARCHITECTURE.md section 5, 「补上」): a plugin learns what is registered from the puts it
+// Catching up (ARCHITECTURE.md「补上」): a plugin learns what is registered from the puts it
 // hears, so one added to a library in use learns what was registered before it from the register. The
 // register is the plugin's that keeps it, asked through the kernel, since plugins do not know each
 // other. Catching up is a named whole pass of the plugin added: it says how much, reports each page,

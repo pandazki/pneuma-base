@@ -1,8 +1,8 @@
 // Requests: an agent asks the owner to run one of the owner's commands, saying why, and the owner
 // approves or declines with one act. They are the kernel's, so they work with no plugin, and travel with
 // the folder and with sync: facts of the kernel's record place `requests`, only appended, which several
-// writers share without conflict; each request's state is a row derived from them. ARCHITECTURE.md
-// section 4, 「请」.
+// writers share without conflict; each request's state is a row derived from them.
+// ARCHITECTURE.md「请主人做」.
 import { randomBytes } from 'node:crypto'
 import type { OwnerCommandInfo } from './owner.js'
 import { checkArgs } from './params.js'

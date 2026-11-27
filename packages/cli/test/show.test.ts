@@ -40,7 +40,7 @@ describe('pneuma-base show', () => {
     expect(list.views.find((v: { id: string }) => v.id === 'config')).toMatchObject({ by: 'kernel', ownerOnly: true })
   })
 
-  // tmp/run-7: the archive page lists one level at a time; a folder row opens the next level.
+  // ARCHITECTURE.md「归档区（`archive`）」: the archive page lists one level at a time; a folder row opens the next level.
   it('prints a page in words, every button as the command that does the same, marked when only the owner may and with the question it asks', () => {
     const r = owner(['show', 'archive'])
     expect(r.code, r.stderr).toBe(0)

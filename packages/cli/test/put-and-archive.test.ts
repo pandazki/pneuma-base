@@ -102,7 +102,7 @@ describe('archive through the command line, no plugin (C15)', () => {
     expect(existsSync(join(lib, 'drafts/old-plan.md'))).toBe(false)
   })
 
-  // tmp/run-7: hits come only from plugins' indexes; the switch is for the plugins that answer.
+  // ARCHITECTURE.md「找、看、说、查、归档」: hits come only from plugins' indexes; the switch is for the plugins that answer.
   it('find gives nothing with no plugin, with the switch or without', () => {
     const paths = (args: string[]) => agent(['find', ...args, '--json']).json().hits.map((h: { path: string }) => h.path)
     expect(paths(['plan'])).toEqual([])

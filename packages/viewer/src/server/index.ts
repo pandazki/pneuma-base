@@ -1,5 +1,5 @@
 // The management UI's server and the local endpoint agents talk to: Node's http, on the loopback
-// addresses only. ARCHITECTURE.md section 6.
+// addresses only. ARCHITECTURE.md「界面的服务」.
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { readFile, realpath, stat } from 'node:fs/promises'

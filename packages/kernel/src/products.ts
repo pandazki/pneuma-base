@@ -1,7 +1,7 @@
 // Everything known about each agent product, one row per product: how its sessions are recognised and
 // its conversations found, how to tell it is on this machine, where it loads skills from, and how an
 // MCP server is registered with it. A fact not verified against the product's documentation or its own
-// behaviour is left out, and the product simply lacks that way of connecting. ARCHITECTURE.md section 6.
+// behaviour is left out, and the product simply lacks that way of connecting. ARCHITECTURE.md「接上一个 agent」.
 import { readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'

@@ -111,7 +111,7 @@ const pluginBoundary = {
   },
 }
 
-// The storage door, over every package (tmp/run-7 architecture.md, sections 2 and 7): the records say
+// The storage door, over every package (ARCHITECTURE.md「六层」 and 「不变式」): the records say
 // what is in the library, and nothing above storage reads or writes the library's folder or its record
 // area but through the kernel's one door, packages/kernel/src/storage.ts, which a plugin reaches as
 // `ctx.tools`. Checked in the runtime sources of every package: packages/*/src, plugins/*/src and the

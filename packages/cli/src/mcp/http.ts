@@ -2,7 +2,7 @@
 // management UI's server. Every message goes to the one protocol implementation, `serve`, through an
 // in-memory transport: a 2026-07-28 request is a `serve` of its own, a legacy connection one
 // long-lived `serve`. The server has already checked the origin, the method, the content type, the
-// size and the grant's name. ARCHITECTURE.md section 6.
+// size and the grant's name. ARCHITECTURE.md「MCP over HTTP」.
 import { randomUUID } from 'node:crypto'
 import type { IncomingHttpHeaders, OutgoingHttpHeaders, ServerResponse } from 'node:http'
 import { hostname } from 'node:os'

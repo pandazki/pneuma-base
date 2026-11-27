@@ -1,6 +1,6 @@
 // A `custom` block: a plugin's own page in a sandboxed frame. The frame gets the block's data, the
 // colour scheme, the design tokens and its actions' names; it may ask for three things only, and an
-// action it asks for runs exactly as a button's would. ARCHITECTURE section 6; the frame's side is
+// action it asks for runs exactly as a button's would. ARCHITECTURE.md「插件自己画的页」; the frame's side is
 // typed in @pneuma-base/sdk/frame.
 import type { Action, Block, Link } from '@pneuma-base/kernel'
 import { FRAME_TOKENS } from '@pneuma-base/sdk/frame'

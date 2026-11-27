@@ -1,4 +1,4 @@
-// Times registering a large directory already in a library, both ways architecture.md section 5 gives:
+// Times registering a large directory already in a library, both ways ARCHITECTURE.md「每个动作在每种位置上做什么」 gives:
 // as one thing (`put <dir>`: a glance and the marker), and "everything inside" (`ledger register <dir>
 // --inside`: an overview of each directory, a level at a time). Each runs on its own copy-on-write clone
 // of the library (APFS `cp -c`), so the library given is never written. With --lock, every file under the

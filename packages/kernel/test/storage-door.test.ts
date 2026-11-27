@@ -1,4 +1,4 @@
-// tmp/run-7: nothing above storage reads or writes the library's folder and record area but through the
+// ARCHITECTURE.md「不变式」: nothing above storage reads or writes the library's folder and record area but through the
 // kernel's door. The lint rule goes red on deliberate violations in the runtime sources of every
 // package, the examples under plugins/ and the scaffold's templates included, and leaves alone the files
 // eslint.config.js lists as touching only what is no library's, a package reading its own files, tests

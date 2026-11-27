@@ -1,6 +1,6 @@
 // The agent face as its faces offer it: each verb's arguments as data, and what it runs and answers.
 // The command line reads a verb's words by this table, the MCP server makes a tool's input schema
-// from it, and both call the same `run`, so the two faces answer the same. ARCHITECTURE.md section 4.
+// from it, and both call the same `run`, so the two faces answer the same. ARCHITECTURE.md「一张命令表生成各个面」.
 import { existsSync, statSync } from 'node:fs'
 import { isAbsolute, resolve } from 'node:path'
 import {

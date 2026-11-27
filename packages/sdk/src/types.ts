@@ -1,4 +1,4 @@
-// The plugin contract's shapes, which a plugin and the kernel exchange. ARCHITECTURE.md sections 4 and 5.
+// The plugin contract's shapes, which a plugin and the kernel exchange. ARCHITECTURE.md「动词」 and 「插件机制」.
 import type { IconName } from './icons.js'
 import type { Description, PluginStorage, StorageFailure, Written } from './storage.js'
 

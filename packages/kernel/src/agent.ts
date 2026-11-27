@@ -168,7 +168,7 @@ async function factsOf(store: Storage, at: At, fingerprint: boolean): Promise<Fi
 }
 
 /**
- * What a target names, by the kind of place (tmp/run-7 architecture.md section 5, 看): a thing, the main
+ * What a target names, by the kind of place (ARCHITECTURE.md「找、看、说、查、归档」, 看): a thing, the main
  * one before its archived copy (`_archive/…` names the archived copy); else a directory, open (its first
  * level) or closed (a probe within its budget); else noise, by which name or path.
  */

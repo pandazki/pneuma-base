@@ -1,4 +1,4 @@
-// The owner's side of pairing: list the pairings, allow one, decline one. ARCHITECTURE.md section 6.
+// The owner's side of pairing: list the pairings, allow one, decline one. ARCHITECTURE.md「配对」.
 // `ownerFace` is read only inside `run`, so this module and the owner face may import each other.
 import { titleOf } from './agent-commands.js'
 import { command, done, refused, type KernelCommand, type Outcome } from './kernel-command.js'

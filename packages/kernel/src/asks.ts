@@ -1,5 +1,5 @@
 // What only the owner can settle: each plugin's `onAsks`, read-only, gathered for check and for the
-// home page. ARCHITECTURE.md section 6.
+// home page. ARCHITECTURE.md「插件机制」.
 import { actionFault, askFault, type Callable } from './blocks.js'
 import { eachPlugin } from './pipeline.js'
 import { readRequests } from './requests.js'

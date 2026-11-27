@@ -1,4 +1,4 @@
-// Things nobody registered, asked about by place (tmp/run-7 architecture.md section 7). The loose files
+// Things nobody registered, asked about by place (ARCHITECTURE.md「问主人」). The loose files
 // of an open directory: register them all as brought in by the owner, or leave them as they are and
 // stop asking. A closed directory: register it as one thing, register every file in it (a named act
 // over all of it, which says how much first, shows its progress and stops cleanly when interrupted), or

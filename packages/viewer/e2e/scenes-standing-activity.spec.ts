@@ -1,6 +1,6 @@
 // C4: the scenes page lists each session and opens its page; the standing page lists what needs
 // looking at, by kind, and a file added, removed or moved outside the UI shows up there within five
-// seconds without a reload (a file edited in place, on the page's next fetch: tmp/run-7, the poll looks
+// seconds without a reload (a file edited in place, on the page's next fetch: ARCHITECTURE.md「界面的服务」, the poll looks
 // at the facts and the open directories only); the activity page lists recent facts, newest first.
 import { renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'

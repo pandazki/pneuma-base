@@ -1,6 +1,6 @@
 // What a plugin author gets from requests: an owner-only command of the plugin can be asked for with
 // no work, the approved run reaches observe as the command's own event carrying the request, and a
-// command marked `askable: false` is refused. ARCHITECTURE.md section 4, 「请」.
+// command marked `askable: false` is refused. ARCHITECTURE.md「请主人做」.
 import { describe, expect, it } from 'vitest'
 import { agentFace, ownerFace, type Event, type GrantId, type OwnerCall } from '../src/index.js'
 import { fixture, plugin } from './support.js'

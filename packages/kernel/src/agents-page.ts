@@ -2,7 +2,7 @@
 // how it is connected, what its grant reaches, what the plugins know of it, and 断开; agents connecting
 // themselves, by the sentence and by pairing; the products found on this machine and not connected,
 // each with 接上; and what a connected agent may do, from the same command table and by the same rule
-// as the MCP face. ARCHITECTURE.md section 6.
+// as the MCP face. ARCHITECTURE.md「Agent 页（`agents`）」.
 import { formOf, type Action, type Block, type FixedValue, type PluginProblem, type Tag, type ViewAnswer } from '@pneuma-base/sdk'
 import { connectionFacts, NOTHING_WRITTEN, titleOf, WAY_WORD, whereOf } from './agent-commands.js'
 import { endpointOf } from './endpoint.js'

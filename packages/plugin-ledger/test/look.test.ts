@@ -1,4 +1,4 @@
-// How the ledger looks at the library, by position (tmp/run-7 architecture.md section 5): a registered
+// How the ledger looks at the library, by position (ARCHITECTURE.md「每个动作在每种位置上做什么」): a registered
 // file, a registered directory-thing, an open directory, a directory nobody looked into, and noise; for
 // check, which compares state tokens, and for check --deep, the named whole pass that reads content.
 // Registering reads no content: a spy on the plugin's storage counts every content read.

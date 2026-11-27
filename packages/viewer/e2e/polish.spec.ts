@@ -88,7 +88,7 @@ test('3: an agent’s request for the act a plugin asks about is the one row; de
   await expect(page.getByRole('main').getByRole('region', { name: '等你决定' })).toContainText('没有要你决定的事。')
 })
 
-// tmp/run-7: asked per place. Each directory nothing registered is in is one question with three
+// ARCHITECTURE.md「问主人」: asked per place. Each directory nothing registered is in is one question with three
 // answers, and is never opened until one is chosen.
 test('4: a folder that had files before it became a library asks about each directory; registering one’s files makes them the owner’s', async ({ page, pb }) => {
   const lib = join(tempDir(), 'lib')

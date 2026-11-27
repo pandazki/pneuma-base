@@ -1,4 +1,4 @@
-// Storage providers on this machine (tmp/run-7 architecture.md, 「存储的实现是可以安装的」; PROVIDERS.md):
+// Storage providers on this machine (ARCHITECTURE.md「存储」; PROVIDERS.md):
 // the one the installation carries is there with no step; installing one from a repository's releases
 // is refused, leaving nothing installed, when its checksum is wrong, its contract version does not fit,
 // the owner has not accepted the trust statement, or the download breaks off; init chooses the provider

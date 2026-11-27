@@ -484,7 +484,7 @@ describe('the cognition section comes and goes with the plugin (C8)', () => {
   it('beside the ledger, a path stands at the best rank either gave it, so the most relevant file is not pushed down by the ledger’s order', async () => {
     await newLibrary('ledger+search')
     const filler = '天气、交通、工作安排、读书计划、周末的打算、房租、快递、体检、旅行、搬家。'
-    // The ledger matches its records, not content (tmp/run-7): each put's note holds some of the words
+    // The ledger matches its records, not content (ARCHITECTURE.md「找和看」): each put's note holds some of the words
     // asked for. alpha and beta are in no file, so search ranks by 咖啡 alone.
     const noted = async (path: string, content: string, note: string) => ok(await agent(['put', '-', '--to', path, '--made', '--note', note], { input: content }))
     await noted('notes/y.md', `一份杂记，提到一次咖啡。${filler}\n`, '咖啡 alpha beta')

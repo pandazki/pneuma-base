@@ -1,5 +1,5 @@
 // What the ledger answers: data for --json and short Chinese text for agents. Pure, except that
-// text reads the home directory to show it as ~ (the kernel's shortDir). ledger-design.md section 7.
+// text reads the home directory to show it as ~ (the kernel's shortDir). ARCHITECTURE.md「找和看」.
 import { regionOf, shortDir, type Fingerprint, type Instant, type LibraryPath, type PluginSection } from '@pneuma-base/kernel'
 import { ADHOC_SCENE, type Fact, type FactActor, type How, type ItemId, type SceneId } from './facts.js'
 import type { Conversation } from './conversation.js'

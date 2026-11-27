@@ -1,6 +1,6 @@
 // The letters of an agent's mark. Colour alone cannot tell two agents apart, so the letters must:
 // two from the name, the same on every page, and where two names on screen would still share them,
-// each takes the first later letter that sets it apart. ARCHITECTURE.md section 7.
+// each takes the first later letter that sets it apart. ARCHITECTURE.md「网页渲染块的规矩」.
 import { useLayoutEffect, useSyncExternalStore } from 'react'
 
 /** The words of a name: runs of letters and digits; a lower-case letter followed by a capital starts a new word. */

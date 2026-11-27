@@ -1,6 +1,6 @@
 // A page of the management UI as the command line prints it: the same typed blocks in words, so an
 // agent reading it knows what the person sees, and every button written as the command line that
-// does the same thing. ARCHITECTURE.md section 6.
+// does the same thing. ARCHITECTURE.md「`show` 的文字」.
 import { commandLine, quote, usageOf, type Action, type ActorMark, type Block, type Call, type Cell, type FeedRow, type FlagParam, type Link, type OwnerCommandInfo, type Paging, type PositionalParam, type TreeNode, type ViewDecl, type ViewList, type ViewRequest, type ViewResult } from '@pneuma-base/kernel'
 
 type Shown = Extract<ViewResult, { outcome: 'shown' }>

@@ -29,7 +29,7 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
-      # pnpm build compiles storage's program, core/ (tmp/run-7), which the kernel starts.
+      # pnpm build compiles storage's program, core/ (ARCHITECTURE.md「包和依赖方向」), which the kernel starts.
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -50,7 +50,7 @@ jobs:
         with:
           node-version: '26'
           cache: pnpm
-      # pnpm build compiles storage's program, core/ (tmp/run-7), which the kernel starts.
+      # pnpm build compiles storage's program, core/ (ARCHITECTURE.md「包和依赖方向」), which the kernel starts.
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -75,7 +75,7 @@ jobs:
         with:
           node-version: '22.18'
           cache: pnpm
-      # pnpm build compiles storage's program, core/ (tmp/run-7), which the kernel starts.
+      # pnpm build compiles storage's program, core/ (ARCHITECTURE.md「包和依赖方向」), which the kernel starts.
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

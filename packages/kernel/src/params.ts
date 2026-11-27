@@ -1,5 +1,5 @@
 // A call's arguments checked against its command's declared `params`, at the owner face's one
-// entry, so a plugin's `run` never sees a call that does not fit. ARCHITECTURE section 6.
+// entry, so a plugin's `run` never sees a call that does not fit. ARCHITECTURE.md「命令表」.
 import { usageOf, type FlagParam, type OwnerArgs, type OwnerParams, type OwnerValues, type PositionalParam } from '@pneuma-base/sdk'
 
 /** A value as given: trimmed, and empty counts as not given, so a form's empty field means the same as leaving it out. */

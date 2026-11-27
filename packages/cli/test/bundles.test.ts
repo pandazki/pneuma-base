@@ -54,7 +54,7 @@ describe('placing an outside directory', () => {
     expect(existsSync(join(lib, 'sites/b/index.html'))).toBe(true)
   })
 
-  // tmp/run-7: a directory placed onto a bundle is not compared by content; with no plugin to keep the
+  // ARCHITECTURE.md「放」: a directory placed onto a bundle is not compared by content; with no plugin to keep the
   // old tree it is refused even when the content is the same.
   it('onto a bundle with the same content and no plugin to keep the old: refused, the tree untouched', () => {
     agent(['put', site(), '--to', 'sites/a', '--made'])
@@ -128,7 +128,7 @@ describe('a bundle under the other verbs', () => {
     expect(agent(['put', site(), '--to', 'sites/a', '--made']).code).toBe(0)
   })
 
-  // tmp/run-7: what find gives comes from the plugins' indexes; the kernel lists nothing by name.
+  // ARCHITECTURE.md「找、看、说、查、归档」: what find gives comes from the plugins' indexes; the kernel lists nothing by name.
   it('find gives nothing with no plugin, the bundle and the files inside alike', () => {
     expect(agent(['find', 'a']).json().hits).toEqual([])
     expect(agent(['find', 'logo']).json().hits).toEqual([])

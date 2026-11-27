@@ -1,6 +1,6 @@
 // Requests: an agent asks for what only the owner may do, with its reason and the exact command; the
 // owner approves or declines with one act; the agent sees the outcome at its next check; the audit
-// names who asked and who decided. ARCHITECTURE.md section 4, 「请」.
+// names who asked and who decided. ARCHITECTURE.md「请主人做」.
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'

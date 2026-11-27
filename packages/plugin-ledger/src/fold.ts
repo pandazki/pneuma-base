@@ -1,6 +1,6 @@
 // The fold: facts into rows, a batch at a time, each fact taken after the ones before it (by time, then
 // id). It reads only the rows the batch names (prefetched in a few asks) and the few that a fact reaches
-// through them: a bundle's absorbed things, a source's dependents. ledger-design.md section 3, on rows.
+// through them: a bundle's absorbed things, a source's dependents. ARCHITECTURE.md「存放和行」.
 import { originalPath, type LibraryPath, type Place } from '@pneuma-base/kernel'
 import { actorKey, inOrder, isTold, mayBeNews, newsKey, requestOf, turned, type Basis, type Fact, type FactActor, type ItemId, type LedgerOrigin } from './facts.js'
 import {

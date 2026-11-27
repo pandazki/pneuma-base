@@ -1,6 +1,6 @@
 // Held copies: content a new version replaced, kept in the ledger's own place under held/ until the
 // owner drops it, and the owner commands over them. Every copy goes through storage: into the own place
-// from the content, and back from the own place to a new path. ledger-design.md section 5.
+// from the content, and back from the own place to a new path. ARCHITECTURE.md「存放和行」.
 import { posix } from 'node:path'
 import {
   defineCommand,

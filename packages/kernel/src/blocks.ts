@@ -1,4 +1,4 @@
-// What a plugin's view answers, checked at the kernel's boundary (ARCHITECTURE section 6). A block
+// What a plugin's view answers, checked at the kernel's boundary (ARCHITECTURE.md「内核核对块」). A block
 // that is not a known kind, lacks a required field, or carries an action that calls nothing the
 // library runs is replaced by one that says whose it was and why, and is listed as a problem (K8);
 // the rest of the page stands. Optional fields are checked only when given; fields the kernel does
