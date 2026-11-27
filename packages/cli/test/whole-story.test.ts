@@ -115,7 +115,8 @@ describe('the whole story, with every plugin installed', () => {
     expect(ok(owner(lib2, ['sync', 'now'])).stdout).toMatch(/拉下来 \d+ ·.* 冲突 0/)
     const provenance = (library: string) => {
       const sections = ok(sb.run(['--library', library, '--as', 'codex', 'inspect', 'sites/coffee', '--json'], { cwd: root })).json().sections
-      return sections.find((s: { plugin: string }) => s.plugin === 'ledger').body as string
+      // How deep this machine's last look went is this library's own, not the provenance.
+      return (sections.find((s: { plugin: string }) => s.plugin === 'ledger').body as string).replace(/\n上次看：.*/, '')
     }
     expect(provenance(lib2)).toBe(provenance(lib))
     expect(provenance(lib2)).toMatch(/^做出来的 · claude-code · .* · 场景 claude-1\n当时在做：做十个小网站/)

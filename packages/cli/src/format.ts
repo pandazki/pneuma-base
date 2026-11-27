@@ -1,5 +1,6 @@
 import {
   CONTENT_LIMIT,
+  elsewhereWords,
   endText,
   quote,
   type ArchiveResult,
@@ -158,6 +159,8 @@ function contentText(target: string, c: Content, inner: string | null): string[]
       return [`内容：${c.why === 'not-utf8' ? '不是 UTF-8 文字' : `超过 ${CONTENT_LIMIT / 1024} KB 的上限`}${c.type === null ? '' : `，${c.type}`}，${c.size} 字节，没有给出。`]
     case 'level':
       return [...levelText(c.path, c.level), `看其中一个：inspect ${target} --content <文件>`]
+    case 'elsewhere':
+      return [`${elsewhereWords(c.provider, c.size)}。取回来：inspect ${target} --content${inner === null ? '' : ` ${inner}`} --fetch`]
     case 'unavailable':
       if (c.reason === 'outside-grant') return [`内容：${c.path} 不在你的授权范围内，不给内容。`]
       if (c.reason === 'not-a-bundle') return [`内容：${c.path} 是一个文件，不是带标记的目录，里面没有别的文件；看它自己：inspect ${target} --content`]

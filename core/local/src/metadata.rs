@@ -6,9 +6,9 @@ use std::collections::VecDeque;
 use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 
 use pneuma_base_storage::{
-    Changed, Ctx, Description, Expect, Failure, GlanceAnswer, GlanceRequest, Kind, LookAnswer,
-    LookItem, More, OverviewAnswer, OverviewRequest, Place, PlaceArg, PlaceFailure, ProbeAnswer,
-    ProbeRequest, Reason, Seen, Token, Trust,
+    Changed, Ctx, DeepLook, DeepToken, Description, Expect, Failure, GlanceAnswer, GlanceRequest,
+    Kind, LookAnswer, LookItem, More, OverviewAnswer, OverviewRequest, Place, PlaceArg,
+    PlaceFailure, ProbeAnswer, ProbeRequest, Reason, Seen, Token, Trust,
 };
 
 use crate::LocalFolder;
@@ -266,7 +266,12 @@ impl LocalFolder {
         })
     }
 
-    pub fn look_places(&self, items: &[LookItem], ctx: &Ctx) -> Result<LookAnswer, Failure> {
+    pub fn look_places(
+        &self,
+        items: &[LookItem],
+        deep: Option<&DeepLook>,
+        ctx: &Ctx,
+    ) -> Result<LookAnswer, Failure> {
         let noise = self.noise();
         let holds = self.live_holds();
         let valid: Vec<Option<&Place>> =
@@ -281,7 +286,7 @@ impl LocalFolder {
         let verdicts: Vec<Vec<(usize, Verdict)>> = std::thread::scope(|scope| {
             let workers: Vec<_> = order
                 .chunks(chunk)
-                .map(|indices| scope.spawn(|| self.look_chunk(items, indices, &noise, ctx)))
+                .map(|indices| scope.spawn(|| self.look_chunk(items, indices, &noise, deep, ctx)))
                 .collect();
             workers
                 .into_iter()
@@ -307,9 +312,10 @@ impl LocalFolder {
         for (item, verdict) in items.iter().zip(by_index) {
             match verdict {
                 Some(Verdict::Same) | None => answer.same += 1,
-                Some(Verdict::Changed(entry)) => answer.changed.push(Changed {
+                Some(Verdict::Changed(entry, deep)) => answer.changed.push(Changed {
                     place: entry.place.clone(),
                     entry,
+                    deep,
                 }),
                 Some(Verdict::Gone(place)) => answer.gone.push(place),
                 Some(Verdict::Failed(failure)) => answer.failed.push(PlaceFailure {
@@ -326,6 +332,7 @@ impl LocalFolder {
         items: &[LookItem],
         indices: &[usize],
         noise: &Noise,
+        deep: Option<&DeepLook>,
         ctx: &Ctx,
     ) -> Result<Vec<(usize, Verdict)>, Failure> {
         let mut walker = Walker::new(&self.root_fd);
@@ -334,22 +341,36 @@ impl LocalFolder {
             if step % 1024 == 0 {
                 ctx.check()?;
             }
-            verdicts.push((index, self.look_one(&mut walker, noise, &items[index])));
+            match self.look_one(&mut walker, noise, &items[index], deep, ctx) {
+                // A deep walk stopped by `cancel` stops the whole look.
+                Verdict::Failed(failure) if failure.reason == Reason::Cancelled => {
+                    return Err(failure);
+                }
+                verdict => verdicts.push((index, verdict)),
+            }
         }
         Ok(verdicts)
     }
 
-    fn look_one(&self, walker: &mut Walker, noise: &Noise, item: &LookItem) -> Verdict {
+    fn look_one(
+        &self,
+        walker: &mut Walker,
+        noise: &Noise,
+        item: &LookItem,
+        deep: Option<&DeepLook>,
+        ctx: &Ctx,
+    ) -> Verdict {
         let PlaceArg::Valid(place) = &item.place else {
             return Verdict::Failed(Failure::bad_request());
         };
-        if let Some(Expect::Token(token)) = &item.expect
-            && token.components().is_none()
-        {
+        let remembered = Remembered::of(&item.expect, deep.is_some());
+        // Outside a deep look no text but a token can be compared, wherever it is asked.
+        if deep.is_none() && matches!(remembered, Remembered::Malformed) {
             return Verdict::Failed(Failure::bad_request());
         }
-        let nothing = || match item.expect {
-            Some(Expect::Empty) => Verdict::Same,
+        let nothing = || match remembered {
+            Remembered::Nothing => Verdict::Same,
+            Remembered::Malformed => Verdict::Failed(Failure::bad_request()),
             _ => Verdict::Gone(place.clone()),
         };
         let found = self
@@ -360,14 +381,33 @@ impl LocalFolder {
             Ok(None) => return nothing(),
             Ok(Some(found)) => found,
         };
-        let same = match &item.expect {
-            Some(Expect::Token(token)) => self.still(walker, place, &found, token),
-            Some(Expect::Empty) | None => Ok(false),
+        let (same, deep_now) = match deep {
+            Some(deep) if found.stat.kind == Kind::Dir => {
+                let token = self
+                    .open_level(walker, place)
+                    .and_then(|dir| self.deep_token(dir, place, deep, noise, ctx));
+                match token {
+                    Ok(token) => {
+                        let same =
+                            matches!(remembered, Remembered::Deep(text) if token.same_as(text));
+                        (Ok(same), Some(token))
+                    }
+                    Err(failure) => (Err(failure), None),
+                }
+            }
+            _ => {
+                let same = match remembered {
+                    Remembered::Token(token) => self.still(walker, place, &found, token),
+                    Remembered::Malformed => Err(Failure::bad_request()),
+                    Remembered::Nothing | Remembered::Unstated | Remembered::Deep(_) => Ok(false),
+                };
+                (same, None)
+            }
         };
         match same {
             Ok(true) => Verdict::Same,
             Ok(false) => match self.once_settled(found, || self.locate(walker, place)) {
-                Ok(Some(found)) => Verdict::Changed(self.describe(place, &found, &[])),
+                Ok(Some(found)) => Verdict::Changed(self.describe(place, &found, &[]), deep_now),
                 Ok(None) => nothing(),
                 Err(failure) => Verdict::Failed(failure),
             },
@@ -561,7 +601,37 @@ fn valid_place(place: &PlaceArg) -> Option<&Place> {
 
 enum Verdict {
     Same,
-    Changed(Description),
+    /// What is there now, and a deep-looked directory's deep token.
+    Changed(Description, Option<DeepToken>),
     Gone(Place),
     Failed(Failure),
+}
+
+/// What a look item remembers at its place, told apart for comparing.
+#[derive(Clone, Copy)]
+enum Remembered<'a> {
+    /// `empty`: nothing there.
+    Nothing,
+    /// No expectation: whatever is there differs.
+    Unstated,
+    Token(&'a Token),
+    /// A deep token, in a deep look: it can stand only for a directory.
+    Deep(&'a str),
+    /// Text that is no token: a deep look of a directory answers `changed`, any other place
+    /// `bad_request`.
+    Malformed,
+}
+
+impl<'a> Remembered<'a> {
+    fn of(expect: &'a Option<Expect>, deep: bool) -> Remembered<'a> {
+        match expect {
+            None => Remembered::Unstated,
+            Some(Expect::Empty) => Remembered::Nothing,
+            Some(Expect::Token(token)) if token.components().is_some() => Remembered::Token(token),
+            Some(Expect::Token(token)) if deep && DeepToken::is_deep(token.as_str()) => {
+                Remembered::Deep(token.as_str())
+            }
+            Some(Expect::Token(_)) => Remembered::Malformed,
+        }
+    }
 }

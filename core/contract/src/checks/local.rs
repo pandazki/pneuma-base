@@ -178,7 +178,7 @@ pub fn the_token_moves_with_size_mtime_ctime_and_inode(env: &Env) -> Outcome {
 }
 
 /// Overwrites a file in place with as many different bytes and puts its modification time back.
-fn same_size_edit(path: &Path, bytes: &[u8]) {
+pub fn same_size_edit(path: &Path, bytes: &[u8]) {
     let modified = fs::metadata(path).unwrap().modified().unwrap();
     let mut file = OpenOptions::new().write(true).open(path).unwrap();
     file.write_all(bytes).unwrap();

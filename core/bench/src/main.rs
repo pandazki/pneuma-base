@@ -22,6 +22,8 @@ const ROWS: usize = 20_000;
 const TEN_MB: usize = 10 << 20;
 const SMALL_FILES: usize = 1_000;
 const CHANGES: usize = 1_000;
+/// The files of the tree a deep look walks: the default bound of a deep look.
+const DEEP_FILES: usize = 5_000;
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -109,7 +111,7 @@ fn run(library: Option<&Path>) -> Result<(), String> {
     build_fixtures(&env, &lib, &outside)?;
     println!(
         "fixtures: {BIG_DIR}-entry directory, {} places, {} facts over {FACT_DAYS} days, {ROWS} rows, \
-         a 10 MB file, {SMALL_FILES} small files outside ({:.1} s)",
+         a 10 MB file, {SMALL_FILES} small files outside, a tree of {DEEP_FILES} files ({:.1} s)",
         PLACE_DIRS * PLACES_PER_DIR,
         FACT_DAYS * FILES_PER_DAY * FACTS_PER_FILE,
         t.elapsed().as_secs_f64()
@@ -157,6 +159,17 @@ fn synthetic_cases<'a>(
         &json!({ "place": "bench", "cursor": cursor }),
     )?;
     let cursor = again["cursor"].clone();
+
+    let deep = json!({ "rule": { "ignore_file": ".gitignore" } });
+    let deep_token = env.one_shot(
+        lib,
+        "look",
+        &json!({ "places": [{ "place": "deep", "token": "empty" }], "deep": deep }),
+    )?["changed"][0]["deep"]
+        .clone();
+    if !deep_token.is_string() {
+        return Err("a deep look of the tree gave no deep token".into());
+    }
 
     let names_cache = lib.join(".pneuma-base/cache/names");
     let small = outside.join("small");
@@ -292,6 +305,35 @@ fn synthetic_cases<'a>(
             }),
             check: |a| a["removed"] == true,
         },
+        // Last: the trees they make would show in `changed` since the cursors above.
+        Case {
+            name: "look deep, 5,000 files, unchanged",
+            target_ms: None,
+            op: "look",
+            prepare: fixed(json!({
+                "places": [{ "place": "deep", "token": deep_token }],
+                "deep": deep,
+            })),
+            check: |a| a["same"] == 1,
+        },
+        Case {
+            name: "look deep, 5,000 files, a new tree (cold)",
+            target_ms: None,
+            op: "look",
+            prepare: Box::new(move |n| {
+                let _ = std::fs::remove_dir_all(lib.join(format!("deep-cold/run-{}", n - 1)));
+                let place = format!("deep-cold/run-{n}");
+                make_deep_tree(&lib.join(&place))?;
+                // Past APFS's racy window, so the walk is taken once.
+                std::thread::sleep(Duration::from_millis(2));
+                Ok(json!({ "places": [{ "place": place, "token": "empty" }], "deep": deep }))
+            }),
+            check: |a| {
+                a["changed"][0]["deep"]
+                    .as_str()
+                    .is_some_and(|d| d.starts_with("d1;n=5000;"))
+            },
+        },
     ])
 }
 
@@ -411,6 +453,11 @@ fn time_cases(env: &Env, lib: &Path, mut cases: Vec<Case>) -> Result<(), String>
     println!();
     println!(
         "median of {RUNS} runs after {WARMUP} warm-up runs; one-shot includes process start; warm page cache"
+    );
+    println!(
+        "look deep, a new tree: each run walks a tree made for it that no process has looked at; the \
+         system still holds that tree's metadata, having just written it (emptying that cache needs \
+         root: purge, or a reboot)"
     );
     println!(
         "targets for changed, content, write, move and remove are proposed from step 2's measurements: \
@@ -585,6 +632,7 @@ fn build_fixtures(env: &Env, lib: &Path, outside: &Path) -> Result<(), String> {
     for i in 0..BIG_DIR {
         std::fs::write(big.join(format!("entry-{i:05}.txt")), b"").map_err(io)?;
     }
+    make_deep_tree(&lib.join("deep"))?;
     for d in 0..PLACE_DIRS {
         let dir = lib.join(format!("places/d{d:03}"));
         std::fs::create_dir_all(&dir).map_err(io)?;
@@ -623,6 +671,22 @@ fn build_fixtures(env: &Env, lib: &Path, outside: &Path) -> Result<(), String> {
         )?;
         if answer["outcome"] != "done" {
             return Err(format!("rows.put: {answer}"));
+        }
+    }
+    Ok(())
+}
+
+/// A tree of `DEEP_FILES` small files, as a project's sources lie: 10 directories of 10
+/// directories of 50 files each.
+fn make_deep_tree(dir: &Path) -> Result<(), String> {
+    for a in 0..10 {
+        for b in 0..10 {
+            let sub = dir.join(format!("a{a}/b{b}"));
+            std::fs::create_dir_all(&sub).map_err(|e| e.to_string())?;
+            for f in 0..DEEP_FILES / 100 {
+                std::fs::write(sub.join(format!("f{f:02}.md")), b"# a note\n")
+                    .map_err(|e| e.to_string())?;
+            }
         }
     }
     Ok(())

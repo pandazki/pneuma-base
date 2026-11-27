@@ -4,7 +4,7 @@
 import { isDescribed, isFailure, type Fingerprint, type LibraryPath, type Place, type PluginContext } from '@pneuma-base/kernel'
 import { appendFacts, fact, type Fact, type FactBody, type ThingId, type Via } from './facts.js'
 import { latest, step, type Thing, type Version } from './model.js'
-import { syncRows, thingWhere, tokenAt, type Seen } from './rows.js'
+import { syncRows, thingWhere, tokensAt, type Seen } from './rows.js'
 import { discard, keep, snapshot } from './store.js'
 
 /** The rows brought up to the facts, for a reader. */
@@ -66,15 +66,20 @@ export type Held = { token: string; fingerprint: Fingerprint | null }
 /** What storage says a thing's path holds against the token on record: the same state, another, or nothing. */
 type Look = 'same' | 'changed' | 'gone'
 
-/** What is at the thing's path against the token on record; with none on record, `changed` when anything is there. `token`: the state now, when storage said it. */
-async function lookAt(ctx: PluginContext, thing: Thing): Promise<{ look: Look; token?: string }> {
+/**
+ * What is at the thing's path against the token on record; with none on record, `changed` when anything
+ * is there. `deep`: a directory thing's every file's state against the deep token on record. `token`,
+ * `deep`: the state now, when storage said it.
+ */
+async function lookAt(ctx: PluginContext, thing: Thing, deep = false): Promise<{ look: Look; token?: string; deep?: string }> {
   const store = ctx.tools.storage
-  const recorded = await tokenAt(store.records, thing.path)
-  if (recorded !== null) {
-    const looked = await store.look([{ place: thing.path, token: recorded }])
-    if (looked.gone.length > 0) return { look: 'gone' }
+  const recorded = await tokensAt(store.records, thing.path)
+  const expect = deep ? recorded.deep : recorded.token
+  if (expect !== null || deep) {
+    const looked = await store.look([{ place: thing.path, token: expect ?? 'empty' }], deep ? { deep: true } : {})
+    if (looked.gone.length > 0 || (expect === null && looked.same === 1)) return { look: 'gone' }
     const changed = looked.changed[0]
-    if (changed) return { look: 'changed', ...(changed.entry.token === undefined ? {} : { token: changed.entry.token }) }
+    if (changed) return { look: 'changed', ...(changed.entry.token === undefined ? {} : { token: changed.entry.token }), ...(changed.deep === undefined ? {} : { deep: changed.deep }) }
     return looked.failed.length > 0 ? { look: 'changed' } : { look: 'same' }
   }
   const [g] = await store.glance([thing.path])
@@ -86,45 +91,54 @@ async function lookAt(ctx: PluginContext, thing: Thing): Promise<{ look: Look; t
 export type Recorded = { version: Version; added: boolean }
 
 /**
+ * How a version taken decides that the content is still the latest: by the token on record (`token`),
+ * which for a directory thing speaks for its own level only; by every file's state for a directory
+ * thing (`look`); or by comparing the content whatever is on record (`content`).
+ */
+export type Compare = 'token' | 'look' | 'content'
+
+/**
  * Keeps the content at the thing's path as a version when it is not the latest one. Null when nothing
  * is there; `moved` when it changed while it was copied, or could not be copied now. `held`: the kernel
- * holds the place for a put, so it does not change while it is copied. `deep`: the content is compared
- * whatever the token on record says.
+ * holds the place for a put, so it does not change while it is copied.
  */
-export async function record(w: Writing, thing: Thing, via: Via, held: Held | null = null, deep = false): Promise<Recorded | null | 'moved'> {
+export async function record(w: Writing, thing: Thing, via: Via, held: Held | null = null, compare: Compare = 'look'): Promise<Recorded | null | 'moved'> {
   const { ctx } = w
   const last = latest(thing)
-  const seen = (token: string | undefined) => {
-    if (token !== undefined) w.seen.set(thing.path, { thing: thing.id, token })
+  const seen = (token: string | undefined, deep?: string) => {
+    if (token !== undefined) w.seen.set(thing.path, { thing: thing.id, token, ...(deep === undefined ? {} : { deep }) })
   }
   if (last && held?.fingerprint === last.fingerprint) {
     seen(held.token)
     return { version: last, added: false }
   }
   let before = held?.token
+  let beforeDeep: string | undefined
   // A directory thing's token speaks for its own level only: before a put replaces one, its content is compared.
-  if (last && !deep && (held === null || (held.fingerprint === null && last.kept.kind === 'file'))) {
-    const at = await lookAt(ctx, thing)
+  if (last && compare !== 'content' && (held === null || (held.fingerprint === null && last.kept.kind === 'file'))) {
+    const at = await lookAt(ctx, thing, compare === 'look' && last.kept.kind !== 'file')
     if (at.look === 'same') return { version: last, added: false }
     if (at.look === 'gone') return null
     before ??= at.token
+    beforeDeep = at.deep
   }
   if (before === undefined) {
     const [g] = await ctx.tools.storage.glance([thing.path])
     if (!g || !isDescribed(g) || g.kind === 'none') return null
     before = g.token ?? ''
+    if (g.kind === 'dir' && compare === 'look') beforeDeep = (await lookAt(ctx, thing, true)).deep
   }
   const shot = await snapshot(ctx, thing.path)
   if (shot === null) return null
   if ('failed' in shot) return 'moved'
   if (held === null) {
-    const after = await ctx.tools.storage.look([{ place: thing.path, token: before }])
+    const after = await ctx.tools.storage.look([{ place: thing.path, token: beforeDeep ?? before }], beforeDeep === undefined ? {} : { deep: true })
     if (after.same !== 1) {
       await discard(ctx, shot)
       return 'moved'
     }
   }
-  seen(before)
+  seen(before, beforeDeep)
   if (last?.fingerprint === shot.fingerprint) {
     await discard(ctx, shot)
     return { version: last, added: false }

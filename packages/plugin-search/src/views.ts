@@ -70,7 +70,7 @@ export async function statusView(ctx: PluginContext): Promise<ViewAnswer> {
   const index: Block = {
     kind: 'section',
     title: '索引',
-    note: '查找插件装上之后放入、登记的东西进索引；索引在库外的缓存目录里，删了能重建',
+    note: '登记过的东西进索引；索引在库外的缓存目录里，删了能重建',
     count: null,
     blocks: [
       {
@@ -116,7 +116,7 @@ export async function itemSection(path: LibraryPath, ctx: PluginContext): Promis
   const fields = (text: string, meaning: string | null) => ({ title: '查找', blocks: [{ kind: 'fields' as const, fields: [field('正文', text), ...(meaning === null ? [] : [field('按意思', meaning)])] }] })
   if (thing === undefined) {
     const [at] = await ctx.tools.what([path])
-    return at?.kind === 'file' || at?.kind === 'bundle' ? fields('没有索引：查找插件装上之后，它没有被放入或登记过', null) : null
+    return at?.kind === 'file' || at?.kind === 'bundle' ? fields('没有索引：查找插件的记录里没有它', null) : null
   }
   const embedder = await currentEmbedder(ctx)
   const index = SearchIndex.peek(ctx.cacheDir)

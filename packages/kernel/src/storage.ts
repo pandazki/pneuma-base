@@ -193,6 +193,9 @@ const doneOrFailure = async <T>(answer: Promise<Answer>): Promise<T | StorageFai
 /** Which of a directory's files are its content, as the caller decides and storage applies: names left out at any depth, and an ignore file read in each directory. */
 export type ContentRule = { noise?: readonly string[]; ignore_file?: string }
 
+/** A deep look: which files of a directory count, and how many it may have before the look answers `too_many`. */
+export type Deep = { rule?: ContentRule; limit?: number }
+
 /**
  * Where a write's content comes from, as the door takes it: a path outside the library, bytes, or a
  * place in the content or in a record place's own area (copying).
@@ -212,13 +215,15 @@ function areaOf(s: Served, records: string | undefined) {
     glance: async (places: readonly Place[], facets?: readonly string[]) =>
       places.length === 0 ? [] : (await done<{ entries: Glanced[] }>('glance', s.request('glance', { ...where, places, ...(facets ? { facets } : {}) }))).entries,
     overview: (place: Place, opts: { limit?: number; after?: string } = {}) => doneOrFailure<Overview>(s.request('overview', { ...where, place, ...opts })),
-    look: async (places: readonly { place: Place; token: Expect }[]): Promise<Looked> => {
+    /** `deep`: each directory among the places is compared by its deep token, its files counted by `rule` up to `limit`. */
+    look: async (places: readonly { place: Place; token: Expect }[], opts: { deep?: Deep } = {}): Promise<Looked> => {
       if (places.length === 0) return { same: 0, changed: [], gone: [], failed: [], held: [] }
-      const a = await done<Looked>('look', s.request('look', { ...where, places }))
+      const a = await done<Looked>('look', s.request('look', { ...where, places, ...opts }))
       return { ...a, held: a.held ?? [] }
     },
     /** A look whose expectations are the rows of a table of the record place `rows.place`: a page of them, compared inside storage. */
-    lookRows: (rows: { place: string; table: string; field: string }, opts: { limit?: number; after?: string } = {}) => done<LookedPage>('look', s.request('look', { ...where, rows, ...opts })),
+    lookRows: (rows: { place: string; table: string; field: string }, opts: { limit?: number; after?: string; deep?: Deep } = {}) =>
+      done<LookedPage>('look', s.request('look', { ...where, rows, ...opts })),
     content: (
       place: Place,
       { progress, ...opts }: { rule?: ContentRule; limit?: number; fetch?: boolean; manifest?: true | { limit?: number; after?: string }; progress?: (p: StorageProgress) => void } = {},

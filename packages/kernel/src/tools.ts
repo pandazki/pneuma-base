@@ -1,7 +1,8 @@
 // The kernel's helpers on a plugin's context, `PluginContext.tools`, bound to the operation's library:
 // storage in its own words, at the places a plugin's records point, through the one door.
 import { type Context, type LibraryPath, type Pass, type Place, type PlaceStore, type PluginName, type PluginStorage, type PluginTools, type WriteSource } from '@pneuma-base/sdk'
-import { changesSince } from './changes.js'
+import { registerPage } from './catch-up.js'
+import { changesWithin } from './changes.js'
 import { archivedPath, originalPath, parseLibraryPath, regionOf } from './paths.js'
 import { PLACE as REQUESTS } from './requests.js'
 import { storageOf, type Area, type Source, type Storage, type StorageProgress } from './storage.js'
@@ -35,6 +36,9 @@ export function relayedPass(pass: Pass): { pass: Pass; heard: StorageHeard } {
   }
 }
 
+/** A deep look counts a directory's files as a thing's content counts them, up to as many as a thing may have. */
+const DEEP = { rule: THING_RULE, limit: THING_FILES }
+
 /** One area as a plugin sees it: a directory's content always counted by the rule things follow. */
 function placeStore(area: Area, own: PluginName, heard?: StorageHeard): PlaceStore {
   const source = (from: WriteSource): Source => ('place' in from ? { place: from.place, ...(from.own ? { records: own } : {}) } : from)
@@ -42,8 +46,8 @@ function placeStore(area: Area, own: PluginName, heard?: StorageHeard): PlaceSto
   return {
     glance: (places) => area.glance(places),
     overview: (place, opts) => area.overview(place, opts),
-    look: (places) => area.look(places),
-    lookRows: (table, field, opts) => area.lookRows({ place: own, table, field }, opts),
+    look: (places, opts = {}) => area.look(places, opts.deep ? { deep: DEEP } : {}),
+    lookRows: (table, field, { deep, ...opts } = {}) => area.lookRows({ place: own, table, field }, { ...opts, ...(deep ? { deep: DEEP } : {}) }),
     content: (place, opts = {}) => area.content(place, { rule: THING_RULE, limit: opts.limit ?? THING_FILES, ...(opts.manifest === undefined ? {} : { manifest: opts.manifest }), ...progress(place, '读') }),
     read: (place, opts) => area.read(place, opts),
     write: (place, from, expect, opts = {}) =>
@@ -68,7 +72,7 @@ export function pluginStorage(store: Storage, name: PluginName, places: readonly
     },
     hold: (places, ttl) => store.hold(places, ttl),
     release: (hold) => store.release(hold),
-    changed: (mark) => changesSince(store, mark),
+    changed: (mark) => changesWithin(store, mark),
     own: placeStore(store.own(name), name),
     records: store.records(name),
     recordPlaces: async () => [REQUESTS, ...places],
@@ -101,6 +105,7 @@ export function pluginTools(ctx: Context, name: PluginName, heard?: StorageHeard
       const { agentFace } = await import('./agent.js')
       return agentFace.put(req, ctx)
     },
+    registered: (opts = {}) => registerPage(ctx, opts),
     storage: loggedStorage(pluginStorage(store, name, ctx.library.config.plugins, heard), name),
   }
 }

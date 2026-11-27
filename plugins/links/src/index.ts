@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { CONTRACT, defineCommand, definePlugin, pluginName, type Block } from '@pneuma-base/sdk'
-import { heardMove, heardPurge, heardPut, scanItem, scanLibrary } from './scan.js'
+import { heardMove, heardPurge, heardPut, heardRegistered, scanItem, scanLibrary } from './scan.js'
 
 type BrokenLink = {
   source: string
@@ -79,6 +79,10 @@ export default definePlugin({
   },
   async onPurged(paths, ctx) {
     await heardPurge(ctx, paths)
+  },
+  // What was registered before it was added, a page at a time.
+  async catchUp(things, ctx) {
+    await heardRegistered(ctx, things)
   },
 
   async onCheck(req, ctx) {

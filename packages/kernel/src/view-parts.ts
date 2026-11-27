@@ -60,8 +60,11 @@ export const placeholderOf = (entry: Pick<Description, 'facets'>): Record<string
 }
 
 /** Where a placeholder's content is and how big it is there, from its facet. */
-export function elsewhereText(facet: Record<string, unknown>): string {
-  const where = typeof facet.provider === 'string' ? (PROVIDERS[facet.provider] ?? facet.provider) : null
-  const size = typeof facet.size_elsewhere === 'number' ? sizeText(facet.size_elsewhere) : null
-  return [where === null ? '内容不在这台机器上' : `内容在 ${where} 上`, size].filter((s) => s !== null).join('，')
+export const elsewhereText = (facet: Record<string, unknown>): string =>
+  elsewhereWords(typeof facet.provider === 'string' ? facet.provider : null, typeof facet.size_elsewhere === 'number' ? facet.size_elsewhere : null)
+
+/** Where content that is not on this machine is, by the sync service's name, and how big it is there. */
+export function elsewhereWords(provider: string | null, size: number | null): string {
+  const where = provider === null ? null : (PROVIDERS[provider] ?? provider)
+  return [where === null ? '内容不在这台机器上' : `内容在 ${where} 上`, size === null ? null : sizeText(size)].filter((s) => s !== null).join('，')
 }

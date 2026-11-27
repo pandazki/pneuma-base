@@ -166,6 +166,14 @@ pub struct LookRows {
 pub struct LookRequest {
     pub area: Area,
     pub from: LookFrom,
+    /// Each place that is a directory is compared by its deep token.
+    pub deep: Option<DeepLook>,
+}
+
+/// How a deep look counts a directory's files: as `content` does, by `rule`, at most `limit`.
+pub struct DeepLook {
+    pub rule: ContentRule,
+    pub limit: u64,
 }
 
 impl LookItem {
@@ -620,9 +628,21 @@ pub fn look(req: &Req) -> Parsed<LookRequest> {
         }
         _ => return Err(Failure::bad_request()),
     };
+    let deep = match req.get("deep") {
+        None => None,
+        Some(Value::Object(deep)) => {
+            let deep = Req(deep);
+            Some(DeepLook {
+                rule: deep.rule()?,
+                limit: deep.count("limit", FILES_LIMIT)?,
+            })
+        }
+        Some(_) => return Err(Failure::bad_request()),
+    };
     Ok(LookRequest {
         area: req.area()?,
         from,
+        deep,
     })
 }
 

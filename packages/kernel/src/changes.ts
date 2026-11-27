@@ -10,6 +10,7 @@
 // journal for one command.
 import type { Changes } from '@pneuma-base/sdk'
 import { storageOf, type Storage } from './storage.js'
+import { enclosingBundles } from './things.js'
 
 /**
  * How many milliseconds a command waits to learn what changed. Read from a live listener's log, an
@@ -24,9 +25,19 @@ const MOST = 10_000
  * What changed since `mark` (a cursor this asker kept from an earlier answer): the places, or null
  * when storage cannot say, there was no mark, or too much changed to list.
  */
-export async function changesSince(store: Storage, mark: string | null): Promise<Changes> {
+export async function changesSince(store: Storage, mark: string | null): Promise<Omit<Changes, 'within'>> {
   const answer = await store.changed(mark, { budget: CHANGED_BUDGET, limit: MOST })
   return { places: mark === null || answer.places === null || ('more' in answer && answer.more) ? null : answer.places, mark: answer.cursor }
+}
+
+/**
+ * What changed since `mark`, as a plugin asks: the places, and the directory things they lie inside.
+ * Storage hears a change at any depth, and a directory thing's own token and its first level's do not
+ * show one deeper down, so the thing a changed place lies in is named as changed itself.
+ */
+export async function changesWithin(store: Storage, mark: string | null): Promise<Changes> {
+  const changes = await changesSince(store, mark)
+  return { ...changes, within: changes.places === null || changes.places.length === 0 ? [] : await enclosingBundles(store, changes.places) }
 }
 
 /** Makes this process listen to the library's changes until `stopListening` or until it ends: for the processes that stay. */

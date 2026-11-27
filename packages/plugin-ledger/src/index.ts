@@ -557,6 +557,20 @@ export const ledger: Plugin = {
     return out
   },
 
+  /** The register: each thing on record by its path, in the content and the archive, a page of the rows at a time. */
+  async registered(req, ctx) {
+    await stateOf(ctx)
+    const recs = records(ctx)
+    const page = await recs.under<{ id: ItemId }>('paths', '', { limit: req.limit, ...(req.after === null ? {} : { after: req.after }) })
+    const items = await getAll<ItemRow>(recs, 'items', page.rows.map((r) => r.value.id))
+    const things = page.rows.flatMap(({ key, value }) => {
+      const item = items.get(value.id)
+      if (item === undefined || item.removed || item.absorbedInto !== null || item.path !== key) return []
+      return [{ place: item.path, kind: item.bundle ? ('bundle' as const) : ('file' as const), token: item.token, fingerprinted: item.fingerprint !== null }]
+    })
+    return { things, more: page.more, total: await scopeOf(ctx, null) }
+  },
+
   /** Things nobody registered, one ask for each place, until they are registered or the owner leaves them so. */
   onAsks: unownedAsks,
 

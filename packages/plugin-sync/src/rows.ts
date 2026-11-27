@@ -5,7 +5,11 @@
 import type { Fingerprint, Instant, LibraryPath, PluginContext, RecordPlace, Row } from '@pneuma-base/kernel'
 import { parseFact, type DeletedFact, type RunFact, type SyncFact, type TargetFact } from './facts.js'
 
-/** Registered things, by library path. Field `token`: the state sync last read; `fp` its fingerprint (null: nothing there). */
+/**
+ * Registered things, by library path. Field `token`: the state sync last read, of a directory thing every
+ * file's (its deep token); `fp` its fingerprint (null: nothing there); `level` a directory thing's own
+ * token then, which a write expects.
+ */
 export const THINGS = 'things'
 /** Conflict copies a sync made, by the copy's path. Field `original`. */
 export const COPIES = 'copies'
@@ -20,7 +24,7 @@ const ROWS_VERSION = 1
 const PAGE = 1000
 const ROWS_PAGE = 10000
 
-export type ThingRow = { fp: Fingerprint | null }
+export type ThingRow = { fp: Fingerprint | null; level?: string }
 /** A file of own content and its fingerprint, or a directory, whose token says whether its level changed. */
 export type OwnRow = { fp: Fingerprint } | { dir: true }
 

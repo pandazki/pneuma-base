@@ -11,7 +11,7 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use pneuma_base_storage::{ContentRule, Ctx, Failure, Kind, Place};
 
 use crate::noise::Noise;
-use crate::sys::{self, DirStream, EntryType, Errno, Stat};
+use crate::sys::{self, Errno, Listed, Stat};
 
 /// A place the walked directory is, or will be once copied, in its area: the noise that applies
 /// there (none in a record place's own area) and the name the area keeps out of its root level.
@@ -100,15 +100,11 @@ pub fn walk(top: OwnedFd, matcher: &Matcher, limit: u64, ctx: &Ctx) -> Result<Wa
         let ignore = matcher
             .ignore_file
             .and_then(|file| read_ignore(fd.as_raw_fd(), file));
-        let mut names = Vec::new();
-        let mut stream = DirStream::open(&fd).map_err(unreadable)?;
-        while let Some(entry) = stream.next_entry() {
-            let (entry_name, kind) = entry.map_err(unreadable)?;
-            if let Ok(entry_name) = std::str::from_utf8(entry_name) {
-                names.push((entry_name.to_owned(), kind));
-            }
-        }
-        drop(stream);
+        let mut names: Vec<(String, Listed)> = sys::list(fd.as_raw_fd())
+            .map_err(unreadable)?
+            .into_iter()
+            .filter_map(|(name, listed)| Some((String::from_utf8(name).ok()?, listed)))
+            .collect();
         levels.push(Level {
             fd,
             path: path.clone(),
@@ -117,29 +113,34 @@ pub fn walk(top: OwnedFd, matcher: &Matcher, limit: u64, ctx: &Ctx) -> Result<Wa
         let dir = levels[depth].fd.as_raw_fd();
         names.sort_unstable_by(|a, b| a.0.cmp(&b.0));
         let mut subdirs = Vec::new();
-        for (entry_name, kind) in names {
+        for (entry_name, listed) in names {
             let child = if path.is_empty() {
                 entry_name.clone()
             } else {
                 format!("{path}/{entry_name}")
             };
-            if kind == EntryType::Other || leaves_out(matcher, &levels, &child, &entry_name) {
+            if matches!(listed, Listed::Other) || leaves_out(matcher, &levels, &child, &entry_name)
+            {
                 continue;
             }
-            let stat = match sys::stat_at(dir, &sys::c_name(entry_name.as_bytes())) {
-                Ok(stat) => stat,
-                Err(libc::ENOENT) => continue,
-                Err(errno) => return Err(unreadable(errno)),
+            let listed = match listed {
+                Listed::Unknown => match sys::stat_at(dir, &sys::c_name(entry_name.as_bytes())) {
+                    Ok(stat) if stat.kind == Kind::File => Listed::File(stat),
+                    Ok(stat) if stat.kind == Kind::Dir => Listed::Dir,
+                    Ok(_) | Err(libc::ENOENT) => continue,
+                    Err(errno) => return Err(unreadable(errno)),
+                },
+                known => known,
             };
-            match stat.kind {
-                Kind::File if !ignored(&levels, &child, false) => {
+            match listed {
+                Listed::File(stat) if !ignored(&levels, &child, false) => {
                     if walked.files.len() as u64 >= limit {
                         return Err(Failure::too_many(limit + 1));
                     }
                     walked.bytes += stat.size;
                     walked.files.push(Found { path: child, stat });
                 }
-                Kind::Dir if !ignored(&levels, &child, true) => {
+                Listed::Dir if !ignored(&levels, &child, true) => {
                     walked.dirs.push(FoundDir {
                         path: child.clone(),
                     });

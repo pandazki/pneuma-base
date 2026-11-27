@@ -1,3 +1,4 @@
+import { catchingUp, catchingUpLine } from './catch-up.js'
 import { makeAddress, resolveAddress } from './address.js'
 import { addressForm, chooseProvider, recordLibrary, type Runnable } from './providers.js'
 import { said, takenBy } from './claims.js'
@@ -186,7 +187,12 @@ export const ownerFace = {
     for (const plugin of ctx.library.plugins) {
       const command = plugin.ownerCommands.find((c) => c.name === name)
       if (!command) continue
-      return gated(bound, name, command, args, command.params, async (values) => ({ answer: await command.run({ ...args, values }, pluginContext(ctx, plugin.name)) }))
+      return gated(bound, name, command, args, command.params, async (values) => {
+        const answer = await command.run({ ...args, values }, pluginContext(ctx, plugin.name))
+        // A plugin still catching up says so in one line under each of its commands' answers.
+        const behind = (await catchingUp(ctx)).get(plugin.name)
+        return { answer: behind === undefined ? answer : { ...answer, text: `${answer.text}\n${catchingUpLine(behind)}` } }
+      })
     }
     return refuse('unknown-command', `没有这条主人命令：${name}`)
   },

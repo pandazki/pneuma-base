@@ -9,7 +9,7 @@ import type { Action, Block, Plugin } from '../types.js'
 import { runProcess, type Result } from './run.js'
 import { sandbox, type Sandbox, type SandboxOptions, type Viewer } from './sandbox.js'
 
-export const CHECKS = ['loads', 'names', 'cognition', 'examples', 'hooks', 'writes', 'bounded', 'cache', 'blocks', 'remove'] as const
+export const CHECKS = ['loads', 'names', 'cognition', 'examples', 'hooks', 'writes', 'bounded', 'cache', 'catchup', 'blocks', 'remove'] as const
 export type CheckName = (typeof CHECKS)[number]
 
 /** What each check holds a plugin to, as the standard says it. */
@@ -22,6 +22,7 @@ export const RULES: Record<CheckName, string> = {
   writes: '插件只往库里自己名下的 .pneuma-base/<插件名>/ 写；那里已有的文件不改写、不删（声明为配置的文件、缓存目录和破坏性的主人命令除外）；视图和条目面板里的一节什么都不写',
   bounded: '插件只在自己的记录指到的地方问存储，一次只取一页：一个钩子或命令里，一览和探查库的内容合起来不超过 1000 条；没人登记过的目录只在它自己那里带预算地探查，不一览、不取内容、不读，它下面的地方什么都不问',
   cache: '缓存删掉什么都不丢：删掉它在本机的缓存目录、声明为缓存的目录和它记录处的行前后，找、看、查的答复一样',
+  catchup: '装进一个已经有登记过的东西的库，补上之后它知道它们：对装上之前放进来的东西，找、看、查和条目面板里它的答复，和装着它时放进来的一样',
   blocks: '视图和条目面板里的一节答复的都是合法的块，钩子不抛错；每个动作调的是一个动词或这个库里在的一条主人命令，参数合它的参数表；custom 块带 text，用字说出它画的；custom 块指向的页面在插件的 ui 目录里，取得到，载入 /plugin-kit/frame.js，脚本里调用 pneuma.onData',
   remove: '卸下插件之后库照常能用：配置和说明里没有它，动词照常答复、没有问题，界面没有它的视图，内容一样不少',
 }
@@ -84,11 +85,12 @@ export async function conformance(subject: Subject, options: ConformanceOptions 
   try {
     await checkLibrary(plugin, install, options, fail, reminders)
     if ((found.get('loads') as string[]).length === 0) await checkExamples(plugin, install, options, fail, reminders)
+    if ((found.get('loads') as string[]).length === 0) await checkCatchUp(plugin, install, options, fail, reminders)
   } catch (error) {
     fail('loads', error instanceof Error ? error.message : String(error))
   }
   if ((found.get('loads') as string[]).length > 0) {
-    for (const c of ['examples', 'hooks', 'writes', 'bounded', 'cache', 'blocks', 'remove'] as const) if ((found.get(c) as string[]).length === 0) fail(c, '没有查：插件没装上')
+    for (const c of ['examples', 'hooks', 'writes', 'bounded', 'cache', 'catchup', 'blocks', 'remove'] as const) if ((found.get(c) as string[]).length === 0) fail(c, '没有查：插件没装上')
   }
   return report(plugin.name, found, reminders)
 }
@@ -599,6 +601,80 @@ async function checkRemove(
   const state = await viewer.state()
   for (const v of state.views) if (v.id.startsWith(`${p.name}.`)) fail('remove', `卸下之后，界面还列着视图 ${v.id}`)
   for (const x of state.problems) fail('remove', `卸下之后，界面报问题：${x.plugin}：${x.message}`)
+}
+
+// ---- two more libraries: catching up ----
+
+const EARLY_FILE = 'conformance/early.md'
+const EARLY_SITE = 'conformance/early-site'
+const EARLY_WORDS = '符合性早先'
+/** What differs between two libraries' answers without saying anything about what a plugin knows: moments, and ids made of hex. */
+const comparable = (answer: unknown) =>
+  JSON.stringify(answer)
+    .replace(/\d{4}-\d\d-\d\d[T ]\d\d:\d\d(:\d\d(\.\d+)?)?Z/g, '<时刻>')
+    .replace(/[0-9a-f]{8,}/g, '<号>')
+
+/** A text file and a directory put into the library as an agent puts them. */
+async function putEarly(sb: Sandbox): Promise<void> {
+  await mkdir(join(sb.work, 'early-site'), { recursive: true })
+  await writeFile(join(sb.work, 'early-site', 'index.html'), `<h1>${EARLY_WORDS}</h1>\n`)
+  for (const args of [['put', '-', '--to', EARLY_FILE, '--made'], ['put', join(sb.work, 'early-site'), '--to', EARLY_SITE, '--made']]) {
+    const r = await sb.agent(AGENT, SESSION, args, { input: `# ${EARLY_WORDS}\n\n一段文字。\n` })
+    if (r.code !== 0) throw new Error(`放进 ${args[3]} 没有做成：${r.stderr || r.stdout}`)
+  }
+}
+
+/** What the plugin answers about the two things: its hits, its sections, its part of each item panel. */
+async function answersAbout(p: Plugin, sb: Sandbox): Promise<[string, string][]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the command line's JSON, as the other checks read it
+  const agent = async (args: string[]): Promise<any> => jsonOf(await sb.agent(AGENT, SESSION, [...args, '--json']))
+  const mine = (list: { plugin?: string; by?: string }[] | undefined) => (list ?? []).filter((x) => (x.plugin ?? x.by) === p.name)
+  const viewer = await sb.viewer()
+  const out: [string, string][] = [[`find ${EARLY_WORDS}`, comparable(mine((await agent(['find', EARLY_WORDS]))?.hits))]]
+  for (const path of [EARLY_FILE, EARLY_SITE]) out.push([`inspect ${path}`, comparable(mine((await agent(['inspect', path]))?.sections))])
+  out.push(['check', comparable(mine((await agent(['check']))?.sections))])
+  for (const path of [EARLY_FILE, EARLY_SITE]) {
+    const item = await viewer.item(path, { plugin: p.name })
+    out.push([`条目面板 ${path}`, comparable(item.outcome === 'shown' ? { blocks: item.blocks, problems: item.problems } : item)])
+  }
+  return out
+}
+
+/**
+ * A library where the plugin heard two things put, and one where they were put before it was added:
+ * after catching up, its answers about them are the same. The plugin that keeps the register is not
+ * checked: there is nothing it could learn the register from but itself.
+ */
+async function checkCatchUp(p: Plugin, install: Install, options: ConformanceOptions, fail: (c: CheckName, what: string) => void, reminders: string[]): Promise<void> {
+  if (p.registered !== undefined) {
+    reminders.push('它自己记着库里登记了什么（registered），catchup 没有查。')
+    return
+  }
+  const heard = await sandbox({ ...pick(options), ...install })
+  const late = await sandbox(pick(options))
+  try {
+    await options.setup?.({ sandbox: heard, cwd: heard.work, bin: join(heard.work, '.bin') })
+    await putEarly(heard)
+    const first = await answersAbout(p, heard)
+    const again = await answersAbout(p, heard)
+    await putEarly(late)
+    if ('plugins' in install) {
+      const r = await late.run(['plugin', 'install', install.plugins[0] as string, '--json'])
+      if (r.json?.outcome !== 'done') return fail('catchup', `plugin install 没有装上：${r.json?.text ?? r.stderr}`)
+    }
+    const added = jsonOf(await late.owner(['plugin', 'add', p.name, '--json']))
+    if (added?.outcome !== 'done') return fail('catchup', `plugin add 没有做成：${added?.text ?? ''}`)
+    for (const x of added.problems ?? []) if (x.plugin === p.name) fail('catchup', `plugin add 补上时：${x.message}`)
+    await options.setup?.({ sandbox: late, cwd: late.work, bin: join(late.work, '.bin') })
+    const after = await answersAbout(p, late)
+    for (const [i, [what, answer]] of first.entries()) {
+      if (again[i]?.[1] !== answer) reminders.push(`${what} 问两次答得不一样，后装上之后没法比，没有查。`)
+      else if (after[i]?.[1] !== answer) fail('catchup', `后装上、补上之后，${what} 的答复和装着它时放进来的不一样`)
+    }
+  } finally {
+    await heard.cleanup()
+    await late.cleanup()
+  }
 }
 
 // ---- a second library: the examples ----

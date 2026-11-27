@@ -143,6 +143,11 @@ pub fn placeholders_need_a_sync_service(env: &Env) -> Outcome {
         .clone();
     assert!(entry["facets"].get("placeholder").is_none(), "{entry}");
     assert_done(&lib.run("read", json!({ "place": "here.txt" })));
+    let looked = lib.run(
+        "look",
+        json!({ "places": [{ "place": "", "token": "empty" }], "deep": {} }),
+    );
+    assert!(looked["changed"][0]["deep"].is_string(), "{looked}");
     not_exercised(
         "a placeholder file needs a sync service that keeps content elsewhere; none is used here",
     )

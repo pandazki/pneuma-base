@@ -125,6 +125,38 @@ async function contentAt(run: Run, path: LibraryPath, kind: ThingKind | null): P
   return withStaged(ctx.tools.storage, path, kind, stageRoot(ctx), (staged) => identify(staged.files))
 }
 
+/**
+ * Rows of the bundles' content as last identified, by path: the deep token storage gave just before
+ * (every file's state), the content id, and what identified it (the target's key, or `fingerprint`).
+ * A cache: without a row, the content is read.
+ */
+const IDENTIFIED = 'identified'
+type IdentifiedRow = { deep: string; content: ContentId; by: string }
+const LOOK_PAGE = 1000
+
+/**
+ * The bundles whose every file storage says is as it was when their content was last identified, with
+ * that content id; and the deep token now of each of the others, taken before their content is read.
+ */
+async function identifiedBefore(run: Run, paths: readonly LibraryPath[]): Promise<{ same: Map<LibraryPath, ContentId>; deep: Map<LibraryPath, string>; by: string }> {
+  const { storage } = run.ctx.tools
+  const by = run.target?.identify ? `target:${run.target.key}` : 'fingerprint'
+  const same = new Map<LibraryPath, ContentId>()
+  const deep = new Map<LibraryPath, string>()
+  for (let i = 0; i < paths.length; i += LOOK_PAGE) {
+    const page = paths.slice(i, i + LOOK_PAGE)
+    const rows = new Map((await storage.records.get<IdentifiedRow>(IDENTIFIED, page)).rows.filter((r) => r.value.by === by).map((r) => [r.key, r.value]))
+    const looked = await storage.look(page.map((place) => ({ place, token: rows.get(place)?.deep ?? 'empty' })), { deep: true })
+    const differ = new Set<string>([...looked.changed.map((c) => c.place), ...looked.gone, ...looked.failed.map((f) => f.place), ...looked.held])
+    for (const c of looked.changed) if (c.deep !== undefined) deep.set(c.place as LibraryPath, c.deep)
+    for (const place of page) {
+      const row = rows.get(place)
+      if (row !== undefined && !differ.has(place)) same.set(place, row.content)
+    }
+  }
+  return { same, deep, by }
+}
+
 /** What the records say the current target holds for a thing. */
 function recorded(run: Run, id: ThingId): Map<SiteName, OnTarget> {
   const sites = run.target ? run.d.sites.get(run.target.key as TargetKey) : undefined
@@ -164,6 +196,9 @@ async function lookAll(run: Run, ids: readonly ThingId[]): Promise<Seen[]> {
   // The content matters only for what is switched on and not archived; one glance says what those paths hold.
   const counted = things.filter((t) => t.on && tools.regionOf(t.path) !== 'archive')
   const kinds = new Map((await thingsAt(tools, counted.map((t) => t.path))).map((kind, i) => [(counted[i] as Declared).id, kind]))
+  // A bundle's content is read only when a file in it is not as it was when it was last identified.
+  const bundles = await identifiedBefore(run, counted.filter((t) => kinds.get(t.id) === 'bundle').map((t) => t.path))
+  const identified: { key: string; value: IdentifiedRow }[] = []
   const parts = []
   for (const thing of things) {
     const id = thing.id
@@ -171,7 +206,9 @@ async function lookAll(run: Run, ids: readonly ThingId[]): Promise<Seen[]> {
     let content: ContentId | null = null
     let refused: string | null = null
     try {
-      if (kinds.has(id)) content = await contentAt(run, thing.path, kinds.get(id) ?? null)
+      if (kinds.has(id)) content = bundles.same.get(thing.path) ?? (await contentAt(run, thing.path, kinds.get(id) ?? null))
+      const deep = bundles.deep.get(thing.path)
+      if (content !== null && deep !== undefined) identified.push({ key: thing.path, value: { deep, content, by: bundles.by } })
     } catch (error) {
       if (!(error instanceof NotStaged)) throw error
       refused = error.message
@@ -187,6 +224,7 @@ async function lookAll(run: Run, ids: readonly ThingId[]): Promise<Seen[]> {
     const names = [...new Set([...(named === null ? [] : [named]), ...mine.keys()])].filter(ours)
     parts.push({ thing, standing, archived, named, mine, names, refused })
   }
+  if (identified.length > 0) await tools.storage.records.put({ [IDENTIFIED]: identified })
   let answer: ReadonlyMap<SiteName, Served> | null = null
   let unreachable: string | null = null
   if (target?.serving) {

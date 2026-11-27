@@ -18,14 +18,14 @@ pub use answer::*;
 pub use place::{Area, Place, PlaceArg, RecordPlace, STORAGE_NAMES};
 use request::Req;
 pub use request::{
-    ChangedRequest, ContentRequest, ContentRule, CursorExpect, DeclarationWriteRequest, Expect,
-    FactsAppendRequest, FactsSinceRequest, GlanceRequest, HoldRequest, LookFrom, LookItem,
+    ChangedRequest, ContentRequest, ContentRule, CursorExpect, DeclarationWriteRequest, DeepLook,
+    Expect, FactsAppendRequest, FactsSinceRequest, GlanceRequest, HoldRequest, LookFrom, LookItem,
     LookRequest, LookRows, ManifestPage, MoveRequest, NoiseEdit, OverviewRequest, ProbeRequest,
     ReadRequest, RemoveRequest, RowChange, RowsGetRequest, RowsPutRequest, RowsUnderRequest,
     RowsWhereRequest, Source, SubscribeRequest, WriteRequest,
 };
 pub use time::Time;
-pub use token::{Token, Trust};
+pub use token::{DeepToken, Token, Trust};
 
 pub const CONTRACT_VERSION: u32 = 1;
 

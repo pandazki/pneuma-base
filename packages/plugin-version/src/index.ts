@@ -183,7 +183,7 @@ export const version: Plugin = {
     const recorded: { path: LibraryPath; version: number }[] = []
     const missing: LibraryPath[] = []
     await eachAtMost(looked, async (thing) => {
-      const r = diffs.get(thing.path) === 'gone' ? null : await record(w, thing, 'outside', null, read.has(thing.id))
+      const r = diffs.get(thing.path) === 'gone' ? null : await record(w, thing, 'outside', null, read.has(thing.id) ? 'content' : 'token')
       if (r === null) missing.push(thing.path)
       else if (r !== 'moved' && r.added) recorded.push({ path: thing.path, version: r.version.n })
     })

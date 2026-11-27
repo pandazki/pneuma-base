@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { CONTRACT, PNEUMA_BASE_VERSION, pluginName, type Plugin } from '@pneuma-base/kernel'
 import { syncCommands } from './commands.js'
 import { envelope, writeFacts } from './facts.js'
+import { foldAll, THINGS } from './rows.js'
 import { carried } from './scope.js'
 import { recordDeletions } from './sync.js'
 import { checkSections, itemSection, STATUS_VIEW, statusView } from './views.js'
@@ -35,6 +36,14 @@ export const sync: Plugin = {
 
   async onPurged(paths, ctx) {
     await writeFacts(ctx, [{ ...envelope(ctx), kind: 'gone', paths: [...paths] }])
+  },
+
+  /** A page of what was registered before it was added: the things it did not know are one fact, carried by the next sync. */
+  async catchUp(things, ctx) {
+    await foldAll(ctx)
+    const known = new Set((await ctx.tools.storage.records.get(THINGS, things.map((t) => t.place))).rows.map((r) => r.key))
+    const paths = things.map((t) => t.place).filter((p) => carried(p) && !known.has(p))
+    if (paths.length > 0) await writeFacts(ctx, [{ ...envelope(ctx), kind: 'things', paths }])
   },
 
   onCheck: (_req, ctx) => checkSections(ctx),

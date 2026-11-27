@@ -1,5 +1,6 @@
 // Which documents the plugin checks, and their broken links. It follows the puts it hears: a record
-// store of the Markdown and HTML documents put or registered, moved, archived and purged. A check reads
+// store of the Markdown and HTML documents put or registered, moved, archived and purged, and of
+// those registered before it was added, which it learns by catching up. A check reads
 // only those documents, each up to READ_BYTES, and asks storage what is at their link targets.
 import { isFailure } from '@pneuma-base/sdk'
 import { recordStore } from '@pneuma-base/sdk/kit'
@@ -59,6 +60,19 @@ export async function heardPut(ctx, req) {
   if (!bundle && !isDocumentPath(req.path)) return
   if (req.kind === 'move') return append(ctx, [{ from: req.from, to: req.path }])
   return append(ctx, [{ under: req.path, paths: bundle ? await documentsIn(ctx, req.path) : [req.path] }])
+}
+
+/** Records the documents among a page of what was registered before the plugin was added; what it knows already stays as it is. */
+export async function heardRegistered(ctx, things) {
+  const known = await documents(ctx)
+  const knows = place => known.some(p => within(p, place))
+  const bodies = []
+  for (const t of things) {
+    if (knows(t.place)) continue
+    if (t.kind === 'bundle') bodies.push({ under: t.place, paths: await documentsIn(ctx, t.place) })
+    else if (isDocumentPath(t.place)) bodies.push({ under: t.place, paths: [t.place] })
+  }
+  return append(ctx, bodies)
 }
 
 export const heardMove = (ctx, from, to) => append(ctx, [{ from, to }])

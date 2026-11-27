@@ -35,6 +35,7 @@ export const KERNEL_COMMAND_NAMES = [
   'grant revoke',
   'plugin add',
   'plugin remove',
+  'plugin catch-up',
   'skill install',
   'archive purge',
   'plugin install',

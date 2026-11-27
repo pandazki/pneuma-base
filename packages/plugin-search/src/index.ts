@@ -8,8 +8,8 @@ import { findHits } from './search.js'
 import { SearchIndex } from './store.js'
 import { itemSection, STATUS_VIEW, statusView } from './views.js'
 
-/** Records `facts` and brings the rows and the index up to them; then reads the things `read` names, as one hook call may. */
-async function heard(ctx: PluginContext, facts: (index: SearchIndex) => Promise<Fact[]>, read: (facts: Fact[]) => LibraryPath[] = () => []): Promise<null> {
+/** Records `facts` and brings the rows and the index up to them; then reads the things `read` names, at most `files` files (as many as one hook call may). */
+async function heard(ctx: PluginContext, facts: (index: SearchIndex) => Promise<Fact[]>, read: (facts: Fact[]) => LibraryPath[] = () => [], files = READS): Promise<null> {
   const index = SearchIndex.open(ctx.cacheDir, ctx.now)
   try {
     await fold(ctx, index)
@@ -18,7 +18,7 @@ async function heard(ctx: PluginContext, facts: (index: SearchIndex) => Promise<
     await append(ctx, written)
     await fold(ctx, index)
     const paths = read(written)
-    if (paths.length > 0) await readPending(ctx, index, { files: READS }, paths)
+    if (paths.length > 0) await readPending(ctx, index, { files }, paths)
     return null
   } finally {
     index.close()
@@ -75,6 +75,20 @@ export const search: Plugin = {
     await heard(ctx, async () => [{ kind: 'gone', paths: [...paths] }])
   },
   onFind: findHits,
+
+  /** A page of what was registered before it was added: the things it did not know are recorded as heard, and read, every one of them. */
+  async catchUp(things, ctx) {
+    await heard(
+      ctx,
+      async () => {
+        const known = await rowsOf(ctx.tools.storage.records, THINGS, things.map((t) => t.place))
+        const fresh = things.filter((t) => !known.has(t.place)).map((t) => ({ path: t.place, bundle: t.kind === 'bundle' }))
+        return fresh.length === 0 ? [] : [{ kind: 'seen', things: fresh }]
+      },
+      putPaths,
+      Infinity,
+    )
+  },
 
   async onView(req, ctx) {
     if (req.view !== STATUS_VIEW) throw new Error(`查找插件没有这个视图：${req.view}`)

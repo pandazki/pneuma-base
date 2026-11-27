@@ -86,7 +86,11 @@ pub const SENTENCES: &[Sentence] = &[
     checked("1.level", "一层 | 一个 `dir` 位置直接含有的那些位置"),
     checked(
         "1.token",
-        "状态令牌 | 存储对一个位置当前状态的不透明标记。内核只保存它、交回来比较，不解读",
+        "状态令牌 | 存储对一个位置当前状态的不透明标记。内核只保存它、交回来比较，不解读。",
+    ),
+    checked(
+        "1.deep-token",
+        "目录另有深令牌：它按内容规则算进的全部文件的状态合成的一个令牌，深看时给",
     ),
     checked(
         "1.facet",
@@ -127,8 +131,9 @@ pub const SENTENCES: &[Sentence] = &[
     checked("2.3", "**变化靠游标。** 没有哪个操作靠遍历去发现变化。"),
     checked(
         "2.4",
-        "**内容只在被要求时读。** 只有 `content`、`read`、`write` 读写字节。",
+        "**内容只在被要求时读。** 只有 `content`、`read`、`write` 读写字节；",
     ),
+    checked("2.4.deep", "深看的 `look` 只读内容规则说的忽略文件。"),
     checked(
         "2.5",
         "**写带预期。** 预期不成立时不改任何东西，答 `refused` 和现状。",
@@ -210,13 +215,29 @@ pub const SENTENCES: &[Sentence] = &[
     outside("4.probe.cost", "`budget`", COST),
     checked(
         "4.look.input",
-        "「位置、预期」的列表，预期是一个令牌或 `empty`；或者一个记录处里的一张表和放着令牌的那个可查的字段，行的键就是位置，带 `limit`（默认 10000）和 `after`（续页）",
+        "「位置、预期」的列表，预期是一个令牌或 `empty`；或者一个记录处里的一张表和放着令牌的那个可查的字段，行的键就是位置，带 `limit`（默认 10000）和 `after`（续页）。",
+    ),
+    checked(
+        "4.look.deep.input",
+        "可带 `deep`（内容规则和文件数上限，默认 5000）：其中的目录深看",
     ),
     checked(
         "4.look.answer",
-        "每个位置：`same`、`changed`（带新描述）、`gone`；从表里取预期时只列出不同的，另答这一页比过的个数和续页用的 `after`",
+        "每个位置：`same`、`changed`（带新描述）、`gone`；从表里取预期时只列出不同的，另答这一页比过的个数和续页用的 `after`。",
     ),
-    outside("4.look.cost", "位置的个数；从表里取预期时是 `limit`", COST),
+    checked(
+        "4.look.deep.answer",
+        "深看的目录在 `changed` 里另带它此刻的深令牌；",
+    ),
+    checked(
+        "4.look.deep.too-many",
+        "算进的文件超过上限的答在 `failed` 里，`too_many` 带至少的个数",
+    ),
+    outside(
+        "4.look.cost",
+        "位置的个数，深看的目录另加它算进的文件数（至多上限）；从表里取预期时是 `limit`",
+        COST,
+    ),
     checked("4.changed.input", "游标（没有则只取当前游标）、时间预算"),
     checked(
         "4.changed.answer",
@@ -288,6 +309,32 @@ pub const SENTENCES: &[Sentence] = &[
     checked(
         "4.look.dir",
         "拿一个目录的令牌比，问的是它自己的这一层变了没有：这一层多了、少了或改了名的条目，令牌就变；它里面的文件改了内容不算，也不往下走。",
+    ),
+    checked(
+        "4.deep.1",
+        "带 `deep` 的 `look` 里，是目录的位置深看：存储照调用方给的内容规则走遍这个目录，取每个算进的文件的状态（令牌的那些分量），不读内容，由这些文件的相对路径和状态算出一个令牌代表整个目录，叫深令牌。",
+    ),
+    checked(
+        "4.deep.2",
+        "算进的文件多了、少了、改了名或任何一个的状态变了，深令牌就变；",
+    ),
+    checked(
+        "4.deep.3",
+        "规则不算的（噪音、忽略文件排除的、链接、空目录）变了不算。",
+    ),
+    checked("4.deep.4", "是文件的位置照常比。"),
+    checked(
+        "4.deep.5",
+        "深令牌只和深令牌比：预期不是一次深看给出的令牌（比如目录自己的令牌）就是 `changed`。",
+    ),
+    checked(
+        "4.deep.6",
+        "算进的文件超过上限就停下，这个位置答在 `failed` 里，`too_many` 带至少的个数。",
+    ),
+    checked("4.deep.7", "深看不触发占位文件的下载；"),
+    checked(
+        "4.deep.8",
+        "有文件的状态担保不了（第 7 节）的深令牌，和任何预期比都是 `changed`。",
     ),
     checked(
         "4.look.rows.1",

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { agentCommands } from './agent-commands.js'
+import { catchUp, caughtUpText } from './catch-up.js'
 import { said, takenBy } from './claims.js'
 import { skillText } from './cognition.js'
 import { exists, writeAtomic } from './machine-files.js'
@@ -160,9 +161,13 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       }
       const updated = await saveConfig(library.root, { ...library.config, plugins: [...library.config.plugins, name as PluginName] }, call.table)
       const added = updated.plugins.find((p) => p.name === name)
-      const heard = await hear(added, (p, pctx) => p.onAdd?.(pctx), { ...call.ctx, library: updated })
+      const ctx = { ...call.ctx, library: updated }
+      const heard = await hear(added, (p, pctx) => p.onAdd?.(pctx), ctx)
       const problems = [...heard.problems, ...(heard.answer ? heard.answer.problems.map((message) => ({ plugin: name as PluginName, message })) : [])]
-      return done(`已装上插件 ${name}，说明已重新生成。`, undefined, updated, problems)
+      // A library in use: the plugin catches up on what was registered before it, from the first page.
+      const caught = await caughtUp(ctx, added, 'fresh')
+      const text = [`已装上插件 ${name}，说明已重新生成。`, ...(caught.text === null ? [] : [caught.text])].join('\n')
+      return done(text, caught.data, updated, [...problems, ...caught.problems])
     },
   }),
   command({
@@ -188,6 +193,21 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       const updated = await saveConfig(library.root, { ...library.config, plugins: library.config.plugins.filter((p) => p !== name) }, call.table)
       const text = `已卸下插件 ${name}，说明已重新生成。它名下的目录 .pneuma-base/${name}/ 原样留着。${warning === null ? '' : `\n它卸下前提醒过：${warning}`}`
       return done(text, undefined, updated, heard.problems)
+    },
+  }),
+  command({
+    name: 'plugin catch-up',
+    summary: '让插件补上装上之前库里登记过的东西；停下过的接着补',
+    params: { positional: [PLUGIN] },
+    destructive: false,
+    ownerOnly: false,
+    scope: 'library',
+    async run({ plugin: name }, call) {
+      const plugin = call.ctx.library.plugins.find((p) => p.name === name)
+      if (!plugin) return refused('not-installed', `这个库没装插件 ${name}`)
+      if (!plugin.catchUp) return refused('nothing-to-catch-up', `插件 ${name} 不从放里学库里登记了什么，没有要补的。`)
+      const caught = await caughtUp(call.ctx, plugin, 'resume')
+      return done(caught.text ?? '', caught.data, undefined, caught.problems)
     },
   }),
   skillInstall,
@@ -385,6 +405,18 @@ async function machineListing(home: string, table: PluginTable, library: Library
 }
 
 /** One plugin's lifecycle hook, if it is installed here and has it: what it answered, or the problem it threw (K8). */
+/** A plugin's catching up as a command answers it: one line, the counts, and the plugin's problem when its hook threw. */
+async function caughtUp(ctx: Context, plugin: Plugin | undefined, how: 'fresh' | 'resume'): Promise<{ text: string | null; data?: unknown; problems: PluginProblem[] }> {
+  if (!plugin) return { text: null, problems: [] }
+  try {
+    const r = await catchUp(ctx, plugin, how)
+    if (r === null || (how === 'fresh' && r.nothing)) return { text: null, problems: [] }
+    return { text: caughtUpText(plugin.name, r, r.keeper), data: { catchUp: { done: r.done, total: r.total, finished: r.finished } }, problems: [] }
+  } catch (error) {
+    return { text: `${plugin.name} 补上装上之前登记的东西时出错；接着补：pneuma-base plugin catch-up ${plugin.name}`, problems: [{ plugin: plugin.name, message: messageOf(error) }] }
+  }
+}
+
 async function hear<T>(plugin: Plugin | undefined, call: (p: Plugin, pctx: PluginContext) => Promise<T> | undefined, ctx: Context): Promise<{ answer: T | undefined; problems: PluginProblem[] }> {
   if (!plugin) return { answer: undefined, problems: [] }
   try {

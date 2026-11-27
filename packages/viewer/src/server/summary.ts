@@ -1,5 +1,5 @@
 // One line for the page to show after a call: what happened, and how it went.
-import type { ArchiveResult, AskResult, OwnerResult, PluginProblem, PutResult, SayResult } from '@pneuma-base/kernel'
+import { elsewhereWords, type ArchiveResult, type AskResult, type InspectResult, type OwnerResult, type PluginProblem, type PutResult, type SayResult } from '@pneuma-base/kernel'
 
 export type Summary = { tone: 'good' | 'warn' | 'bad'; text: string }
 
@@ -48,6 +48,11 @@ export function askSummary(r: AskResult): Summary {
 /** For a verb that only reads: nothing to say unless a plugin failed. */
 export function readSummary(problems: PluginProblem[]): Summary {
   return withProblems({ tone: 'good', text: '好了。' }, problems)
+}
+
+/** For inspect asked for content: a fetch that left it elsewhere says where it is still. */
+export function inspectSummary(r: InspectResult): Summary {
+  return r.content?.kind === 'elsewhere' ? withProblems({ tone: 'warn', text: `${elsewhereWords(r.content.provider, r.content.size)}。` }, r.problems) : readSummary(r.problems)
 }
 
 /** For a named whole pass: what it found, as its plugin wrote it. */

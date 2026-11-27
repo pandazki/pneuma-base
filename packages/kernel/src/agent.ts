@@ -4,6 +4,7 @@ import { callableIn } from './blocks.js'
 import { contentOf } from './content.js'
 import { ownerFace } from './owner.js'
 import { archivedPath, parseLibraryPath, regionOf } from './paths.js'
+import { catchingUp, catchingUpLine } from './catch-up.js'
 import { eachPlugin, messageOf, performVerb, pluginContext, type Collected } from './pipeline.js'
 import { openDirectories } from './places.js'
 import { put } from './put.js'
@@ -49,7 +50,13 @@ export const agentFace: AgentFace = {
 /** The plugins' hits, from their indexes: the kernel lists no file by name, since that would walk the library. */
 async function find(req: FindRequest, ctx: Context): Promise<FindResult> {
   const heard = await eachPlugin(ctx, (plugin, pctx) => plugin.onFind?.(req, pctx))
-  const answers = heard.values.map(({ plugin, value }) => ({ plugin, ...(Array.isArray(value) ? { hits: value, problems: [] } : value) }))
+  // A plugin still catching up says so in one line, last among its hits; start's find leaves it to check.
+  const behind: Awaited<ReturnType<typeof catchingUp>> = req.skipOwnSession ? new Map() : await catchingUp(ctx)
+  const answers = heard.values.map(({ plugin, value }) => {
+    const answer = Array.isArray(value) ? { hits: value, problems: [] } : value
+    const c = behind.get(plugin)
+    return { plugin, ...answer, hits: c === undefined ? answer.hits : [...answer.hits, { path: null, title: catchingUpLine(c), group: null, detail: null }] }
+  })
   const found = answers.map(({ plugin, hits }) => hits.map((h) => ({ ...h, by: plugin })))
   const known = await annotate(req, ctx, found.flat())
   const merged = mergeHits(ctx.library.plugins.map((p) => p.name), found, known.hits)
@@ -130,7 +137,7 @@ async function inspect(req: InspectRequest, ctx: Context): Promise<InspectResult
   const request = named.file === null && named.place === undefined ? await requestNamed(ctx.library.root, req.target) : null
   const result: InspectResult = { file: named.file, ...(named.place ? { place: named.place } : {}), sections: stamp(heard), problems: heard.problems, ...(request === null ? {} : { request }) }
   if (req.content === undefined) return result
-  return { ...result, content: named.file === null ? { kind: 'unavailable', path: null, reason: 'no-such-file' } : await contentOf(ctx, store, named.file, req.content.file) }
+  return { ...result, content: named.file === null ? { kind: 'unavailable', path: null, reason: 'no-such-file' } : await contentOf(ctx, store, named.file, req.content.file, req.content.fetch === true) }
 }
 
 /** The thing a target names, as storage says it is now: the main one, else its archived copy; `_archive/…` names the archived copy. */
@@ -212,6 +219,18 @@ async function say(req: SayRequest, ctx: Context): Promise<SayResult> {
 
 async function check(req: CheckRequest, ctx: Context): Promise<CheckResult> {
   const heard = await eachPlugin(ctx, (plugin, pctx) => plugin.onCheck?.(req, pctx))
+  // A plugin still catching up says so in one line among its sections.
+  const behind = await catchingUp(ctx)
+  for (const plugin of ctx.library.plugins) {
+    const c = behind.get(plugin.name)
+    if (c === undefined || plugin.onCheck === undefined) continue
+    const section = { title: '装上之前登记的', body: catchingUpLine(c) }
+    const at = heard.values.find((v) => v.plugin === plugin.name)
+    if (at) at.value = [...at.value, section]
+    else heard.values.push({ plugin: plugin.name, value: [section] })
+  }
+  const order = ctx.library.plugins.map((p) => p.name)
+  heard.values.sort((a, b) => order.indexOf(a.plugin) - order.indexOf(b.plugin))
   const asked = await asksOf(ctx, callableIn(ctx.library))
   return { sections: stamp(heard), asks: asked.asks, requests: await requestsFor(ctx), problems: [...heard.problems, ...asked.problems] }
 }

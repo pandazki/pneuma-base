@@ -22,6 +22,15 @@ const archiveAction = (kind: 'archive' | 'unarchive', path: LibraryPath): Action
   call: { face: 'agent', verb: 'archive', request: { kind, path } },
 })
 
+/** Fetching a placeholder's content to this machine: inspect asked for the content with fetch. */
+const fetchAction = (path: LibraryPath): Action => ({
+  label: '取回内容',
+  tone: 'default',
+  confirm: null,
+  inputs: [],
+  call: { face: 'agent', verb: 'inspect', request: { target: path, content: { file: null, fetch: true } } },
+})
+
 /** Moving a thing within the library: put with --to, the whole of a bundle with it. */
 const moveAction = (path: LibraryPath): Action => ({
   label: '挪到',
@@ -163,8 +172,8 @@ async function thingSections(ctx: Context, facts: FileFacts, bundle: LibraryPath
   const partOf: Block[] = bundle === null ? [] : [{ kind: 'text', tone: 'neutral', text: `它是 ${bundle} 的一部分。${bundle} 是一样东西，只能整个一起放、挪、归档。` }]
   const own = section('文件', [fields, ...partOf])
   if (facts.kind === 'bundle') return [own, await levelSection(ctx, facts.path, params, rows, true)]
-  if (facets?.placeholder !== undefined) return [own]
-  return [own, { kind: 'section', title: '预览', note: null, count: null, blocks: [{ kind: 'preview', path: facts.path }], actions: [], collapse: 'open' }]
+  const preview: Block[] = facets?.placeholder !== undefined ? [{ kind: 'actions', actions: [fetchAction(facts.path)] }] : [{ kind: 'preview', path: facts.path }]
+  return [own, { kind: 'section', title: '预览', note: null, count: null, blocks: preview, actions: [], collapse: 'open' }]
 }
 
 /**

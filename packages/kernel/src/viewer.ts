@@ -110,8 +110,14 @@ async function configPage(_params: Record<string, string>, { ctx, table }: Viewe
       actions,
     }
   }
+  // A plugin that learns what is registered from puts can catch up on what was registered before it, again at any time.
+  const catchUp = (name: string): Action[] =>
+    library.plugins.some((p) => p.name === name && p.catchUp !== undefined) ? [kernelAction('plugin catch-up', '补上装上之前登记的', { fixed: { plugin: name } })] : []
   const installed = config.plugins.map((name) =>
-    pluginRow(name, library.plugins.some((p) => p.name === name) ? { text: '已装', tone: 'good' } : { text: '这个 pneuma-base 里没有', tone: 'warn' }, [kernelAction('plugin remove', '卸下', { fixed: { plugin: name, anyway: false } })]),
+    pluginRow(name, library.plugins.some((p) => p.name === name) ? { text: '已装', tone: 'good' } : { text: '这个 pneuma-base 里没有', tone: 'warn' }, [
+      ...catchUp(name),
+      kernelAction('plugin remove', '卸下', { fixed: { plugin: name, anyway: false } }),
+    ]),
   )
   // A plugin installed on this machine, not built in, can also leave the machine once no library here uses it.
   const uninstall = (name: string): Action[] => {

@@ -101,7 +101,7 @@ describe('the item section', () => {
 
     expect(await lib.item('a.md')).toEqual({ title: '查找', blocks: [{ kind: 'fields', fields: [{ label: '正文', value: { text: '已索引，1 块' } }, { label: '按意思', value: { text: '没配嵌入器' } }] }] })
     expect(fields((await lib.item('logo.png'))?.blocks ?? [])).toMatchObject({ 正文: '不是文本，不索引正文' })
-    expect(fields((await lib.item('new.md'))?.blocks ?? [])).toMatchObject({ 正文: '没有索引：查找插件装上之后，它没有被放入或登记过' })
+    expect(fields((await lib.item('new.md'))?.blocks ?? [])).toMatchObject({ 正文: '没有索引：查找插件的记录里没有它' })
     expect(fields((await lib.item('sites/a'))?.blocks ?? [])).toMatchObject({ 正文: '已索引 2 个文件，2 块' })
 
     await lib.owner('search embedder set', { kind: ['hash'] })

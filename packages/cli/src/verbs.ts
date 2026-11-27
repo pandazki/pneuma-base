@@ -202,11 +202,15 @@ export const VERBS: readonly Verb[] = [
         { name: 'target', hint: '库内路径、条目号或场景号', required: true },
         { name: 'file', hint: '带标记的目录里的一个文件，相对这个目录，跟 content 一起写' },
       ],
-      flags: [{ name: 'content', hint: '也给内容：UTF-8 文字给全文，别的给大小和种类，带标记的目录给文件清单', kind: 'boolean' }],
+      flags: [
+        { name: 'content', hint: '也给内容：UTF-8 文字给全文，别的给大小和种类，带标记的目录给文件清单', kind: 'boolean' },
+        { name: 'fetch', hint: '内容不在这台机器上时先取回来，跟 content 一起写', kind: 'boolean' },
+      ],
     },
-    run: async ({ target, file, content }, { bound: { ctx } }) => {
+    run: async ({ target, file, content, fetch }, { bound: { ctx } }) => {
       if (file !== null && !content) throw new UsageError(`${file}：目录里的文件跟 --content 一起写：inspect ${target} --content ${file}`)
-      const r = await agentFace.inspect({ target, ...(content ? { content: { file } } : {}) }, ctx)
+      if (fetch && !content) throw new UsageError(`--fetch 跟 --content 一起写：inspect ${target} --content --fetch`)
+      const r = await agentFace.inspect({ target, ...(content ? { content: { file, ...(fetch ? { fetch: true } : {}) } } : {}) }, ctx)
       return { json: r, lines: inspectText(target, r, file), exit: exitOf(r) }
     },
   }),

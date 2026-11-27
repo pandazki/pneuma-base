@@ -57,8 +57,12 @@ export type Overview = { entries: Description[]; more: { at_least: number; after
 
 export type Probe = { files: number; dirs: number; bytes: number; exceeded: boolean; markers: string[] }
 
-/** Places not named in `changed`, `gone`, `failed` or `held` are as expected. */
-export type Looked = { same: number; changed: { place: Place; entry: Description }[]; gone: Place[]; failed: { place: Place; reason: StorageReason }[]; held: Place[] }
+/**
+ * Places not named in `changed`, `gone`, `failed` or `held` are as expected. `deep`: in a deep look, a
+ * directory's deep token now, to keep and hand back as the next expectation. `at_least`: with
+ * `too_many`, how many files a deep-looked directory has at least.
+ */
+export type Looked = { same: number; changed: { place: Place; entry: Description; deep?: string }[]; gone: Place[]; failed: { place: Place; reason: StorageReason; at_least?: number }[]; held: Place[] }
 
 /** A page of a look whose expectations a table holds: what differs among `compared` rows, and the key the next page starts after. */
 export type LookedPage = Looked & { compared: number; more: { after: string } | null }
@@ -89,8 +93,10 @@ export type Written = { entry: Description; fingerprint: Fingerprint; files?: nu
 /**
  * What changed in the content since a mark kept by the asker: the places (a place may stand for its
  * directory), or `null` when storage could not say, and then every registered place is to be compared.
+ * `within`: the directory things a changed place lies inside, at any depth: each one changed, though
+ * its own token and its first level's may not show it.
  */
-export type Changes = { places: Place[] | null; mark: string }
+export type Changes = { places: Place[] | null; mark: string; within: Place[] }
 
 export type StoredFact = { order: string; fact: unknown }
 /** A page of facts; read from no cursor, also how many facts files there are (each holds one fact or more). */
@@ -134,15 +140,20 @@ export interface PlaceStore {
   glance(places: readonly Place[]): Promise<Glanced[]>
   /** One level of a directory, one page of at most `limit` (200, at most 1000) after `after`. */
   overview(place: Place, opts?: { limit?: number; after?: string }): Promise<Overview | StorageFailure>
-  /** Which of these places are not as expected any more: a token, or `empty` for nothing there. */
-  look(places: readonly { place: Place; token: Expect }[]): Promise<Looked>
+  /**
+   * Which of these places are not as expected any more: a token, or `empty` for nothing there.
+   * `deep`: a directory is compared by its deep token, the states of every file the rule things follow
+   * counts, taken without reading content; past 5000 files it answers `too_many`. Only a deep token
+   * matches a deep token.
+   */
+  look(places: readonly { place: Place; token: Expect }[], opts?: { deep?: true }): Promise<Looked>
   /**
    * Which places are not as the rows of a table of the plugin's own record place expect: each row's key
    * is a place and its field `field` a token or `empty` (a row without it expects nothing in particular,
    * and whatever is there differs). A page of at most `limit` rows (10000, at most 100000) after `after`,
    * compared inside storage; only the differences come back.
    */
-  lookRows(table: string, field: string, opts?: { limit?: number; after?: string }): Promise<LookedPage>
+  lookRows(table: string, field: string, opts?: { limit?: number; after?: string; deep?: true }): Promise<LookedPage>
   /**
    * The fingerprint of the content: read only now, because asked. A directory over `limit` files (5000)
    * answers `too_many`. `manifest`: a directory's answer also lists the files the rule counts, a page of

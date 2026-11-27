@@ -13,6 +13,7 @@ import { foldFacts, foldOut, type FoldOut } from './fold.js'
 import { ancestors, expectations, live, nameOf, parentOf, putItem, putSeen, ROWS_VERSION, unlisted, type Entry, type ItemRow, type MarkRow, type SeenRow } from './model.js'
 import { pagesOf, PUT_ROWS, Tx, wherePages } from './rows.js'
 import { settle, settling, type Settling } from './settle.js'
+import type { LastLook } from './views.js'
 
 /** How many entries of a directory one look lists. */
 export const OVERVIEW = 200
@@ -330,9 +331,10 @@ async function compareItems(store: Store, items: readonly ItemRow[]): Promise<Di
 /**
  * Looks at these registered things: what storage said differs among their places (asked here with their
  * records when not given), a directory-thing's first level with it. A thing named in none of the
- * differences is as recorded; a thing being written now is judged by its record.
+ * differences is as recorded; a thing being written now is judged by its record. `within`: the
+ * directory-things the change log named a place deep inside, judged as changed whatever their level says.
  */
-export async function lookItems(store: Store, tx: Tx, settling: Settling, items: readonly ItemRow[], given?: Differences): Promise<void> {
+export async function lookItems(store: Store, tx: Tx, settling: Settling, items: readonly ItemRow[], given?: Differences, within: ReadonlySet<Place> = new Set()): Promise<void> {
   const diff = given ?? (await compareItems(store, items))
   const gone = (place: Place) => diff.gone.has(place) || diff.failed.has(place)
   const decide: { item: ItemRow; d: Description }[] = []
@@ -350,7 +352,7 @@ export async function lookItems(store: Store, tx: Tx, settling: Settling, items:
       else decide.push({ item, d: own })
       continue
     }
-    const inner = (item.entries ?? []).some((e) => diff.changed.has(`${item.path}/${e.name}`) || gone(`${item.path}/${e.name}`))
+    const inner = within.has(item.path) || (item.entries ?? []).some((e) => diff.changed.has(`${item.path}/${e.name}`) || gone(`${item.path}/${e.name}`))
     // A place whose row expected nothing in particular is always answered; its token on record says it is as recorded.
     if ((own === undefined || own.token === item.token) && !inner) {
       if (item.bundle && item.entries === null) item.entries = await levelOf(store, item.path)
@@ -431,8 +433,8 @@ async function itemsAt(tx: Tx, places: readonly Place[], extra: Iterable<Library
   return [...(await tx.getMany<ItemRow>('items', ids)).values()].filter(live)
 }
 
-/** The look when storage named what changed: those places and the places the facts named, and the open directories among them and their parents. */
-async function lookSome(store: Store, tx: Tx, settling: Settling, places: readonly Place[], named: ReadonlySet<LibraryPath>): Promise<void> {
+/** The look when storage named what changed: those places and the places the facts named, the open directories among them and their parents, and the directory-things a place lies deep inside (`within`). */
+async function lookSome(store: Store, tx: Tx, settling: Settling, places: readonly Place[], named: ReadonlySet<LibraryPath>, within: ReadonlySet<Place>): Promise<void> {
   const dirs = new Set<Place>()
   for (const p of places) {
     dirs.add(p)
@@ -442,7 +444,7 @@ async function lookSome(store: Store, tx: Tx, settling: Settling, places: readon
   const open = await tx.getMany<number>('dirs', dirs)
   await lookDirs(store, tx, settling, [...dirs].filter((d) => d === '' || open.has(d)))
   const items = await itemsAt(tx, places, named)
-  for (let i = 0; i < items.length; i += LOOK_PAGE) await lookItems(store, tx, settling, items.slice(i, i + LOOK_PAGE))
+  for (let i = 0; i < items.length; i += LOOK_PAGE) await lookItems(store, tx, settling, items.slice(i, i + LOOK_PAGE), undefined, within)
 }
 
 /**
@@ -486,10 +488,13 @@ async function lookAll(ctx: PluginContext, mark: string): Promise<void> {
       await lookDirs(store, tx, settling, [...new Set([...dirs.changed.keys(), ...dirs.gone, ...dirs.failed])], dirs)
       const things = await differing(store, 'tokens')
       await lookItems(store, tx, settling, await thingsDiffering(tx, things), things)
+      tx.set('meta', LOOKED, { how: 'level', at: ctx.now } satisfies LastLook)
     },
     mark,
   )
 }
+
+const LOOKED = 'looked'
 
 /** The look of the operation under way, by library and moment: check and its asks, or the home page and its parts, look once. */
 let lastLook: { key: string; answer: Promise<void> } | null = null
@@ -514,7 +519,14 @@ async function lookNow(ctx: PluginContext): Promise<void> {
   const changes = await store.changed(mark)
   const places = changes.places?.filter((p) => regionOf(p as LibraryPath) !== 'kernel') ?? null
   if (places === null || places.length > PLACES_MAX || out.overflow) return lookAll(ctx, changes.mark)
-  await inTx(ctx, (tx, settling, more) => lookSome(store, tx, settling, places, new Set([...out.voided, ...more.voided])), changes.mark)
+  await inTx(
+    ctx,
+    async (tx, settling, more) => {
+      await lookSome(store, tx, settling, places, new Set([...out.voided, ...more.voided]), new Set(changes.within))
+      tx.set('meta', LOOKED, { how: 'log', at: ctx.now } satisfies LastLook)
+    },
+    changes.mark,
+  )
 }
 
 /** Takes what is at these places now as what was recorded there: after the ledger recorded a put, a claimed change or a move. */

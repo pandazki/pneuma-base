@@ -50,9 +50,13 @@ function agentCall(verb: unknown, r: Raw): Call {
       need(isStringOrNull(r.text) && (r.match === 'terms' || r.match === 'words') && isRecordOf(r.filters, isString), 'find needs text, match and filters')
       need(typeof r.includeArchived === 'boolean' && typeof r.skipOwnSession === 'boolean', 'find needs includeArchived and skipOwnSession')
       return { face: 'agent', verb, request: { text: r.text as string | null, match: r.match as 'terms' | 'words', filters: r.filters as Record<string, string>, includeArchived: r.includeArchived as boolean, skipOwnSession: r.skipOwnSession as boolean } }
-    case 'inspect':
+    case 'inspect': {
       need(isString(r.target), 'inspect needs a target')
-      return { face: 'agent', verb, request: { target: r.target as string } }
+      const c = r.content
+      const content = c === undefined ? undefined : isObject(c) && isStringOrNull(c.file) && (c.fetch === undefined || typeof c.fetch === 'boolean') ? { file: c.file as string | null, ...(c.fetch === true ? { fetch: true } : {}) } : null
+      need(content !== null, 'inspect content needs file, a string or null, and fetch, a boolean')
+      return { face: 'agent', verb, request: { target: r.target as string, ...(content ? { content } : {}) } }
+    }
     case 'say':
       need(isString(r.kind) && isStringOrNull(r.about) && isStringOrNull(r.text) && isRecordOf(r.args, isStrings), 'say needs kind, about, text and args')
       return { face: 'agent', verb, request: { kind: r.kind as string, about: r.about as string | null, text: r.text as string | null, args: r.args as Record<string, string[]> } }

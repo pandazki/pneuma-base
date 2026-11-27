@@ -104,7 +104,13 @@ pub const CHECKS: &[Check] = &[
     ),
     check!(
         places::placeholders_need_a_sync_service,
-        ["3.8.2", "4.read.elsewhere", "7.placeholder", "8.elsewhere"]
+        [
+            "3.8.2",
+            "4.read.elsewhere",
+            "4.deep.7",
+            "7.placeholder",
+            "8.elsewhere"
+        ]
     ),
     check!(places::costlier_facets_come_only_when_asked, ["3.9"]),
     // The content half
@@ -162,6 +168,59 @@ pub const CHECKS: &[Check] = &[
         ["4.s4", "4.probe.answer"]
     ),
     check!(places::describe_lists_no_whole_library_operation, ["4.s11"]),
+    // A deep look
+    check!(
+        deep::an_unchanged_directory_keeps_its_deep_token,
+        [
+            "1.deep-token",
+            "4.look.deep.input",
+            "4.look.deep.answer",
+            "4.deep.1"
+        ]
+    ),
+    check!(
+        deep::a_change_far_down_changes_the_deep_token,
+        ["4.deep.2", "4.look.deep.answer", "4.look.dir"]
+    ),
+    check!(
+        deep::deep_tokens_follow_files_added_removed_and_renamed,
+        ["4.deep.2"]
+    ),
+    check!(
+        deep::what_the_rule_leaves_out_does_not_change_the_deep_token,
+        ["4.deep.3", "4.look.deep.input", "4.s9"]
+    ),
+    check!(
+        deep::only_a_deep_token_compares_with_a_deep_token,
+        ["4.deep.5", "4.look.empty"]
+    ),
+    check!(
+        deep::a_file_in_a_deep_look_is_compared_as_usual,
+        ["4.deep.4"]
+    ),
+    check!(
+        deep::a_deep_look_stops_at_its_file_limit,
+        [
+            "4.look.deep.too-many",
+            "4.deep.6",
+            "4.look.deep.input",
+            "8.too_many",
+            "2.2"
+        ]
+    ),
+    check!(
+        deep::a_deep_look_takes_expectations_from_a_table,
+        ["4.look.deep.input", "4.look.deep.answer", "4.look.rows.3"]
+    ),
+    check!(
+        deep::a_deep_look_reads_no_content,
+        ["2.4.deep", "4.deep.1", "8.unreadable"]
+    ),
+    check!(
+        deep::a_deep_look_works_in_a_record_place,
+        ["4.s12", "4.s13", "4.s15"]
+    ),
+    check!(deep::a_racy_deep_edit_is_seen, ["4.deep.8"]),
     check!(
         reads::changed_without_a_cursor_gives_the_current_one,
         ["4.changed.input"]
