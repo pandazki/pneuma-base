@@ -3,7 +3,7 @@
 // knows its kind, renders as what it says; a plugin that throws in its view is the kernel's
 // (packages/kernel/test/viewer.test.ts) and the server's (packages/viewer/test/server.test.ts).
 import { join } from 'node:path'
-import { cutTexts, expect, fromMenu, navTitles, tempDir, test, write } from './support.ts'
+import { cutTexts, expect, navTitles, tempDir, test, write } from './support.ts'
 
 // The sample table's moment reads 11:11 here: the digit whose proportional and tabular widths differ most.
 test.use({ timezoneId: 'UTC' })
@@ -36,6 +36,16 @@ test('a plugin’s page appears when installed, renders each kind of block, and 
   await expect(section.getByText('字段的值')).toBeVisible() // fields
   await expect(main.getByText('列表的一项')).toBeVisible() // list
   await expect(main.getByText('一项的说明')).toBeVisible()
+  // A list row that is a setting: its switch names the action in a tooltip, its whole text is behind an ⓘ,
+  // Enter turns it through the action's path, and it then stands as the page says.
+  const setting = main.getByRole('switch', { name: '一个开关' })
+  await expect(setting).toHaveAttribute('aria-checked', 'true')
+  await expect(setting).toHaveAttribute('data-tip', '关上')
+  await expect(main.getByRole('img', { name: '一个开关：拨它就打个招呼。' })).toBeVisible()
+  await setting.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('status')).toContainText('pong')
+  await expect(setting).toHaveAttribute('aria-checked', 'true')
   await expect(main.getByText('时间线的一条')).toBeVisible() // timeline
   await expect(main.locator('time[datetime="2026-11-25T01:00:00.000Z"]')).toBeVisible()
   await expect(main.getByRole('figure', { name: '预览' })).toContainText('pager 预览的内容') // preview
@@ -49,9 +59,9 @@ test('a plugin’s page appears when installed, renders each kind of block, and 
   await section.getByRole('row', { name: /表的第一行/ }).click()
   await expect(page.getByRole('complementary', { name: '详情' }).getByTestId('panel-title')).toHaveText('pager.md')
 
-  // Removed from the config page: the page is gone.
+  // Switched off on the config page: the page is gone.
   await nav.getByRole('button', { name: '配置' }).click()
-  await fromMenu(page.getByRole('region', { name: '插件' }).getByRole('row', { name: /pager/ }), '卸下')
+  await page.getByRole('region', { name: '插件' }).getByRole('switch', { name: 'pager' }).click()
   await expect(page.getByRole('status')).toContainText('已卸下插件 pager')
   await expect(nav.getByRole('button', { name: '块的样例' })).toHaveCount(0)
   expect(await navTitles(page)).toEqual(['首页', '文件', 'Agent', '配置'])

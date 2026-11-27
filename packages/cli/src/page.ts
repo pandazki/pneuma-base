@@ -209,7 +209,17 @@ function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: 
     case 'fields':
       return block.fields.map((f) => `${indent}${f.label}：${cellText(f.value)}`)
     case 'list':
-      return [...block.items.flatMap((item) => [`${indent}- ${cellText(item.cell)}`, ...(item.note === null ? [] : [`${more}${item.note}`]), ...actions(item.actions, more)]), ...pageLines(block.page, indent)]
+      return [
+        ...block.items.flatMap((item) => [
+          `${indent}- ${cellText(item.cell)}`,
+          ...(item.note === null ? [] : [`${more}${item.note}`]),
+          ...(item.about === undefined ? [] : [`${more}（${item.about}）`]),
+          // A setting: whether it is on, and the command that turns it the other way.
+          ...(item.toggle === undefined ? [] : [`${more}${item.toggle.on ? '开着' : '关着'}  ${actionLine(item.toggle.action, commands, '')}`]),
+          ...actions(item.actions, more),
+        ]),
+        ...pageLines(block.page, indent),
+      ]
     case 'timeline':
       return [
         ...block.entries.flatMap((e) => [

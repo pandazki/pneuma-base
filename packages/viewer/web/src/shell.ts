@@ -28,7 +28,8 @@ export type MenuItem = { id: string; label: string; danger?: true }
  * places, each answered by itself; the system's drag of these files out of the window, from the
  * pointer, giving copies; how many places are selected, for the app's menus. A conversation opened
  * again: `url` when an application handles it, else `run` in the default terminal, else `reveal`.
- * A question before an act that cannot be undone, as the system's sheet (`confirmInShell`).
+ * A question before an act that cannot be undone, as the system's sheet (`confirmInShell`). A path of
+ * this machine a cell names (`Cell.local`, such as the library's folder), shown selected in Finder.
  */
 export type ShellMessage =
   | { type: 'choose'; to: string }
@@ -50,6 +51,7 @@ export type ShellMessage =
   | { type: 'selection'; count: number }
   | { type: 'reopen'; url: string | null; run: { command: string; cwd: string } | null; reveal: string }
   | { type: 'confirm'; id: number; text: string; act: string; danger: boolean }
+  | { type: 'reveal-local'; path: string }
 
 /** What the app's menus ask of the page's selection, and what the context menu's 打开 and 快速查看 hand back. */
 export type ShellCommand = 'open' | 'preview' | 'reveal' | 'copy-path' | 'rename' | 'list' | 'icons' | 'up'

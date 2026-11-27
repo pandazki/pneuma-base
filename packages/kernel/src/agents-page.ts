@@ -1,23 +1,31 @@
-// The kernel's `agents` page: the agents connected to this library, a two-line row each with its mark,
-// how it is connected, what its grant reaches, what the plugins know of it, and 断开; agents connecting
-// themselves, by the sentence and by pairing; the products found on this machine and not connected,
-// each with 接上; and what a connected agent may do, from the same command table and by the same rule
-// as the MCP face. ARCHITECTURE.md「Agent 页（`agents`）」.
-import { formOf, type Action, type Block, type FixedValue, type PluginProblem, type Tag, type ViewAnswer } from '@pneuma-base/sdk'
+// The kernel's `agents` page: the agents that may use this library, a two-line row each with its mark:
+// the connected ones with how they are connected, what their grant reaches, what the plugins know of
+// them, and 断开; a grant no product was connected with, with its skills and 撤回; 发授权 in the head.
+// Then agents connecting themselves, by the sentence and by pairing; the products found on this machine
+// and not connected, each with 接上; and what a connected agent may do, from the same command table and
+// by the same rule as the MCP face. ARCHITECTURE.md「Agent 页（`agents`）」.
+import { formOf, type Action, type Block, type FixedValue, type ListItem, type PluginProblem, type Tag, type ViewAnswer } from '@pneuma-base/sdk'
 import { connectionFacts, NOTHING_WRITTEN, titleOf, WAY_WORD, whereOf } from './agent-commands.js'
 import { endpointOf } from './endpoint.js'
 import { KERNEL_COMMANDS } from './owner-commands.js'
 import { ownerFace, type OwnerCommandInfo } from './owner.js'
 import { pairingActions, pairingsOf, pairingState, sentenceBlock, type PairingState } from './pairing.js'
 import { eachPlugin } from './pipeline.js'
-import { CONNECTABLE, lookedFor, signsOf, waysOf, type Way } from './products.js'
+import { codexHint, CONNECTABLE, lookedFor, signsOf, waysOf, type Way } from './products.js'
 import { when } from './requests.js'
 import type { ViewerCall } from './viewer.js'
 
-function kernelAction(name: string, label: string, fixed: Record<string, FixedValue>, opts: { tone?: Action['tone']; confirm?: string } = {}): Action {
-  const { inputs, call } = formOf(KERNEL_COMMANDS.find((c) => c.name === name) ?? { name, params: {} }, { fixed })
+function kernelAction(name: string, label: string, fixed: Record<string, FixedValue>, opts: { tone?: Action['tone']; confirm?: string; values?: Record<string, string> } = {}): Action {
+  const { inputs, call } = formOf(KERNEL_COMMANDS.find((c) => c.name === name) ?? { name, params: {} }, { fixed, ...(opts.values ? { values: opts.values } : {}) })
   return { label, tone: opts.tone ?? 'default', confirm: opts.confirm ?? null, inputs, call }
 }
+
+/** A skill for Claude or Codex pointing at the description, written for one grant into the directory that product reads. */
+const skillAction = (grant: string, agent: 'claude' | 'codex'): Action => ({
+  ...kernelAction('skill install', agent === 'claude' ? '为 Claude 生成技能' : '为 Codex 生成技能', { grant, agent }, { values: { dir: agent === 'claude' ? '~/.claude/skills' : '~/.agents/skills' } }),
+  as: 'menu',
+  icon: 'sparkles',
+})
 
 /** The verbs an agent's session runs, which no plugin changes (K3), and the two the command line adds. */
 const VERBS_LINE = 'start、find、inspect、put、say、check、archive、unarchive、ask、show：放、找、看、说、查、归档、请你做一条下面的命令，和开始一件事、看管理界面的一页'
@@ -98,32 +106,44 @@ async function pairingSection({ ctx }: ViewerCall): Promise<Block | null> {
 
 export async function agentsPage(_params: Record<string, string>, call: ViewerCall): Promise<ViewAnswer & { problems: PluginProblem[] }> {
   const { ctx, table, env } = call
-  const { root } = ctx.library
+  const { root, config } = ctx.library
   const connections = await connectionFacts(ctx.home, env, table, root)
   const problems: PluginProblem[] = []
-  const rows = []
+  const known = async (grant: string) => {
+    const k = await knownAbout(ctx, grant)
+    problems.push(...k.problems)
+    return k.text
+  }
+  // The whole library, read and write, is the usual reach and goes unsaid; a narrower one is said, read-only as a mark.
+  const area = (a: string | null) => (a === null ? null : `区域 ${a}/`)
+  const line = (parts: (string | null)[]) => parts.filter((part) => part !== null).join(' · ')
+  const rows: ListItem[] = []
   for (const c of connections) {
-    const known = await knownAbout(ctx, c.grant)
-    problems.push(...known.problems)
-    // The whole library, read and write, is the usual reach and goes unsaid; a narrower one is said, read-only as a mark.
-    const note = [WAY_WORD[c.way], c.area === null ? null : `区域 ${c.area}/`, c.grant === c.product ? null : `凭授权 ${c.grant}`, ...(c.inPlace && c.where !== NOTHING_WRITTEN ? [`写在 ${c.where}`] : []), ...(known.text === null ? [] : [known.text])]
+    const note = line([WAY_WORD[c.way], area(c.area), c.grant === c.product ? null : `凭授权 ${c.grant}`, ...(c.inPlace && c.where !== NOTHING_WRITTEN ? [`写在 ${c.where}`] : []), await known(c.grant)])
     const tag: Tag | null = !c.inPlace ? { text: c.problems.join('；'), tone: 'warn' } : c.readOnly === true ? { text: '只读', tone: 'neutral' } : null
     rows.push({
-      cell: { text: c.title, actor: { kind: 'agent' as const, name: c.product, grant: c.grant }, ...(tag ? { tag } : {}) },
-      note: note.filter((part) => part !== null).join(' · '),
-      actions: [{ ...kernelAction('agent disconnect', '断开', { grant: c.grant, 'keep-grant': false }, { tone: 'danger', confirm: `断开后，${c.title} 就不能再用这个库：接上时写进去的会被拿掉，授权 ${c.grant} 会被撤回。` }), icon: 'unplug' as const }],
+      cell: { text: c.title, actor: { kind: 'agent', name: c.product, grant: c.grant }, ...(tag ? { tag } : {}) },
+      note,
+      actions: [{ ...kernelAction('agent disconnect', '断开', { grant: c.grant, 'keep-grant': false }, { tone: 'danger', confirm: `断开后，${c.title} 就不能再用这个库：接上时写进去的会被拿掉，授权 ${c.grant} 会被撤回。` }), icon: 'unplug' }],
+    })
+  }
+  // A grant issued by hand, or left by a connection undone with --keep-grant: the agent it was given to.
+  for (const g of config.grants.filter((g) => !connections.some((c) => c.grant === g.name))) {
+    const note = line([g.name === g.agent ? null : `凭授权 ${g.name}`, area(g.area), await known(g.name)])
+    rows.push({
+      cell: { text: titleOf(g.agent), actor: { kind: 'agent', name: g.agent, grant: g.name }, ...(g.readOnly ? { tag: { text: '只读', tone: 'neutral' as const } } : {}) },
+      note: note === '' ? null : note,
+      actions: [skillAction(g.name, 'claude'), skillAction(g.name, 'codex'), { ...kernelAction('grant revoke', '撤回', { name: g.name }, { tone: 'danger', confirm: `撤回后，拿着授权 ${g.name} 的 agent 就不能再用这个库。` }), icon: 'trash-2' }],
     })
   }
   const connected: Block = {
     kind: 'section',
     title: '接上的 agent',
     note: null,
-    about: '断开会拿掉接上时写进那个产品的技能或 MCP 服务，再撤回授权；接上之后被你改过的，原样留着。',
-    count: connections.length,
+    about: `没发任何授权时，谁都能用整个库。断开会拿掉接上时写进那个产品的技能或 MCP 服务，再撤回授权；接上之后被你改过的，原样留着。${codexHint(root)}`,
+    count: rows.length,
     blocks: rows.length > 0 ? [{ kind: 'list', items: rows }] : [{ kind: 'text', tone: 'neutral', text: '还没有接上任何 agent。' }],
-    actions: [],
-    // None connected yet: the products found below, each with 接上, say all there is to do.
-    ...(rows.length === 0 ? { normal: true as const } : {}),
+    actions: [{ ...kernelAction('grant issue', '发授权', {}), as: 'icon', icon: 'plus' }],
   }
 
   const found = CONNECTABLE.map((p) => ({ p, signs: signsOf(p, env) }))

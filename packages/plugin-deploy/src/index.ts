@@ -5,5 +5,6 @@ import { commandTarget, dirTarget } from './targets.js'
 /** 部署: the deploy kit with a local directory and the owner's commands as targets. README.md. */
 export const deploy = deployPlugin('deploy', [dirTarget, commandTarget], {
   version: PNEUMA_BASE_VERSION,
-  summary: '声明了可以部署的东西由主人开关上线，线上跟着库里现在的内容，部署到本地目录或主人自己的命令。',
+  summary: '让可以部署的东西上线、下线',
+  about: '声明了可以部署的东西由主人开关上线，线上跟着库里现在的内容，部署到本地目录或主人自己的命令。',
 })
