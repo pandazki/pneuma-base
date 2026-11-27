@@ -834,7 +834,7 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 | `observe` | `archive purge` 后记 `gone`，各版内容照样留着 |
 | `onView`、`onItemView` | 页 `version.things`；面板里的时间线和动作，没声明的给「声明有版本」 |
 
-版本号数全部的版，清掉的也算，号码永远不变；和更早一版相同的标「同第 N 版」。页 `version.things` 一张表列出全部，不分页：路径、版本、最近一版、说明、状态；筛选「归档的」缺省不显示。
+版本号数全部的版，清掉的也算，号码永远不变；和更早一版相同的标「同第 N 版」。页 `version.things` 一张表一页一页地列出：路径、版本、最近一版、说明、状态，只为这一页上令牌不同的读状态；筛选「归档的」缺省不显示。
 
 | 命令 | 谁能用 | 做什么 |
 | --- | --- | --- |

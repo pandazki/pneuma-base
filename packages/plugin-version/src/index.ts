@@ -1,8 +1,11 @@
 import { readFileSync } from 'node:fs'
 import {
   CONTRACT,
+  pageOfList,
+  pagingOf,
   PNEUMA_BASE_VERSION,
   pluginName,
+  rowsOf,
   TEXT_ROWS,
   type Event,
   type LibraryPath,
@@ -247,20 +250,23 @@ export const version: Plugin = {
     await commit(w)
   },
 
-  /** Every thing in the library, from the rows a page at a time; storage compares their tokens, and only what differs is read. */
+  /** Every thing in the library, from the rows, a page of them at a time; storage compares their tokens, and only what differs on the page is read. */
   async onView(req, ctx) {
     await load(ctx)
     const diffs = await differing(ctx)
     const showArchived = req.params.archived === 'show'
-    const rows: { thing: Thing; state: DiskState }[] = []
+    const listed: Thing[] = []
     for await (const page of thingPages(ctx.tools.storage.records)) {
-      for (const thing of page) if (!thing.gone && (showArchived || ctx.tools.regionOf(thing.path) !== 'archive')) rows.push({ thing, state: 'current' })
+      for (const thing of page) if (!thing.gone && (showArchived || ctx.tools.regionOf(thing.path) !== 'archive')) listed.push(thing)
     }
+    const size = rowsOf(req)
+    const { rows: shown, next } = pageOfList(listed, req.params, size)
+    const rows = shown.map((thing): { thing: Thing; state: DiskState } => ({ thing, state: 'current' }))
     await eachAtMost(rows, async (row) => {
       const look = diffs.get(row.thing.path)
       if (look !== undefined) row.state = await diskState(ctx, row.thing, look)
     })
-    return thingsPage(rows, showArchived)
+    return thingsPage(rows, pagingOf({ view: THINGS_VIEW.id, params: req.params, rows: size, shown: rows.length, next, total: listed.length }))
   },
 
   async onItemView(path, ctx) {
