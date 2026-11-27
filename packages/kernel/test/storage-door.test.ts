@@ -112,6 +112,11 @@ describe('the storage door', () => {
       ['App.swift', /getxattr\(url\.path|downloadAddress\(of: url\)/],
       // The provider's input.
       ['Watcher.swift', /input\.write\(contentsOf:/],
+      // Opening a conversation again: its .command file in the app's temporary folder, whether the
+      // session's directory and its transcript are there; the applications 打开方式 names.
+      ['Files.swift', /contentsOf: commandFile|atPath: run\.cwd|atPath: reveal|fm\.(createDirectory|contentsOfDirectory)\(at: dir|fm\.removeItem\(at: old\)|ofItemAtPath: file\.path|displayName\(atPath: \$0\.path\)/],
+      // The thumbnails' cache under $PNEUMA_BASE_HOME/app/cache; the library's files reach the system's thumbnail service by their fs.path.
+      ['Thumbnails.swift', /at: root,|at: library,|removeItem\(at: entry\)|createDirectory\(at: dir|contentsOf: cached|ofItemAtPath: cached\.path/],
     ]
     const direct = readdirSync(sources).flatMap((file) =>
       readFileSync(join(sources, file), 'utf8')

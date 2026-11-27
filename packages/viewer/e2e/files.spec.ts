@@ -111,6 +111,33 @@ test('selection as in a file manager: click, ⌘-click, Shift-click, ⌘A, arrow
   await expect(row(/z\.md/)).toBeVisible()
 })
 
+test('among the icons a rectangle drawn from an empty part selects what it covers; with ⌘ it adds to what was selected', async ({ page, pb }) => {
+  const { url } = await library(pb)
+  await page.goto(`${url}#view=files&view.dir=inbox`)
+  const main = page.getByRole('main')
+  await main.getByRole('radio', { name: '图标' }).click()
+  const grid = main.getByRole('listbox', { name: '文件' })
+  const tile = (name: string) => grid.getByRole('option', { name })
+  await expect(tile('a-report.pdf')).toBeVisible()
+  const box = async (name: string) => (await tile(name).boundingBox()) as { x: number; y: number; width: number; height: number }
+  const [a, b, d] = [await box('a-report.pdf'), await box('b-notes.md'), await box('deeper')]
+  // From below the first row, up across the first two tiles.
+  const below = Math.max(a.y, b.y, d.y) + a.height + 6
+  await page.mouse.move(a.x + 10, below)
+  await page.mouse.down()
+  await page.mouse.move(b.x + b.width - 10, a.y + a.height / 2, { steps: 5 })
+  await page.mouse.up()
+  const selected = grid.locator('[aria-selected="true"]')
+  await expect(selected).toHaveText(['a-report.pdf', 'b-notes.md'])
+  await page.keyboard.down('Meta')
+  await page.mouse.move(d.x + d.width - 10, below)
+  await page.mouse.down()
+  await page.mouse.move(d.x + 10, d.y + d.height / 2, { steps: 5 })
+  await page.mouse.up()
+  await page.keyboard.up('Meta')
+  await expect(selected).toHaveText(['a-report.pdf', 'b-notes.md', 'deeper'])
+})
+
 test('sorting from the column heads and the head’s menu, by when it changed, kind and size, kept for the page', async ({ page, pb }) => {
   const { url } = await library(pb)
   await page.goto(`${url}#view=files&view.dir=inbox`)
