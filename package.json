@@ -13,6 +13,7 @@
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "test": "pnpm build && vitest run",
+    "test:changed": "pnpm build && node scripts/affected-tests.mjs --run",
     "test:e2e": "pnpm build && playwright test -c packages/viewer/e2e/playwright.config.ts",
     "pack:dist": "pnpm build && node scripts/pack-dist.mjs",
     "pack:plugins": "node scripts/pack-plugins.mjs",

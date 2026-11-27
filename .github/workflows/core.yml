@@ -2,10 +2,10 @@ name: Core
 
 on:
   push:
-    branches: [main]
-    paths: ['core/**', '.github/workflows/core.yml']
+    tags: ['v*']
   pull_request:
     paths: ['core/**', '.github/workflows/core.yml']
+  workflow_dispatch:
 
 permissions:
   contents: read

@@ -1,8 +1,10 @@
+# A change is checked by the tests of what it touches: the packages it changed, a few tests that
+# cross the layers when it is below the command line, the browser tests when it changes what a
+# person sees, the slow tests when it changes what a plugin author gets. Everything runs in the
+# Full workflow, for a release.
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
 
 permissions:
@@ -10,24 +12,22 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: true
 
 jobs:
   check:
-    name: Node ${{ matrix.node }}
+    name: Check
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node: ['22.18', '24', '26']
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
+          node-version: '22.18'
           cache: pnpm
-      # pnpm build compiles storage's program, core/ (tmp/run-7), which the kernel starts.
+      # pnpm build compiles storage's program, core/, which the kernel starts.
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -36,53 +36,19 @@ jobs:
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm lint
-      - run: pnpm test
-
-  e2e:
-    name: Viewer E2E (Node 26)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '26'
-          cache: pnpm
-      # pnpm build compiles storage's program, core/ (tmp/run-7), which the kernel starts.
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: core
-      - run: pnpm install --frozen-lockfile
+      - name: Tests of what changed
+        id: affected
+        run: node scripts/affected-tests.mjs --base "origin/${{ github.base_ref }}" --run --github
       - name: Install Chrome and CJK fonts
+        if: steps.affected.outputs.e2e == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends fonts-noto-cjk
           pnpm exec playwright install --with-deps chrome
-      - run: pnpm test:e2e
-
-  scaffold:
-    # Generates a plugin project of each kind, installs it from the two package files and the
-    # registry, builds it, runs its own tests, and installs it into a library. Needs the network.
-    name: Plugin scaffold (Node 22.18)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22.18'
-          cache: pnpm
-      # pnpm build compiles storage's program, core/ (tmp/run-7), which the kernel starts.
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: core
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm test:slow
-        timeout-minutes: 15
-      # The package built here carries storage's programs built on Linux, for these tests only; the
-      # product package and the app are built on an Apple-silicon Mac (PROVIDERS.md).
-      - name: Plugins written outside the repository still pass
-        run: pnpm pack:dist && sh scripts/test-example-plugins.sh
-        timeout-minutes: 10
+      - name: Browser tests
+        if: steps.affected.outputs.e2e == 'true'
+        run: pnpm test:e2e
+      - name: Slow tests and the example plugins
+        if: steps.affected.outputs.slow == 'true'
+        run: pnpm test:slow && pnpm pack:dist && sh scripts/test-example-plugins.sh
+        timeout-minutes: 25
