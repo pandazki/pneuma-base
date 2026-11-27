@@ -461,7 +461,10 @@ export function useFiles(block: Table): Files | null {
   useEffect(() => {
     if (active === null) active = proxy
     return () => {
-      if (active === proxy) active = null
+      if (active !== proxy) return
+      active = null
+      // The app's menus have nothing left to act on.
+      if (IN_SHELL) tellShell({ type: 'selection', count: 0 })
     }
   }, [proxy])
 
