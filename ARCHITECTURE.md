@@ -319,7 +319,7 @@ type AskResult = { outcome: 'asked'; request; again: boolean } | { outcome: 'wit
 
 ```ts
 interface Plugin {
-  readonly contract: number                     // 按哪一版插件契约写的：sdk 的 CONTRACT（现在是 2）；内核跑 1 和 2
+  readonly contract: number                     // 按哪一版插件契约写的：sdk 的 CONTRACT（2），内核只跑这一版
   readonly name: PluginName
   readonly version?: string                     // 它自己的版本，给人看
   readonly summary?: string                     // 一句中文，说它带来什么，给人看
