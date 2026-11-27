@@ -109,8 +109,9 @@ describe('an agent connects itself through the endpoint', () => {
 
     const asked = await postJson(`${s.origin}/pair`, { product: 'claude-code', why: '整理这次的调研' })
     expect(asked.status).toBe(201)
-    const { id, code } = (await asked.json()) as { id: string; code: string }
+    const { id, code, poll } = (await asked.json()) as { id: string; code: string; poll: string }
     expect(code).toMatch(/^\d{3}-\d{3}$/)
+    expect(poll).toBe(`${s.origin}/pair/${id}`)
     expect(((await (await fetch(`${s.origin}/pair/${id}`)).json()) as { state: string }).state).toBe('waiting')
 
     const ask = (await homeAsks(s)).find((a) => a.text.includes(code))

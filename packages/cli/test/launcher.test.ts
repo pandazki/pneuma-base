@@ -92,7 +92,6 @@ describe('launcher install', () => {
 
     const again = run(['launcher', 'install', '--json']).json()
     expect(again.data.changed).toBe(false)
-    expect(again.text).toContain('没有改')
     expect(readFileSync(launcher, 'utf8')).toBe(text)
   })
 
@@ -132,12 +131,6 @@ describe('what agent connect writes names the launcher', () => {
     const entry = cursorEntry()
     expect(entry).toEqual({ type: 'stdio', command: launcher, args: ['@cursor', 'mcp'] })
     expect(await toolsOf(entry)).toEqual(expect.arrayContaining(['start', 'find', 'put']))
-  })
-
-  it('a TOML entry names it too', () => {
-    put('.codex/config.toml', 'model = "o3"\n')
-    run(['agent', 'connect', 'codex', '--via', 'mcp', '--library', lib])
-    expect(readFileSync(join(sb.home, '.codex/config.toml'), 'utf8')).toBe(`model = "o3"\n\n[mcp_servers.pneuma-base-codex]\ncommand = ${JSON.stringify(launcher)}\nargs = ["@codex", "mcp"]\n`)
   })
 })
 

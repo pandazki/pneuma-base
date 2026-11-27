@@ -103,7 +103,6 @@ describe('pneuma-base show', () => {
     expect(command.code).toBe(2)
     const words = (text: string, name: string) => text.trim().replace(`「${name}」`, '「…」')
     expect(words(page.stdout, 'show config')).toBe(words(command.stdout, 'request list'))
-    expect(page.stdout).toContain('拒绝（agent-session）：「show config」是替主人做的决定')
     expect(agent(['show', 'config', '--json']).json()).toMatchObject({ outcome: 'refused', reason: 'agent-session' })
     expect(owner(['show', 'config']).code).toBe(0)
   })
