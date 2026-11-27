@@ -90,7 +90,7 @@ ps -o command= -p "$child" | grep -q "$app/Contents/MacOS/node .*$app/Contents/R
 wait_for "watcher: subscribed to 我的库" 15 || true
 storage=$(pgrep -P "$pid" -f "pneuma-base-core serve" || true)
 [ -n "$storage" ] && ps -o command= -p "$storage" | grep -q "^$kbin/pneuma-base-core serve --root $lib$" && ok "the watcher is the provider's subscription: $kbin/pneuma-base-core serve, a child of the app (pid $storage)" || fail "the watcher's provider: $(grep 'watcher:' "$log" | head -3) $(ps -o command= -p "${storage:-0}" 2>&1)"
-page_shows home-0.txt "接上你的 agent" 10 && page_text home-0.txt | grep -q "做完了 0 步，还有 3 步" && ok "home opens with 开始, 0 of 3 done" || fail "home opens with 开始: $(head -c 300 "$work/home-0.txt")"
+page_shows home-0.txt "接上你的 agent" 10 && page_text home-0.txt | grep -qx "0 / 3" && ok "home opens with 开始, 0 of 3 done" || fail "home opens with 开始: $(head -c 300 "$work/home-0.txt")"
 
 echo "dropped" > "$work/Downloads/dropped.txt"
 hook "drop-window:$work/Downloads/dropped.txt"
