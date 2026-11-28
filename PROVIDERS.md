@@ -62,13 +62,13 @@ $PNEUMA_BASE_HOME/storage/
 | `storage remove <名字>` | 拿掉一个装上来的；答复列出这台机器上用它的库，它们要再装上它才打开得了 |
 | `storage update <名字> [--checksum <sha256>]` | 第三方的换成仓库最新的发布，官方的换成官方名单里的版本；和装一样先验 |
 
-配置页的「存储」一节是一行：库放在这台机器的哪个文件夹，用的是哪个提供者。行的「···」里是同几条命令的表单：官方没装的「装上」，装上来的「更新」「卸掉」，和「安装别的存储…」，填一个仓库。库的噪音折在这一节里。
+设置页的「存储」一节是一行：库放在这台机器的哪个文件夹，用的是哪个提供者。行的「···」里是同几条命令的表单：官方没装的「安装」，装上来的「更新」「卸载」，和「安装其他存储…」，填一个仓库。库的「忽略规则」折在这一节里。
 
 ## 装一个
 
 1. 取清单：`<发布的主机>/<owner>/<repo>/releases/download/<版本>/pneuma-base-provider.json`；没写版本时取 `…/releases/latest/download/pneuma-base-provider.json`，版本就钉在清单写的那一个上。发布的主机是 `https://github.com`，`PNEUMA_BASE_RELEASE_HOST` 可以换成按同样路径给文件的另一个主机（测试用这台机器上的一个）。
 2. 看清单：格式对、契约版本是这个 pneuma-base 讲的（现在是 1），有这台机器（`darwin-arm64`）的程序；名字不是自带的，也不是这台机器上来自别的仓库的另一个。
-3. 主人认下：第三方的，先说存储提供者是什么，再写明仓库、版本和校验和：「存储提供者是一个以你的身份运行的程序，看得到库里的全部内容。要装的是 acme/pneuma-base-s3 的 v0.3.0，校验和 sha256:…。」终端里输入 `yes` 认下；不在终端里（页面、应用），拒绝的答复带这句话和一个按钮，按钮就是带上 `--checksum <那个校验和>` 再跑一次。`--checksum` 写的是主人看过、认下的那个程序；发布在这中间变了，以 `checksum-changed` 拒绝。官方的不问：它的校验和随安装包带着。
+3. 主人认下：第三方的，先说存储提供者是什么，再写明仓库、版本和校验和：「存储提供者是以当前用户身份运行的程序，可访问资料库中的全部内容。将安装 acme/pneuma-base-s3 的 v0.3.0，校验和 sha256:…。」终端里输入 `yes` 认下；不在终端里（页面、应用），拒绝的答复带这句话和一个按钮，按钮就是带上 `--checksum <那个校验和>` 再跑一次。`--checksum` 写的是主人看过、认下的那个程序；发布在这中间变了，以 `checksum-changed` 拒绝。官方的不问：它的校验和随安装包带着。
 4. 取程序：清单里这台机器的那个文件，边取边算 sha256，对不上清单（官方的，对不上官方名单）就拒绝。
 5. 问程序：在一个空的临时文件夹上跑 `describe`，名字、答的写法要和清单一样，契约版本要是 1。
 6. 契约测试：`pneuma-base-contract --provider <程序>`，按 `STORAGE.md` 逐句核对，约半分钟。没过的那几句各自再单独跑一次（有几句要计时，机器忙时会慢一点）；再跑还没过就拒绝，答复列出没过的几项。
@@ -87,7 +87,7 @@ $PNEUMA_BASE_HOME/storage/
   "version": "v0.3.0",
   "contract": 1,
   "addresses": ["s3"],
-  "summary": "把库放在一个 S3 桶的前缀下",
+  "summary": "S3 存储桶",
   "executables": {
     "darwin-arm64": { "asset": "pneuma-base-s3-darwin-arm64", "sha256": "…64 位小写十六进制…" },
     "linux-x64": { "asset": "pneuma-base-s3-linux-x64", "sha256": "…" }
@@ -113,4 +113,4 @@ $PNEUMA_BASE_HOME/storage/
 
 ## 平台
 
-这一版的产品只有 Apple 芯片的 Mac：安装包和应用带的是 `darwin-arm64` 的本机文件夹提供者和契约测试的程序，内核旁边的 `bin/platform` 写着 `darwin-arm64`。在别的机器上运行，命令行只说一句「这个 pneuma-base 是给 Apple 芯片的 Mac (darwin-arm64) 构建的，这台机器是 …。」就退出。CI 的机器是 Linux：在那里打的包带 Linux 上构建的程序，只给测试用。
+这一版的产品只有 Apple 芯片的 Mac：安装包和应用带的是 `darwin-arm64` 的本机文件夹提供者和契约测试的程序，内核旁边的 `bin/platform` 写着 `darwin-arm64`。在别的机器上运行，命令行只说一句「此 pneuma-base 为 Apple 芯片的 Mac（darwin-arm64）构建，本机为 …。」就退出。CI 的机器是 Linux：在那里打的包带 Linux 上构建的程序，只给测试用。
