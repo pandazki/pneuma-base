@@ -67,7 +67,7 @@ export class Tx {
   }
 
   private knows(table: string): void {
-    if (this.taken.has(table)) throw new Error(`记账插件的行表 ${table} 已经先存下了，这次改动不再读它`)
+    if (this.taken.has(table)) throw new Error(`溯源索引表 ${table} 已先行保存，本次修改不再读取`)
   }
 
   private kept(map: Map<string, Map<string, Kept>>, table: string): Map<string, Kept> {

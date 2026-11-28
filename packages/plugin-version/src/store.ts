@@ -30,7 +30,7 @@ export async function keep(ctx: PluginContext, shot: Shot): Promise<void> {
   const moved = await own.move(shot.pending.place, to, { from: shot.pending.token, to: 'empty' })
   if (!isFailure(moved)) return
   const there = (moved.actual as { to?: { kind?: string } } | undefined)?.to?.kind
-  if (moved.reason !== 'refused' || there === undefined || there === 'none') throw new Error(`没能把内容放进版本存放（${moved.reason}）`)
+  if (moved.reason !== 'refused' || there === undefined || there === 'none') throw new Error(`无法将内容写入版本存储（${moved.reason}）`)
   await discard(ctx, shot)
 }
 

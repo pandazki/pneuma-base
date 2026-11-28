@@ -62,7 +62,7 @@ describe('versions of a declared thing (C4)', () => {
     expect(versions('a/notes.md')).toHaveLength(1)
     const second = ok(put('theirs', 'a/notes.md')).json()
     expect(second).toMatchObject({ outcome: 'accepted', copied: true })
-    expect(second.notes.map((n: any) => n.text).join('\n')).toContain('第 2 版')
+    expect(second.notes.map((n: any) => n.text).join('\n')).toContain('版本 2')
     expect(text('a/notes.md')).toBe('theirs')
     ok(put('theirs', 'a/notes.md'))
     expect(versions('a/notes.md').map((v) => [v.n, v.note, v.via])).toEqual([
@@ -100,17 +100,17 @@ describe('versions of a declared thing (C4)', () => {
     ok(agent(['version', 'export', 'f/report.md', '--version', '1', '--to', join(outside, 'f-v1.md')]))
     const since = () => {
       const r = ok(sb.run(['--library', lib, '--as', 'codex', '--session', 's2', 'check', '--json'], { cwd: outside })).json()
-      return r.sections.find((s: any) => s.title === '自上次以来')?.body as string
+      return r.sections.find((s: any) => s.title === '最近动态')?.body as string
     }
     const first = since()
-    expect(first).toContain('放入 f/report.md')
-    expect(first).toContain('f/report.md 换了新内容')
+    expect(first).toContain('生成 f/report.md')
+    expect(first).toContain('f/report.md 内容已更新')
     expect(first).not.toContain('version export')
     ok(agent(['version', 'restore', 'f/report.md', '--version', '1']))
     // That check was a look: the next one has the restore, and only what came after the look.
     const next = since()
-    expect(next).toContain('执行 version restore')
-    expect(next).not.toContain('放入 f/report.md')
+    expect(next).toContain('pneuma-base version restore')
+    expect(next).not.toContain('生成 f/report.md')
   })
 
   it('put --note records the version description in the same step, and the ledger keeps it on that content, not as a separate note', () => {
@@ -119,7 +119,7 @@ describe('versions of a declared thing (C4)', () => {
     declare('c/report.md', '初稿')
     const second = ok(agent(['put', '-', '--to', 'c/report.md', '--generated', '--note', '按新成本重算早鸟价', '--json'], 'v2')).json()
     expect(second).toMatchObject({ outcome: 'accepted', copied: true })
-    expect(second.notes.map((n: any) => n.text).join('\n')).toContain('记为 c/report.md 的第 2 版：「按新成本重算早鸟价」')
+    expect(second.notes.map((n: any) => n.text).join('\n')).toContain('已记录为 c/report.md 的版本 2：「按新成本重算早鸟价」')
     expect(versions('c/report.md').map((v) => [v.n, v.note])).toEqual([
       [1, '初稿'],
       [2, '按新成本重算早鸟价'],
@@ -137,7 +137,7 @@ describe('versions of a declared thing (C4)', () => {
     ok(put('v2', 's/report.md'))
     expect(ok(agent(['say', 'version', 's/report.md', '换了结论', '--json'])).json()).toMatchObject({ outcome: 'heard' })
     expect(versions('s/report.md').map((v) => v.note)).toEqual([null, '换了结论'])
-    expect(declare('s/report.md').note).toBe('s/report.md 早已声明有版本，现在有 2 版。')
+    expect(declare('s/report.md').note).toBe('s/report.md 已启用版本管理，当前共 2 个版本。')
     expect(agent(['say', 'version', 's/other.md', '没声明过', '--json']).json()).toMatchObject({ outcome: 'not-heard', reason: 'refused' })
   })
 
@@ -155,7 +155,7 @@ describe('versions of a declared thing (C4)', () => {
 
     const section = versionSection([])
     expect(section.body).toContain('d/report.md')
-    expect(section.body).toContain('第 2 版')
+    expect(section.body).toContain('版本 2')
     expect(section.data.recorded).toEqual([{ path: 'd/report.md', version: 2 }])
     expect(versions('d/report.md').map((v) => [v.n, v.via])).toEqual([
       [1, 'declare'],

@@ -97,12 +97,12 @@ describe('the sync.status view', () => {
     const f = await fixture()
     const v = await f.view()
     expect(v?.blocks).toMatchObject([
-      { kind: 'empty', title: '还没设同步目标' },
+      { kind: 'empty', title: '未设置同步目标' },
       { kind: 'actions', head: true, actions: [{ as: 'primary', inputs: [{ name: 'to' }], call: { face: 'owner', command: 'sync target set', args: { flags: { kind: ['dir'], to: ['{to}'] } } } }] },
     ])
   })
 
-  it('shows the target, what a sync would do with a 现在同步 button, and after the sync the last run and nothing pending', async () => {
+  it('shows the target, what a sync would do with a 立即同步 button, and after the sync the last run and nothing pending', async () => {
     const f = await fixture()
     await f.owner('sync target set', { kind: ['dir'], to: [f.target] })
     await f.register('a.md', 'a')
@@ -112,17 +112,17 @@ describe('the sync.status view', () => {
     // The target is the subtitle; changing it is the head's menu.
     expect(shownBefore?.subtitle).toBe(`目录 ${f.target}`)
     expect(before[0]).toMatchObject({ kind: 'actions', head: true, actions: [{ as: 'menu', call: { face: 'owner', command: 'sync target set' } }] })
-    expect(before[1]).toMatchObject({ kind: 'fields', fields: [{ label: '上次同步', value: { text: '这台机器还没同步过' } }, { label: '设于' }] })
+    expect(before[1]).toMatchObject({ kind: 'fields', fields: [{ label: '上次同步', value: { text: '本机尚未同步' } }, { label: '设置时间' }] })
     const pending = sectionNamed(before, '待同步')
-    expect(pending?.actions).toMatchObject([{ label: '现在同步', call: { face: 'owner', command: 'sync now' } }])
+    expect(pending?.actions).toMatchObject([{ label: '立即同步', call: { face: 'owner', command: 'sync now' } }])
     const table = flat(before).find((b) => b.kind === 'table')
     expect(table?.kind === 'table' && table.rows.find((r) => r.key === 'pushed')?.cells.count?.text).toBe('1')
     expect(existsSync(join(f.target, 'a.md'))).toBe(false)
 
     await f.owner('sync now')
     const after = (await f.view())?.blocks ?? []
-    expect(after[1]).toMatchObject({ kind: 'fields', fields: [{ label: '上次同步', value: { text: expect.stringContaining('推上去 1') } }, {}] })
-    expect(sectionNamed(after, '待同步')).toMatchObject({ count: 0, note: '两边一样' })
+    expect(after[1]).toMatchObject({ kind: 'fields', fields: [{ label: '上次同步', value: { text: expect.stringContaining('上传 1') } }, {}] })
+    expect(sectionNamed(after, '待同步')).toMatchObject({ count: 0, note: '已同步' })
     expect(existsSync(join(f.target, 'stray.md'))).toBe(false)
   })
 
@@ -131,7 +131,7 @@ describe('the sync.status view', () => {
     await f.owner('sync target set', { kind: ['dir'], to: [f.target] })
     rmSync(f.target, { recursive: true })
     const blocks = (await f.view())?.blocks ?? []
-    expect(flat(blocks).find((b) => b.kind === 'text')).toMatchObject({ tone: 'warn', text: expect.stringContaining(`${f.target} 在这台机器上不存在`) })
+    expect(flat(blocks).find((b) => b.kind === 'text')).toMatchObject({ tone: 'warn', text: expect.stringContaining(`${f.target} 在本机不存在`) })
   })
 
   it('lists the conflict copies a sync made that are still where it made them, each with an archive button', async () => {
@@ -144,7 +144,7 @@ describe('the sync.status view', () => {
     const conflicts = sectionNamed((await f.view())?.blocks ?? [], '冲突副本')
     expect(conflicts).toMatchObject({
       count: 1,
-      blocks: [{ kind: 'list', items: [{ cell: { text: copy, link: { view: 'item', params: { path: copy } } }, note: 'n/plan.md 的另一份', actions: [{ label: '归档', call: { face: 'agent', verb: 'archive', request: { kind: 'archive', path: copy } } }] }] }],
+      blocks: [{ kind: 'list', items: [{ cell: { text: copy, link: { view: 'item', params: { path: copy } } }, note: 'n/plan.md 的另一侧版本', actions: [{ label: '归档', call: { face: 'agent', verb: 'archive', request: { kind: 'archive', path: copy } } }] }] }],
     })
   })
 })

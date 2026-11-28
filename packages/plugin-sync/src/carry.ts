@@ -34,7 +34,7 @@ async function idsHere(ctx: PluginContext, place: string): Promise<Set<string>> 
   for (let cursor: string | null = null; ; ) {
     const page = await facts.since(cursor, FACT_PAGE)
     if (page === null) {
-      if (cursor === null) throw new Error(`记录处 ${place} 的事实读不出来`)
+      if (cursor === null) throw new Error(`无法读取记录区 ${place} 的记录`)
       out.clear()
       cursor = null
       continue
@@ -106,7 +106,7 @@ export async function pullFacts(ctx: PluginContext, target: TargetDir, base: Bas
     for (const { lib, file, ids } of files) {
       if (ids.length === 0) continue
       const carried = await carrier.facts(target.carriedName(place, lib, file), target.streamPath(place, lib, file))
-      if (isFailure(carried)) throw new Error(`记录处 ${place} 的事实没能带进来（${carried.reason}）：${target.streamPath(place, lib, file)}`)
+      if (isFailure(carried)) throw new Error(`记录区 ${place} 的记录同步失败（${carried.reason}）：${target.streamPath(place, lib, file)}`)
       for (const id of ids) fb.pulled.add(id)
     }
     fb.read = read

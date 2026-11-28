@@ -29,7 +29,7 @@ async function library(): Promise<{ lib: Library; call: () => OwnerCall; as: (ac
 const text = (content: string) => ({ kind: 'stdin' as const, content: new TextEncoder().encode(content) })
 const sinceLines = async (ctx: ReturnType<typeof makeContext>) => {
   const r = await agentFace.check({ since: 'last', includeArchived: false }, ctx)
-  return { r, lines: (r.sections.find((s) => s.title === '自上次以来')?.body ?? '').split('\n') }
+  return { r, lines: (r.sections.find((s) => s.title === '最近动态')?.body ?? '').split('\n') }
 }
 
 describe('an owner operation in the record', () => {
@@ -44,7 +44,7 @@ describe('an owner operation in the record', () => {
 })
 
 describe('a plugin command run by an agent', () => {
-  it('is attributed as a command run by that agent, not as 主人面的操作', async () => {
+  it('is told as the command, under a scene that names that agent, not the owner', async () => {
     const syncer = {
       name: 'syncer' as never,
       cognition: null,
@@ -61,8 +61,8 @@ describe('a plugin command run by an agent', () => {
     const codex: Actor = { kind: 'agent', name: 'codex', grant: null }
     await ownerFace.dispatch({ ctx: makeContext(lib, codex, session('s-codex'), home, next()), table: both, env: {}, viaGrant: true, confirm: async () => false }, 'syncer run', { positional: [], flags: {} })
     const { lines } = await sinceLines(makeContext(lib, claude, session('s-claude'), home, next()))
-    expect(lines).toContain('  执行 syncer run：已对一遍')
-    expect(lines.some((l) => l.includes('主人面的操作 syncer run'))).toBe(false)
+    expect(lines).toContain('  pneuma-base syncer run')
+    expect(lines.find((l) => l.startsWith('场景 '))).toMatch(/^场景 \S+ · codex( · |$)/)
   })
 })
 
@@ -74,7 +74,7 @@ describe('new content made from the old', () => {
     expect(r).toMatchObject({ outcome: 'accepted' })
     const body = (await agentFace.inspect({ target: 'site.md' }, as(claude, 's3'))).sections[0]?.body ?? ''
     expect(body).not.toContain('依据：')
-    expect(body).not.toContain('被依据')
+    expect(body).not.toContain('被引用')
   })
 })
 
@@ -87,11 +87,11 @@ describe('confirmed destructive owner commands', () => {
     expect(existsSync(join(lib.root, '.pneuma-base/ledger/held'))).toBe(true)
 
     expect(await ownerFace.dispatch(call(), 'ledger copies list', { positional: [], flags: {} })).toMatchObject({ outcome: 'done' })
-    expect(await ownerFace.dispatch(call(), 'ledger copies drop', { positional: [], flags: {} })).toMatchObject({ outcome: 'done', text: '已清掉 1 份留存。' })
+    expect(await ownerFace.dispatch(call(), 'ledger copies drop', { positional: [], flags: {} })).toMatchObject({ outcome: 'done', text: '已清除 1 个历史副本。' })
     expect(existsSync(join(lib.root, '.pneuma-base/ledger/held'))).toBe(false)
 
     const { lines } = await sinceLines(as(claude, 's2'))
-    expect(lines).toContain('  主人面的操作 ledger copies drop：已清掉 1 份留存。')
+    expect(lines).toContain('  pneuma-base ledger copies drop')
     expect(lines.some((l) => l.includes('ledger copies list'))).toBe(false)
   })
 
@@ -103,10 +103,10 @@ describe('confirmed destructive owner commands', () => {
     expect(await ownerFace.dispatch(call(), 'archive purge', { positional: [], flags: {} })).toMatchObject({ outcome: 'done' })
 
     const { r, lines } = await sinceLines(as(claude, 's2'))
-    expect(lines).toContain('  _archive/s.md 随归档区一起清掉了')
-    expect(r.sections.find((s) => s.title === '来源不在')?.data).toMatchObject({ count: 1, shown: [{ path: 'a.md', sources: [{ path: '_archive/s.md' }] }] })
-    expect(r.sections.find((s) => s.title === '不在了的')).toBeUndefined()
+    expect(lines).toContain('  _archive/s.md 已随清空归档删除')
+    expect(r.sections.find((s) => s.title === '来源缺失')?.data).toMatchObject({ count: 1, shown: [{ path: 'a.md', sources: [{ path: '_archive/s.md' }] }] })
+    expect(r.sections.find((s) => s.title === '已缺失')).toBeUndefined()
     const inspected = await agentFace.inspect({ target: 'a.md' }, as(claude, 's2'))
-    expect(inspected.sections[0]?.body).toMatch(/_archive\/s\.md\s+已除 ← 来源不在/)
+    expect(inspected.sections[0]?.body).toMatch(/_archive\/s\.md\s+已删除 ← 来源缺失/)
   })
 })

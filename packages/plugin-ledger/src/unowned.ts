@@ -34,7 +34,8 @@ const BATCH = 500
 /** How many files the look before registering everything in a directory counts at most. */
 export const INSIDE_BUDGET = 5000
 
-const dirName = (dir: Place) => (dir === '' ? '库的根目录' : `${dir}/`)
+/** A directory inside a phrase: 资料库根目录 for the root, else its path with a space on either side of it, as Latin words stand in Chinese text. */
+const around = (before: string, dir: Place, after: string) => (dir === '' ? `${before}资料库根目录${after}` : `${before}${before === '' ? '' : ' '}${dir}/ ${after}`)
 
 /** The entries of one listing nobody registered (and, with `skipLeft`, the owner did not leave): its files, and its directories that are no thing. */
 async function strays(ctx: PluginContext, dir: Place, entries: readonly Description[], skipLeft: boolean): Promise<{ files: Description[]; dirs: Description[] }> {
@@ -99,7 +100,7 @@ async function placeOf(ctx: PluginContext, input: string | null): Promise<Place 
 }
 
 const done = (text: string, data: unknown): OwnerAnswer => ({ outcome: 'done', text, data })
-const NOTHING = '没有还没登记的散文件。'
+const NOTHING = '无未登记的文件。'
 
 /**
  * The named whole act: every file below `dir` nobody registered, one listing at a time, each listing
@@ -109,11 +110,11 @@ const NOTHING = '没有还没登记的散文件。'
  */
 async function registerInside(ctx: PluginContext, dir: Place, input: string): Promise<OwnerAnswer> {
   const scope = await ctx.tools.storage.probe(dir, INSIDE_BUDGET)
-  if (isFailure(scope)) return { outcome: 'refused', reason: scope.reason, text: `没能看这个目录（${scope.reason}）：${input}` }
+  if (isFailure(scope)) return { outcome: 'refused', reason: scope.reason, text: `无法读取目录（${scope.reason}）：${input}` }
   const total = scope.exceeded ? `至少 ${scope.files}` : `${scope.files}`
   // Past what the probe counted there is no total to give: the probe stopped at its budget.
   const report = (n: number, text: string) => ctx.pass?.report({ done: n, total: scope.exceeded && n >= scope.files ? null : scope.files, ...(scope.exceeded ? { atLeast: true } : {}), text })
-  report(0, `要登记 ${dirName(dir)}里的全部文件：${total} 个，不含噪音。`)
+  report(0, `${around('将登记', dir, '中的全部文件')}：${total} 个，不含已忽略的。`)
   await stateOf(ctx)
   const stopped = () => ctx.pass?.stopped() ?? false
   let n = 0
@@ -139,44 +140,44 @@ async function registerInside(ctx: PluginContext, dir: Place, input: string): Pr
   }
   if (!stopped()) await flush(true)
   const left = scope.files - n
-  if (stopped()) return done(`停下了：已把 ${dirName(dir)}里的 ${n} 个文件记为主人带进来的${left > 0 ? `，还剩${scope.exceeded ? '至少' : ''} ${left} 个` : ''}。`, { registered: n, of: scope.files, stopped: true })
-  return done(n === 0 ? `${dirName(dir)}里没有还没登记的文件。` : `已把 ${dirName(dir)}里的 ${n} 个文件记为主人带进来的。`, { registered: n })
+  if (stopped()) return done(`已停止：${around('已将', dir, '中的')} ${n} 个文件标记为所有者导入${left > 0 ? `，${scope.exceeded ? '至少' : ''}剩余 ${left} 个` : ''}。`, { registered: n, of: scope.files, stopped: true })
+  return done(n === 0 ? `${around('', dir, '中')}无未登记的文件。` : `${around('已将', dir, '中的')} ${n} 个文件标记为所有者导入。`, { registered: n })
 }
 
 export const REGISTER = defineCommand({
   name: 'ledger register',
   act: { kind: 'imported', object: 'dir' },
-  summary: '把还没登记的散文件记为主人带进来的；写一个目录只登记它这一层的；加 --recursive 登记这个目录里的全部文件，先说有多少，再报进度，Ctrl-C 停下',
+  summary: '将未登记的文件标记为所有者导入；指定目录时仅登记该目录这一层；加 --recursive 登记目录内的全部文件，先报告数量，再显示进度，按 Ctrl-C 停止',
   params: {
-    positional: [{ name: 'dir', hint: '库内的目录，. 是库的根目录；不写是所有看过的目录' }],
-    flags: [{ name: 'recursive', hint: '登记这个目录里任意深处的全部文件，噪音除外', kind: 'boolean' }],
+    positional: [{ name: 'dir', hint: '库内目录，. 表示资料库根目录；省略时为所有已检查的目录' }],
+    flags: [{ name: 'recursive', hint: '登记目录内所有层级的全部文件，已忽略的除外', kind: 'boolean' }],
   },
   destructive: false,
   ownerOnly: true,
   async run({ dir: input, recursive }, ctx) {
     const dir = await placeOf(ctx, input)
-    if (dir === null) return { outcome: 'refused', reason: 'not-in-library', text: `这不是库里的目录：${input}` }
+    if (dir === null) return { outcome: 'refused', reason: 'not-in-library', text: `不是资料库中的目录：${input}` }
     if (recursive) {
-      if (input === null) return { outcome: 'refused', reason: 'usage', text: '--recursive 要写是哪个目录，整个库写 .：ledger register <目录> --recursive' }
+      if (input === null) return { outcome: 'refused', reason: 'usage', text: '--recursive 需指定目录，整个资料库写 .：ledger register <目录> --recursive' }
       return registerInside(ctx, dir, input)
     }
     await stateOf(ctx)
     let n = 0
     for (const at of input === null ? await looseDirsNow(ctx) : [dir]) n += await eachLevel(ctx, at, (files) => enter(ctx, files))
-    return done(n === 0 ? NOTHING : `已把 ${n} 样东西记为主人带进来的。`, { registered: n })
+    return done(n === 0 ? NOTHING : `已将 ${n} 个文件标记为所有者导入。`, { registered: n })
   },
 })
 
 export const DISMISS = defineCommand({
   name: 'ledger dismiss',
-  act: { kind: 'hidden', object: 'dir', name: '没登记的散文件' },
-  summary: '还没登记的散文件照原样留着，不再为它们问主人；写一个目录只管它这一层的',
-  params: { positional: [{ name: 'dir', hint: '库内的目录；不写是所有看过的目录' }] },
+  act: { kind: 'hidden', object: 'dir', name: '未登记的文件' },
+  summary: '忽略未登记的文件，不再提示所有者；指定目录时仅作用于该目录这一层',
+  params: { positional: [{ name: 'dir', hint: '库内目录；省略时为所有已检查的目录' }] },
   destructive: false,
   ownerOnly: true,
   async run({ dir: input }, ctx) {
     const dir = await placeOf(ctx, input)
-    if (dir === null) return { outcome: 'refused', reason: 'not-in-library', text: `这不是库里的目录：${input}` }
+    if (dir === null) return { outcome: 'refused', reason: 'not-in-library', text: `不是资料库中的目录：${input}` }
     await stateOf(ctx)
     const leave = async (files: Description[]) => {
       if (files.length > 0) await writeFacts(ctx, [fact(ctx, 'tool', { kind: 'unowned.left', paths: files.map((f) => f.place as LibraryPath) })])
@@ -185,7 +186,7 @@ export const DISMISS = defineCommand({
     let n = 0
     for (const at of input === null ? await looseDirsNow(ctx) : [dir]) n += await eachLevel(ctx, at, leave)
     if (n === 0) return done(NOTHING, { left: 0 })
-    return done(`${n} 样还没登记的东西照原样留着，不再为它们问主人；状况页仍列着它们，要登记时在那里补上来历。`, { left: n })
+    return done(`已忽略 ${n} 个未登记的文件，不再提示；状态页仍列出这些文件，可在该页补充来源。`, { left: n })
   },
 })
 
@@ -199,11 +200,11 @@ const filesText = (p: Probe) => `${p.exceeded ? '至少 ' : ''}${p.files} 个`
  * says first what it will register, as far as a look into the directory found.
  */
 export function closedActions(path: LibraryPath, look: Probe | null = null): Action[] {
-  const inside = ownerAction('登记里面的文件', REGISTER, { dir: path, recursive: true })
+  const inside = ownerAction('登记目录内的文件', REGISTER, { dir: path, recursive: true })
   return [
-    { label: '登记成一样东西', tone: 'default', confirm: null, inputs: [], call: { face: 'agent', verb: 'put', request: { kind: 'register', path, origin: { kind: 'brought', source: null, by: 'owner' }, note: null } } },
-    { ...inside, confirm: `要登记 ${path}/ 里任意深处的全部文件${look === null ? '' : `：${filesText(look)}`}，不含噪音。` },
-    { label: '不用管', tone: 'default', confirm: null, inputs: [], call: { face: 'owner', command: 'ignore add', args: { positional: [path], flags: {} } } },
+    { label: '登记为条目', tone: 'default', confirm: null, inputs: [], call: { face: 'agent', verb: 'put', request: { kind: 'register', path, origin: { kind: 'brought', source: null, by: 'owner' }, note: null } } },
+    { ...inside, confirm: `将登记 ${path}/ 中所有层级的全部文件${look === null ? '' : `：${filesText(look)}`}，不含已忽略的。` },
+    { label: '忽略', tone: 'default', confirm: null, inputs: [], call: { face: 'owner', command: 'ignore add', args: { positional: [path], flags: {} } } },
   ]
 }
 
@@ -214,7 +215,7 @@ export async function closedLooks(ctx: PluginContext, paths: readonly LibraryPat
 }
 
 /** A closed directory in one sentence: nothing registered in it, and what a look into it found. */
-export const closedText = (path: LibraryPath, look: Probe | null) => `${path}/ 没登记${look === null ? '' : `：${probeWords(look)}`}。`
+export const closedText = (path: LibraryPath, look: Probe | null) => `${path}/ 未登记${look === null ? '' : `：${probeWords(look)}`}。`
 
 /**
  * One ask for each place with things nobody registered, at most ASKS of them: the loose files of an
@@ -229,9 +230,9 @@ export async function unownedAsks(ctx: PluginContext): Promise<PluginAsk[]> {
   const partial = new Set((await partialDirs(records)).map((m) => m.dir))
   const asks: PluginAsk[] = page.rows.map(({ key: dir, value }) => ({
     key: `ledger:unregistered:${dir}`,
-    text: `${dirName(dir)}有${partial.has(dir) ? '至少' : ''} ${value.loose.length} 个文件还没登记。都记为你带进来的吗？`,
+    text: `${around('', dir, '中')}有${partial.has(dir) ? '至少' : ''} ${value.loose.length} 个未登记的文件。`,
     about: dir === '' ? null : (dir as LibraryPath),
-    actions: [ownerAction('都记为我带进来的', REGISTER, { dir: dir === '' ? '.' : dir, recursive: false }), ownerAction('不登记，不再问', DISMISS, { dir: dir === '' ? '.' : dir })],
+    actions: [ownerAction('全部标记为我导入', REGISTER, { dir: dir === '' ? '.' : dir, recursive: false }), ownerAction('忽略且不再提示', DISMISS, { dir: dir === '' ? '.' : dir })],
     suggested: 0,
   }))
   const closed = await standingList(records, 'closed', false, ASKS)
@@ -242,5 +243,5 @@ export async function unownedAsks(ctx: PluginContext): Promise<PluginAsk[]> {
   }
   const places = (page.more === null ? page.rows.length : await records.count('seen', 'loose', 'y')) + closed.count
   if (places <= ASKS) return asks
-  return [...asks.slice(0, ASKS - 1), { key: 'ledger:unregistered:more', text: `还有 ${places - (ASKS - 1)} 个地方有没登记的东西，都在状况页上：pneuma-base show ledger.status --kind unowned`, about: null, actions: [] }]
+  return [...asks.slice(0, ASKS - 1), { key: 'ledger:unregistered:more', text: `另有 ${places - (ASKS - 1)} 处位置有未登记的文件，均列在状态页：pneuma-base show ledger.status --kind unowned`, about: null, actions: [] }]
 }

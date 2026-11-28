@@ -22,22 +22,22 @@ const problemLines = (problems: PluginProblem[]) => problems.map((p) => `\n插�
  */
 async function named(ctx: PluginContext, input: string): Promise<Thing | OwnerAnswer> {
   const path = await thingPath(ctx, input)
-  if (path === null) return refused('not-versioned', `${input} 没有声明有版本。要留住它的每一版，agent 用 say versioned ${input} 声明。`)
+  if (path === null) return refused('not-versioned', `${input} 未启用版本管理。如需保留每个版本，由 Agent 执行 say versioned ${input}。`)
   const thing = await declaredAt(ctx, path)
   if (thing) return thing
   const records = ctx.tools.storage.records
   const gone = (await thingWhere(records, 'gone', path)) ?? (await thingWhere(records, 'gone', ctx.tools.archivedPath(path)))
-  if (gone) return refused('gone', `${gone.path} 随归档区清掉了。它的 ${gone.versions.filter((v) => !v.pruned).length} 版内容还在版本存放里，没有命令能取回或清掉它们。`)
-  return refused('not-versioned', `${input} 没有声明有版本。要留住它的每一版，agent 用 say versioned ${input} 声明。`)
+  if (gone) return refused('gone', `${gone.path} 已随清空归档删除。其 ${gone.versions.filter((v) => !v.pruned).length} 个版本的内容仍在版本存储中，无法通过命令恢复或清除。`)
+  return refused('not-versioned', `${input} 未启用版本管理。如需保留每个版本，由 Agent 执行 say versioned ${input}。`)
 }
 
 /** Version `n` of the thing, with its content in the store, or the refusal to answer with. */
 async function kept(ctx: PluginContext, thing: Thing, n: number): Promise<Version | OwnerAnswer> {
   const v = thing.versions[n - 1]
-  if (!v) return refused('no-such-version', `${thing.path} 没有第 ${n} 版，它有 ${thing.versions.length} 版。`)
-  if (v.pruned) return refused('pruned', `${thing.path} 的第 ${n} 版已经清掉了，取不回。`)
+  if (!v) return refused('no-such-version', `${thing.path} 无版本 ${n}，共 ${thing.versions.length} 个版本。`)
+  if (v.pruned) return refused('pruned', `${thing.path} 的版本 ${n} 已清除，不可恢复。`)
   const places = placesOf(v)
-  if ((await present(ctx, places)).size < new Set(places).size) return refused('content-missing', `${thing.path} 的第 ${n} 版的内容不在存放里了，取不回。`)
+  if ((await present(ctx, places)).size < new Set(places).size) return refused('content-missing', `${thing.path} 的版本 ${n} 的内容已从存储中缺失，不可恢复。`)
   return v
 }
 
@@ -56,12 +56,12 @@ const NUMBER = '[1-9][0-9]*'
 export const VERSION_EXPORT = defineCommand({
   name: 'version export',
   act: { kind: 'exported', object: 'path' },
-  summary: '把某一版写到库外的一个新路径',
+  summary: '将指定版本导出到外部新路径',
   params: {
     positional: [PATH],
     flags: [
-      { name: 'version', hint: '第几版', kind: 'value', required: true, pattern: NUMBER },
-      { name: 'to', hint: '库外的目录或文件', kind: 'value', required: true },
+      { name: 'version', hint: '版本号', kind: 'value', required: true, pattern: NUMBER },
+      { name: 'to', hint: '外部目录或文件', kind: 'value', required: true },
     ],
   },
   destructive: false,
@@ -72,22 +72,22 @@ export const VERSION_EXPORT = defineCommand({
     if ('outcome' in found) return found
     const { thing, v } = found
     const { target, taken } = await exportTarget(ctx.session.cwd, to, thing.path)
-    if (parseLibraryPath(ctx.library.root, target) !== null) return refused('inside-library', `导出要写到库外，${to} 在库里。要在库里用旧版，用 version restore。`)
-    if (taken) return refused('would-overwrite', `${target} 已有东西，没有动它。换一个路径。`)
+    if (parseLibraryPath(ctx.library.root, target) !== null) return refused('inside-library', `导出路径须位于资料库之外，${to} 在资料库中。如需在资料库中使用旧版本，请用 version restore。`)
+    if (taken) return refused('would-overwrite', `${target} 已存在，未修改。请使用其他路径。`)
     try {
       await writeOut(ctx, v, target)
     } catch (error) {
-      return refused('export-failed', `没能导出到 ${target}：${error instanceof Error ? error.message : String(error)}`)
+      return refused('export-failed', `导出到 ${target} 失败：${error instanceof Error ? error.message : String(error)}`)
     }
-    return done(`已把 ${thing.path} 的第 ${n} 版导出到 ${target}。`, { path: thing.path, version: n, to: target })
+    return done(`已将 ${thing.path} 的版本 ${n} 导出到 ${target}。`, { path: thing.path, version: n, to: target })
   },
 })
 
 export const VERSION_RESTORE = defineCommand({
   name: 'version restore',
   act: { kind: 'restored', object: 'path' },
-  summary: '把某一版放回来，作为新的一版',
-  params: { positional: [PATH], flags: [{ name: 'version', hint: '第几版', kind: 'value', required: true, pattern: NUMBER }] },
+  summary: '恢复指定版本，记录为新版本',
+  params: { positional: [PATH], flags: [{ name: 'version', hint: '版本号', kind: 'value', required: true, pattern: NUMBER }] },
   destructive: false,
   ownerOnly: false,
   async run({ path: input, version }, ctx) {
@@ -95,19 +95,19 @@ export const VERSION_RESTORE = defineCommand({
     const found = await chosen(ctx, input, n)
     if ('outcome' in found) return found
     const { thing, v } = found
-    if (archived(thing)) return refused('archived', `${thing.path} 已归档。先 unarchive ${ctx.tools.originalPath(thing.path) ?? thing.path}，再放回旧版。`)
-    if ((await fingerprintNow(ctx, thing)) === v.fingerprint) return done(`${thing.path} 现在就是第 ${n} 版的内容，没有动。`)
+    if (archived(thing)) return refused('archived', `${thing.path} 已归档。请先执行 unarchive ${ctx.tools.originalPath(thing.path) ?? thing.path}，再恢复旧版本。`)
+    if ((await fingerprintNow(ctx, thing)) === v.fingerprint) return done(`${thing.path} 当前内容即为版本 ${n}，未修改。`)
     // Through the kernel's put, so every plugin sees it and it sends its event; the export is its source outside the library.
     return inScratch(async (scratch) => {
       const from = join(scratch, posix.basename(thing.path))
       await writeOut(ctx, v, from)
       const source = { kind: v.kept.kind === 'file' ? ('file' as const) : ('directory' as const), path: from }
-      const r = await ctx.tools.put({ kind: 'place', from: source, to: thing.path, origin: { kind: 'brought', source: `${thing.path} 的第 ${n} 版`, by: null } })
-      if (r.outcome === 'refused') return refused(r.reason, `没能放回 ${thing.path}：放入被拒绝（${r.reason}，${r.subject}）。${problemLines(r.problems)}`)
+      const r = await ctx.tools.put({ kind: 'place', from: source, to: thing.path, origin: { kind: 'brought', source: `${thing.path} 的版本 ${n}`, by: null } })
+      if (r.outcome === 'refused') return refused(r.reason, `恢复 ${thing.path} 失败：添加被拒绝（${r.reason}，${r.subject}）。${problemLines(r.problems)}`)
       await load(ctx)
       const now = await declaredAt(ctx, thing.path)
       const m = now ? latest(now)?.n : undefined
-      return done(`已把 ${thing.path} 的第 ${n} 版放回来${m === undefined ? '' : `，记为第 ${m} 版`}。${problemLines(r.problems)}`, { path: thing.path, version: n, recorded: m ?? null })
+      return done(`已恢复 ${thing.path} 的版本 ${n}${m === undefined ? '' : `，记录为版本 ${m}`}。${problemLines(r.problems)}`, { path: thing.path, version: n, recorded: m ?? null })
     })
   },
 })
@@ -122,8 +122,8 @@ async function neededContent(ctx: PluginContext): Promise<Set<Place>> {
 export const VERSION_PRUNE = defineCommand({
   name: 'version prune',
   act: { kind: 'removed', object: 'path' },
-  summary: '只留最近的几版，清掉更早的',
-  params: { positional: [PATH], flags: [{ name: 'keep', hint: '留几版', kind: 'value', required: true, pattern: NUMBER }] },
+  summary: '仅保留最近的版本，清除更早的版本',
+  params: { positional: [PATH], flags: [{ name: 'keep', hint: '保留版本数', kind: 'value', required: true, pattern: NUMBER }] },
   destructive: true,
   ownerOnly: true,
   async run({ path: input, keep: kept }, ctx) {
@@ -135,8 +135,8 @@ export const VERSION_PRUNE = defineCommand({
     const dropped = live.slice(0, Math.max(0, live.length - keep))
     const left = live.slice(dropped.length)
     const leftovers = await sweepPending(ctx, ctx.now)
-    const swept = leftovers === 0 ? '' : `另删了 ${leftovers} 份中断时留下的复制。`
-    if (dropped.length === 0) return done(`${found.path} 留着的只有 ${live.length} 版，没有要清的。${swept}`)
+    const swept = leftovers === 0 ? '' : `另删除 ${leftovers} 个中断时残留的副本。`
+    if (dropped.length === 0) return done(`${found.path} 仅保留 ${live.length} 个版本，无需清除。${swept}`)
     w.things.set(found.id, found)
     apply(w, { kind: 'prune', thing: found.id, versions: dropped.map((v) => v.id) })
     await commit(w)
@@ -144,7 +144,7 @@ export const VERSION_PRUNE = defineCommand({
     const needed = await neededContent(ctx)
     const orphans = [...new Set(dropped.flatMap(placesOf))].filter((p) => !needed.has(p))
     const deleted = await drop(ctx, orphans)
-    return done(`已清掉 ${found.path} 的第 ${numbers(dropped)} 版，删了 ${deleted} 份只属于这些版本的内容；留着第 ${numbers(left)} 版。${swept}`, {
+    return done(`已清除 ${found.path} 的版本 ${numbers(dropped)}，删除 ${deleted} 份仅属于这些版本的内容；保留版本 ${numbers(left)}。${swept}`, {
       path: found.path,
       pruned: dropped.map((v) => v.n),
       kept: left.map((v) => v.n),
@@ -157,7 +157,7 @@ export const VERSION_PRUNE = defineCommand({
 export const versionCommands: OwnerCommand[] = [
   defineCommand({
     name: 'version list',
-    summary: '列出一样有版本的东西的每一版',
+    summary: '列出受版本管理条目的所有版本',
     params: { positional: [PATH] },
     destructive: false,
     ownerOnly: false,

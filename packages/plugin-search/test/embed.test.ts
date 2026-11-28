@@ -72,9 +72,9 @@ describe('the http embedder', () => {
     const url = await serve((body) => (body.input[0] === 'slow' ? null : body.input[0] === 'bad' ? { status: 200, body: { data: [{ index: 0 }] } } : { status: 401, body: { error: 'no' } }))
     const config = { kind: 'http' as const, url, model: 'm' }
     await expect(embedderFor(config, null).embed(['x'])).rejects.toThrow('401')
-    await expect(embedderFor(config, null).embed(['bad'])).rejects.toThrow('嵌入')
-    await expect(httpEmbedder(config, null, 200).embed(['slow'])).rejects.toThrow('没有答复')
-    await expect(embedderFor({ ...config, url: 'http://127.0.0.1:9' }, null).embed(['x'])).rejects.toThrow('连不上')
+    await expect(embedderFor(config, null).embed(['bad'])).rejects.toThrow('embedding')
+    await expect(httpEmbedder(config, null, 200).embed(['slow'])).rejects.toThrow('无响应')
+    await expect(embedderFor({ ...config, url: 'http://127.0.0.1:9' }, null).embed(['x'])).rejects.toThrow('无法连接')
   })
 
   it('names its vectors by address and model, so changing either changes the embedder', () => {

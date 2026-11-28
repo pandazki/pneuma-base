@@ -63,11 +63,11 @@ function fuse(words: readonly Ranked[], meaning: readonly Ranked[]): Fused[] {
 }
 
 function hitOf(found: Fused, row: ChunkRow, terms: readonly string[]): PluginHit {
-  const cut = row.truncated ? '（只索引了前 1 MB）' : ''
+  const cut = row.truncated ? '（仅索引前 1 MB）' : ''
   const detail =
     found.how === 'words'
-      ? `${row.inner || '正文'}：${snippet(row.body, terms)}${cut}`
-      : `按意思：${row.inner ? `${row.inner} · ` : ''}${firstLine(row.body)}${cut}`
+      ? `${row.inner || '全文'}：${snippet(row.body, terms)}${cut}`
+      : `语义：${row.inner ? `${row.inner} · ` : ''}${firstLine(row.body)}${cut}`
   return { path: row.path, title: posix.basename(row.path), group: null, detail }
 }
 
@@ -103,7 +103,7 @@ export async function findHits(req: FindRequest, ctx: PluginContext): Promise<Pl
         if (vector) query = { embedder: embedder.id, vector }
       } catch (error) {
         const moved = movedKey(config, key !== null)
-        problems.push(`按意思找没做成，只按文字找了：${messageOf(error)}${moved ? `。${moved}` : ''}`)
+        problems.push(`语义检索失败，仅进行了全文检索：${messageOf(error)}${moved ? `。${moved}` : ''}`)
       }
     }
     const terms = searchTerms(text, 'words')
@@ -119,7 +119,7 @@ export async function findHits(req: FindRequest, ctx: PluginContext): Promise<Pl
       return row ? [hitOf(f, row, terms)] : []
     })
     if (req.match === 'terms' && fused.length > limit) {
-      hits.push({ path: null, title: `还有 ${fused.length - limit} 样东西的正文也相关，没有列出；换更具体的词缩小范围`, group: null, detail: null })
+      hits.push({ path: null, title: `另有 ${fused.length - limit} 个条目的全文相关，未列出；请使用更具体的关键词缩小范围`, group: null, detail: null })
     }
     return problems.length === 0 ? hits : { hits, problems }
   } finally {

@@ -78,9 +78,9 @@ describe('check, by position', () => {
     const later = new Date(Date.now() + 60_000)
     utimesSync(join(root, 'b.md'), later, later)
     unlinkSync(join(root, 'c.md'))
-    const r = await checkUntil(check, (x) => section(x, '被直接改过的').includes('a.md') && section(x, '不在了的').includes('c.md'))
-    expect(section(r, '被直接改过的')).toBe('  a.md\n是你改的，就用 say revised <库内路径> 认下；主人说是自己改的，加 --by owner。')
-    expect(section(r, '不在了的')).toBe('  c.md')
+    const r = await checkUntil(check, (x) => section(x, '外部修改').includes('a.md') && section(x, '已缺失').includes('c.md'))
+    expect(section(r, '外部修改')).toBe('  a.md\nAgent 自己的修改，用 say revised <库内路径> 确认；所有者说明是自己修改的，加 --by owner。')
+    expect(section(r, '已缺失')).toBe('  c.md')
     expect(told(r)).not.toContain('b.md')
     // Only the things whose token differs and that have a fingerprint were read: the touched one and the changed one.
     expect([...new Set(reads)].sort()).toEqual(['a.md', 'b.md'])
@@ -100,8 +100,8 @@ describe('check, by position', () => {
     await agentFace.put({ kind: 'register', path: 'site', origin: { kind: 'brought', source: null, by: null } }, agent())
     expect(told(await check())).not.toContain('site')
     write('site/style.css', 'h1{}')
-    const r = await checkUntil(check, (x) => section(x, '被直接改过的').includes('site'))
-    expect(section(r, '被直接改过的').split('\n')[0]).toBe('  site')
+    const r = await checkUntil(check, (x) => section(x, '外部修改').includes('site'))
+    expect(section(r, '外部修改').split('\n')[0]).toBe('  site')
     expect(told(r)).not.toContain('style.css')
   })
 
@@ -111,8 +111,8 @@ describe('check, by position', () => {
     await check()
     write('notes/b.md', 'b')
     const r = await checkUntil(check, (x) => x.asks.length > 0)
-    expect(r.asks.map((a) => a.text)).toEqual(['notes/有 1 个文件还没登记。都记为你带进来的吗？'])
-    expect(section(r, '没人登记过的').split('\n')[0]).toBe('  notes/b.md')
+    expect(r.asks.map((a) => a.text)).toEqual(['notes/ 中有 1 个未登记的文件。'])
+    expect(section(r, '未登记').split('\n')[0]).toBe('  notes/b.md')
   })
 
   it('a directory nobody looked into: one line for the directory, nothing of what is in it', async () => {
@@ -122,8 +122,8 @@ describe('check, by position', () => {
     write('notes/proj/src/main.ts', 'x')
     write('notes/proj/README.md', 'r')
     const r = await checkUntil(check, (x) => x.asks.length > 0)
-    expect(r.asks.map((a) => a.text)).toEqual(['notes/proj/ 没登记：2 个文件。'])
-    expect(section(r, '没登记的目录')).toBe('  notes/proj/')
+    expect(r.asks.map((a) => a.text)).toEqual(['notes/proj/ 未登记：2 个文件。'])
+    expect(section(r, '未登记的目录')).toBe('  notes/proj/')
     expect(told(r)).not.toMatch(/main\.ts|README|src/)
   })
 
@@ -144,8 +144,8 @@ describe('check, by position', () => {
     await check()
     const { renameSync } = await import('node:fs')
     renameSync(join(root, 'notes/a.md'), join(root, 'notes/here.md'))
-    const r = await checkUntil(check, (x) => section(x, '挪过的') !== '')
-    expect(section(r, '挪过的')).toBe('  notes/a.md → notes/here.md，已接回')
+    const r = await checkUntil(check, (x) => section(x, '已移动') !== '')
+    expect(section(r, '已移动')).toBe('  notes/a.md → notes/here.md，已记录新路径')
     const after = await check()
     expect(told(after)).not.toMatch(/a\.md|here\.md/)
   })
@@ -170,7 +170,7 @@ describe('check --deep, by position', () => {
     const { root, check, reads } = await arranged()
     reads.length = 0
     const whole = await check({ dir: null })
-    expect(section(whole, '按内容查').split('\n')[0]).toBe('按内容查了整个库：3 样登记过的东西。')
+    expect(section(whole, '内容检索').split('\n')[0]).toBe('内容检索完成：整个资料库共 3 个已登记条目。')
     // No loose file, no directory nobody looked into, no noise.
     expect([...new Set(reads)].sort()).toEqual(['a.md', 'notes/n.md', 'site'])
 
@@ -178,12 +178,12 @@ describe('check --deep, by position', () => {
     const later = new Date(Date.now() + 60_000)
     utimesSync(join(root, 'notes/n.md'), later, later)
     const r = await check({ dir: null })
-    const body = section(r, '按内容查')
-    expect(body).toContain('内容变了（1 样）：\n  a.md')
-    expect(body).toContain('只是碰过，内容没变（已按现在的记下）（1 样）：\n  notes/n.md')
+    const body = section(r, '内容检索')
+    expect(body).toContain('内容已变更（1 个）：\n  a.md')
+    expect(body).toContain('仅元数据变化，内容未变，已按当前状态记录（1 个）：\n  notes/n.md')
     reads.length = 0
     const notes = await check({ dir: 'notes' })
-    expect(section(notes, '按内容查').split('\n')[0]).toBe('按内容查了 notes：1 样登记过的东西。')
+    expect(section(notes, '内容检索').split('\n')[0]).toBe('内容检索完成：notes 共 1 个已登记条目。')
     expect([...new Set(reads)]).toEqual(['notes/n.md'])
   })
 })
@@ -202,7 +202,7 @@ describe('registering', () => {
     const after = await check()
     expect(told(after)).not.toMatch(/b\.md|c\.md/)
     // Its folders are left as they were: one directory nobody looked into.
-    expect(after.asks.map((a) => a.text)).toEqual(['notes/deeper/ 没登记：1 个文件。'])
+    expect(after.asks.map((a) => a.text)).toEqual(['notes/deeper/ 未登记：1 个文件。'])
   })
 
   it('everything in a directory, by the owner, says how much first, reads no content, and leaves nothing to ask', async () => {
@@ -213,7 +213,7 @@ describe('registering', () => {
     await check()
     reads.length = 0
     const r = await run('ledger register', ['notes/proj'], { recursive: true })
-    expect(r).toMatchObject({ outcome: 'done', text: '已把 notes/proj/里的 5 个文件记为主人带进来的。', data: { registered: 5 } })
+    expect(r).toMatchObject({ outcome: 'done', text: '已将 notes/proj/ 中的 5 个文件标记为所有者导入。', data: { registered: 5 } })
     expect(reads).toEqual([])
     const after = await check()
     expect(after.asks).toEqual([])

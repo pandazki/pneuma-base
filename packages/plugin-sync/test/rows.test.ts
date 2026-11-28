@@ -54,7 +54,7 @@ beforeAll(() => {
 
 describe('one row per kind of step', () => {
   it('unchanged / unchanged: nothing moves, and sync now says so', () => {
-    expect(ok(owner(['sync', 'now'])).stdout).toContain('两边一样，什么都没动')
+    expect(ok(owner(['sync', 'now'])).stdout).toContain('两侧一致，无变更')
     expect(remote.read('push.md')).toBe('push base')
   })
 
@@ -115,7 +115,7 @@ describe('a run the target fails in the middle of', () => {
     const failed = owner(['sync', 'now'])
     expect(failed.code).toBe(2)
     expect(failed.stdout).toContain('拒绝（target-failed）')
-    expect(failed.stdout).toContain('内容没有丢')
+    expect(failed.stdout).toContain('内容未丢失')
     expect(existsSync(join(target, 'b/x.md'))).toBe(false)
     expect(ok(owner(['sync', 'status'])).stdout).toMatch(/上次同步：.*中断/)
 

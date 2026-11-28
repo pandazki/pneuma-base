@@ -36,7 +36,7 @@ export type FactBody =
   | { kind: 'item.remove'; item: ItemId }
   | { kind: 'owner.op'; command: string; summary: string; destructive: boolean; readOnly?: true; setup?: true; request?: { id: string; by: FactActor }; refused?: string; declined?: { id: string; by: FactActor | null }; line?: string; act?: FeedAct | 'brought'; object?: string } // request: the owner approved it at an agent's request; refused: the command's reason when it then refused; declined: the request a `request decline` turned down, and who had asked; line: the command as given, its name and arguments, under the name it had then (words.ts reads it as now); act and object: what it did and to what, as the command declares (`brought`: what `ledger register` declared before it was `imported`) (readOnly: one an older ledger wrote; looking is no longer recorded)
   | { kind: 'request'; act: 'asked' | 'withdrawn'; request: string; line: string; why?: string } // an agent asked the owner to run a command, or took the request back
-  | { kind: 'checked' } // the actor looked at what changed: its check, or the owner's 都看过了 on the home page
+  | { kind: 'checked' } // the actor looked at what changed: its check, or the owner's 全部标为已读 on the home page
   | { kind: 'unowned.left'; paths: LibraryPath[] } // the owner left these things unregistered, not to be asked about them again
 
 export type FactActor = { kind: 'agent' | 'owner' | 'plugin'; name: string; grant: string | null }

@@ -92,17 +92,17 @@ describe('the library page', () => {
     const r = shown(await show('ledger.items'))
     const rows = rowsOf(r)
     expect(rows.map((r) => line(r.cells))).toEqual([
-      { path: 'recommendation.md', origin: '做出来的', who: 'claude-code', state: '一致', at: '2026-11-25 02:00Z' },
-      { path: 'comparison.md', origin: '做出来的', who: 'claude-code', state: '一致', at: '2026-11-25 02:00Z' },
-      { path: 'stripe.html', origin: '带进来的', who: 'claude-code', state: '一致', at: '2026-11-25 02:00Z' },
+      { path: 'recommendation.md', origin: '生成', who: 'claude-code', state: '一致', at: '2026-11-25 02:00Z' },
+      { path: 'comparison.md', origin: '生成', who: 'claude-code', state: '一致', at: '2026-11-25 02:00Z' },
+      { path: 'stripe.html', origin: '导入', who: 'claude-code', state: '一致', at: '2026-11-25 02:00Z' },
     ])
     // A row stands under the folder it is in, said once by the group; the name is all its cell says.
     expect(rows.map((r) => r.group)).toEqual([undefined, undefined, 'src'])
     expect(rows[0]?.cells.who).toMatchObject({ actor: { kind: 'agent', name: 'claude-code' } })
     // Made and consistent are what most things are: the page leaves them unsaid, the text form says them.
     expect(rows[0]?.cells.state).toEqual({ text: '一致', muted: true, normal: true })
-    expect(rows[0]?.cells.origin).toEqual({ text: '做出来的', muted: true, normal: true })
-    expect(rows[2]?.cells.origin).toEqual({ text: '带进来的', muted: true })
+    expect(rows[0]?.cells.origin).toEqual({ text: '生成', muted: true, normal: true })
+    expect(rows[2]?.cells.origin).toEqual({ text: '导入', muted: true })
     expect(rows[0]?.link).toEqual({ view: 'item', params: { path: 'recommendation.md' }, target: 'panel' })
     expect(rows[2]?.link).toEqual({ view: 'item', params: { path: 'src/stripe.html' }, target: 'panel' })
 
@@ -111,8 +111,8 @@ describe('the library page', () => {
         name: 'show',
         options: [
           { value: '', label: '全部', count: 3 },
-          { value: 'imported', label: '带进来的', count: 1 },
-          { value: 'generated', label: '做出来的', count: 2 },
+          { value: 'imported', label: '导入', count: 1 },
+          { value: 'generated', label: '生成', count: 2 },
           { value: 'archived', label: '已归档', count: 1 },
         ],
       },
@@ -135,55 +135,56 @@ describe('the library page', () => {
     const { root, show } = await relayed()
     writeFileSync(join(root, 'src/stripe.html'), 'stripe, new prices')
     const states = Object.fromEntries(rowsOf(await show('ledger.items')).map((r) => [r.link?.params.path, r.cells.state]))
-    expect(states['src/stripe.html']).toEqual({ text: '', tag: { text: '已变', tone: 'warn' } })
-    expect(states['comparison.md']).toEqual({ text: '', tag: { text: '可能过期', tone: 'warn' } })
+    expect(states['src/stripe.html']).toEqual({ text: '', tag: { text: '已修改', tone: 'warn' } })
+    expect(states['comparison.md']).toEqual({ text: '', tag: { text: '可能已过期', tone: 'warn' } })
     expect(states['recommendation.md']).toEqual({ text: '一致', muted: true, normal: true })
 
-    const accept = (blocks: Block[]) => actionsIn(blocks).filter((a) => a.label === '认下这次改动')
+    const accept = (blocks: Block[]) => actionsIn(blocks).filter((a) => a.label === '确认修改')
     expect(accept(shown(await show('item', { path: 'src/stripe.html' })).blocks)).toMatchObject([{ call: { face: 'agent', verb: 'say', request: { kind: 'revised', about: 'src/stripe.html', text: null, args: {} } } }])
     expect(accept(shown(await show('item', { path: 'comparison.md' })).blocks)).toEqual([])
   })
 })
 
 describe('the ledger’s part of the item panel', () => {
-  it('says who, how it came and when, then in which scene, as lines; each source with its state, a brought one with where it came from; what happened, 决定 said once, and where a note is written; what built on it; folded, whether its content was read, where and by which grant', async () => {
+  it('says who, how it came and when, then in which scene, as lines; each source with its state, a brought one with where it came from; what happened, 决策 said once, and where a note is written; what built on it; folded, whether its content was read, where and by which grant', async () => {
     const { show } = await relayed()
     const r = shown(await show('item', { path: 'comparison.md' }))
-    const provenance = sectionNamed(r.blocks, '来历')
+    const provenance = sectionNamed(r.blocks, '溯源')
     // Who, how it came and when, then the scene, each a line; its state only when it departs from the record.
     expect(provenance.blocks.slice(0, 2)).toMatchObject([{ kind: 'fields', line: true }, { kind: 'fields', line: true }])
-    expect(fieldsText(provenance.blocks[0])).toEqual(['谁:claude-code', '来历:做出来的', '何时:2026-11-25 02:00Z'])
+    expect(fieldsText(provenance.blocks[0])).toEqual(['执行者:claude-code', '来源:生成', '时间:2026-11-25 02:00Z'])
     expect(fieldsText(provenance.blocks[1])).toEqual(['场景:给小店选支付服务'])
     expect(fieldIn(provenance.blocks, '场景')?.value.link).toEqual({ view: 'ledger.scene', params: { scene: 'sess-a' }, target: 'panel' })
-    expect(fieldIn(provenance.blocks, '现状')).toBeUndefined()
-    expect(provenance.blocks.filter((b) => b.kind === 'section').map((b) => b.kind === 'section' && b.title)).toEqual(['依据', '发生过什么', '被什么依据', '记录'])
+    expect(fieldIn(provenance.blocks, '状态')).toBeUndefined()
+    expect(provenance.blocks.filter((b) => b.kind === 'section').map((b) => b.kind === 'section' && b.title)).toEqual(['依据', '历史记录', '被引用', '记录'])
     // Each source with its state, which a consistent one leaves unsaid.
     const came = sectionNamed(provenance.blocks, '依据')
     expect(came).toMatchObject({
       count: 2,
-      blocks: [{ kind: 'list', items: [{ cell: { text: 'src/stripe.html', link: { view: 'item', params: { path: 'src/stripe.html' }, target: 'panel' } }, note: null }, { cell: { text: '主人说客户在欧洲' }, note: '库外' }] }],
+      blocks: [{ kind: 'list', items: [{ cell: { text: 'src/stripe.html', link: { view: 'item', params: { path: 'src/stripe.html' }, target: 'panel' } }, note: null }, { cell: { text: '主人说客户在欧洲' }, note: '外部' }] }],
     })
     expect(listIn(came)[0]?.cell.tag).toBeUndefined()
-    const happened = sectionNamed(provenance.blocks, '发生过什么')
-    expect(happened).toMatchObject({ count: 2, blocks: [{ kind: 'timeline', entries: [{ title: { text: '用 Paddle' }, tag: { text: '决定' } }, { title: { text: '放进来' } }] }] })
-    // 决定 once: the tag says it, the mark says who.
+    const happened = sectionNamed(provenance.blocks, '历史记录')
+    expect(happened).toMatchObject({ count: 2, blocks: [{ kind: 'timeline', entries: [{ title: { text: '用 Paddle' }, tag: { text: '决策' } }, { title: { text: '添加' } }] }] })
+    // 决策 once: the tag says it, the mark says who.
     const timeline = happened.blocks[0]
     expect(timeline?.kind === 'timeline' && timeline.entries.find((e) => e.title.text === '用 Paddle')).toMatchObject({ actor: { kind: 'agent', name: 'claude-code' }, lines: [] })
     // A note is written where the history is.
-    expect(happened.actions).toMatchObject([{ label: '记一条备注', as: 'inline', call: { verb: 'say', request: { kind: 'note', about: 'comparison.md' } } }])
-    expect(sectionNamed(provenance.blocks, '被什么依据')).toMatchObject({ blocks: [{ items: [{ cell: { text: 'recommendation.md', link: { params: { path: 'recommendation.md' } } } }] }] })
+    expect(happened.actions).toMatchObject([{ label: '添加备注', as: 'inline', call: { verb: 'say', request: { kind: 'note', about: 'comparison.md' } } }])
+    expect(sectionNamed(provenance.blocks, '被引用')).toMatchObject({ blocks: [{ items: [{ cell: { text: 'recommendation.md', link: { params: { path: 'recommendation.md' } } } }] }] })
     // The record behind the lines, folded: whether its content was read (a put reads it), where, by which grant.
     const record = sectionNamed(provenance.blocks, '记录')
     expect(record.collapse).toBe('closed')
-    expect(fieldsText(record.blocks[0])).toEqual([expect.stringMatching(/^内容:读过 · [0-9a-f]{12}$/), '在哪:/work/shop', expect.stringMatching(/^凭什么:没带授权/), '场景号:sess-a'])
+    expect(fieldsText(record.blocks[0])).toEqual([expect.stringMatching(/^内容:已读取 · [0-9a-f]{12}$/), '位置:/work/shop', expect.stringMatching(/^授权:未带授权/), '场景编号:sess-a'])
     // The panel's order: the actions in its head, the plugins' parts, the file's preview and facts.
-    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['actions', 'section:来历', 'section:预览', 'section:文件'])
+    expect(r.blocks.map((b) => (b.kind === 'section' ? `section:${b.title}` : b.kind))).toEqual(['actions', 'section:溯源', 'section:预览', 'section:文件'])
     expect(r.blocks[0]).toMatchObject({ kind: 'actions', head: true })
-    expect(actionsIn([r.blocks[0] as Block]).map((a) => a.label)).toEqual(['归档', '挪到', '补上依据', '记一条决定'])
+    // The kernel's two actions come first; their words are the kernel's.
+    expect(actionsIn([r.blocks[0] as Block]).map((a) => a.label)).toEqual([expect.any(String), expect.any(String), '补充依据', '添加决策'])
 
-    const stripe = sectionNamed(shown(await show('item', { path: 'src/stripe.html' })).blocks, '来历')
-    expect(fieldIn(stripe.blocks, '来历')?.value.text).toBe('带进来的')
-    const brought = sectionNamed(stripe.blocks, '怎么来的').blocks[0]
+    const stripe = sectionNamed(shown(await show('item', { path: 'src/stripe.html' })).blocks, '溯源')
+    expect(fieldIn(stripe.blocks, '来源')?.value.text).toBe('导入')
+    const brought = sectionNamed(stripe.blocks, '来源').blocks[0]
     expect(brought?.kind === 'fields' && brought.fields.map((f) => f.value.text || f.value.tag?.text)).toEqual(['https://stripe.com/pricing'])
   })
 
@@ -191,16 +192,16 @@ describe('the ledger’s part of the item panel', () => {
     const { root, show } = await relayed()
     writeFileSync(join(root, 'dropped.md'), 'by hand')
     const r = shown(await show('item', { path: 'dropped.md' }))
-    expect(sectionNamed(r.blocks, '来历').blocks).toMatchObject([{ kind: 'text', text: expect.stringContaining('来历不明') }])
-    expect(actionsIn(r.blocks).map((a) => a.label)).toEqual(['归档', '挪到', '记为带进来的', '记为做出来的'])
-    expect(actionsIn(r.blocks).filter((a) => a.label.startsWith('记为'))).toMatchObject([
+    expect(sectionNamed(r.blocks, '溯源').blocks).toMatchObject([{ kind: 'text', text: expect.stringContaining('来源未知') }])
+    expect(actionsIn(r.blocks).map((a) => a.label)).toEqual([expect.any(String), expect.any(String), '标记为导入', '标记为生成'])
+    expect(actionsIn(r.blocks).filter((a) => a.label.startsWith('标记为'))).toMatchObject([
       {
-        label: '记为带进来的',
+        label: '标记为导入',
         inputs: [{ name: 'source' }, { name: 'by', options: [{ value: 'owner' }, { value: '' }] }],
         call: { face: 'agent', verb: 'put', request: { kind: 'register', path: 'dropped.md', origin: { kind: 'brought', source: '{source}', by: '{by}' } } },
       },
       {
-        label: '记为做出来的',
+        label: '标记为生成',
         inputs: [{ name: 'from', multiple: true }, { name: 'outside', multiple: true }],
         call: { face: 'agent', verb: 'put', request: { kind: 'register', path: 'dropped.md', origin: { kind: 'made', from: ['{from}'], outside: ['{outside}'] } } },
       },
@@ -230,9 +231,9 @@ describe('the scenes page', () => {
     const scenes = feedRows(shown(await show('ledger.scenes')).blocks)
     // The library was made at the real time, after the test's sessions at 02:00Z.
     expect(scenes.map((row) => [nameOf(row.actor), row.text, ...row.meta.map((c) => c.text)])).toEqual([
-      ['主人', '主人面的操作：init', '没放东西'],
-      ['codex', '把支付服务接进小店', '放入 1 样'],
-      ['claude-code', '给小店选支付服务', '放入 4 样'],
+      ['我', '所有者操作：init', '无新增条目'],
+      ['codex', '把支付服务接进小店', '添加 1 个条目'],
+      ['claude-code', '给小店选支付服务', '添加 4 个条目'],
     ])
     expect(scenes[1]?.link).toEqual({ view: 'ledger.scene', params: { scene: 'sess-b' }, target: 'panel' })
     expect(scenes[1]?.at).toMatch(/^2026-11-25T02:00:\d\d\.000Z$/)
@@ -244,31 +245,31 @@ describe('the scenes page', () => {
     expect(r.blocks[0]).toEqual({
       kind: 'stats',
       stats: [
-        { label: '放入', value: '4', note: '带进来 2 样，做出来 2 样' },
-        { label: '依据', value: '3', note: '库外 1 句' },
-        { label: '决定', value: '1', note: '用 Paddle' },
+        { label: '添加', value: '4', note: '导入 2 个，生成 2 个' },
+        { label: '依据', value: '3', note: '外部 1 条' },
+        { label: '决策', value: '1', note: '用 Paddle' },
       ],
     })
     const record = sectionNamed(r.blocks, '记录')
     expect(record.collapse).toBe('closed')
-    expect(record.blocks[0]?.kind === 'fields' && record.blocks[0].fields.map((f) => `${f.label}:${f.value.text}`)).toEqual(['谁:claude-code', '在哪:/work/shop', '场景号:sess-a'])
+    expect(record.blocks[0]?.kind === 'fields' && record.blocks[0].fields.map((f) => `${f.label}:${f.value.text}`)).toEqual(['执行者:claude-code', '位置:/work/shop', '场景编号:sess-a'])
     const rows = feedRows(r.blocks)
     expect(rows.map((row) => row.text)).toEqual([
       '归档 old.md',
-      '决定：用 Paddle（关于 comparison.md）',
-      // Made and put by its maker is the usual way in: a page's row leaves it unsaid.
-      '放入 recommendation.md',
-      '放入 comparison.md',
-      '放入 old.md（现在在 _archive/old.md）（带进来的）',
-      '放入 src/stripe.html（带进来的）',
+      '决策：用 Paddle（关于 comparison.md）',
+      // The act says how it came: generated, imported.
+      '生成 recommendation.md',
+      '生成 comparison.md',
+      '导入 old.md（现位于 _archive/old.md）',
+      '导入 src/stripe.html',
       // What it was doing is the page's title, not one of its acts.
     ])
     // An archive that still stands can be taken back from its row; a fact with no undo says nothing there.
-    expect(rows[0]).toMatchObject({ action: { label: '取回', call: { verb: 'archive', request: { kind: 'unarchive', path: '_archive/old.md' } } } })
+    expect(rows[0]).toMatchObject({ action: { label: '取消归档', call: { verb: 'archive', request: { kind: 'unarchive', path: '_archive/old.md' } } } })
     expect(rows[1]?.action).toBeUndefined()
     expect(rows[1]?.settled).toBeUndefined()
 
-    expect(shown(await show('ledger.scene', { scene: 'nope-nope' })).blocks).toMatchObject([{ kind: 'empty', title: '没有这个场景' }])
+    expect(shown(await show('ledger.scene', { scene: 'nope-nope' })).blocks).toMatchObject([{ kind: 'empty', title: '场景不存在' }])
   })
 
   it('says what to do when there is no scene yet', async () => {
@@ -287,7 +288,7 @@ describe('the scenes page', () => {
 describe('the standing view', () => {
   it('says there is nothing to look at when all is in order; then has a section for each kind of thing to look at, each row opening the item panel and offering what settles it', async () => {
     const { root, show, codex } = await relayed()
-    expect(shown(await show('ledger.status')).blocks).toMatchObject([{ kind: 'actions', head: true, actions: [{ label: '按内容查', call: { verb: 'check', request: { deep: { dir: null } } } }] }, { kind: 'empty', title: '没有要处理的事' }])
+    expect(shown(await show('ledger.status')).blocks).toMatchObject([{ kind: 'actions', head: true, actions: [{ label: '内容检索', call: { verb: 'check', request: { deep: { dir: null } } } }] }, { kind: 'empty', title: '暂无待处理事项' }])
 
     await agentFace.put({ kind: 'place', from: text('src'), to: 'gone-src.md', origin: { kind: 'brought', source: null, by: null } }, codex())
     await agentFace.put({ kind: 'place', from: text('uses'), to: 'uses-gone.md', origin: { kind: 'made', from: ['gone-src.md'], outside: [] } }, codex())
@@ -303,31 +304,31 @@ describe('the standing view', () => {
 
     const r = shown(await show('ledger.status'))
     const sections = r.blocks.filter((b) => b.kind === 'section')
-    expect(sections.map((s) => s.kind === 'section' && `${s.title}:${s.count}`)).toEqual(['可能过期:1', '来源不在:1', '上游有标记:1', '没人登记过的:2', '被直接改过的:1', '不在了的:1', '挪过的:1'])
+    expect(sections.map((s) => s.kind === 'section' && `${s.title}:${s.count}`)).toEqual(['可能已过期:1', '来源缺失:1', '上游已标记:1', '未登记:2', '外部修改:1', '已缺失:1', '已移动:1'])
     // Each a list of things: the path opening the item panel, a note only where it says more than the section.
     const items = (title: string) => listIn(sectionNamed(r.blocks, title))
     const itemsOf = (title: string) => items(title).map((i) => ({ path: i.cell.text, note: i.note, open: i.cell.link?.params.path }))
-    expect(itemsOf('可能过期')).toEqual([{ path: 'comparison.md', note: '依据 src/stripe.html 变了', open: 'comparison.md' }])
-    expect(itemsOf('来源不在')).toEqual([{ path: 'uses-gone.md', note: '依据 gone-src.md 不在了', open: 'uses-gone.md' }])
-    expect(itemsOf('上游有标记')).toEqual([{ path: 'recommendation.md', note: '上游 comparison.md 有标记', open: 'recommendation.md' }])
-    expect(itemsOf('被直接改过的')).toEqual([{ path: 'src/stripe.html', note: null, open: 'src/stripe.html' }])
-    expect(itemsOf('不在了的')).toEqual([{ path: 'gone-src.md', note: null, open: 'gone-src.md' }])
-    expect(itemsOf('挪过的')).toEqual([{ path: 'moving.md', note: '挪到了 src/here.md', open: 'src/here.md' }])
-    expect(items('可能过期')[0]?.cell.link).toEqual({ view: 'item', params: { path: 'comparison.md' }, target: 'panel' })
+    expect(itemsOf('可能已过期')).toEqual([{ path: 'comparison.md', note: '依据 src/stripe.html 已修改', open: 'comparison.md' }])
+    expect(itemsOf('来源缺失')).toEqual([{ path: 'uses-gone.md', note: '依据 gone-src.md 已缺失', open: 'uses-gone.md' }])
+    expect(itemsOf('上游已标记')).toEqual([{ path: 'recommendation.md', note: '上游 comparison.md 已标记', open: 'recommendation.md' }])
+    expect(itemsOf('外部修改')).toEqual([{ path: 'src/stripe.html', note: null, open: 'src/stripe.html' }])
+    expect(itemsOf('已缺失')).toEqual([{ path: 'gone-src.md', note: null, open: 'gone-src.md' }])
+    expect(itemsOf('已移动')).toEqual([{ path: 'moving.md', note: '已移动到 src/here.md', open: 'src/here.md' }])
+    expect(items('可能已过期')[0]?.cell.link).toEqual({ view: 'item', params: { path: 'comparison.md' }, target: 'panel' })
     // The same operations as the panel's on its rows: provenance for things nobody registered, accepting a direct change.
-    expect(items('没人登记过的').map((i) => [i.cell.text, i.note, i.cell.link?.params.path, i.actions.map((a) => a.label), i.actions.map((a) => a.call.face === 'agent' && a.call.verb === 'put' && a.call.request.kind === 'register' && a.call.request.path)])).toEqual([
-      ['adopted.md', '入了册，来历不明', 'adopted.md', ['记为带进来的', '记为做出来的'], ['adopted.md', 'adopted.md']],
-      ['dropped.md', null, 'dropped.md', ['记为带进来的', '记为做出来的'], ['dropped.md', 'dropped.md']],
+    expect(items('未登记').map((i) => [i.cell.text, i.note, i.cell.link?.params.path, i.actions.map((a) => a.label), i.actions.map((a) => a.call.face === 'agent' && a.call.verb === 'put' && a.call.request.kind === 'register' && a.call.request.path)])).toEqual([
+      ['adopted.md', '已登记，来源未知', 'adopted.md', ['标记为导入', '标记为生成'], ['adopted.md', 'adopted.md']],
+      ['dropped.md', null, 'dropped.md', ['标记为导入', '标记为生成'], ['dropped.md', 'dropped.md']],
     ])
-    expect(items('被直接改过的')[0]?.actions).toMatchObject([{ label: '认下这次改动', call: { verb: 'say', request: { kind: 'revised', about: 'src/stripe.html' } } }])
-    expect(items('可能过期')[0]?.actions).toEqual([])
+    expect(items('外部修改')[0]?.actions).toMatchObject([{ label: '确认修改', call: { verb: 'say', request: { kind: 'revised', about: 'src/stripe.html' } } }])
+    expect(items('可能已过期')[0]?.actions).toEqual([])
     // Nobody knowing where it came from is the one origin worth a tag.
     const adopted = rowsOf(await show('ledger.items')).find((row) => row.cells.path?.text === 'adopted.md')
     expect(adopted?.cells.origin).toMatchObject({ text: '', tag: { tone: 'warn' } })
 
     // The panel at the new path knows the thing that moved there.
-    const panel = sectionNamed(shown(await show('item', { path: 'src/here.md' })).blocks, '来历').blocks
-    expect(fieldIn(panel, '现状')?.value).toMatchObject({ text: 'src/here.md', tag: { text: '挪到了' } })
+    const panel = sectionNamed(shown(await show('item', { path: 'src/here.md' })).blocks, '溯源').blocks
+    expect(fieldIn(panel, '状态')?.value).toMatchObject({ text: 'src/here.md', tag: { text: '已移动到' } })
   })
 
   // ARCHITECTURE.md「怎么看库」: nothing below a directory no record points into is opened, so a thing moved there is
@@ -338,8 +339,8 @@ describe('the standing view', () => {
     mkdirSync(join(root, 'moved'))
     renameSync(join(root, 'moving.md'), join(root, 'moved/here.md'))
     const r = shown(await show('ledger.status'))
-    expect(r.blocks.filter((b) => b.kind === 'section').map((s) => s.kind === 'section' && `${s.title}:${s.count}`)).toEqual(['没登记的目录:1', '不在了的:1'])
-    expect(listIn(sectionNamed(r.blocks, '没登记的目录')).map((i) => [i.cell.text, i.actions?.map((a) => a.label)])).toEqual([['moved/', ['登记成一样东西', '登记里面的文件', '不用管']]])
+    expect(r.blocks.filter((b) => b.kind === 'section').map((s) => s.kind === 'section' && `${s.title}:${s.count}`)).toEqual(['未登记的目录:1', '已缺失:1'])
+    expect(listIn(sectionNamed(r.blocks, '未登记的目录')).map((i) => [i.cell.text, i.actions?.map((a) => a.label)])).toEqual([['moved/', ['登记为条目', '登记目录内的文件', '忽略']]])
   })
 })
 
@@ -348,11 +349,11 @@ describe('the activity page', () => {
     const { show, codex } = await relayed()
     const rows = feedRows(shown(await show('ledger.activity')).blocks)
     // The library was made at the real time, after the test's session at 02:00Z, so its init is newest.
-    expect(rows[0]).toMatchObject({ actor: { kind: 'owner', name: '主人' }, whose: 'owner', act: 'created', path: 'lib', text: expect.stringMatching(/^pneuma-base init \/.+\/lib$/) })
+    expect(rows[0]).toMatchObject({ actor: { kind: 'owner', name: '我' }, whose: 'owner', act: 'created', path: 'lib', text: expect.stringMatching(/^pneuma-base init \/.+\/lib$/) })
     expect(rows.slice(1, 4).map((row) => [nameOf(row.actor), row.whose, row.act, row.path, row.note, row.text, ...row.meta.map((c) => c.text)])).toEqual([
-      ['claude-code', 'agent', 'archived', 'old.md', undefined, '归档 old.md', '没带授权'],
-      ['claude-code', 'agent', 'decision', 'comparison.md', '用 Paddle', '决定：用 Paddle（关于 comparison.md）', '没带授权'],
-      ['claude-code', 'agent', 'generated', 'recommendation.md', undefined, '放入 recommendation.md', '没带授权'],
+      ['claude-code', 'agent', 'archived', 'old.md', undefined, '归档 old.md', '未带授权'],
+      ['claude-code', 'agent', 'decision', 'comparison.md', '用 Paddle', '决策：用 Paddle（关于 comparison.md）', '未带授权'],
+      ['claude-code', 'agent', 'generated', 'recommendation.md', undefined, '生成 recommendation.md', '未带授权'],
     ])
     expect(rows[1]?.link).toEqual({ view: 'item', params: { path: '_archive/old.md' }, target: 'panel' })
     expect(rows.find((row) => row.act === 'task')).toBeUndefined()
@@ -364,55 +365,55 @@ describe('the activity page', () => {
     await agentFace.say({ kind: 'note', about: 'comparison.md', text: '看过了', args: {} }, codex())
     const r = shown(await show('ledger.activity'))
     expect(r.filters).toEqual([
-      { name: 'who', options: [{ value: '', label: '全部', count: 8 }, { value: 'agent', label: 'agent 做的', count: 7 }, { value: 'owner', label: '主人做的', count: 1 }] },
-      { name: 'agent', options: [{ value: '', label: '全部 agent', count: 8 }, { value: 'claude-code', label: 'claude-code', count: 6 }, { value: 'codex', label: 'codex', count: 1 }] },
+      { name: 'who', options: [{ value: '', label: '全部', count: 8 }, { value: 'agent', label: 'Agent', count: 7 }, { value: 'owner', label: '我', count: 1 }] },
+      { name: 'agent', options: [{ value: '', label: '全部 Agent', count: 8 }, { value: 'claude-code', label: 'claude-code', count: 6 }, { value: 'codex', label: 'codex', count: 1 }] },
     ])
-    expect(feedRows(shown(await show('ledger.activity', { who: 'owner' })).blocks).map((row) => nameOf(row.actor))).toEqual(['主人'])
+    expect(feedRows(shown(await show('ledger.activity', { who: 'owner' })).blocks).map((row) => nameOf(row.actor))).toEqual(['我'])
     expect(feedRows(shown(await show('ledger.activity', { agent: 'codex' })).blocks).map((row) => row.text)).toEqual(['备注：看过了（关于 comparison.md）'])
   })
 })
 
 describe('the ledger’s part of the home page', () => {
   /** The home page as an agent sees it, which is what the owner sees of the agents. */
-  it('tells what others did since the last look, by scene under what it was doing, with 都看过了, which is a check; then what needs looking at', async () => {
+  it('tells what others did since the last look, by scene under what it was doing, with 全部标为已读, which is a check; then what needs looking at', async () => {
     const { root, show, codex, claudeIn } = await relayed()
     const asCodex = () => show('home', {}, codex())
     const first = shown(await asCodex())
-    // No agent is connected on this machine, so the page opens with 开始; the ledger's step in it is done.
-    expect(first.blocks.map((b) => (b.kind === 'section' ? b.title : b.kind))).toEqual(['开始', '等你决定', '自上次以来', '需要留意'])
-    const since = sectionNamed(first.blocks, '自上次以来')
-    expect(since.actions).toMatchObject([{ label: '都看过了', call: { face: 'agent', verb: 'check', request: { since: 'last', includeArchived: false } } }])
+    // No agent is connected on this machine, so the page opens with the kernel's first steps and requests; the ledger's step in it is done.
+    expect(first.blocks.map((b) => (b.kind === 'section' ? b.title : b.kind))).toEqual([expect.any(String), expect.any(String), '最近动态', '需要关注'])
+    const since = sectionNamed(first.blocks, '最近动态')
+    expect(since.actions).toMatchObject([{ label: '全部标为已读', call: { face: 'agent', verb: 'check', request: { since: 'last', includeArchived: false } } }])
     const feed = since.blocks[0]
     if (feed?.kind !== 'feed') throw new Error('no feed')
     // init is setup, already told by PNEUMA-BASE.md, so it is no news.
     expect(feed.groups.map((g) => [g.title, g.count])).toEqual([['给小店选支付服务', 6]])
     expect(feed.groups[0]?.link).toEqual({ view: 'ledger.scene', params: { scene: 'sess-a' }, target: 'panel' })
-    expect(feed.groups[0]?.rows.map((r) => r.text)).not.toContain('在做：给小店选支付服务')
-    expect(sectionNamed(first.blocks, '需要留意').blocks).toMatchObject([{ kind: 'text', tone: 'neutral' }])
+    expect(feed.groups[0]?.rows.map((r) => r.text)).not.toContain('任务：给小店选支付服务')
+    expect(sectionNamed(first.blocks, '需要关注').blocks).toMatchObject([{ kind: 'text', tone: 'neutral' }])
 
     await agentFace.check({ since: 'last', includeArchived: false }, codex())
     // Nothing since: when that look was, and the way to all that ever happened.
-    const seen = sectionNamed(shown(await asCodex()).blocks, '自上次以来')
-    expect(seen).toMatchObject({ actions: [], note: '上次看过：2026-11-25 02:00Z', blocks: [{ kind: 'feed', groups: [], empty: '那之后还没有谁做过什么。' }, { kind: 'list' }] })
-    expect(listIn(seen).map((i) => [i.cell.text, i.cell.link])).toEqual([['看全部活动', { view: 'ledger.activity', params: {}, target: 'main' }]])
+    const seen = sectionNamed(shown(await asCodex()).blocks, '最近动态')
+    expect(seen).toMatchObject({ actions: [], note: '上次查看：2026-11-25 02:00Z', blocks: [{ kind: 'feed', groups: [], empty: '暂无新动态' }, { kind: 'list' }] })
+    expect(listIn(seen).map((i) => [i.cell.text, i.cell.link])).toEqual([['查看全部活动', { view: 'ledger.activity', params: {}, target: 'main' }]])
 
     // A scene saying what it is doing is no act, so nothing yet; its one act is then that row, naming the scene, in a list without a heading; the section counts it.
     await agentFace.say({ kind: 'task', about: null, text: '整理首页文案', args: {} }, claudeIn('sess-c'))
-    expect(sectionNamed(shown(await asCodex()).blocks, '自上次以来')).toMatchObject({ count: null, blocks: [{ kind: 'feed', groups: [] }, { kind: 'list' }] })
+    expect(sectionNamed(shown(await asCodex()).blocks, '最近动态')).toMatchObject({ count: null, blocks: [{ kind: 'feed', groups: [] }, { kind: 'list' }] })
     await agentFace.say({ kind: 'note', about: null, text: '首页先不动', args: {} }, claudeIn('sess-c'))
-    const doing = sectionNamed(shown(await asCodex()).blocks, '自上次以来')
+    const doing = sectionNamed(shown(await asCodex()).blocks, '最近动态')
     const doingFeed = doing.blocks[0]
-    expect(doingFeed?.kind === 'feed' && doingFeed.groups.map((g) => [g.title, g.count, g.rows.map((r) => [r.act, r.note, r.text, r.meta.map((c) => c.text)])])).toEqual([['', null, [['note', '首页先不动', '备注：首页先不动', ['整理首页文案', '没带授权']]]]])
+    expect(doingFeed?.kind === 'feed' && doingFeed.groups.map((g) => [g.title, g.count, g.rows.map((r) => [r.act, r.note, r.text, r.meta.map((c) => c.text)])])).toEqual([['', null, [['note', '首页先不动', '备注：首页先不动', ['整理首页文案', '未带授权']]]]])
     expect(doing).toMatchObject({ count: 1, note: null })
 
     writeFileSync(join(root, 'src/stripe.html'), 'stripe, new prices')
-    const attention = sectionNamed(shown(await asCodex()).blocks, '需要留意')
+    const attention = sectionNamed(shown(await asCodex()).blocks, '需要关注')
     expect(listIn(attention).map((i) => [i.cell.text, i.cell.link])).toEqual([
-      ['1 样可能过期', { view: 'ledger.status', params: { kind: 'stale' }, target: 'main' }],
-      ['1 样上游有标记', { view: 'ledger.status', params: { kind: 'upstream' }, target: 'main' }],
-      ['1 样被直接改过的', { view: 'ledger.status', params: { kind: 'changed' }, target: 'main' }],
+      ['可能已过期：1 个', { view: 'ledger.status', params: { kind: 'stale' }, target: 'main' }],
+      ['上游已标记：1 个', { view: 'ledger.status', params: { kind: 'upstream' }, target: 'main' }],
+      ['外部修改：1 个', { view: 'ledger.status', params: { kind: 'changed' }, target: 'main' }],
     ])
-    expect(sectionNamed(shown(await show('ledger.status', { kind: 'changed' })).blocks, '被直接改过的').count).toBe(1)
+    expect(sectionNamed(shown(await show('ledger.status', { kind: 'changed' })).blocks, '外部修改').count).toBe(1)
     // One kind alone: the deep pass that tells a real change from a touch, then that kind's section.
     expect(shown(await show('ledger.status', { kind: 'changed' })).blocks.map((b) => b.kind)).toEqual(['actions', 'section'])
   })
@@ -445,32 +446,32 @@ describe('things nobody registered', () => {
     const { show, run, asks } = await folderWithFiles(3)
     const [loose, closed, ...more] = await asks()
     expect(more).toEqual([])
-    expect(loose).toMatchObject({ by: '记账与对账', text: '库的根目录有 2 个文件还没登记。都记为你带进来的吗？', suggested: 0 })
+    expect(loose).toMatchObject({ by: '溯源', text: '资料库根目录中有 2 个未登记的文件。', suggested: 0 })
     expect(loose?.actions.map((a) => [a.label, a.call])).toEqual([
-      ['都记为我带进来的', { face: 'owner', command: 'ledger register', args: { positional: ['.'], flags: {} } }],
-      ['不登记，不再问', { face: 'owner', command: 'ledger dismiss', args: { positional: ['.'], flags: {} } }],
+      ['全部标记为我导入', { face: 'owner', command: 'ledger register', args: { positional: ['.'], flags: {} } }],
+      ['忽略且不再提示', { face: 'owner', command: 'ledger dismiss', args: { positional: ['.'], flags: {} } }],
     ])
-    expect(closed).toMatchObject({ text: 'notes/ 没登记：1 个文件。', about: 'notes' })
-    expect(closed?.actions[1]?.confirm).toBe('要登记 notes/ 里任意深处的全部文件：1 个，不含噪音。')
+    expect(closed).toMatchObject({ text: 'notes/ 未登记：1 个文件。', about: 'notes' })
+    expect(closed?.actions[1]?.confirm).toBe('将登记 notes/ 中所有层级的全部文件：1 个，不含已忽略的。')
     expect(closed?.actions.map((a) => [a.label, a.call])).toEqual([
-      ['登记成一样东西', { face: 'agent', verb: 'put', request: { kind: 'register', path: 'notes', origin: { kind: 'brought', source: null, by: 'owner' }, note: null } }],
-      ['登记里面的文件', { face: 'owner', command: 'ledger register', args: { positional: ['notes'], flags: { recursive: true } } }],
-      ['不用管', { face: 'owner', command: 'ignore add', args: { positional: ['notes'], flags: {} } }],
+      ['登记为条目', { face: 'agent', verb: 'put', request: { kind: 'register', path: 'notes', origin: { kind: 'brought', source: null, by: 'owner' }, note: null } }],
+      ['登记目录内的文件', { face: 'owner', command: 'ledger register', args: { positional: ['notes'], flags: { recursive: true } } }],
+      ['忽略', { face: 'owner', command: 'ignore add', args: { positional: ['notes'], flags: {} } }],
     ])
     // Nothing else to look at, said without claiming the unregistered things match a record.
-    expect(sectionNamed(shown(await show('home')).blocks, '需要留意').blocks).toEqual([{ kind: 'text', tone: 'neutral', text: '没有要留意的：登记过的东西都和记录的一样。' }])
+    expect(sectionNamed(shown(await show('home')).blocks, '需要关注').blocks).toEqual([{ kind: 'text', tone: 'neutral', text: '已登记条目均与记录一致。' }])
 
     const register = loose?.actions[0]?.call
     if (register?.face !== 'owner') throw new Error('no owner call')
-    expect(await run(register)).toMatchObject({ outcome: 'done', text: '已把 2 样东西记为主人带进来的。', data: { registered: 2 } })
+    expect(await run(register)).toMatchObject({ outcome: 'done', text: '已将 2 个文件标记为所有者导入。', data: { registered: 2 } })
     const inside = (await asks()).find((a) => a.about === 'notes')?.actions[1]?.call
     if (inside?.face !== 'owner') throw new Error('no owner call')
-    expect(await run(inside)).toMatchObject({ outcome: 'done', text: '已把 notes/里的 1 个文件记为主人带进来的。', data: { registered: 1 } })
+    expect(await run(inside)).toMatchObject({ outcome: 'done', text: '已将 notes/ 中的 1 个文件标记为所有者导入。', data: { registered: 1 } })
     expect(await asks()).toEqual([])
-    const came = sectionNamed(shown(await show('item', { path: 'notes/n1.md' })).blocks, '来历').blocks
-    expect(fieldIn(came, '来历')?.value.text).toBe('带进来的，主人给的')
+    const came = sectionNamed(shown(await show('item', { path: 'notes/n1.md' })).blocks, '溯源').blocks
+    expect(fieldIn(came, '来源')?.value.text).toBe('导入（所有者提供）')
     const rows = feedRows(shown(await show('ledger.activity')).blocks)
-    expect(rows.map((r) => r.text).filter((t) => t.includes('ledger register') || t.includes('放入'))).toEqual([
+    expect(rows.map((r) => r.text).filter((t) => t.includes('ledger register') || /^(导入|生成) /.test(t))).toEqual([
       'pneuma-base ledger register notes --recursive',
       'pneuma-base ledger register .',
     ])
@@ -487,11 +488,11 @@ describe('things nobody registered', () => {
     const leave = (await asks())[0]?.actions[1]?.call
     if (leave?.face !== 'owner') throw new Error('no owner call')
     expect(await run(leave)).toMatchObject({ outcome: 'done', data: { left: 2 } })
-    const closedOnly = ['notes/ 没登记：2 个文件。']
+    const closedOnly = ['notes/ 未登记：2 个文件。']
     expect((await asks()).map((a) => a.text)).toEqual(closedOnly)
-    expect(sectionNamed(shown(await show('ledger.status')).blocks, '没人登记过的').count).toBe(2)
+    expect(sectionNamed(shown(await show('ledger.status')).blocks, '未登记').count).toBe(2)
     writeFileSync(join(root, 'later.md'), 'dropped in later')
-    expect((await asks()).map((a) => a.text)).toEqual(['库的根目录有 1 个文件还没登记。都记为你带进来的吗？', ...closedOnly])
+    expect((await asks()).map((a) => a.text)).toEqual(['资料库根目录中有 1 个未登记的文件。', ...closedOnly])
   })
 })
 
@@ -499,15 +500,15 @@ describe('held copies and changes in the ledger’s blocks', () => {
   it('say whose content each was: a held copy can be taken back to a new path, as ledger copies restore; a put’s note ends its entry and its activity row; an edit the owner made and an agent recorded names both', async () => {
     const { root, show, codex } = await relayed()
     await agentFace.put({ kind: 'place', from: text('cmp v2'), to: 'comparison.md', origin: { kind: 'made', from: ['src/stripe.html'], outside: [] }, note: '换了结论' }, codex())
-    const provenance = sectionNamed(shown(await show('item', { path: 'comparison.md' })).blocks, '来历')
-    expect(sectionNamed(provenance.blocks, '留存').blocks.find((b) => b.kind === 'list')).toMatchObject({
+    const provenance = sectionNamed(shown(await show('item', { path: 'comparison.md' })).blocks, '溯源')
+    expect(sectionNamed(provenance.blocks, '历史副本').blocks.find((b) => b.kind === 'list')).toMatchObject({
       items: [
         {
           // Whose content it was, not where the plugin keeps it.
-          note: 'claude-code 放进来的那份内容',
+          note: 'claude-code 添加的内容',
           actions: [
             {
-              label: '取回到新路径',
+              label: '恢复到新路径',
               inputs: [{ name: 'to', value: expect.stringMatching(/^comparison\.[0-9a-f]{8}\.md$/) }],
               call: { face: 'owner', command: 'ledger copies restore', args: { positional: [expect.stringMatching(/^i_/)], flags: { fingerprint: [expect.stringMatching(/^[0-9a-f]{64}$/)], to: ['{to}'] } } },
             },
@@ -515,7 +516,7 @@ describe('held copies and changes in the ledger’s blocks', () => {
         },
       ],
     })
-    const changes = sectionNamed(provenance.blocks, '发生过什么').blocks[0]
+    const changes = sectionNamed(provenance.blocks, '历史记录').blocks[0]
     // Each change: who, as its mark, and the sentence it came with.
     const lines = changes?.kind === 'timeline' ? changes.entries.filter((e) => e.title.text !== '用 Paddle').map((e) => [e.actor === undefined ? null : nameOf(e.actor), e.lines]) : []
     expect(lines).toEqual([
@@ -523,15 +524,15 @@ describe('held copies and changes in the ledger’s blocks', () => {
       ['claude-code', []],
     ])
     const activity = async () => feedRows(shown(await show('ledger.activity')).blocks)
-    expect((await activity()).filter((row) => nameOf(row.actor) === 'codex').map((row) => row.text)).toEqual(['comparison.md 换了新内容：换了结论'])
+    expect((await activity()).filter((row) => nameOf(row.actor) === 'codex').map((row) => row.text)).toEqual(['comparison.md 内容已更新：换了结论'])
 
     writeFileSync(join(root, 'src/stripe.html'), 'stripe, new prices')
     await agentFace.say({ kind: 'revised', about: 'src/stripe.html', text: null, args: { by: ['owner'] } }, codex())
-    expect((await activity()).filter((row) => row.text === '记下 src/stripe.html 是主人直接改的').map((row) => nameOf(row.actor))).toEqual(['codex'])
+    expect((await activity()).filter((row) => row.text === '记录 src/stripe.html 为所有者直接修改').map((row) => nameOf(row.actor))).toEqual(['codex'])
     await agentFace.put({ kind: 'place', from: text('stripe v3'), to: 'src/stripe.html', origin: { kind: 'brought', source: null, by: null } }, codex())
-    const stripe = sectionNamed(shown(await show('item', { path: 'src/stripe.html' })).blocks, '来历')
-    expect(sectionNamed(stripe.blocks, '发生过什么').blocks[0]).toMatchObject({ entries: [{ tag: { text: '当前' } }, { title: { text: '主人直接改的' }, actor: { kind: 'owner' }, lines: ['codex 代记'] }, {}] })
-    expect(sectionNamed(stripe.blocks, '留存').blocks.find((b) => b.kind === 'list')).toMatchObject({ items: [{ note: '主人直接改的那份内容，codex 代记' }] })
+    const stripe = sectionNamed(shown(await show('item', { path: 'src/stripe.html' })).blocks, '溯源')
+    expect(sectionNamed(stripe.blocks, '历史记录').blocks[0]).toMatchObject({ entries: [{ tag: { text: '当前' } }, { title: { text: '所有者直接修改' }, actor: { kind: 'owner' }, lines: ['codex 代为记录'] }, {}] })
+    expect(sectionNamed(stripe.blocks, '历史副本').blocks.find((b) => b.kind === 'list')).toMatchObject({ items: [{ note: '所有者直接修改的内容，codex 代为记录' }] })
   })
 })
 
@@ -550,9 +551,9 @@ describe('bundles in the ledger’s blocks', () => {
     expect(rows.find((r) => r.cells.path?.text === 'site')?.cells.path).toMatchObject({ icon: 'package' })
     expect(rows.find((r) => r.cells.path?.text === 'comparison.md')?.cells.path).toMatchObject({ icon: 'file' })
 
-    const absorbed = sectionNamed(shown(await show('item', { path: 'site/index.html' })).blocks, '来历').blocks
-    expect(fieldIn(absorbed, '现状')?.value).toMatchObject({ text: 'site', tag: { text: '并入了' }, link: { view: 'item', params: { path: 'site' }, target: 'panel' } })
-    const part = sectionNamed(shown(await show('item', { path: 'site/later.css' })).blocks, '来历').blocks
-    expect(part).toEqual([{ kind: 'fields', line: true, fields: [{ label: '来历记在', value: { text: '来历记在 site', icon: 'package', link: { view: 'item', params: { path: 'site' }, target: 'panel' } } }] }])
+    const absorbed = sectionNamed(shown(await show('item', { path: 'site/index.html' })).blocks, '溯源').blocks
+    expect(fieldIn(absorbed, '状态')?.value).toMatchObject({ text: 'site', tag: { text: '已合并到' }, link: { view: 'item', params: { path: 'site' }, target: 'panel' } })
+    const part = sectionNamed(shown(await show('item', { path: 'site/later.css' })).blocks, '溯源').blocks
+    expect(part).toEqual([{ kind: 'fields', line: true, fields: [{ label: '来源记录于', value: { text: '来源记录于 site', icon: 'package', link: { view: 'item', params: { path: 'site' }, target: 'panel' } } }] }])
   })
 })

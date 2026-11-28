@@ -75,7 +75,7 @@ describe('the period and its buckets', () => {
     expect(all.sessions.total).toBe(all.put.imported)
     const weeks = await statsOf([on('2026-09-30 12:00', enter('i_a', 'a.md', 'a')), on('2026-11-25 12:00', enter('i_b', 'b.md', 'b'))], 'all', NOW)
     expect(weeks.grain).toBe('week')
-    expect(weeks.buckets[0]).toBe('9月28日那周')
+    expect(weeks.buckets[0]).toBe('9月28日当周')
     expect(weeks.put.byBucket.imported.filter((x) => x > 0)).toEqual([1, 1])
   })
 })
