@@ -4,10 +4,10 @@
 
 | 插件 | 做什么 | 怎么来的 |
 | --- | --- | --- |
-| [`links`](links/) | 检查库里文件之间的坏链接 | 一个没有任何上下文的 Codex 会话，只拿到两个包文件和 `PROMPT.txt` 里那段话；`NOTES.md` 是它记下的规范的缺口 |
-| [`pulse`](pulse/) | 记录放入和归档，用自己画的热度图显示 | 同上，一个 Claude 会话 |
+| [`links`](links/) | 检查资料库里文件之间的坏链接 | 一个没有任何上下文的 Codex 会话，只拿到两个包文件和 `PROMPT.txt` 里那段话；`NOTES.md` 是它记下的规范的缺口 |
+| [`pulse`](pulse/) | 记录添加和归档，用自己画的热度图显示 | 同上，一个 Claude 会话 |
 
-插件标准是从发布到 PneumaSpace 的那个插件反推出来的。它现在是自带的部署插件的两种目标，在 [`packages/plugin-deploy`](../packages/plugin-deploy/)。
+插件标准是从发布到 PneumaSpace 的那个插件反推出来的。它现在是内置的部署插件的两种目标，在 [`packages/plugin-deploy`](../packages/plugin-deploy/)。
 
 ## 跑它们的测试
 
@@ -24,7 +24,7 @@ npm test
 
 `package-lock.json` 不进仓库：包文件每次重打，校验值都会变。
 
-## 只装不改
+## 只安装不改
 
 只想用一个插件、不改它的人，不用进插件目录装依赖。在仓库根打出包文件，再把每个插件构建好：
 
