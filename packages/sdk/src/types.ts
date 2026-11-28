@@ -91,10 +91,11 @@ export interface PluginSecrets {
 
 /**
  * A credential a plugin reads, so the configuration page can show whether it is set and offer to set
- * it. `optional`: the plugin works without it, such as a token only some servers ask for; the page,
- * `secret list` and a deploy target's `target set` then do not ask for it as missing.
+ * it. `title`: the name the page shows for it, such as 「API 密钥」; without one the page shows `name`,
+ * which is what `secret set` takes. `optional`: the plugin works without it, such as a token only some
+ * servers ask for; the page, `secret list` and a deploy target's `target set` then do not ask for it as missing.
  */
-export type SecretDecl = { name: string; description: string; optional?: boolean }
+export type SecretDecl = { name: string; title?: string; description: string; optional?: boolean }
 
 /** Where a library path lies: the content anyone may arrange, the archive, or the kernel's own files. */
 export type Region = 'content' | 'archive' | 'kernel'

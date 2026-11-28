@@ -646,7 +646,7 @@ export default definePlugin({
 
 库外的缓存 `ctx.cacheDir` 是 `$PNEUMA_BASE_HOME/cache/<库的 id>/<插件名>/`，因为索引这类文件经不起同步。内核不建它，也没有谁清理它。
 
-令牌这类凭证不得放进库：库会被同步、会给别的 agent 看。插件在 `secrets` 里声明它读的密钥，各带一句中文说明；插件没有它也能用的，比如只有一部分服务器要的令牌，标 `optional: true`。`ctx.secrets.get(名字)` 读，没设是 `null`。主人在这台机器上设：值从标准输入读，从不取命令行的参数，存在库外的 `$PNEUMA_BASE_HOME/secrets/<插件名>/<密钥名>`，只有用户能读。配置页列出每个密钥设没设（可选的写「没设（可选）」）并能设它，`secret list` 把可选的另列一行：
+令牌这类凭证不得放进库：库会被同步、会给别的 agent 看。插件在 `secrets` 里声明它读的密钥，各带一句中文说明，可以带 `title`，是页面上显示的名称（如「API 密钥」），没有时显示 `name`；插件没有它也能用的，比如只有一部分服务器要的令牌，标 `optional: true`。`ctx.secrets.get(名字)` 读，没设是 `null`。主人在这台机器上设：值从标准输入读，从不取命令行的参数，存在库外的 `$PNEUMA_BASE_HOME/secrets/<插件名>/<密钥名>`，只有用户能读。配置页列出每个密钥设没设（可选的写「没设（可选）」）并能设它，`secret list` 把可选的另列一行：
 
 ```sh
 printf %s 'sk-例子' | pneuma-base secret set search key
@@ -1399,7 +1399,7 @@ pneuma-base plugin uninstall marks
 | `statements` | 列表，每项是不空的文字，不重复 |
 | `ownerCommands` | 列表，每项有文字的 `summary`、真假的 `destructive` 和 `ownerOnly`、函数 `run`，`readOnly` 和 `setup` 没有或是真假，`askable` 没有或是 `false`，名字以 `<插件名> ` 开头、不是内核的命令、不重复，参数表合 4.3 |
 | `views` | 没有，或列表，每项 `{ id, title, icon, nav, filters }`，可以带 `ownerOnly` 和 `home`（真假），`title` 和 `icon` 是文字，`nav` 是真假，`filters` 是列表，`id` 以 `<插件名>.` 开头、不重复 |
-| `secrets` | 没有，或列表，每项 `{ name, description }`，可以带 `optional`（真假），`name` 合 `SECRET_NAME`，不重复 |
+| `secrets` | 没有，或列表，每项 `{ name, description }`，可以带 `title`（文字）和 `optional`（真假），`name` 合 `SECRET_NAME`，不重复 |
 | 钩子 | 给了的都是函数 |
 
 留到调用时的：钩子答什么、抛不抛错，插件往哪里写，`ui` 目录在不在。

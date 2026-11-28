@@ -261,9 +261,9 @@ function whatIsWrong(p: unknown, name: string | null): string[] {
   if (p.views !== undefined) eachOf(p.views, 'views', wrong, (v) => viewWrong(v, own), (v) => (isObject(v) ? v.id : undefined))
   if (p.secrets !== undefined) {
     const secretWrong = (s: unknown) =>
-      isObject(s) && isText(s.name) && SECRET_NAME.test(s.name) && isText(s.description) && (s.optional === undefined || typeof s.optional === 'boolean')
+      isObject(s) && isText(s.name) && SECRET_NAME.test(s.name) && isText(s.description) && optional(s.title, isText) && (s.optional === undefined || typeof s.optional === 'boolean')
         ? null
-        : 'secrets 的每一项要是 { name, description }，可以带 optional: true 或 false；name 用小写字母开头，只用小写字母、数字和连字符'
+        : 'secrets 的每一项要是 { name, description }，可以带文字的 title 和 optional: true 或 false；name 用小写字母开头，只用小写字母、数字和连字符'
     eachOf(p.secrets, 'secrets', wrong, secretWrong, (s) => (isObject(s) ? s.name : undefined))
   }
   for (const hook of Object.keys(HOOKS)) check(optional(p[hook], (v) => typeof v === 'function'), `${hook} 不是函数`)
