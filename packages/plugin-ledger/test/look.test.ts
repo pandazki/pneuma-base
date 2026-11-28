@@ -170,7 +170,7 @@ describe('check --deep, by position', () => {
     const { root, check, reads } = await arranged()
     reads.length = 0
     const whole = await check({ dir: null })
-    expect(section(whole, '内容检索').split('\n')[0]).toBe('内容检索完成：整个资料库共 3 个已登记条目。')
+    expect(section(whole, '深度检查').split('\n')[0]).toBe('深度检查完成：整个资料库共 3 个已登记条目。')
     // No loose file, no directory nobody looked into, no noise.
     expect([...new Set(reads)].sort()).toEqual(['a.md', 'notes/n.md', 'site'])
 
@@ -178,12 +178,12 @@ describe('check --deep, by position', () => {
     const later = new Date(Date.now() + 60_000)
     utimesSync(join(root, 'notes/n.md'), later, later)
     const r = await check({ dir: null })
-    const body = section(r, '内容检索')
+    const body = section(r, '深度检查')
     expect(body).toContain('内容已变更（1 个）：\n  a.md')
     expect(body).toContain('仅元数据变化，内容未变，已按当前状态记录（1 个）：\n  notes/n.md')
     reads.length = 0
     const notes = await check({ dir: 'notes' })
-    expect(section(notes, '内容检索').split('\n')[0]).toBe('内容检索完成：notes 共 1 个已登记条目。')
+    expect(section(notes, '深度检查').split('\n')[0]).toBe('深度检查完成：notes 共 1 个已登记条目。')
     expect([...new Set(reads)]).toEqual(['notes/n.md'])
   })
 })

@@ -432,7 +432,7 @@ function deepSection(d: Deep): PluginSection {
 /** The named whole pass of `check --deep`: how much it reads first, then how far, on the operation's pass; it stops after the page under way when asked. */
 async function deepCheck(ctx: PluginContext, dir: LibraryPath | null): Promise<Deep> {
   const where = dir === null ? '整个资料库' : ` ${dir} `
-  const progress = (done: number, scope: number) => ctx.pass?.report({ done, total: scope, text: done === 0 ? `将读取${where}的内容：${scope} 个已登记条目。` : `已检索 ${done} / ${scope} 个` })
+  const progress = (done: number, scope: number) => ctx.pass?.report({ done, total: scope, text: done === 0 ? `将读取${where}的内容：${scope} 个已登记条目。` : `已检查 ${done} / ${scope} 个` })
   return deepPass(ctx, dir, progress, () => ctx.pass?.stopped() ?? false)
 }
 

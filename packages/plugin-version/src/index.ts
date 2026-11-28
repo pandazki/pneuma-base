@@ -131,7 +131,7 @@ async function deepRead(ctx: PluginContext, w: Writing, dir: LibraryPath | null,
     await eachAtMost(page, check)
     await commit(w)
     done += page.length
-    ctx.pass?.report({ done, total: scope.length, text: `受版本管理的条目已检索 ${done} / ${scope.length} 个` })
+    ctx.pass?.report({ done, total: scope.length, text: `受版本管理的条目已检查 ${done} / ${scope.length} 个` })
   }
   return { scope: scope.length, done, stopped: false }
 }
@@ -220,7 +220,7 @@ export const version: Plugin = {
     // Each list names its first TEXT_ROWS, then how many and the page that lists every versioned thing.
     const rest = (n: number, shown: number) => (n > shown ? [`  ……共 ${n} 个，查看全部：show ${THINGS_VIEW.id}`] : [])
     const lines = [
-      ...(deep?.stopped ? [`已停止：受版本管理的条目已检索 ${deep.done} / ${deep.scope} 个。`] : []),
+      ...(deep?.stopped ? [`已停止：受版本管理的条目已检查 ${deep.done} / ${deep.scope} 个。`] : []),
       ...recorded.slice(0, TEXT_ROWS).map((r) => `${r.path} 已被外部修改，已记录为版本 ${r.version}`),
       ...rest(recorded.length, TEXT_ROWS),
       ...missing.slice(0, TEXT_ROWS).map((path) => `${path} 已缺失；所有版本仍保留，可用 version restore ${path} --version <n> 恢复`),

@@ -52,10 +52,10 @@ describe('a named whole pass of a plugin', () => {
   it('check --deep reads the versioned things by content, saying how many first, and stops when asked', async () => {
     const whole = ok(['--library', lib, '--as', 'claude-code', 'check', '--deep', '.'])
     expect(whole.stderr).toContain('将读取整个资料库中受版本管理的条目：1 个。')
-    expect(whole.stderr).toContain('受版本管理的条目已检索 1 / 1 个')
+    expect(whole.stderr).toContain('受版本管理的条目已检查 1 / 1 个')
     // The ledger's pass reports first; asked to stop there, the version plugin reads nothing and says so.
     const stopped = await stoppedAtFirstReport(['--library', lib, '--as', 'claude-code', 'check', '--deep', '.'])
-    expect(stopped.stdout).toContain('已停止：受版本管理的条目已检索 0 / 1 个。')
+    expect(stopped.stdout).toContain('已停止：受版本管理的条目已检查 0 / 1 个。')
   })
 
   it('search rebuild reads every registered thing, saying how many first, and stops when asked, leaving the rest to find', async () => {

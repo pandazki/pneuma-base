@@ -151,16 +151,16 @@ test('a named pass says what it will read, shows how far it is with a way to sto
 
   // Reading every registered thing's content: how many first, how far it is, and a stop that keeps what was read.
   await page.goto(`${url}#view=ledger.status`)
-  await main.getByRole('button', { name: '内容检索' }).click()
+  await main.getByRole('button', { name: '深度检查' }).click()
   await expect(page.getByRole('dialog')).toContainText('将读取整个资料库的内容：20000 个已登记条目。')
-  await page.getByRole('dialog').getByRole('button', { name: '内容检索' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '深度检查' }).click()
   const bar = notices.getByRole('progressbar', { name: '进度' })
   await expect(bar).toBeVisible()
   await expect(bar).toHaveAttribute('aria-valuemax', '20000')
-  await expect(notices).toContainText(/已检索 \d+ \/ 20000 个/)
+  await expect(notices).toContainText(/已检查 \d+ \/ 20000 个/)
   await notices.getByRole('button', { name: '停止' }).click()
   await expect(notices.getByRole('button', { name: '正在停止…' })).toBeDisabled()
-  await expect(notices).toContainText(/已停止：整个资料库已检索 \d+ \/ 20000 个已登记条目。/)
+  await expect(notices).toContainText(/已停止：整个资料库已检查 \d+ \/ 20000 个已登记条目。/)
   await expect(bar).toHaveCount(0)
   // What it did stays past the time a notice usually shows, until it is closed; nothing holds the
   // notices meanwhile, as the pointer or the keyboard on them would.
@@ -208,7 +208,7 @@ test('a thing’s panel says its state in words, whether its content was read, a
 
   // Things rest on it, so reading its content is offered; once read, the panel says so.
   await panel.getByRole('button', { name: '读取内容' }).click()
-  await expect(page.getByRole('status')).toContainText('内容检索完成：report.pdf 共 1 个已登记条目。')
+  await expect(page.getByRole('status')).toContainText('深度检查完成：report.pdf 共 1 个已登记条目。')
   await expect(record).toContainText(/已读取 · [0-9a-f]{12}/)
   await expect(panel.getByRole('button', { name: '读取内容' })).toHaveCount(0)
 

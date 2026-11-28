@@ -288,7 +288,7 @@ describe('the scenes page', () => {
 describe('the standing view', () => {
   it('says there is nothing to look at when all is in order; then has a section for each kind of thing to look at, each row opening the item panel and offering what settles it', async () => {
     const { root, show, codex } = await relayed()
-    expect(shown(await show('ledger.status')).blocks).toMatchObject([{ kind: 'actions', head: true, actions: [{ label: '内容检索', call: { verb: 'check', request: { deep: { dir: null } } } }] }, { kind: 'empty', title: '暂无待处理事项' }])
+    expect(shown(await show('ledger.status')).blocks).toMatchObject([{ kind: 'actions', head: true, actions: [{ label: '深度检查', call: { verb: 'check', request: { deep: { dir: null } } } }] }, { kind: 'empty', title: '暂无待处理事项' }])
 
     await agentFace.put({ kind: 'place', from: text('src'), to: 'gone-src.md', origin: { kind: 'brought', source: null, by: null } }, codex())
     await agentFace.put({ kind: 'place', from: text('uses'), to: 'uses-gone.md', origin: { kind: 'made', from: ['gone-src.md'], outside: [] } }, codex())
