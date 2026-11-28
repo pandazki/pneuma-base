@@ -44,7 +44,7 @@ function assembleDescription(library: Pick<Library, 'config' | 'plugins'>, parag
 export async function describeLibrary(ctx: Context): Promise<{ text: string; problems: PluginProblem[] }> {
   const said = await eachPlugin(ctx, async (plugin, pctx) => {
     const paragraph = plugin.cognition && plugin.onDescribe ? await plugin.onDescribe(pctx) : null
-    if (paragraph !== null && typeof paragraph !== 'string') throw new Error(`onDescribe 答的不是文字或 null：${JSON.stringify(paragraph)}`)
+    if (paragraph !== null && typeof paragraph !== 'string') throw new Error(`onDescribe 的答复须为字符串或 null：${JSON.stringify(paragraph)}`)
     return paragraph?.trim() || null
   })
   return { text: assembleDescription(ctx.library, new Map(said.values.map(({ plugin, value }) => [plugin, value]))), problems: said.problems }

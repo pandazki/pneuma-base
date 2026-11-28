@@ -65,7 +65,7 @@ test('an agent’s request: its reason with the command under it; approving or d
   const decide = page.getByRole('main').getByRole('region', { name: '待处理' })
   await expect(decide).toContainText('要给支付方案留住每一版')
   await expect(decide.getByText('plugin enable version', { exact: true })).toBeVisible()
-  await expect(decide).toContainText('codex')
+  await expect(decide).toContainText('Codex')
   await expect(decide.getByRole('button', { name: '批准', exact: true })).toHaveClass(/btn-primary/)
   await decide.getByRole('button', { name: '批准', exact: true }).click()
   const receipt = decide.getByRole('status')

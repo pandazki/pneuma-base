@@ -269,7 +269,7 @@ function whatIsWrong(p: unknown, name: string | null): string[] {
     eachOf(p.secrets, 'secrets', wrong, secretWrong, (s) => (isObject(s) ? s.name : undefined))
   }
   for (const hook of Object.keys(HOOKS)) check(optional(p[hook], (v) => typeof v === 'function'), `${hook} 不是函数`)
-  check(p.onDescribe === undefined || c !== null, 'onDescribe 的一段接在认知段后面，cognition 是 null 时不能有它')
+  check(p.onDescribe === undefined || c !== null, 'onDescribe 的段落接在认知段之后，cognition 为 null 时不得声明 onDescribe')
   return wrong
 }
 
@@ -328,8 +328,8 @@ function paramsWrong(params: unknown): string | null {
   }
   const { secret } = params
   if (secret === undefined) return null
-  if (!isObject(secret) || !isText(secret.name) || !FLAG_NAME.test(secret.name) || !isText(secret.hint)) return 'secret 要是 { name, hint }，name 小写字母开头，只用小写字母、数字和连字符'
-  return names.has(secret.name) ? `${secret.name} 写了两次` : null
+  if (!isObject(secret) || !isText(secret.name) || !FLAG_NAME.test(secret.name) || !isText(secret.hint)) return 'secret 须为 { name, hint }，name 以小写字母开头，仅含小写字母、数字和连字符'
+  return names.has(secret.name) ? `${secret.name} 重复声明` : null
 }
 
 function viewWrong(view: unknown, plugin: string): string | null {

@@ -33,7 +33,7 @@ test('the items page and the provenance chain of a relayed library', async ({ pa
   await row('payments/integration-notes.md').click()
   await expect(title).toHaveText('integration-notes.md')
   await expect(provenance).toContainText('生成')
-  await expect(provenance).toContainText('codex')
+  await expect(provenance).toContainText('Codex')
   const basis = provenance.getByRole('region', { name: /^依据/ })
   // A source consistent with its record is the usual case: no state is said beside it.
   await expect(basis.getByRole('listitem').filter({ hasText: 'payments/recommendation.md' }).locator('.tag')).toHaveCount(0)

@@ -73,7 +73,7 @@ describe('the loader of a plugin outside the repository', () => {
     const host = { flags: [{ name: 'host', hint: '主机', kind: 'value' }] }
     const cases: [Record<string, unknown>, RegExp][] = [
       [command({ params: { secret: { name: 'Key', hint: '账户密钥' } } }), /params：secret/],
-      [command({ params: { ...host, secret: { name: 'host', hint: '账户密钥' } } }), /host 写了两次/],
+      [command({ params: { ...host, secret: { name: 'host', hint: '账户密钥' } } }), /host 重复声明/],
       [command({ params: host, act: { kind: 'connected', object: ['host', 7] } }), /act/],
       [{ cognition: null, onDescribe: 'HOOK' }, /onDescribe/],
       [{ name: 'other' }, /目录名 echo/],

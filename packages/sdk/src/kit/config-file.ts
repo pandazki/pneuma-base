@@ -70,9 +70,9 @@ export function configFile<T>(ctx: PluginContext, name: Place, parse: (raw: unkn
           known = 'empty'
           return
         }
-        if (removed.reason !== 'refused') throw new Error(`${name} 删不掉：${removed.reason}`)
+        if (removed.reason !== 'refused') throw new Error(`无法删除 ${name}（${removed.reason}）`)
       }
-      throw new Error(`${name} 删的时候连续 ${TRIES} 次遇上别处的写入`)
+      throw new Error(`删除 ${name} 时连续 ${TRIES} 次遇到其他进程写入`)
     },
   }
 }
