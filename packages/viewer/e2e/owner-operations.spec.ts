@@ -77,9 +77,11 @@ test('every owner operation from the page leaves a trace an agent sees in check'
   await expect(status).toContainText('已装上插件 pager')
   await expect(pager).toHaveAttribute('aria-checked', 'true')
   await expect(nav.getByRole('button', { name: '块的样例' })).toBeVisible()
-  // The page redraws once the plugin is on; pressing on the switch itself finds it again if so.
-  await pager.press('Space')
-  await expect(status).toContainText('已卸下插件 pager')
+  // The page redraws once the plugin is on, and a key pressed into the switch being replaced is lost: press again then.
+  await expect(async () => {
+    if ((await pager.getAttribute('aria-checked')) === 'true') await pager.press('Space')
+    await expect(status).toContainText('已卸下插件 pager', { timeout: 8_000 })
+  }).toPass({ timeout: 40_000 })
   await expect(pager).toHaveAttribute('aria-checked', 'false')
   await expect(nav.getByRole('button', { name: '块的样例' })).toHaveCount(0)
 
