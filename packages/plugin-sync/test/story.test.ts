@@ -28,8 +28,8 @@ function library(w: World, name: string, plugins: string[] = []): Library {
   const dir = join(w.root, name)
   ok(w.m.run(['init', dir]))
   const owner = (args: string[]) => w.m.run([...args, '--library', dir], { cwd: w.outside })
-  for (const p of ['sync', ...plugins]) ok(owner(['plugin', 'add', p]))
-  ok(owner(['sync', 'target', 'set', '--kind', 'dir', '--to', w.target]))
+  for (const p of ['sync', ...plugins]) ok(owner(['plugin', 'enable', p]))
+  ok(owner(['sync', 'target', 'set', '--kind', 'folder', '--to', w.target]))
   const agent = (args: string[], input?: string) => w.m.run(['--library', dir, '--as', 'claude-code', '--session', `s-${name}`, ...args], { cwd: w.outside, ...(input === undefined ? {} : { input }) })
   const confirmed = (args: string[]) => w.m.run([...args, '--library', dir], { cwd: w.outside, confirm: true })
   return { dir, agent, owner, confirmed }
@@ -65,17 +65,17 @@ describe('two libraries, one target (C6)', () => {
     const site = join(w.outside, 'site')
     write(site, 'index.html', '<h1>hi</h1>')
     write(site, 'css/a.css', 'body{}')
-    ok(a.agent(['put', '-', '--to', 'sources/s.md', '--brought', '--source', 'https://example.com/s'], 'source text'))
-    ok(a.agent(['put', '-', '--to', 'notes/summary.md', '--made', '--from', 'sources/s.md'], 'summary of s'))
-    ok(a.agent(['put', '-', '--to', 'notes/n.md', '--made'], 'note'))
-    ok(a.agent(['put', site, '--to', 'sites/one', '--made']))
+    ok(a.agent(['put', '-', '--to', 'sources/s.md', '--imported', '--source', 'https://example.com/s'], 'source text'))
+    ok(a.agent(['put', '-', '--to', 'notes/summary.md', '--generated', '--from', 'sources/s.md'], 'summary of s'))
+    ok(a.agent(['put', '-', '--to', 'notes/n.md', '--generated'], 'note'))
+    ok(a.agent(['put', site, '--to', 'sites/one', '--generated']))
     ok(a.agent(['say', 'versioned', 'sites/one', '第一版']))
-    ok(a.agent(['put', '-', '--to', 'notes/moving.md', '--made'], 'moving'))
+    ok(a.agent(['put', '-', '--to', 'notes/moving.md', '--generated'], 'moving'))
     ok(a.agent(['put', 'notes/moving.md', '--to', 'notes/moved.md']))
-    ok(a.agent(['put', '-', '--to', 'notes/old.md', '--made'], 'old'))
+    ok(a.agent(['put', '-', '--to', 'notes/old.md', '--generated'], 'old'))
     ok(a.agent(['archive', 'notes/old.md']))
-    ok(a.agent(['put', '-', '--to', 'doc.md', '--made'], 'first version'))
-    ok(a.agent(['put', '-', '--to', 'doc.md', '--made'], 'second version'))
+    ok(a.agent(['put', '-', '--to', 'doc.md', '--generated'], 'first version'))
+    ok(a.agent(['put', '-', '--to', 'doc.md', '--generated'], 'second version'))
     // The ledger records sync now itself after it ran; that record travels with the next sync.
     factsOfA = factIds(a.dir)
     ok(a.owner(['sync', 'now']))
@@ -107,8 +107,8 @@ describe('two libraries, one target (C6)', () => {
     expect(ok(b.agent(['inspect', 'notes/summary.md'])).stdout).toContain('sources/s.md')
     const ledger = (lib: Library, path: string) => inspect(lib, path).find((x: any) => x.plugin === 'ledger')?.body
     for (const path of ['notes/n.md', 'sites/one', 'notes/moved.md', '_archive/notes/old.md', 'doc.md']) expect(ledger(b, path), path).toBe(ledger(a, path))
-    expect(ledger(b, 'sites/one')).toContain('现状：一致')
-    expect(ok(b.agent(['version', 'list', 'sites/one'])).stdout).toContain('第 1 版')
+    expect(ledger(b, 'sites/one')).toContain('状态：一致')
+    expect(ok(b.agent(['version', 'list', 'sites/one'])).stdout).toContain('版本 1')
   })
 
   it('never brings another library’s configuration', () => {
@@ -152,15 +152,15 @@ describe('two libraries, one target (C6)', () => {
   })
 
   it('both sides changed the same file: both versions on both sides, reported by sync now and by check until the copy is archived', () => {
-    ok(a.agent(['put', '-', '--to', 'plan.md', '--made'], 'v1'))
+    ok(a.agent(['put', '-', '--to', 'plan.md', '--generated'], 'v1'))
     ok(a.owner(['sync', 'now']))
     ok(b.owner(['sync', 'now']))
 
-    ok(a.agent(['put', '-', '--to', 'plan.md', '--made'], 'from a'))
+    ok(a.agent(['put', '-', '--to', 'plan.md', '--generated'], 'from a'))
     ok(a.owner(['sync', 'now']))
-    ok(b.agent(['put', '-', '--to', 'plan.md', '--made'], 'from b'))
+    ok(b.agent(['put', '-', '--to', 'plan.md', '--generated'], 'from b'))
     const r = ok(b.owner(['sync', 'now']))
-    expect(r.stdout).toMatch(/冲突（两份都在[^\n]*\n {2}plan\.md {2}另一份：plan\.conflict-[^\n]+\.md/)
+    expect(r.stdout).toMatch(/冲突（保留双方[^\n]*\n {2}plan\.md {2}另一侧版本：plan\.conflict-[^\n]+\.md/)
     const copy = readdirSync(b.dir).find((n) => n.startsWith('plan.conflict-')) as string
     expect(read(b.dir, 'plan.md')).toBe('from b')
     expect(read(b.dir, copy)).toBe('from a')
@@ -171,23 +171,23 @@ describe('two libraries, one target (C6)', () => {
 
     const check = ok(b.agent(['check', '--json'])).json().sections.find((s: any) => s.title === '同步冲突')
     expect(check.data.conflicts).toEqual([{ copy, original: 'plan.md' }])
-    expect(ok(b.agent(['check'])).stdout).toContain(`${copy}（plan.md 的另一份）`)
+    expect(ok(b.agent(['check'])).stdout).toContain(`${copy}（plan.md 的另一侧版本）`)
     // The ledger also lists the copy among files nobody registered; both sections end in archiving what is not wanted.
     const sections = ok(b.agent(['check', '--json'])).json().sections
-    const unowned = sections.find((s: any) => s.title === '没人登记过的')
+    const unowned = sections.find((s: any) => s.title === '未登记')
     expect(unowned.body).toContain(copy)
-    expect(unowned.body).toContain('不要的归档')
-    expect(check.body).toContain('再把冲突副本归档')
+    expect(unowned.body).toContain('不需要的归档')
+    expect(check.body).toContain('再归档冲突副本')
     ok(b.agent(['archive', copy]))
     expect(ok(b.agent(['check', '--json'])).json().sections.find((s: any) => s.title === '同步冲突')).toBeUndefined()
   })
 
   it('sync now is not destructive: it runs in an agent session and through a grant', () => {
-    ok(a.agent(['put', '-', '--to', 'x.md', '--made'], 'x'))
+    ok(a.agent(['put', '-', '--to', 'x.md', '--generated'], 'x'))
     ok(w.m.run(['sync', 'now', '--library', a.dir], { env: { CLAUDE_CODE_SESSION_ID: 'session-1' } }))
     expect(read(w.target, 'x.md')).toBe('x')
-    ok(a.owner(['grant', 'issue', 'claude', '--agent', 'claude-code']))
-    ok(a.agent(['put', '-', '--to', 'y.md', '--made'], 'y'))
+    ok(a.owner(['grant', 'create', 'claude', '--agent', 'claude-code']))
+    ok(a.agent(['put', '-', '--to', 'y.md', '--generated'], 'y'))
     ok(w.m.run(['@claude', 'sync', 'now'], { cwd: w.outside }))
     expect(read(w.target, 'y.md')).toBe('y')
   })
@@ -211,15 +211,15 @@ describe('what the owner deletes with a destructive command stays deleted (CONTE
 
   beforeAll(() => {
     a = library(w, 'a')
-    ok(a.agent(['put', '-', '--to', 'notes/keep.md', '--made'], 'kept'))
-    ok(a.agent(['put', '-', '--to', 'notes/old.md', '--made'], 'archived before the sync'))
-    ok(a.agent(['put', '-', '--to', 'notes/late.md', '--made'], 'archived after the sync'))
+    ok(a.agent(['put', '-', '--to', 'notes/keep.md', '--generated'], 'kept'))
+    ok(a.agent(['put', '-', '--to', 'notes/old.md', '--generated'], 'archived before the sync'))
+    ok(a.agent(['put', '-', '--to', 'notes/late.md', '--generated'], 'archived after the sync'))
     ok(a.agent(['archive', 'notes/old.md']))
-    ok(a.agent(['put', '-', '--to', 'notes/n.md', '--made'], 'removed by hand'))
-    ok(a.agent(['put', '-', '--to', 'notes/o.md', '--made'], 'archived, then removed by hand'))
+    ok(a.agent(['put', '-', '--to', 'notes/n.md', '--generated'], 'removed by hand'))
+    ok(a.agent(['put', '-', '--to', 'notes/o.md', '--generated'], 'archived, then removed by hand'))
     ok(a.agent(['archive', 'notes/o.md']))
-    ok(a.agent(['put', '-', '--to', 'doc.md', '--made'], 'first version'))
-    ok(a.agent(['put', '-', '--to', 'doc.md', '--made'], 'second version'))
+    ok(a.agent(['put', '-', '--to', 'doc.md', '--generated'], 'first version'))
+    ok(a.agent(['put', '-', '--to', 'doc.md', '--generated'], 'second version'))
     ok(a.owner(['sync', 'now']))
     b = library(w, 'b')
     ok(b.owner(['sync', 'now']))
@@ -258,9 +258,9 @@ describe('what the owner deletes with a destructive command stays deleted (CONTE
   })
 
   // The held copies are a record place's own content, not things in the library.
-  it('ledger held drop on A: the held copies leave the target and B, and stay gone', () => {
+  it('ledger copies drop on A: the held copies leave the target and B, and stay gone', () => {
     expect(texts(b.dir)).toContain('first version')
-    ok(a.confirmed(['ledger', 'held', 'drop']))
+    ok(a.confirmed(['ledger', 'copies', 'drop']))
 
     for (let round = 0; round < 2; round++) {
       both()
@@ -278,37 +278,37 @@ describe('refusals', () => {
     const dir = join(w.root, 'lib')
     const owner = (args: string[]) => w.m.run([...args, '--library', dir])
     ok(w.m.run(['init', dir, '--bare']))
-    ok(owner(['plugin', 'add', 'sync']))
+    ok(owner(['plugin', 'enable', 'sync']))
 
     const noTarget = owner(['sync', 'now'])
     expect(noTarget.code).toBe(2)
     expect(noTarget.stdout).toContain('拒绝（no-target）')
-    expect(noTarget.stdout).toContain('sync target set --kind dir --to')
+    expect(noTarget.stdout).toContain('sync target set --kind folder --to')
 
-    for (const args of [['--kind', 's3', '--to', w.target], ['--kind', 'dir']]) {
+    for (const args of [['--kind', 's3', '--to', w.target], ['--kind', 'folder']]) {
       const r = owner(['sync', 'target', 'set', ...args])
       expect(r.code, args.join(' ')).toBe(1)
       expect(r.stderr).toContain('用法错误')
     }
     for (const to of [join(dir, 'inner'), dirname(dir)]) {
-      const r = owner(['sync', 'target', 'set', '--kind', 'dir', '--to', to])
+      const r = owner(['sync', 'target', 'set', '--kind', 'folder', '--to', to])
       expect(r.code, to).toBe(2)
       expect(r.stdout).toContain('target-overlaps')
     }
     expect(existsSync(join(dir, 'inner'))).toBe(false)
     const locked = join(w.root, 'locked')
     mkdirSync(locked, { mode: 0o555 })
-    const unreachable = owner(['sync', 'target', 'set', '--kind', 'dir', '--to', join(locked, 'disk', 'base')])
+    const unreachable = owner(['sync', 'target', 'set', '--kind', 'folder', '--to', join(locked, 'disk', 'base')])
     expect(unreachable.code).toBe(2)
-    expect(unreachable.stdout).toContain('拒绝（target-unreachable）：建不了这个目录')
+    expect(unreachable.stdout).toContain('拒绝（target-unreachable）：无法创建目录')
 
-    ok(owner(['sync', 'target', 'set', '--kind', 'dir', '--to', w.target]))
+    ok(owner(['sync', 'target', 'set', '--kind', 'folder', '--to', w.target]))
     const facts = () => factsOf(dir, 'sync')
     const n = facts().length
-    expect(ok(owner(['sync', 'target', 'set', '--kind', 'dir', '--to', w.target])).stdout).toContain('没有变')
+    expect(ok(owner(['sync', 'target', 'set', '--kind', 'folder', '--to', w.target])).stdout).toContain('未更改')
     expect(facts()).toHaveLength(n)
 
-    ok(w.m.run(['--library', dir, '--as', 'claude-code', 'put', '-', '--to', 'x.md', '--made'], { input: 'x' }))
+    ok(w.m.run(['--library', dir, '--as', 'claude-code', 'put', '-', '--to', 'x.md', '--generated'], { input: 'x' }))
     ok(owner(['sync', 'now']))
     rmSync(w.target, { recursive: true })
     const before = contents(dir)
@@ -317,6 +317,6 @@ describe('refusals', () => {
     expect(missing.stdout).toContain('拒绝（target-missing）')
     expect(existsSync(w.target)).toBe(false)
     expect(contents(dir)).toEqual(before)
-    expect(ok(owner(['sync', 'status'])).stdout).toContain('在这台机器上不存在')
+    expect(ok(owner(['sync', 'status'])).stdout).toContain('在本机不存在')
   })
 })

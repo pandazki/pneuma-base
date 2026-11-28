@@ -200,7 +200,7 @@ function TableView({ block: given }: { block: Extract<Block, { kind: 'table' }> 
                 </th>
               )
             })}
-            {withActions ? <th scope="col" aria-label="动作" /> : null}
+            {withActions ? <th scope="col" aria-label="操作" /> : null}
           </tr>
         </thead>
         <tbody onKeyDown={files ? (e) => files.onKeyDown(e) : onKeyDown} data-files={files ? '' : undefined}>
@@ -518,11 +518,11 @@ function PreviewView({ block }: { block: Extract<Block, { kind: 'preview' }> }) 
     return (
       <figure aria-label="预览">
         <pre className="preview-text">{loaded.text}</pre>
-        {loaded.cut ? <figcaption className="caption">只显示了前 {TEXT_LIMIT.toLocaleString()} 个字符。</figcaption> : null}
+        {loaded.cut ? <figcaption className="caption">仅显示前 {TEXT_LIMIT.toLocaleString()} 个字符。</figcaption> : null}
       </figure>
     )
-  if (loaded.kind === 'binary') return <p className="note">这个文件不是文字或图片，不能预览。</p>
-  return <p className="note">没能读到这个文件。</p>
+  if (loaded.kind === 'binary') return <p className="note">该文件不是文本或图片，无法预览。</p>
+  return <p className="note">无法读取文件。</p>
 }
 
 /**
@@ -531,7 +531,7 @@ function PreviewView({ block }: { block: Extract<Block, { kind: 'preview' }> }) 
  */
 function EmbedView({ block }: { block: Extract<Block, { kind: 'embed' }> }) {
   const href = outsideUrl(block.url)
-  if (href === null) return <p className="note">这一块要显示的不是 http 或 https 的地址：{block.url}</p>
+  if (href === null) return <p className="note">不是 HTTP 或 HTTPS URL，无法显示：{block.url}</p>
   const sandbox = new URL(href).origin === window.location.origin ? 'allow-scripts' : 'allow-scripts allow-same-origin'
   return (
     <figure className="card embed" aria-label={block.title}>
@@ -542,7 +542,7 @@ function EmbedView({ block }: { block: Extract<Block, { kind: 'embed' }> }) {
           {href}
         </span>
         <a href={href} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-quiet">
-          在新标签页打开
+          在新标签页中打开
           <ExternalLink strokeWidth={2} aria-hidden />
         </a>
       </figcaption>
@@ -626,7 +626,7 @@ export function BlockView({ block }: { block: Block }) {
       return (
         <p className="unknown">
           <CircleHelp strokeWidth={2} aria-hidden />
-          这一块界面还不认识：{String((block as { kind?: unknown }).kind)}
+          不支持的块类型：{String((block as { kind?: unknown }).kind)}
         </p>
       )
   }

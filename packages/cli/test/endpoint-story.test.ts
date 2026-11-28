@@ -115,7 +115,7 @@ describe('an agent connects itself through the endpoint', () => {
     expect(((await (await fetch(`${s.origin}/pair/${id}`)).json()) as { state: string }).state).toBe('waiting')
 
     const ask = (await homeAsks(s)).find((a) => a.text.includes(code))
-    expect(ask?.text).toContain('Claude Code 想接入这个库')
+    expect(ask?.text).toContain('Claude Code')
     expect(ask?.text).toContain('整理这次的调研')
     const allow = ask?.actions.find((a) => a.label === '允许')
     expect(allow).toBeDefined()
@@ -130,10 +130,10 @@ describe('an agent connects itself through the endpoint', () => {
 
     const started_ = asAgent(sb, `${answer.connected.command} start "整理这次的调研"`, 'story-session')
     expect(started_.code, started_.out).toBe(0)
-    const put = asAgent(sb, `${answer.connected.command} put - --to notes/research.md --made`, 'story-session', '# 调研\n')
+    const put = asAgent(sb, `${answer.connected.command} put - --to notes/research.md --generated`, 'story-session', '# 调研\n')
     expect(put.code, put.out).toBe(0)
     const facts = sb.run(['--library', lib, 'inspect', 'notes/research.md']).stdout
-    expect(facts).toContain('做出来的 · claude-code')
+    expect(facts).toContain('生成 · claude-code')
     expect(facts).toContain('整理这次的调研')
   })
 
@@ -154,13 +154,13 @@ describe('an agent connects itself through the endpoint', () => {
     const client = new Client({ name: 'story', version: '0' }, { versionNegotiation: { mode: { pin: '2026-07-28' } } })
     await client.connect(new StreamableHTTPClientTransport(new URL(`${answer.connected.mcp.url}?session=minutes`)))
     try {
-      const r = (await client.callTool({ name: 'put', arguments: { to: 'notes/minutes.md', made: true, text: '# 纪要\n' } })) as { isError?: boolean; content: { text?: string }[] }
+      const r = (await client.callTool({ name: 'put', arguments: { to: 'notes/minutes.md', generated: true, text: '# 纪要\n' } })) as { isError?: boolean; content: { text?: string }[] }
       expect(r.isError, r.content.map((c) => c.text).join('\n')).toBeFalsy()
     } finally {
       await client.close()
     }
     const facts = sb.run(['--library', lib, 'inspect', 'notes/minutes.md']).stdout
-    expect(facts).toContain(`做出来的 · my-app`)
+    expect(facts).toContain('生成 · my-app')
   })
 
   it('pairing through HTTP and through the command line end in the same state', async () => {

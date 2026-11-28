@@ -23,7 +23,7 @@ const optional = (v: unknown) => v === undefined || v === null || typeof v === '
 function parseConfig(raw: TargetConfig): Config {
   const { origin, account, prefix } = raw
   if (typeof origin !== 'string' || typeof account !== 'string' || typeof prefix !== 'string' || !optional(raw.host) || !optional(raw.credentials) || !optional(raw.tenant)) {
-    throw new Error('Cloudflare 上的 PneumaSpace 的配置要写 origin、account、prefix，可以有 host、credentials、tenant')
+    throw new Error('Cloudflare 上 PneumaSpace 的配置须包含 origin、account、prefix，可包含 host、credentials、tenant')
   }
   return { host: text(raw.host), origin, account, prefix, credentials: text(raw.credentials), tenant: text(raw.tenant) }
 }
@@ -53,13 +53,13 @@ async function credentialsAt(path: string): Promise<Credentials | string> {
     raw = await readFile(path, 'utf8')
   } catch (error) {
     const code = (error as { code?: string }).code
-    return code === 'ENOENT' ? '没有这个文件' : code === 'EACCES' ? '没有权限读它' : code === 'EISDIR' ? '这是一个目录' : '读不出来'
+    return code === 'ENOENT' ? '文件不存在' : code === 'EACCES' ? '无读取权限' : code === 'EISDIR' ? '该路径是目录' : '无法读取'
   }
   let json: unknown
   try {
     json = JSON.parse(raw)
   } catch {
-    return '它不是 JSON'
+    return '不是 JSON'
   }
   const c = (typeof json === 'object' && json !== null ? json : {}) as Record<string, unknown>
   return { origin: text(c.origin), account: text(c.account), tenant: text(c.tenantId), key: text(c.key) }
@@ -82,35 +82,35 @@ const managerOf = (libraryId: string): Manager => ({ name: MANAGER, url: `https:
 
 /** Who holds an app, in words, when it is not this library's: made by this account, managed by pneuma-base for this library. */
 function holder(app: AppSummary, user: string, mine: Manager): string | null {
-  if (app.manager === null) return '它是在 PneumaSpace 上直接建的，不归 pneuma-base 管'
-  if (app.manager.name !== MANAGER) return `它归 ${app.manager.name} 管理`
-  if (app.manager.url !== mine.url) return `它归另一个库（${app.manager.url ?? '没有地址'}）`
-  if (app.ownerId !== user) return '它属于另一个账户'
+  if (app.manager === null) return '在 PneumaSpace 上直接创建，不由 pneuma-base 管理'
+  if (app.manager.name !== MANAGER) return `由 ${app.manager.name} 管理`
+  if (app.manager.url !== mine.url) return `属于另一个资料库（${app.manager.url ?? '无地址'}）`
+  if (app.ownerId !== user) return '属于另一个账户'
   return null
 }
 
 const planeOf = (origin: string): Plane => ({
   requests: '请求（累计）',
   framed: false,
-  visible: `登录了 ${new URL(origin).host} 的账户才看得到。`,
+  visible: `仅登录 ${new URL(origin).host} 的账户可以访问。`,
   // Each drawing signs in once, and PneumaSpace takes 40 sign-ins from a machine in ten minutes.
   refresh: 60,
 })
 
 export const cloudflareTarget = defineTarget({
   kind: 'cloudflare',
-  label: 'Cloudflare 上的 PneumaSpace',
+  label: 'Cloudflare',
   icon: 'cloud',
-  group: { name: 'PneumaSpace', choice: 'Cloudflare 上的' },
+  group: { name: 'PneumaSpace', choice: 'Cloudflare' },
   form: ['origin', 'account'],
   params: [
-    { name: 'host', hint: '这台机器上装的 PneumaSpace', kind: 'value', pattern: HOST },
-    { name: 'credentials', hint: 'PneumaSpace 的凭据文件', kind: 'value' },
+    { name: 'host', hint: '本机已安装的 PneumaSpace', kind: 'value', pattern: HOST },
+    { name: 'credentials', hint: 'PneumaSpace 凭据文件', kind: 'value' },
     { name: 'origin', hint: '地址', kind: 'value', pattern: ORIGIN },
     { name: 'account', hint: '账户', kind: 'value', pattern: '[A-Za-z0-9_-]{1,40}' },
     PREFIX_PARAM,
   ],
-  secrets: [{ name: 'key', description: 'Cloudflare 上的 PneumaSpace 的账户密钥，连上时填的', optional: true }],
+  secrets: [{ name: 'key', title: '账户密钥', description: 'Cloudflare 上 PneumaSpace 的账户密钥，连接时填写', optional: true }],
   asked: { name: 'key', hint: '账户密钥' },
   cognition: CLOUDFLARE_COGNITION,
   found: installed,
@@ -121,18 +121,18 @@ export const cloudflareTarget = defineTarget({
    * It signs in once with the key it will use and signs out; nothing is stored when that fails.
    */
   async configure({ host, credentials, origin, account, prefix }, ctx, typed) {
-    if (host !== null && credentials !== null) return { ok: false, reason: 'usage', text: '--host 和 --credentials 只写一个。' }
+    if (host !== null && credentials !== null) return { ok: false, reason: 'usage', text: '--host 和 --credentials 只能指定其一。' }
     const file = host !== null ? ownerFile(host) : credentials === null ? null : pathOf(credentials)
     const read = file === null ? null : await credentialsAt(file)
-    if (typeof read === 'string') return { ok: false, reason: 'credentials', text: host !== null ? `这台机器上的 PneumaSpace ${host} 用不了：${read}。` : `用不了凭据文件 ${file}：${read}。` }
+    if (typeof read === 'string') return { ok: false, reason: 'credentials', text: host !== null ? `本机的 PneumaSpace ${host} 不可用：${read}。` : `凭据文件 ${file} 不可用：${read}。` }
     const at = originOf((host === null ? origin : null) ?? read?.origin ?? '')
     const who = (host === null ? account : null) ?? read?.account ?? null
     if (at === null || who === null) {
-      const missing = host !== null ? `这台机器上的 PneumaSpace ${host} 的 owner.json 里没有可用的 origin 和 account。` : file === null ? '要写 --host，或 --origin 和 --account，或 --credentials。' : `凭据文件 ${file} 里没有可用的 origin 和 account；用 --origin、--account 写出来。`
+      const missing = host !== null ? `本机的 PneumaSpace ${host} 的 owner.json 中缺少 origin 或 account。` : file === null ? '需指定 --host，或 --origin 和 --account，或 --credentials。' : `凭据文件 ${file} 中缺少 origin 或 account；请用 --origin、--account 指定。`
       return { ok: false, reason: 'usage', text: missing }
     }
     const key = read !== null ? read.key : ((await typed()) ?? (await ctx.secrets.get('key')))
-    if (key === null) return { ok: false, reason: 'no-key', text: read !== null ? `${host !== null ? `这台机器上的 PneumaSpace ${host} 的 owner.json` : `凭据文件 ${file}`} 里没有密钥。` : '没有账户密钥。' }
+    if (key === null) return { ok: false, reason: 'no-key', text: read !== null ? `${host !== null ? `本机的 PneumaSpace ${host} 的 owner.json` : `凭据文件 ${file}`} 中缺少密钥。` : '缺少账户密钥。' }
     const tenant = read?.tenant ?? null
     const control = new Control(at, who, async () => key, tenant)
     try {
@@ -154,15 +154,15 @@ export const cloudflareTarget = defineTarget({
       if (file === null) {
         const kept = await env.secret('key')
         if (kept !== null) return kept
-        throw new ControlError(`这台机器上没有 ${c.origin} 的账户密钥`)
+        throw new ControlError(`本机未设置 ${c.origin} 的账户密钥`)
       }
       const read = await credentialsAt(file)
       if (typeof read !== 'string' && read.key !== null) return read.key
-      throw new ControlError(`${c.host !== null ? `这台机器上的 PneumaSpace ${c.host}` : `凭据文件 ${file}`} 用不了：${typeof read === 'string' ? read : '里面没有密钥'}`)
+      throw new ControlError(`${c.host !== null ? `本机的 PneumaSpace ${c.host}` : `凭据文件 ${file}`} 不可用：${typeof read === 'string' ? read : '缺少密钥'}`)
     }
     const control = new Control(c.origin, c.account, key, c.tenant)
     const mine = managerOf(env.ctx.library.config.id)
-    const taken = (site: string, by: string) => new ControlError(`应用名 ${site} 在 PneumaSpace 上已经有了：${by}，不是这个库的，所以不动它；换一个前缀，或在 PneumaSpace 上处理那个应用`)
+    const taken = (site: string, by: string) => new ControlError(`应用名称 ${site} 在 PneumaSpace 上已存在：${by}。不属于此资料库，未做改动；请更换应用名称前缀，或在 PneumaSpace 上处理该应用`)
     /** The app named `site`, unless someone else holds the name; null when there is none. */
     const ours = async (site: string): Promise<AppSummary | null> => {
       const app = (await control.apps()).get(site) ?? null
@@ -187,13 +187,13 @@ export const cloudflareTarget = defineTarget({
         const pkg = await packageOf(meta.files)
         const refused = refusal(meta.files, pkg)
         if (refused !== null) throw new ControlError(refused)
-        if (pkg.digest !== (meta.content as string)) throw new ControlError(`复制出来的内容和决定发布的不同：${pkg.digest} 不是 ${meta.content}`)
+        if (pkg.digest !== (meta.content as string)) throw new ControlError(`复制的内容与待发布的内容不一致：${pkg.digest} 不是 ${meta.content}`)
         let app = await ours(site)
         if (app === null) {
           try {
             app = await control.create(site, mine)
           } catch (error) {
-            if (error instanceof ControlError && error.code === 'app_exists') throw taken(site, '这个名字被这个 PneumaSpace 上别的空间的应用占着')
+            if (error instanceof ControlError && error.code === 'app_exists') throw taken(site, '该名称已被此 PneumaSpace 上其他空间的应用占用')
             throw error
           }
         }

@@ -10,22 +10,22 @@ const SECTION = readFileSync(fileURLToPath(new URL('../../plugin-ledger/cognitio
 
 describe('the ledger cognition section', () => {
   it('the usages in its table are heard', () => {
-    for (const template of ['`say note "<一句话>"`', '`say note <库内路径> "<备注>"`', '`say from <库内路径> --from <库内路径…>`', '`put <库内路径> --brought …`', '`say revised <库内路径>`']) {
+    for (const template of ['`say note "<说明>"`', '`say note <库内路径> "<备注>"`', '`say basis <库内路径> --from <库内路径…>`', '`put <库内路径> --imported …`', '`say revised <库内路径>`']) {
       expect(SECTION).toContain(template)
     }
     const sb = sandbox()
     const lib = join(tempDir(), 'lib')
     expect(sb.run(['init', lib]).code).toBe(0)
     const run = (args: string[], input?: string) => sb.run(['--library', lib, '--as', 'claude-code', '--session', 's', ...args], { ...(input === undefined ? {} : { input }) })
-    expect(run(['put', '-', '--to', 'notes/a.md', '--made'], 'a').code).toBe(0)
-    expect(run(['put', '-', '--to', 'notes/b.md', '--brought'], 'b').code).toBe(0)
+    expect(run(['put', '-', '--to', 'notes/a.md', '--generated'], 'a').code).toBe(0)
+    expect(run(['put', '-', '--to', 'notes/b.md', '--imported'], 'b').code).toBe(0)
     mkdirSync(join(lib, 'inbox'))
     writeFileSync(join(lib, 'inbox/dropped.md'), 'dropped')
     for (const args of [
       ['say', 'note', '一句备注'],
       ['say', 'note', 'notes/a.md', '给 a 的备注'],
-      ['say', 'from', 'notes/a.md', '--from', 'notes/b.md'],
-      ['put', 'inbox/dropped.md', '--brought', '--by', 'owner'],
+      ['say', 'basis', 'notes/a.md', '--from', 'notes/b.md'],
+      ['put', 'inbox/dropped.md', '--imported', '--by', 'owner'],
     ]) {
       const r = run([...args, '--json'])
       expect(r.code, `${args.join(' ')}\n${r.stdout}\n${r.stderr}`).toBe(0)

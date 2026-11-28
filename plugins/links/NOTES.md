@@ -59,7 +59,7 @@
 
 在 Node 26.13.0、npm 11.20.0 上，最终一次 `npm test` 通过 12 项，失败 0 项。其中一项调用官方 `conformance(dist, …)`，另有真实 CLI、查看器服务、文件系统边界和解析器测试。集成测试向库里补上目标文件后，再次打开管理页和面板、运行两条命令，坏链都已消失。测试输出保存在 `.local/test-result.txt`。
 
-手工验收另建了 `init --bare` 的库，执行 `plugin install dist`、`plugin add links`，用 `put` 放入两个互相引用的文件。最终构建后再次安装，并用 `cmp` 核对 `index.js` 和认知段都与安装副本相同。`plugin list --library .local/library` 显示 `links 0.1.0  契约 1 · 装上来的 · 这个库装了`。agent 的 `check` 和主人的 `links list` 输出一致。
+手工验收另建了 `init --bare` 的库，执行 `plugin install dist`、`plugin enable links`，用 `put` 放入两个互相引用的文件。最终构建后再次安装，并用 `cmp` 核对 `index.js` 和认知段都与安装副本相同。`plugin list --library .local/library` 显示 `links 0.1.0  契约 1 · 装上来的 · 这个库装了`。agent 的 `check` 和主人的 `links list` 输出一致。
 
 | 来源与位置 | 文档中的链接值 | 缺少的文件 |
 | --- | --- | --- |

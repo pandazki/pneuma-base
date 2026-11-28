@@ -27,21 +27,21 @@ beforeAll(() => {
   work = tempDir('pb-work-')
   lib = join(tempDir(), 'lib')
   ok(sb.run(['init', lib]))
-  ok(sb.run(['--library', lib, 'grant', 'issue', 'claude', '--agent', 'claude-code']))
-  ok(sb.run(['--library', lib, 'grant', 'issue', 'codex', '--agent', 'codex']))
+  ok(sb.run(['--library', lib, 'grant', 'create', 'claude', '--agent', 'claude-code']))
+  ok(sb.run(['--library', lib, 'grant', 'create', 'codex', '--agent', 'codex']))
   // claude-code brings a source and makes a comparison from it; codex, in its own session, builds on that.
   const a = as('claude', 'session-a')
   writeFileSync(join(work, 'stripe.html'), '<html>Stripe 2.9%</html>')
   writeFileSync(join(work, 'comparison.md'), '# 比较')
   writeFileSync(join(work, 'integration.md'), '# 接入')
   ok(a(['start', '给小店选支付服务']))
-  ok(a(['put', 'stripe.html', '--to', 'pay/stripe.html', '--brought', '--source', 'https://stripe.com/pricing']))
-  ok(a(['put', 'comparison.md', '--to', 'pay/comparison.md', '--made', '--from', 'pay/stripe.html']))
-  ok(a(['say', 'decided', '用 Paddle']))
+  ok(a(['put', 'stripe.html', '--to', 'pay/stripe.html', '--imported', '--source', 'https://stripe.com/pricing']))
+  ok(a(['put', 'comparison.md', '--to', 'pay/comparison.md', '--generated', '--from', 'pay/stripe.html']))
+  ok(a(['say', 'decision', '用 Paddle']))
   ok(a(['say', 'note', NOTE]))
-  ok(a(['ask', '要留住每一版', 'plugin', 'add', 'version']))
+  ok(a(['ask', '要留住每一版', 'plugin', 'enable', 'version']))
   const b = as('codex', 'session-b')
-  ok(b(['put', 'integration.md', '--to', 'pay/integration.md', '--made', '--from', 'pay/comparison.md']))
+  ok(b(['put', 'integration.md', '--to', 'pay/integration.md', '--generated', '--from', 'pay/comparison.md']))
   const id = /r-[0-9a-f]{8}/.exec(ok(owner(['request', 'list'])).stdout)?.[0] as string
   ok(owner(['request', 'decline', id, '先不装']))
 })
@@ -54,19 +54,19 @@ describe('ledger stats', () => {
     const r = ok(owner(['ledger', 'stats', '--json']))
     expect(r.json().data).toMatchObject({
       period: '30d',
-      put: { brought: 1, made: 2 },
+      put: { imported: 1, generated: 2 },
       sessions: { total: 2 },
-      reuse: { made: 2, fromLibrary: 2, otherSession: 1, otherAgent: 1, top: [{ path: 'pay/comparison.md', uses: 1, by: ['codex'] }, { path: 'pay/stripe.html', uses: 1, by: ['claude-code'] }] },
+      reuse: { generated: 2, fromLibrary: 2, otherSession: 1, otherAgent: 1, top: [{ path: 'pay/comparison.md', uses: 1, by: ['codex'] }, { path: 'pay/stripe.html', uses: 1, by: ['claude-code'] }] },
       agents: [
-        { name: 'claude-code', sessions: 1, brought: 1, made: 1, decided: 1, notes: 1, asked: 1, declined: 1, pending: 0 },
-        { name: 'codex', sessions: 1, made: 1 },
+        { name: 'claude-code', sessions: 1, imported: 1, generated: 1, decisions: 1, notes: 1, asked: 1, declined: 1, pending: 0 },
+        { name: 'codex', sessions: 1, generated: 1 },
       ],
       owner: { declined: 1 },
       order: { now: { stale: 0, changed: 0, unknown: 0, archived: 0 } },
     })
     const text = r.json().text as string
-    expect(text).toContain('做出来的 2 样里，2 样依据了库里已有的东西；1 样用了别的会话留下的（50%），1 样用了别的 agent 带来或做出的（50%）。')
-    expect(text).toContain('- claude-code：1 次会话 · 带进来 1 样 · 做出来 1 样 · 决定 1 条 · 备注 1 条 · 请主人做 1 件：拒绝 1 件')
+    expect(text).toContain('生成的 2 个条目中，2 个依据了资料库中已有的条目；1 个引用了其他会话的条目（50%），1 个引用了其他 Agent 导入或生成的条目（50%）。')
+    expect(text).toContain('- claude-code：1 次会话 · 导入 1 个 · 生成 1 个 · 决策 1 条 · 备注 1 条 · 请求 1 项：已拒绝 1 项')
 
     for (const period of ['7d', 'all']) {
       const text = ok(owner(['ledger', 'stats', '--period', period])).stdout
@@ -75,13 +75,14 @@ describe('ledger stats', () => {
         b.kind === 'text' || b.kind === 'chart' ? [b.text] : b.kind === 'list' ? b.items.map((i) => `- ${i.cell.text}：${i.note}`) : b.kind === 'section' ? [b.title] : [],
       )
       expect(said.length, period).toBeGreaterThan(8)
-      for (const sentence of said) expect(text, `${period}: ${sentence}`).toContain(sentence)
+      // The owner is 我 on the page and 所有者 in the command's text.
+      for (const sentence of said.map((t) => t.replaceAll('我', '所有者'))) expect(text, `${period}: ${sentence}`).toContain(sentence)
     }
   })
 
   it('may be run by an agent, and leaves no record, as the page leaves none when it is looked at: reading the statistics twice says the same', () => {
     const before = ok(owner(['ledger', 'stats', '--json'])).json().data
-    expect(ok(as('claude', 'session-a')(['ledger', 'stats'])).stdout).toContain('## 谁做了什么')
+    expect(ok(as('claude', 'session-a')(['ledger', 'stats'])).stdout).toContain('## 操作分布')
     expect(ok(owner(['ledger', 'stats', '--json'])).json().data).toEqual({ ...before, to: expect.any(String) })
     const rows = ok(owner(['show', 'ledger.activity', '--json'])).json().blocks.find((b: Block) => b.kind === 'feed').groups.flatMap((g: { rows: { text: string }[] }) => g.rows)
     expect(rows.filter((row: { text: string }) => row.text.includes('ledger stats'))).toEqual([])
@@ -134,15 +135,15 @@ describe('ledger export', () => {
     const newest = [...shown].sort((a, b) => b.at.localeCompare(a.at) || a.key.localeCompare(b.key))
     expect(acts.map((x) => [x.id, x.at, x.whose])).toEqual(newest.map((x) => [x.key, x.at, x.whose]))
     expect(rows.filter((x) => !acts.includes(x)).map((x) => x.kind)).toEqual(expect.arrayContaining(['said']))
-    // The same sentence as the activity's row, but a record spells out the usual origin the page leaves unsaid; a command's is its answer, the row's the command as given.
-    for (const x of acts.filter((x) => x.kind !== 'owner.op')) expect(x.text?.replace('（做出来的）', '')).toBe(shown.find((s) => s.key === x.id)?.text)
-    expect(rows.filter((x) => x.kind === 'item.enter' && x.text?.includes('（做出来的）')).length).toBeGreaterThan(0)
+    // The same sentence as the activity's row, a thing entered named by its origin's word; a command's is its answer, the row's the command as given.
+    for (const x of acts.filter((x) => x.kind !== 'owner.op')) expect(x.text).toBe(shown.find((s) => s.key === x.id)?.text)
+    expect(rows.filter((x) => x.kind === 'item.enter' && x.text?.startsWith('生成 ')).length).toBeGreaterThan(0)
     expect(Object.keys(rows[0] as object)).toEqual(['id', 'at', 'actor', 'actor_kind', 'grant', 'session', 'kind', 'path', 'text', 'whose', 'request'])
     const put = rows.find((x) => x.kind === 'item.enter' && x.path === 'pay/integration.md')
     expect(put).toMatchObject({ actor: 'codex', actor_kind: 'agent', grant: 'codex', session: 'session-b', whose: 'agent', request: '' })
     const decline = rows.find((x) => x.kind === 'owner.op' && x.text?.includes('request decline'))
     const asked = rows.find((x) => x.kind === 'request')
-    expect(decline).toMatchObject({ actor: '主人', actor_kind: 'owner', grant: '', whose: 'owner' })
+    expect(decline).toMatchObject({ actor: '所有者', actor_kind: 'owner', grant: '', whose: 'owner' })
     expect(decline?.request).toMatch(/^r-[0-9a-f]{8}$/)
     expect(asked?.request).toBe(decline?.request)
 
@@ -182,13 +183,13 @@ describe('ledger export', () => {
     const dir = tempDir('pb-out-')
     const inside = owner(['ledger', 'export', '--to', join(lib, 'audit.csv')])
     expect(inside.code).toBe(2)
-    expect(inside.stdout).toContain('要放在库外')
+    expect(inside.stdout).toContain('拒绝（inside-library）')
     expect(existsSync(join(lib, 'audit.csv'))).toBe(false)
     writeFileSync(join(dir, 'taken.csv'), 'mine')
     const taken = owner(['ledger', 'export', '--to', join(dir, 'taken.csv')])
     expect(taken.code).toBe(2)
     expect(readFileSync(join(dir, 'taken.csv'), 'utf8')).toBe('mine')
-    expect(owner(['ledger', 'export', '--to', join(dir, 'x.csv'), '--since', 'last tuesday']).stdout).toContain('--since 要写一天')
+    expect(owner(['ledger', 'export', '--to', join(dir, 'x.csv'), '--since', 'last tuesday']).stdout).toContain('拒绝（bad-moment）')
     const agent = as('claude', 'session-d')(['ledger', 'export', '--to', join(dir, 'agent.csv')])
     expect(agent.code).toBe(2)
     expect(existsSync(join(dir, 'agent.csv'))).toBe(false)

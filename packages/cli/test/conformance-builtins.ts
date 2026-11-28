@@ -24,12 +24,12 @@ const write = (path: string, content: string) => {
 /** A site in the library at sites/shop, and its next version beside the agent, as the version and deploy examples assume. */
 async function shop({ sandbox, cwd }: SetupContext) {
   write(join(sandbox.work, 'shop-first/index.html'), '<h1>小店</h1>')
-  expect((await sandbox.agent('setup', 'setup', ['put', join(sandbox.work, 'shop-first'), '--to', 'sites/shop', '--made'])).code).toBe(0)
+  expect((await sandbox.agent('setup', 'setup', ['put', join(sandbox.work, 'shop-first'), '--to', 'sites/shop', '--generated'])).code).toBe(0)
   write(join(cwd, 'shop/index.html'), '<h1>小店，换了配色</h1>')
 }
 
 const target = (plugin: string) => async ({ sandbox }: SetupContext) => {
-  expect((await sandbox.owner([plugin, 'target', 'set', '--kind', 'dir', '--to', await tempDir(`pb-${plugin}-`)])).code).toBe(0)
+  expect((await sandbox.owner([plugin, 'target', 'set', '--kind', 'folder', '--to', await tempDir(`pb-${plugin}-`)])).code).toBe(0)
 }
 
 /** What each built-in's examples stand on. The ledger's bring a page with curl, which here prints instead of fetching. */
@@ -38,7 +38,7 @@ const SETUP: Record<string, ConformanceOptions['setup']> = {
     write(join(bin, 'curl'), '#!/bin/sh\nfor last; do :; done\nprintf "<html>%s</html>" "$last"\n')
     chmodSync(join(bin, 'curl'), 0o755)
     write(join(cwd, 'comparison.md'), '# 支付服务对比\n')
-    const put = ['put', '-', '--to', 'payments/sources/paddle-pricing.html', '--brought', '--source', 'https://www.paddle.com/pricing']
+    const put = ['put', '-', '--to', 'payments/sources/paddle-pricing.html', '--imported', '--source', 'https://www.paddle.com/pricing']
     expect((await sandbox.agent('setup', 'setup', put, { input: '<html>paddle</html>' })).code).toBe(0)
   },
   version: shop,

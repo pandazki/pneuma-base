@@ -15,7 +15,7 @@ function parse(raw) {
   const strings = value => Array.isArray(value) && value.every(v => typeof v === 'string')
   if (typeof raw.under === 'string' && strings(raw.paths)) return { under: raw.under, paths: raw.paths }
   if (typeof raw.from === 'string' && typeof raw.to === 'string') return { from: raw.from, to: raw.to }
-  return '不是一条文档记录'
+  return '不是有效的文档记录'
 }
 
 const store = ctx => recordStore(ctx, 'documents', parse)

@@ -28,7 +28,7 @@ async function library() {
       writeFileSync(join(root, path), content)
     },
     register: async (path: string) => {
-      const r = await agentFace.put({ kind: 'register', path, origin: { kind: 'made', from: [], outside: [] } }, (await open()).ctx)
+      const r = await agentFace.put({ kind: 'register', path, origin: { kind: 'generated', from: [], outside: [] } }, (await open()).ctx)
       if (r.outcome !== 'accepted') throw new Error(`not registered: ${r.reason}`)
     },
     dropCache: async () => rmSync((await open()).pctx.cacheDir, { recursive: true, force: true }),
@@ -57,17 +57,17 @@ describe('the search.status view', () => {
   it('says there is no index yet, and offers the owner commands as actions', async () => {
     const lib = await library()
     const view = await lib.status()
-    expect(fields(view?.blocks ?? [])).toMatchObject({ 文件: '还没有索引', 嵌入器: '没配嵌入器，find 只按文字找' })
+    expect(fields(view?.blocks ?? [])).toMatchObject({ 文件: '暂无索引', 'embedding 服务': '未配置 embedding，find 仅进行全文检索' })
     const calls = actions(view?.blocks ?? []).map((a) => a.call)
     expect(calls).toEqual([
       { face: 'owner', command: 'search rebuild', args: { positional: [], flags: {} } },
-      { face: 'owner', command: 'search embedder set', args: { positional: [], flags: { kind: ['{kind}'], url: ['{url}'], model: ['{model}'] } } },
+      { face: 'owner', command: 'search embedding set', args: { positional: [], flags: { kind: ['{kind}'], url: ['{url}'], model: ['{model}'] } } },
     ])
     const set = actions(view?.blocks ?? [])[1]
     expect(set?.inputs.find((i) => i.name === 'kind')?.options?.map((o) => o.value)).toEqual(['hash', 'http'])
 
-    expect((await lib.owner('search embedder set', { kind: ['hash'] })).outcome).toBe('done')
-    expect(actions((await lib.status())?.blocks ?? []).map((a) => a.call)).toContainEqual({ face: 'owner', command: 'search embedder clear', args: { positional: [], flags: {} } })
+    expect((await lib.owner('search embedding set', { kind: ['hash'] })).outcome).toBe('done')
+    expect(actions((await lib.status())?.blocks ?? []).map((a) => a.call)).toContainEqual({ face: 'owner', command: 'search embedding clear', args: { positional: [], flags: {} } })
   })
 
   it('counts what is indexed, what is left to read, and the vectors of the embedder that is set', async () => {
@@ -78,12 +78,12 @@ describe('the search.status view', () => {
     await lib.register('logo.png')
     // Nothing left to read is the usual state and goes unsaid.
     const indexed = fields((await lib.status())?.blocks ?? [])
-    expect(indexed).toMatchObject({ 文件: '2 个，其中文本 1 个', 块: '1' })
-    expect(indexed).not.toHaveProperty('待读')
+    expect(indexed).toMatchObject({ 文件: '2 个，其中文本 1 个', 分块: '1' })
+    expect(indexed).not.toHaveProperty('待索引')
 
-    expect((await lib.owner('search embedder set', { kind: ['hash'] })).outcome).toBe('done')
+    expect((await lib.owner('search embedding set', { kind: ['hash'] })).outcome).toBe('done')
     await lib.find('退款')
-    expect(fields((await lib.status())?.blocks ?? [])).toMatchObject({ 嵌入器: 'hash：特征哈希，不用模型', 向量: '1 / 1 块' })
+    expect(fields((await lib.status())?.blocks ?? [])).toMatchObject({ 'embedding 服务': 'hash：特征哈希，无需模型', 向量: '1 / 1 个分块' })
   })
 })
 
@@ -98,19 +98,19 @@ describe('the item section', () => {
     for (const path of ['a.md', 'logo.png', 'sites/a']) await lib.register(path)
     lib.write('new.md', '新来的\n')
 
-    expect(await lib.item('a.md')).toEqual({ title: '查找', blocks: [{ kind: 'fields', fields: [{ label: '正文', value: { text: '已索引，1 块' } }, { label: '按意思', value: { text: '没配嵌入器' } }] }] })
-    expect(fields((await lib.item('logo.png'))?.blocks ?? [])).toMatchObject({ 正文: '不是文本，不索引正文' })
-    expect(fields((await lib.item('new.md'))?.blocks ?? [])).toMatchObject({ 正文: '没有索引：查找插件的记录里没有它' })
-    expect(fields((await lib.item('sites/a'))?.blocks ?? [])).toMatchObject({ 正文: '已索引 2 个文件，2 块' })
+    expect(await lib.item('a.md')).toEqual({ title: '搜索', blocks: [{ kind: 'fields', fields: [{ label: '全文', value: { text: '已索引，1 个分块' } }, { label: '语义', value: { text: '未配置 embedding' } }] }] })
+    expect(fields((await lib.item('logo.png'))?.blocks ?? [])).toMatchObject({ 全文: '非文本文件，不索引全文' })
+    expect(fields((await lib.item('new.md'))?.blocks ?? [])).toMatchObject({ 全文: '未索引：搜索插件中无此条目的记录' })
+    expect(fields((await lib.item('sites/a'))?.blocks ?? [])).toMatchObject({ 全文: '已索引 2 个文件，2 个分块' })
 
-    await lib.owner('search embedder set', { kind: ['hash'] })
+    await lib.owner('search embedding set', { kind: ['hash'] })
     await lib.find('退款')
-    expect(fields((await lib.item('a.md'))?.blocks ?? [])).toMatchObject({ 按意思: '1 / 1 块有向量' })
+    expect(fields((await lib.item('a.md'))?.blocks ?? [])).toMatchObject({ 语义: '1 / 1 个分块已有向量' })
 
     await lib.dropCache()
-    expect(fields((await lib.item('a.md'))?.blocks ?? [])).toMatchObject({ 正文: '还没读，下次 find 时读' })
+    expect(fields((await lib.item('a.md'))?.blocks ?? [])).toMatchObject({ 全文: '未读取，下次 find 时读取' })
     await lib.find('退款')
-    expect(fields((await lib.item('a.md'))?.blocks ?? [])).toMatchObject({ 正文: '已索引，1 块' })
+    expect(fields((await lib.item('a.md'))?.blocks ?? [])).toMatchObject({ 全文: '已索引，1 个分块' })
     expect(await lib.item('nothing.md')).toBeNull()
   })
 })

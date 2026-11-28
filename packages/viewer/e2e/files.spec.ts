@@ -15,7 +15,7 @@ async function library(pb: Cli): Promise<{ url: string; lib: string }> {
   write(lib, 'inbox/a-report.pdf', `%PDF-1.4 ${'x'.repeat(4000)}`)
   write(lib, 'inbox/deeper/inner/z.md', 'deep\n')
   pb.run(['init', lib])
-  for (const f of ['b-notes.md', 'c-picture.png', 'a-report.pdf', 'deeper/inner/z.md']) pb.run(['--library', lib, 'put', `inbox/${f}`, '--brought'])
+  for (const f of ['b-notes.md', 'c-picture.png', 'a-report.pdf', 'deeper/inner/z.md']) pb.run(['--library', lib, 'put', `inbox/${f}`, '--imported'])
   const day = 86_400
   const now = Date.now() / 1000
   utimesSync(join(lib, 'inbox/a-report.pdf'), now - 3 * day, now - 3 * day)
@@ -145,11 +145,11 @@ test('sorting from the column heads and the head’s menu, by when it changed, k
   const rows = main.locator('tbody tr[data-key]')
   await expect.poll(() => names(rows)).toEqual(['a-report.pdf', 'b-notes.md', 'c-picture.png', 'deeper/'])
 
-  // 改于 first shows the newest; again, the oldest.
-  await main.getByRole('columnheader', { name: '改于' }).getByRole('button').click()
-  await expect(main.getByRole('columnheader', { name: '改于' })).toHaveAttribute('aria-sort', 'descending')
+  // 修改时间 first shows the newest; again, the oldest.
+  await main.getByRole('columnheader', { name: '修改时间' }).getByRole('button').click()
+  await expect(main.getByRole('columnheader', { name: '修改时间' })).toHaveAttribute('aria-sort', 'descending')
   await expect.poll(() => names(rows)).toEqual(['deeper/', 'b-notes.md', 'c-picture.png', 'a-report.pdf'])
-  await main.getByRole('columnheader', { name: '改于' }).getByRole('button').click()
+  await main.getByRole('columnheader', { name: '修改时间' }).getByRole('button').click()
   await expect.poll(() => names(rows)).toEqual(['a-report.pdf', 'c-picture.png', 'b-notes.md', 'deeper/'])
 
   // The sort is kept for the page: another folder of it, and the icons, are sorted the same way.
@@ -165,7 +165,7 @@ test('sorting from the column heads and the head’s menu, by when it changed, k
   await page.getByRole('menuitem', { name: '大小' }).click()
   await expect.poll(async () => (await tiles.allInnerTexts()).map((t) => t.trim())).toEqual(['a-report.pdf', 'c-picture.png', 'b-notes.md', 'deeper'])
   await main.getByRole('button', { name: /^排序/ }).click()
-  await page.getByRole('menuitem', { name: '种类' }).click()
+  await page.getByRole('menuitem', { name: '类型' }).click()
   await expect.poll(async () => (await tiles.allInnerTexts()).map((t) => t.trim())).toEqual(['deeper', 'b-notes.md', 'a-report.pdf', 'c-picture.png'])
 })
 
@@ -199,23 +199,23 @@ test('the context menu: the page’s preview and a path to copy, then the librar
   const row = (name: RegExp) => main.getByRole('row', { name })
 
   await row(/a-report\.pdf/).click({ button: 'right' })
-  const menu = page.getByRole('menu', { name: '对这些文件' })
-  await expect(menu.getByRole('menuitem')).toHaveText(['快速查看空格', '拷贝路径', '归档', '挪到…', '重新命名'])
+  const menu = page.getByRole('menu', { name: '所选文件' })
+  await expect(menu.getByRole('menuitem')).toHaveText(['快速查看空格', '复制路径', '归档', '移动…', '重命名'])
   await menu.getByRole('menuitem', { name: '归档' }).click()
   await expect(row(/a-report\.pdf/)).toHaveCount(0)
   expect(pb.run(['--library', lib, 'inspect', '_archive/inbox/a-report.pdf']).stdout).toContain('a-report.pdf')
 
   // Renamed in place: the name's part before its extension is chosen; Return keeps the new name, a move recorded as one.
   await row(/b-notes\.md/).click({ button: 'right' })
-  await menu.getByRole('menuitem', { name: '重新命名' }).click()
-  const field = main.getByRole('textbox', { name: '新的名字' })
+  await menu.getByRole('menuitem', { name: '重命名' }).click()
+  const field = main.getByRole('textbox', { name: '新名称' })
   await expect(field).toHaveValue('b-notes.md')
   await page.keyboard.type('notes')
   await page.keyboard.press('Enter')
   await expect(row(/notes\.md/)).toBeVisible()
   await expect(row(/b-notes\.md/)).toHaveCount(0)
   // The library's move: the thing keeps where it came from.
-  expect(pb.run(['--library', lib, 'inspect', 'inbox/notes.md']).stdout).toContain('带进来的 · 主人')
+  expect(pb.run(['--library', lib, 'inspect', 'inbox/notes.md']).stdout).toContain('导入 · 所有者')
 
   // F2 renames too; Escape leaves the name as it was. Several selected: only what applies to all.
   await row(/c-picture\.png/).click()
@@ -224,14 +224,14 @@ test('the context menu: the page’s preview and a path to copy, then the librar
   await expect(row(/c-picture\.png/)).toBeVisible()
   await row(/notes\.md/).click({ modifiers: ['Meta'] })
   await row(/notes\.md/).click({ button: 'right' })
-  await expect(menu.getByRole('menuitem')).toHaveText(['快速查看空格', '拷贝路径', '归档'])
+  await expect(menu.getByRole('menuitem')).toHaveText(['快速查看空格', '复制路径', '归档'])
   await page.keyboard.press('Escape')
 
-  // 挪到… asks where, starting from where it is.
+  // 移动… asks where, starting from where it is.
   await row(/c-picture\.png/).click()
   await row(/c-picture\.png/).click({ button: 'right' })
-  await menu.getByRole('menuitem', { name: '挪到…' }).click()
-  await expect(page.getByRole('dialog').getByRole('textbox', { name: '新的库内路径' })).toHaveValue('inbox/c-picture.png')
+  await menu.getByRole('menuitem', { name: '移动…' }).click()
+  await expect(page.getByRole('dialog').getByRole('textbox', { name: '新路径' })).toHaveValue('inbox/c-picture.png')
 })
 
 test('a time from today keeps its whole width as the page’s clock moves it on: 刚刚 becomes 2 分钟前 and stays whole', async ({ page, pb }) => {

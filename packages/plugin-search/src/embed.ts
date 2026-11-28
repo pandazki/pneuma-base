@@ -72,17 +72,17 @@ const errorCode = (error: unknown) => {
 /** Parses the server's answer at the boundary: one numeric vector per text, all of one length. */
 function vectorsOf(body: unknown, count: number): Float32Array[] {
   const data = (body as { data?: unknown } | null)?.data
-  if (!Array.isArray(data) || data.length !== count) throw new Error(`嵌入服务的答复不对：要 ${count} 个向量`)
+  if (!Array.isArray(data) || data.length !== count) throw new Error(`embedding 服务的响应格式错误：应为 ${count} 个向量`)
   const out: Float32Array[] = new Array(count)
   for (const [position, row] of data.entries()) {
     const { index, embedding } = row as { index?: unknown; embedding?: unknown }
     const at = typeof index === 'number' ? index : position
     if (!Array.isArray(embedding) || embedding.length === 0 || !embedding.every((x) => typeof x === 'number') || at < 0 || at >= count) {
-      throw new Error('嵌入服务的答复不对：有一项不是向量')
+      throw new Error('embedding 服务的响应格式错误：其中一项不是向量')
     }
     out[at] = unit(Float32Array.from(embedding as number[]))
   }
-  if (out.some((v) => v === undefined || v.length !== out[0]?.length)) throw new Error('嵌入服务的答复不对：向量缺了或长短不一')
+  if (out.some((v) => v === undefined || v.length !== out[0]?.length)) throw new Error('embedding 服务的响应格式错误：向量缺失或长度不一致')
   return out
 }
 
@@ -102,10 +102,10 @@ export function httpEmbedder(config: Extract<EmbedderConfig, { kind: 'http' }>, 
           signal: AbortSignal.timeout(timeoutMs),
         })
       } catch (error) {
-        if ((error as Error).name === 'TimeoutError') throw new Error(`嵌入服务 ${base} ${timeoutMs / 1000} 秒没有答复`, { cause: error })
-        throw new Error(`嵌入服务连不上：${base}（${errorCode(error)}）`, { cause: error })
+        if ((error as Error).name === 'TimeoutError') throw new Error(`embedding 服务 ${base} 在 ${timeoutMs / 1000} 秒内无响应`, { cause: error })
+        throw new Error(`无法连接 embedding 服务：${base}（${errorCode(error)}）`, { cause: error })
       }
-      if (!response.ok) throw new Error(`嵌入服务答复 ${response.status}：${(await response.text().catch(() => '')).slice(0, 200)}`)
+      if (!response.ok) throw new Error(`embedding 服务返回 ${response.status}：${(await response.text().catch(() => '')).slice(0, 200)}`)
       return vectorsOf(await response.json().catch(() => null), texts.length)
     },
   }
@@ -118,13 +118,13 @@ export function embedderFor(config: EmbedderConfig, key: string | null): Embedde
 /** For a record that named an environment variable for the key while the secret is not set: where the key lives now. */
 export function movedKey(config: EmbedderConfig | null, key: boolean): string | null {
   if (key || config?.kind !== 'http' || !config.keyEnv) return null
-  return `密钥原来取自环境变量 ${config.keyEnv}，现在放在这个插件的密钥里，不再读环境变量：用 ${SET_KEY} 设，值从标准输入读`
+  return `密钥之前取自环境变量 ${config.keyEnv}，现改为保存在此插件的密钥中，不再读取环境变量：用 ${SET_KEY} 设置，值从标准输入读取`
 }
 
 /** How the owner reads the embedder; `key`: whether its secret is set on this machine. */
 export function embedderLabel(config: EmbedderConfig | null, key: boolean): string {
-  if (config === null) return '没配嵌入器，find 只按文字找'
-  if (config.kind === 'hash') return 'hash：特征哈希，不用模型'
+  if (config === null) return '未配置 embedding，find 仅进行全文检索'
+  if (config.kind === 'hash') return 'hash：特征哈希，无需模型'
   const moved = movedKey(config, key)
-  return `http：${config.model} @ ${baseUrl(config.url)}${key ? '，密钥已设' : moved ? `。${moved}` : ''}`
+  return `http：${config.model} @ ${baseUrl(config.url)}${key ? '，密钥已设置' : moved ? `。${moved}` : ''}`
 }

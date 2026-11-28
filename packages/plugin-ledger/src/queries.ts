@@ -23,10 +23,10 @@ export async function getAll<V>(records: Pick<Records, 'get'>, table: string, ke
 export const counters = async (records: Pick<Records, 'get'>): Promise<Record<string, number>> => (await records.get<Record<string, number>>('meta', ['counts'])).rows[0]?.value ?? {}
 
 /** The items and the scenes these facts name, and these scenes besides. */
-export async function lookupOf(records: Pick<Records, 'get'>, facts: readonly Fact[], more: { items?: Iterable<ItemId>; scenes?: Iterable<SceneId> } = {}): Promise<Lookup> {
+export async function lookupOf(records: Pick<Records, 'get'>, facts: readonly Fact[], more: { items?: Iterable<ItemId>; scenes?: Iterable<SceneId>; titles?: ReadonlyMap<string, string> } = {}): Promise<Lookup> {
   const items = await getAll<ItemRow>(records, 'items', [...facts.flatMap(itemsOf), ...(more.items ?? [])])
   const scenes = await getAll<SceneRow>(records, 'scenes', [...facts.map((f) => f.scene), ...(more.scenes ?? [])])
-  return { items: items as Map<ItemId, ItemRow>, scenes: scenes as Map<SceneId, SceneRow> }
+  return { items: items as Map<ItemId, ItemRow>, scenes: scenes as Map<SceneId, SceneRow>, ...(more.titles ? { titles: more.titles } : {}) }
 }
 
 /** The item a path names now: the one recorded there, else, for a content path, the one archived from it. */

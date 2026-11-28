@@ -63,12 +63,12 @@ describe('concurrent writers (C12)', () => {
     writeFileSync(join(lib, 'shared.md'), 'shared')
     for (const name of ['a', 'b']) writeFileSync(join(outside, `${name}.md`), name)
     const codes = await runAll(
-      ['a', 'b'].map((name) => ['--as', 'claude-code', '--session', `s-${name}`, 'put', join(outside, `${name}.md`), '--to', `${name}.md`, '--made', '--from', 'shared.md']),
+      ['a', 'b'].map((name) => ['--as', 'claude-code', '--session', `s-${name}`, 'put', join(outside, `${name}.md`), '--to', `${name}.md`, '--generated', '--from', 'shared.md']),
     )
     expect(codes).toEqual([0, 0])
     const inspect = (path: string) => sb.run(['--library', lib, 'inspect', path, '--json'], { cwd: outside }).json().sections[0].data
     const shared = inspect('shared.md')
-    expect(shared.origin).toEqual({ kind: 'adopted' })
+    expect(shared.origin).toEqual({ kind: 'unknown' })
     expect(shared.dependents.map((d: any) => d.path).sort()).toEqual(['a.md', 'b.md'])
     expect(inspect('a.md').basis[0].item).toBe(shared.item)
     expect(inspect('b.md').basis[0].item).toBe(shared.item)
@@ -81,9 +81,9 @@ describe('fact files', () => {
 
   it('never change once written', () => {
     agent(['start', '整理资料'])
-    agent(['put', '-', '--to', 'a.md', '--made'], 'a')
+    agent(['put', '-', '--to', 'a.md', '--generated'], 'a')
     const before = factFiles()
-    agent(['put', '-', '--to', 'b.md', '--made', '--from', 'a.md'], 'b')
+    agent(['put', '-', '--to', 'b.md', '--generated', '--from', 'a.md'], 'b')
     agent(['say', 'note', 'a.md', '一条备注'])
     agent(['check'])
     const after = factFiles()

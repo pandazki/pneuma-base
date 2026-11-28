@@ -44,13 +44,16 @@ function parseStored(raw: unknown): StoredTarget {
 export const targetFile = (ctx: PluginContext) => configFile(ctx, 'config.json', parseStored)
 const stageRoot = (ctx: PluginContext) => join(ctx.cacheDir, 'stage')
 
+/** The adapter for a stored kind: the one of that kind, else the one that had it before a rename. */
+export const adapterOf = (kit: Kit, kind: string): TargetAdapter | undefined => kit.targets.find((t) => t.kind === kind) ?? kit.targets.find((t) => t.formerly?.includes(kind))
+
 /** The target a stored configuration opens: by its kind, through that adapter's own parser. */
 export function openTarget(kit: Kit, stored: StoredTarget['target'], ctx: PluginContext): Target {
-  const adapter = kit.targets.find((t) => t.kind === stored.kind)
+  const adapter = adapterOf(kit, stored.kind)
   if (!adapter) throw new Error(`unknown kind of target: ${stored.kind}`)
   // `secretOf` gives null only for an optional secret, as `TargetEnv['secret']` types it per name.
   const secret = ((name: string) => secretOf(kit, adapter, ctx, name)) as TargetEnv['secret']
-  return adapter.open(stored, { ctx, scratch: stageRoot(ctx), plugin: kit.name, secret })
+  return adapter.open({ ...stored, kind: adapter.kind }, { ctx, scratch: stageRoot(ctx), plugin: kit.name, secret })
 }
 
 /** The command that sets a secret of the plugin, for the owner to type. */
@@ -61,16 +64,16 @@ async function secretOf(kit: Kit, adapter: TargetAdapter, ctx: PluginContext, na
   const declared = adapter.secrets?.find((s) => s.name === name)
   if (declared === undefined) throw new Error(`the ${adapter.kind} target reads a secret it does not declare: ${name}`)
   const value = await ctx.secrets.get(name)
-  if (value === null && declared.optional !== true) throw new Error(`还没设密钥 ${name}：用 ${setSecret(kit, name)} 设，值从标准输入读`)
+  if (value === null && declared.optional !== true) throw new Error(`未设置密钥 ${name}：用 ${setSecret(kit, name)} 设置，值从标准输入读取`)
   return value
 }
 
 async function configured(kit: Kit, ctx: PluginContext): Promise<{ target: Target; set: SetAs } | null> {
   try {
     const stored = await targetFile(ctx).read()
-    return stored && { target: openTarget(kit, stored.target, ctx), set: { kind: stored.target.kind, given: stored.given ?? {} } }
+    return stored && { target: openTarget(kit, stored.target, ctx), set: { kind: adapterOf(kit, stored.target.kind)?.kind ?? stored.target.kind, given: stored.given ?? {} } }
   } catch {
-    throw new Error(`部署目标的配置读不懂：.pneuma-base/${kit.name}/config.json`)
+    throw new Error(`无法解析部署目标的配置：.pneuma-base/${kit.name}/config.json`)
   }
 }
 
@@ -316,7 +319,7 @@ export async function settle(run: Run, id: ThingId): Promise<Settled> {
       if (step.kind === 'publish') {
         const holder = run.d.sites.get(key)?.get(step.site)?.thing
         const other = holder === undefined || holder === id ? undefined : run.d.things.get(holder)
-        if (other) throw new Error(`站点名 ${step.site} 已被 ${other.path} 用着`)
+        if (other) throw new Error(`站点名称 ${step.site} 已被 ${other.path} 占用`)
         const { url } = await publish(run, target, before.thing.path, step.site, step.content)
         record(run, { kind: 'publish', thing: id, target: key, site: step.site, fingerprint: step.content, url })
         done.push({ kind: 'publish', site: step.site, url })

@@ -1,6 +1,6 @@
 // C3, K8: a plugin in the owner's $PNEUMA_BASE_HOME/plugins/<name>/index.js is installed with
-// `plugin add` and hooked to the verbs; it gets a cache directory outside the library. One that
-// fails to load fails no command: it is listed as a problem, and `plugin add` says why. The loader's
+// `plugin enable` and hooked to the verbs; it gets a cache directory outside the library. One that
+// fails to load fails no command: it is listed as a problem, and `plugin enable` says why. The loader's
 // refusals of the shapes it checks (no contract, contract 1, a name another plugin holds) and a plugin
 // refusing its removal are packages/kernel/test/contract.test.ts's.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -49,7 +49,7 @@ describe('a plugin from the owner’s plugin directory', () => {
   beforeEach(() => plugin('echo', ECHO))
 
   it('is added by name, joins the description, hears its say kind, and gets a cache directory outside the library, made by the plugin when it first uses it', () => {
-    const add = run(['plugin', 'add', 'echo'])
+    const add = run(['plugin', 'enable', 'echo'])
     expect(add.code, add.stdout + add.stderr).toBe(0)
     expect(JSON.parse(readFileSync(join(lib, '.pneuma-base/config.json'), 'utf8')).plugins).toEqual(['echo'])
     expect(readFileSync(join(lib, 'PNEUMA-BASE.md'), 'utf8')).toContain('## 回声')
@@ -62,7 +62,7 @@ describe('a plugin from the owner’s plugin directory', () => {
   })
 
   it('that breaks after it was added fails no command and is listed as a problem with the reason', () => {
-    run(['plugin', 'add', 'echo'])
+    run(['plugin', 'enable', 'echo'])
     plugin('echo', BROKEN)
     const find = run(['find'])
     expect(find.code).toBe(3)
@@ -74,19 +74,19 @@ describe('a plugin from the owner’s plugin directory', () => {
 })
 
 describe('a plugin that fails to load', () => {
-  it('fails no command of a library that does not use it; plugin add refuses it, saying why; under a built-in plugin’s name it shadows nothing', () => {
+  it('fails no command of a library that does not use it; plugin enable refuses it, saying why; under a built-in plugin’s name it shadows nothing', () => {
     plugin('broken', BROKEN)
     const find = run(['find'])
     expect(find.code, find.stderr).toBe(0)
     expect(find.json().problems).toEqual([])
-    const r = run(['plugin', 'add', 'broken'])
+    const r = run(['plugin', 'enable', 'broken'])
     expect(r.code).toBe(2)
     expect(r.json()).toMatchObject({ outcome: 'refused', reason: 'plugin-failed-to-load' })
     expect(r.json().text).toContain('broken on purpose')
     expect(JSON.parse(readFileSync(join(lib, '.pneuma-base/config.json'), 'utf8')).plugins).toEqual([])
 
     plugin('ledger', BROKEN)
-    expect(run(['plugin', 'add', 'ledger']).code).toBe(0)
+    expect(run(['plugin', 'enable', 'ledger']).code).toBe(0)
     expect(run(['find']).json().problems).toEqual([])
   })
 })

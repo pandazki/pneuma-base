@@ -10,13 +10,13 @@ import { expect, frames, tempDir, test, write, type Cli } from './support.ts'
 test.use({ timezoneId: 'UTC' })
 
 const LONG_URL = 'http://127.0.0.1:18080/apps/a-rather-long-application-name-for-the-demo-site/index.html'
-const FRAME = 'iframe[title="插件 pager 的页"]'
+const FRAME = 'iframe[title="插件 pager 的页面"]'
 
 /** A bare library with the test plugin pager, and its view server. */
 async function pagerLibrary(pb: Cli, env: Record<string, string> = {}): Promise<string> {
   const lib = join(tempDir(), 'lib')
   pb.run(['init', lib, '--bare'], { testPlugins: true })
-  pb.run(['plugin', 'add', 'pager', '--library', lib], { testPlugins: true })
+  pb.run(['plugin', 'enable', 'pager', '--library', lib], { testPlugins: true })
   write(lib, 'pager.md', 'pager 预览的内容')
   return (await pb.view(lib, { testPlugins: true, env })).url
 }
@@ -71,8 +71,8 @@ test('an embed shows an outside page in a sandboxed frame, with a way to open it
     const inside = page.frameLocator('iframe[title="站点预览"]')
     await expect(inside.getByRole('heading', { name: '站点首页' })).toBeVisible()
     await expect(inside.getByText('脚本运行了')).toBeVisible()
-    await expect(embed.getByRole('link', { name: '在新标签页打开' })).toHaveAttribute('href', local.url)
-    await expect(embed.getByRole('link', { name: '在新标签页打开' })).toHaveAttribute('rel', 'noopener noreferrer')
+    await expect(embed.getByRole('link', { name: '在新标签页中打开' })).toHaveAttribute('href', local.url)
+    await expect(embed.getByRole('link', { name: '在新标签页中打开' })).toHaveAttribute('rel', 'noopener noreferrer')
   } finally {
     await local.close()
   }
@@ -168,7 +168,7 @@ test('a plugin’s page that never says it is ready shows a message naming the p
     await expect(counter).toHaveText('0')
     await expect(page.frameLocator('iframe[title="站点预览"]').getByText('脚本运行了')).toBeVisible()
     await page.clock.runFor(5_000)
-    const failed = page.getByRole('main').getByRole('alert').filter({ hasText: '插件 pager 的页没能打开' })
+    const failed = page.getByRole('main').getByRole('alert').filter({ hasText: '插件 pager 的页面无法打开' })
     await expect(failed).toBeVisible()
     await expect(failed).toContainText('missing.html')
     await expect(counter).toHaveText('0')

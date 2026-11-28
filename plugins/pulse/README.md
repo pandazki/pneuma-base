@@ -1,14 +1,14 @@
-# pulse：库的活动热度
+# pulse：资料库的活动热度
 
-Pneuma Base 插件。每次有东西被放进库（登记、放入、换新内容）或被归档，记一笔：谁、什么时候、哪样东西。挪动、取回、已经在归档区的再归档不算。
+Pneuma Base 插件。每次有条目被添加到资料库（登记、添加、换新内容）或被归档，记一笔：谁、什么时候、哪个条目。移动、取消归档、已经在归档区的再归档不算。
 
-- 管理界面的「活动热度」一页（`pulse.heat`）：最近 30 天每天的次数画成格子（`src/ui/heat.html`，颜色只用界面给的变量，跟着深浅色走），下面按 agent 列出次数，最后是「清空记录」按钮。
-- 主人命令 `pulse clear`：清空全部记录。它是 `destructive`：agent 的会话里被拒绝；终端里要输入 `yes`；界面里先问一句。
-- 认知段告诉 agent 它的放入和归档会被记下，只有主人能清空。
+- 管理界面的「活动热度」一页（`pulse.heat`）：最近 30 天每天的次数画成格子（`src/ui/heat.html`，颜色只用界面给的变量，跟着深浅色走），下面按执行者列出次数，最后是「清空记录」按钮。
+- 所有者命令 `pulse clear`：清空全部记录。它是 `destructive`：agent 的会话里被拒绝；终端里要输入 `yes`；界面里先问一句。
+- 认知段告诉 agent 它的添加和归档会被记下，只有所有者能清空。
 
 ## 存储
 
-记录在库的记录处（`ctx.tools.storage.records`），用 sdk 的 `recordStore`，只追加：两个记录库，每条带着库名（`store`）。
+记录在资料库的记录处（`ctx.tools.storage.records`），用 sdk 的 `recordStore`，只追加：两个记录库，每条带着库名（`store`）。
 
 | 记录库 | 一条是 |
 | --- | --- |
@@ -26,8 +26,8 @@ Pneuma Base 插件。每次有东西被放进库（登记、放入、换新内�
 ```sh
 npm install
 npm test                 # 构建，跑符合性检查和 test/plugin.test.ts
-npm run install-local    # 装到 $PNEUMA_BASE_HOME/plugins/pulse/（只有主人能做）
-pneuma-base plugin add pulse --library <库的目录>
+npm run install-local    # 安装到 $PNEUMA_BASE_HOME/plugins/pulse/（只有所有者能做）
+pneuma-base plugin enable pulse --library <资料库目录>
 ```
 
 规范在 `node_modules/pneuma-base/PLUGINS.md`。

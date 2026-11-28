@@ -39,8 +39,8 @@ beforeAll(() => {
   dirA = tempDir('pb-dir-a-')
   dirB = tempDir('pb-dir-b-')
   ok(sb.run(['init', lib]))
-  ok(sb.run(['grant', 'issue', 'claude', '--library', lib, '--agent', 'claude-code']))
-  ok(sb.run(['grant', 'issue', 'codex', '--library', lib, '--agent', 'codex']))
+  ok(sb.run(['grant', 'create', 'claude', '--library', lib, '--agent', 'claude-code']))
+  ok(sb.run(['grant', 'create', 'codex', '--library', lib, '--agent', 'codex']))
 
   writeFileSync(join(dirA, 'stripe.html'), '<html>Stripe pricing: 2.9% + 30c</html>')
   writeFileSync(join(dirA, 'paddle.html'), '<html>Paddle pricing: 5% + 50c, merchant of record</html>')
@@ -49,13 +49,13 @@ beforeAll(() => {
   writeFileSync(join(dirA, 'recommendation.md'), '# 建议\n\n电子书小店的支付用 Paddle。\n')
 
   ok(A(['start', DOING]))
-  ok(A(['put', 'stripe.html', '--to', 'payments/sources/stripe-pricing.html', '--brought', '--source', SOURCES['payments/sources/stripe-pricing.html']]))
-  ok(A(['put', 'paddle.html', '--to', 'payments/sources/paddle-pricing.html', '--brought', '--source', SOURCES['payments/sources/paddle-pricing.html']]))
-  ok(A(['put', '-', '--to', 'payments/sources/lemonsqueezy-pricing.html', '--brought', '--source', SOURCES['payments/sources/lemonsqueezy-pricing.html']], '<html>Lemon Squeezy: 5% + 50c</html>'))
-  ok(A(['put', 'eu-vat.txt', '--to', 'payments/sources/eu-vat-note.txt', '--brought', '--by', 'owner']))
-  ok(A(['put', 'comparison.md', '--to', 'payments/comparison.md', '--made', '--from', ...Object.keys(SOURCES), '--from-outside', OUTSIDE]))
-  ok(A(['put', 'recommendation.md', '--to', 'payments/recommendation.md', '--made', '--from', 'payments/comparison.md', 'payments/sources/eu-vat-note.txt']))
-  ok(A(['say', 'decided', DECIDED]))
+  ok(A(['put', 'stripe.html', '--to', 'payments/sources/stripe-pricing.html', '--imported', '--source', SOURCES['payments/sources/stripe-pricing.html']]))
+  ok(A(['put', 'paddle.html', '--to', 'payments/sources/paddle-pricing.html', '--imported', '--source', SOURCES['payments/sources/paddle-pricing.html']]))
+  ok(A(['put', '-', '--to', 'payments/sources/lemonsqueezy-pricing.html', '--imported', '--source', SOURCES['payments/sources/lemonsqueezy-pricing.html']], '<html>Lemon Squeezy: 5% + 50c</html>'))
+  ok(A(['put', 'eu-vat.txt', '--to', 'payments/sources/eu-vat-note.txt', '--imported', '--by', 'owner']))
+  ok(A(['put', 'comparison.md', '--to', 'payments/comparison.md', '--generated', '--from', ...Object.keys(SOURCES), '--from-external', OUTSIDE]))
+  ok(A(['put', 'recommendation.md', '--to', 'payments/recommendation.md', '--generated', '--from', 'payments/comparison.md', 'payments/sources/eu-vat-note.txt']))
+  ok(A(['say', 'decision', DECIDED]))
 })
 
 describe('session B, told nothing', () => {
@@ -65,7 +65,7 @@ describe('session B, told nothing', () => {
     const text = ok(B(['check', '--since', '2000-01-01T00:00:00Z'])).stdout + ok(B(['find', '把支付服务接进电子书小店'])).stdout
     for (const readable of ['sess-a', 'claude-code', shown(dirA), DOING, DECIDED, 'payments/comparison.md', 'payments/sources/stripe-pricing.html']) expect(text).toContain(readable)
 
-    const since = json.check.sections.find((s: any) => s.title === '自上次以来')
+    const since = json.check.sections.find((s: any) => s.title === '最近动态')
     const sceneA = since.data.scenes.find((s: any) => s.scene === 'sess-a')
     expect(sceneA).toMatchObject({ actors: ['claude-code'], cwds: [dirA] })
     expect(sceneA.facts.filter((f: any) => f.kind === 'item.enter')).toHaveLength(6)
@@ -77,7 +77,7 @@ describe('session B, told nothing', () => {
 
   it('inspect gives who, when, where, what for, the basis and its state, what built on it, and the decision; of a scene, its card', () => {
     const text = ok(B(['inspect', 'payments/comparison.md'])).stdout
-    for (const readable of ['做出来的', 'claude-code', shown(dirA), '场景 sess-a', `当时在做：${DOING}`, `库外：${OUTSIDE}`, '被依据：payments/recommendation.md', `决定：${DECIDED}`]) {
+    for (const readable of ['生成', 'claude-code', shown(dirA), '场景 sess-a', `任务：${DOING}`, `外部：${OUTSIDE}`, '被引用：payments/recommendation.md', `决策：${DECIDED}`]) {
       expect(text).toContain(readable)
     }
     for (const source of Object.keys(SOURCES)) expect(text).toMatch(new RegExp(`${source}\\s+一致`))
@@ -86,7 +86,7 @@ describe('session B, told nothing', () => {
     expect(data).toMatchObject({
       kind: 'item',
       path: 'payments/comparison.md',
-      origin: { kind: 'made' },
+      origin: { kind: 'generated' },
       entered: { scene: 'sess-a', actor: { kind: 'agent', name: 'claude-code' }, where: { cwd: dirA, sessionSource: 'flag' } },
       doing: DOING,
       outside: [OUTSIDE],
@@ -100,10 +100,10 @@ describe('session B, told nothing', () => {
 
   it('puts back a file made from A’s output; inspect leads step by step back to A’s brought-in sources; A, coming back later, sees in start what B did', () => {
     writeFileSync(join(dirB, 'integration.md'), '# 接入 Paddle\n')
-    ok(B(['put', 'integration.md', '--to', 'payments/integration-notes.md', '--made', '--from', 'payments/recommendation.md']))
+    ok(B(['put', 'integration.md', '--to', 'payments/integration-notes.md', '--generated', '--from', 'payments/recommendation.md']))
 
     const text = ok(B(['inspect', 'payments/integration-notes.md'])).stdout
-    for (const readable of ['做出来的', 'codex', shown(dirB), '场景 sess-b']) expect(text).toContain(readable)
+    for (const readable of ['生成', 'codex', shown(dirB), '场景 sess-b']) expect(text).toContain(readable)
     expect(text).toMatch(/payments\/recommendation\.md\s+一致/)
 
     const own = B(['inspect', 'payments/integration-notes.md', '--json']).json().sections[0].data
@@ -116,7 +116,7 @@ describe('session B, told nothing', () => {
       if (seen.has(path)) return
       seen.add(path)
       const data = B(['inspect', path, '--json']).json().sections[0].data
-      if (data.origin.kind === 'brought') brought.set(path, data.origin.source)
+      if (data.origin.kind === 'imported') brought.set(path, data.origin.source)
       for (const b of data.basis) walk(b.path)
     }
     walk('payments/integration-notes.md')

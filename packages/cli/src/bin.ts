@@ -2,7 +2,7 @@
 import { meetsNodeFloor, NODE_FLOOR } from './node-floor.js'
 
 if (!meetsNodeFloor(process.versions.node)) {
-  process.stderr.write(`pneuma-base 要 Node ${NODE_FLOOR} 以上，现在是 ${process.versions.node}。\n`)
+  process.stderr.write(`pneuma-base 需要 Node ${NODE_FLOOR} 或更高版本，当前为 ${process.versions.node}。\n`)
   process.exit(1)
 }
 

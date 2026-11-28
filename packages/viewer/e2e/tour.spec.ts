@@ -29,7 +29,7 @@ function bare(pb: Cli): string {
 function month(pb: Cli): string {
   const lib = join(tempDir(), 'lib')
   pb.run(['init', lib])
-  for (const [grant, agent] of [['claude', 'claude-code'], ['codex', 'codex'], ['gemini', 'gemini']]) pb.run(['--library', lib, 'grant', 'issue', grant as string, '--agent', agent as string])
+  for (const [grant, agent] of [['claude', 'claude-code'], ['codex', 'codex'], ['gemini', 'gemini']]) pb.run(['--library', lib, 'grant', 'create', grant as string, '--agent', agent as string])
   writeHistory(lib, { days: 29, sessions: 2.2, seed: 11 })
   return lib
 }
@@ -53,7 +53,7 @@ function unregistered(pb: Cli): string {
   execFileSync('xattr', ['-wx', 'com.apple.metadata:kMDItemWhereFroms', bplist(['https://example.com/files/report.pdf', 'https://example.com/']), file])
   execFileSync('xattr', ['-w', 'com.apple.quarantine', '0083;6aee14ed;Safari;0A1B2C3D-0000-0000-0000-000000000000', file])
   execFileSync('xattr', ['-wx', 'com.apple.metadata:_kMDItemUserTags', bplist(['工作\n6', '要看\n2']), file])
-  pb.run(['--library', lib, 'ledger', 'register', 'downloads', '--inside'])
+  pb.run(['--library', lib, 'ledger', 'register', 'downloads', '--recursive'])
   return lib
 }
 
@@ -106,7 +106,7 @@ test('relay library', async ({ page, pb }) => {
   await extra(page, `${url}#view=ledger.items&panel=item&panel.path=payments/comparison.md`, 'relay-item')
   write(lib, 'payments/comparison.md', '# 支付服务对比，主人手改过\n')
   await page.waitForTimeout(2500)
-  await extra(page, `${url}#view=ledger.standing&panel=item&panel.path=payments/comparison.md`, 'relay-changed')
+  await extra(page, `${url}#view=ledger.status&panel=item&panel.path=payments/comparison.md`, 'relay-changed')
 })
 
 test('month library', async ({ page, pb }) => {
@@ -129,7 +129,7 @@ test('unregistered project and 500 loose files', async ({ page, pb }) => {
     '.pneuma-base/storage/providers/acme-folder/provider.json',
     JSON.stringify({ format: 1, name: 'acme-folder', version: 'v1.0.0', contract: 1, addresses: ['acme'], executable: 'v1.0.0/acme-folder', sha256: '0'.repeat(64), official: false, installed: '2026-11-27T00:00:00.000Z', from: { repository: 'acme/acme-folder', tag: 'v1.0.0' } }),
   )
-  await extra(page, `${url}#view=config`, 'loose-config-storage', async () => {
+  await extra(page, `${url}#view=settings`, 'loose-config-storage', async () => {
     // Its heading just under the page's own, which stays at the top.
     await page.getByRole('main').getByRole('region', { name: '存储', exact: true }).evaluate((el) => {
       let pane = el.parentElement
@@ -143,7 +143,7 @@ test('unregistered project and 500 loose files', async ({ page, pb }) => {
     await page.getByRole('complementary', { name: '详情' }).getByRole('region', { name: '文件', exact: true }).scrollIntoViewIfNeeded()
   })
   await extra(page, `${url}#view=files`, 'loose-confirm', async () => {
-    await page.getByRole('main').getByRole('row', { name: /^app\// }).getByRole('button', { name: '登记里面的文件' }).click()
+    await page.getByRole('main').getByRole('row', { name: /^app\// }).getByRole('button', { name: '登记目录内的文件' }).click()
     await expect(page.getByRole('dialog')).toBeVisible()
     await page.waitForTimeout(300)
   })
@@ -153,20 +153,20 @@ test('a named pass under way and stopped', async ({ page, pb }) => {
   const lib = join(tempDir(), 'lib')
   for (let i = 0; i < 40000; i++) write(lib, `scans-2019/d${Math.floor(i / 2000)}/f${i}.txt`, `${i}\n`)
   pb.run(['init', lib])
-  pb.run(['--library', lib, 'ledger', 'register', 'scans-2019', '--inside'])
+  pb.run(['--library', lib, 'ledger', 'register', 'scans-2019', '--recursive'])
   const { url } = await pb.view(lib)
   const notices = page.getByRole('status')
   for (const size of SIZES) {
     await page.setViewportSize(size)
-    await page.goto(`${url}#view=ledger.standing`)
+    await page.goto(`${url}#view=ledger.status`)
     await settle(page)
-    await page.getByRole('main').getByRole('button', { name: '按内容查' }).click()
-    await page.getByRole('dialog').getByRole('button', { name: '按内容查' }).click()
-    await expect(notices).toContainText(/已查 [1-9]\d* \/ 40000 样/)
+    await page.getByRole('main').getByRole('button', { name: '深度检查' }).click()
+    await page.getByRole('dialog').getByRole('button', { name: '深度检查' }).click()
+    await expect(notices).toContainText(/已检查 [1-9]\d* \/ 40000 个/)
     await page.mouse.move(0, 0)
     await shoot(page, `pass-running-${size.width}`, SHOTS)
-    await notices.getByRole('button', { name: '停下' }).click()
-    await expect(notices).toContainText('停下了', { timeout: 30_000 })
+    await notices.getByRole('button', { name: '停止' }).click()
+    await expect(notices).toContainText('已停止', { timeout: 30_000 })
     await page.mouse.move(0, 0)
     await page.waitForTimeout(500)
     await shoot(page, `pass-stopped-${size.width}`, SHOTS)

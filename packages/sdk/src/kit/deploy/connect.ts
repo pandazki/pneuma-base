@@ -50,7 +50,7 @@ function foundFlag(found: readonly Found[]): string | null {
 
 /**
  * A dialog that connects one of `kinds`: with several, first the kind, by `choose`; for a kind that
- * found destinations, a choice of them and 别的; then the fields of the kind chosen, and of 别的, each
+ * found destinations, a choice of them and 其他; then the fields of the kind chosen, and of 其他, each
  * shown by `when`; the secret a kind asks for last, typed hidden and sent as standard input.
  * `start`: the kind chosen when it opens.
  */
@@ -78,7 +78,7 @@ export function connectAction(kit: Kit, kinds: readonly TargetAdapter[], label: 
     const by = found.length > 0 ? foundFlag(found) : null
     const otherwise: InputShown[] = by === null ? [] : [{ input: by, is: [''] }]
     if (by !== null) {
-      const options = [...found.map((f) => ({ value: f.values[by] as string, label: f.label })), { value: '', label: '别的' }]
+      const options = [...found.map((f) => ({ value: f.values[by] as string, label: f.label })), { value: '', label: '其他' }]
       field(by, { name: by, label: t.params.find((p) => p.name === by)?.hint ?? by, placeholder: null, value: options[0]?.value ?? null, options }, t.kind, [])
     }
     for (const p of formFlags(t)) {
@@ -115,7 +115,7 @@ export function settingAction(kit: Kit, kind: string, given: Given, setting: Non
 
 /** Forgetting the destination, after a question that says what stays. */
 export function disconnectAction(kit: Kit, label: string): Action {
-  return { ...plain('断开', ownerCall(targetRemoveName(kit), {})), confirm: `断开 ${label}？线上的东西不撤下，开关都留着。` }
+  return { ...plain('断开连接', ownerCall(targetRemoveName(kit), {})), confirm: `断开连接 ${label}？已发布的条目不取消发布，开关保留。` }
 }
 
 /** A word as a shell reads it back: quoted when it holds anything but plain characters. */

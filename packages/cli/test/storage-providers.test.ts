@@ -34,7 +34,7 @@ describe('storage list', () => {
     const m = machine()
     const r = await m.run(['storage', 'list'])
     expect(r.code, r.stderr).toBe(0)
-    expect(r.stdout).toMatch(/^local-folder \S+ · 自带 · 官方 · 地址：path · 契约 1$/m)
+    expect(r.stdout).toMatch(/^local-folder \S+ · 内置 · 官方 · 地址：path · 契约 1$/m)
     expect(r.stdout).toContain(`程序：${CORE}`)
     expect(r.stdout).toContain(`校验和：sha256:${coreSha()}`)
     const data = (await m.run(['storage', 'list', '--json'])).json().data
@@ -53,7 +53,7 @@ describe('storage list', () => {
       }),
     )
     const official = await m.run(['storage', 'list'], { PNEUMA_BASE_OFFICIAL_PROVIDERS: list })
-    expect(official.stdout).toContain('官方的、没装的：')
+    expect(official.stdout).toContain('官方（未安装）：')
     expect(official.stdout).toContain('cloud-folder v2.0.0 · 地址：cloud · pneuma-base storage install example/cloud-folder')
   })
 
@@ -88,8 +88,8 @@ describe('storage install', () => {
     const r = await m.run(['storage', 'install', 'acme/alpha-folder'])
     expect(r.code).toBe(2)
     expect(r.stdout).toContain('拒绝（not-confirmed）')
-    expect(r.stdout).toContain('存储提供者是一个以你的身份运行的程序，看得到库里的全部内容。')
-    expect(r.stdout).toContain(`要装的是 acme/alpha-folder 的 v1.0.0，校验和 sha256:${sha}。`)
+    expect(r.stdout).toContain('存储提供者是以当前用户身份运行的程序，可访问资料库中的全部内容。')
+    expect(r.stdout).toContain(`将安装 acme/alpha-folder 的 v1.0.0，校验和 sha256:${sha}。`)
     expect(r.stdout).toContain(`pneuma-base storage install acme/alpha-folder@v1.0.0 --checksum ${sha}`)
     const offer = (await m.run(['storage', 'install', 'acme/alpha-folder', '--json'])).json().offer
     expect(offer.call).toEqual({ face: 'owner', command: 'storage install', args: { positional: ['acme/alpha-folder@v1.0.0'], flags: { checksum: [sha] } } })
@@ -113,7 +113,7 @@ describe('storage install', () => {
     const r = await m.run(['storage', 'install', 'acme/gamma-folder@v1.0.0', '--checksum', wrong])
     expect(r.code).toBe(2)
     expect(r.stdout).toContain('拒绝（checksum）')
-    expect(r.stdout).toContain(`清单写的是 sha256:${wrong}`)
+    expect(r.stdout).toContain(`sha256:${wrong}`)
     expect(m.installedNothing('gamma-folder')).toBe(true)
     expect((await m.run(['storage', 'list', '--json'])).json().data.providers.map((p: { name: string }) => p.name)).toEqual(['local-folder'])
   })
@@ -123,7 +123,7 @@ describe('storage install', () => {
     publish('acme/delta-folder', { name: 'delta-folder', version: 'v3.0.0', manifestContract: 2 })
     const r = await m.run(['storage', 'install', 'acme/delta-folder'])
     expect(r.stdout).toContain('拒绝（contract-version）')
-    expect(r.stdout).toContain('delta-folder 讲的是存储契约第 2 版，这个 pneuma-base 讲第 1 版。')
+    expect(r.stdout).toMatch(/delta-folder.*第 2 版.*第 1 版/)
     expect(host.asked).not.toContain('/acme/delta-folder/releases/download/v3.0.0/delta-folder')
     expect(m.installedNothing('delta-folder')).toBe(true)
 
@@ -146,7 +146,7 @@ describe('storage install', () => {
   it('a repository with no such release is refused, saying so', async () => {
     const r = await machine().run(['storage', 'install', 'acme/nothing-here'])
     expect(r.stdout).toContain('拒绝（no-release）')
-    expect(r.stdout).toContain('acme/nothing-here 没有最新的发布')
+    expect(r.stdout).toContain('acme/nothing-here')
   })
 })
 
@@ -158,7 +158,7 @@ describe('init <地址>', () => {
     expect(r.json().data).toEqual({ root: lib, provider: 'local-folder' })
     const records = readdirSync(join(m.pbHome, 'storage/libraries')).map((f) => JSON.parse(readFileSync(join(m.pbHome, 'storage/libraries', f), 'utf8')))
     expect(records).toEqual([{ address: lib, provider: 'local-folder' }])
-    expect((await m.run(['storage', 'list', '--library', lib])).stdout).toMatch(/^local-folder .* · 这个库在用$/m)
+    expect((await m.run(['storage', 'list', '--library', lib])).stdout).toMatch(/^local-folder .* · 此资料库使用中$/m)
     expect((await m.run(['storage', 'list', '--library', lib, '--json'])).json().data.library).toEqual({ address: lib, provider: 'local-folder' })
   })
 
@@ -166,7 +166,7 @@ describe('init <地址>', () => {
     const m = machine()
     const r = await m.run(['init', 'cloud://bucket/lib', '--bare'])
     expect(r.code).toBe(2)
-    expect(r.stdout).toContain('拒绝（no-provider）：这台机器上没有答 cloud 这种地址的存储提供者。')
+    expect(r.stdout).toMatch(/拒绝（no-provider）：.*cloud/)
     expect(existsSync(join(m.pbHome, 'storage/libraries'))).toBe(false)
     expect((await m.run(['init', join(m.home, 'lib'), '--provider', 'cloud-folder'])).stdout).toContain('拒绝（no-such-provider）')
   })

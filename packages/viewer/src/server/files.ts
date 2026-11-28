@@ -1,7 +1,23 @@
-// What the server reads from disk itself, none of it a library's: a plugin's page files, and a cheap
-// stamp of what changed in a folder of this machine's state.
-import { realpath, stat } from 'node:fs/promises'
+// What the server reads from disk itself, none of it a library's: a plugin's page files, a cheap stamp
+// of what changed in a folder of this machine's state, and the scratch file a command writes for the
+// page to hand over.
+import { mkdtemp, readFile, realpath, rm, stat } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
+
+/**
+ * A path named `name` in a new folder of the system's temporary one, for `use` to have a command write;
+ * its bytes, or null when `use` says it is not done. The folder goes either way.
+ */
+export async function scratchFile(name: string, use: (path: string) => Promise<boolean>): Promise<Buffer | null> {
+  const dir = await mkdtemp(join(tmpdir(), 'pneuma-base-save-'))
+  try {
+    const path = join(dir, name)
+    return (await use(path)) ? await readFile(path) : null
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+}
 
 /**
  * The regular file `rest` names inside a plugin's `ui` directory, links followed and still inside it.

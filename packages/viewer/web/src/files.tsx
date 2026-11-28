@@ -138,15 +138,15 @@ function TileArt({ place }: { place: RowPlace }) {
 
 // ---- opening a conversation again ----
 
-/** 打开那次对话: in the Mac app, the scene's conversation opened again, the first way that works here. */
+/** 打开对话: in the Mac app, the scene's conversation opened again, the first way that works here. */
 export function ReopenButton({ reopen }: { reopen: Reopen }) {
   if (!IN_SHELL) return null
   return (
     <button
       type="button"
       className="icon-btn reopen"
-      aria-label="打开那次对话"
-      data-tip="打开那次对话"
+      aria-label="打开对话"
+      data-tip="打开对话"
       onClick={(e) => {
         e.stopPropagation()
         tellShell({ type: 'reopen', url: reopen.url, run: reopen.run, reveal: reopen.reveal })
@@ -178,7 +178,7 @@ function QuickView({ row, onClose, onArrow }: { row: Placed; onClose(): void; on
       <div className="quick-view-card" onClick={(e) => e.stopPropagation()}>
         <div className="quick-view-head">
           <span className="truncate">{name}</span>
-          <button type="button" className="icon-btn" aria-label="关闭" onClick={onClose}>
+          <button type="button" className="icon-btn" aria-label="关闭" data-tip="关闭" onClick={onClose}>
             <X strokeWidth={2} aria-hidden />
           </button>
         </div>
@@ -211,7 +211,7 @@ export function RenameField({ name, onDone }: { name: string; onDone(name: strin
     <input
       ref={ref}
       className="rename-field"
-      aria-label="新的名字"
+      aria-label="新名称"
       defaultValue={name}
       spellCheck={false}
       onClick={(e) => e.stopPropagation()}
@@ -430,7 +430,7 @@ export function useFiles(block: Table): Files | null {
       }
       const lead: MenuEntry[] = [
         ...(on.some((r) => r.place.kind === 'file') ? [{ label: '快速查看', keys: '空格', onSelect: () => preview(on) }] : []),
-        { label: '拷贝路径', onSelect: () => copyPaths(on) },
+        { label: '复制路径', onSelect: () => copyPaths(on) },
       ]
       const safe = own.filter((a) => !a.danger).map((a) => ({ label: a.label, onSelect: a.run }))
       const danger = own.filter((a) => a.danger).map((a) => ({ label: a.label, danger: true, onSelect: a.run }))
@@ -563,7 +563,7 @@ export function useFiles(block: Table): Files | null {
   const overlay = (
     <>
       {quickRow ? <QuickView row={quickRow} onClose={() => setQuick(false)} onArrow={(k, s) => move(k === 'ArrowUp' || k === 'ArrowLeft' ? -1 : 1, s)} /> : null}
-      {menu ? <Menu label="对这些文件" entries={menu.entries} at={menu.at} onClose={() => setMenu(null)} /> : null}
+      {menu ? <Menu label="所选文件" entries={menu.entries} at={menu.at} onClose={() => setMenu(null)} /> : null}
     </>
   )
 
@@ -579,7 +579,7 @@ function Badges({ row }: { row: Placed }) {
     <>
       {tag ? <span className="tile-badge" data-tone={tag.tone} aria-label={tag.text} data-tip={tag.text} role="img" /> : null}
       {row.place.elsewhere ? (
-        <span className="tile-cloud" aria-label="内容不在这台机器上" data-tip="内容不在这台机器上" role="img">
+        <span className="tile-cloud" aria-label="内容未下载" data-tip="内容未下载" role="img">
           <Cloud strokeWidth={2} aria-hidden />
         </span>
       ) : null}

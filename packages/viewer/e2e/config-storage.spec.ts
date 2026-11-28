@@ -48,7 +48,7 @@ test('storage on the configuration page: where the library is kept, installing a
     )
     const { url } = await pb.view(lib, { env: { PNEUMA_BASE_RELEASE_HOST: host.url } })
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
-    await page.goto(`${url}#view=config`)
+    await page.goto(`${url}#view=settings`)
     const storage = page.getByRole('main').getByRole('region', { name: '存储', exact: true })
     // One row: the library's folder by its name, the whole path on demand and to copy, and the provider in use.
     const kept = storage.getByRole('listitem').first()
@@ -61,27 +61,27 @@ test('storage on the configuration page: where the library is kept, installing a
     await expect(kept.getByRole('button', { name: '在访达中显示' })).toHaveCount(0)
     // The noise, folded under it with its count, opens to a row per name; among so many rows, a row's
     // 「···」 shows while the pointer is on it, where the one row of storage keeps its own in sight.
-    const noise = storage.getByRole('region', { name: '噪音' })
-    await noise.getByRole('button', { name: '噪音' }).click()
+    const noise = storage.getByRole('region', { name: '忽略规则' })
+    await noise.getByRole('button', { name: '忽略规则' }).click()
     const git = noise.getByRole('listitem').filter({ hasText: '.git' }).first()
     await page.mouse.move(0, 0)
     await expect(git.locator('.actions')).toHaveCSS('opacity', '0')
     await expect(kept.locator('.actions')).toHaveCSS('opacity', '1')
     await git.hover()
     await expect(git.locator('.actions')).toHaveCSS('opacity', '1')
-    await noise.getByRole('button', { name: '噪音' }).click()
+    await noise.getByRole('button', { name: '忽略规则' }).click()
     // The other providers' actions are in its 「···」, the dangerous last.
     await kept.getByRole('button', { name: '更多' }).click()
-    await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['更新 beta-folder', '安装别的存储…', '卸掉 beta-folder'])
+    await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['更新 beta-folder', '安装其他存储…', '卸载 beta-folder'])
     await page.keyboard.press('Escape')
 
     // Another from a repository: refused at first, the refusal saying what a provider is, with the checksum.
-    await fromMenu(kept, '安装别的存储…')
+    await fromMenu(kept, '安装其他存储…')
     const form = page.getByRole('dialog')
     await form.getByRole('textbox').fill('acme/alpha-folder')
-    await form.getByRole('button', { name: '安装别的存储', exact: true }).click()
+    await form.getByRole('button', { name: '安装其他存储', exact: true }).click()
     const notices = page.getByRole('status')
-    await expect(notices).toContainText(`存储提供者是一个以你的身份运行的程序，看得到库里的全部内容。要装的是 acme/alpha-folder 的 v1.0.0，校验和 sha256:${sha256(bytes)}。`)
+    await expect(notices).toContainText(`存储提供者是以当前用户身份运行的程序，可访问资料库中的全部内容。将安装 acme/alpha-folder 的 v1.0.0，校验和 sha256:${sha256(bytes)}。`)
     // Accepting it asks for the same command with that checksum; cancelled, nothing is installed.
     await notices.getByRole('button', { name: '安装' }).click()
     await expect(page.getByRole('dialog')).toContainText(`sha256:${sha256(bytes)}`)
@@ -89,12 +89,12 @@ test('storage on the configuration page: where the library is kept, installing a
     await expect(page.getByRole('dialog')).toHaveCount(0)
 
     // Removing one asks first, then it is gone from the menu.
-    await fromMenu(kept, '卸掉 beta-folder')
-    await expect(page.getByRole('dialog')).toContainText('卸掉存储提供者 beta-folder？')
-    await page.getByRole('dialog').getByRole('button', { name: '卸掉 beta-folder' }).click()
-    await expect(notices).toContainText('已卸下存储提供者 beta-folder v1.0.0。')
+    await fromMenu(kept, '卸载 beta-folder')
+    await expect(page.getByRole('dialog')).toContainText('卸载存储提供者 beta-folder？')
+    await page.getByRole('dialog').getByRole('button', { name: '卸载 beta-folder' }).click()
+    await expect(notices).toContainText('已卸载存储提供者 beta-folder v1.0.0。')
     await kept.getByRole('button', { name: '更多' }).click()
-    await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['安装别的存储…'])
+    await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['安装其他存储…'])
     await page.keyboard.press('Escape')
 
     // In the Mac app the row shows the folder in Finder, by asking the app.
@@ -103,7 +103,7 @@ test('storage on the configuration page: where the library is kept, installing a
       ;(window as unknown as { sent: unknown[] }).sent = sent
       ;(window as unknown as { webkit: unknown }).webkit = { messageHandlers: { shell: { postMessage: (m: unknown) => sent.push(m) } } }
     })
-    await page.goto(`${url}&shell=mac#view=config`)
+    await page.goto(`${url}&shell=mac#view=settings`)
     await kept.getByRole('button', { name: '在访达中显示' }).click()
     expect(await page.evaluate(() => (window as unknown as { sent: { type: string }[] }).sent.filter((m) => m.type === 'reveal-local'))).toEqual([{ type: 'reveal-local', path: lib }])
   } finally {

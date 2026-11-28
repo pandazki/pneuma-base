@@ -1,5 +1,5 @@
 // The owner commands of a deploy plugin, named after it. None loses anything, so none is
-// destructive. Publishing faces outward, so the switch and the target are owner-only: the kernel
+// destructive. Publishing faces outward, so publishing, unpublishing and the target are owner-only: the kernel
 // refuses them in an agent session. Every command declares its arguments; `target set` takes them
 // from the kinds of target.
 import { defineCommand } from '../../params.js'
@@ -7,7 +7,7 @@ import type { FlagParam, LibraryPath, OwnerAnswer, OwnerCommand, OwnerValues, Pl
 import { foundAll, setCommand, targetRemoveName, targetSetName } from './connect.js'
 import { newThingId, type TargetKey } from './facts.js'
 import { siteName } from './model.js'
-import { closeTarget, declaredAt, looks, onlyTarget, openTarget, record, setSecret, settle, sweep, targetFile, thingPath, thingsAt, withRun, type Done, type Given, type Kit, type Run, type Settled } from './reconcile.js'
+import { closeTarget, declaredAt, looks, onlyTarget, openTarget, record, setSecret, settle, sweep, targetFile, thingPath, withRun, type Done, type Given, type Kit, type Run, type Settled } from './reconcile.js'
 import type { Target, TargetAdapter } from './target.js'
 import { kindUsage, lookText, noTarget, STATUS } from './words.js'
 
@@ -15,38 +15,41 @@ const done = (text: string, data?: unknown): OwnerAnswer => ({ outcome: 'done', 
 const refused = (reason: string, text: string): OwnerAnswer => ({ outcome: 'refused', reason, text })
 
 function doneText(path: string, d: Done): string {
-  return d.kind === 'publish' ? `已发布 ${path}${d.url ? ` → ${d.url}` : ''}` : `已下线 ${path} 的站点 ${d.site}`
+  return d.kind === 'publish' ? `已发布 ${path}${d.url ? ` → ${d.url}` : ''}` : `已取消发布 ${path} 的站点 ${d.site}`
 }
 
-export const switchName = (plugin: string, on: boolean) => `${plugin} ${on ? 'on' : 'off'}`
+/** `<plugin> publish` switches a thing on, `<plugin> unpublish` off. */
+export const switchName = (plugin: string, on: boolean) => `${plugin} ${on ? 'publish' : 'unpublish'}`
 export const SWITCH_PARAMS = { positional: [{ name: 'path', hint: '库内路径', required: true }] } as const
 
-/** The thing an input names, as one that can be declared deployable: in the content, there now. `then`: what may follow once it is taken back. */
+/** The thing an input names, as one that can be declared deployable: in the content, there now. `then`: what may follow once it is unarchived. */
 export async function declarable(tools: PluginTools, input: string, then: string): Promise<{ path: LibraryPath } | { refused: string }> {
   const path = await thingPath(tools, input)
-  if (path === null) return { refused: `${input} 不在库的内容里` }
-  const archivedText = { refused: `${path} 已归档；取回之后再${then}` }
+  if (path === null) return { refused: `${input} 不在资料库中` }
+  const archivedText = { refused: `${path} 已归档；取消归档后再${then}` }
   if (tools.regionOf(path) === 'archive') return archivedText
-  const [here, archived] = await thingsAt(tools, [path, tools.archivedPath(path)])
-  if (!here && archived) return archivedText
-  if (!here) return { refused: `库里没有这样东西：${input}` }
+  const [here, archived] = await tools.what([path, tools.archivedPath(path)])
+  const thing = (at: typeof here) => at?.kind === 'file' || at?.kind === 'bundle'
+  if (!thing(here) && thing(archived)) return archivedText
+  // Something there that is no thing, such as a folder without the marker, is in the folder and not registered.
+  if (!thing(here)) return { refused: here === undefined || here.kind === 'none' ? `${input} 不存在` : `${input} 未登记` }
   return { path }
 }
 
-/** What the owner is told after the switch: the address once online, the fact once offline, else the state. */
+/** What the owner is told after the switch: the address once published, the fact once unpublished, else the state. */
 function switchedText(r: Settled, on: boolean): string {
   const { path } = r.thing
-  if (on && r.status === 'online') return `已上线 ${path}${r.url ? ` → ${r.url}` : ''}`
-  if (!on && r.status === 'offline') return `已下线 ${path}。`
-  return `已${on ? '打开' : '关上'} ${path} 的开关：${lookText(r)}`
+  if (on && r.status === 'published') return `已发布 ${path}${r.url ? ` → ${r.url}` : ''}`
+  if (!on && r.status === 'unpublished') return `已取消发布 ${path}。`
+  return `已${on ? '开启' : '关闭'} ${path} 的开关：${lookText(r)}`
 }
 
 function switchCommand(kit: Kit, on: boolean): OwnerCommand {
-  const [verb, effect] = on ? ['打开', '发布'] : ['关上', '下线']
+  const [verb, effect] = on ? ['开启', '发布'] : ['关闭', '取消发布']
   return defineCommand({
     name: switchName(kit.name, on),
     act: { kind: on ? 'on' : 'off', object: 'path' },
-    summary: on ? '上线一样东西，之后线上跟着它的内容；没声明过的，主人上线就是声明' : '下线一样东西',
+    summary: on ? '发布条目，之后部署目标随其内容更新；未声明的条目，所有者发布即声明' : '取消发布条目',
     params: SWITCH_PARAMS,
     destructive: false,
     ownerOnly: true,
@@ -54,9 +57,9 @@ function switchCommand(kit: Kit, on: boolean): OwnerCommand {
       return withRun(kit, ctx, async (run) => {
         let id = await declaredAt(run, input)
         if (id === null) {
-          if (!on) return refused('not-declared', `${input} 没有声明过可以部署。`)
-          // The owner putting a thing online declares it: one act, in the owner's name.
-          const thing = await declarable(ctx.tools, input, '上线')
+          if (!on) return refused('not-declared', `${input} 未声明可部署。`)
+          // The owner publishing a thing declares it: one act, in the owner's name.
+          const thing = await declarable(ctx.tools, input, '发布')
           if ('refused' in thing) return refused('not-declared', thing.refused)
           id = newThingId()
           record(run, { kind: 'declare', thing: id, path: thing.path, note: null })
@@ -66,8 +69,8 @@ function switchCommand(kit: Kit, on: boolean): OwnerCommand {
         if (thing?.on !== on || !thing.decided) record(run, { kind: 'switch', thing: id, on })
         const r = await settle(run, id)
         const path = r.thing.path
-        if (r.problem?.kind === 'no-target') return refused('no-target', `已${verb} ${path} 的开关；还没有部署目标，没有${effect}。`)
-        if (r.problem?.kind === 'failed') return refused(on ? 'publish-failed' : 'unpublish-failed', `已${verb} ${path} 的开关，没能${effect}：${r.problem.message}。`)
+        if (r.problem?.kind === 'no-target') return refused('no-target', `已${verb} ${path} 的开关；未连接部署目标，未${effect}。`)
+        if (r.problem?.kind === 'failed') return refused(on ? 'publish-failed' : 'unpublish-failed', `已${verb} ${path} 的开关，${effect}失败：${r.problem.message}。`)
         return done(switchedText(r, on), { path, status: r.status, site: r.site, url: r.url })
       })
     },
@@ -78,7 +81,7 @@ function syncCommand(kit: Kit): OwnerCommand {
   return defineCommand({
     name: `${kit.name} sync`,
     act: { kind: 'synced', name: '部署' },
-    summary: '把全部可部署的东西对一遍：该发布的发布，该下线的下线；跑几遍结果都一样',
+    summary: '同步全部可部署的条目：该发布的发布，该取消发布的取消发布；重复执行结果相同',
     params: {},
     destructive: false,
     ownerOnly: false,
@@ -90,17 +93,17 @@ function syncCommand(kit: Kit): OwnerCommand {
         const changed = results.reduce((n, r) => n + r.done.length, 0) + swept.done.length
         const counts = (Object.keys(STATUS) as (keyof typeof STATUS)[]).flatMap((s) => {
           const n = results.filter((r) => r.status === s).length
-          return n > 0 ? [`${STATUS[s].text} ${n}`] : []
+          return n > 0 ? [`${n} 个${STATUS[s].text}`] : []
         })
         const lines = [
           ...results.flatMap((r) => r.done.map((d) => doneText(r.thing.path, d))),
-          ...swept.done.map((d) => `已下线没人声明的站点 ${d.site}`),
-          ...results.flatMap((r) => (r.problem?.kind === 'failed' ? [`没能跟上 ${r.thing.path}：${r.problem.message}`] : [])),
-          ...swept.failed.map((f) => `没能下线站点 ${f.site}：${f.message}`),
+          ...swept.done.map((d) => `已取消发布未声明的站点 ${d.site}`),
+          ...results.flatMap((r) => (r.problem?.kind === 'failed' ? [`${r.thing.path} 同步失败：${r.problem.message}`] : [])),
+          ...swept.failed.map((f) => `站点 ${f.site} 取消发布失败：${f.message}`),
         ]
-        if (results.length === 0 && swept.done.length === 0) return done('还没有声明过可以部署的东西。', { changed })
+        if (results.length === 0 && swept.done.length === 0) return done('暂无可部署的条目。', { changed })
         const quiet = lines.length === 0 && results.every((r) => r.problem === null)
-        const head = quiet ? `对了一遍，没有要改的：${counts.join('，')}。` : `对了一遍：${counts.join('，')}。`
+        const head = quiet ? `已同步，无变更：${counts.join('，')}。` : `已同步：${counts.join('，')}。`
         const text = [head, ...lines].join('\n')
         if (results.some((r) => r.problem?.kind === 'no-target')) return refused('no-target', `${text}\n${noTarget(kit)}`)
         if (results.some((r) => r.problem?.kind === 'failed') || swept.failed.length > 0) return refused('publish-failed', text)
@@ -113,7 +116,7 @@ function syncCommand(kit: Kit): OwnerCommand {
 function listCommand(kit: Kit): OwnerCommand {
   return defineCommand({
     name: `${kit.name} list`,
-    summary: '列出可部署的东西、状态和地址',
+    summary: '列出可部署的条目、状态和地址',
     params: {},
     destructive: false,
     ownerOnly: false,
@@ -121,9 +124,9 @@ function listCommand(kit: Kit): OwnerCommand {
     async run(_values, ctx) {
       return withRun(kit, ctx, async (run) => {
         const all = await looks(run)
-        const head = run.target ? `目标：${run.target.label}` : noTarget(kit)
+        const head = run.target ? `部署目标：${run.target.label}` : noTarget(kit)
         const rows = all.map((l) => `${l.thing.path}  ${STATUS[l.status].text}${l.url ? `  ${l.url}` : ''}`)
-        return done([head, ...(rows.length > 0 ? rows : ['还没有声明过可以部署的东西。'])].join('\n'), all.map((l) => ({ path: l.thing.path, status: l.status, on: l.thing.on, site: l.site, url: l.url })))
+        return done([head, ...(rows.length > 0 ? rows : ['暂无可部署的条目。'])].join('\n'), all.map((l) => ({ path: l.thing.path, status: l.status, on: l.thing.on, site: l.site, url: l.url })))
       })
     },
   })
@@ -131,7 +134,7 @@ function listCommand(kit: Kit): OwnerCommand {
 
 /** `--kind`, a choice of the kit's kinds; required unless it has only one. */
 export function kindFlag(kit: Kit): FlagParam {
-  return { name: 'kind', hint: '种类', kind: 'value', ...(onlyTarget(kit) ? {} : { required: true }), options: kit.targets.map((t) => ({ value: t.kind, label: t.label })) }
+  return { name: 'kind', hint: '类型', kind: 'value', ...(onlyTarget(kit) ? {} : { required: true }), options: kit.targets.map((t) => ({ value: t.kind, label: t.label })) }
 }
 
 /** A flag as several kinds share it: which flags are required depends on the kind chosen, so none is. */
@@ -182,15 +185,15 @@ function kindWrong(kit: Kit, t: TargetAdapter, values: OwnerValues): string | nu
   const own = new Set(['kind', ...t.params.map((f) => f.name)])
   const how = `\n用法：${targetSetName(kit)} ${kindUsage(kit, t)}`
   const other = Object.keys(values).find((name) => !own.has(name) && given(values[name]))
-  if (other !== undefined) return `--kind ${t.kind} 不带 --${other}。${how}`
+  if (other !== undefined) return `--kind ${t.kind} 不接受 --${other}。${how}`
   const missing = t.params.find((f) => f.required && !given(values[f.name]))
-  return missing === undefined ? null : `--kind ${t.kind} 要写 --${missing.name}。${how}`
+  return missing === undefined ? null : `--kind ${t.kind} 需指定 --${missing.name}。${how}`
 }
 
 /** What `target set` says of the required secrets the target reads that the owner has not set. */
 function secretNote(kit: Kit, unset: readonly SecretDecl[]): string[] {
   const required = unset.filter((s) => s.optional !== true).map((s) => s.name)
-  return required.length === 0 ? [] : [`这个目标要用密钥 ${required.join('、')}，还没设：${required.map((name) => setSecret(kit, name)).join('；')}。`]
+  return required.length === 0 ? [] : [`该部署目标需要密钥 ${required.join('、')}，未设置：${required.map((name) => setSecret(kit, name)).join('；')}。`]
 }
 
 /** How many things switched on in the content the target `t` does not hold under the name it gives them, by the records. */
@@ -210,8 +213,8 @@ function targetSetCommand(kit: Kit): OwnerCommand {
   return {
     name: targetSetName(kit),
     // The row names where it was connected: the first of these a kind takes, else the owner's own commands.
-    act: { kind: 'connected', object: ['host', 'origin', 'admin', 'to'], name: '自己的命令' },
-    summary: `连上部署目标：${kit.targets.map((t) => t.label).join('，或')}`,
+    act: { kind: 'connected', object: ['host', 'origin', 'admin', 'to'], name: '自定义命令' },
+    summary: `连接部署目标：${kit.targets.map((t) => t.label).join('、')}`,
     params: { flags: targetFlags(kit), ...(asked === undefined ? {} : { secret: asked }) },
     destructive: false,
     ownerOnly: true,
@@ -238,10 +241,10 @@ function targetSetCommand(kit: Kit): OwnerCommand {
         const waiting = notHere(run, next)
         const old = run.target !== null && run.target.key !== next.key ? heldOn(run, run.target) : 0
         const notes = [
-          ...(waiting > 0 ? [`开着的 ${waiting} 样还没发到这里。`] : []),
-          ...(old > 0 && run.target ? [`${run.target.label} 上的 ${old} 样没有撤下。`] : []),
+          ...(waiting > 0 ? [`${waiting} 个待发布。`] : []),
+          ...(old > 0 && run.target ? [`${run.target.label} 上的 ${old} 个条目未取消发布。`] : []),
         ]
-        return done([`已连上 ${next.label}。`, ...secrets, ...notes].join(''), { target: stored })
+        return done([`已连接 ${next.label}。`, ...secrets, ...notes].join(''), { target: stored })
       })
     },
   }
@@ -250,7 +253,7 @@ function targetSetCommand(kit: Kit): OwnerCommand {
 function targetListCommand(kit: Kit): OwnerCommand {
   return defineCommand({
     name: `${kit.name} target list`,
-    summary: '列出连着的部署目标，和这台机器上找到的',
+    summary: '列出已连接的部署目标，以及本机检测到的部署目标',
     params: {},
     destructive: false,
     ownerOnly: false,
@@ -260,8 +263,8 @@ function targetListCommand(kit: Kit): OwnerCommand {
         const found = await foundAll(kit, ctx)
         const connected = run.target && run.set ? { kind: run.set.kind, label: run.target.label } : null
         const lines = [
-          connected && run.set ? `连着 ${connected.label}：${setCommand(kit, { kind: connected.kind, ...run.set.given })}` : '还没有部署目标。',
-          ...found.map((f) => `这台机器上有 ${f.found.label}：${setCommand(kit, { kind: f.adapter.kind, ...f.found.values })}`),
+          connected && run.set ? `已连接 ${connected.label}：${setCommand(kit, { kind: connected.kind, ...run.set.given })}` : '未连接部署目标。',
+          ...found.map((f) => `本机检测到 ${f.found.label}：${setCommand(kit, { kind: f.adapter.kind, ...f.found.values })}`),
         ]
         return done(lines.join('\n'), { connected, found: found.map((f) => ({ kind: f.adapter.kind, label: f.found.label, values: f.found.values })) })
       })
@@ -273,17 +276,17 @@ function targetRemoveCommand(kit: Kit): OwnerCommand {
   return defineCommand({
     name: targetRemoveName(kit),
     act: { kind: 'disconnected', name: '部署目标' },
-    summary: '断开部署目标：线上的不撤下，开关都留着',
+    summary: '断开部署目标的连接：已发布的条目不取消发布，开关保留',
     params: {},
     destructive: false,
     ownerOnly: true,
     setup: true,
     async run(_values, ctx) {
       return withRun(kit, ctx, async (run) => {
-        if (run.target === null) return refused('no-target', '还没有部署目标。')
+        if (run.target === null) return refused('no-target', '未连接部署目标。')
         const left = heldOn(run, run.target)
         await targetFile(ctx).remove()
-        return done(`已断开 ${run.target.label}。${left > 0 ? `线上的 ${left} 样没有撤下。` : ''}`, { left })
+        return done(`已断开连接 ${run.target.label}。${left > 0 ? `${left} 个已发布的条目未取消发布。` : ''}`, { left })
       })
     },
   })

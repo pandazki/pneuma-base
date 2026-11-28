@@ -21,7 +21,7 @@ test('a bare library: four pages, folders, text and image preview, archive and t
   await page.goto(url)
 
   await expect(page.getByRole('heading', { level: 1, name: '首页' })).toBeVisible()
-  expect(await navTitles(page)).toEqual(['首页', '文件', 'Agent', '配置'])
+  expect(await navTitles(page)).toEqual(['首页', '文件', 'Agent', '设置'])
   await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '文件' }).click()
   await expect(page.getByRole('heading', { level: 1, name: '文件' })).toBeVisible()
 
@@ -53,27 +53,27 @@ test('a bare library: four pages, folders, text and image preview, archive and t
   await expect(page.getByRole('main').getByRole('row', { name: /hello\.md/ })).toHaveCount(0)
 
   // The archive page lists one level at a time: the folder, then in it the file; taking it back returns it to its path.
-  await openShared(page, '文件', '归档区')
+  await openShared(page, '文件', '已归档')
   await page.getByRole('main').getByRole('row', { name: /^notes\// }).dblclick()
   const row = page.getByRole('main').getByRole('row', { name: /notes\/hello\.md/ })
   await expect(row).toBeVisible()
-  await row.getByRole('button', { name: '取回' }).click()
-  await expect(page.getByRole('status')).toContainText('已取回：_archive/notes/hello.md → notes/hello.md')
-  await expect(page.getByRole('main').getByText('归档区是空的')).toBeVisible()
+  await row.getByRole('button', { name: '取消归档' }).click()
+  await expect(page.getByRole('status')).toContainText('已取消归档：_archive/notes/hello.md → notes/hello.md')
+  await expect(page.getByRole('main').getByText(/^暂无归档条目。/)).toBeVisible()
   expect(readFileSync(join(lib, 'notes/hello.md'), 'utf8')).toContain('一段笔记')
   expect(existsSync(join(lib, '_archive/notes/hello.md'))).toBe(false)
 
   // The config page of a bare library: settings, no column heads. Nothing installed; the ledger this
   // pneuma-base knows is a row whose switch is off, its whole text behind an ⓘ, nothing else to do.
-  await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '配置' }).click()
+  await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: '设置' }).click()
   await expect(page.getByRole('main').getByRole('columnheader')).toHaveCount(0)
-  const ledger = page.getByRole('region', { name: '插件' }).getByRole('listitem').filter({ hasText: '记账' })
-  await expect(ledger.getByRole('switch', { name: '记账' })).toHaveAttribute('aria-checked', 'false')
-  await expect(ledger.getByRole('img', { name: /^记账：.*命令行里叫 ledger。$/ })).toBeVisible()
+  const ledger = page.getByRole('region', { name: '插件' }).getByRole('listitem').filter({ hasText: '溯源' })
+  await expect(ledger.getByRole('switch', { name: '溯源' })).toHaveAttribute('aria-checked', 'false')
+  await expect(ledger.getByRole('img', { name: /^溯源：.*命令行中的名称：ledger。$/ })).toBeVisible()
   await expect(ledger.getByRole('button', { name: '更多' })).toHaveCount(0)
   // What Codex needs is said on demand, beside the title of the Agent page's first section.
   await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: 'Agent' }).click()
-  await expect(page.getByRole('region', { name: '接上的 agent' }).getByRole('img', { name: /codex --add-dir/ })).toBeVisible()
+  await expect(page.getByRole('region', { name: '已连接的 Agent' }).getByRole('img', { name: /codex --add-dir/ })).toBeVisible()
 })
 
 test('when the server stops, the page says it cannot reach it and keeps what it showed', async ({ page, pb }) => {
@@ -82,6 +82,6 @@ test('when the server stops, the page says it cannot reach it and keeps what it 
   await page.goto(server.url)
   await expect(page.getByRole('row', { name: /readme\.txt/ })).toBeVisible()
   await server.stop()
-  await expect(page.getByRole('alert')).toContainText('连不上服务', { timeout: 6_000 })
+  await expect(page.getByRole('alert')).toContainText('无法连接服务', { timeout: 6_000 })
   await expect(page.getByRole('row', { name: /readme\.txt/ })).toBeVisible()
 })

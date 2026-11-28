@@ -1,4 +1,5 @@
 // The page's only way to the library: the server's /api, with the token from the page's address.
+import { knowAgentMarks } from './agents'
 import type { Call, ListedView, PassProgress, PluginProblem, ViewRequest, ViewResult } from '@pneuma-base/kernel'
 
 export const TOKEN = new URLSearchParams(window.location.search).get('token') ?? ''
@@ -11,6 +12,8 @@ export type State = {
   views: ListedView[]
   problems: PluginProblem[]
   available: { name: string; title: string | null }[]
+  /** The agents drawn as their product's icon, and the names each goes by. */
+  agentMarks: { product: string; title: string; names: string[] }[]
 }
 
 export type Tone = 'good' | 'warn' | 'bad'
@@ -38,7 +41,7 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
   } catch {
-    throw new Unreachable('连不上服务')
+    throw new Unreachable('无法连接服务')
   }
   const json = (await res.json().catch(() => null)) as { error?: string } | null
   if (!res.ok) throw new ApiError(res.status, json?.error ?? res.statusText)
@@ -54,7 +57,7 @@ async function streamed(call: Call, confirmed: boolean, pass: string, onProgress
   try {
     res = await fetch('/api/call', { method: 'POST', headers: { 'x-pneuma-token': TOKEN, 'content-type': 'application/json' }, body: JSON.stringify({ call, confirmed, pass }) })
   } catch {
-    throw new Unreachable('连不上服务')
+    throw new Unreachable('无法连接服务')
   }
   if (!res.ok || res.body === null) {
     const json = (await res.json().catch(() => null)) as { error?: string } | null
@@ -64,7 +67,7 @@ async function streamed(call: Call, confirmed: boolean, pass: string, onProgress
   let buffered = ''
   for (;;) {
     const { value, done } = await reader.read().catch(() => {
-      throw new Unreachable('连不上服务')
+      throw new Unreachable('无法连接服务')
     })
     if (done) break
     buffered += value
@@ -80,7 +83,33 @@ async function streamed(call: Call, confirmed: boolean, pass: string, onProgress
       }
     }
   }
-  throw new Unreachable('连不上服务')
+  throw new Unreachable('无法连接服务')
+}
+
+/**
+ * Runs a call that writes a file at the input `input` (an action's `save`) and hands the file over as
+ * a download named `name`: the browser's downloads, the app's save panel. A call that does not finish
+ * answers its reply instead.
+ */
+async function saved(call: Call, confirmed: boolean, input: string, name: string): Promise<CallReply | null> {
+  let res: Response
+  try {
+    res = await fetch('/api/save', { method: 'POST', headers: { 'x-pneuma-token': TOKEN, 'content-type': 'application/json' }, body: JSON.stringify({ call, save: input, name, confirmed }) })
+  } catch {
+    throw new Unreachable('无法连接服务')
+  }
+  if ((res.headers.get('content-type') ?? '').startsWith('application/json')) {
+    const json = (await res.json().catch(() => null)) as { error?: string } | null
+    if (!res.ok) throw new ApiError(res.status, json?.error ?? res.statusText)
+    return json as CallReply
+  }
+  const url = URL.createObjectURL(await res.blob())
+  const link = Object.assign(document.createElement('a'), { href: url, download: name })
+  document.body.append(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  return null
 }
 
 const passId = () => (typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`)
@@ -92,9 +121,14 @@ export const api = {
     return streamed(call, confirmed, id, (p) => onProgress(p, id))
   },
   stop: (pass: string) => request<{ running: boolean }>('/api/stop', { pass }),
-  state: () => request<State>('/api/state'),
+  state: () =>
+    request<State>('/api/state').then((s) => {
+      knowAgentMarks(s.agentMarks)
+      return s
+    }),
   view: (req: ViewRequest) => request<ViewResult>(`/api/view?${new URLSearchParams({ ...req.params, view: req.view })}`),
   call: (call: Call, confirmed: boolean) => request<CallReply>('/api/call', { call, confirmed }),
+  save: saved,
   init: (plugins: string[]) => request<CallReply>('/api/init', { plugins }),
   rev: () => request<{ rev: string }>('/api/rev'),
   fileUrl: (path: string) => `/api/file?${new URLSearchParams({ path, token: TOKEN })}`,

@@ -1,7 +1,7 @@
 // Connecting an agent product to a library in one command, and undoing it in one: a grant, then a
 // skill in the folder the product loads skills from or an MCP server in its configuration, and a
-// record on this machine of exactly what was written. Built from `grant issue`, `grant revoke` and
-// `skill install`. ARCHITECTURE.md「接上一个 agent」.
+// record on this machine of exactly what was written. Built from `grant create`, `grant revoke` and
+// `skill install`. ARCHITECTURE.md「连接一个 agent」.
 import { readdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { skillText } from './cognition.js'
@@ -36,7 +36,7 @@ import type { Grant, Library, PluginTable } from '@pneuma-base/sdk'
 export const WAY_WORD: Record<Way, string> = { skill: '技能', mcp: 'MCP 服务', 'mcp-http': 'MCP 服务（HTTP）' }
 
 /** In words, what connecting a product the products table does not know writes into other programs: nothing. */
-export const NOTHING_WRITTEN = '不写别的程序的文件'
+export const NOTHING_WRITTEN = '不修改其他程序的文件'
 
 export const titleOf = (name: string) => productNamed(name)?.title ?? name
 
@@ -52,7 +52,7 @@ export function whereOf(p: AgentProduct, way: Way, grant: string, env: Env): str
   const home = homeOf(env)
   if (way === 'skill') return tilde(join(home, p.skills as string, entryName(grant), 'SKILL.md'), home)
   const mcp = mcpOf(p, way)
-  return `${tilde(join(home, mcp.file), home)} 的 ${mcp.key}`
+  return `${tilde(join(home, mcp.file), home)} 中的 ${mcp.key}`
 }
 
 /** How an agent connected under `grant` runs every verb, and how an application that only speaks MCP reaches the library. */
@@ -78,14 +78,14 @@ async function planOf(product: AgentProduct | null, way: Way, endpoint: Endpoint
   const plan = (mcp: McpConfig, entry: ServerEntry) => (mcp.format === 'toml' ? planToml(p, mcp, entry) : planJson(p, mcp, entry))
   if (way === 'mcp') return plan(mcpOf(product, way), serverCommand(p.grant, launcherPath(p.call.ctx.home)))
   if (endpoint === null) {
-    const text = `${product.title} 要经本机的地址接上，可现在没有为这个库开着的地址：它在 Pneuma Base 应用开着时有，或者先运行 pneuma-base view ${quote(p.root)}。`
+    const text = `${product.title} 需通过本机地址连接，当前没有为此资料库开放的地址：Pneuma Base 应用运行时提供该地址，也可先运行 pneuma-base view ${quote(p.root)}。`
     return { kind: 'refused', outcome: refused('no-endpoint', text) }
   }
   return plan(mcpOf(product, way), { url: mcpUrl(endpoint.url, p.grant) })
 }
 
 const taken = (where: string) =>
-  refused('taken', `${where} 已经有一份同名的，不是接上时写的，或写了之后被改过。没有动它。要接上，先把它挪开，或用 --name 另起一个授权名。`)
+  refused('taken', `${where} 已存在同名内容，不是连接时写入的，或写入后已修改。未做改动。如需连接，请先将其移走，或用 --name 指定其他授权名称。`)
 
 async function planSkill({ product, grant, root, call, mine, skillInstall }: Planning): Promise<Plan> {
   const home = homeOf(call.env)
@@ -115,7 +115,7 @@ async function planSkill({ product, grant, root, call, mine, skillInstall }: Pla
 /** Writes `next` over another program's file, if it still reads as it did when planned, keeping a copy of it first. */
 function writeOver(call: LibraryCall, grant: string, file: string, text: string | null, next: string, written: Written): () => Promise<Written> {
   return async () => {
-    if ((await readText(file)) !== text) throw new Error(`${tilde(file, homeOf(call.env))} 在接上的时候被别的程序改了，再接一次`)
+    if ((await readText(file)) !== text) throw new Error(`${tilde(file, homeOf(call.env))} 在连接期间被其他程序修改，请重新连接`)
     await keepBefore(call.ctx.home, grant, file)
     await writeBeside(file, next)
     return written
@@ -124,8 +124,8 @@ function writeOver(call: LibraryCall, grant: string, file: string, text: string 
 
 /** A refusal for a file that cannot be edited safely, with what to paste by hand and the grant to issue first. */
 function pasteInstead(where: string, why: string, snippet: string, grant: string, product: AgentProduct, root: string): Plan {
-  const issue = `pneuma-base grant issue ${grant} --agent ${product.name} --library ${root}`
-  return { kind: 'refused', outcome: refused('unreadable-config', `${where} ${why}，没有改它。\n要接上，先发授权：\n  ${issue}\n再把下面这段自己加进去：\n${snippet}`) }
+  const issue = `pneuma-base grant create ${grant} --agent ${product.name} --library ${root}`
+  return { kind: 'refused', outcome: refused('unreadable-config', `${where} ${why}，未修改。\n如需连接，请先新建授权：\n  ${issue}\n再手动添加以下内容：\n${snippet}`) }
 }
 
 async function planJson({ product, grant, root, call, mine }: Planning, mcp: McpConfig, entry: ServerEntry): Promise<Plan> {
@@ -141,11 +141,11 @@ async function planJson({ product, grant, root, call, mine }: Planning, mcp: Mcp
   const where = tilde(file, home)
   switch (added.outcome) {
     case 'unreadable':
-      return pasteInstead(where, `读不懂（${added.why}）`, JSON.stringify({ [name]: value }, null, 2), grant, product, root)
+      return pasteInstead(where, `无法解析（${added.why}）`, JSON.stringify({ [name]: value }, null, 2), grant, product, root)
     case 'present': {
       const kept = { kind: 'json' as const, file, key: mcp.key, name, created: own?.created ?? ('entry' as const), innerWas: own?.innerWas ?? null, dirs: own?.dirs ?? [] }
       if (canonical(added.value) === canonical(value)) return { kind: 'same', written: { ...kept, fingerprint } }
-      if (own === null || sha256(canonical(added.value)) !== own.fingerprint) return { kind: 'refused', outcome: taken(`${where} 的 ${mcp.key} 里的 ${name}`) }
+      if (own === null || sha256(canonical(added.value)) !== own.fingerprint) return { kind: 'refused', outcome: taken(`${where} 中 ${mcp.key} 下的 ${name}`) }
       return { kind: 'write', changes: where, write: writeOver(call, grant, file, text, replaceJsonEntry(text as string, mcp.key, name, value), { ...kept, fingerprint }) }
     }
     case 'added': {
@@ -182,8 +182,8 @@ async function planToml({ product, grant, root, call, mine }: Planning, mcp: Mcp
 function wroteText(w: Written, home: string): string {
   if (w.kind === 'none') return NOTHING_WRITTEN
   if (w.kind === 'skill') return tilde(w.file, home)
-  if (w.kind === 'json') return `${tilde(w.file, home)} 的 ${w.key} 里的 ${w.name}`
-  return `${tilde(w.file, home)} 里的 [${w.key}.${w.name}]`
+  if (w.kind === 'json') return `${tilde(w.file, home)} 中 ${w.key} 下的 ${w.name}`
+  return `${tilde(w.file, home)} 中的 [${w.key}.${w.name}]`
 }
 
 /** One connection as the owner reads it: the grant's area and access come from the library, which is authoritative. */
@@ -201,13 +201,13 @@ export type ConnectionFacts = {
   problems: string[]
 }
 
-const STATE_WORD = { changed: '被改过', gone: '不在了', unreadable: '所在的文件读不懂了' } as const
+const STATE_WORD = { changed: '已修改', gone: '已缺失', unreadable: '所在文件无法解析' } as const
 
 /** What is wrong with what a connection runs: the launcher, or the node and entry file a record from before it names. */
 async function commandProblems(c: Connection['command']): Promise<string[]> {
   if (c === null) return []
   if ('launcher' in c) return launcherProblems(c.launcher)
-  return [...((await exists(c.node)) ? [] : [`node 不在了（${c.node}）`]), ...((await exists(c.entry)) ? [] : [`命令行不在了（${c.entry}）`])]
+  return [...((await exists(c.node)) ? [] : [`node 已缺失（${c.node}）`]), ...((await exists(c.entry)) ? [] : [`命令行程序已缺失（${c.entry}）`])]
 }
 
 /** The connections recorded on this machine, those of the library at `root` when one is given, each checked against what is on disk now. */
@@ -221,8 +221,8 @@ export async function connectionFacts(home: string, env: Env, table: PluginTable
     const grant = library?.config.grants.find((g) => g.name === c.grant && g.id === c.grantId) ?? null
     const state = await stateOf(c.wrote)
     const problems = [
-      ...(state === 'in-place' ? [] : [`接上时写的${STATE_WORD[state]}`]),
-      ...(library === null ? ['库不在了'] : grant === null ? ['授权已撤回'] : []),
+      ...(state === 'in-place' ? [] : [`连接时写入的内容${STATE_WORD[state]}`]),
+      ...(library === null ? ['资料库不存在'] : grant === null ? ['授权已撤销'] : []),
       ...(await commandProblems(c.command)),
     ]
     out.push({ grant: c.grant, product: c.product, title: titleOf(c.product), library: c.library, way: c.way, area: grant?.area ?? null, readOnly: grant?.readOnly ?? null, where: wroteText(c.wrote, homeOf(env)), inPlace: problems.length === 0, problems })
@@ -230,19 +230,19 @@ export async function connectionFacts(home: string, env: Env, table: PluginTable
   return out
 }
 
-const accessText = (g: Pick<Grant, 'area' | 'readOnly'>) => `${g.area === null ? '整个库' : `区域 ${g.area}/`}，${g.readOnly ? '只读' : '读写'}`
+const accessText = (g: Pick<Grant, 'area' | 'readOnly'>) => `${g.area === null ? '整个资料库' : `区域 ${g.area}/`}，${g.readOnly ? '只读' : '读写'}`
 
-type Base = { grantIssue: KernelCommand; grantRevoke: KernelCommand; skillInstall: KernelCommand }
+type Base = { grantCreate: KernelCommand; grantRevoke: KernelCommand; skillInstall: KernelCommand }
 
-/** The four commands, built on the kernel's own `grant issue`, `grant revoke` and `skill install`. */
-export function agentCommands({ grantIssue, grantRevoke, skillInstall }: Base): KernelCommand[] {
-  const issue = grantIssue as Extract<KernelCommand, { scope: 'library' }>
+/** The four commands, built on the kernel's own `grant create`, `grant revoke` and `skill install`. */
+export function agentCommands({ grantCreate, grantRevoke, skillInstall }: Base): KernelCommand[] {
+  const issue = grantCreate as Extract<KernelCommand, { scope: 'library' }>
   const revoke = grantRevoke as Extract<KernelCommand, { scope: 'library' }>
   const install = skillInstall as Extract<KernelCommand, { scope: 'library' }>
   return [
     command({
       name: 'agent detect',
-      summary: '这台机器上有哪些 agent 产品，各能怎么接上；只看文件和程序在不在',
+      summary: '检测本机的 Agent 产品及各自的连接方式；仅检查文件和程序是否存在',
       params: {},
       destructive: false,
       ownerOnly: true,
@@ -253,13 +253,13 @@ export function agentCommands({ grantIssue, grantRevoke, skillInstall }: Base): 
         const connections = (await allConnections(call.ctx.home)).filter((c) => root === null || c.library === root)
         const products = CONNECTABLE.map((p) => {
           const signs = signsOf(p, call.env)
-          return { name: p.name, title: p.title, found: signs.length > 0, signs, ways: waysOf(p).map((way) => ({ way, where: whereOf(p, way, '<授权名>', call.env) })), connected: connections.filter((c) => c.product === p.name).map((c) => c.grant) }
+          return { name: p.name, title: p.title, found: signs.length > 0, signs, ways: waysOf(p).map((way) => ({ way, where: whereOf(p, way, '<授权名称>', call.env) })), connected: connections.filter((c) => c.product === p.name).map((c) => c.grant) }
         })
         const lines = products.flatMap((p) => {
           const product = productNamed(p.name) as AgentProduct
-          const head = `${p.title}（${p.name}）：${p.found ? `找到了，${p.signs.join('、')}` : `没找到，看了 ${lookedFor(product)}`}`
-          const ways = p.ways.map((w, i) => `  ${WAY_WORD[w.way]}${i === 0 && p.ways.length > 1 ? '（缺省）' : ''}：${w.where}`)
-          const next = p.connected.length > 0 ? [`  已接上：${p.connected.join('、')}`] : p.found ? [`  接上：pneuma-base agent connect ${p.name} --library ${root ?? '<库的目录>'}`] : []
+          const head = `${p.title}（${p.name}）：${p.found ? `已检测到，${p.signs.join('、')}` : `未检测到，已检查 ${lookedFor(product)}`}`
+          const ways = p.ways.map((w, i) => `  ${WAY_WORD[w.way]}${i === 0 && p.ways.length > 1 ? '（默认）' : ''}：${w.where}`)
+          const next = p.connected.length > 0 ? [`  已连接：${p.connected.join('、')}`] : p.found ? [`  连接：pneuma-base agent connect ${p.name} --library ${root ?? '<资料库目录>'}`] : []
           return [head, ...ways, ...next]
         })
         return done(lines.join('\n'), { products })
@@ -268,14 +268,14 @@ export function agentCommands({ grantIssue, grantRevoke, skillInstall }: Base): 
     command({
       name: 'agent connect',
       act: { kind: 'connected', object: 'product' },
-      summary: '把一个 agent 产品接到这个库：发授权，再装技能或登记 MCP 服务；产品表里没有的产品只发授权，它经 MCP 自己连上来',
+      summary: '将 Agent 产品连接到此资料库：新建授权，再安装技能或登记 MCP 服务；产品表中没有的产品仅新建授权，由其自行通过 MCP 连接',
       params: {
         positional: [{ name: 'product', hint: '产品', required: true, pattern: GRANT_NAME.source }],
         flags: [
-          { name: 'name', hint: '授权名，缺省是产品名', kind: 'value', pattern: GRANT_NAME.source },
+          { name: 'name', hint: '授权名称，默认为产品名称', kind: 'value', pattern: GRANT_NAME.source },
           { name: 'area', hint: '子文件夹', kind: 'value' },
           { name: 'read-only', hint: '只读', kind: 'boolean' },
-          { name: 'via', hint: '怎么接', kind: 'value', options: (Object.keys(WAY_WORD) as Way[]).map((value) => ({ value, label: WAY_WORD[value] })) },
+          { name: 'via', hint: '连接方式', kind: 'value', options: (Object.keys(WAY_WORD) as Way[]).map((value) => ({ value, label: WAY_WORD[value] })) },
         ],
       },
       destructive: false,
@@ -286,13 +286,13 @@ export function agentCommands({ grantIssue, grantRevoke, skillInstall }: Base): 
         const title = titleOf(wanted)
         const ways: Way[] = product === null ? ['mcp-http'] : waysOf(product)
         const way = (via ?? ways[0]) as Way
-        if (!ways.includes(way)) return refused('no-such-way', `${title} 不能这样接上：${WAY_WORD[way]}。它能用的：${ways.map((w) => WAY_WORD[w]).join('、')}。`)
-        if (product !== null && signsOf(product, call.env).length === 0) return refused('not-found', `这台机器上没找到 ${title}：看了 ${lookedFor(product)}。装上它、打开过一次之后再接。`)
+        if (!ways.includes(way)) return refused('no-such-way', `${title} 不支持此连接方式：${WAY_WORD[way]}。支持的方式：${ways.map((w) => WAY_WORD[w]).join('、')}。`)
+        if (product !== null && signsOf(product, call.env).length === 0) return refused('not-found', `本机未检测到 ${title}：已检查 ${lookedFor(product)}。请安装并至少打开一次后再连接。`)
         const grant = nameInput ?? wanted
         const { library } = call.ctx
         const mine = await readConnection(call.ctx.home, grant)
         if (mine !== null && (mine.product !== wanted || mine.library !== library.root || mine.way !== way)) {
-          return refused('name-taken', `授权名 ${grant} 已经用来把 ${titleOf(mine.product)}（${WAY_WORD[mine.way]}）接到 ${mine.library}。先 pneuma-base agent disconnect ${grant}，或用 --name 另起一个授权名。`)
+          return refused('name-taken', `授权名称 ${grant} 已用于将 ${titleOf(mine.product)}（${WAY_WORD[mine.way]}）连接到 ${mine.library}。请先运行 pneuma-base agent disconnect ${grant}，或用 --name 指定其他授权名称。`)
         }
         const endpoint = way === 'mcp-http' ? await endpointOf(call.ctx.home, library.root) : null
         const plan = await planOf(product, way, endpoint, { grant, root: library.root, call, mine, skillInstall: install })
@@ -300,45 +300,45 @@ export function agentCommands({ grantIssue, grantRevoke, skillInstall }: Base): 
 
         const reused = library.config.grants.some((g) => g.name === grant)
         const issued = await issue.run({ name: grant, agent: wanted, area, 'read-only': readOnly }, call)
-        if (issued.answer.outcome === 'refused') return refused(issued.answer.reason, `${issued.answer.text}\n要接上 ${title}，用 --name 另起一个授权名，比如 --name ${wanted}-2。`)
+        if (issued.answer.outcome === 'refused') return refused(issued.answer.reason, `${issued.answer.text}\n如需连接 ${title}，请用 --name 指定其他授权名称，例如 --name ${wanted}-2。`)
         const updated = issued.library ?? library
         const given = (issued.answer.data as { grant: Grant }).grant
         const bound: LibraryCall = { ...call, ctx: { ...call.ctx, library: updated } }
         const home = homeOf(call.env)
-        const grantLine = `授权：${grant}（${reused ? '已有的，接着用' : '新发的'}），${accessText(given)}`
+        const grantLine = `授权：${grant}（${reused ? '沿用已有授权' : '新建'}），${accessText(given)}`
         const launcher = await ensureLauncher(call.ctx.home, call.env)
         const launcherLine = launcher.changed ? [ranText(launcher)] : []
         if (plan.kind === 'same' && mine !== null && mine.grantId === given.id) {
-          const head = launcher.changed ? `${title} 已经接上了，接上时写的没有改，命令修好了。` : `${title} 已经接上了，什么都没改。`
-          return done([head, grantLine, `写着：${wroteText(plan.written, home)}`, ...launcherLine].join('\n'), { connection: mine }, updated)
+          const head = launcher.changed ? `${title} 已连接，连接时写入的内容未变，命令已修复。` : `${title} 已连接，未做任何修改。`
+          return done([head, grantLine, `已写入：${wroteText(plan.written, home)}`, ...launcherLine].join('\n'), { connection: mine }, updated)
         }
 
         const written = plan.kind === 'same' ? plan.written : await plan.write(bound)
         const connection: Connection = { format: 1, grant, grantId: given.id, product: wanted, library: library.root, way, at: call.ctx.now, wrote: written, command: { launcher: launcher.launcher.path } }
         await saveConnection(call.ctx.home, connection)
-        const before = plan.kind === 'write' && plan.changes !== null ? [`改之前的那份留在：${tilde(join(call.ctx.home, 'connections', grant, 'before'), home)}/`] : []
+        const before = plan.kind === 'write' && plan.changes !== null ? [`修改前的副本：${tilde(join(call.ctx.home, 'connections', grant, 'before'), home)}/`] : []
         const reach = reachOf(launcher.launcher.path, grant, endpoint)
-        const live = '（Pneuma Base 应用或 pneuma-base view 为这个库开着时才连得上）'
+        const live = '（仅在 Pneuma Base 应用或 pneuma-base view 为此资料库运行时可连接）'
         const how =
           product === null
-            ? [`命令：${reach.command} <动词> …`, ...(reach.mcp.url === null ? [] : [`MCP（HTTP）：${reach.mcp.url}${live}`]), `MCP（标准输入输出）：${reach.mcp.stdio}`]
+            ? [`命令：${reach.command} <命令> …`, ...(reach.mcp.url === null ? [] : [`MCP（HTTP）：${reach.mcp.url}${live}`]), `MCP（标准输入输出）：${reach.mcp.stdio}`]
             : way === 'mcp'
-              ? [`它运行：${reach.mcp.stdio}`]
+              ? [`运行：${reach.mcp.stdio}`]
               : way === 'mcp-http'
-                ? [`它连：${reach.mcp.url ?? ''}${live}`]
+                ? [`连接：${reach.mcp.url ?? ''}${live}`]
                 : []
-        const next = product === null ? `让它先读 ${join(library.root, 'PNEUMA-BASE.md')}，再用上面的命令或 MCP 干活。` : (product.next?.[way] ?? '')
+        const next = product === null ? `Agent 先读取 ${join(library.root, 'PNEUMA-BASE.md')}，再通过上述命令或 MCP 操作。` : (product.next?.[way] ?? '')
         const notice = way === 'skill' && product?.notice ? [product.notice(library.root)] : []
         const lines = [
-          `已把 ${title} 接到这个库（${WAY_WORD[way]}）。`,
+          `已将 ${title} 连接到此资料库（${WAY_WORD[way]}）。`,
           grantLine,
-          written.kind === 'none' ? `${NOTHING_WRITTEN}：它自己连上来。` : `${plan.kind === 'same' ? '写着' : '写了'}：${wroteText(written, home)}`,
+          written.kind === 'none' ? `${NOTHING_WRITTEN}：由其自行连接。` : `${plan.kind === 'same' ? '已存在' : '已写入'}：${wroteText(written, home)}`,
           ...how,
           ...launcherLine,
           ...before,
-          `接着：${next}`,
+          `下一步：${next}`,
           ...notice,
-          `要撤回：pneuma-base agent disconnect ${grant}`,
+          `断开连接：pneuma-base agent disconnect ${grant}`,
         ]
         return done(lines.join('\n'), { connection }, updated)
       },
@@ -346,15 +346,15 @@ export function agentCommands({ grantIssue, grantRevoke, skillInstall }: Base): 
     command({
       name: 'agent disconnect',
       act: { kind: 'disconnected', object: 'grant' },
-      summary: '断开一个接上的 agent：拿掉接上时写的，再撤回授权',
-      params: { positional: [{ name: 'grant', hint: '授权名', required: true }], flags: [{ name: 'keep-grant', hint: '授权留着', kind: 'boolean' }] },
+      summary: '断开已连接的 Agent：移除连接时写入的内容，再撤销授权',
+      params: { positional: [{ name: 'grant', hint: '授权名称', required: true }], flags: [{ name: 'keep-grant', hint: '保留授权', kind: 'boolean' }] },
       destructive: false,
       ownerOnly: true,
       scope: 'machine',
       async run({ grant, 'keep-grant': keep }, call) {
         const record = await readConnection(call.ctx.home, grant)
-        if (record === null) return done(`本机没有叫 ${grant} 的连接，什么都没做。`, { removed: false })
-        if (call.ctx.library !== null && call.ctx.library.root !== record.library) return refused('other-library', `连接 ${grant} 是 ${record.library} 的，不是这个库的。`)
+        if (record === null) return done(`本机没有名为 ${grant} 的连接，未执行任何操作。`, { removed: false })
+        if (call.ctx.library !== null && call.ctx.library.root !== record.library) return refused('other-library', `连接 ${grant} 属于 ${record.library}，不属于此资料库。`)
         const title = titleOf(record.product)
         const home = homeOf(call.env)
         const act = async (bound: LibraryCall | null): Promise<Outcome> => {
@@ -364,18 +364,18 @@ export function agentCommands({ grantIssue, grantRevoke, skillInstall }: Base): 
           const lines =
             wrote.kind === 'none'
               ? []
-              : [state === 'in-place' ? `拿掉了：${where}` : state === 'changed' ? `${where} 在接上之后被改过，没有动它；不要了就自己删掉。` : state === 'gone' ? `${where} 已经不在了。` : `${tilde(wrote.file, home)} 现在读不懂了，没有动它。`]
+              : [state === 'in-place' ? `已移除：${where}` : state === 'changed' ? `${where} 在连接后已修改，未做改动；如不再需要，请手动删除。` : state === 'gone' ? `${where} 已缺失。` : `${tilde(wrote.file, home)} 无法解析，未做改动。`]
           let library = undefined
-          if (keep) lines.push(`授权 ${grant} 留着。再接上：pneuma-base agent connect ${record.product} --library ${record.library}${grant === record.product ? '' : ` --name ${grant}`}`)
-          else if (bound === null) lines.push(`库 ${record.library} 不在了，授权跟着它。`)
-          else if (!bound.ctx.library.config.grants.some((g) => g.name === grant && g.id === record.grantId)) lines.push(`授权 ${grant} 已经不在了。`)
+          if (keep) lines.push(`已保留授权 ${grant}。重新连接：pneuma-base agent connect ${record.product} --library ${record.library}${grant === record.product ? '' : ` --name ${grant}`}`)
+          else if (bound === null) lines.push(`资料库 ${record.library} 不存在，授权随之失效。`)
+          else if (!bound.ctx.library.config.grants.some((g) => g.name === grant && g.id === record.grantId)) lines.push(`授权 ${grant} 不存在。`)
           else {
             const r = await revoke.run({ name: grant }, bound)
             library = r.library
-            lines.push(r.answer.outcome === 'done' ? `撤回了授权 ${grant}。` : r.answer.text)
+            lines.push(r.answer.outcome === 'done' ? `已撤销授权 ${grant}。` : r.answer.text)
           }
           await dropConnection(call.ctx.home, grant)
-          return done(`已断开 ${title}（${grant}）。\n${lines.join('\n')}`, { removed: state === 'in-place', state }, library)
+          return done(`已断开 ${title}（${grant}）的连接。\n${lines.join('\n')}`, { removed: state === 'in-place', state }, library)
         }
         if (call.ctx.library !== null) return act({ ...call, ctx: call.ctx })
         const library = keep ? null : await openLibrary(record.library, call.table)
@@ -389,7 +389,7 @@ export function agentCommands({ grantIssue, grantRevoke, skillInstall }: Base): 
     }),
     command({
       name: 'agent list',
-      summary: '接上的 agent：产品、授权、怎么接的、区域、只读与否，接上时写的还在不在；带 --library 时只列这个库的',
+      summary: '已连接的 Agent：产品、授权、连接方式、区域、是否只读，连接时写入的内容是否完好；带 --library 时仅列出此资料库的连接',
       params: {},
       destructive: false,
       ownerOnly: true,
@@ -397,10 +397,10 @@ export function agentCommands({ grantIssue, grantRevoke, skillInstall }: Base): 
       scope: 'machine',
       async run(_values, call) {
         const connections = await connectionFacts(call.ctx.home, call.env, call.table, call.ctx.library?.root ?? null)
-        if (connections.length === 0) return done('还没有接上任何 agent。pneuma-base agent detect 看这台机器上有哪些。', { connections })
+        if (connections.length === 0) return done('暂无已连接的 Agent。运行 pneuma-base agent detect 查看本机的 Agent 产品。', { connections })
         const lines = connections.flatMap((c) => [
-          `${c.grant}  ${c.title}  ${WAY_WORD[c.way]}  ${c.area === null ? '整个库' : c.area}  ${c.readOnly === null ? '—' : c.readOnly ? '只读' : '读写'}  ${c.inPlace ? '在用' : c.problems.join('；')}`,
-          `    ${c.where}${call.ctx.library === null ? `\n    库：${c.library}` : ''}`,
+          `${c.grant}  ${c.title}  ${WAY_WORD[c.way]}  ${c.area === null ? '整个资料库' : c.area}  ${c.readOnly === null ? '—' : c.readOnly ? '只读' : '读写'}  ${c.inPlace ? '使用中' : c.problems.join('；')}`,
+          `    ${c.where}${call.ctx.library === null ? `\n    资料库：${c.library}` : ''}`,
         ])
         return done(lines.join('\n'), { connections })
       },

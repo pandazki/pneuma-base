@@ -17,7 +17,7 @@ const PAIR_BODY_LIMIT = 4 * 1024
 const MCP_BODY_LIMIT = 8 * 1024 * 1024
 const PAIRING_ID = /^p-[0-9a-f]{8}$/
 const MINUTE = 60_000
-const NOT_A_LIBRARY = '这个目录还不是 Pneuma Base 库，没有接入的说明。请主人先在管理界面里把它建成库。'
+const NOT_A_LIBRARY = '此目录不是 Pneuma Base 资料库，无连接指引。请所有者先在管理界面中将其初始化为资料库。'
 const REFUSAL_STATUS: Record<Extract<PairRequested, { outcome: 'refused' }>['reason'], number> = { usage: 400, 'too-many': 429, 'not-a-library': 409 }
 
 /** At most `limit` requests in any sixty seconds, for the whole server. */

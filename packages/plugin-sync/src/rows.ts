@@ -171,7 +171,7 @@ export async function foldAll(ctx: PluginContext): Promise<void> {
     await fold(change, page.facts.flatMap(({ fact }) => parseFact(fact) ?? []))
     if (await change.save({ cursor: page.cursor, expect: cursor })) {
       if (!page.more) return
-    } else if (tries > 20) throw new Error('同步插件的行一直在被别的进程改写，没能读到一致的状态')
+    } else if (tries > 20) throw new Error('同步索引持续被其他进程改写，无法读取一致的状态')
   }
 }
 

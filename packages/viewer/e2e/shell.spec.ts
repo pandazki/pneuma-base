@@ -12,7 +12,7 @@ const hashOf = (page: Page) => new URLSearchParams(new URL(page.url()).hash.slic
 test('several things open at once as tabs, kept in the address; Escape closes the front one', async ({ page, relayUrl: url }) => {
   await page.goto(`${url}#view=ledger.items`)
   const panel = page.getByRole('complementary', { name: '详情' })
-  const tabs = panel.getByRole('tablist', { name: '打开的详情' }).getByRole('tab')
+  const tabs = panel.getByRole('tablist', { name: '详情' }).getByRole('tab')
   const title = panel.getByTestId('panel-title')
 
   await row(page, 'payments/comparison.md').click()
@@ -65,7 +65,7 @@ test('the palette finds a thing by its text and opens it, and with nothing typed
   await page.keyboard.press('ControlOrMeta+k')
   await expect(palette).toBeVisible()
   const pages = palette.getByRole('group', { name: '前往' })
-  await expect(pages.getByRole('option')).toHaveText(['首页', '库', '状况', '留存', '活动', '统计', '场景', '文件', '归档区', 'Agent', '配置'].map((t) => new RegExp(`^${t}`)))
+  await expect(pages.getByRole('option')).toHaveText(['首页', '资料库', '状态', '历史副本', '活动', '统计', '场景', '文件', '已归档', 'Agent', '设置'].map((t) => new RegExp(`^${t}`)))
   for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown')
   await expect(pages.getByRole('option', { name: /^活动/ })).toHaveAttribute('aria-selected', 'true')
   await page.keyboard.press('Enter')
@@ -78,7 +78,7 @@ test('the palette finds a thing by its text and opens it, and with nothing typed
   const scene = palette.getByRole('group', { name: /^场景 sess-a/ })
   const hit = scene.getByRole('option', { name: /payments\/sources\/lemonsqueezy-pricing\.html/ })
   await expect(hit).toBeVisible()
-  await expect(hit).toContainText('带进来的')
+  await expect(hit).toContainText('导入')
   await hit.click()
   await expect(palette).toHaveCount(0)
   await expect(page.getByRole('complementary', { name: '详情' }).getByTestId('panel-title')).toHaveText('lemonsqueezy-pricing.html')
@@ -86,7 +86,7 @@ test('the palette finds a thing by its text and opens it, and with nothing typed
   // Nothing found says so; Escape closes the palette and leaves the panel open.
   await page.keyboard.press('ControlOrMeta+k')
   await palette.getByRole('combobox').fill('没有这样的字')
-  await expect(palette).toContainText('没有找到。')
+  await expect(palette).toContainText('无结果')
   await page.keyboard.press('Escape')
   await expect(palette).toHaveCount(0)
   await expect(page.getByRole('complementary', { name: '详情' })).toBeVisible()
@@ -121,7 +121,7 @@ test('in a table the arrow keys move between rows, one row in the Tab order, and
 async function pagerLibrary(pb: Cli): Promise<string> {
   const lib = join(tempDir(), 'lib')
   pb.run(['init', lib, '--bare'], { testPlugins: true })
-  pb.run(['plugin', 'add', 'pager', '--library', lib], { testPlugins: true })
+  pb.run(['plugin', 'enable', 'pager', '--library', lib], { testPlugins: true })
   write(lib, 'pager.md', 'pager 预览的内容')
   return (await pb.view(lib, { testPlugins: true })).url
 }
@@ -156,7 +156,7 @@ test('the sidebar’s width is kept across a reload, and the sidebar folds to a 
   pb.run(['init', lib])
   const { url } = await pb.view(lib)
   await page.goto(url)
-  const handle = page.getByRole('separator', { name: '侧栏的宽度' })
+  const handle = page.getByRole('separator', { name: '侧边栏宽度' })
   const width = Number(await handle.getAttribute('aria-valuenow'))
   await handle.focus()
   await page.keyboard.press('ArrowRight')
@@ -165,12 +165,12 @@ test('the sidebar’s width is kept across a reload, and the sidebar folds to a 
   await page.reload()
   await expect(handle).toHaveAttribute('aria-valuenow', String(width + 32))
 
-  await page.getByRole('button', { name: '收起侧栏' }).click()
+  await page.getByRole('button', { name: '收起侧边栏' }).click()
   await expect(handle).toHaveCount(0)
   // The pages stay in the navigation, by icon.
-  await openShared(page, '库', '状况')
-  await expect(page.getByRole('heading', { level: 1, name: '状况' })).toBeVisible()
-  await page.getByRole('button', { name: '展开侧栏' }).click()
+  await openShared(page, '资料库', '状态')
+  await expect(page.getByRole('heading', { level: 1, name: '状态' })).toBeVisible()
+  await page.getByRole('button', { name: '展开侧边栏' }).click()
   await expect(handle).toHaveAttribute('aria-valuenow', String(width + 32))
 })
 
@@ -203,9 +203,9 @@ test('in a browser the configuration page chooses 浅色, 深色 or 跟随系统
   pb.run(['init', lib, '--bare'])
   const { url } = await pb.view(lib)
   await page.emulateMedia({ colorScheme: 'light' })
-  await page.goto(`${url}#view=config`)
+  await page.goto(`${url}#view=settings`)
   const ground = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor)
-  const choice = page.getByRole('region', { name: '这个浏览器' }).getByRole('radiogroup', { name: '外观' })
+  const choice = page.getByRole('region', { name: '当前浏览器' }).getByRole('radiogroup', { name: '外观' })
   await expect(choice.getByRole('radio', { name: '跟随系统' })).toHaveAttribute('aria-checked', 'true')
   await expect.poll(ground).toBe('rgb(248, 248, 248)')
 

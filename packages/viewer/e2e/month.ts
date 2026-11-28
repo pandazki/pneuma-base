@@ -180,7 +180,7 @@ export function writeHistory(lib: string, shape: Shape): { things: number; facts
       }
       if (rnd() < 0.08) {
         const id = `r-${randomBytes(4).toString('hex')}`
-        const line = rnd() < 0.5 ? 'deploy online sites/landing' : 'plugin add version'
+        const line = rnd() < 0.5 ? 'deploy online sites/landing' : 'plugin enable version'
         emit(tick(), scene, actor, { kind: 'request', act: 'asked', request: id, line, why: '要让主人在线上看到改好的页' })
         requests.push({ id, asked: at, scene, agent: actor, line })
       }
@@ -192,7 +192,7 @@ export function writeHistory(lib: string, shape: Shape): { things: number; facts
     if (at > now) at = new Date(now.getTime() - 5 * 60_000)
     const tick = () => (at = new Date(at.getTime() + 60_000))
     if (d === 0) {
-      for (const g of AGENTS) emit(tick(), ownerScene, owner, { kind: 'owner.op', command: 'grant issue', summary: `已发授权 ${g.grant}，给 ${g.name}`, destructive: false })
+      for (const g of AGENTS) emit(tick(), ownerScene, owner, { kind: 'owner.op', command: 'grant create', summary: `已新建授权 ${g.grant}，授权对象为 ${g.name}`, destructive: false })
     }
     for (const r of requests.splice(0, today ? requests.length - 1 : requests.length)) {
       const fate = rnd()

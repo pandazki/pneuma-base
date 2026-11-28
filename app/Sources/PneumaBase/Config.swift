@@ -132,10 +132,10 @@ enum Appearance: String, CaseIterable, Codable {
 struct Prefs: Codable {
   var libraries: [String] = []
   var current: String?
-  /// 直接放进来的文件算主人的: the watcher registers a file that appeared outside the tools as the
+  /// 直接拷入的文件记为我添加: the watcher registers a file that appeared outside the tools as the
   /// owner's, seen rather than said, and records a direct change as seen. Unset means on.
   var ownerFiles: Bool?
-  /// The symbolic link to the launcher that 在终端里用 pneuma-base put on the owner's PATH; unset means off.
+  /// The symbolic link to the launcher that 安装命令行工具 put on the owner's PATH; unset means off.
   var pathLink: String?
   /// 外观: unset means following the system.
   var appearance: Appearance?

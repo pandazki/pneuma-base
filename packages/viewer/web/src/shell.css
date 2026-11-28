@@ -714,13 +714,22 @@ html[data-window='inactive'] .fresh {
     0 -0.5px 0 var(--line),
     0 -1px 2px rgba(0, 0, 0, 0.03);
 }
+/* The title keeps its whole width: the actions sit beside it while both fit, else on the row below. */
 .detail-title {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 8px;
   margin-bottom: 16px;
 }
-.detail-title > .icon-btn {
+.detail-name {
+  display: flex;
+  flex: 1 0 auto;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 100%;
+}
+.detail-name > .icon-btn {
   margin: 2px -4px 0 -6px;
 }
 .detail-tile {
@@ -909,4 +918,5 @@ html[data-panel='tray'] #root {
 .detail-title .head-actions {
   flex: none;
   margin-top: 2px;
+  margin-left: auto;
 }

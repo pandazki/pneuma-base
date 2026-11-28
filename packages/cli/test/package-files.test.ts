@@ -40,8 +40,10 @@ describe('the package files', () => {
   })
 
   it('give npx pneuma-base, which makes a library, puts into it and serves its UI', async () => {
-    expect(run('npx', ['--no', '--', 'pneuma-base', 'init', 'lib'])).toContain('建成库')
-    expect(run('npx', ['--no', '--', 'pneuma-base', '--library', 'lib', 'put', '-', '--to', 'notes/a.md', '--made'], '# 一页\n')).toContain('已放入 notes/a.md')
+    run('npx', ['--no', '--', 'pneuma-base', 'init', 'lib'])
+    expect(readdirSync(join(project, 'lib'))).toContain('PNEUMA-BASE.md')
+    run('npx', ['--no', '--', 'pneuma-base', '--library', 'lib', 'put', '-', '--to', 'notes/a.md', '--generated'], '# 一页\n')
+    expect(readFileSync(join(project, 'lib/notes/a.md'), 'utf8')).toBe('# 一页\n')
     const viewer = spawn('npx', ['--no', '--', 'pneuma-base', 'view', 'lib', '--no-open', '--port', '0'], { cwd: project, env })
     try {
       const url = await new Promise<string>((resolve, reject) => {
@@ -83,7 +85,7 @@ describe('the package files', () => {
     try {
       const r = spawnSync('npx', ['--no', '--', 'pneuma-base', 'storage', 'list'], { cwd: project, env, encoding: 'utf8' })
       expect(r.status).toBe(1)
-      expect(r.stderr).toBe(`这个 pneuma-base 是给 ${other === 'darwin-arm64' ? 'Apple 芯片的 Mac (darwin-arm64)' : other} 构建的，这台机器是 ${here}。\n`)
+      expect(r.stderr).toBe(`此 pneuma-base 为 ${other === 'darwin-arm64' ? 'Apple 芯片的 Mac（darwin-arm64）' : other} 构建，本机为 ${here}。\n`)
     } finally {
       writeFileSync(file, built)
     }

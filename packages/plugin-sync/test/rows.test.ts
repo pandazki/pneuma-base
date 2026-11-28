@@ -15,7 +15,7 @@ let target: string
 
 const owner = (args: string[]) => m.run([...args, '--library', lib])
 const agent = (args: string[], input?: string) => ok(m.run(['--library', lib, '--as', 'claude-code', '--session', 's-rows', ...args], input === undefined ? {} : { input }))
-const put = (path: string, content: string) => agent(['put', '-', '--to', path, '--made'], content)
+const put = (path: string, content: string) => agent(['put', '-', '--to', path, '--generated'], content)
 const local = {
   write: (path: string, content: string) => write(lib, path, content),
   read: (path: string) => read(lib, path),
@@ -45,8 +45,8 @@ beforeAll(() => {
   lib = join(tempDir(), 'lib')
   target = join(tempDir(), 'target')
   ok(m.run(['init', lib, '--bare']))
-  ok(owner(['plugin', 'add', 'sync']))
-  ok(owner(['sync', 'target', 'set', '--kind', 'dir', '--to', target]))
+  ok(owner(['plugin', 'enable', 'sync']))
+  ok(owner(['sync', 'target', 'set', '--kind', 'folder', '--to', target]))
   // Every content written here is its own, so that no row's content is already kept at another row's path.
   for (const name of ['push', 'pull', 'conflict', 'move']) put(`${name}.md`, `${name} base`)
   sync()
@@ -54,7 +54,7 @@ beforeAll(() => {
 
 describe('one row per kind of step', () => {
   it('unchanged / unchanged: nothing moves, and sync now says so', () => {
-    expect(ok(owner(['sync', 'now'])).stdout).toContain('两边一样，什么都没动')
+    expect(ok(owner(['sync', 'now'])).stdout).toContain('两侧一致，无变更')
     expect(remote.read('push.md')).toBe('push base')
   })
 
@@ -115,7 +115,7 @@ describe('a run the target fails in the middle of', () => {
     const failed = owner(['sync', 'now'])
     expect(failed.code).toBe(2)
     expect(failed.stdout).toContain('拒绝（target-failed）')
-    expect(failed.stdout).toContain('内容没有丢')
+    expect(failed.stdout).toContain('内容未丢失')
     expect(existsSync(join(target, 'b/x.md'))).toBe(false)
     expect(ok(owner(['sync', 'status'])).stdout).toMatch(/上次同步：.*中断/)
 

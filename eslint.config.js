@@ -161,7 +161,7 @@ const MAY_TOUCH_FILES = {
   'packages/plugin-ledger/src/conversation.ts': "agents' conversation transcripts, outside the library",
   'packages/plugin-ledger/src/export-file.ts': 'the audit export the owner names: one file outside the library, written page by page',
   'packages/viewer/src/server/index.ts': "the built pages and the files of a plugin's ui folder, outside every library",
-  'packages/viewer/src/server/files.ts': "the files of a plugin's ui folder, and a stamp of this machine's pairings under $PNEUMA_BASE_HOME",
+  'packages/viewer/src/server/files.ts': "the files of a plugin's ui folder, a stamp of this machine's pairings under $PNEUMA_BASE_HOME, and the scratch file an action that saves a file has its command write in the system's temporary folder",
   'packages/cli/src/main.ts': 'whether the first word a person typed names a folder, to open the management UI on it',
   'packages/cli/src/verbs.ts': "whether a path an agent typed names a file or a folder, before the kernel parses it",
   'packages/cli/src/scaffold.ts': 'the plugin project plugin new writes where the person says, outside every library, and the standard it points to',

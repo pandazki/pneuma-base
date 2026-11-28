@@ -40,15 +40,15 @@ export function kernelAction(name: KernelCommandName, label: string, opts: FormO
 
 /** Registering a directory nobody looked into as one thing the owner brought: put of what is already there. */
 export const asOneThing = (path: LibraryPath): Action => ({
-  label: '登记成一样东西',
+  label: '登记为条目',
   tone: 'default',
   confirm: null,
   inputs: [],
-  call: { face: 'agent', verb: 'put', request: { kind: 'register', path, origin: { kind: 'brought', source: null, by: 'owner' }, note: null } },
+  call: { face: 'agent', verb: 'put', request: { kind: 'register', path, origin: { kind: 'imported', source: null, by: 'owner' }, note: null } },
 })
 
 /** Leaving a directory alone: it joins the library's noise, so nothing mentions it again. */
-export const leaveAlone = (path: LibraryPath): Action => kernelAction('noise add', '不用管', { fixed: { path, name: false } })
+export const leaveAlone = (path: LibraryPath): Action => kernelAction('ignore add', '忽略', { fixed: { path, name: false } })
 
 const PROVIDERS: Record<string, string> = { icloud: 'iCloud', dropbox: 'Dropbox', googledrive: 'Google Drive', onedrive: 'OneDrive', box: 'Box' }
 export const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -66,7 +66,7 @@ export const elsewhereText = (facet: Record<string, unknown>): string =>
 /** Where content that is not on this machine is, by the sync service's name, and how big it is there. */
 export function elsewhereWords(provider: string | null, size: number | null): string {
   const where = provider === null ? null : (PROVIDERS[provider] ?? provider)
-  return [where === null ? '内容不在这台机器上' : `内容在 ${where} 上`, size === null ? null : sizeText(size)].filter((s) => s !== null).join('，')
+  return [where === null ? '内容未下载' : `内容位于 ${where}`, size === null ? null : sizeText(size)].filter((s) => s !== null).join('，')
 }
 
 /**
@@ -75,8 +75,8 @@ export function elsewhereWords(provider: string | null, size: number | null): st
  */
 export const placeActions = (): { actions: Action[]; rename: Action } => ({
   actions: [
-    { label: '归档', tone: 'default', confirm: null, inputs: [], call: { face: 'agent', verb: 'archive', request: { kind: 'archive', path: '{path}' } }, icon: 'archive', key: 'e' },
-    { label: '挪到', tone: 'default', confirm: null, inputs: [field('to', '新的库内路径', { value: '{path}' })], call: { face: 'agent', verb: 'put', request: { kind: 'move', from: '{path}', to: '{to}' } }, icon: 'folder-input', key: 'm' },
+    { label: '归档', tone: 'default', confirm: null, inputs: [], call: { face: 'agent', verb: 'archive', request: { kind: 'archive', path: '{path}' } }, as: 'icon', icon: 'archive', key: 'e' },
+    { label: '移动', tone: 'default', confirm: null, inputs: [field('to', '新路径', { value: '{path}' })], call: { face: 'agent', verb: 'put', request: { kind: 'move', from: '{path}', to: '{to}' } }, as: 'icon', icon: 'folder-input', key: 'm' },
   ],
-  rename: { label: '重新命名', tone: 'default', confirm: null, inputs: [field('name', '新的名字')], call: { face: 'agent', verb: 'put', request: { kind: 'move', from: '{path}', to: '{in}{name}' } }, icon: 'pencil' },
+  rename: { label: '重命名', tone: 'default', confirm: null, inputs: [field('name', '新名称')], call: { face: 'agent', verb: 'put', request: { kind: 'move', from: '{path}', to: '{in}{name}' } }, as: 'icon', icon: 'pencil' },
 })

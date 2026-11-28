@@ -14,23 +14,24 @@ export type CheckName = (typeof CHECKS)[number]
 
 /** What each check holds a plugin to, as the standard says it. */
 export const RULES: Record<CheckName, string> = {
-  loads: '插件目录的 index.js 缺省导出一个插件，按这个 pneuma-base 的插件契约写（contract 是 sdk 的 CONTRACT，现在是 2），过得了装载时的核对',
-  names: '主人命令以「<插件名> 」开头，视图编号以「<插件名>.」开头，插件名不是命令行或内核自己用的词，命令名不是内核的命令',
-  cognition: '认知段以「## <它带来什么>：<怎么用>」开头，第一句是「这个库装了**<标题>**插件。」，命令示例写成 pneuma-base @{{授权的名字}} …，只用 {{授权的名字}} 这一个占位，不重复内核管的规矩',
-  examples: '认知段里的每条命令示例，在一个新库上做完准备步骤之后，照原样在 agent 的会话里能跑，退出码是 0',
-  hooks: '每个钩子在空库上、在每个动词之后都不抛错，答复里没有这个插件的问题；登记已在库里的文件（插件收到的指纹是 null，凭 now.token 认它）和登记一个目录这一层的散文件（插件收到一次 register-files）也一样',
-  writes: '插件只往库里自己名下的 .pneuma-base/<插件名>/ 写；那里已有的文件不改写、不删（声明为配置的文件、缓存目录和破坏性的主人命令除外）；视图和条目面板里的一节什么都不写',
-  bounded: '插件只在自己的记录指到的地方问存储，一次只取一页：一个钩子或命令里，一览和探查库的内容合起来不超过 1000 条；没人登记过的目录只在它自己那里带预算地探查，不一览、不取内容、不读，它下面的地方什么都不问',
-  cache: '缓存删掉什么都不丢：删掉它在本机的缓存目录、声明为缓存的目录和它记录处的行前后，找、看、查的答复一样',
-  catchup: '装进一个已经有登记过的东西的库，补上之后它知道它们：对装上之前放进来的东西，找、看、查和条目面板里它的答复，和装着它时放进来的一样',
-  blocks: '视图和条目面板里的一节答复的都是合法的块，钩子不抛错；每个动作调的是一个动词或这个库里在的一条主人命令，参数合它的参数表；custom 块带 text，用字说出它画的；custom 块指向的页面在插件的 ui 目录里，取得到，载入 /plugin-kit/frame.js，脚本里调用 pneuma.onData',
-  remove: '卸下插件之后库照常能用：配置和说明里没有它，动词照常答复、没有问题，界面没有它的视图，内容一样不少',
+  loads: '插件目录的 index.js 默认导出一个插件，符合当前 pneuma-base 的插件契约（contract 为 sdk 的 CONTRACT，当前为 2），并通过加载时的校验',
+  names: '所有者命令以「<插件名称> 」开头，视图 ID 以「<插件名称>.」开头，插件名称不是命令行或内核的保留词，命令名称不是内核命令',
+  cognition: '认知段以「## <功能>：<用法>」开头，第一句为「此资料库已启用**<标题>**插件。」，命令示例写成 pneuma-base @{{授权的名字}} …，仅使用 {{授权的名字}} 这一个占位符，不重复内核负责的规则',
+  examples: '认知段中的每条命令示例，在新资料库上完成准备步骤后，按原样在 Agent 会话中运行，退出码为 0',
+  hooks: '每个钩子在空资料库上和每个基本命令之后均不抛出错误，答复中没有该插件报告的问题；登记资料库中已有的文件（插件收到的内容哈希为 null，凭 now.token 识别）和登记目录第一层的未登记文件（插件收到一次 register-files）时同样如此',
+  writes: '插件只写入资料库中自己的目录 .pneuma-base/<插件名称>/；不改写、不删除其中已有的文件（声明为配置的文件、缓存目录和破坏性所有者命令除外）；生成视图和条目面板中的分节时不写入任何内容',
+  bounded: '插件只向存储查询自身记录指向的位置，每次只取一页：一个钩子或命令中，对资料库内容的一览和探查合计不超过 1000 条；未登记的目录只在目录本身做有预算的探查，不做一览、不获取内容、不读取，其下的位置一概不查询',
+  cache: '删除缓存不丢失任何信息：删除插件在本机的缓存目录、声明为缓存的目录和其记录区的行，前后 find、inspect、check 的答复相同',
+  catchup: '在已有登记条目的资料库中启用后，经补录即可识别这些条目：对启用前添加的条目，find、inspect、check 和条目面板中插件的答复，与启用后添加的条目相同',
+  blocks: '视图和条目面板中的分节返回的均为合法的块，钩子不抛出错误；每个操作调用一个基本命令或此资料库中存在的所有者命令，参数符合其参数表；custom 块带 text，以文字描述其绘制的内容；custom 块指向的页面位于插件的 ui 目录中，可以获取，载入 /plugin-kit/frame.js，并在脚本中调用 pneuma.onData',
+  remove: '停用插件后资料库正常可用：配置和说明中不再有该插件，基本命令正常答复且无问题，界面不再列出其视图，内容无缺失',
 }
 
 /** Kernel rules a cognition section must not repeat: each phrase, and the rule it belongs to. */
 const KERNEL_PHRASES: readonly [phrase: string, rule: string][] = [
-  ['--include-archived', '找和查默认不带归档的东西'],
-  ['在库外写好', '在库外写好再放进来'],
+  ['--include-archived', '搜索和检查默认不包含已归档的条目'],
+  ['在库外写好', '在外部写好后再添加'],
+  ['在外部写好', '在外部写好后再添加'],
 ]
 
 const GRANT_PLACEHOLDER = '{{授权的名字}}'
@@ -75,7 +76,7 @@ export async function conformance(subject: Subject, options: ConformanceOptions 
   const loaded = dir === null ? (subject as { builtin: Plugin }).builtin : await importPlugin(dir)
   if (typeof loaded === 'string') {
     fail('loads', loaded)
-    for (const c of CHECKS.slice(1)) fail(c, '没有查：插件没装上')
+    for (const c of CHECKS.slice(1)) fail(c, '未检查：插件加载失败')
     return report(dir ?? '?', found, reminders)
   }
   const plugin = loaded
@@ -90,7 +91,7 @@ export async function conformance(subject: Subject, options: ConformanceOptions 
     fail('loads', error instanceof Error ? error.message : String(error))
   }
   if ((found.get('loads') as string[]).length > 0) {
-    for (const c of ['examples', 'hooks', 'writes', 'bounded', 'cache', 'catchup', 'blocks', 'remove'] as const) if ((found.get(c) as string[]).length === 0) fail(c, '没有查：插件没装上')
+    for (const c of ['examples', 'hooks', 'writes', 'bounded', 'cache', 'catchup', 'blocks', 'remove'] as const) if ((found.get(c) as string[]).length === 0) fail(c, '未检查：插件加载失败')
   }
   return report(plugin.name, found, reminders)
 }
@@ -99,10 +100,10 @@ async function importPlugin(dir: string): Promise<Plugin | string> {
   try {
     const module = (await import(pathToFileURL(join(dir, 'index.js')).href)) as { default?: unknown }
     const p = module.default as Plugin | undefined
-    if (typeof p !== 'object' || p === null || typeof p.name !== 'string') return `${dir}/index.js 的缺省导出不是插件`
+    if (typeof p !== 'object' || p === null || typeof p.name !== 'string') return `${dir}/index.js 的默认导出不是插件`
     return p
   } catch (error) {
-    return `载入 ${dir}/index.js 时出错：${error instanceof Error ? error.message : String(error)}`
+    return `载入 ${dir}/index.js 失败：${error instanceof Error ? error.message : String(error)}`
   }
 }
 
@@ -116,20 +117,20 @@ function report(plugin: string, found: Problems, reminders: string[]): Report {
     lines.push(`  ${c.ok ? '通过' : '不通过'}  ${c.name}`)
     if (!c.ok) lines.push(...c.problems.map((p) => `      - ${p}`), `      规则：${c.rule}`)
   }
-  if (reminders.length > 0) lines.push('查不了、要自己看的：', ...reminders.map((r) => `  - ${r}`))
+  if (reminders.length > 0) lines.push('需人工检查：', ...reminders.map((r) => `  - ${r}`))
   return { plugin, ok: checks.every((c) => c.ok), checks, reminders, text: lines.join('\n') }
 }
 
 // ---- what can be read off the plugin object ----
 
 function checkNames(p: Plugin, fail: (c: CheckName, what: string) => void): void {
-  if (RESERVED_PLUGIN_NAMES.includes(p.name)) fail('names', `插件名 ${p.name} 是命令行或内核自己用的词`)
+  if (RESERVED_PLUGIN_NAMES.includes(p.name)) fail('names', `插件名称 ${p.name} 为命令行或内核保留`)
   for (const c of p.ownerCommands) {
-    if (!c.name.startsWith(`${p.name} `)) fail('names', `主人命令「${c.name}」不以「${p.name} 」开头`)
-    if ((KERNEL_COMMAND_NAMES as readonly string[]).includes(c.name)) fail('names', `主人命令「${c.name}」是内核自己的命令`)
+    if (!c.name.startsWith(`${p.name} `)) fail('names', `所有者命令「${c.name}」未以「${p.name} 」开头`)
+    if ((KERNEL_COMMAND_NAMES as readonly string[]).includes(c.name)) fail('names', `所有者命令「${c.name}」为内核命令`)
   }
-  for (const v of p.views ?? []) if (!v.id.startsWith(`${p.name}.`)) fail('names', `视图「${v.id}」不以「${p.name}.」开头`)
-  for (const k of p.statements) if (!/^\S+$/u.test(k)) fail('names', `「说」的种类「${k}」是空的或带空白`)
+  for (const v of p.views ?? []) if (!v.id.startsWith(`${p.name}.`)) fail('names', `视图「${v.id}」未以「${p.name}.」开头`)
+  for (const k of p.statements) if (!/^\S+$/u.test(k)) fail('names', `say 类型「${k}」为空或含空白`)
 }
 
 /** The command examples of a cognition text: each line of an sh block, continuations joined, comments dropped; and each inline command with no placeholder but the grant. */
@@ -148,22 +149,23 @@ export function examplesOf(text: string): string[] {
 
 function checkCognition(p: Plugin, fail: (c: CheckName, what: string) => void, reminders: string[]): void {
   if (p.cognition === null) {
-    reminders.push('它没有认知段：agent 读说明时不知道它在。只有不给 agent 用的插件才这样。')
+    reminders.push('该插件没有认知段：Agent 读取说明时不会知道它的存在。仅不供 Agent 使用的插件可以没有认知段。')
     return
   }
   const { title, text } = p.cognition
   const [heading = '', ...rest] = text.trimStart().split('\n')
-  if (!/^## \S.*：\S/u.test(heading)) fail('cognition', `第一行是「${heading}」，不是「## <它带来什么>：<怎么用>」这样的标题`)
-  const opening = `这个库装了**${title}**插件。`
-  if (!rest.join('\n').trimStart().startsWith(opening)) fail('cognition', `标题之后的第一句不是「${opening}」`)
-  for (const m of text.matchAll(/\{\{([^{}]*)\}\}/g)) if (m[0] !== GRANT_PLACEHOLDER) fail('cognition', `用了占位 ${m[0]}；能用的只有 ${GRANT_PLACEHOLDER}`)
+  if (!/^## \S.*：\S/u.test(heading)) fail('cognition', `第一行为「${heading}」，不是「## <功能>：<用法>」形式的标题`)
+  const opening = `此资料库已启用**${title}**插件。`
+  const body = rest.join('\n').trimStart()
+  if (!body.startsWith(opening)) fail('cognition', `标题后的第一句不是「${opening}」`)
+  for (const m of text.matchAll(/\{\{([^{}]*)\}\}/g)) if (m[0] !== GRANT_PLACEHOLDER) fail('cognition', `使用了占位符 ${m[0]}；仅可使用 ${GRANT_PLACEHOLDER}`)
   const commands = [...text.matchAll(/(?:^|[`\n|]\s*)(pneuma-base\s[^\n`]*)/g)].map((m) => (m[1] as string).trim())
-  for (const c of commands) if (!c.startsWith(`pneuma-base @${GRANT_PLACEHOLDER} `)) fail('cognition', `命令「${c}」没有写成 pneuma-base @${GRANT_PLACEHOLDER} …`)
-  for (const [phrase, rule] of KERNEL_PHRASES) if (text.includes(phrase)) fail('cognition', `写了「${phrase}」：「${rule}」是内核的规矩，说明里内核已经说了`)
+  for (const c of commands) if (!c.startsWith(`pneuma-base @${GRANT_PLACEHOLDER} `)) fail('cognition', `命令「${c}」未写成 pneuma-base @${GRANT_PLACEHOLDER} …`)
+  for (const [phrase, rule] of KERNEL_PHRASES) if (text.includes(phrase)) fail('cognition', `包含「${phrase}」：「${rule}」是内核规则，说明中已由内核给出`)
   reminders.push(
-    '认知段许诺的不超出插件真做的（K6）：每句「会」「能」都要有代码在做。',
-    '不重复内核和别的插件管的规矩：归档、找和查不带归档、在库外写好再放、不要覆盖已有的东西。',
-    '说清 agent 不该做、做不了的（比如只有主人能开的开关），和出了问题该告诉主人还是重试。',
+    '认知段的承诺不超出插件的实际行为（K6）：每句「会」「能」都需有代码实现。',
+    '不重复内核和其他插件负责的规则：归档、搜索和检查不包含已归档条目、在外部写好后再添加、不覆盖已有条目。',
+    '写明 Agent 不应做和无法做的事（例如仅所有者可开启的开关），以及出现问题时应告知所有者还是重试。',
   )
 }
 
@@ -226,13 +228,13 @@ async function checkLibrary(p: Plugin, install: Install, options: ConformanceOpt
   try {
     if ('plugins' in install) {
       const r = await sb.run(['plugin', 'install', install.plugins[0] as string, '--json'])
-      if (r.json?.outcome !== 'done') return fail('loads', `plugin install 没有装上：${r.json?.text ?? r.stderr}`)
+      if (r.json?.outcome !== 'done') return fail('loads', `plugin install 失败：${r.json?.text ?? r.stderr}`)
     }
     const listed = (await sb.run(['plugin', 'list', '--json'])).json?.data?.plugins?.find((x: { name: string }) => x.name === p.name)
-    if (listed === undefined) return fail('loads', `plugin list 里没有 ${p.name}`)
-    if (listed.failed !== null) return fail('loads', `它没能加载：${listed.failed}`)
-    if (p.contract !== CONTRACT) return fail('loads', `它按插件契约第 ${p.contract} 版写，这个 pneuma-base 的插件契约是第 ${CONTRACT} 版`)
-    if (listed.contract !== p.contract) fail('loads', `plugin list 说它的契约是 ${listed.contract}，它自己写的是 ${p.contract}`)
+    if (listed === undefined) return fail('loads', `plugin list 中没有 ${p.name}`)
+    if (listed.failed !== null) return fail('loads', `加载失败：${listed.failed}`)
+    if (p.contract !== CONTRACT) return fail('loads', `该插件按插件契约第 ${p.contract} 版编写，当前 pneuma-base 的插件契约为第 ${CONTRACT} 版`)
+    if (listed.contract !== p.contract) fail('loads', `plugin list 显示其契约为 ${listed.contract}，插件声明的是 ${p.contract}`)
 
     const own = `.pneuma-base/${p.name}`
     const mine = (r: { problems?: { plugin: string; message: string }[] } | null) => (r?.problems ?? []).filter((x) => x.plugin === p.name).map((x) => x.message)
@@ -244,21 +246,21 @@ async function checkLibrary(p: Plugin, install: Install, options: ConformanceOpt
     const watch = boundedWatch(sb.toolLog, p.name, fail)
 
     // On the empty library: being added and removed, and every hook that needs no content.
-    hooksOn('plugin add（onAdd）', await expectDone(owner(['plugin', 'add', p.name]), 'plugin add', fail))
+    hooksOn('plugin enable（onAdd）', await expectDone(owner(['plugin', 'enable', p.name]), 'plugin enable', fail))
     const viewer = await sb.viewer()
     const empty: Step[] = [
-      { what: '空库上的 find', touches: [], run: () => agent(['find', '符合性']) },
-      { what: '空库上的 check', touches: [], run: () => agent(['check']) },
-      { what: '空库上 inspect 一个不在的路径', touches: [], run: () => agent(['inspect', 'conformance/nothing.md']) },
+      { what: '空资料库上的 find', touches: [], run: () => agent(['find', '符合性']) },
+      { what: '空资料库上的 check', touches: [], run: () => agent(['check']) },
+      { what: '空资料库上 inspect 不存在的路径', touches: [], run: () => agent(['inspect', 'conformance/nothing.md']) },
       ...p.statements.flatMap((kind): Step[] => [
-        { what: `空库上的 say ${kind}`, touches: [], run: () => agent(['say', kind]) },
-        { what: `空库上的 say ${kind} conformance/nothing.md`, touches: [], run: () => agent(['say', kind, 'conformance/nothing.md', '符合性检查']) },
+        { what: `空资料库上的 say ${kind}`, touches: [], run: () => agent(['say', kind]) },
+        { what: `空资料库上的 say ${kind} conformance/nothing.md`, touches: [], run: () => agent(['say', kind, 'conformance/nothing.md', '符合性检查']) },
       ]),
     ]
     await runSteps(sb.library, empty, own, p, options, fail, hooksOn, watch)
-    await checkViews(p, viewer, ['conformance/nothing.md'], '空库上', fail, watch)
-    hooksOn('空库上的 plugin remove（onRemove）', await removeIt(owner, p.name, fail))
-    hooksOn('空库上再 plugin add（onAdd）', await expectDone(owner(['plugin', 'add', p.name]), 'plugin add', fail))
+    await checkViews(p, viewer, ['conformance/nothing.md'], '空资料库上', fail, watch)
+    hooksOn('空资料库上的 plugin disable（onRemove）', await removeIt(owner, p.name, fail))
+    hooksOn('空资料库上再次 plugin enable（onAdd）', await expectDone(owner(['plugin', 'enable', p.name]), 'plugin enable', fail))
 
     await options.setup?.({ sandbox: sb, cwd: sb.work, bin: join(sb.work, '.bin') })
     await addOpener(sb, owner, fail)
@@ -277,44 +279,44 @@ async function checkLibrary(p: Plugin, install: Install, options: ConformanceOpt
     }
     const purge = async () => {
       const action = await purgeAction(viewer)
-      if (action === null) throw new Error('归档页没有「清空归档区」')
+      if (action === null) throw new Error('归档页没有「清空归档」')
       return (await viewer.act(action)).result
     }
     const script: Step[] = [
-      { what: 'put 一个文件', touches: ['conformance/note.md'], run: () => agent(['put', '-', '--to', 'conformance/note.md', '--made', '--note', '符合性检查'], '# 符合性检查\n\n一段文字。\n') },
-      { what: 'put 一个目录', touches: ['conformance/site'], run: () => agent(['put', 'site', '--to', 'conformance/site', '--made']) },
+      { what: 'put 文件', touches: ['conformance/note.md'], run: () => agent(['put', '-', '--to', 'conformance/note.md', '--generated', '--note', '符合性检查'], '# 符合性检查\n\n一段文字。\n') },
+      { what: 'put 目录', touches: ['conformance/site'], run: () => agent(['put', 'site', '--to', 'conformance/site', '--generated']) },
       {
-        what: 'put 登记一个已在库里的文件',
+        what: 'put 登记资料库中已有的文件',
         touches: ['conformance/written.md'],
         run: async () => {
           await written('conformance/written.md', '# 写在库里\n')
-          return agent(['put', 'conformance/written.md', '--made'])
+          return agent(['put', 'conformance/written.md', '--generated'])
         },
       },
       {
-        what: 'put 登记一个目录这一层的散文件',
+        what: 'put 登记目录第一层的未登记文件',
         touches: [`${OPEN_DIR}/loose-a.md`, `${OPEN_DIR}/loose-b.md`],
         run: async () => {
           await written(`${OPEN_DIR}/loose-a.md`, '散文件 a\n')
           await written(`${OPEN_DIR}/loose-b.md`, '散文件 b\n')
-          return agent(['put', OPEN_DIR, '--made'])
+          return agent(['put', OPEN_DIR, '--generated'])
         },
       },
       { what: 'find', touches: [], run: () => agent(['find', '符合性']) },
       { what: 'inspect', touches: [], run: () => agent(['inspect', 'conformance/note.md']) },
       ...p.statements.map((kind): Step => ({ what: `say ${kind}`, touches: [], run: () => agent(['say', kind, 'conformance/site', '符合性检查']) })),
       { what: 'check', touches: [], run: () => agent(['check', '--since', t0]) },
-      { what: '在同一路径 put 不同的内容', touches: ['conformance/note.md'], run: () => agent(['put', '-', '--to', 'conformance/note.md', '--made'], '# 符合性检查\n\n改过的一段文字。\n') },
-      { what: 'put 挪位置', touches: ['conformance/note.md', 'conformance/moved.md'], run: () => agent(['put', 'conformance/note.md', '--to', 'conformance/moved.md']) },
+      { what: '在同一路径 put 不同内容', touches: ['conformance/note.md'], run: () => agent(['put', '-', '--to', 'conformance/note.md', '--generated'], '# 符合性检查\n\n改过的一段文字。\n') },
+      { what: 'put 移动', touches: ['conformance/note.md', 'conformance/moved.md'], run: () => agent(['put', 'conformance/note.md', '--to', 'conformance/moved.md']) },
       { what: 'archive', touches: ['conformance/moved.md', '_archive/conformance/moved.md'], run: () => agent(['archive', 'conformance/moved.md']) },
       { what: 'unarchive', touches: ['conformance/moved.md', '_archive/conformance/moved.md'], run: () => agent(['unarchive', 'conformance/moved.md']) },
-      { what: '归档一个目录', touches: ['conformance/site', '_archive/conformance/site'], run: () => agent(['archive', 'conformance/site']) },
+      { what: '归档目录', touches: ['conformance/site', '_archive/conformance/site'], run: () => agent(['archive', 'conformance/site']) },
       { what: 'archive purge（onPurged）', touches: ['_archive'], run: purge },
-      ...p.ownerCommands.filter((c) => c.readOnly === true && callable(c)).map((c): Step => ({ what: `主人命令 ${c.name}`, touches: [], run: () => owner(c.name.split(' ')) })),
+      ...p.ownerCommands.filter((c) => c.readOnly === true && callable(c)).map((c): Step => ({ what: `所有者命令 ${c.name}`, touches: [], run: () => owner(c.name.split(' ')) })),
       // Confirmed as a person confirms on the page, the one confirmation a sandbox can give.
-      ...p.ownerCommands.filter((c) => c.destructive && callable(c)).map((c): Step => ({ what: `主人命令 ${c.name}`, touches: [], dropsOwn: true, run: async () => (await viewer.act(confirmedCall(c.name))).result })),
+      ...p.ownerCommands.filter((c) => c.destructive && callable(c)).map((c): Step => ({ what: `所有者命令 ${c.name}`, touches: [], dropsOwn: true, run: async () => (await viewer.act(confirmedCall(c.name))).result })),
     ]
-    for (const c of p.ownerCommands.filter((c) => c.destructive && !callable(c))) reminders.push(`破坏性的主人命令 ${c.name} 要参数，没有跑：它只该删、改写插件自己目录里的文件，别处什么都不动。`)
+    for (const c of p.ownerCommands.filter((c) => c.destructive && !callable(c))) reminders.push(`破坏性所有者命令 ${c.name} 需要参数，未运行：该命令应只删除、改写插件自身目录中的文件，不改动其他位置。`)
     await runSteps(sb.library, script, own, p, options, fail, hooksOn, watch)
     const before = await snapshot(sb.library)
     await checkViews(p, viewer, ['conformance/moved.md', 'conformance/site', '_archive/conformance/site'], '', fail, watch)
@@ -348,7 +350,7 @@ async function plantUnregistered(root: string): Promise<void> {
 type ToolCall = { plugin: string; area: string; tool: string; place?: string; entries?: number }
 
 /** The tools that look into a place of the content, as the report names them. */
-const LOOKS: Record<string, string> = { overview: '一览', probe: '探查', content: '取内容', read: '读' }
+const LOOKS: Record<string, string> = { overview: '一览', probe: '探查', content: '获取内容', read: '读取' }
 
 /** Runs a step, then judges what the plugin asked of the content in it, from the lines the step added to the tool log. */
 type Watch = <T>(what: string, run: () => Promise<T>) => Promise<T>
@@ -364,19 +366,19 @@ function boundedWatch(log: string, plugin: string, fail: (c: CheckName, what: st
     const result = await run()
     const asked = (await calls()).slice(before).filter((c) => c.plugin === plugin && c.area === 'content')
     const listed = asked.filter((c) => c.tool === 'overview' || c.tool === 'probe').reduce((n, c) => n + (c.entries ?? 0), 0)
-    if (listed > PAGE) fail('bounded', `${what}时，它一览和探查库的内容共取了 ${listed} 条，多于一页（${PAGE} 条）`)
+    if (listed > PAGE) fail('bounded', `${what}时，插件对资料库内容的一览和探查共获取 ${listed} 条，超过一页（${PAGE} 条）`)
     const inside = asked.flatMap((c) => {
       const dir = UNREGISTERED.find((d) => c.place !== undefined && within(c.place, d))
       // A budgeted probe of the directory itself is how a closed directory is looked at; anything else there or below it is not.
       if (dir === undefined || LOOKS[c.tool] === undefined || (c.tool === 'probe' && c.place === dir)) return []
-      return [`${what}时，它${LOOKS[c.tool]}了没人登记过的目录 ${dir}：${c.place}`]
+      return [`${what}时，插件对未登记的目录 ${dir} 执行${LOOKS[c.tool]}：${c.place}`]
     })
     for (const problem of new Set(inside)) fail('bounded', problem)
     return result
   }
 }
 
-const WORD: Record<Change['change'], string> = { added: '多了出来', changed: '被改写了', removed: '被删掉了' }
+const WORD: Record<Change['change'], string> = { added: '被创建', changed: '被改写', removed: '被删除' }
 
 /** The directory the check's own plugin keeps open, as a ledger's records would: registering it registers the loose files of its level. */
 const OPEN_DIR = 'conformance/open'
@@ -389,8 +391,8 @@ async function addOpener(sb: Sandbox, owner: (args: string[]) => Promise<unknown
   const plugin = { contract: CONTRACT, name: OPENER, cognition: null, storage: [], statements: [], ownerCommands: [] }
   await writeFile(join(dir, 'index.js'), `export default { ...${JSON.stringify(plugin)}, openDirs: async () => [${JSON.stringify(OPEN_DIR)}] }\n`)
   const installed = await sb.run(['plugin', 'install', dir, '--json'])
-  if (installed.json?.outcome !== 'done') return fail('loads', `检查自己用的插件 ${OPENER} 没装上：${installed.json?.text ?? installed.stderr}`)
-  await expectDone(owner(['plugin', 'add', OPENER]), `plugin add ${OPENER}`, fail)
+  if (installed.json?.outcome !== 'done') return fail('loads', `检查所用的插件 ${OPENER} 安装失败：${installed.json?.text ?? installed.stderr}`)
+  await expectDone(owner(['plugin', 'enable', OPENER]), `plugin enable ${OPENER}`, fail)
 }
 
 /** An owner command every argument of which may be left out, so the check can run it as it is. */
@@ -407,23 +409,23 @@ const pick = (o: ConformanceOptions): Pick<SandboxOptions, 'env' | 'timeout' | '
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the command line's JSON, read by the fields each check needs
 function jsonOf(r: Result): any {
-  if (r.json === null) throw new Error(`命令没有给出 JSON（退出码 ${r.code}）：\n${r.stdout}${r.stderr}`)
+  if (r.json === null) throw new Error(`命令未输出 JSON（退出码 ${r.code}）：\n${r.stdout}${r.stderr}`)
   return r.json
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- as above
 async function expectDone(call: Promise<any>, what: string, fail: (c: CheckName, what: string) => void) {
   const r = await call
-  if (r.outcome !== 'done') fail('loads', `${what} 没有做成：${r.text ?? r.reason}`)
+  if (r.outcome !== 'done') fail('loads', `${what} 失败：${r.text ?? r.reason}`)
   return r
 }
 
-/** `plugin remove`, and with `--anyway` when the plugin refuses, as the owner can. */
+/** `plugin disable`, and with `--force` when the plugin refuses, as the owner can. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- as above
 async function removeIt(owner: (args: string[]) => Promise<any>, name: string, fail: (c: CheckName, what: string) => void) {
-  const first = await owner(['plugin', 'remove', name])
-  const r = first.outcome === 'refused' && first.reason === 'plugin-refused' ? await owner(['plugin', 'remove', name, '--anyway']) : first
-  if (r.outcome !== 'done') fail('remove', `plugin remove 没有做成：${r.text ?? r.reason}`)
+  const first = await owner(['plugin', 'disable', name])
+  const r = first.outcome === 'refused' && first.reason === 'plugin-refused' ? await owner(['plugin', 'disable', name, '--force']) : first
+  if (r.outcome !== 'done') fail('remove', `plugin disable 失败：${r.text ?? r.reason}`)
   return r
 }
 
@@ -446,9 +448,9 @@ async function runSteps(
       if (within(c.path, own)) {
         const rel = c.path === own ? '.' : c.path.slice(own.length + 1)
         if (c.change === 'added' || rel === '.' || step.dropsOwn || rewritable.some((r) => within(rel, r))) continue
-        fail('writes', `${step.what}时，它自己目录里已有的 ${c.path} ${WORD[c.change]}`)
+        fail('writes', `${step.what}时，插件自身目录中已有的 ${c.path} ${WORD[c.change]}`)
       } else if (!step.touches.some((t) => within(c.path, t) || t.startsWith(`${c.path}/`))) {
-        fail('writes', `${step.what}时，${c.path} ${WORD[c.change]}，它不在插件自己的目录 ${own}/ 下`)
+        fail('writes', `${step.what}时，${c.path} ${WORD[c.change]}，该路径不在插件自身目录 ${own}/ 下`)
       }
     }
   }
@@ -493,7 +495,7 @@ async function checkViews(p: Plugin, viewer: Viewer, paths: readonly string[], w
     const r = await watch(page.what, page.get)
     for (const x of r.problems.filter((x) => x.plugin === p.name)) fail('blocks', `${page.what}：${x.message}`)
     if (r.outcome !== 'shown') {
-      fail('blocks', `${page.what}没有打开（${r.outcome}）`)
+      fail('blocks', `${page.what}无法打开（${r.outcome}）`)
       continue
     }
     for (const b of allBlocks(r.blocks)) {
@@ -501,10 +503,10 @@ async function checkViews(p: Plugin, viewer: Viewer, paths: readonly string[], w
       const entry = `/plugin-ui/${p.name}/${b.entry.split('/').map(encodeURIComponent).join('/')}`
       const reply = await viewer.get(entry)
       if (!reply.ok) {
-        fail('blocks', `${page.what}里的 custom 块指向 ${b.entry}，取它答复 ${reply.status}`)
+        fail('blocks', `${page.what}中的 custom 块指向 ${b.entry}，获取时返回 ${reply.status}`)
         continue
       }
-      for (const wrong of await pageFaults(viewer, p.name, entry, await reply.text())) fail('blocks', `${page.what}里的 custom 块指向 ${b.entry}：${wrong}`)
+      for (const wrong of await pageFaults(viewer, p.name, entry, await reply.text())) fail('blocks', `${page.what}中的 custom 块指向 ${b.entry}：${wrong}`)
     }
   }
 }
@@ -532,8 +534,8 @@ async function pageFaults(viewer: Viewer, plugin: string, entry: string, html: s
     }),
   )
   return [
-    ...(framed ? [] : [`页没有载入 ${FRAME_SCRIPT}，pneuma 不在：要写 <script src="${FRAME_SCRIPT}"></script>`]),
-    ...(texts.some((t) => /\bonData\b/.test(t)) ? [] : ['页的脚本没有调用 pneuma.onData，收不到块的数据']),
+    ...(framed ? [] : [`页面未载入 ${FRAME_SCRIPT}，pneuma 不可用：需添加 <script src="${FRAME_SCRIPT}"></script>`]),
+    ...(texts.some((t) => /\bonData\b/.test(t)) ? [] : ['页面脚本未调用 pneuma.onData，无法接收块的数据']),
   ]
 }
 
@@ -563,8 +565,8 @@ async function checkCache(
   for (const f of await readdir(rows).catch(() => [] as string[])) if (f === `${p.name}.sqlite` || f.startsWith(`${p.name}.sqlite-`)) await rm(join(rows, f), { force: true })
   const after = await answers()
   for (const [i, [what]] of asks.entries()) {
-    if (first[i] !== again[i]) reminders.push(`${what} 问两次答得不一样，删掉缓存前后没法比，没有查。`)
-    else if (after[i] !== first[i]) fail('cache', `删掉缓存之后，${what} 的答复变了`)
+    if (first[i] !== again[i]) reminders.push(`${what} 两次查询的答复不同，无法比较删除缓存前后的结果，未检查。`)
+    else if (after[i] !== first[i]) fail('cache', `删除缓存后，${what} 的答复发生变化`)
   }
 }
 
@@ -582,25 +584,25 @@ async function checkRemove(
   const before = content(await snapshot(sb.library))
   await removeIt(owner, p.name, fail)
   const config = JSON.parse(await readFile(join(sb.library, '.pneuma-base', 'config.json'), 'utf8')) as { plugins: string[] }
-  if (config.plugins.includes(p.name)) fail('remove', '卸下之后，配置里还有它')
+  if (config.plugins.includes(p.name)) fail('remove', '停用后，配置中仍有该插件')
   const description = await readFile(join(sb.library, 'PNEUMA-BASE.md'), 'utf8')
-  if (p.cognition !== null && description.includes(`这个库装了**${p.cognition.title}**插件`)) fail('remove', '卸下之后，说明里还有它的那一段')
+  if (p.cognition !== null && description.includes(`此资料库已启用**${p.cognition.title}**插件`)) fail('remove', '停用后，说明中仍有其认知段')
   const after = content(await snapshot(sb.library))
-  for (const [path, e] of before) if (after.get(path)?.hash !== e.hash) fail('remove', `卸下之后，${path} 不在了或变了`)
+  for (const [path, e] of before) if (after.get(path)?.hash !== e.hash) fail('remove', `停用后，${path} 已缺失或已修改`)
   const asks: [string, () => Promise<{ outcome?: string; problems: { plugin: string; message: string }[] }>][] = [
     ['find', () => agent(['find', '符合性'])],
     ['check', () => agent(['check'])],
     ['inspect', () => agent(['inspect', 'conformance/moved.md'])],
-    ['put', () => agent(['put', '-', '--to', 'conformance/after.md', '--made'], '卸下之后放进来的。\n')],
+    ['put', () => agent(['put', '-', '--to', 'conformance/after.md', '--generated'], '停用后添加的。\n')],
   ]
   for (const [what, ask] of asks) {
     const r = await ask()
-    if (r.outcome === 'refused') fail('remove', `卸下之后，${what} 被拒绝了`)
-    for (const x of r.problems) fail('remove', `卸下之后，${what} 的答复里有问题：${x.plugin}：${x.message}`)
+    if (r.outcome === 'refused') fail('remove', `停用后，${what} 被拒绝`)
+    for (const x of r.problems) fail('remove', `停用后，${what} 的答复中有问题：${x.plugin}：${x.message}`)
   }
   const state = await viewer.state()
-  for (const v of state.views) if (v.id.startsWith(`${p.name}.`)) fail('remove', `卸下之后，界面还列着视图 ${v.id}`)
-  for (const x of state.problems) fail('remove', `卸下之后，界面报问题：${x.plugin}：${x.message}`)
+  for (const v of state.views) if (v.id.startsWith(`${p.name}.`)) fail('remove', `停用后，界面仍列出视图 ${v.id}`)
+  for (const x of state.problems) fail('remove', `停用后，界面报告问题：${x.plugin}：${x.message}`)
 }
 
 // ---- two more libraries: catching up ----
@@ -618,9 +620,9 @@ const comparable = (answer: unknown) =>
 async function putEarly(sb: Sandbox): Promise<void> {
   await mkdir(join(sb.work, 'early-site'), { recursive: true })
   await writeFile(join(sb.work, 'early-site', 'index.html'), `<h1>${EARLY_WORDS}</h1>\n`)
-  for (const args of [['put', '-', '--to', EARLY_FILE, '--made'], ['put', join(sb.work, 'early-site'), '--to', EARLY_SITE, '--made']]) {
+  for (const args of [['put', '-', '--to', EARLY_FILE, '--generated'], ['put', join(sb.work, 'early-site'), '--to', EARLY_SITE, '--generated']]) {
     const r = await sb.agent(AGENT, SESSION, args, { input: `# ${EARLY_WORDS}\n\n一段文字。\n` })
-    if (r.code !== 0) throw new Error(`放进 ${args[3]} 没有做成：${r.stderr || r.stdout}`)
+    if (r.code !== 0) throw new Error(`添加 ${args[3]} 失败：${r.stderr || r.stdout}`)
   }
 }
 
@@ -647,7 +649,7 @@ async function answersAbout(p: Plugin, sb: Sandbox): Promise<[string, string][]>
  */
 async function checkCatchUp(p: Plugin, install: Install, options: ConformanceOptions, fail: (c: CheckName, what: string) => void, reminders: string[]): Promise<void> {
   if (p.registered !== undefined) {
-    reminders.push('它自己记着库里登记了什么（registered），catchup 没有查。')
+    reminders.push('该插件自行记录资料库的登记内容（registered），未检查 catchup。')
     return
   }
   const heard = await sandbox({ ...pick(options), ...install })
@@ -660,16 +662,16 @@ async function checkCatchUp(p: Plugin, install: Install, options: ConformanceOpt
     await putEarly(late)
     if ('plugins' in install) {
       const r = await late.run(['plugin', 'install', install.plugins[0] as string, '--json'])
-      if (r.json?.outcome !== 'done') return fail('catchup', `plugin install 没有装上：${r.json?.text ?? r.stderr}`)
+      if (r.json?.outcome !== 'done') return fail('catchup', `plugin install 失败：${r.json?.text ?? r.stderr}`)
     }
-    const added = jsonOf(await late.owner(['plugin', 'add', p.name, '--json']))
-    if (added?.outcome !== 'done') return fail('catchup', `plugin add 没有做成：${added?.text ?? ''}`)
-    for (const x of added.problems ?? []) if (x.plugin === p.name) fail('catchup', `plugin add 补上时：${x.message}`)
+    const added = jsonOf(await late.owner(['plugin', 'enable', p.name, '--json']))
+    if (added?.outcome !== 'done') return fail('catchup', `plugin enable 失败：${added?.text ?? ''}`)
+    for (const x of added.problems ?? []) if (x.plugin === p.name) fail('catchup', `plugin enable 补录时：${x.message}`)
     await options.setup?.({ sandbox: late, cwd: late.work, bin: join(late.work, '.bin') })
     const after = await answersAbout(p, late)
     for (const [i, [what, answer]] of first.entries()) {
-      if (again[i]?.[1] !== answer) reminders.push(`${what} 问两次答得不一样，后装上之后没法比，没有查。`)
-      else if (after[i]?.[1] !== answer) fail('catchup', `后装上、补上之后，${what} 的答复和装着它时放进来的不一样`)
+      if (again[i]?.[1] !== answer) reminders.push(`${what} 两次查询的答复不同，无法与后启用的结果比较，未检查。`)
+      else if (after[i]?.[1] !== answer) fail('catchup', `后启用并补录后，${what} 的答复与启用状态下添加时不同`)
     }
   } finally {
     await heard.cleanup()
@@ -683,7 +685,7 @@ async function checkExamples(p: Plugin, install: Install, options: ConformanceOp
   const examples = p.cognition === null ? [] : examplesOf(p.cognition.text)
   if (examples.length === 0) return
   if (process.platform === 'win32') {
-    reminders.push('在 Windows 上没有 sh，认知段的命令示例没有跑。')
+    reminders.push('Windows 上没有 sh，未运行认知段的命令示例。')
     return
   }
   const sb = await sandbox({ bare: true, ...pick(options), ...install })
@@ -695,8 +697,8 @@ async function checkExamples(p: Plugin, install: Install, options: ConformanceOp
     const shim = join(bin, 'pneuma-base')
     await writeFile(shim, `#!/bin/sh\nexec "${process.execPath}" "${sb.cli}" "$@"\n`)
     await chmod(shim, 0o755)
-    const issued = await sb.owner(['grant', 'issue', GRANT, '--agent', AGENT, '--json'])
-    if (issued.json?.outcome !== 'done') throw new Error(`发授权没有做成：${issued.stdout}${issued.stderr}`)
+    const issued = await sb.owner(['grant', 'create', GRANT, '--agent', AGENT, '--json'])
+    if (issued.json?.outcome !== 'done') throw new Error(`新建授权失败：${issued.stdout}${issued.stderr}`)
     await options.setup?.({ sandbox: sb, cwd, bin })
     const env = { ...sb.env, PATH: `${bin}:${sb.env.PATH ?? ''}`, PNEUMA_BASE_SESSION: 'conformance-examples' }
     for (const example of examples) {

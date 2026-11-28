@@ -27,7 +27,7 @@ const time = (f) => {
 const ms = (n) => `${n.toFixed(0)} ms`
 
 cli('init', lib)
-for (const [grant, agent] of [['claude', 'claude-code'], ['codex', 'codex'], ['gemini', 'gemini']]) cli('--library', lib, 'grant', 'issue', grant, '--agent', agent)
+for (const [grant, agent] of [['claude', 'claude-code'], ['codex', 'codex'], ['gemini', 'gemini']]) cli('--library', lib, 'grant', 'create', grant, '--agent', agent)
 const made = writeHistory(lib, { days, sessions, talk, seed: 7 })
 console.log(`library: ${made.things} things, ${made.facts} facts, in ${lib}`)
 

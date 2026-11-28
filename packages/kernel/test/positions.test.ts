@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { agentFace, type AcceptedPut, type InspectResult, type PlaceOverExisting, type Plugin, type PutResult } from '../src/index.js'
 import { fixture, plugin, type Fixture } from './support.js'
 
-const brought = { kind: 'brought', source: null, by: null } as const
+const brought = { kind: 'imported', source: null, by: null } as const
 const sha = (text: string) => createHash('sha256').update(text).digest('hex')
 
 /** A contract-2 plugin that records what it is told, says `notes` is open, and keeps a copy before any replacement. */
@@ -63,7 +63,7 @@ async function setUp() {
 
 // One test per action, walking the kinds of place it meets.
 describe('put, copying in from outside the library', () => {
-  it('replaces a registered file with what it expects there and a directory registered as one thing by the content rule, puts into an open directory and into one nobody looked into, and refuses noise', async () => {
+  it('replaces a registered file with what it expects there and a directory registered as one thing by the content rule, puts into an open directory and into one nobody looked into, and refuses an ignored place', async () => {
     const { f, seen, revised } = await setUp()
     const stdin = (text: string) => ({ kind: 'stdin', content: Buffer.from(text) }) as const
     expect(outcome(await agentFace.put({ kind: 'place', from: stdin('new'), to: 'a.md', origin: brought }, f.ctx))).toBe('accepted')
@@ -84,15 +84,15 @@ describe('put, copying in from outside the library', () => {
     expect(f.read('notes/new.md')).toBe('n')
     expect(outcome(await agentFace.put({ kind: 'place', from: stdin('y'), to: 'closed/y.txt', origin: brought }, f.ctx))).toBe('accepted')
     expect(f.read('closed/y.txt')).toBe('y')
-    expect(outcome(await agentFace.put({ kind: 'place', from: stdin('z'), to: 'node_modules/z.js', origin: brought }, f.ctx))).toBe('refused:noise')
+    expect(outcome(await agentFace.put({ kind: 'place', from: stdin('z'), to: 'node_modules/z.js', origin: brought }, f.ctx))).toBe('refused:ignored')
   })
 })
 
 describe('put, registering what is already there', () => {
-  it("corrects the origin of a registered file and registers a bundle again, reading none of either; registers an open directory's loose files of its one level as files; registers a directory nobody looked into as one thing, reading none of it; refuses noise", async () => {
+  it("corrects the origin of a registered file and registers a bundle again, reading none of either; registers an open directory's loose files of its one level as files; registers a directory nobody looked into as one thing, reading none of it; refuses an ignored place", async () => {
     const { f, seen } = await setUp()
     unreadable(f, 'a.md')
-    expect(outcome(await agentFace.put({ kind: 'register', path: 'a.md', origin: { kind: 'brought', source: 'mail', by: null } }, f.ctx))).toBe('accepted')
+    expect(outcome(await agentFace.put({ kind: 'register', path: 'a.md', origin: { kind: 'imported', source: 'mail', by: null } }, f.ctx))).toBe('accepted')
     const file = seen.at(-1)
     expect(file).toMatchObject({ kind: 'register', path: 'a.md', fingerprint: null, origin: { source: 'mail' } })
     expect(file?.kind === 'register' && file.now.token).toBeTruthy()
@@ -112,12 +112,12 @@ describe('put, registering what is already there', () => {
     expect(seen.at(-1)).toMatchObject({ kind: 'register', path: 'closed', fingerprint: null, now: { kind: 'bundle' } })
     expect(existsSync(join(f.root, 'closed', '.pneuma-item'))).toBe(true)
 
-    expect(outcome(await agentFace.put({ kind: 'register', path: 'node_modules/m.js', origin: brought }, f.ctx))).toBe('refused:noise')
+    expect(outcome(await agentFace.put({ kind: 'register', path: 'node_modules/m.js', origin: brought }, f.ctx))).toBe('refused:ignored')
   })
 })
 
 describe('inspect', () => {
-  it('gives a registered file as storage says it is, its content unread; a bundle and an open directory with their first level; a directory nobody looked into probed within a budget, with the project markers at its top; noise as noise, and by which rule', async () => {
+  it('gives a registered file as storage says it is, its content unread; a bundle and an open directory with their first level; a directory nobody looked into probed within a budget, with the project markers at its top; an ignored place as ignored, and by which rule', async () => {
     const { f } = await setUp()
     const inspect = (target: string): Promise<InspectResult> => agentFace.inspect({ target }, f.ctx)
     unreadable(f, 'a.md')
@@ -141,12 +141,12 @@ describe('inspect', () => {
     expect(closed.place?.kind === 'closed' && closed.place.exceeded).toBe(true)
     expect(closed.place?.kind === 'closed' && closed.place.markers).toContain('package.json')
 
-    expect((await inspect('node_modules')).place).toEqual({ kind: 'noise', path: 'node_modules', by: { name: 'node_modules' } })
+    expect((await inspect('node_modules')).place).toEqual({ kind: 'ignored', path: 'node_modules', by: { name: 'node_modules' } })
   })
 })
 
 describe('archive', () => {
-  it('moves a registered file with what it expects at both ends, and a directory registered as one thing; refuses an open directory and one nobody looked into, neither being one thing, and noise', async () => {
+  it('moves a registered file with what it expects at both ends, and a directory registered as one thing; refuses an open directory and one nobody looked into, neither being one thing, and an ignored place', async () => {
     const { f } = await setUp()
     const archive = (path: string) => agentFace.archive({ kind: 'archive', path }, f.ctx)
     expect(await archive('a.md')).toMatchObject({ outcome: 'accepted', from: 'a.md', to: '_archive/a.md', moved: true })
@@ -155,6 +155,6 @@ describe('archive', () => {
     expect((await archive('notes')).outcome).toBe('refused')
     expect((await archive('closed')).outcome).toBe('refused')
     expect(existsSync(join(f.root, 'notes', 'one.md'))).toBe(true)
-    expect(await archive('node_modules/m.js')).toMatchObject({ outcome: 'refused', reason: 'noise' })
+    expect(await archive('node_modules/m.js')).toMatchObject({ outcome: 'refused', reason: 'ignored' })
   })
 })

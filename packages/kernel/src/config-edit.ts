@@ -1,6 +1,6 @@
 // Another program's configuration, edited as text: one entry goes in, every other byte stays where it
 // was, and taking the entry out gives back the text as it was. No parser rewrites the file, so numbers,
-// key order, comments and formatting the owner chose survive. ARCHITECTURE.md「接上一个 agent」.
+// key order, comments and formatting the owner chose survive. ARCHITECTURE.md「连接一个 agent」.
 
 // ---- JSON ----
 
@@ -70,16 +70,16 @@ function locate(text: string, key: string, name: string): Located | { why: strin
   } catch (error) {
     return { why: `不是 JSON：${error instanceof Error ? error.message : String(error)}` }
   }
-  if (!isPlainObject(parsed)) return { why: '最外层不是一个对象' }
+  if (!isPlainObject(parsed)) return { why: '最外层不是对象' }
   const top = objectAt(text, skipSpace(text, 0))
   const holders = top.members.filter((m) => m.key === key)
-  if (holders.length > 1) return { why: `有不止一个 ${key}` }
+  if (holders.length > 1) return { why: `存在多个 ${key}` }
   const member = holders[0]
   if (member === undefined) return { top, servers: null, entry: null }
-  if (!isPlainObject(parsed[key])) return { why: `${key} 不是一个对象` }
+  if (!isPlainObject(parsed[key])) return { why: `${key} 不是对象` }
   const obj = objectAt(text, member.valueStart)
   const entries = obj.members.filter((m) => m.key === name)
-  if (entries.length > 1) return { why: `${key} 里有不止一个 ${name}` }
+  if (entries.length > 1) return { why: `${key} 中存在多个 ${name}` }
   return { top, servers: { member, obj }, entry: entries[0] ?? null }
 }
 
@@ -229,8 +229,8 @@ export type TomlAdd = { outcome: 'added'; text: string; appended: string } | { o
 export function appendToml(text: string | null, table: string, name: string, block: string): TomlAdd {
   const t = text ?? ''
   if (t.includes(block)) return { outcome: 'present' }
-  if (nameIn(name).test(t)) return { outcome: 'taken', why: `已经写着 ${name}` }
-  if (new RegExp(`^\\s*${table}\\s*=`, 'm').test(t)) return { outcome: 'taken', why: `${table} 写成了一行里的表，不能再往里加` }
+  if (nameIn(name).test(t)) return { outcome: 'taken', why: `已存在 ${name}` }
+  if (new RegExp(`^\\s*${table}\\s*=`, 'm').test(t)) return { outcome: 'taken', why: `${table} 为内联表，无法追加内容` }
   const appended = `${t === '' ? '' : t.endsWith('\n') ? '\n' : '\n\n'}${block}`
   return { outcome: 'added', text: `${t}${appended}`, appended }
 }

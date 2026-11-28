@@ -1,6 +1,6 @@
 // Times registering a large directory already in a library, both ways ARCHITECTURE.md「每个动作在每种位置上做什么」 gives:
 // as one thing (`put <dir>`: a glance and the marker), and "everything inside" (`ledger register <dir>
-// --inside`: an overview of each directory, a level at a time). Each runs on its own copy-on-write clone
+// --recursive`: an overview of each directory, a level at a time). Each runs on its own copy-on-write clone
 // of the library (APFS `cp -c`), so the library given is never written. With --lock, every file under the
 // directory is made unreadable in the clone first: a registration that read any content would fail.
 //   node scripts/bench-register.mjs --library <library folder> --dir <path in it> [--lock] [--keep] [--bin <bin.js>]
@@ -41,9 +41,9 @@ function timed(env, args) {
 const files = Number(execFileSync('sh', ['-c', `find "${join(library, dir)}" -type f | wc -l`], { encoding: 'utf8' }).trim())
 console.log(`${dir}: ${files} files${argv.includes('--lock') ? ', each made unreadable in the clones' : ''}`)
 const one = clone('one')
-const asOne = timed(one.env, ['--library', one.lib, 'put', dir, '--brought', '--by', 'owner'])
+const asOne = timed(one.env, ['--library', one.lib, 'put', dir, '--imported', '--by', 'owner'])
 const all = clone('all')
-const inside = timed(all.env, ['--library', all.lib, 'ledger', 'register', dir, '--inside'])
+const inside = timed(all.env, ['--library', all.lib, 'ledger', 'register', dir, '--recursive'])
 const mb = (n) => `${(n / 1024 / 1024).toFixed(0)} MB`
 console.log('| registration | time | peak memory | exit | answer |\n| --- | --- | --- | --- | --- |')
 console.log(`| as one thing | ${asOne.ms.toFixed(0)} ms | ${mb(asOne.rss)} | ${asOne.status} | ${asOne.out.split('\n')[0]?.slice(0, 100)} |`)

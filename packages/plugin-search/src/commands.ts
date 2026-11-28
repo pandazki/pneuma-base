@@ -17,8 +17,8 @@ const usage = (text: string) => refused('usage', text)
 function embedderOf(kind: string, url: string | null, model: string | null): EmbedderConfig | string {
   // A form sends every field; for hash the http ones mean nothing.
   if (kind === 'hash') return { kind }
-  if (url === null) return `--kind http 要写 --url <地址>，比如 http://127.0.0.1:11434。`
-  if (model === null) return '--kind http 要写 --model <模型名>。'
+  if (url === null) return `--kind http 需指定 --url <URL>，例如 http://127.0.0.1:11434。`
+  if (model === null) return '--kind http 需指定 --model <模型名称>。'
   return { kind: 'http', url, model }
 }
 
@@ -37,17 +37,17 @@ async function rebuild(ctx: PluginContext): Promise<OwnerAnswer> {
   try {
     await refresh(index, ctx, { files: 0 })
     const { pending } = await counts(ctx)
-    ctx.pass?.report({ done: 0, total: pending, text: `要重建查找的索引：读 ${pending} 样登记过的东西。` })
+    ctx.pass?.report({ done: 0, total: pending, text: `将重建搜索索引：读取 ${pending} 个已登记条目。` })
     await readPending(ctx, index, { files: Infinity }, undefined, (read) => {
-      ctx.pass?.report({ done: read, total: pending, text: `已读 ${read} / ${pending} 样` })
-      if (stopped()) stop = `停下了：读了 ${read} / ${pending} 样，其余的下次 find 时接着读。`
+      ctx.pass?.report({ done: read, total: pending, text: `已读取 ${read} / ${pending} 个` })
+      if (stopped()) stop = `已停止：已读取 ${read} / ${pending} 个，其余的在下次 find 时继续读取。`
       return stop !== null
     })
     if (config !== null && stop === null) {
       try {
         await embedMissing(index, embedderFor(config, key), (n, total) => {
-          ctx.pass?.report({ done: n, total, text: `按意思：已建 ${n} / ${total} 块的向量` })
-          if (stopped()) stop = `停下了：${n} / ${total} 块有了向量，其余的下次 find 时接着建。`
+          ctx.pass?.report({ done: n, total, text: `语义：已建立 ${n} / ${total} 个分块的向量` })
+          if (stopped()) stop = `已停止：${n} / ${total} 个分块已有向量，其余的在下次 find 时继续建立。`
           return stop !== null
         })
       } catch (error) {
@@ -58,29 +58,29 @@ async function rebuild(ctx: PluginContext): Promise<OwnerAnswer> {
     index.close()
   }
   const s = await statusOf(ctx)
-  const built = `${stop === null ? '已重建索引' : '索引重建了一部分'}：${s.files} 个文件，其中文本 ${s.textFiles} 个，${s.chunks} 块。`
-  if (failure !== null) return refused('embedder-failed', `${built}按意思的向量没建完（${s.vectors} / ${s.chunks} 块）：${failure}`)
-  return done(`${stop ?? ''}${built}${config ? `按意思：${s.vectors} / ${s.chunks} 块有向量。` : ''}`, { ...s, stopped: stop !== null })
+  const built = `${stop === null ? '已重建索引' : '索引已部分重建'}：${s.files} 个文件，其中文本 ${s.textFiles} 个，${s.chunks} 个分块。`
+  if (failure !== null) return refused('embedding-failed', `${built}语义检索的向量未建立完成（${s.vectors} / ${s.chunks} 个分块）：${failure}`)
+  return done(`${stop ?? ''}${built}${config ? `语义：${s.vectors} / ${s.chunks} 个分块已有向量。` : ''}`, { ...s, stopped: stop !== null })
 }
 
 export const SET_EMBEDDER = defineCommand({
-  name: 'search embedder set',
-  act: { kind: 'set', object: 'model', name: '嵌入模型' },
-  summary: '设按意思找用的嵌入器：hash，或 OpenAI 兼容的 http 服务',
+  name: 'search embedding set',
+  act: { kind: 'set', object: 'model', name: 'embedding 配置' },
+  summary: '配置语义检索使用的 embedding 服务：hash，或兼容 OpenAI 的 HTTP 服务',
   params: {
     flags: [
       {
         name: 'kind',
-        hint: '种类',
+        hint: '类型',
         kind: 'value',
         required: true,
         options: [
-          { value: 'hash', label: 'hash：特征哈希，不用模型' },
-          { value: 'http', label: 'http：OpenAI 兼容的 /v1/embeddings' },
+          { value: 'hash', label: 'hash：特征哈希，无需模型' },
+          { value: 'http', label: 'http：兼容 OpenAI 的 /v1/embeddings' },
         ],
       },
-      { name: 'url', hint: '地址（http）', kind: 'value', pattern: 'https?://[^\\s/]+\\S*' },
-      { name: 'model', hint: '模型（http）', kind: 'value' },
+      { name: 'url', hint: 'URL（HTTP）', kind: 'value', pattern: 'https?://[^\\s/]+\\S*' },
+      { name: 'model', hint: '模型（HTTP）', kind: 'value' },
     ],
   },
   destructive: false,
@@ -93,34 +93,34 @@ export const SET_EMBEDDER = defineCommand({
     // The key never goes into the library: it is this machine's secret, read when set.
     const key = await ctx.secrets.get(KEY_SECRET)
     const probe = await embedderFor(config, key)
-      .embed(['试一下能不能用'])
+      .embed(['测试连接'])
       .then(() => null)
       .catch((error: unknown) => messageOf(error))
-    const tried = probe === null ? '试了一次，能用。下次 find 时给库里的文本补上向量。' : `不过试了一次没成：${probe}。find 照常按文字找，并报这个问题。`
-    const secret = config.kind === 'http' && key === null ? `服务要密钥时，用 ${SET_KEY} 设，值从标准输入读；它只存在这台机器上，不进库。` : ''
-    return done(`已设好嵌入器：${embedderLabel(config, key !== null)}。${tried}${secret}`, { embedder: config, probe: probe ?? 'ok', key: key !== null })
+    const tried = probe === null ? '测试连接成功。下次执行 find 时为资料库中的文本补充向量。' : `但测试连接失败：${probe}。find 照常进行全文检索，并报告此问题。`
+    const secret = config.kind === 'http' && key === null ? `服务需要密钥时，用 ${SET_KEY} 设置，值从标准输入读取；密钥仅保存在本机，不写入资料库。` : ''
+    return done(`已配置 embedding：${embedderLabel(config, key !== null)}。${tried}${secret}`, { embedding: config, probe: probe ?? 'ok', key: key !== null })
   },
 })
 
 export const searchCommands: OwnerCommand[] = [
   SET_EMBEDDER,
   defineCommand({
-    name: 'search embedder clear',
-    act: { kind: 'removed', name: '嵌入模型' },
-    summary: '清除嵌入器，find 只按文字找',
+    name: 'search embedding clear',
+    act: { kind: 'removed', name: 'embedding 配置' },
+    summary: '清除 embedding 配置，find 仅进行全文检索',
     params: {},
     destructive: false,
     ownerOnly: true,
     setup: true,
     async run(_values, ctx) {
-      if ((await currentEmbedder(ctx)) === null) return done('本来就没配嵌入器。')
+      if ((await currentEmbedder(ctx)) === null) return done('未配置 embedding。')
       await recordEmbedder(ctx, null)
-      return done('已清除嵌入器，find 只按文字找。缓存里的向量下次 find 时删掉。')
+      return done('已清除 embedding 配置，find 仅进行全文检索。缓存中的向量在下次 find 时删除。')
     },
   }),
   defineCommand({
     name: 'search rebuild',
-    summary: '删掉查找的索引，把登记过的东西全部重读一遍',
+    summary: '删除搜索索引，重新读取全部已登记条目',
     params: {},
     destructive: false,
     ownerOnly: false,
@@ -129,7 +129,7 @@ export const searchCommands: OwnerCommand[] = [
   }),
   defineCommand({
     name: 'search status',
-    summary: '查找的索引有多少、待读多少、配了什么嵌入器',
+    summary: '查看搜索索引的规模、待索引数量和 embedding 配置',
     params: {},
     destructive: false,
     ownerOnly: false,

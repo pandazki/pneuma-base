@@ -37,14 +37,14 @@ const entry = site ? listed.find((s) => s.path === site.path) : undefined
 const revised = site ? by('codex').filter((f) => f.kind === 'item.revise' && f.item === site.item) : []
 const otherSites = by('codex').filter((f) => f.kind === 'item.enter' && f.bundle === true)
 const live = entry ? textOf(join(online, entry.site)) : ''
-const held = (pb('ledger', 'held', 'list').data?.copies ?? []).filter((c) => site && c.item === site.item)
+const held = (pb('ledger', 'copies', 'list').data?.copies ?? []).filter((c) => site && c.item === site.item)
 const heldText = held.map((c) => textOf(join(library, c.path))).join('\n')
 const versions = site ? (pb('version', 'list', site.path).data?.versions ?? []) : []
 
 const rows = [
   ['甲把网站作为一个目录放进了库（做出来的）', made.length >= 1, site?.path ?? '没有'],
   ['甲声明了它可以部署', entry !== undefined, entry ? `${entry.path} · ${entry.status}` : '没有'],
-  ['主人打开后它在线', entry?.status === 'online', entry?.url ?? ''],
+  ['主人打开后它在线', entry?.status === 'published', entry?.url ?? ''],
   ['乙说了在做什么', by('codex').some((f) => f.kind === 'said' && f.flavor === 'doing'), by('codex').find((f) => f.kind === 'said')?.text ?? ''],
   ['乙改的是甲的那个网站，不是另做一个', revised.length >= 1 && otherSites.length === 0, `改了 ${revised.length} 次，另放了 ${otherSites.length} 个目录`],
   ['线上的内容是改后的（周日、三点）', /周日/.test(live) && /(三点|3\s*[点:：]|15[:：]00)/.test(live) && !/周六/.test(live), live.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 80)],

@@ -41,10 +41,10 @@ export type ResolvedGrant =
 /** The gate for `@<name>`: the local grant file, its library, and the grant still present in that library's configuration. */
 export async function resolveGrant(home: string, name: string, table: PluginTable): Promise<ResolvedGrant> {
   const file = GRANT_NAME.test(name) ? await readGrantFile(home, name) : null
-  if (!file) return { ok: false, reason: 'no-such-grant', text: `本机没有叫 ${name} 的授权（${grantFilePath(home, name)}）` }
+  if (!file) return { ok: false, reason: 'no-such-grant', text: `本机没有名为 ${name} 的授权（${grantFilePath(home, name)}）` }
   const library = await openLibrary(file.library, table)
-  if (!library) return { ok: false, reason: 'no-library', text: `授权 ${name} 指向的库不在了：${file.library}` }
+  if (!library) return { ok: false, reason: 'no-library', text: `授权 ${name} 指向的资料库不存在：${file.library}` }
   const grant = library.config.grants.find((g) => g.id === file.grant)
-  if (!grant) return { ok: false, reason: 'grant-revoked', text: `授权 ${name} 已被主人撤回` }
+  if (!grant) return { ok: false, reason: 'grant-revoked', text: `授权 ${name} 已被所有者撤销` }
   return { ok: true, library, grant }
 }

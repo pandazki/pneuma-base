@@ -125,26 +125,23 @@ export async function closedAnswers(ctx: Context, dirs: readonly LibraryPath[]):
 }
 
 /** Bringing a file of this machine into the library, as put of a file outside does; the page cannot hand over standard input. */
-const placeAction = (dir: string | null): Action => ({
-  label: '从这台机器放进来',
+export const placeAction = (dir: string | null): Action => ({
+  label: '从本机添加',
   tone: 'default',
   confirm: null,
   inputs: [
-    field('from', '这台机器上的文件', { placeholder: '绝对路径，比如 /Users/me/Downloads/a.pdf' }),
-    field('to', '库内路径', { placeholder: '比如 sources/a.pdf', value: dir === null ? '' : `${dir}/` }),
-    field('source', '出处', { placeholder: '网址、书名或别的出处；不知道就留空' }),
+    field('from', '本机文件', { placeholder: '绝对路径，例如 /Users/me/Downloads/a.pdf' }),
+    field('to', '路径', { placeholder: '例如 sources/a.pdf', value: dir === null ? '' : `${dir}/` }),
+    field('source', '原始来源', { placeholder: 'URL、书名或其他来源；未知时留空' }),
   ],
-  call: { face: 'agent', verb: 'put', request: { kind: 'place', from: { kind: 'file', path: '{from}' }, to: '{to}', origin: { kind: 'brought', source: '{source}', by: null } } },
-  as: 'icon',
-  icon: 'plus',
-  key: 'n',
+  call: { face: 'agent', verb: 'put', request: { kind: 'place', from: { kind: 'file', path: '{from}' }, to: '{to}', origin: { kind: 'imported', source: '{source}', by: null } } },
 })
 
 // Where a row carries answers the name keeps its room: the size, or what a look found, gives way first.
 const FILE_COLUMNS = [
-  { key: 'name', label: '名字' },
+  { key: 'name', label: '名称' },
   { key: 'size', label: '大小', optional: true },
-  { key: 'modified', label: '改于', optional: true },
+  { key: 'modified', label: '修改时间', optional: true },
 ]
 
 /**
@@ -158,11 +155,11 @@ export async function filesPage(params: Record<string, string>, { ctx }: ViewerC
   const input = params.dir ?? ''
   const dir = input === '' ? null : parseLibraryPath(root, input)
   if (input !== '' && (dir === null || regionOf(dir) !== 'content')) {
-    return shown('文件', input, [{ kind: 'empty', title: '这个文件夹不在库的内容里', hint: null }])
+    return shown('文件', input, [{ kind: 'empty', title: '该文件夹不属于资料库内容', hint: null }])
   }
   const sorting = sortingOf(params.sort)
   const level = await levelPage(root, dir ?? '', params, rows, 'files', new Set(dir === null ? [DESCRIPTION_FILE, ARCHIVE_DIR] : []), 'main', sorting)
-  if (level === null) return shown('文件', input, [{ kind: 'empty', title: '没有这个文件夹', hint: input }])
+  if (level === null) return shown('文件', input, [{ kind: 'empty', title: '文件夹不存在', hint: input }])
   const store = storageOf(root)
   const folders = level.listed.filter((l) => l.kind === 'folder').map((l) => l.entry.place)
   // Inside a thing every folder is part of it, and with no plugin keeping records a folder is only a folder; elsewhere one with nothing registered in it is closed.
@@ -182,27 +179,27 @@ export async function filesPage(params: Record<string, string>, { ctx }: ViewerC
       tableRows.push({ key: path, cells: { name: { text: `${name}/`, mono: true, icon: 'folder', link: folderLink(path) }, size: { text: '' }, modified: modified(entry.modified) }, link: folderLink(path), actions: [], ...at })
     } else if (kind === 'folder') {
       const probe = looked.get(path)
-      const found = probe === undefined || isFailure(probe) ? '读不了这个目录' : probeWords(probe)
+      const found = probe === undefined || isFailure(probe) ? '无法读取目录' : probeWords(probe)
       tableRows.push({
         key: path,
-        cells: { name: { text: `${name}/`, mono: true, icon: 'folder-dot', tag: { text: '没登记', tone: 'warn' } }, size: { text: found, muted: true }, modified: modified(entry.modified) },
+        cells: { name: { text: `${name}/`, mono: true, icon: 'folder-dot', tag: { text: '未登记', tone: 'warn' } }, size: { text: found, muted: true }, modified: modified(entry.modified) },
         link: folderLink(path),
         actions: answers.get(path) ?? [],
         ...at,
       })
     } else if (kind === 'other') {
-      tableRows.push({ key: path, cells: { name: { text: name, mono: true, muted: true }, size: { text: '链接或特殊文件，不算库里的东西', muted: true }, modified: modified(entry.modified) }, link: null, actions: [] })
+      tableRows.push({ key: path, cells: { name: { text: name, mono: true, muted: true }, size: { text: '链接或特殊文件，不属于资料库条目', muted: true }, modified: modified(entry.modified) }, link: null, actions: [] })
     } else {
       const placeholder = placeholderOf(entry)
       const named = thingName(name, kind, kind === 'bundle' ? entriesOf(entry) : null)
       const cells = placeholder === null
         ? { name: named, size: { text: kind === 'file' ? sizeText(entry.size ?? 0) : '', muted: true }, modified: modified(entry.modified) }
-        : { name: { ...named, tag: { text: '只有占位', tone: 'warn' as const } }, size: { text: elsewhereText(placeholder), muted: true }, modified: modified(entry.modified) }
+        : { name: { ...named, tag: { text: '未下载', tone: 'warn' as const } }, size: { text: elsewhereText(placeholder), muted: true }, modified: modified(entry.modified) }
       tableRows.push({ key: path, cells, link: itemLink(path), actions: [], ...at })
     }
   }
-  const table: Block = { kind: 'table', columns: FILE_COLUMNS, rows: tableRows, empty: '这个文件夹是空的。把文件放进这个文件夹，或者让 agent 用 put 放进来。', page: level.paging, sorted: sorting, each: placeActions() }
-  return { ...shown('文件', dir, [{ kind: 'actions', head: true, actions: [placeAction(dir)] }, table]), trail: trailOf('文件', dir, folderLink) }
+  const table: Block = { kind: 'table', columns: FILE_COLUMNS, rows: tableRows, empty: '文件夹为空。可将文件拷入此文件夹，或由 Agent 通过 put 添加。', page: level.paging, sorted: sorting, each: placeActions() }
+  return { ...shown('文件', dir, [{ kind: 'actions', head: true, actions: [{ ...placeAction(dir), as: 'icon', icon: 'plus', key: 'n' }] }, table]), trail: trailOf('文件', dir, folderLink) }
 }
 
 /** One page of one folder of `_archive/`, each thing with the path it came from; to take back one, or to purge them all. */
@@ -237,19 +234,19 @@ export async function archivePage(params: Record<string, string>, { ctx }: Viewe
         modified: modified(entry.modified),
       },
       link: itemLink(path),
-      actions: [{ label: '取回', tone: 'default', confirm: null, inputs: [], call: { face: 'agent', verb: 'archive', request: { kind: 'unarchive', path } }, as: 'icon', icon: 'archive-restore' }],
+      actions: [{ label: '取消归档', tone: 'default', confirm: null, inputs: [], call: { face: 'agent', verb: 'archive', request: { kind: 'unarchive', path } }, as: 'icon', icon: 'archive-restore' }],
       ...(rowPlace(one, false) === null ? {} : { place: rowPlace(one, false) as RowPlace }),
     })
   }
   const any = listed.length > 0 || dir !== ARCHIVE_DIR
-  const purge = { ...kernelAction('archive purge', '清空归档区', { tone: 'danger', confirm: '归档区里的东西会全部被删掉，不能撤回。' }), icon: 'trash-2' as const }
+  const purge = { ...kernelAction('archive purge', '清空归档', { tone: 'danger', confirm: '清空归档？已归档的条目将全部删除，且无法撤销。' }), icon: 'trash-2' as const }
   // Where each lies in the archive is its old path under _archive/, so the old path alone is said.
   const columns = [
-    { key: 'name', label: '原来的路径' },
+    { key: 'name', label: '原路径' },
     { key: 'size', label: '大小', optional: true },
-    { key: 'modified', label: '改于', optional: true },
+    { key: 'modified', label: '修改时间', optional: true },
   ]
-  const table: Block = { kind: 'table', columns, rows: tableRows, empty: '归档区是空的。归档的东西挪到这里，不会被删掉；默认的找和查不带它们。', ...(level ? { page: level.paging } : {}), sorted: sorting }
-  const trail = trailOf('归档区', dir, archiveLink, ARCHIVE_DIR)
-  return { ...shown('归档区', dir === ARCHIVE_DIR ? null : dir, [...(any ? [{ kind: 'actions' as const, head: true as const, actions: [purge] }] : []), table]), trail }
+  const table: Block = { kind: 'table', columns, rows: tableRows, empty: '暂无归档条目。归档的条目移动到此处，不会被删除；默认的搜索和检查不包含已归档条目。', ...(level ? { page: level.paging } : {}), sorted: sorting }
+  const trail = trailOf('已归档', dir, archiveLink, ARCHIVE_DIR)
+  return { ...shown('已归档', dir === ARCHIVE_DIR ? null : dir, [...(any ? [{ kind: 'actions' as const, head: true as const, actions: [purge] }] : []), table]), trail }
 }

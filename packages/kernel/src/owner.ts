@@ -1,14 +1,14 @@
 import { basename } from 'node:path'
 import { catchingUp, catchingUpLine } from './catch-up.js'
 import { makeAddress, resolveAddress } from './address.js'
-import { addressForm, chooseProvider, recordLibrary, type Runnable } from './providers.js'
+import { addressForm, chooseProvider, officialProviders, recordLibrary, type Runnable } from './providers.js'
 import { said, takenBy } from './claims.js'
 import { newConfig, saveConfig, writeDescription } from './library.js'
 import { KERNEL_COMMANDS, type Outcome } from './owner-commands.js'
 import { checkArgs } from './params.js'
 import { performOwner, pluginContext } from './pipeline.js'
 import { askLine } from './requests.js'
-import { agentSign, ownerOnlyRefusal, OWNER_DECIDES, type Env } from './session.js'
+import { agentSign, ownerOnlyRefusal, type Env } from './session.js'
 import { bindProvider, storageOf } from './storage.js'
 import { usageOf, type Actor, type Context, type Instant, type OwnerAct, type OwnerActDone, type OwnerArgs, type OwnerParams, type OwnerResult, type OwnerValues, type Plugin, type PluginName, type PluginTable, type Requested, type Session } from '@pneuma-base/sdk'
 
@@ -98,13 +98,13 @@ async function gated(call: OwnerCall, name: string, gate: Gate, args: OwnerArgs,
     const sign = gate.destructive || gate.ownerOnly ? agentSign(call.env, call.viaGrant, call.ctx.actor) : null
     if (sign !== null) {
       const ask = isAskable(gate) && call.ctx.actor.kind === 'agent' ? askLine(call.ctx, name, args) : null
-      const text = ownerOnlyRefusal(name, gate.destructive ? '会丢数据' : OWNER_DECIDES, sign, ask)
+      const text = ownerOnlyRefusal(name, gate.destructive ? '将丢失数据' : null, sign, ask)
       return { answer: { outcome: 'refused', reason: 'agent-session', text } }
     }
     const checked = checkArgs(name, params, args)
     if ('usage' in checked) return { answer: { outcome: 'refused', reason: 'usage', text: checked.usage } }
-    if (gate.destructive && !(await call.confirm(`「${name}」会丢数据，不能撤回。确认要做吗？`))) {
-      return { answer: { outcome: 'refused', reason: 'not-confirmed', text: '没有得到当面确认，什么都没做。' } }
+    if (gate.destructive && !(await call.confirm(`「${name}」将丢失数据，且无法撤销。确认执行？`))) {
+      return { answer: { outcome: 'refused', reason: 'not-confirmed', text: '未获当面确认，未执行任何操作。' } }
     }
     return body(checked.values)
   }
@@ -129,19 +129,19 @@ export async function initLibrary(
 ): Promise<OwnerResult> {
   const refuse = (reason: string, text: string): OwnerResult => ({ outcome: 'refused', reason, text, problems: [] })
   const sign = agentSign(opts.env ?? {}, false, opts.actor)
-  if (sign !== null) return refuse('agent-session', ownerOnlyRefusal('init', OWNER_DECIDES, sign))
+  if (sign !== null) return refuse('agent-session', ownerOnlyRefusal('init', null, sign))
   const provider = chooseProvider(opts.home, addressForm(address), opts.provider ?? null)
   if ('reason' in provider) return refuse(provider.reason, provider.text)
-  if (await isLibrary(address, provider)) return refuse('already-a-library', `${address} 已经是一个库了`)
+  if (await isLibrary(address, provider)) return refuse('already-a-library', `${address} 已是资料库`)
   const unknown = opts.plugins.filter((name) => !opts.table.has(name))
-  if (unknown.length > 0) return refuse('unknown-plugin', `没有这个插件：${unknown.join('、')}`)
-  // As `plugin add` would refuse each plugin after the first that claims a name an earlier one holds.
+  if (unknown.length > 0) return refuse('unknown-plugin', `插件不存在：${unknown.join('、')}`)
+  // As `plugin enable` would refuse each plugin after the first that claims a name an earlier one holds.
   const chosen = [...new Set(opts.plugins)].map((name) => opts.table.get(name) as Plugin)
   const clashes = chosen.flatMap((p, i) => takenBy(p, chosen.slice(0, i)).map((t) => ({ plugin: p.name, ...t })))
   if (clashes.length > 0) {
-    const what = clashes.map((c) => `插件 ${c.plugin} 的${said(c.claim)}已归插件 ${c.holder}`).join('；')
+    const what = clashes.map((c) => `插件 ${c.plugin} 的${said(c.claim)}已属于插件 ${c.holder}`).join('；')
     const pairs = [...new Set(clashes.map((c) => `${c.holder} 和 ${c.plugin}`))].join('、')
-    return refuse('name-taken', `没有建库：${what}。一个名字只归一个插件，${pairs} 只能选一个。`)
+    return refuse('name-taken', `未创建资料库：${what}。一个名称只能属于一个插件，${pairs} 只能选择其一。`)
   }
   const root = await makeAddress(address)
   bindProvider(root, provider)
@@ -154,7 +154,7 @@ export async function initLibrary(
   const flags = { ...(opts.plugins.length === 0 ? { bare: true as const } : {}), ...(opts.provider ? { provider: [opts.provider] } : {}) }
   const args: OwnerArgs = { positional: [library.root], flags }
   return performOwner(ctx, 'init', args, { destructive: false, readOnly: false, act: { kind: 'created', object: basename(library.root) } }, async () => ({
-    answer: { outcome: 'done', text: `已把 ${library.root} 建成库，存储提供者是 ${provider.name}。说明在 PNEUMA-BASE.md。`, data: { root: library.root, provider: provider.name } },
+    answer: { outcome: 'done', text: `已将 ${library.root} 初始化为资料库，存储提供者为${officialProviders().find((p) => p.name === provider.name)?.summary ?? ` ${provider.name} `}。资料库说明位于 PNEUMA-BASE.md。`, data: { root: library.root, provider: provider.name } },
     problems,
   }))
 }
@@ -167,7 +167,7 @@ async function isLibrary(address: string, provider: Runnable): Promise<boolean> 
   return (await storageOf(root).declaration.read()).token !== null
 }
 
-const NEEDS_LIBRARY = '要用 @<授权名> 或 --library <库的目录> 指明是哪个库。'
+const NEEDS_LIBRARY = '需用 @<授权名称> 或 --library <资料库目录> 指定资料库。'
 
 export const ownerFace = {
   /** The owner commands with these plugins installed: the kernel's, then each plugin's in order. A name already taken is not listed again. */
@@ -212,7 +212,7 @@ export const ownerFace = {
     const kernel = KERNEL_COMMANDS.find((c) => c.name === name)
     const ctx = call.ctx
     if (kernel?.scope === 'machine') return gated(call, name, kernel, args, kernel.params, (values) => kernel.run(values, call))
-    if (ctx.library === null) return kernel ? refuse('no-library', `「${name}」${NEEDS_LIBRARY}`) : refuse('unknown-command', `没有这条主人命令：${name}。插件的命令${NEEDS_LIBRARY}`)
+    if (ctx.library === null) return kernel ? refuse('no-library', `「${name}」${NEEDS_LIBRARY}`) : refuse('unknown-command', `所有者命令 ${name} 不存在。插件命令${NEEDS_LIBRARY}`)
     const bound: LibraryCall = { ...call, ctx }
     if (kernel) return gated(bound, name, kernel, args, kernel.params, (values) => kernel.run(values, bound))
     for (const plugin of ctx.library.plugins) {
@@ -227,6 +227,6 @@ export const ownerFace = {
         return { answer: behind === undefined ? answer : { ...answer, text: `${answer.text}\n${catchingUpLine(behind)}` }, problems }
       })
     }
-    return refuse('unknown-command', `没有这条主人命令：${name}`)
+    return refuse('unknown-command', `所有者命令 ${name} 不存在`)
   },
 }

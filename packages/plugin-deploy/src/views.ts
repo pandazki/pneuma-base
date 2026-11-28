@@ -1,4 +1,4 @@
-// What PneumaSpace adds to the kit's page and item panel, the same for both kinds: its live columns and
+// What PneumaSpace adds to the kit's page and item panel, the same for both kinds: its traffic columns and
 // fields, the release history, a preview of the served page where one can be framed; and its own page,
 // the board (ui/board.html). All of it is drawn from the Seen each kind's `serving` makes of what its
 // API answered. The release history is read-only: which content is online is the library's.
@@ -33,7 +33,7 @@ export type Plane = { requests: string; framed: boolean; visible: string | null;
 
 /** Nothing to say: not drawn. */
 const dash: Cell = { text: '—', muted: true, normal: true }
-const THERE: Record<string, string> = { registered: '在服务', removed: '已撤下，发布记录还在', draft: '建好了，还没发布过', purging: '正在清除' }
+const THERE: Record<string, string> = { registered: '服务中', removed: '已取消发布，发布历史保留', draft: '已创建，未发布', purging: '正在清除' }
 
 const MiB = 1024 * 1024
 const size = (bytes: number) => (bytes >= MiB ? `${(bytes / MiB).toFixed(1)} MiB` : `${(bytes / 1024).toFixed(1)} KiB`)
@@ -41,42 +41,42 @@ const size = (bytes: number) => (bytes >= MiB ? `${(bytes / MiB).toFixed(1)} MiB
 const cell = {
   requests: (s: Seen | null): Cell => {
     const live = s?.live
-    // None is what 没人访问过 says.
+    // None is what 无访问记录 says.
     if (live?.requests == null || (live.requests === 0 && !live.errors)) return dash
-    return { text: `${live.requests}${live.errors ? ` · 错 ${live.errors}` : ''}` }
+    return { text: `${live.requests}${live.errors ? ` · 错误 ${live.errors}` : ''}` }
   },
   lastAccess: (s: Seen | null): Cell => {
     if (!s?.live) return dash
     const at = s.live.lastAccessAt
-    return at === null ? { text: '没人访问过', muted: true } : { text: instant(at), at: instant(at) }
+    return at === null ? { text: '无访问记录', muted: true } : { text: instant(at), at: instant(at) }
   },
 }
 
 /**
  * What the panel says of a site beside its address: its traffic, where PneumaSpace does not have it as
- * it should, and its upload allowance once most of it is used. Which release is live is in 发布记录;
+ * it should, and its upload allowance once most of it is used. Which release is live is in 发布历史;
  * a name someone else holds is the row's mark.
  */
 function fields(plane: Plane, l: Look, s: Seen | null): { label: string; value: Cell }[] {
-  const there: Cell = s === null ? (l.thing.on ? { text: '没有这个应用', muted: true } : dash) : s.status === 'registered' || s.takenBy ? dash : { text: THERE[s.status] ?? s.status }
+  const there: Cell = s === null ? (l.thing.on ? { text: '应用不存在', muted: true } : dash) : s.status === 'registered' || s.takenBy ? dash : { text: THERE[s.status] ?? s.status }
   const full = s?.uploads ? Math.max(s.uploads.used / s.uploads.max, s.uploads.bytes / s.uploads.limit) >= 0.8 : false
   return [
     { label: plane.requests, value: cell.requests(s) },
     { label: '最近访问', value: cell.lastAccess(s) },
-    { label: 'PneumaSpace 里', value: there },
-    ...(s?.uploads ? [{ label: '上传额度', value: { text: `用了 ${s.uploads.used}/${s.uploads.max} 次，包合计 ${size(s.uploads.bytes)}/${size(s.uploads.limit)}`, ...(full ? {} : { normal: true as const }) } }] : []),
+    { label: 'PneumaSpace 状态', value: there },
+    ...(s?.uploads ? [{ label: '上传配额', value: { text: `已用 ${s.uploads.used}/${s.uploads.max} 次，包合计 ${size(s.uploads.bytes)}/${size(s.uploads.limit)}`, ...(full ? {} : { normal: true as const }) } }] : []),
   ]
 }
 
 function itemBlocks(plane: Plane, l: Look, s: Seen | null): Block[] {
-  if (s?.takenBy) return [{ kind: 'text', tone: 'bad', text: `应用名 ${l.site} 在 PneumaSpace 上已经有了：${s.takenBy}。它不归这个库，所以不发布也不撤下它。换一个前缀，或在 PneumaSpace 上处理那个应用。` }]
+  if (s?.takenBy) return [{ kind: 'text', tone: 'bad', text: `应用名称 ${l.site} 在 PneumaSpace 上已存在：${s.takenBy}。该应用不属于此资料库，不发布也不取消发布。请更换应用名称前缀，或在 PneumaSpace 上处理该应用。` }]
   const blocks: Block[] = []
-  if (l.status === 'online' && l.url) blocks.push(plane.framed ? { kind: 'embed', url: l.url, title: `${l.site} 的线上页面`, height: 320 } : { kind: 'text', tone: 'neutral', text: plane.visible ?? '' })
+  if (l.status === 'published' && l.url) blocks.push(plane.framed ? { kind: 'embed', url: l.url, title: `${l.site} 的已发布页面`, height: 320 } : { kind: 'text', tone: 'neutral', text: plane.visible ?? '' })
   const releases = s?.releases ?? []
   if (releases.length > 0) {
     blocks.push({
       kind: 'section',
-      title: '发布记录',
+      title: '发布历史',
       note: null,
       count: releases.length,
       collapse: 'open',
@@ -85,9 +85,9 @@ function itemBlocks(plane: Plane, l: Look, s: Seen | null): Block[] {
           kind: 'timeline',
           entries: releases.map((r) => ({
             at: instant(r.publishedAt),
-            title: { text: `第 ${r.number} 版` },
+            title: { text: `版本 ${r.number}` },
             lines: [],
-            tag: r.number === s?.live?.release ? { text: '线上', tone: 'good' as const } : null,
+            tag: r.number === s?.live?.release ? { text: '当前', tone: 'good' as const } : null,
           })),
         },
       ],
@@ -118,15 +118,15 @@ export function boardText(data: BoardData, requests: string): string {
     [
       `${c.path}：${c.state.text}`,
       c.url ?? (c.site === null ? null : `站点 ${c.site}`),
-      c.release === null ? null : `第 ${c.release} 版`,
-      c.requests === null ? null : `${requests} ${c.requests}${c.errors ? `，错 ${c.errors}` : ''}`,
+      c.release === null ? null : `版本 ${c.release}`,
+      c.requests === null ? null : `${requests} ${c.requests}${c.errors ? `，错误 ${c.errors}` : ''}`,
       c.lastAccessAt === null ? null : `最近访问 ${minute(c.lastAccessAt)}`,
-      c.spark === null ? null : `过去 24 小时每小时的请求 ${c.spark.join(' ')}`,
+      c.spark === null ? null : `过去 24 小时每小时请求数 ${c.spark.join(' ')}`,
     ]
       .filter((part) => part !== null)
       .join(' · ')
-  const on = data.cards.length === 0 ? ['还没有打开开关的站点。'] : [...data.cards.map(card), ...(data.visible === null ? [] : [data.visible])]
-  const off = data.off.length === 0 ? [] : [`开关关着的：${data.off.map((o) => `${o.path}（${o.state.text}）`).join('、')}`]
+  const on = data.cards.length === 0 ? ['暂无开关已开启的站点。'] : [...data.cards.map(card), ...(data.visible === null ? [] : [data.visible])]
+  const off = data.off.length === 0 ? [] : [`开关已关闭：${data.off.map((o) => `${o.path}（${o.state.text}）`).join('、')}`]
   return [...on, ...off].join('\n')
 }
 
@@ -148,7 +148,7 @@ function boardBlock(plane: Plane, all: readonly Look<Seen>[], plugin: string): B
           key: l.thing.id,
           path: l.thing.path,
           site: l.site,
-          url: l.status === 'online' ? l.url : null,
+          url: l.status === 'published' ? l.url : null,
           state: STATUS[l.status],
           release: live?.release ?? null,
           requests: live?.requests ?? null,
@@ -160,11 +160,11 @@ function boardBlock(plane: Plane, all: readonly Look<Seen>[], plugin: string): B
     off: shown.filter((l) => !l.thing.on).map((l) => ({ key: l.thing.id, path: l.thing.path, state: STATUS[l.status] })),
     visible: plane.framed ? null : plane.visible,
   }
-  const picture = plane.framed ? '小图是线上的页面，折线是过去 24 小时每小时的请求' : '地址在新标签页打开'
+  const picture = plane.framed ? '缩略图为已发布的页面，折线为过去 24 小时每小时请求数' : '地址在新标签页中打开'
   return {
     kind: 'section',
     title: '站点',
-    note: `开关开着的站点各一张卡，${picture}；关着的列在后面。`,
+    note: `开关已开启的站点各一张卡片，${picture}；开关已关闭的列在后面。`,
     count: data.cards.length,
     blocks: [{ kind: 'custom', entry: 'board.html', height: data.cards.length > 0 ? 330 : 60, text: boardText(data, plane.requests), data, actions }],
     actions: [],
@@ -174,7 +174,7 @@ function boardBlock(plane: Plane, all: readonly Look<Seen>[], plugin: string): B
 /** The views of a target on `plane`, for the plugin `plugin`. */
 export function viewOf(plane: Plane, plugin: string): TargetView<Seen> {
   return {
-    mark: (l) => (l.detail?.takenBy ? { text: '名字被占用', tone: 'bad', tip: l.detail.takenBy } : null),
+    mark: (l) => (l.detail?.takenBy ? { text: '名称已被占用', tone: 'bad', tip: l.detail.takenBy } : null),
     fields: (l) => fields(plane, l, l.detail),
     item: (l) => itemBlocks(plane, l, l.detail),
     pages: { board: (all) => [boardBlock(plane, all, plugin)] },

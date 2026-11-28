@@ -43,7 +43,7 @@
   </head>
   <body>
     <div class="card wrap">
-      <div class="grid" role="figure" aria-label="最近 30 天每天的放入和归档次数">
+      <div class="grid" role="figure" aria-label="最近 30 天每日的添加和归档次数">
         <div class="months muted" id="months"></div>
         <div class="body">
           <div class="wd faint"><span>一</span><span></span><span>三</span><span></span><span>五</span><span></span><span>日</span></div>
@@ -54,8 +54,8 @@
         </div>
       </div>
       <div class="facts">
-        <div><div class="big" id="total">…</div><div class="label muted">最近 30 天的放入和归档</div></div>
-        <div><div class="big" id="active">…</div><div class="label muted">有活动的天数</div></div>
+        <div><div class="big" id="total">…</div><div class="label muted">最近 30 天的添加和归档</div></div>
+        <div><div class="big" id="active">…</div><div class="label muted">活跃天数</div></div>
         <div><div class="label" id="peak"></div></div>
       </div>
     </div>
@@ -63,7 +63,7 @@
     <script>
       const $ = (id) => document.getElementById(id)
       const tip = $('tip')
-      const label = (d) => `${Number(d.day.slice(5, 7))} 月 ${Number(d.day.slice(8))} 日：${d.count === 0 ? '没有活动' : `${d.count} 次`}`
+      const label = (d) => `${Number(d.day.slice(5, 7))} 月 ${Number(d.day.slice(8))} 日：${d.count === 0 ? '无活动' : `${d.count} 次`}`
       const level = (count, max) => (count === 0 ? 0 : Math.max(1, Math.ceil((4 * count) / max)))
 
       function showTip(cell, text) {
@@ -117,7 +117,7 @@
         $('total').textContent = String(data.total)
         $('active').textContent = String(days.filter((d) => d.count > 0).length)
         const peak = days.reduce((best, d) => (d.count > best.count ? d : best), days[0])
-        $('peak').textContent = peak.count === 0 ? '还没有活动。' : `最忙的一天是 ${label(peak)}`
+        $('peak').textContent = peak.count === 0 ? '暂无活动' : `最活跃的一天：${label(peak)}`
         $('peak').className = 'label muted'
       })
     </script>

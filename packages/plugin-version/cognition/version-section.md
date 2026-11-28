@@ -1,12 +1,12 @@
-## 版本：留住每一版
+## 版本管理：保留每个版本
 
-这个库装了**版本**插件。会反复改、以后可能要回头看旧版的成果（一个网站、一份方案），放进库之后声明它有版本：之后每次放进不同的内容就多一版，内容相同不多记；有人在工具之外改了它，`check` 会把改后的内容记成一版并告诉你。版本是你自己能列出、导出、放回的历史。只有声明过有版本的东西，这个插件才留住旧版。
+此资料库已启用**版本管理**插件。需要反复修改、之后可能回看旧版本的成果（一个网站、一份方案），添加到资料库后启用版本管理：之后每次添加不同的内容即新增一个版本，内容相同则不新增；内容被外部修改时，`check` 将修改后的内容记录为一个版本并报告。版本可由 Agent 列出、导出和恢复。仅启用了版本管理的条目保留旧版本。
 
 ```sh
 pneuma-base @{{授权的名字}} say versioned sites/shop "第一版"
-pneuma-base @{{授权的名字}} put ./shop --to sites/shop --made --note "换了配色"   # 第 2 版，--note 的这句话同时是这一版的说明
-pneuma-base @{{授权的名字}} say version sites/shop "换了配色"   # 也可以事后给当前这一版写说明
+pneuma-base @{{授权的名字}} put ./shop --to sites/shop --generated --note "更换配色"   # 版本 2，--note 的说明同时作为此版本的说明
+pneuma-base @{{授权的名字}} say version sites/shop "更换配色"   # 也可事后为当前版本添加说明
 pneuma-base @{{授权的名字}} version list sites/shop
 pneuma-base @{{授权的名字}} version export sites/shop --version 1 --to ./shop-v1
-pneuma-base @{{授权的名字}} version restore sites/shop --version 1   # 放回来算新的一版，现在的内容不会丢
+pneuma-base @{{授权的名字}} version restore sites/shop --version 1   # 恢复的内容记录为新版本，当前内容不会丢失
 ```

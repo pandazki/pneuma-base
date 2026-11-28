@@ -23,7 +23,7 @@ test('目标按存储看到的检查：没登记的文件和符号链接本身�
     '[目录](assets)', '[新文件](assets/manual.pdf)', '[文件别名](manual.pdf)', '[缺页](assets/missing.pdf)',
     '[使用说明](PNEUMA-BASE.md)', '[记录区](.pneuma-base/missing.txt)',
   ].join('\n')
-  const put = await sb.agent('author', 'seed', ['put', '-', '--to', 'guide.md', '--made'], { input: guide })
+  const put = await sb.agent('author', 'seed', ['put', '-', '--to', 'guide.md', '--generated'], { input: guide })
   assert.equal(put.code, 0, put.stderr)
 
   assert.deepEqual(await brokenTargets(sb), [
@@ -35,12 +35,12 @@ test('目标按存储看到的检查：没登记的文件和符号链接本身�
 test('插件装上之前放进来的文档，再放一次才查', async t => {
   const sb = await sandbox({ bare: true })
   t.after(() => sb.cleanup())
-  const put = () => sb.agent('author', 'seed', ['put', '-', '--to', 'notes/a.md', '--made'], { input: '[缺页](b.md)\n' })
+  const put = () => sb.agent('author', 'seed', ['put', '-', '--to', 'notes/a.md', '--generated'], { input: '[缺页](b.md)\n' })
   assert.equal((await put()).code, 0)
   assert.equal((await sb.run(['plugin', 'install', dist, '--json'])).json.outcome, 'done')
-  assert.equal((await sb.owner(['plugin', 'add', 'links', '--json'])).json.outcome, 'done')
+  assert.equal((await sb.owner(['plugin', 'enable', 'links', '--json'])).json.outcome, 'done')
 
   assert.deepEqual(await brokenTargets(sb), [])
-  assert.equal((await sb.agent('author', 'again', ['put', 'notes/a.md', '--made'])).code, 0)
+  assert.equal((await sb.agent('author', 'again', ['put', 'notes/a.md', '--generated'])).code, 0)
   assert.deepEqual(await brokenTargets(sb), [['notes/a.md', 'notes/b.md']])
 })

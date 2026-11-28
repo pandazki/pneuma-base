@@ -12,8 +12,8 @@ export const SECRET_LIMIT = 64 * 1024
 export const secretsDir = (home: string, plugin: string) => join(home, 'secrets', plugin)
 
 function fileOf(home: string, plugin: string, name: string): string {
-  if (!PLUGIN_NAME.test(plugin)) throw new Error(`不是插件名：${plugin}`)
-  if (!SECRET_NAME.test(name)) throw new Error(`不是密钥名（小写字母、数字和连字符，字母开头）：${name}`)
+  if (!PLUGIN_NAME.test(plugin)) throw new Error(`不是有效的插件名称：${plugin}`)
+  if (!SECRET_NAME.test(name)) throw new Error(`不是有效的密钥名称（须以字母开头，仅含小写字母、数字和连字符）：${name}`)
   return join(secretsDir(home, plugin), name)
 }
 
@@ -65,9 +65,9 @@ export function pluginSecrets(home: string, plugin: string, declares: readonly s
   return {
     get: (name) => readSecret(home, plugin, name),
     async set(name, value) {
-      if (!command) throw new Error(`插件 ${plugin} 只能在主人命令里存密钥，钩子和视图里不能`)
-      if (!declares.includes(name)) throw new Error(`插件 ${plugin} 没有声明叫 ${name} 的密钥，不能存它`)
-      if (value === '' || Buffer.byteLength(value) > SECRET_LIMIT) throw new Error(`密钥 ${name} 是空的，或长过 ${SECRET_LIMIT / 1024} KB，没有存`)
+      if (!command) throw new Error(`插件 ${plugin} 仅可在所有者命令中保存密钥，不能在钩子和视图中保存`)
+      if (!declares.includes(name)) throw new Error(`插件 ${plugin} 未声明名为 ${name} 的密钥，无法保存`)
+      if (value === '' || Buffer.byteLength(value) > SECRET_LIMIT) throw new Error(`密钥 ${name} 为空或超过 ${SECRET_LIMIT / 1024} KB，未保存`)
       await writeSecret(home, plugin, name, value)
     },
   }

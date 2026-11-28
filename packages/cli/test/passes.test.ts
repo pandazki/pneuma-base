@@ -18,10 +18,10 @@ const ok = (args: string[], input?: string) => {
 function library(): string {
   const lib = join(tempDir(), 'lib')
   ok(['init', lib])
-  for (const plugin of ['version', 'search']) ok(['--library', lib, 'plugin', 'add', plugin])
-  ok(['--library', lib, '--as', 'claude-code', 'put', '-', '--to', 'notes/opener.md', '--made'], 'the opener\n')
+  for (const plugin of ['version', 'search']) ok(['--library', lib, 'plugin', 'enable', plugin])
+  ok(['--library', lib, '--as', 'claude-code', 'put', '-', '--to', 'notes/opener.md', '--generated'], 'the opener\n')
   for (let i = 0; i < 299; i++) writeFileSync(join(lib, 'notes', `n${i}.md`), `note ${i} word${i}\n`)
-  for (let i = 0; i < 2; i++) ok(['--library', lib, '--as', 'claude-code', 'put', 'notes', '--made'])
+  for (let i = 0; i < 2; i++) ok(['--library', lib, '--as', 'claude-code', 'put', 'notes', '--generated'])
   ok(['--library', lib, '--as', 'claude-code', 'say', 'versioned', 'notes/opener.md'])
   return lib
 }
@@ -51,19 +51,19 @@ beforeAll(() => {
 describe('a named whole pass of a plugin', () => {
   it('check --deep reads the versioned things by content, saying how many first, and stops when asked', async () => {
     const whole = ok(['--library', lib, '--as', 'claude-code', 'check', '--deep', '.'])
-    expect(whole.stderr).toContain('要按内容读整个库有版本的东西：1 样。')
-    expect(whole.stderr).toContain('有版本的东西已按内容查 1 / 1 样')
+    expect(whole.stderr).toContain('将读取整个资料库中受版本管理的条目：1 个。')
+    expect(whole.stderr).toContain('受版本管理的条目已检查 1 / 1 个')
     // The ledger's pass reports first; asked to stop there, the version plugin reads nothing and says so.
     const stopped = await stoppedAtFirstReport(['--library', lib, '--as', 'claude-code', 'check', '--deep', '.'])
-    expect(stopped.stdout).toContain('停下了：有版本的东西按内容查了 0 / 1 样。')
+    expect(stopped.stdout).toContain('已停止：受版本管理的条目已检查 0 / 1 个。')
   })
 
   it('search rebuild reads every registered thing, saying how many first, and stops when asked, leaving the rest to find', async () => {
     const whole = ok(['--library', lib, 'search', 'rebuild'])
-    expect(whole.stderr).toContain('要重建查找的索引：读 300 样登记过的东西。')
-    expect(whole.stderr).toContain('已读 300 / 300 样')
+    expect(whole.stderr).toContain('将重建搜索索引：读取 300 个已登记条目。')
+    expect(whole.stderr).toContain('已读取 300 / 300 个')
     const stopped = await stoppedAtFirstReport(['--library', lib, 'search', 'rebuild'])
-    expect(stopped.stdout).toContain('停下了：读了 100 / 300 样，其余的下次 find 时接着读。')
-    expect(ok(['--library', lib, 'search', 'status']).stdout).toContain('待读：200 样东西')
+    expect(stopped.stdout).toContain('已停止：已读取 100 / 300 个，其余的在下次 find 时继续读取。')
+    expect(ok(['--library', lib, 'search', 'status']).stdout).toContain('待索引：200 个条目')
   })
 })

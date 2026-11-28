@@ -23,8 +23,8 @@ describe('a plugin that throws in every hook (C10)', () => {
   const thrown = (problems: { plugin: string; message: string }[]) => problems.filter((p) => p.plugin === 'thrower').map((p) => p.message)
 
   it('fails no verb: each answers, names the hook that threw among its problems, exits 3, and says so in the readable output too', () => {
-    expect(sb.runWithTestPlugins(['plugin', 'add', 'thrower', '--library', lib]).code).toBe(3)
-    const put = agent(['put', '-', '--to', 'a.md', '--made'], 'a')
+    expect(sb.runWithTestPlugins(['plugin', 'enable', 'thrower', '--library', lib]).code).toBe(3)
+    const put = agent(['put', '-', '--to', 'a.md', '--generated'], 'a')
     expect(put.code).toBe(3)
     expect(put.json()).toMatchObject({ outcome: 'accepted', path: 'a.md', copied: true })
     expect(thrown(put.json().problems)).toEqual(['thrower failed in onPut', 'thrower failed in observe'])
@@ -58,12 +58,12 @@ describe('a plugin that throws in every hook (C10)', () => {
 
 describe('a plugin installed in the library but unknown to this command line', () => {
   it('is reported as a problem in every answer; the verbs still work and its directory stays', () => {
-    sb.runWithTestPlugins(['plugin', 'add', 'recorder', '--library', lib])
+    sb.runWithTestPlugins(['plugin', 'enable', 'recorder', '--library', lib])
     const r = sb.run(['--library', lib, 'find', '--json'], { cwd: outside })
     expect(r.code).toBe(3)
     expect(r.json().problems).toEqual([{ plugin: 'recorder', message: 'installed in this library but not known to this pneuma-base' }])
-    expect(readFileSync(join(lib, 'PNEUMA-BASE.md'), 'utf8')).not.toContain('没有装任何插件')
-    expect(sb.run(['plugin', 'remove', 'recorder', '--library', lib]).code).toBe(0)
+    expect(readFileSync(join(lib, 'PNEUMA-BASE.md'), 'utf8')).not.toContain('未启用任何插件')
+    expect(sb.run(['plugin', 'disable', 'recorder', '--library', lib]).code).toBe(0)
     expect(existsSync(join(lib, '.pneuma-base/recorder'))).toBe(true)
   })
 })
@@ -72,9 +72,9 @@ describe('events (K5)', () => {
   it('each operation of either face reaches the installed plugins exactly once', () => {
     const run = (args: string[], opts?: { input?: string; env?: Record<string, string> }) =>
       sb.runWithTestPlugins(['--library', lib, ...args], { cwd: outside, ...opts })
-    run(['plugin', 'add', 'recorder'])
-    run(['put', '-', '--to', 'a.md', '--made'], { input: 'a' })
-    run(['put', '-', '--to', 'a.md', '--made'], { input: 'b' }) // refused
+    run(['plugin', 'enable', 'recorder'])
+    run(['put', '-', '--to', 'a.md', '--generated'], { input: 'a' })
+    run(['put', '-', '--to', 'a.md', '--generated'], { input: 'b' }) // refused
     run(['find', 'a'])
     run(['inspect', 'a.md'])
     run(['say', 'note', 'x'])
@@ -82,15 +82,15 @@ describe('events (K5)', () => {
     run(['archive', 'a.md'])
     run(['unarchive', 'a.md'])
     run(['start', 'a']) // say, check, find
-    run(['grant', 'issue', 'g', '--agent', 'x'])
+    run(['grant', 'create', 'g', '--agent', 'x'])
     run(['archive', 'purge'], { env: { CLAUDE_CODE_SESSION_ID: 's' } }) // refused
     expect(run(['put', '-', '--to', 'b.md'], { input: 'b' }).code).toBe(1) // usage error: no operation
-    run(['plugin', 'remove', 'recorder'])
+    run(['plugin', 'disable', 'recorder'])
     run(['find', 'a']) // the recorder is no longer installed
 
     const events = readFileSync(join(lib, '.pneuma-base/recorder/events.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
     expect(events.map((e) => `${e.face}:${e.what}:${e.outcome}`)).toEqual([
-      'owner:plugin add:done',
+      'owner:plugin enable:done',
       'agent:put:accepted',
       'agent:put:refused',
       'agent:find:undefined',
@@ -102,7 +102,7 @@ describe('events (K5)', () => {
       'agent:say:not-heard',
       'agent:check:undefined',
       'agent:find:undefined',
-      'owner:grant issue:done',
+      'owner:grant create:done',
       'owner:archive purge:refused',
     ])
   })
@@ -110,14 +110,14 @@ describe('events (K5)', () => {
 
 describe('destructive owner commands (K7)', () => {
   it('archive purge is refused in an agent session, whichever variable shows it, through a grant, and without an in-person confirmation', () => {
-    agent(['put', '-', '--to', 'old.md', '--made'], 'old')
+    agent(['put', '-', '--to', 'old.md', '--generated'], 'old')
     agent(['archive', 'old.md'])
     for (const variable of ['PNEUMA_BASE_SESSION', 'CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID']) {
       const r = sb.runWithTestPlugins(['archive', 'purge', '--library', lib], { env: { [variable]: 'session-1' } })
       expect(r.code, variable).toBe(2)
       expect(r.stdout, variable).toContain('agent-session')
     }
-    sb.runWithTestPlugins(['grant', 'issue', 'claude', '--library', lib, '--agent', 'claude-code'])
+    sb.runWithTestPlugins(['grant', 'create', 'claude', '--library', lib, '--agent', 'claude-code'])
     const viaGrant = sb.runWithTestPlugins(['@claude', 'archive', 'purge'])
     expect(viaGrant.code).toBe(2)
     expect(viaGrant.stdout).toContain('agent-session')
@@ -128,7 +128,7 @@ describe('destructive owner commands (K7)', () => {
   })
 
   it('a plugin-declared destructive command passes the same gate', () => {
-    sb.runWithTestPlugins(['plugin', 'add', 'recorder', '--library', lib])
+    sb.runWithTestPlugins(['plugin', 'enable', 'recorder', '--library', lib])
     const events = join(lib, '.pneuma-base/recorder/events.jsonl')
     writeFileSync(events, 'kept\n')
     const inSession = sb.runWithTestPlugins(['recorder', 'clear', '--library', lib], { env: { CODEX_THREAD_ID: 't' } })

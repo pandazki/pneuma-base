@@ -89,7 +89,7 @@ export interface Sandbox {
 /** What a stand-in answers to one request, as a `fetch` handler does. */
 export type Handler = (request: Request) => Response | Promise<Response>
 
-const failed = (what: string, r: Result) => new Error(`${what}没有做成（退出码 ${r.code}）：\n${r.stdout}${r.stderr}`)
+const failed = (what: string, r: Result) => new Error(`${what}失败（退出码 ${r.code}）：\n${r.stdout}${r.stderr}`)
 
 export async function sandbox(options: SandboxOptions = {}): Promise<Sandbox> {
   const cli = findCli(options.cli)
@@ -142,11 +142,11 @@ export async function sandbox(options: SandboxOptions = {}): Promise<Sandbox> {
   try {
     const installed: string[] = []
     for (const dir of options.plugins ?? []) {
-      const r = await must(`装插件 ${dir} `, run(['plugin', 'install', resolve(dir), '--json']))
+      const r = await must(`安装插件 ${dir} `, run(['plugin', 'install', resolve(dir), '--json']))
       installed.push(r.json.data.name)
     }
-    await must('建库', run(['init', library, ...(options.bare ? ['--bare'] : []), '--json']))
-    for (const name of [...(options.builtins ?? []), ...installed]) await must(`在库里装上插件 ${name} `, owner(['plugin', 'add', name, '--json']))
+    await must('初始化资料库', run(['init', library, ...(options.bare ? ['--bare'] : []), '--json']))
+    for (const name of [...(options.builtins ?? []), ...installed]) await must(`在资料库中启用插件 ${name} `, owner(['plugin', 'enable', name, '--json']))
   } catch (error) {
     await sb.cleanup()
     throw error
@@ -170,7 +170,7 @@ async function standIn(handler: Handler): Promise<{ url: string; stop: () => Pro
       res.end(Buffer.from(await answer.arrayBuffer()))
     } catch (error) {
       res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })
-      res.end(`替身出错了：${error instanceof Error ? error.message : String(error)}`)
+      res.end(`替身服务出错：${error instanceof Error ? error.message : String(error)}`)
     }
   })
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done))
@@ -193,7 +193,7 @@ async function startViewer(cli: string, library: string, opts: { cwd: string; en
     let printed = ''
     const timer = setTimeout(() => {
       child.kill('SIGKILL')
-      fail(new Error(`pneuma-base view 过了 ${opts.timeout / 1000} 秒还没给出地址：\n${printed}`))
+      fail(new Error(`pneuma-base view 运行超过 ${opts.timeout / 1000} 秒仍未给出地址：\n${printed}`))
     }, opts.timeout)
     const read = (chunk: Buffer) => {
       printed += chunk.toString('utf8')
@@ -206,7 +206,7 @@ async function startViewer(cli: string, library: string, opts: { cwd: string; en
     child.stderr.on('data', read)
     child.once('exit', (code) => {
       clearTimeout(timer)
-      fail(new Error(`pneuma-base view 退出了（${code}）：\n${printed}`))
+      fail(new Error(`pneuma-base view 已退出（${code}）：\n${printed}`))
     })
   })
   const token = url.searchParams.get('token') as string
@@ -214,7 +214,7 @@ async function startViewer(cli: string, library: string, opts: { cwd: string; en
   const get = (path: string) => fetch(new URL(`${path}${path.includes('?') ? '&' : '?'}token=${token}`, url.origin), { signal: signal() })
   const json = async <T>(path: string, query: Record<string, string>): Promise<T> => {
     const reply = await get(`${path}?${new URLSearchParams(query)}`)
-    if (!reply.ok) throw new Error(`${path} 答复 ${reply.status}：${await reply.text()}`)
+    if (!reply.ok) throw new Error(`${path} 返回 ${reply.status}：${await reply.text()}`)
     return (await reply.json()) as T
   }
   return {
@@ -237,7 +237,7 @@ async function startViewer(cli: string, library: string, opts: { cwd: string; en
         body: JSON.stringify({ call, confirmed: true }),
         signal: signal(),
       })
-      if (!reply.ok) throw new Error(`/api/call 答复 ${reply.status}：${await reply.text()}`)
+      if (!reply.ok) throw new Error(`/api/call 返回 ${reply.status}：${await reply.text()}`)
       return (await reply.json()) as Awaited<ReturnType<Viewer['act']>>
     },
     get,

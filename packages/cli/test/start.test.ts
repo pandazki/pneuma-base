@@ -1,4 +1,4 @@
-// The home page's 「开始」 through its states, as the command line prints it and as the page gets it:
+// The home page's 「快速开始」 through its states, as the command line prints it and as the page gets it:
 // connect an agent, put the first thing in, have an agent work here. Every run has a temporary HOME
 // with the product folders the test makes, and a PATH with no agent program on it.
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -19,12 +19,12 @@ const run = (args: string[]) => {
 
 const home = () => (run(['--library', lib, 'show', 'home', '--json']).json() as { blocks: Block[] }).blocks
 
-/** The steps of 「开始」, or null when the home page has no such part. */
+/** The steps of 「快速开始」, or null when the home page has no such part. */
 function stepsOf(blocks: Block[]): Step[] | null {
   const start = blocks[0]
-  if (start?.kind !== 'section' || start.title !== '开始') return null
+  if (start?.kind !== 'section' || start.title !== '快速开始') return null
   const [steps] = start.blocks
-  if (steps?.kind !== 'steps') throw new Error('开始 holds no steps')
+  if (steps?.kind !== 'steps') throw new Error('快速开始 holds no steps')
   return steps.steps
 }
 
@@ -37,32 +37,32 @@ beforeEach(() => {
   mkdirSync(join(sb.home, '.claude'), { recursive: true })
 })
 
-describe('「开始」 on the home page', () => {
-  it('opens a new library: the products found here with 接上 in one click, a drop area into inbox/, and the sentence to say', () => {
+describe('「快速开始」 on the home page', () => {
+  it('opens a new library: the products found here with 连接 in one click, a drop area into inbox/, and the sentence to say', () => {
     run(['init', lib])
     const blocks = home()
-    expect(blocks.map((b) => (b.kind === 'section' ? b.title : b.kind)).slice(0, 2)).toEqual(['开始', '等你决定'])
+    expect(blocks.map((b) => (b.kind === 'section' ? b.title : b.kind)).slice(0, 2)).toEqual(['快速开始', '待处理'])
     const steps = stepsOf(blocks) as Step[]
     expect(steps.map((s) => [s.key, s.title, s.done])).toEqual([
-      ['connect', '接上你的 agent', false],
-      ['first', '放进第一样东西', false],
-      ['say', '对你的 agent 说一句', false],
+      ['connect', '连接 Agent', false],
+      ['first', '添加第一个条目', false],
+      ['say', '向 Agent 发出第一条指令', false],
     ])
     const [connect, first, say] = steps as [Step, Step, Step]
-    expect(connect.blocks).toMatchObject([{ kind: 'list', items: [{ cell: { text: 'Claude Code', actor: { kind: 'agent', name: 'claude-code' } }, actions: [{ label: '接上', inputs: [], call: { face: 'owner', command: 'agent connect', args: { positional: ['claude-code'], flags: {} } } }] }] }])
-    expect(first.blocks).toEqual([{ kind: 'drop', to: 'inbox', command: `pneuma-base put <文件或文件夹> --to inbox/<名字> --brought --by owner --library ${lib}` }])
-    expect(say.blocks).toMatchObject([{ kind: 'list', items: [{ cell: { text: '看看我的 Pneuma Base 库里有什么。', copy: true } }] }])
+    expect(connect.blocks).toMatchObject([{ kind: 'list', items: [{ cell: { text: 'Claude Code', actor: { kind: 'agent', name: 'claude-code' } }, actions: [{ label: '连接', inputs: [], call: { face: 'owner', command: 'agent connect', args: { positional: ['claude-code'], flags: {} } } }] }] }])
+    expect(first.blocks).toMatchObject([{ kind: 'drop', to: 'inbox', command: `pneuma-base put <文件或文件夹> --to inbox/<名称> --imported --by owner --library ${lib}`, action: { label: '从本机添加…', call: { face: 'agent', verb: 'put' } } }])
+    expect(say.blocks).toMatchObject([{ kind: 'list', items: [{ cell: { text: '查看我的 Pneuma Base 资料库中有哪些内容。', copy: true } }] }])
   })
 
   it('folds each step once it is done, and is gone when all three are', () => {
     run(['init', lib])
     run(['--library', lib, 'agent', 'connect', 'claude-code'])
-    expect(states(stepsOf(home()))).toEqual(['connect:已接上 Claude Code', 'first:todo', 'say:todo'])
-    expect(stepsOf(home())?.[0]?.blocks).toMatchObject([{ kind: 'list', items: [{ cell: { text: 'Claude Code' }, note: '已接上 · 技能 · 授权 claude-code', actions: [] }] }])
+    expect(states(stepsOf(home()))).toEqual(['connect:已连接 Claude Code', 'first:todo', 'say:todo'])
+    expect(stepsOf(home())?.[0]?.blocks).toMatchObject([{ kind: 'list', items: [{ cell: { text: 'Claude Code' }, note: '已连接 · 技能 · 授权 claude-code', actions: [] }] }])
 
     writeFileSync(join(work, 'paper.pdf'), '%PDF')
-    run(['--library', lib, 'put', join(work, 'paper.pdf'), '--to', 'inbox/paper.pdf', '--brought', '--by', 'owner'])
-    expect(states(stepsOf(home()))).toEqual(['connect:已接上 Claude Code', 'first:库的根目录里有 1 样东西', 'say:todo'])
+    run(['--library', lib, 'put', join(work, 'paper.pdf'), '--to', 'inbox/paper.pdf', '--imported', '--by', 'owner'])
+    expect(states(stepsOf(home()))).toEqual(['connect:已连接 Claude Code', 'first:资料库根目录中有 1 个条目', 'say:todo'])
 
     run(['@claude-code', 'start', '看看库里有什么'])
     expect(stepsOf(home())).toBeNull()
@@ -70,8 +70,8 @@ describe('「开始」 on the home page', () => {
 
   it('counts a grant issued by hand as an agent connected, as the agents page lists it', () => {
     run(['init', lib])
-    run(['grant', 'issue', 'grok', '--library', lib, '--agent', 'grok-bot'])
-    expect(states(stepsOf(home()))).toEqual(['connect:已接上 grok-bot', 'first:todo', 'say:todo'])
+    run(['grant', 'create', 'grok', '--library', lib, '--agent', 'grok-bot'])
+    expect(states(stepsOf(home()))).toEqual(['connect:已连接 grok-bot', 'first:todo', 'say:todo'])
   })
 
   it('in a library without the ledger has the kernel’s two steps, and a hidden file put there by Finder is not the first thing', () => {
@@ -88,7 +88,7 @@ describe('「开始」 on the home page', () => {
     const empty = sandbox()
     const r = empty.run(['--library', lib, 'show', 'home', '--json'], { env: { PATH: tempDir('pb-bin-') }, cwd: work })
     const [connect] = stepsOf((r.json() as { blocks: Block[] }).blocks) as Step[]
-    expect(connect?.blocks).toMatchObject([{ kind: 'text', text: expect.stringContaining('这台机器上还没找到能接上的 agent（看了 Claude Code：PATH 上的 claude、~/.claude') }])
+    expect(connect?.blocks).toMatchObject([{ kind: 'text', text: expect.stringContaining('本机未检测到可连接的 Agent（已检查 Claude Code：PATH 中的 claude、~/.claude') }])
   })
 
   it('shows the sentence to say to any agent, to copy, only while an endpoint runs for this library, and so does the agents page', async () => {
@@ -101,12 +101,12 @@ describe('「开始」 on the home page', () => {
     const record = (library: string) => recordEndpoint(join(sb.home, '.pneuma-base'), { url: origin, port: 7638, pid: process.pid, library, at: instant(Date.now()) })
     await record(join(tempDir(), 'another'))
     expect(JSON.stringify(connect().blocks)).not.toContain(sentence)
-    expect(agents().map((b) => b.title)).not.toContain('让 agent 自己接上')
+    expect(agents().map((b) => b.title)).not.toContain('配对')
 
     await record(lib)
     const item = { kind: 'list', items: [{ cell: { text: expect.stringContaining(sentence), copy: true, icon: 'message-square-plus' }, note: expect.stringContaining('核对配对码后'), actions: [] }] }
     expect(connect().blocks).toEqual(expect.arrayContaining([item]))
-    expect(agents().find((b) => b.title === '让 agent 自己接上')?.blocks).toEqual([item])
+    expect(agents().find((b) => b.title === '配对')?.blocks).toEqual([item])
     expect(run(['--library', lib, 'show', 'home']).stdout).toContain(sentence)
   })
 
@@ -114,9 +114,9 @@ describe('「开始」 on the home page', () => {
     run(['init', lib])
     run(['--library', lib, 'agent', 'connect', 'claude-code'])
     const text = run(['--library', lib, 'show', 'home']).stdout
-    expect(text).toContain('## 开始\n1 / 3\n[✓] 接上你的 agent：已接上 Claude Code\n')
-    expect(text).toContain('[ ] 放进第一样东西\n')
-    expect(text).toContain(`    $ pneuma-base put <文件或文件夹> --to inbox/<名字> --brought --by owner --library ${lib}\n`)
-    expect(text).toContain('[ ] 对你的 agent 说一句\n    - 看看我的 Pneuma Base 库里有什么。\n')
+    expect(text).toContain('## 快速开始\n1 / 3\n[✓] 连接 Agent：已连接 Claude Code\n')
+    expect(text).toContain('[ ] 添加第一个条目\n')
+    expect(text).toContain(`    $ pneuma-base put <文件或文件夹> --to inbox/<名称> --imported --by owner --library ${lib}\n`)
+    expect(text).toContain('[ ] 向 Agent 发出第一条指令\n    - 查看我的 Pneuma Base 资料库中有哪些内容。\n')
   })
 })

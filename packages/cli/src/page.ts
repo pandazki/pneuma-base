@@ -77,9 +77,9 @@ function agentWords({ verb, request }: AgentCall, action: Action): string[] {
       const what = request.kind === 'register' ? [v(request.path)] : request.from.kind === 'stdin' ? ['-', '--to', v(request.to)] : [v(request.from.path), '--to', v(request.to)]
       const o = request.origin
       const origin =
-        o.kind === 'brought'
-          ? ['--brought', ...(o.source === null ? [] : optionalFlag('source', o.source, action)), ...(o.by === null ? [] : optionalFlag('by', o.by, action))]
-          : ['--made', ...listFlag('from', o.from, action), ...listFlag('from-outside', o.outside, action)]
+        o.kind === 'imported'
+          ? ['--imported', ...(o.source === null ? [] : optionalFlag('source', o.source, action)), ...(o.by === null ? [] : optionalFlag('by', o.by, action))]
+          : ['--generated', ...listFlag('from', o.from, action), ...listFlag('from-external', o.outside, action)]
       const note = request.note === undefined || request.note === null ? [] : optionalFlag('note', request.note, action)
       return ['put', ...what, ...origin, ...note]
     }
@@ -120,8 +120,8 @@ function ownersOnly(action: Action, commands: readonly OwnerCommandInfo[]): bool
 
 /** One action as a line: the command, then the button's label, whether only the owner may, and what it asks first. */
 function actionLine(action: Action, commands: readonly OwnerCommandInfo[], indent: string): string {
-  const gate = ownersOnly(action, commands) ? '（只给主人）' : ''
-  const asks = action.confirm === null ? '' : `；先问：${action.confirm}`
+  const gate = ownersOnly(action, commands) ? '（仅所有者）' : ''
+  const asks = action.confirm === null ? '' : `；需确认：${action.confirm}`
   return `${indent}$ ${commandOf(action, commands)}  # ${action.label}${gate}${asks}`
 }
 
@@ -149,7 +149,7 @@ function cellText(cell: Cell, rowLink: Link | null = null): string {
 const TONE_WORD: Partial<Record<string, string>> = { warn: '警告：', bad: '错误：' }
 
 /** Whose act a feed row is, in the words the page shows beside it. */
-export const WHOSE: Record<NonNullable<FeedRow['whose']>, string> = { agent: '自己做的', owner: '主人做的', approved: '主人批准的', observed: '看到的' }
+export const WHOSE: Record<NonNullable<FeedRow['whose']>, string> = { agent: 'Agent 执行', owner: '所有者执行', approved: '所有者批准', observed: '检测到' }
 
 const whoText = (who: ActorMark | string) => (typeof who === 'string' ? who : who.name)
 
@@ -180,11 +180,11 @@ function treeLines(nodes: readonly TreeNode[], block: Extract<Block, { kind: 'tr
 }
 
 /** What a table says can be done with any of its things, once for all of them: `{path}` written as the path to give, `{in}` left to the person. */
-/** What the table offers for each of its things, as commands taking the thing's path; renaming in place is a move, which 挪到 already says. */
+/** What the table offers for each of its things, as commands taking the thing's path; renaming in place is a move, which 移动 already says. */
 function eachLines(each: Extract<Block, { kind: 'table' }>['each'], commands: readonly OwnerCommandInfo[], indent: string): string[] {
   if (each === undefined || each.actions.length === 0) return []
   const given = (a: Action): Action => ({ ...a, inputs: [...a.inputs, { name: 'path', label: '库内路径', placeholder: null, value: null, options: null }] })
-  return [`${indent}其中每一样东西：`, ...each.actions.map((a) => actionLine(given(a), commands, `${indent}  `))]
+  return [`${indent}其中每个条目：`, ...each.actions.map((a) => actionLine(given(a), commands, `${indent}  `))]
 }
 
 /** Where one page of a long list stands, and the commands that show the pages after and before it. */
@@ -227,7 +227,7 @@ function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: 
           ...(item.note === null ? [] : [`${more}${item.note}`]),
           ...(item.about === undefined ? [] : [`${more}（${item.about}）`]),
           // A setting: whether it is on, and the command that turns it the other way.
-          ...(item.toggle === undefined ? [] : [`${more}${item.toggle.on ? '开着' : '关着'}  ${actionLine(item.toggle.action, commands, '')}`]),
+          ...(item.toggle === undefined ? [] : [`${more}${item.toggle.on ? '已启用' : '已停用'}  ${actionLine(item.toggle.action, commands, '')}`]),
           ...actions(item.actions, more),
         ]),
         ...pageLines(block.page, indent),
@@ -250,7 +250,7 @@ function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: 
     case 'empty':
       return [`${indent}${block.title}`, ...(block.hint === null ? [] : [`${indent}${block.hint}`])]
     case 'embed':
-      return [`${indent}嵌入的页面「${block.title}」：${block.url}`]
+      return [`${indent}嵌入页面「${block.title}」：${block.url}`]
     case 'custom':
       return [...block.text.split('\n').map((l) => `${indent}${l}`), ...actions(Object.values(block.actions))]
     case 'feed':
@@ -273,7 +273,7 @@ function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: 
         ...s.blocks.flatMap((b) => blockLines(b, commands, depth + 1, `${indent}    `, req)).filter((l) => l !== ''),
       ])
     case 'drop':
-      return [`${indent}放进 ${block.to}/，记成主人带进来的：在应用里把文件或文件夹拖到窗口上，或选出来；在终端里：`, `${indent}$ ${block.command}`]
+      return [`${indent}添加到 ${block.to}/，标记为所有者导入：在应用中将文件或文件夹拖到窗口上，或选择文件；在终端中：`, `${indent}$ ${block.command}`]
     case 'chart':
       return [...block.text.split('\n').map((l) => `${indent}${l}`), ...chartTable(block, more)]
   }
@@ -321,10 +321,10 @@ export function viewListText(list: ViewList): string[] {
     v.by,
     [
       ...v.filters.map((f) => `[--${f.name} ${f.options.flatMap((o) => (o.value === '' ? [] : [o.value])).join('|')}]`),
-      ...(v.ownerOnly === true ? ['只给主人'] : []),
-      ...(shares(v) ? [`和 ${v.with} 一个入口`] : []),
-      ...(v.nav ? [] : ['从别的页的链接打开']),
+      ...(v.ownerOnly === true ? ['仅所有者'] : []),
+      ...(shares(v) ? [`与 ${v.with} 共用入口`] : []),
+      ...(v.nav ? [] : ['从其他页面的链接打开']),
     ].join(' '),
   ])
-  return ['这个库的页，pneuma-base show <编号> 打开一页：', ...aligned(rows, '  '), ...problemLines(list)]
+  return ['此资料库的页面，pneuma-base show <页面 ID> 打开页面：', ...aligned(rows, '  '), ...problemLines(list)]
 }

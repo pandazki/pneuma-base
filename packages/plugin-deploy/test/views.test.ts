@@ -42,12 +42,12 @@ beforeAll(async () => {
     const site = join(dir, name)
     mkdirSync(site)
     writeFileSync(join(site, 'index.html'), `<h1>${name}</h1>`)
-    await agentFace.put({ kind: 'place', from: { kind: 'directory', path: site }, to: `sites/${name}`, origin: { kind: 'made', from: [], outside: [] } }, as(claude))
+    await agentFace.put({ kind: 'place', from: { kind: 'directory', path: site }, to: `sites/${name}`, origin: { kind: 'generated', from: [], outside: [] } }, as(claude))
   }
   for (const name of ['s1', 's2', 's3']) await agentFace.say({ kind: 'deployable', about: `sites/${name}`, text: null, args: {} }, as(claude))
   const call = { ctx: as(owner), table, home, env: {}, viaGrant: false, confirm: async () => false }
-  expect(await ownerFace.dispatch(call, 'deploy target set', { positional: [], flags: { kind: ['dir'], to: [join(dir, 'www')] } })).toMatchObject({ outcome: 'done' })
-  expect(await ownerFace.dispatch(call, 'deploy on', { positional: ['sites/s1'], flags: {} })).toMatchObject({ outcome: 'done' })
+  expect(await ownerFace.dispatch(call, 'deploy target set', { positional: [], flags: { kind: ['folder'], to: [join(dir, 'www')] } })).toMatchObject({ outcome: 'done' })
+  expect(await ownerFace.dispatch(call, 'deploy publish', { positional: ['sites/s1'], flags: {} })).toMatchObject({ outcome: 'done' })
   await agentFace.archive({ kind: 'archive', path: 'sites/s2' }, as(claude))
   pctx = pluginContext(as(owner), deploy.name)
 })
@@ -56,7 +56,7 @@ const lists = (blocks: Block[]) => blocks.filter((b): b is Extract<Block, { kind
 const ownerCall = (action: Action | undefined) => (action?.call.face === 'owner' ? { command: action.call.command, positional: action.call.args.positional } : null)
 
 describe('the deploy.sites view', () => {
-  it('is in the navigation with the board beside it; shows the folder it publishes to, each thing in the content with its address and switch, and puts a thing online', async () => {
+  it('is in the navigation with the board beside it; shows the folder it publishes to, each thing in the content with its address and switch, and publishes a thing', async () => {
     expect(deploy.views).toEqual([expect.objectContaining({ id: 'deploy.sites', nav: true }), expect.objectContaining({ id: 'deploy.board', with: 'deploy.sites' })])
     const view = await deploy.onView?.({ view: 'deploy.sites', params: {} }, pctx)
     const [where, things] = lists(view?.blocks ?? [])
@@ -66,12 +66,12 @@ describe('the deploy.sites view', () => {
     expect(Object.keys(byName)).toEqual(['s1', 's3'])
     expect(byName.s1).toMatchObject({ note: 'sites', aside: { text: expect.stringMatching(/^file:.*\/www\/sites-s1\/$/), copy: true }, toggle: { on: true } })
     expect(byName.s1?.aside?.href).toBeUndefined()
-    expect(ownerCall(byName.s1?.toggle?.action)).toEqual({ command: 'deploy off', positional: ['sites/s1'] })
+    expect(ownerCall(byName.s1?.toggle?.action)).toEqual({ command: 'deploy unpublish', positional: ['sites/s1'] })
     expect(byName.s3?.aside).toBeUndefined()
     expect(byName.s3?.cell.tag).toBeUndefined()
-    expect(ownerCall(byName.s3?.toggle?.action)).toEqual({ command: 'deploy on', positional: ['sites/s3'] })
+    expect(ownerCall(byName.s3?.toggle?.action)).toEqual({ command: 'deploy publish', positional: ['sites/s3'] })
     const head = view?.blocks[0]
-    expect(head?.kind === 'actions' && head.actions.map((a) => ownerCall(a))).toEqual([{ command: 'deploy on', positional: ['{path}'] }])
+    expect(head?.kind === 'actions' && head.actions.map((a) => ownerCall(a))).toEqual([{ command: 'deploy publish', positional: ['{path}'] }])
   })
 })
 
@@ -84,19 +84,19 @@ describe('the deploy section of the item panel', () => {
     expect(line?.fields.map((f) => f.label)).toEqual(['地址'])
     expect(line?.fields[0]?.value.text).toMatch(/sites-s1\/$/)
     expect(section?.blocks.some((b) => b.kind === 'actions')).toBe(false)
-    expect(section?.actions?.map((a) => [a.label, a.as, ownerCall(a)])).toEqual([['下线', 'menu', { command: 'deploy off', positional: ['sites/s1'] }]])
+    expect(section?.actions?.map((a) => [a.label, a.as, ownerCall(a)])).toEqual([['取消发布', 'menu', { command: 'deploy unpublish', positional: ['sites/s1'] }]])
   })
 
-  it('for an archived declared thing switched off, under its archive path: nothing to say, and no 上线', async () => {
+  it('for an archived declared thing switched off, under its archive path: nothing to say, and no 发布', async () => {
     const section = await deploy.onItemView?.('_archive/sites/s2' as LibraryPath, pctx)
     expect(section?.blocks.filter((b) => b.kind === 'fields')).toEqual([])
     expect(section?.actions).toEqual([])
   })
 
-  it('for a directory thing nobody declared: 上线… in its menu; for no thing, or a file inside a bundle, nothing', async () => {
+  it('for a directory thing nobody declared: 发布… in its menu; for no thing, or a file inside a bundle, nothing', async () => {
     const section = await deploy.onItemView?.('sites/other' as LibraryPath, pctx)
     expect(section?.blocks).toEqual([])
-    expect(section?.actions?.map((a) => [a.label, ownerCall(a)])).toEqual([['上线…', { command: 'deploy on', positional: ['sites/other'] }]])
+    expect(section?.actions?.map((a) => [a.label, ownerCall(a)])).toEqual([['发布…', { command: 'deploy publish', positional: ['sites/other'] }]])
     expect(await deploy.onItemView?.('sites/nothing-here' as LibraryPath, pctx)).toBeNull()
     expect(await deploy.onItemView?.('sites/other/index.html' as LibraryPath, pctx)).toBeNull()
   })

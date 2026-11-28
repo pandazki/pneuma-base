@@ -43,11 +43,11 @@ const byHand = (path: string, content: string) => {
 
 describe('changes made outside the tool (C4)', () => {
   beforeAll(() => {
-    for (const name of ['kept', 'edited', 'moved', 'deleted']) ok(agent(['put', '-', '--to', `${name}.md`, '--brought'], `${name} content`))
+    for (const name of ['kept', 'edited', 'moved', 'deleted']) ok(agent(['put', '-', '--to', `${name}.md`, '--imported'], `${name} content`))
     byHand('dropped.md', 'nobody registered me')
     byHand('edited.md', 'edited by hand')
     // elsewhere/ holds a registered thing, so it is an open directory, the one kind check lists.
-    ok(agent(['put', '-', '--to', 'elsewhere/anchor.md', '--brought'], 'anchor'))
+    ok(agent(['put', '-', '--to', 'elsewhere/anchor.md', '--imported'], 'anchor'))
     renameSync(join(lib, 'moved.md'), join(lib, 'elsewhere/moved.md'))
     rmSync(join(lib, 'deleted.md'))
   })
@@ -55,38 +55,38 @@ describe('changes made outside the tool (C4)', () => {
   it('check names each: unowned, changed, moved and taken back, missing', () => {
     const sections = check()
     const paths = (rows: { path: string }[] | undefined) => (rows ?? []).map((r) => r.path)
-    expect(paths(section(sections, '没人登记过的'))).toEqual(['dropped.md'])
-    expect(paths(section(sections, '被直接改过的'))).toEqual(['edited.md'])
-    expect(section(sections, '挪过的')).toMatchObject([{ from: 'moved.md', to: 'elsewhere/moved.md' }])
-    expect(paths(section(sections, '不在了的'))).toEqual(['deleted.md'])
+    expect(paths(section(sections, '未登记'))).toEqual(['dropped.md'])
+    expect(paths(section(sections, '外部修改'))).toEqual(['edited.md'])
+    expect(section(sections, '已移动')).toMatchObject([{ from: 'moved.md', to: 'elsewhere/moved.md' }])
+    expect(paths(section(sections, '已缺失'))).toEqual(['deleted.md'])
     // The text output prints each section's title and body.
     const body = (title: string) => sections.find((s) => s.title === title)?.body
-    expect(body('没人登记过的')).toContain('dropped.md')
-    expect(body('被直接改过的')).toContain('edited.md')
-    expect(body('挪过的')).toContain('moved.md → elsewhere/moved.md，已接回')
-    expect(body('不在了的')).toContain('deleted.md')
-    expect(ok(agent(['check'])).stdout).toContain('## 不在了的（ledger）\n  deleted.md')
+    expect(body('未登记')).toContain('dropped.md')
+    expect(body('外部修改')).toContain('edited.md')
+    expect(body('已移动')).toContain('moved.md → elsewhere/moved.md，已记录新路径')
+    expect(body('已缺失')).toContain('deleted.md')
+    expect(ok(agent(['check'])).stdout).toContain('## 已缺失（ledger）\n  deleted.md')
   })
 
   it('the remedies clear the reports: put gives an unowned file its origin, say revised claims an edit, as the agent’s or, with --by owner, as the owner’s; what they cannot fix is answered plainly', () => {
     expect(agent(['say', 'revised', 'dropped.md', '--json']).json()).toMatchObject({ outcome: 'not-heard', reason: 'refused' })
     expect(ok(agent(['say', 'revised', 'kept.md'])).stdout).toContain('一致')
-    ok(agent(['put', 'dropped.md', '--brought', '--by', 'owner']))
+    ok(agent(['put', 'dropped.md', '--imported', '--by', 'owner']))
     expect(ok(agent(['say', 'revised', 'edited.md', '--json'])).json()).toMatchObject({ outcome: 'heard', by: 'ledger' })
     const sections = check()
-    expect(section(sections, '没人登记过的')).toBeUndefined()
-    expect(section(sections, '被直接改过的')).toBeUndefined()
+    expect(section(sections, '未登记')).toBeUndefined()
+    expect(section(sections, '外部修改')).toBeUndefined()
 
     // The owner edits it again: the agent stays the one who recorded it, the owner is named as who edited.
     byHand('edited.md', 'edited by the owner')
     expect(agent(['say', 'revised', 'edited.md', '--by', 'someone', '--json']).json()).toMatchObject({ outcome: 'not-heard', reason: 'refused' })
-    expect(ok(agent(['say', 'revised', 'edited.md', '--by', 'owner', '--json'])).json()).toMatchObject({ outcome: 'heard', by: 'ledger', note: '已记下 edited.md 的这次直接改动是主人做的' })
+    expect(ok(agent(['say', 'revised', 'edited.md', '--by', 'owner', '--json'])).json()).toMatchObject({ outcome: 'heard', by: 'ledger', note: '已记录 edited.md 的外部修改为所有者直接修改' })
     expect(reviseFacts()).toMatchObject([
       { actor: { kind: 'agent', name: 'claude-code' }, claimed: true },
       { actor: { kind: 'agent', name: 'claude-code' }, claimed: true, by: 'owner' },
     ])
     expect(reviseFacts()[0]).not.toHaveProperty('by')
-    expect(ok(agent(['inspect', 'edited.md'])).stdout).toMatch(/claude-code\s+主人直接改的，claude-code 代记/)
+    expect(ok(agent(['inspect', 'edited.md'])).stdout).toMatch(/claude-code\s+所有者直接修改，claude-code 代为记录/)
 
     // Said by the owner, --by owner records the owner, with no by.
     byHand('edited.md', 'edited by the owner, again')
@@ -101,28 +101,28 @@ describe('staleness (C5)', () => {
   const ORIGINAL = 'source, first version'
 
   beforeAll(() => {
-    ok(agent(['put', '-', '--to', 'sources/s.md', '--brought', '--source', 'https://example.com/s'], ORIGINAL))
-    ok(agent(['put', '-', '--to', 'made/a.md', '--made', '--from', 'sources/s.md'], 'made from s'))
-    ok(agent(['put', '-', '--to', 'made/b.md', '--made', '--from', 'made/a.md'], 'made from a'))
+    ok(agent(['put', '-', '--to', 'sources/s.md', '--imported', '--source', 'https://example.com/s'], ORIGINAL))
+    ok(agent(['put', '-', '--to', 'made/a.md', '--generated', '--from', 'sources/s.md'], 'made from s'))
+    ok(agent(['put', '-', '--to', 'made/b.md', '--generated', '--from', 'made/a.md'], 'made from a'))
   })
 
   it('S changed: A is maybe stale, B upstream-flagged; S deleted: source gone; S back as it was: no mark', () => {
     byHand('sources/s.md', 'source, edited')
     const sections = check()
-    expect(section(sections, '可能过期')).toMatchObject([{ path: 'made/a.md', sources: [{ path: 'sources/s.md' }] }])
-    expect(section(sections, '上游有标记')).toMatchObject([{ path: 'made/b.md', via: [{ path: 'made/a.md' }] }])
-    expect(ok(agent(['check'])).stdout).toMatch(/made\/a\.md ← 依据 sources\/s\.md 变了/)
-    expect(ok(agent(['inspect', 'made/a.md'])).stdout).toMatch(/sources\/s\.md\s+已变 ← 可能过期/)
+    expect(section(sections, '可能已过期')).toMatchObject([{ path: 'made/a.md', sources: [{ path: 'sources/s.md' }] }])
+    expect(section(sections, '上游已标记')).toMatchObject([{ path: 'made/b.md', via: [{ path: 'made/a.md' }] }])
+    expect(ok(agent(['check'])).stdout).toMatch(/made\/a\.md ← 依据 sources\/s\.md 已修改/)
+    expect(ok(agent(['inspect', 'made/a.md'])).stdout).toMatch(/sources\/s\.md\s+已修改 ← 可能已过期/)
 
     rmSync(join(lib, 'sources/s.md'))
     const gone = check()
-    expect(section(gone, '可能过期')).toBeUndefined()
-    expect(section(gone, '来源不在')).toMatchObject([{ path: 'made/a.md', sources: [{ path: 'sources/s.md' }] }])
+    expect(section(gone, '可能已过期')).toBeUndefined()
+    expect(section(gone, '来源缺失')).toMatchObject([{ path: 'made/a.md', sources: [{ path: 'sources/s.md' }] }])
 
-    // ARCHITECTURE.md「没经过库的改动」: a file whose row has a fingerprint, written back as it was, is taken as the new
+    // ARCHITECTURE.md「没经过资料库的改动」: a file whose row has a fingerprint, written back as it was, is taken as the new
     // baseline silently: not changed directly, and no mark comes from it.
     byHand('sources/s.md', ORIGINAL)
     const back = check()
-    for (const title of ['可能过期', '来源不在', '上游有标记', '被直接改过的']) expect(section(back, title), title).toBeUndefined()
+    for (const title of ['可能已过期', '来源缺失', '上游已标记', '外部修改']) expect(section(back, title), title).toBeUndefined()
   })
 })

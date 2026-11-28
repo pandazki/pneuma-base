@@ -75,7 +75,7 @@ function terminalPass(): Pass {
           stop = true
         })
       }
-      process.stderr.write(`${p.text}${first ? '（Ctrl-C 停下）' : ''}\n`)
+      process.stderr.write(`${p.text}${first ? '（按 Ctrl-C 停止）' : ''}\n`)
     },
     stopped: () => stop,
   }
@@ -152,28 +152,28 @@ export function processIo(): Io {
 }
 
 const USAGE = `用法：
-  pneuma-base @<授权名> <动词> …
-  pneuma-base --library <库的目录> [--as <agent 名>] <动词> …
-动词：start "<一句话>" | find <文字> [--include-archived] [--scene <场景号>] [--origin brought|made] | inspect <库内路径|条目号|场景号>
-      put <文件|目录|-|库内路径> [--to <库内路径>] (--brought [--source <出处>] [--by owner] | --made [--from <库内路径…>] [--from-outside <一句话…>]) [--note "<一句话>"]
-      say <种类> [<关于>] [<内容>] | check [--since <时间>|last] [--include-archived]
+  pneuma-base @<授权名称> <命令> …
+  pneuma-base --library <资料库目录> [--as <Agent 名称>] <命令> …
+基本命令：start "<任务描述>" | find <关键词> [--include-archived] [--scene <场景编号>] [--origin imported|generated] | inspect <库内路径|条目编号|场景编号>
+      put <文件|目录|-|库内路径> [--to <库内路径>] (--imported [--source <原始来源>] [--by owner] | --generated [--from <库内路径…>] [--from-external <说明…>]) [--note "<说明>"]
+      say <类型> [<对象>] [<内容>] | check [--since <时间>|last] [--include-archived]
       archive <库内路径> | unarchive <库内路径>
-看管理界面的一页：show [<页的编号> [--<参数> <值>…]]（不写编号列出这个库的页；条目面板是 show item --path <库内路径>）
-给只能接 MCP 的 agent 应用：pneuma-base @<授权名> mcp（在标准输入输出上跑 MCP 服务，动词和能用的命令都是工具）
-让 agent 自己接上：guide [<产品>] [--library <库的目录>] [--url]（给 agent 读的说明，和本机地址 /guide 给的一样；--url 印出那个地址）
-      pair request <产品> "<为什么>" [--library <库的目录>]（请主人允许接入，答复里有配对码）| pair status <配对号>
-主人：view [<目录>] [--port <端口>] [--no-open]（在浏览器里打开管理界面；pneuma-base <目录> 也一样）
-      init <地址> [--bare] [--provider <存储提供者>]（地址是一个文件夹，或别的存储提供者答的写法）
-插件作者：plugin new <目录> [--kind blank|deploy] [--name <插件名>] [--packages <两个包文件所在的目录>]（生成一个插件项目）
+查看管理界面的页面：show [<页面 ID> [--<参数> <值>…]]（不写页面 ID 时列出此资料库的页面；条目面板为 show item --path <库内路径>）
+供仅支持 MCP 的 Agent 应用使用：pneuma-base @<授权名称> mcp（在标准输入输出上运行 MCP 服务，基本命令和可用的所有者命令均为工具）
+Agent 自行连接：guide [<产品>] [--library <资料库目录>] [--url]（供 Agent 读取的连接指南，与本机地址 /guide 的内容相同；--url 输出该地址）
+      pair request <产品> "<原因>" [--library <资料库目录>]（请求所有者批准接入，答复中含配对码）| pair status <配对编号>
+所有者：view [<目录>] [--port <端口>] [--no-open]（在浏览器中打开管理界面；pneuma-base <目录> 与之等同）
+      init <地址> [--bare] [--provider <存储提供者>]（地址为文件夹，或其他存储提供者支持的地址写法）
+插件作者：plugin new <目录> [--kind blank|deploy] [--name <插件名称>] [--packages <包文件目录>]（生成插件项目）
 加 --json 输出结果对象。`
 
 /** `plugin new --help`: the scaffold's own usage. */
-const PLUGIN_NEW_USAGE = `用法：pneuma-base plugin new <目录> [--kind blank|deploy] [--name <插件名>] [--packages <两个包文件所在的目录>]
-在一个空的或还不存在的目录里生成一个插件项目，不改一行就能构建、通过自己的测试、装进这台机器。不碰任何库。
-  --kind      blank（缺省）：一种「说」的种类、一条带参数表的主人命令、一个视图和一个自己画的块；deploy：开发包里的部署库加一个发布到本地目录的目标
-  --name      插件名：小写字母开头，只用小写字母、数字和连字符；不写就用目录名
-  --packages  pneuma-base 和 @pneuma-base/sdk 两个包文件（pneuma-base-${PNEUMA_BASE_VERSION}.tgz、pneuma-base-sdk-${PNEUMA_BASE_VERSION}.tgz）所在的目录。项目按绝对路径依赖它们，挪到哪里都装得上；包文件要留在原处。不写时按包名依赖，两个包没有发布到 npm，npm install 装不上
-生成之后：cd <目录>，npm install，npm test，npm run install-local；README.md 说每个文件是什么。`
+const PLUGIN_NEW_USAGE = `用法：pneuma-base plugin new <目录> [--kind blank|deploy] [--name <插件名称>] [--packages <包文件目录>]
+在空目录或不存在的目录中生成插件项目，无需修改即可构建、通过自带的测试并安装到本机。不涉及任何资料库。
+  --kind      blank（默认）：一种记录类型、一条带参数表的所有者命令、一个视图和一个自绘块；deploy：开发包中的部署库加一个发布到本地目录的目标
+  --name      插件名称：以小写字母开头，仅含小写字母、数字和连字符；默认为目录名
+  --packages  pneuma-base 和 @pneuma-base/sdk 两个包文件（pneuma-base-${PNEUMA_BASE_VERSION}.tgz、pneuma-base-sdk-${PNEUMA_BASE_VERSION}.tgz）所在的目录。项目按绝对路径依赖这两个包，移动项目后仍可安装；包文件需保留在原位置。不指定时按包名依赖，而这两个包未发布到 npm，npm install 将失败
+生成后：cd <目录>，npm install，npm test，npm run install-local；README.md 说明每个文件的用途。`
 
 /**
  * The owner commands of the library at hand, from the owner face, or the kernel's when there is
@@ -181,12 +181,12 @@ const PLUGIN_NEW_USAGE = `用法：pneuma-base plugin new <目录> [--kind blank
  */
 function ownerHelp(commands: OwnerCommandInfo[], library: Library | null): string {
   const lines = commands.map((c) => {
-    const gate = c.destructive ? '；会丢数据，只有主人能做，要当面确认' : c.ownerOnly ? '；只有主人能做' : ''
-    const machine = c.machine ? '；不用指明库' : ''
+    const gate = c.destructive ? '；将丢失数据，仅所有者可执行，需当面确认' : c.ownerOnly ? '；仅所有者可执行' : ''
+    const machine = c.machine ? '；无需指定资料库' : ''
     return `  ${[c.name, ...(c.usage === null ? [] : [c.usage])].join(' ')}\n      ${c.summary}${gate}${machine}${c.by === 'kernel' ? '' : `（${c.by}）`}`
   })
-  const head = `主人命令${library === null ? '' : `（${library.root} 能用的）`}，都带 --library <库的目录>，skill install 和不用指明库的除外：`
-  const more = library === null ? ['库里装的插件各带自己的命令，pneuma-base --help --library <库的目录> 列出那个库能用的全部。'] : []
+  const head = `所有者命令${library === null ? '' : `（${library.root} 可用）`}，除 skill install 和无需指定资料库的命令外均需加 --library <资料库目录>：`
+  const more = library === null ? ['资料库中启用的插件各自提供命令，pneuma-base --help --library <资料库目录> 列出该资料库的全部可用命令。'] : []
   return [head, ...lines, ...more].join('\n')
 }
 
@@ -264,18 +264,18 @@ function specOf(verb: Verb): Spec {
   }
 }
 
-const NO_ENDPOINT = '现在没有开着的 Pneuma Base 地址：它在 Pneuma Base 应用开着时有，或者运行 pneuma-base view <库的目录>。'
+const NO_ENDPOINT = '当前没有可用的 Pneuma Base 本机地址：Pneuma Base 应用运行时提供该地址，也可运行 pneuma-base view <资料库目录>。'
 
 /** The library of a command for an agent not connected yet: `--library`, else the one the running endpoint serves. */
 async function servedLibrary({ parsed, io, table, home }: Invocation): Promise<Library | Answer> {
   const dir = flagValue(parsed, 'library')
   const root = dir === null ? ((await endpointOf(home, null))?.library ?? null) : typedAddress(dir, io.cwd)
-  if (root === null) throw new UsageError('没有开着的 Pneuma Base 地址，用 --library <库的目录> 指明是哪个库。')
-  return (await openLibrary(root, table)) ?? refusal('not-a-library', `${dir ?? root} 不是一个库。`)
+  if (root === null) throw new UsageError('当前没有可用的 Pneuma Base 本机地址，需用 --library <资料库目录> 指定资料库。')
+  return (await openLibrary(root, table)) ?? refusal('not-a-library', `${dir ?? root} 不是资料库。`)
 }
 
 const productArg = (name: string): string => {
-  if (!GRANT_NAME.test(name)) throw new UsageError(`不是一个产品名：${name}（小写字母或数字开头，只用小写字母、数字和连字符）`)
+  if (!GRANT_NAME.test(name)) throw new UsageError(`产品名称无效：${name}（需以小写字母或数字开头，仅含小写字母、数字和连字符）`)
   return name
 }
 
@@ -292,7 +292,7 @@ const SPECS: Spec[] = [
       if (hasFlag(parsed, 'url')) {
         const dir = flagValue(parsed, 'library')
         const library = dir === null ? null : await openLibrary(typedAddress(dir, io.cwd), table)
-        if (dir !== null && library === null) return refusal('not-a-library', `${dir} 不是一个库。`)
+        if (dir !== null && library === null) return refusal('not-a-library', `${dir} 不是资料库。`)
         const endpoint = await endpointOf(home, library?.root ?? null)
         if (endpoint === null) return refusal('no-endpoint', NO_ENDPOINT)
         const json = { url: guideUrl(endpoint.url), port: endpoint.port, library: endpoint.library, sentence: sentenceFor(endpoint.url) }
@@ -329,7 +329,7 @@ const SPECS: Spec[] = [
     run: async ({ args, home }) => {
       const id = args[0] as string
       const a = await pairingAnswer(home, id, instant(Date.now()))
-      return a === null ? refusal('no-such-pairing', `没有配对 ${id}。`) : { json: a, lines: [a.text], exit: 0 }
+      return a === null ? refusal('no-such-pairing', `配对 ${id} 不存在。`) : { json: a, lines: [a.text], exit: 0 }
     },
   },
   {
@@ -339,8 +339,8 @@ const SPECS: Spec[] = [
     library: false,
     run: async ({ parsed, io, table, builtins, home }) => {
       const grant = parsed.grant
-      if (grant === null) throw new UsageError('mcp 要写 @<授权名>：授权定了是哪个库、是谁。')
-      if (['library', 'as'].some((f) => hasFlag(parsed, f))) throw new UsageError('mcp 只认 @<授权名>：库和身份由授权定，不写 --library 或 --as。')
+      if (grant === null) throw new UsageError('mcp 需指定 @<授权名称>：授权决定资料库和身份。')
+      if (['library', 'as'].some((f) => hasFlag(parsed, f))) throw new UsageError('mcp 仅接受 @<授权名称>：资料库和身份由授权决定，不使用 --library 或 --as。')
       // Standard output carries the protocol alone: a refusal before it starts, and whatever a plugin logs, go to standard error.
       const resolved = await resolveGrant(home, grant, table)
       if (!resolved.ok) {
@@ -376,7 +376,7 @@ const SPECS: Spec[] = [
     library: false,
     run: async ({ args, parsed, io }) => {
       const kind = flagValue(parsed, 'kind') ?? 'blank'
-      if (!(KINDS as readonly string[]).includes(kind)) throw new UsageError(`--kind 只能是 ${KINDS.join(' 或 ')}：${kind}`)
+      if (!(KINDS as readonly string[]).includes(kind)) throw new UsageError(`--kind 的值只能为 ${KINDS.join(' 或 ')}：${kind}`)
       const packages = flagValue(parsed, 'packages')
       const dir = resolve(io.cwd, args[0] as string)
       const r = scaffold({ dir, kind: kind as Kind, name: flagValue(parsed, 'name'), packages: packages === null ? null : resolve(io.cwd, packages) })
@@ -384,10 +384,10 @@ const SPECS: Spec[] = [
         if (r.reason === 'usage') throw new UsageError(r.text)
         return refusal(r.reason, r.text)
       }
-      const where = r.packages === null ? ['没写 --packages，package.json 按包名依赖两个包，它们没有发布到 npm，npm install 装不上。换一个空目录，加 --packages <两个包文件所在的目录> 再生成。'] : []
-      const next = [`cd ${dir}`, 'npm install', 'npm test', 'npm run install-local', `npx -- pneuma-base plugin add ${r.name} --library <库的目录>`]
-      const standard = `插件规范：${r.standard ?? 'npm install 之后在 node_modules/pneuma-base/PLUGINS.md'}`
-      const lines = [`已在 ${dir} 生成插件 ${r.name}（${r.kind}），${r.files.length} 个文件，README.md 说每个是什么。`, standard, ...where, '接着：', ...next.map((l) => `  ${l}`)]
+      const where = r.packages === null ? ['未指定 --packages：package.json 按包名依赖两个包，而这两个包未发布到 npm，npm install 将失败。请改用空目录，加 --packages <包文件目录> 重新生成。'] : []
+      const next = [`cd ${dir}`, 'npm install', 'npm test', 'npm run install-local', `npx -- pneuma-base plugin enable ${r.name} --library <资料库目录>`]
+      const standard = `插件规范：${r.standard ?? 'npm install 后位于 node_modules/pneuma-base/PLUGINS.md'}`
+      const lines = [`已在 ${dir} 生成插件 ${r.name}（${r.kind}），共 ${r.files.length} 个文件，README.md 说明每个文件的用途。`, standard, ...where, '下一步：', ...next.map((l) => `  ${l}`)]
       return { json: { outcome: 'done', problems: [], ...r }, lines, exit: 0 }
     },
   },
@@ -398,10 +398,10 @@ const SPECS: Spec[] = [
     library: false,
     run: async ({ args, parsed, io, builtins, home }) => {
       const port = flagValue(parsed, 'port')
-      if (port !== null && !/^\d{1,5}$/.test(port)) throw new UsageError(`--port 要写一个端口号：${port}`)
+      if (port !== null && !/^\d{1,5}$/.test(port)) throw new UsageError(`--port 的值应为端口号：${port}`)
       const dir = resolve(io.cwd, args[0] ?? '.')
       const stopped = await view({ dir, builtins, home, io, port: port === null ? undefined : Number(port), open: !hasFlag(parsed, 'no-open') })
-      return { json: stopped, lines: ['界面已关闭。'], exit: 0 }
+      return { json: stopped, lines: ['管理界面已关闭。'], exit: 0 }
     },
   },
 ]
@@ -421,14 +421,14 @@ function matchSpec(typed: readonly string[]): Spec | null {
 async function bind(inv: Invocation): Promise<Bound | Answer> {
   const { parsed, io, table, home } = inv
   const dir = flagValue(parsed, 'library')
-  if (parsed.grant !== null && (dir !== null || hasFlag(parsed, 'as'))) throw new UsageError('@<授权名> 已经定了库和身份，不要再写 --library 或 --as。')
+  if (parsed.grant !== null && (dir !== null || hasFlag(parsed, 'as'))) throw new UsageError('@<授权名称> 已决定资料库和身份，不能再使用 --library 或 --as。')
   if (parsed.grant !== null) {
     const r = await resolveGrant(home, parsed.grant, table)
     return r.ok ? contextFor(inv, r.library, r.grant) : refusal(r.reason, r.text)
   }
-  if (dir === null) throw new UsageError('要用 @<授权名> 或 --library <库的目录> 指明是哪个库。')
+  if (dir === null) throw new UsageError('需用 @<授权名称> 或 --library <资料库目录> 指定资料库。')
   const library = await openLibrary(typedAddress(dir, io.cwd), table)
-  return library ? contextFor(inv, library, null) : refusal('not-a-library', `${dir} 不是一个库。先用 pneuma-base init <地址> 建库。`)
+  return library ? contextFor(inv, library, null) : refusal('not-a-library', `${dir} 不是资料库。可用 pneuma-base init <地址> 初始化资料库。`)
 }
 
 function contextFor({ parsed, io, home }: Invocation, library: Library, grant: Grant | null): Bound {
@@ -445,7 +445,7 @@ const words = (name: string) => name.split(' ')
 
 /** The library of a grant-bound command: the one its grant points at, used by the owner. */
 async function bindByGrant(inv: Invocation, grantName: string | undefined, command: string): Promise<Bound | Answer> {
-  if (grantName === undefined) throw new UsageError(`${command} 要写授权名`)
+  if (grantName === undefined) throw new UsageError(`${command} 需指定授权名称`)
   const resolved = await resolveGrant(inv.home, grantName, inv.table)
   return resolved.ok ? contextFor(inv, resolved.library, null) : refusal(resolved.reason, resolved.text)
 }
@@ -462,7 +462,7 @@ function machineCall(inv: Invocation): OwnerCall {
 /** An owner command, the kernel's or an installed plugin's, run through the owner face's one entry. */
 async function ownerCommand(inv: Invocation, line: Line): Promise<Answer> {
   const typed = leadingWords(line)
-  const unknown = () => new UsageError(`不认识的命令：${typed.join(' ') || '（空）'}`)
+  const unknown = () => new UsageError(`未知命令：${typed.join(' ') || '（空）'}`)
   const answer = (r: OwnerResult): Answer => {
     if (r.outcome === 'refused' && r.reason === 'usage') throw new UsageError(r.text)
     return owner(r)
@@ -473,7 +473,7 @@ async function ownerCommand(inv: Invocation, line: Line): Promise<Answer> {
     if (!kernel) throw unknown()
     const args = argsOf(kernel, line)
     if (kernel.machine) return answer(await ownerFace.dispatch(machineCall(inv), kernel.name, args))
-    if (!GRANT_BOUND.has(kernel.name)) throw new UsageError('要用 @<授权名> 或 --library <库的目录> 指明是哪个库。')
+    if (!GRANT_BOUND.has(kernel.name)) throw new UsageError('需用 @<授权名称> 或 --library <资料库目录> 指定资料库。')
     bound = await bindByGrant(inv, args.positional[0], kernel.name)
   } else bound = await bind(inv)
   if ('exit' in bound) return bound
@@ -484,7 +484,7 @@ async function ownerCommand(inv: Invocation, line: Line): Promise<Answer> {
 
 async function runSpec(spec: Spec, inv: Invocation): Promise<Answer> {
   const name = spec.words.join(' ')
-  if (inv.args.length < spec.arity[0] || inv.args.length > spec.arity[1]) throw new UsageError(`${name} 的参数个数不对`)
+  if (inv.args.length < spec.arity[0] || inv.args.length > spec.arity[1]) throw new UsageError(`${name} 的参数个数错误`)
   if (!spec.library) return spec.run(inv)
   const bound = await bind(inv)
   return 'exit' in bound ? bound : spec.run(inv, bound)
@@ -535,7 +535,7 @@ export async function main(argv: readonly string[], builtins: PluginTable, io: I
     if (error instanceof UsageError) {
       io.err(`用法错误：${error.message}`)
       // A command's own usage line, when the message ends with one, says more than the general one.
-      io.err(`${error.message.includes('\n用法：') ? '' : `${USAGE}\n`}主人命令：pneuma-base --help --library <库的目录> 列出一个库能用的全部。`)
+      io.err(`${error.message.includes('\n用法：') ? '' : `${USAGE}\n`}所有者命令：pneuma-base --help --library <资料库目录> 列出该资料库的全部可用命令。`)
       return 1
     }
     io.err(`出错：${error instanceof Error ? error.message : String(error)}`)

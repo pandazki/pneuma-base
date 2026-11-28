@@ -29,7 +29,7 @@ const AT_ONCE = 8
 
 const heard = (note: string): SayAnswer => ({ outcome: 'heard', note })
 const refused = (note: string): SayAnswer => ({ outcome: 'not-heard', reason: 'refused', note })
-const busy = (path: string) => refused(`${path} 正在被改动，没能记下当前的内容；稍后再说一次。`)
+const busy = (path: string) => refused(`${path} 正在被修改，无法记录当前内容；请稍后重试。`)
 
 async function eachAtMost<T>(list: readonly T[], f: (t: T) => Promise<void>): Promise<void> {
   let next = 0
@@ -42,43 +42,43 @@ async function eachAtMost<T>(list: readonly T[], f: (t: T) => Promise<void>): Pr
 /** Writes the note on the content now at the thing's path, recording that content as a version first if it is not one. */
 async function describe(w: Writing, thing: Thing, text: string): Promise<SayAnswer> {
   const r = await record(w, thing, 'outside')
-  if (r === null) return refused(`${thing.path} 上现在没有东西，没法给当前这一版写说明。`)
+  if (r === null) return refused(`${thing.path} 当前不存在，无法为当前版本添加说明。`)
   if (r === 'moved') return busy(thing.path)
   apply(w, { kind: 'note', thing: thing.id, version: r.version.id, text })
   await commit(w)
-  const first = r.added ? `${thing.path} 在工具之外改过，已先记为第 ${r.version.n} 版；` : ''
-  return heard(`${first}已给 ${thing.path} 的第 ${r.version.n} 版写上说明：${text}`)
+  const first = r.added ? `${thing.path} 已被外部修改，已先记录为版本 ${r.version.n}；` : ''
+  return heard(`${first}已为 ${thing.path} 的版本 ${r.version.n} 添加说明：${text}`)
 }
 
-/** `say versioned <path> [一句话]`: declares the thing and records its current content as version 1. */
+/** `say versioned <path> [说明]`: declares the thing and records its current content as version 1. */
 async function declare(w: Writing, input: string, text: string | null): Promise<SayAnswer> {
   const { tools } = w.ctx
   const path = await thingPath(w.ctx, input)
-  if (path === null) return refused(`${input} 不在库的内容里。`)
+  if (path === null) return refused(`${input} 不在资料库中。`)
   const known = await declaredAt(w.ctx, path)
-  if (known) return text ? describe(w, adopt(w, known), text) : heard(`${known.path} 早已声明有版本，现在有 ${known.versions.length} 版。`)
+  if (known) return text ? describe(w, adopt(w, known), text) : heard(`${known.path} 已启用版本管理，当前共 ${known.versions.length} 个版本。`)
   const candidates = tools.regionOf(path) === 'content' ? [path, tools.archivedPath(path)] : [path]
   const at = (await tools.what(candidates)).find((t) => t.kind === 'file' || t.kind === 'bundle')?.path
-  if (at === undefined) return refused(`库里没有这样东西：${input}。先 put 进来，再声明。`)
+  if (at === undefined) return refused(`条目不存在：${input}。请先用 put 添加，再启用版本管理。`)
   const thing = w.things.get(apply(w, { kind: 'declare', thing: newThingId(), path: at }).thing) as Thing
   const r = await record(w, thing, 'declare')
-  if (r === null) return refused(`${at} 刚刚不见了，没有声明。`)
+  if (r === null) return refused(`${at} 已缺失，未启用版本管理。`)
   if (r === 'moved') return busy(at)
   if (text) apply(w, { kind: 'note', thing: thing.id, version: r.version.id, text })
   await commit(w)
-  return heard(`已声明 ${at} 有版本，当前内容记为第 1 版。以后用 put 放进不同的内容就多一版；inspect ${at} 看每一版。`)
+  return heard(`已为 ${at} 启用版本管理，当前内容记录为版本 1。之后每次用 put 添加不同的内容即新增一个版本；inspect ${at} 查看所有版本。`)
 }
 
 async function hear(w: Writing, req: SayRequest): Promise<SayAnswer> {
   if (req.kind === 'versioned') {
     const input = req.about ?? req.text
-    if (input === null) return refused('要写是哪样东西：say versioned <库内路径> ["一句话"]')
+    if (input === null) return refused('缺少条目：say versioned <库内路径> ["<说明>"]')
     return declare(w, input, req.about === null ? null : req.text)
   }
-  if (req.about === null || !req.text) return refused('要写是哪样东西和一句话：say version <库内路径> "<一句话>"')
+  if (req.about === null || !req.text) return refused('缺少条目或说明：say version <库内路径> "<说明>"')
   const path = await thingPath(w.ctx, req.about)
   const named = path === null ? undefined : await declaredAt(w.ctx, path)
-  if (!named) return refused(`${req.about} 没有声明有版本，先 say versioned ${req.about}。`)
+  if (!named) return refused(`${req.about} 未启用版本管理，请先执行 say versioned ${req.about}。`)
   return describe(w, adopt(w, named), req.text)
 }
 
@@ -89,7 +89,7 @@ async function follow(ctx: PluginContext, from: LibraryPath, to: LibraryPath, wh
   if (!thing) return null
   apply(w, { kind: 'move', thing: thing.id, from, to })
   await commit(w)
-  return { text: `它的 ${thing.versions.length} 版跟着${what}到了 ${to}`, data: { thing: thing.id } }
+  return { text: `${thing.versions.length} 个版本已随条目${what}到 ${to}`, data: { thing: thing.id } }
 }
 
 /** A put over a declared thing, which the kernel holds: a version when its content is not the latest; the put's note on that version. */
@@ -101,8 +101,8 @@ async function putOver(w: Writing, path: LibraryPath, held: Held, note: string |
   if (note !== null) apply(w, { kind: 'note', thing: thing.id, version: r.version.id, text: note })
   await commit(w)
   const data = { thing: thing.id, version: r.version.n }
-  if (r.added) return { text: `记为 ${thing.path} 的第 ${r.version.n} 版${note ? `：「${note}」` : ''}`, data }
-  return note === null ? null : { text: `已给 ${thing.path} 的第 ${r.version.n} 版写上说明：${note}`, data }
+  if (r.added) return { text: `已记录为 ${thing.path} 的版本 ${r.version.n}${note ? `：「${note}」` : ''}`, data }
+  return note === null ? null : { text: `已为 ${thing.path} 的版本 ${r.version.n} 添加说明：${note}`, data }
 }
 
 /** What `check --deep` reads: each declared thing in the library, not archived, at or under `dir` (all of them when null), from the rows a page at a time. */
@@ -122,8 +122,8 @@ const DEEP_PAGE = 100
  */
 async function deepRead(ctx: PluginContext, w: Writing, dir: LibraryPath | null, looked: ReadonlySet<string>, check: (thing: Thing) => Promise<void>): Promise<{ scope: number; done: number; stopped: boolean }> {
   const scope = (await inScope(ctx, dir)).filter((t) => !looked.has(t.id)).map((t) => adopt(w, t))
-  const where = dir === null ? '整个库' : ` ${dir} 下`
-  ctx.pass?.report({ done: 0, total: scope.length, text: `要按内容读${where}有版本的东西：${scope.length} 样。` })
+  const where = dir === null ? '整个资料库中' : ` ${dir} 下`
+  ctx.pass?.report({ done: 0, total: scope.length, text: `将读取${where}受版本管理的条目：${scope.length} 个。` })
   let done = 0
   for (let i = 0; i < scope.length; i += DEEP_PAGE) {
     if (ctx.pass?.stopped()) return { scope: scope.length, done, stopped: true }
@@ -131,7 +131,7 @@ async function deepRead(ctx: PluginContext, w: Writing, dir: LibraryPath | null,
     await eachAtMost(page, check)
     await commit(w)
     done += page.length
-    ctx.pass?.report({ done, total: scope.length, text: `有版本的东西已按内容查 ${done} / ${scope.length} 样` })
+    ctx.pass?.report({ done, total: scope.length, text: `受版本管理的条目已检查 ${done} / ${scope.length} 个` })
   }
   return { scope: scope.length, done, stopped: false }
 }
@@ -143,15 +143,15 @@ function purged(event: Event): LibraryPath[] {
   return Array.isArray(paths) ? paths.filter((p): p is LibraryPath => typeof p === 'string') : []
 }
 
-/** 版本：things declared versioned keep every version's content. */
+/** 版本管理: things declared versioned keep every version's content. */
 export const version: Plugin = {
   contract: CONTRACT,
   name: pluginName('version'),
   version: PNEUMA_BASE_VERSION,
-  title: '版本',
-  summary: '留下每一版，能列出、导出、放回',
-  about: '声明了有版本的东西，每一版的内容都留着，能列出、导出、放回。',
-  cognition: { title: '版本', text: readFileSync(new URL('../cognition/version-section.md', import.meta.url), 'utf8') },
+  title: '版本管理',
+  summary: '保留条目的每个版本',
+  about: '启用版本管理的条目保留每个版本的内容，可列出、导出和恢复。',
+  cognition: { title: '版本管理', text: readFileSync(new URL('../cognition/version-section.md', import.meta.url), 'utf8') },
   keeps: 'some',
   storage: [
     { dir: 'objects', kind: 'body' },
@@ -169,7 +169,7 @@ export const version: Plugin = {
 
   /** A put over a declared thing: a new version when the content differs from the latest; a move follows it. */
   async onPut(req, ctx) {
-    if (req.kind === 'move') return follow(ctx, req.from, req.path, '挪')
+    if (req.kind === 'move') return follow(ctx, req.from, req.path, '移动')
     const w = await writing(ctx)
     if (req.kind !== 'register-files') return putOver(w, req.path, { token: req.now.token, fingerprint: req.fingerprint }, req.note)
     const notes: string[] = []
@@ -184,15 +184,15 @@ export const version: Plugin = {
   async revise(req, ctx) {
     const w = await writing(ctx)
     const thing = await declaredExactly(w, req.path)
-    if (!thing) return { outcome: 'declined', reason: `${req.path} 没有声明有版本。要改它并留住旧版，先 say versioned ${req.path}，再放。` }
+    if (!thing) return { outcome: 'declined', reason: `${req.path} 未启用版本管理。如需修改并保留旧版本，请先执行 say versioned ${req.path}，再添加。` }
     const r = await record(w, thing, 'outside', { token: req.token, fingerprint: req.current })
-    if (r === null || r === 'moved') return { outcome: 'declined', reason: `${req.path} 正在被改动，没能留住当前的内容` }
+    if (r === null || r === 'moved') return { outcome: 'declined', reason: `${req.path} 正在被修改，无法保留当前内容` }
     await commit(w)
-    return { outcome: 'held', note: r.added ? `当前内容是在工具之外改的，已先记为第 ${r.version.n} 版` : null }
+    return { outcome: 'held', note: r.added ? `当前内容为外部修改，已先记录为版本 ${r.version.n}` : null }
   },
 
   async onArchive(req, ctx) {
-    return req.moved ? follow(ctx, req.from, req.to, req.kind === 'archive' ? '归档' : '取回') : null
+    return req.moved ? follow(ctx, req.from, req.to, req.kind === 'archive' ? '归档' : '取消归档') : null
   },
 
   /**
@@ -218,17 +218,17 @@ export const version: Plugin = {
     const deep = req.deep ? await deepRead(ctx, w, req.deep.dir, new Set(looked.map((t) => t.id)), check('content')) : null
     if (recorded.length === 0 && missing.length === 0 && !deep?.stopped) return []
     // Each list names its first TEXT_ROWS, then how many and the page that lists every versioned thing.
-    const rest = (n: number, shown: number) => (n > shown ? [`  ……共 ${n} 样，看全部：show ${THINGS_VIEW.id}`] : [])
+    const rest = (n: number, shown: number) => (n > shown ? [`  ……共 ${n} 个，查看全部：show ${THINGS_VIEW.id}`] : [])
     const lines = [
-      ...(deep?.stopped ? [`停下了：有版本的东西按内容查了 ${deep.done} / ${deep.scope} 样。`] : []),
-      ...recorded.slice(0, TEXT_ROWS).map((r) => `${r.path} 在工具之外被改过，已记为第 ${r.version} 版`),
+      ...(deep?.stopped ? [`已停止：受版本管理的条目已检查 ${deep.done} / ${deep.scope} 个。`] : []),
+      ...recorded.slice(0, TEXT_ROWS).map((r) => `${r.path} 已被外部修改，已记录为版本 ${r.version}`),
       ...rest(recorded.length, TEXT_ROWS),
-      ...missing.slice(0, TEXT_ROWS).map((path) => `${path} 不在了；它的每一版都还在，version restore ${path} --version <n> 能放回来`),
+      ...missing.slice(0, TEXT_ROWS).map((path) => `${path} 已缺失；所有版本仍保留，可用 version restore ${path} --version <n> 恢复`),
       ...rest(missing.length, TEXT_ROWS),
     ]
     const more = recorded.length > TEXT_ROWS || missing.length > TEXT_ROWS ? { more: `show ${THINGS_VIEW.id}` } : {}
     const data = { recorded: recorded.slice(0, TEXT_ROWS), missing: missing.slice(0, TEXT_ROWS), count: { recorded: recorded.length, missing: missing.length }, ...more, ...(deep ? { deep } : {}) }
-    return [{ title: '有版本的东西', body: lines.join('\n'), data }]
+    return [{ title: '受版本管理的条目', body: lines.join('\n'), data }]
   },
 
   async onInspect(req, ctx) {

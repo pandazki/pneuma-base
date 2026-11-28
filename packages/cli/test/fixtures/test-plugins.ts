@@ -285,7 +285,7 @@ export const asker: Plugin = {
             link: { view: 'ledger.scene', params: { scene: 's1' }, target: 'panel' },
             rows: [
               { key: 'f1', at: '2026-11-25T11:11:00.000Z' as Instant, actor: { kind: 'agent', name: 'claude-code', grant: 'claude' }, text: '归档 notes/old.md', meta: [{ text: '整理笔记' }, { text: '凭授权 claude', muted: true }], whose: 'agent', action: undo, link: { view: 'item', params: { path: '_archive/old.md' }, target: 'panel' } },
-              { key: 'f2', at: '2026-11-25T11:12:00.000Z' as Instant, actor: { kind: 'owner', name: '主人' }, text: '主人面的操作 plugin add', meta: [], whose: 'owner', settled: '已定', link: null },
+              { key: 'f2', at: '2026-11-25T11:12:00.000Z' as Instant, actor: { kind: 'owner', name: '主人' }, text: '主人面的操作 plugin enable', meta: [], whose: 'owner', settled: '已定', link: null },
             ],
           },
         ],

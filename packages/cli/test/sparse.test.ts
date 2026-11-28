@@ -26,7 +26,7 @@ function setUp() {
   sb = sandbox()
   lib = join(tempDir(), 'lib')
   ok(sb.run(['init', lib]))
-  agent(['put', '-', '--to', 'notes/a.md', '--made'], 'a')
+  agent(['put', '-', '--to', 'notes/a.md', '--generated'], 'a')
   // A folder nobody registered and nobody may read: opening it would fail, so nothing may open it.
   closed = join(lib, 'vendor')
   mkdirSync(join(closed, 'pkg'), { recursive: true })
@@ -44,18 +44,18 @@ describe('a directory no record points into', () => {
     setUp()
     const check = agent(['check', '--json']).json()
     expect(check.problems).toEqual([])
-    expect(check.sections.find((s: any) => s.title === '没登记的目录').data).toEqual({ count: 1, shown: [{ path: 'vendor' }] })
+    expect(check.sections.find((s: any) => s.title === '未登记的目录').data).toEqual({ count: 1, shown: [{ path: 'vendor' }] })
     const home = owner(['show', 'home']).stdout
-    expect(home).toContain('vendor/ 没登记。')
+    expect(home).toContain('vendor/ 未登记。')
     expect(agent(['start', '看看库里有什么']).stdout).toContain('vendor/')
   })
 
   it('is not mentioned again once the owner leaves it alone, which adds it to the noise', () => {
     setUp()
-    owner(['noise', 'add', 'vendor'])
+    owner(['ignore', 'add', 'vendor'])
     // What remains is the news that the owner did it.
-    expect(titles(agent(['check', '--json']))).toEqual(['自上次以来'])
-    expect(owner(['noise', 'list']).stdout).toContain('vendor')
+    expect(titles(agent(['check', '--json']))).toEqual(['最近动态'])
+    expect(owner(['ignore', 'list']).stdout).toContain('vendor')
     expect(owner(['show', 'home']).stdout).not.toContain('vendor')
   })
 })
@@ -79,8 +79,8 @@ describe('an agent’s start and check', () => {
     const text = agent(['check']).stdout
     expect(text).toContain('loose-19.md')
     expect(text).not.toContain('loose-20.md')
-    expect(text).toContain('……共 30 样，看全部：show ledger.standing --kind unowned')
-    const data = agent(['check', '--json']).json().sections.find((s: any) => s.title === '没人登记过的').data
+    expect(text).toContain('……共 30 个，查看全部：show ledger.status --kind unowned')
+    const data = agent(['check', '--json']).json().sections.find((s: any) => s.title === '未登记').data
     expect(data.count).toBe(30)
     expect(data.shown).toHaveLength(20)
   })
@@ -89,7 +89,7 @@ describe('an agent’s start and check', () => {
     setUp()
     // Thousands of registered things changed by hand, of files nobody registered, and hundreds of directories nobody registered.
     for (let i = 0; i < 1000; i++) writeFileSync(join(lib, 'notes', `n${i}.md`), `${i}`)
-    for (let i = 0; i < 6; i++) agent(['put', 'notes', '--made'])
+    for (let i = 0; i < 6; i++) agent(['put', 'notes', '--generated'])
     for (let i = 0; i < 1000; i++) writeFileSync(join(lib, 'notes', `n${i}.md`), `${i} changed by hand`)
     for (let i = 0; i < 2000; i++) writeFileSync(join(lib, `loose-${i}.md`), `${i}`)
     for (let i = 0; i < 300; i++) {
@@ -104,8 +104,8 @@ describe('an agent’s start and check', () => {
     expect(Buffer.byteLength(json.stdout)).toBeLessThanOrEqual(AGENT_JSON_LIMIT)
     // Both forms stop at the same place and say where the rest is.
     expect(text.match(/^- .*（ledger）$/gm)).toHaveLength(check.asks.length)
-    expect(check.cut.where).toContain('show ledger.standing')
-    for (const s of check.sections.filter((s: any) => s.data?.count > 20)) expect(s.data).toMatchObject({ more: expect.stringMatching(/^show ledger\.standing --kind /) })
+    expect(check.cut.where).toContain('show ledger.status')
+    for (const s of check.sections.filter((s: any) => s.data?.count > 20)) expect(s.data).toMatchObject({ more: expect.stringMatching(/^show ledger\.status --kind /) })
     expect(Buffer.byteLength(agent(['start', '--json', '看看库里有什么']).stdout)).toBeLessThanOrEqual(AGENT_JSON_LIMIT)
     // find gives a page of 20 and the command for the next; the last page names no next.
     const first = agent(['find', '--json', 'notes']).json()
@@ -113,7 +113,7 @@ describe('an agent’s start and check', () => {
     expect(first.more.next).toContain('--page 2')
     const last = agent(['find', '--json', 'notes', '--page', String(Math.ceil(first.more.count / 20))]).json()
     expect(last.more.next).toBeNull()
-    owner(['grant', 'issue', 'g', '--agent', 'claude-code'])
+    owner(['grant', 'create', 'g', '--agent', 'claude-code'])
     const client = await connect(sb, 'g', 'legacy')
     try {
       const r = await call(client, 'check', { since: '2000-01-01T00:00:00Z' })

@@ -10,7 +10,7 @@ import { useEnv } from '../env'
 /** The range of rows a page shows and the whole list's count, in words: 51–100，共 523 项. */
 export function rangeText(page: Paging): string {
   const last = page.first + page.shown - 1
-  const range = page.shown === 0 ? '没有' : page.shown === 1 ? `第 ${page.first.toLocaleString()} 项` : `${page.first.toLocaleString()}–${last.toLocaleString()}`
+  const range = page.shown === 0 ? '无' : page.shown === 1 ? `第 ${page.first.toLocaleString()} 项` : `${page.first.toLocaleString()}–${last.toLocaleString()}`
   return `${range}，${page.atLeast ? '至少' : '共'} ${page.total.toLocaleString()} 项`
 }
 

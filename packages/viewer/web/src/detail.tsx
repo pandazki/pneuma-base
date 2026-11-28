@@ -71,7 +71,7 @@ export function DetailPanel({ tabs, active, labelOf, iconOf, result, actions, ch
   return (
     <aside ref={panel} aria-label="详情" className="detail">
       <div className="detail-head" data-drag data-chrome>
-        <div ref={strip} role="tablist" aria-label="打开的详情" className="tabs" onKeyDown={onKeyDown}>
+        <div ref={strip} role="tablist" aria-label="详情" className="tabs" onKeyDown={onKeyDown}>
           {tabs.map((tab, i) => {
             const label = i === active && shown ? shown.title : labelOf(topOf(tab))
             return (
@@ -104,19 +104,21 @@ export function DetailPanel({ tabs, active, labelOf, iconOf, result, actions, ch
       </div>
       <div id="detail-body" role="tabpanel" aria-labelledby={`tab-${active}`} className="detail-body">
         <div className="detail-title">
-          {front && front.length > 1 ? (
-            <button type="button" className="icon-btn" aria-label="返回" data-tip="返回" onClick={onBack}>
-              <ArrowLeft strokeWidth={2} aria-hidden />
-            </button>
-          ) : null}
-          {front ? (
-            <span className="detail-tile" aria-hidden>
-              <ViewIcon name={shown?.icon ?? iconOf(topOf(front))} />
-            </span>
-          ) : null}
-          <div className="min-w-0 flex-1">
-            <h2 data-testid="panel-title">{shown?.title ?? ''}</h2>
-            {subtitle ? <p title={shown?.subtitle ?? undefined}>{localMoments(subtitle)}</p> : null}
+          <div className="detail-name">
+            {front && front.length > 1 ? (
+              <button type="button" className="icon-btn" aria-label="返回" data-tip="返回" onClick={onBack}>
+                <ArrowLeft strokeWidth={2} aria-hidden />
+              </button>
+            ) : null}
+            {front ? (
+              <span className="detail-tile" aria-hidden>
+                <ViewIcon name={shown?.icon ?? iconOf(topOf(front))} />
+              </span>
+            ) : null}
+            <div className="min-w-0 flex-1">
+              <h2 data-testid="panel-title">{shown?.title ?? ''}</h2>
+              {subtitle ? <p title={shown?.subtitle ?? undefined}>{localMoments(subtitle)}</p> : null}
+            </div>
           </div>
           <ActionBar actions={actions} small={false} className="head-actions" />
         </div>

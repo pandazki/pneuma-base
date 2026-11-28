@@ -11,6 +11,7 @@ import { archived, type FindRow, type ItemRow, type SceneRow } from './model.js'
 import { getAll, scenesNamed } from './queries.js'
 import { pagesOf, wherePages } from './rows.js'
 import { originLabel, sceneLine } from './views.js'
+import { storedOrigin } from './words.js'
 
 type ItemFind = Extract<FindRow, { item: ItemId }>
 type SceneFind = Extract<FindRow, { texts: string; scene: SceneId }> & { item?: undefined }
@@ -30,16 +31,21 @@ function itemHit(scenes: ReadonlyMap<string, SceneRow>, row: Pick<ItemFind, 'pat
 
 function sceneHit(s: SceneRow): PluginHit {
   const decided = s.said.filter((x) => x.flavor === 'decided').map((x) => x.text)
-  const parts = [...(s.cwds.length ? [`在 ${s.cwds.map((d) => shortDir(d)).join('、')}`] : []), ...(decided.length ? [`决定：${decided.join('；')}`] : [])]
+  const parts = [...(s.cwds.length ? [`位置 ${s.cwds.map((d) => shortDir(d)).join('、')}`] : []), ...(decided.length ? [`决策：${decided.join('；')}`] : [])]
   return { path: null, title: `场景 ${s.id}`, group: sceneLine(s), detail: parts.length ? parts.join(' · ') : null }
 }
 
 const bareHit = (path: LibraryPath): PluginHit => ({ path, title: posix.basename(path), group: null, detail: null })
 
+/** The origin a find's filter names, as the rows keep it: undefined without the filter, null for a word that names none. */
+const originFilter = (req: FindRequest) => (req.filters.origin === undefined ? undefined : storedOrigin(req.filters.origin))
+
 /** The rows a find with these filters reads: by the scene or the origin it names, else every thing (and every scene), page by page. */
 async function* rowsOf(ctx: PluginContext, req: FindRequest): AsyncGenerator<FindRow[]> {
   const records = ctx.tools.storage.records
-  const { scene, origin } = req.filters
+  const { scene } = req.filters
+  const origin = originFilter(req)
+  if (origin === null) return
   const keep = (rows: { key: string; value: FindRow }[]) => rows.filter((r) => req.includeArchived || !r.key.startsWith('a|')).map((r) => r.value)
   if (scene !== undefined) {
     for (const s of (await scenesNamed(records, scene)).scenes) for await (const page of wherePages<FindRow>(records, 'find', 'scene', s.id)) yield keep(page).filter((r) => origin === undefined || (isItem(r) && r.origin.kind === origin))
@@ -94,9 +100,10 @@ export async function findHits(req: FindRequest, ctx: PluginContext): Promise<Pl
 export async function foundHits(paths: readonly LibraryPath[], req: FindRequest, ctx: PluginContext): Promise<PluginHit[]> {
   const records = ctx.tools.storage.records
   const skip = req.skipOwnSession ? sceneOf(ctx) : null
+  const origin = originFilter(req)
   const held = await getAll<{ id: ItemId }>(records, 'paths', paths)
   const items = [...(await getAll<ItemRow>(records, 'items', [...held.values()].map((v) => v.id))).values()].filter(
-    (item) => !item.removed && item.absorbedInto === null && item.entered.scene !== skip && (req.includeArchived || !archived(item)) && (req.filters.origin === undefined || item.origin.kind === req.filters.origin),
+    (item) => !item.removed && item.absorbedInto === null && item.entered.scene !== skip && (req.includeArchived || !archived(item)) && (origin === undefined || item.origin.kind === origin),
   )
   const scenes = await getAll<SceneRow>(records, 'scenes', items.map((i) => i.entered.scene))
   return items.map((item) => itemHit(scenes, { path: item.path, scene: item.entered.scene, origin: item.origin, how: item.entered.how }))

@@ -40,16 +40,16 @@ export function plan(w: Want, held: Held): Step[] {
   return [...publish, ...stale.map((site): Step => ({ kind: 'unpublish', site }))]
 }
 
-/** 在线, 待发布, 离线, 待下线, 已归档, 不在. */
-export type State = 'online' | 'pending' | 'offline' | 'retiring' | 'archived' | 'missing'
+/** 已发布, 待发布, 未发布, 待取消发布, 已归档, 条目缺失. */
+export type State = 'published' | 'pending' | 'unpublished' | 'pending-unpublish' | 'archived' | 'missing'
 
-/** Settled: named by why the target holds what it holds. Not settled: pending when something should be online, retiring when nothing should. */
+/** Settled: named by why the target holds what it holds. Not settled: pending when something should be published, pending-unpublish when nothing should. */
 export function statusOf(site: SiteName | null, s: Standing, held: Held): State {
   const w = want(site, s)
-  if (plan(w, held).length > 0) return w === null ? 'retiring' : 'pending'
+  if (plan(w, held).length > 0) return w === null ? 'pending-unpublish' : 'pending'
   if (s.archived) return 'archived'
-  if (!s.on) return 'offline'
-  return s.content === null ? 'missing' : 'online'
+  if (!s.on) return 'unpublished'
+  return s.content === null ? 'missing' : 'published'
 }
 
 /** A path that is already lower-case letters and digits joined by single dashes and slashes. */

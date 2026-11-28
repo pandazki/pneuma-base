@@ -6,7 +6,7 @@
 # suite's program for darwin-arm64. The first launch points the machine's launcher at the app's Node and
 # command line and shows the welcome window, which offers where to keep the library: with the one
 # provider, a folder; choosing a folder (the same code, by a test hook) makes it a library and opens
-# the window on home with 「开始」; the watcher is the provider's own subscription, a child of the app;
+# the window on home with 「快速开始」; the watcher is the provider's own subscription, a child of the app;
 # a file dropped on the window (the drop code, by a test hook) is put as brought by the owner, into
 # inbox/ or the folder the library page shows, named as Finder names a copy when the name is taken; a
 # file written straight into the library is heard through the subscription and registered as the
@@ -28,7 +28,7 @@
 # menu bar panel; the local endpoint's address is in machine state and its sentence on the agents page,
 # its guide names the launcher, a foreign Host or Origin is refused, a pairing asked over HTTP shows on
 # home with its code and, allowed, lets the application put by MCP over HTTP under its own name;
-# 在终端里用 pneuma-base puts a link in a folder on PATH and takes it out; a moved copy
+# 安装命令行工具 puts a link in a folder on PATH and takes it out; a moved copy
 # of the app repoints the launcher and the agents keep working; quitting and killing the app leave no
 # process behind: no app, no server, no storage provider.
 #
@@ -111,14 +111,14 @@ if [ "${1:-}" = pictures ]; then
   picture() { mark; hook "$1:$out/$2.png"; logged "capture: wrote $2.png" 5 || echo "     (no picture $2)"; }
   for look in light dark; do
     hook "$look"; sleep 1
-    for page in "home=" "activity=view=ledger.activity" "config=view=config" "agents=view=agents"; do
+    for page in "home=" "activity=view=ledger.activity" "settings=view=settings" "agents=view=agents"; do
       hook "route:${page#*=}"; sleep 2
       picture capture "window-${page%%=*}-$look"
     done
     hook "route:"; sleep 1
-    page_eval 'document.querySelector("[aria-label=收起侧栏]").click(), "folded"' >/dev/null; sleep 1
+    page_eval 'document.querySelector("[aria-label=收起侧边栏]").click(), "folded"' >/dev/null; sleep 1
     picture capture "window-rail-$look"
-    page_eval 'document.querySelector("[aria-label=展开侧栏]").click(), "unfolded"' >/dev/null; sleep 1
+    page_eval 'document.querySelector("[aria-label=展开侧边栏]").click(), "unfolded"' >/dev/null; sleep 1
     open_tray; picture capture-tray "tray-$look"
     hook "tray-fit:$work/fit-$look.txt"; sleep 1; sed "s/^/     $look panel: /" "$work/fit-$look.txt" 2>/dev/null || true
     hook "route:"; sleep 0.5
@@ -132,8 +132,8 @@ fi
 start
 wait_for "welcome: shown" 10 && ok "first launch with no library: the welcome window" || fail "first launch: the welcome window"
 hook "text-welcome:$work/welcome.txt"; sleep 1
-grep -q "^places: 本机文件夹（local-folder）$" "$work/welcome.txt" && grep -q "^picker: hidden$" "$work/welcome.txt" && grep -q "^button: 选一个文件夹…$" "$work/welcome.txt" && grep -q "^other: 安装别的存储…$" "$work/welcome.txt" \
-  && ok "where to keep the library: with the one provider, choosing a folder; 安装别的存储… beside it" || fail "the welcome window offers: $(cat "$work/welcome.txt" 2>&1)"
+grep -q "^places: 本机文件夹$" "$work/welcome.txt" && grep -q "^picker: hidden$" "$work/welcome.txt" && grep -q "^button: 选择文件夹…$" "$work/welcome.txt" && grep -q "^other: 安装其他存储…$" "$work/welcome.txt" \
+  && ok "where to keep the library: with the one provider, choosing a folder; 安装其他存储… beside it" || fail "the welcome window offers: $(cat "$work/welcome.txt" 2>&1)"
 kbin="$app/Contents/Resources/cli/node_modules/@pneuma-base/kernel/bin"
 [ -x "$kbin/pneuma-base-core" ] && [ -x "$kbin/pneuma-base-contract" ] && [ "$(cat "$kbin/platform")" = darwin-arm64 ] && ok "the app carries the provider and the contract suite's program, for darwin-arm64" || fail "the app's storage programs: $(ls "$kbin" 2>&1)"
 pb storage list | grep -q "^    程序：$kbin/pneuma-base-core$" && ok "storage list: the local folder, built in, runs from the app" || fail "storage list: $(pb storage list 2>&1)"
@@ -151,14 +151,14 @@ ps -o command= -p "$child" | grep -q "$app/Contents/MacOS/node .*$app/Contents/R
 wait_for "watcher: subscribed to 我的库" 15 || true
 storage=$(pgrep -P "$pid" -f "pneuma-base-core serve" || true)
 [ -n "$storage" ] && ps -o command= -p "$storage" | grep -q "^$kbin/pneuma-base-core serve --root $lib$" && ok "the watcher is the provider's subscription: $kbin/pneuma-base-core serve, a child of the app (pid $storage)" || fail "the watcher's provider: $(grep 'watcher:' "$log" | head -3) $(ps -o command= -p "${storage:-0}" 2>&1)"
-page_shows home-0.txt "接上你的 agent" 10 && page_text home-0.txt | grep -qx "0 / 3" && ok "home opens with 开始, 0 of 3 done" || fail "home opens with 开始: $(head -c 300 "$work/home-0.txt")"
+page_shows home-0.txt "连接 Agent" 10 && page_text home-0.txt | grep -qx "0 / 3" && ok "home opens with 快速开始, 0 of 3 done" || fail "home opens with 快速开始: $(head -c 300 "$work/home-0.txt")"
 
 echo "dropped" > "$work/Downloads/dropped.txt"
 hook "drop-window:$work/Downloads/dropped.txt"
 wait_for "drop (窗口): placed" 10 && ok "drop on the window: placed" || fail "drop on the window: placed"
-pb --library "$lib" inspect inbox/dropped.txt | grep -q "带进来的，主人给的 · 主人" && ok "drop: inbox/dropped.txt, brought by the owner" || fail "drop: brought by the owner: $(pb --library "$lib" inspect inbox/dropped.txt | head -3)"
-pb --library "$lib" inspect inbox/dropped.txt | grep -q "出处：Downloads" && ok "drop: its source is the folder it came from" || fail "drop: source"
-page_shows home-1.txt "库的根目录里有 1 样东西" 10 && ok "the second step folds: 库的根目录里有 1 样东西" || fail "the second step folds"
+pb --library "$lib" inspect inbox/dropped.txt | grep -q "导入（所有者提供） · 所有者" && ok "drop: inbox/dropped.txt, brought by the owner" || fail "drop: brought by the owner: $(pb --library "$lib" inspect inbox/dropped.txt | head -3)"
+pb --library "$lib" inspect inbox/dropped.txt | grep -q "原始来源：Downloads" && ok "drop: its source is the folder it came from" || fail "drop: source"
+page_shows home-1.txt "资料库根目录中有 1 个条目" 10 && ok "the second step folds: 资料库根目录中有 1 个条目" || fail "the second step folds"
 hook "route:view=ledger.items&view.dir=docs"
 sleep 1
 echo "into the folder shown" > "$work/Downloads/shown.txt"
@@ -179,12 +179,12 @@ xattr -wx com.apple.metadata:kMDItemWhereFroms "$hex" "$work/Downloads/report.pd
 cp "$work/Downloads/report.pdf" "$lib/report.pdf"
 wait_for "watcher: registered.*direct.txt" 20 && ok "a file written into the library: registered by the watcher" || fail "a file written into the library: registered"
 grep -q "watcher: heard .*direct.txt" "$log" && ok "heard through storage's subscription" || fail "heard through the subscription: $(grep 'watcher: heard' "$log" | head -3)"
-pb --library "$lib" inspect direct.txt | grep -q "带进来的，主人给的（自动登记） · 主人" && ok "it is the owner's, seen: 带进来的，主人给的（自动登记）" || fail "it is the owner's, seen: $(pb --library "$lib" inspect direct.txt | head -3)"
-pb --library "$lib" inspect report.pdf | grep -q "出处：https://example.com/files/report.pdf" && ok "xattr: the download address is the source" || fail "xattr: the download address is the source"
+pb --library "$lib" inspect direct.txt | grep -q "导入（所有者提供，自动登记） · 所有者" && ok "it is the owner's, seen: 导入（所有者提供，自动登记）" || fail "it is the owner's, seen: $(pb --library "$lib" inspect direct.txt | head -3)"
+pb --library "$lib" inspect report.pdf | grep -q "原始来源：https://example.com/files/report.pdf" && ok "xattr: the download address is the source" || fail "xattr: the download address is the source"
 
 echo "changed in place" >> "$lib/inbox/dropped.txt"
 wait_for "watcher: registered \[\] seen \[\"inbox/dropped.txt\"\]" 20 && ok "a direct change: recorded" || fail "a direct change: recorded"
-pb --library "$lib" inspect inbox/dropped.txt | grep -q "直接改的，自动登记" && ok "it is recorded as seen: 直接改的，自动登记" || fail "the change is recorded as seen"
+pb --library "$lib" inspect inbox/dropped.txt | grep -q "外部修改（自动登记）" && ok "it is recorded as seen: 外部修改（自动登记）" || fail "the change is recorded as seen"
 
 # Files of the library as in Finder, driven by the page's messages to the shell (posted with eval:);
 # with hooks the shell's acts outside the app are only logged (opener: …), so nothing launches.
@@ -197,7 +197,7 @@ open(sys.argv[1], 'wb').write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack(
 " "$work/pic.png"
 sips -s format pdf "$work/pic.png" --out "$work/doc.pdf" >/dev/null
 mkdir -p "$work/many" && for i in $(seq -w 1 53); do echo "note $i" > "$work/many/n$i.txt"; done
-for f in pic.png doc.pdf many; do pb --library "$lib" put "$work/$f" --to "$f" --brought --by owner >/dev/null; done
+for f in pic.png doc.pdf many; do pb --library "$lib" put "$work/$f" --to "$f" --imported --by owner >/dev/null; done
 listen
 mark; shell_post '{ type: "preview", paths: ["inbox/dropped.txt"], at: 0 }'
 logged "preview: $lib/inbox/dropped.txt at 0" && ok "preview: Quick Look on the file at its path on this machine" || fail "preview of one: $(since_mark | grep 'preview:\|files:')"
@@ -231,9 +231,9 @@ cp "$(ls "$pb_home/app/cache/thumbnails/"*/*.png | head -1)" "$stale" && touch -
 mark; shell_post '{ type: "drag", paths: ["report.pdf"] }'
 logged "drag: offers $(/usr/bin/python3 -c 'import pathlib, sys; print(pathlib.Path(sys.argv[1]).as_uri())' "$lib/report.pdf") as copy" && ok "drag: the file offered as a copy" || fail "drag: $(since_mark | grep 'drag:\|files:')"
 
-menu='{ type: "menu", paths: ["report.pdf"], x: 240, y: 180, items: [{ id: "move", label: "挪到…" }, { id: "archive", label: "归档" }, { id: "remove", label: "丢掉", danger: true }] }'
+menu='{ type: "menu", paths: ["report.pdf"], x: 240, y: 180, items: [{ id: "move", label: "移动…" }, { id: "archive", label: "归档" }, { id: "remove", label: "删除", danger: true }] }'
 mark; shell_post "$menu"
-logged "menu: 打开 | 打开方式 | — | 快速查看 | 在访达中显示 | 拷贝路径 | — | 挪到… | 归档 | — | 丢掉" && ok "menu: the system's entries, then the page's, the destructive one last after a separator" || fail "menu: $(since_mark | grep 'menu:')"
+logged "menu: 打开 | 打开方式 | — | 快速查看 | 在访达中显示 | 复制路径 | — | 移动… | 归档 | — | 删除" && ok "menu: the system's entries, then the page's, the destructive one last after a separator" || fail "menu: $(since_mark | grep 'menu:')"
 mark; hook "menu-pick:在访达中显示"
 logged "opener: reveal $lib/report.pdf" && ok "menu: 在访达中显示 reveals (stubbed)" || fail "menu-pick 在访达中显示: $(since_mark | tail -2)"
 mark; shell_post "$menu"; logged "menu: 打开 |"; hook "menu-pick:归档"
@@ -248,11 +248,11 @@ logged "reopen: run echo resumed in $work" && command_file=$(since_mark | sed -n
   && ok "reopen: no handler for the URL, so a .command file that cds into the directory and execs the command (not opened)" || fail "reopen by command: $(since_mark | tail -4)"
 mark; shell_post "{ type: \"reopen\", url: null, run: null, reveal: \"$lib/report.pdf\" }"
 logged "reopen: reveal $lib/report.pdf" && logged "opener: reveal $lib/report.pdf" && ok "reopen: with neither, the transcript is revealed (stubbed)" || fail "reopen by reveal: $(since_mark | grep 'reopen:\|opener:')"
-hook owner-files:off; wait_for "app: owner files off" 5 && hook owner-files:on && wait_for "app: owner files on" 5 && ok "owner-files:off and :on switch 直接放进来的文件算主人的" || fail "owner-files hooks: $(grep 'owner files' "$log")"
+hook owner-files:off; wait_for "app: owner files off" 5 && hook owner-files:on && wait_for "app: owner files on" 5 && ok "owner-files:off and :on switch 直接拷入的文件记为我添加" || fail "owner-files hooks: $(grep 'owner files' "$log")"
 
 # A small plain folder written in is registered as one thing; a project folder of 80,000 files is the ledger's question.
 mkdir -p "$lib/photos" && for i in 1 2 3; do echo "photo $i" > "$lib/photos/p$i.jpg"; done
-wait_for "watcher: registered.*photos" 20 && pb --library "$lib" inspect photos | grep -q "带进来的，主人给的（自动登记）" && ok "a small plain folder written in: registered as one thing, the owner's, seen" || fail "the small folder: $(grep 'watcher:' "$log" | tail -3) $(pb --library "$lib" inspect photos | head -3)"
+wait_for "watcher: registered.*photos" 20 && pb --library "$lib" inspect photos | grep -q "导入（所有者提供，自动登记）" && ok "a small plain folder written in: registered as one thing, the owner's, seen" || fail "the small folder: $(grep 'watcher:' "$log" | tail -3) $(pb --library "$lib" inspect photos | head -3)"
 /usr/bin/python3 -c "
 import os, sys
 root = sys.argv[1]
@@ -264,62 +264,62 @@ for d in range(400):
         open(os.path.join(root, 'src', 'd%03d' % d, 'f%03d.ts' % f), 'w').write('export {}\n')
 " "$lib/proj"
 found=$(find "$lib/proj" -type f | wc -l | tr -d ' ')
-page_shows home-proj.txt "proj/ 没登记" 60 && ok "a project folder of $found files written in: the ledger's question on home, proj/ 没登记" || fail "the project folder's question: $(grep -n 'proj' "$work/home-proj.txt" | head -3)"
+page_shows home-proj.txt "proj/ 未登记" 60 && ok "a project folder of $found files written in: the ledger's question on home, proj/ 未登记" || fail "the project folder's question: $(grep -n 'proj' "$work/home-proj.txt" | head -3)"
 wait_for "watcher: proj/ is a question" 30 && ok "the watcher's probe: $(grep -o 'watcher: proj/ is a question.*' "$log" | head -1 | sed 's/watcher: //')" || fail "the watcher on proj/: $(grep 'watcher: storage cannot say\|watcher: looked\|watcher: heard' "$log" | tail -3)"
-pb --library "$lib" inspect proj | grep -q "^proj/ · 目录，没有登记，至少 [0-9]* 个文件，顶上有 package.json$" && ok "proj/ is not a thing: $(pb --library "$lib" inspect proj | head -1)" || fail "proj/: $(pb --library "$lib" inspect proj | head -5)"
+pb --library "$lib" inspect proj | grep -q "^proj/ · 目录，未登记，至少 [0-9]* 个文件，顶层含 package.json$" && ok "proj/ is not a thing: $(pb --library "$lib" inspect proj | head -1)" || fail "proj/: $(pb --library "$lib" inspect proj | head -5)"
 ! grep -q "watcher: registered.*proj" "$log" && ! pb --library "$lib" find f000 | grep -q "proj/" && ok "nothing in it is registered" || fail "registered from proj/: $(grep 'watcher: registered' "$log" | tail -2) $(pb --library "$lib" find f000 | head -3)"
 
 page_text home-2.txt | grep -q "Claude Code" && ok "step 1 lists Claude Code, found in the fake HOME" || fail "step 1 lists Claude Code"
 pb --library "$lib" agent connect claude-code >/dev/null
 skill="$fake_home/.claude/skills/pneuma-base-claude-code/SKILL.md"
 [ -f "$skill" ] && ok "connect wrote the skill into the fake HOME" || fail "connect wrote the skill"
-page_shows home-3.txt "已接上 Claude Code" 10 && ok "the first step folds: 已接上 Claude Code" || fail "the first step folds: $(head -c 300 "$work/home-3.txt")"
+page_shows home-3.txt "已连接 Claude Code" 10 && ok "the first step folds: 已连接 Claude Code" || fail "the first step folds: $(head -c 300 "$work/home-3.txt")"
 
 # The skill's own three command lines, run as Claude Code would: placeholders filled, system tools only.
 echo "# 书单" > "$work/books.md"
 line() { grep "^$launcher @claude-code $1 " "$skill" | sed 's/ *#.*//'; }
-start_line=$(line start | sed 's/"<一句话：这次在做什么>"/整理读书笔记/')
-put_line=$(line put | sed -e "s|<库外的文件或目录>|$work/books.md|" -e 's|<库内路径>|notes/books.md|' -e 's| --from <依据的库内路径…>||')
-find_line=$(line find | sed 's/<文字>/books/')
+start_line=$(line start | sed 's/"<任务描述>"/整理读书笔记/')
+put_line=$(line put | sed -e "s|<外部文件或目录>|$work/books.md|" -e 's|<库内路径>|notes/books.md|' -e 's| --from <依据的库内路径…>||')
+find_line=$(line find | sed 's/<关键词>/books/')
 [ -n "$start_line" ] && [ -n "$put_line" ] && [ -n "$find_line" ] && ok "the skill names the launcher by absolute path in its three command lines" || fail "the skill's command lines: $(grep '@claude-code' "$skill")"
 for l in "$start_line" "$put_line" "$find_line"; do
   out=$(bare "$l" 2>&1) && echo "     \$ $l" && echo "$out" | sed -n '1,3s/^/       /p' || fail "with env -i: $l: $out"
 done
 bare "$find_line" | grep -q "notes/books.md" && ok "with env -i: start, put, find from the skill work; find finds what put put" || fail "find finds what put put"
-pb --library "$lib" inspect notes/books.md | grep -q "做出来的 · claude-code" && pb --library "$lib" inspect notes/books.md | grep -q "整理读书笔记" && ok "the scene is Claude Code's, in this library: 做出来的 · claude-code, 整理读书笔记" || fail "the scene: $(pb --library "$lib" inspect notes/books.md | head -5)"
+pb --library "$lib" inspect notes/books.md | grep -q "生成 · claude-code" && pb --library "$lib" inspect notes/books.md | grep -q "整理读书笔记" && ok "the scene is Claude Code's, in this library: 生成 · claude-code, 整理读书笔记" || fail "the scene: $(pb --library "$lib" inspect notes/books.md | head -5)"
 
 # The fake Claude Desktop by MCP: start what its entry names, with system tools only, and list its tools.
 pb --library "$lib" agent connect claude-desktop >/dev/null
 desktop="$fake_home/Library/Application Support/Claude/claude_desktop_config.json"
 entry() { plutil -extract "mcpServers.pneuma-base-claude-desktop.$1" raw -o - "$desktop"; }
 [ "$(entry command)" = "$launcher" ] && [ "$(entry args.0) $(entry args.1)" = "@claude-desktop mcp" ] && ! entry env >/dev/null 2>&1 && ok "the MCP entry: $(entry command) @claude-desktop mcp, no env" || fail "the MCP entry: $(cat "$desktop")"
-{ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"verify","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"put","arguments":{"to":"notes/desktop.md","made":true,"text":"# 桌面\n"}}}'; sleep 4; } \
+{ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"verify","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"put","arguments":{"to":"notes/desktop.md","generated":true,"text":"# 桌面\n"}}}'; sleep 4; } \
   | env -i HOME="$fake_home" PATH=/usr/bin:/bin "$(entry command)" "$(entry args.0)" "$(entry args.1)" > "$work/mcp.out" 2> "$work/mcp.err"
 tools=$(grep '"id":2' "$work/mcp.out" | grep -o '"name":"[a-z_]*"' | sed 's/"name":"\(.*\)"/\1/' | tr '\n' ' ')
 echo "$tools" | grep -q "start find inspect put" && ok "with env -i: the MCP entry starts and lists its tools: $tools" || fail "the MCP entry's tools: $(head -c 400 "$work/mcp.out") $(head -c 300 "$work/mcp.err")"
-pb --library "$lib" inspect notes/desktop.md | grep -q "做出来的 · claude-desktop" && ok "a put through MCP is Claude Desktop's" || fail "the MCP put: $(pb --library "$lib" inspect notes/desktop.md | head -3)"
+pb --library "$lib" inspect notes/desktop.md | grep -q "生成 · claude-desktop" && ok "a put through MCP is Claude Desktop's" || fail "the MCP put: $(pb --library "$lib" inspect notes/desktop.md | head -3)"
 
 for i in 1 2 3 4 5; do
   echo "made by an agent $i" > "$work/made-$i.md"
-  pb --library "$lib" --as verify-agent put "$work/made-$i.md" --to "notes/made-$i.md" --made >/dev/null
+  pb --library "$lib" --as verify-agent put "$work/made-$i.md" --to "notes/made-$i.md" --generated >/dev/null
 done
 sleep 8
 taken=0
-for i in 1 2 3 4 5; do pb --library "$lib" inspect "notes/made-$i.md" | grep -q "做出来的 · verify-agent" || taken=$((taken + 1)); done
+for i in 1 2 3 4 5; do pb --library "$lib" inspect "notes/made-$i.md" | grep -q "生成 · verify-agent" || taken=$((taken + 1)); done
 [ $taken -eq 0 ] && ok "agent puts: 5 of 5 stay the agent's" || fail "agent puts: $taken of 5 taken for the owner's"
 grep -q "watcher: registered.*notes/" "$log" && fail "the watcher registered an agent's file" || ok "the watcher registered none of them"
 
-pb --library "$lib" plugin add deploy >/dev/null
-pb --library "$lib" deploy target set --kind dir --to "$work/www" >/dev/null
+pb --library "$lib" plugin enable deploy >/dev/null
+pb --library "$lib" deploy target set --kind folder --to "$work/www" >/dev/null
 mkdir -p "$work/site" && echo "<h1>shop</h1>" > "$work/site/index.html"
-pb --library "$lib" --as claude-code put "$work/site" --to sites/shop --made >/dev/null
+pb --library "$lib" --as claude-code put "$work/site" --to sites/shop --generated >/dev/null
 pb --library "$lib" --as claude-code say deployable sites/shop >/dev/null
 wait_for "dot: 1 waiting" 20 && ok "an ask puts the dot on the icon" || fail "the dot on the icon"
-page_shows home-4.txt "等你决定" 10 && ! grep -q "接上你的 agent" "$work/home-4.txt" && ok "an agent has worked here: 开始 is gone" || fail "开始 is gone: $(head -c 300 "$work/home-4.txt")"
+page_shows home-4.txt "待处理" 10 && ! grep -q "连接 Agent" "$work/home-4.txt" && ok "an agent has worked here: 快速开始 is gone" || fail "快速开始 is gone: $(head -c 300 "$work/home-4.txt")"
 
 hook tray
 wait_for "tray: shown" 5 && ok "a click on the icon opens the panel" || fail "the panel opens"
-page_shows tray.txt "要上线吗" 10 text-tray && grep -q "我的库" "$work/tray.txt" && ok "the panel: the library, the ask" || fail "the panel: $(head -c 300 "$work/tray.txt")"
+page_shows tray.txt "是否发布" 10 text-tray && grep -q "我的库" "$work/tray.txt" && ok "the panel: the library, the ask" || fail "the panel: $(head -c 300 "$work/tray.txt")"
 snap snap-tray tray-app
 
 # The panel: one line a row and no text button but the asks' answers; under a small display's menu
@@ -338,11 +338,11 @@ hook "tray-room:"; sleep 0.5
 # pages follow at once, and the choice is kept.
 appearance() { rm -f "$work/$1"; hook "text-appearance:$work/$1"; i=0; while [ ! -s "$work/$1" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done; tr '\n' ' ' < "$work/$1" 2>/dev/null || true; }
 mark; hook panel-menu
-logged "panel-menu: 外观 | 跟随系统 | 浅色 | 深色 | 库 | 我的库 | 新建或打开一个库… | 设置… | 退出 Pneuma Base" && ok "the panel's 「···」: 外观, the libraries, 设置…, 退出" || fail "the panel's menu: $(since_mark | grep 'panel-menu:')"
+logged "panel-menu: 外观 | 跟随系统 | 浅色 | 深色 | 资料库 | 我的库 | 新建或打开资料库… | 设置… | 退出 Pneuma Base" && ok "the panel's 「···」: 外观, the libraries, 设置…, 退出" || fail "the panel's menu: $(since_mark | grep 'panel-menu:')"
 hook "menu-pick:深色"; sleep 1
 [ "$(appearance look-1.txt)" = "choice: dark kept: dark app: dark window: dark tray: dark page: dark tray page: dark " ] && ok "深色 from the panel's menu: the window, the panel and both pages are dark, and it is kept" || fail "深色: $(appearance look-1.txt)"
-hook "route:view=config"; sleep 2
-page_eval '[...document.querySelectorAll("main [aria-label=这台机器] [role=radio]")].find((b) => b.textContent === "浅色")?.click(), "clicked"' >/dev/null; sleep 1
+hook "route:view=settings"; sleep 2
+page_eval '[...document.querySelectorAll("main [aria-label=本机] [role=radio]")].find((b) => b.textContent === "浅色")?.click(), "clicked"' >/dev/null; sleep 1
 [ "$(appearance look-2.txt)" = "choice: light kept: light app: light window: light tray: light page: light tray page: light " ] && ok "浅色 from the configuration page's row: all light at once, kept" || fail "浅色 from the page: $(appearance look-2.txt)"
 hook panel-menu; hook "menu-pick:跟随系统"; sleep 1
 look=$(appearance look-3.txt); sys=$(echo "$look" | sed -n 's/.*app: \([a-z]*\).*/\1/p')
@@ -357,7 +357,7 @@ mark
 page_eval '(async () => { const wait = (ms) => new Promise((r) => setTimeout(r, ms)); window.__pbAsked = "none"; for (const more of document.querySelectorAll("main [aria-label=更多]")) { more.click(); await wait(200); const item = [...document.querySelectorAll("[role=menuitem]")].find((m) => m.textContent.includes("断开")); if (item) { item.click(); window.__pbAsked = "asked"; return } more.click(); await wait(100) } })(), "started"' >/dev/null
 sleep 2
 asked=$(page_eval 'window.__pbAsked')
-if [ "$asked" = asked ] && logged "sheet: " && since_mark | grep -q "sheet: 断开后，.* | 断开 (danger) | 取消$"; then
+if [ "$asked" = asked ] && logged "sheet: " && since_mark | grep -q "sheet: 断开 .* 的连接？.* | 断开连接 (danger) | 取消$"; then
   ok "断开 asks with the system's sheet: $(since_mark | sed -n 's/^.*sheet: //p' | head -1)"
 else
   fail "断开's sheet ($asked): $(since_mark | grep 'sheet:' | tail -2)"
@@ -370,6 +370,14 @@ hook "sheet:1"
 logged "sheet: answered 1" && sleep 1.5 && [ "$(pb --library "$lib" agent list 2>&1)" = "$agents_before" ] && ok "取消 on the sheet: nothing changed, agent list is as it was" || fail "取消 on the sheet: $(since_mark | grep 'sheet:' | tail -2) $(pb --library "$lib" agent list 2>&1 | head -5)"
 hook "route:"; sleep 1
 
+# 导出 on the activity page hands the records over as a download, which the window saves where its save panel says.
+hook "route:view=ledger.activity"; sleep 1.5
+mark
+page_eval '(async () => { const wait = (ms) => new Promise((r) => setTimeout(r, ms)); document.querySelector("[aria-label=导出]").click(); await wait(600); [...document.querySelectorAll("[role=dialog] button")].find((b) => b.textContent.trim() === "导出")?.click() })(), "started"' >/dev/null
+logged "download: save panel for 活动记录.csv" 10 && ok "导出 on the activity page: the save panel asks where to save 活动记录.csv" || fail "导出 as a download: $(since_mark | grep -E 'download:|eval:' | tail -3)"
+hook "sheet:1"; logged "download: not saved" 5 || true
+hook "route:"; sleep 1
+
 if [ -n "$shots" ]; then
   mkdir -p "$shots"
   # $1 the picture's name, $2 the hook (capture or capture-tray), $3 what to do in the page before, $4 after.
@@ -379,14 +387,14 @@ if [ -n "$shots" ]; then
   open_tray
   shoot tray capture-tray
   shoot window capture
-  page_eval 'document.querySelector("[aria-label=收起侧栏]").click(), "folded"' >/dev/null; sleep 1
+  page_eval 'document.querySelector("[aria-label=收起侧边栏]").click(), "folded"' >/dev/null; sleep 1
   shoot window-rail capture
-  page_eval 'document.querySelector("[aria-label=展开侧栏]").click(), "unfolded"' >/dev/null; sleep 1
+  page_eval 'document.querySelector("[aria-label=展开侧边栏]").click(), "unfolded"' >/dev/null; sleep 1
   hook "route:view=ledger.activity"; sleep 1
   shoot scrolled capture 'document.querySelector(".main").scrollTop = 300'
   palette='window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true })), "palette"'
   shoot palette capture "$palette" "$palette"
-  shoot notice capture 'window.dispatchEvent(new CustomEvent("pneuma-shell", { detail: { notice: { tone: "good", text: "已放进 inbox/paper.pdf，记成你带进来的" } } })), "notice"'
+  shoot notice capture 'window.dispatchEvent(new CustomEvent("pneuma-shell", { detail: { notice: { tone: "good", text: "已添加 inbox/paper.pdf，标记为我导入" } } })), "notice"'
   page_eval 'document.querySelector(".main").scrollTop = 0' >/dev/null
   hook "route:"; sleep 1
   echo "     pictures in $shots/app-*.png"
@@ -399,7 +407,7 @@ port=${record%.json}
 endpoint="http://127.0.0.1:$port"
 [ -n "$record" ] && grep -q "\"library\": \"$lib\"" "$pb_home/endpoints/$record" && ! grep -q token "$pb_home/endpoints/$record" && ok "the endpoint's address is in machine state, without the token: $endpoint" || fail "the endpoint record: $(ls "$pb_home/endpoints/" 2>&1)"
 [ "$(pb guide --url)" = "$endpoint/guide" ] && ok "pneuma-base guide --url prints $endpoint/guide" || fail "guide --url: $(pb guide --url 2>&1)"
-pb show agents --library "$lib" | grep -q "读一下 $endpoint/guide，接上我的 Pneuma Base 库。" && ok "the agents page shows the sentence to say" || fail "the sentence: $(pb show agents --library "$lib" | head -20)"
+pb show agents --library "$lib" | grep -q "读取 $endpoint/guide，连接我的 Pneuma Base 资料库。" && ok "the agents page shows the sentence to say" || fail "the sentence: $(pb show agents --library "$lib" | head -20)"
 curl -s "$endpoint/guide/claude-code" | grep -q "$launcher" && ok "GET /guide/claude-code names this machine's command" || fail "the guide: $(curl -s "$endpoint/guide/claude-code" | head -5)"
 [ "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.example' "$endpoint/guide")" = 403 ] && [ "$(curl -s -o /dev/null -w '%{http_code}' -H 'Origin: http://evil.example' "$endpoint/guide")" = 403 ] && ok "a foreign Host or Origin is refused" || fail "Host and Origin checks"
 paired=$(curl -s -X POST -H 'content-type: application/json' -d '{"product":"verify-app","why":"验证配对"}' "$endpoint/pair")
@@ -407,13 +415,13 @@ pair_id=$(echo "$paired" | sed -n 's/.*"id":"\(p-[0-9a-f]*\)".*/\1/p')
 pair_code=$(echo "$paired" | sed -n 's/.*"code":"\([0-9-]*\)".*/\1/p')
 [ -n "$pair_id" ] && [ -n "$pair_code" ] && ok "POST /pair: pairing $pair_id, code $pair_code" || fail "POST /pair: $paired"
 wait_for "dot: 2 waiting" 10 && ok "the pairing is a second thing waiting: the dot counts it at once" || fail "the dot with the pairing: $(grep 'dot:' "$log" | tail -1)"
-page_shows home-pair.txt "verify-app 想接入这个库" 10 && grep -q "$pair_code" "$work/home-pair.txt" && ok "home shows the pairing with its code" || fail "home shows the pairing: $(grep -n '想接入' "$work/home-pair.txt")"
+page_shows home-pair.txt "verify-app 请求接入此资料库" 10 && grep -q "$pair_code" "$work/home-pair.txt" && ok "home shows the pairing with its code" || fail "home shows the pairing: $(grep -n '请求接入' "$work/home-pair.txt")"
 pb --library "$lib" pair allow "$pair_id" >/dev/null && curl -s "$endpoint/pair/$pair_id" | grep -q '"state":"connected"' && ok "allowed: GET /pair/$pair_id answers connected" || fail "allowed: $(curl -s "$endpoint/pair/$pair_id")"
 init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"verify","version":"0"}}}'
 sid=$(curl -s -D - -o /dev/null -X POST -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d "$init" "$endpoint/mcp/verify-app" | tr -d '\r' | sed -n 's/^[Mm]cp-[Ss]ession-[Ii]d: //p')
 curl -s -o /dev/null -X POST -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -H "mcp-session-id: $sid" -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$endpoint/mcp/verify-app"
-curl -s -X POST -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -H "mcp-session-id: $sid" -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"put","arguments":{"to":"notes/over-http.md","made":true,"text":"# HTTP\n"}}}' "$endpoint/mcp/verify-app" > "$work/mcp-http.out"
-[ -n "$sid" ] && pb --library "$lib" inspect notes/over-http.md | grep -q "做出来的 · verify-app" && ok "MCP over HTTP at /mcp/verify-app: a put is verify-app's" || fail "MCP over HTTP: session '$sid', $(head -c 300 "$work/mcp-http.out")"
+curl -s -X POST -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -H "mcp-session-id: $sid" -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"put","arguments":{"to":"notes/over-http.md","generated":true,"text":"# HTTP\n"}}}' "$endpoint/mcp/verify-app" > "$work/mcp-http.out"
+[ -n "$sid" ] && pb --library "$lib" inspect notes/over-http.md | grep -q "生成 · verify-app" && ok "MCP over HTTP at /mcp/verify-app: a put is verify-app's" || fail "MCP over HTTP: session '$sid', $(head -c 300 "$work/mcp-http.out")"
 
 # Files on the page as in Finder: the page's own rows and tiles, clicked, keyed, dragged and
 # right-clicked (events dispatched with eval:), send the shell the messages checked above; the icons
@@ -429,7 +437,7 @@ space='el.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }
 double='el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))'
 right='const r = el.getBoundingClientRect(); el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 24, clientY: r.top + 8 }))'
 look() { page_eval "window.dispatchEvent(new CustomEvent(\"pneuma-shell\", { detail: { command: \"$1\" } })), \"$1\"" >/dev/null; }
-reopen_buttons='document.querySelectorAll("[aria-label=详情] button[aria-label=打开那次对话]").length'
+reopen_buttons='document.querySelectorAll("[aria-label=详情] button[aria-label=打开对话]").length'
 
 hook "route:view=files"
 page_until 'document.querySelectorAll("[data-files] [data-key]").length > 5' 15 || fail "the files page: $(page_eval 'document.body.innerText.slice(0, 300)')"
@@ -448,19 +456,19 @@ mark; on_row "$(key report.pdf)" 'el.dispatchEvent(new DragEvent("dragstart", { 
 logged "drag: offers $(/usr/bin/python3 -c 'import pathlib, sys; print(pathlib.Path(sys.argv[1]).as_uri())' "$lib/report.pdf") as copy" && ok "page: dragging a row offers the file as a copy" || fail "page: drag: $(since_mark | grep 'drag:\|eval:' | head -3)"
 
 mark; on_row "$(key doc.pdf)" "$right" >/dev/null
-logged "menu: 打开 | 打开方式 | — | 快速查看 | 在访达中显示 | 拷贝路径 | — | 归档 | 挪到… | 重新命名" && ok "page: the context menu: the system's entries, then the library's archive, move and rename" || fail "page: the context menu: $(since_mark | grep 'menu:\|eval:' | head -3)"
+logged "menu: 打开 | 打开方式 | — | 快速查看 | 在访达中显示 | 复制路径 | — | 归档 | 移动… | 重命名" && ok "page: the context menu: the system's entries, then the library's archive, move and rename" || fail "page: the context menu: $(since_mark | grep 'menu:\|eval:' | head -3)"
 hook "menu-pick:归档"
 i=0; while [ ! -f "$lib/_archive/doc.pdf" ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done
 [ -f "$lib/_archive/doc.pdf" ] && [ ! -e "$lib/doc.pdf" ] && ok "page: 归档 from the menu archives it through the library" || fail "page: 归档 from the menu: $(ls "$lib" "$lib/_archive" 2>&1 | tr '\n' ' ')"
 page_until '![...document.querySelectorAll("[data-files] [data-key]")].some((e) => e.dataset.key === "doc.pdf")' || true
-mark; on_row "$(key direct.txt)" "$right" >/dev/null; logged "menu: 打开 |"; hook "menu-pick:重新命名"
+mark; on_row "$(key direct.txt)" "$right" >/dev/null; logged "menu: 打开 |"; hook "menu-pick:重命名"
 page_until 'document.querySelector(".rename-field") !== null' && page_eval '(() => { const f = document.querySelector(".rename-field"); f.value = "direct-renamed.txt"; f.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); return "typed" })()' >/dev/null
 i=0; while [ ! -f "$lib/direct-renamed.txt" ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done
-[ -f "$lib/direct-renamed.txt" ] && [ ! -e "$lib/direct.txt" ] && pb --library "$lib" inspect direct-renamed.txt | grep -q "带进来的，主人给的（自动登记）" && ok "page: 重新命名 in place: the library moves it, and it keeps where it came from" || fail "page: rename in place: $(ls "$lib" | tr '\n' ' ') $(pb --library "$lib" inspect direct-renamed.txt 2>&1 | head -2)"
+[ -f "$lib/direct-renamed.txt" ] && [ ! -e "$lib/direct.txt" ] && pb --library "$lib" inspect direct-renamed.txt | grep -q "导入（所有者提供，自动登记）" && ok "page: 重命名 in place: the library moves it, and it keeps where it came from" || fail "page: rename in place: $(ls "$lib" | tr '\n' ' ') $(pb --library "$lib" inspect direct-renamed.txt 2>&1 | head -2)"
 
 # The icons, from the 显示 menu's command: each tile in view gets the system's thumbnail or its type's icon.
 mkdir -p "$work/day" && echo "# 日报" > "$work/day/index.md" && echo "<h1>日报</h1>" > "$work/day/index.html"
-for d in 2026-11-25 2026-11-26 2026-11-27; do pb --library "$lib" --as grok-bot put "$work/day" --to "daily/$d" --made >/dev/null; done
+for d in 2026-11-25 2026-11-26 2026-11-27; do pb --library "$lib" --as grok-bot put "$work/day" --to "daily/$d" --generated >/dev/null; done
 # A window the system counts as hidden runs no transitions: the pictures are taken without them, so they show where each one ends.
 [ -z "$shots" ] || page_eval '(() => { const s = document.createElement("style"); s.textContent = "*, *::before, *::after { transition: none !important }"; document.head.append(s); return "still" })()' >/dev/null
 mark; look icons
@@ -480,7 +488,7 @@ look list
 # directory it ran in, Codex by its link or, with nothing to handle it, its resume command; a product
 # with no rule, or a conversation whose file is gone, offers nothing.
 # Puts a made thing at $2 from the directory $1 as an agent product runs, its session in the variable $3.
-as_product() { (cd "$1" && printf '# 对话里做的\n' | env -i HOME="$fake_home" PATH=/usr/bin:/bin PNEUMA_BASE_HOME="$pb_home" "$3" "$app/Contents/MacOS/node" "$app/Contents/Resources/cli/dist/bin.js" --library "$lib" put - --to "$2" --made >/dev/null); }
+as_product() { (cd "$1" && printf '# 对话里做的\n' | env -i HOME="$fake_home" PATH=/usr/bin:/bin PNEUMA_BASE_HOME="$pb_home" "$3" "$app/Contents/MacOS/node" "$app/Contents/Resources/cli/dist/bin.js" --library "$lib" put - --to "$2" --generated >/dev/null); }
 claude_id=11111111-2222-4333-8444-555555555555; codex_id=01a2106d-fcb1-72c3-9aef-583c6bd555a2; gone_id=22222222-3333-4444-8555-666666666666
 mkdir -p "$work/proj-claude" "$work/proj-codex"
 folder=$(echo "$work/proj-claude" | sed 's/[^a-zA-Z0-9]/-/g')
@@ -493,10 +501,10 @@ as_product "$work/proj-codex" talk/antigravity.md ANTIGRAVITY_CONVERSATION_ID=ag
 as_product "$work/proj-claude" talk/gone.md CLAUDE_CODE_SESSION_ID=$gone_id
 rm "$fake_home/.claude/projects/$folder/$gone_id.jsonl"
 # Opens the item panel of $1 and waits for its provenance.
-panel_of() { hook "route:view=files&view.dir=talk&panel=item&panel.path=$1"; page_until "document.querySelector(\"[aria-label=详情]\")?.innerText.includes(\"来历\") === true" 15; }
-panel_of talk/claude.md; mark; page_eval "document.querySelector(\"[aria-label=详情] button[aria-label=打开那次对话]\")?.click(), \"clicked\"" >/dev/null
+panel_of() { hook "route:view=files&view.dir=talk&panel=item&panel.path=$1"; page_until "document.querySelector(\"[aria-label=详情]\")?.innerText.includes(\"溯源\") === true" 15; }
+panel_of talk/claude.md; mark; page_eval "document.querySelector(\"[aria-label=详情] button[aria-label=打开对话]\")?.click(), \"clicked\"" >/dev/null
 logged "reopen: run claude --resume $claude_id in $work/proj-claude" && logged "exec claude --resume $claude_id" && ok "reopen, Claude Code: its resume command, in a terminal, in the directory it ran in (stubbed)" || fail "reopen Claude Code: $(since_mark | grep 'reopen:\|opener:' | head -3)"
-panel_of talk/codex.md; mark; page_eval "document.querySelector(\"[aria-label=详情] button[aria-label=打开那次对话]\")?.click(), \"clicked\"" >/dev/null
+panel_of talk/codex.md; mark; page_eval "document.querySelector(\"[aria-label=详情] button[aria-label=打开对话]\")?.click(), \"clicked\"" >/dev/null
 if logged "reopen: url codex://threads/$codex_id"; then ok "reopen, Codex: its link, an application here handles codex:// (stubbed)"
 elif logged "reopen: run codex resume $codex_id in $work/proj-codex"; then ok "reopen, Codex: nothing here handles codex://, so its resume command in its directory (stubbed)"
 else fail "reopen Codex: $(since_mark | grep 'reopen:\|opener:' | head -3)"; fi
@@ -504,13 +512,13 @@ panel_of talk/antigravity.md && [ "$(page_eval "$reopen_buttons")" = 0 ] && ok "
 panel_of talk/gone.md && [ "$(page_eval "$reopen_buttons")" = 0 ] && ok "reopen: a conversation whose file is gone offers nothing" || fail "reopen, gone: $(page_eval "$reopen_buttons") buttons"
 hook "route:view=files"
 
-# A change made straight in the library while those are not taken as the owner's: 已变, in the list and on the tile.
+# A change made straight in the library while those are not taken as the owner's: 已修改, in the list and on the tile.
 hook owner-files:off; wait_for "app: owner files off" 5
 echo "改在外面" >> "$lib/notes/books.md"
 hook "route:view=ledger.items&view.dir=notes"
-page_until "[...document.querySelectorAll(\"[data-files] [data-key]\")].some((e) => e.innerText.includes(\"books.md\") && e.innerText.includes(\"已变\"))" 20 && ok "page: changed outside, in the list: 已变 on its row" || fail "page: changed outside in the list: $(page_eval 'document.querySelector("[data-files]")?.innerText.slice(0, 300)')"
+page_until "[...document.querySelectorAll(\"[data-files] [data-key]\")].some((e) => e.innerText.includes(\"books.md\") && e.innerText.includes(\"已修改\"))" 20 && ok "page: changed outside, in the list: 已修改 on its row" || fail "page: changed outside in the list: $(page_eval 'document.querySelector("[data-files]")?.innerText.slice(0, 300)')"
 look icons
-page_until "[...document.querySelectorAll(\".tile[data-key]\")].some((t) => t.innerText.includes(\"books.md\") && t.querySelector(\".tile-badge[data-tone=warn]\")?.getAttribute(\"aria-label\") === \"已变\")" 10 && ok "page: changed outside, in the icons: a badge on its tile" || fail "page: changed outside in the icons: $(page_eval 'document.querySelectorAll(".tile-badge").length') badges"
+page_until "[...document.querySelectorAll(\".tile[data-key]\")].some((t) => t.innerText.includes(\"books.md\") && t.querySelector(\".tile-badge[data-tone=warn]\")?.getAttribute(\"aria-label\") === \"已修改\")" 10 && ok "page: changed outside, in the icons: a badge on its tile" || fail "page: changed outside in the icons: $(page_eval 'document.querySelectorAll(".tile-badge").length') badges"
 look list; hook owner-files:on; wait_for "app: owner files on" 5
 
 # Only the app's own page speaks to the shell: a frame of it that tries is not heard.
@@ -522,11 +530,11 @@ saw=$(page_eval 'window.__frameSaw')
 hook settings
 wait_for "settings: PATH folders" 10
 hook "text-settings:$work/settings.txt"; sleep 1
-grep -q "在终端里用 pneuma-base：关着" "$work/settings.txt" && grep -q "登录时打开：关着" "$work/settings.txt" && ok "settings: both conveniences start off" || fail "settings: $(cat "$work/settings.txt")"
-grep -q "PATH 上能放的文件夹：.*$work/bin" "$work/settings.txt" && ok "settings: a folder on the owner's PATH they can write is offered" || fail "settings: the PATH folders: $(cat "$work/settings.txt")"
+grep -q "安装命令行工具：已停用" "$work/settings.txt" && grep -q "登录时启动：已停用" "$work/settings.txt" && ok "settings: both conveniences start off" || fail "settings: $(cat "$work/settings.txt")"
+grep -q "PATH 中可写入的文件夹：.*$work/bin" "$work/settings.txt" && ok "settings: a folder on the owner's PATH they can write is offered" || fail "settings: the PATH folders: $(cat "$work/settings.txt")"
 snap snap-settings settings
 hook "path-link:$work/bin"; sleep 1
-[ "$(readlink "$work/bin/pneuma-base")" = "$launcher" ] && env -i HOME="$fake_home" PATH="$work/bin:/usr/bin:/bin" pneuma-base --library "$lib" find books | grep -q "notes/books.md" && ok "在终端里用 pneuma-base: a link on PATH, and pneuma-base runs in a terminal" || fail "the link on PATH: $(ls -l "$work/bin")"
+[ "$(readlink "$work/bin/pneuma-base")" = "$launcher" ] && env -i HOME="$fake_home" PATH="$work/bin:/usr/bin:/bin" pneuma-base --library "$lib" find books | grep -q "notes/books.md" && ok "安装命令行工具: a link on PATH, and pneuma-base runs in a terminal" || fail "the link on PATH: $(ls -l "$work/bin")"
 hook path-unlink; sleep 1
 [ ! -e "$work/bin/pneuma-base" ] && [ ! -L "$work/bin/pneuma-base" ] && ok "turned off: the link is gone" || fail "the link is left"
 
@@ -556,11 +564,11 @@ wait_for "thumbnails: removed 1 not used for 30 days" 10 && [ ! -e "$stale" ] &&
 [ "$(cat "$desktop")" = "$desktop_before" ] && [ "$(cat "$skill")" = "$skill_before" ] && bare "$find_line" | grep -q "notes/books.md" && ok "moved: the skill and the MCP entry are unchanged and still work" || fail "moved: the entries"
 stop
 mv "$work/moved/Pneuma Base.app" "$work/moved/gone.app"
-pb agent list | grep -q "指向的 node 不在了" && ok "moved away: agent list says the launcher points at a Node that is gone" || fail "moved away: $(pb agent list)"
+pb agent list | grep -q "指向的 node 已缺失" && ok "moved away: agent list says the launcher points at a Node that is gone" || fail "moved away: $(pb agent list)"
 : > "$log"
 start
 # The app or the server it starts first, whichever comes first, points the launcher back at the app's own Node.
-wait_for "launcher: " 10 && grep -q "exec '$app/Contents/MacOS/node'" "$launcher" && pb agent list --json | grep -q '"inPlace": true' && ! pb agent list | grep -q "不在了" && ok "launching the app again repairs it: every connection in use" || fail "repaired: $(tail -1 "$launcher") $(pb agent list)"
+wait_for "launcher: " 10 && grep -q "exec '$app/Contents/MacOS/node'" "$launcher" && pb agent list --json | grep -q '"inPlace": true' && ! pb agent list | grep -q "已缺失" && ok "launching the app again repairs it: every connection in use" || fail "repaired: $(tail -1 "$launcher") $(pb agent list)"
 stop
 : > "$log"
 start

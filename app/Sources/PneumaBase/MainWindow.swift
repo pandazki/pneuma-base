@@ -261,12 +261,18 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
     (value as? [[Double]] ?? []).compactMap { r in r.count == 4 ? CGRect(x: r[0], y: r[1], width: r[2], height: r[3]) : nil }
   }
 
-  /// The page's own address and the frames inside it stay; any other link opens in the browser.
+  /// A file the page hands over is a download; the page's own address and the frames inside it stay;
+  /// any other link opens in the browser.
   func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
+    if action.shouldPerformDownload { return decisionHandler(.download) }
     guard let url = action.request.url, action.targetFrame?.isMainFrame ?? false, let address else { return decisionHandler(.allow) }
     if url.host == address.host && url.port == address.port { return decisionHandler(.allow) }
     NSWorkspace.shared.open(url)
     decisionHandler(.cancel)
+  }
+
+  func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+    download.delegate = self
   }
 
   func webView(_ webView: WKWebView, createWebViewWith config: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
@@ -290,6 +296,28 @@ final class MainWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDe
   var webContentPid: Int32? { (webView?.value(forKey: "_webProcessIdentifier") as? NSNumber)?.int32Value }
 }
 
+/// A download goes where the save panel says, as a sheet on the window; the panel asked before
+/// replacing a file there, so the old one makes way.
+extension MainWindow: WKDownloadDelegate {
+  func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String) async -> URL? {
+    guard let window else { return nil }
+    let panel = NSSavePanel()
+    panel.nameFieldStringValue = suggestedFilename
+    Log.line("download: save panel for \(suggestedFilename)")
+    guard await panel.beginSheetModal(for: window) == .OK, let url = panel.url else {
+      Log.line("download: not saved")
+      return nil
+    }
+    try? FileManager.default.removeItem(at: url)
+    Log.line("download: to \(url.path)")
+    return url
+  }
+
+  func download(_ download: WKDownload, didFailWithError error: any Error, resumeData: Data?) {
+    Log.line("download: failed: \(error.localizedDescription)")
+  }
+}
+
 /// WebKit has no find bar of its own on the Mac: a search field in the toolbar, shown while finding,
 /// drives `WKWebView.find`. Return finds the next match, Shift-Return the previous, Escape ends.
 extension MainWindow: NSToolbarDelegate, NSSearchFieldDelegate {
@@ -298,7 +326,7 @@ extension MainWindow: NSToolbarDelegate, NSSearchFieldDelegate {
   func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
     guard id == Self.findItem else { return nil }
     let item = NSSearchToolbarItem(itemIdentifier: id)
-    item.searchField.placeholderString = "在这一页里查找"
+    item.searchField.placeholderString = "在本页中查找"
     item.searchField.sendsWholeSearchString = true
     item.searchField.delegate = self
     item.searchField.target = self
@@ -504,7 +532,7 @@ private final class DropOverlay: NSView {
   init(frame: NSRect, target: String) {
     super.init(frame: frame)
     wantsLayer = true
-    let label = NSTextField(labelWithString: "松开，放进库的 \(target)，记成你带进来的")
+    let label = NSTextField(labelWithString: "松开以添加到 \(target)，标记为我导入")
     label.font = .systemFont(ofSize: 15, weight: .semibold)
     label.textColor = .controlAccentColor
     label.translatesAutoresizingMaskIntoConstraints = false

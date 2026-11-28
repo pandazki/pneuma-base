@@ -17,7 +17,7 @@ describe('secret set', () => {
 
     const fromArgs = sb.run(['secret', 'set', 'vault', 'token', TOKEN])
     expect(fromArgs.code).toBe(1)
-    expect(fromArgs.stderr).toContain('多了参数')
+    expect(fromArgs.stderr).toContain('有多余的参数')
     expect(existsSync(join(home, 'secrets'))).toBe(false)
 
     const r = sb.run(['secret', 'set', 'vault', 'token', '--json'], { input: `${TOKEN}\n` })

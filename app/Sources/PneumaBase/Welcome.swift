@@ -8,13 +8,13 @@ struct StorageChoice: Equatable {
   let forms: [String]
   let install: String?
   var answersFolders: Bool { forms.contains("path") }
-  var title: String { "\(summary)（\(name)）\(install == nil ? "" : " · 没装")" }
+  var title: String { "\(summary)\(install == nil ? "" : " · 未安装")" }
 }
 
 /// The first launch, with no library yet: one small window that offers where to keep the library:
-/// the providers this machine has, the official ones not installed, and 安装别的存储… (a repository).
+/// the providers this machine has, the official ones not installed, and 安装其他存储… (a repository).
 /// With one provider it is simply choosing a folder. Choosing one makes a library there, and the main
-/// window opens on its home page, where 「开始」 takes the owner on.
+/// window opens on its home page, where 「快速开始」 takes the owner on.
 @MainActor
 final class WelcomeWindow: NSObject, NSWindowDelegate {
   private var window: NSWindow?
@@ -70,11 +70,11 @@ final class WelcomeWindow: NSObject, NSWindowDelegate {
 
   @objc private func picked() {
     guard let choice = selected else {
-      choose.title = "选一个文件夹…"
+      choose.title = "选择文件夹…"
       return
     }
     choose.isEnabled = choice.answersFolders
-    choose.title = !choice.answersFolders ? "\(choice.name) 答的地址不是文件夹" : choice.install == nil ? "选一个文件夹…" : "装上，再选一个文件夹…"
+    choose.title = !choice.answersFolders ? "\(choice.summary) 的地址不是文件夹" : choice.install == nil ? "选择文件夹…" : "安装并选择文件夹…"
   }
 
   private func make() -> NSWindow {
@@ -105,21 +105,21 @@ final class WelcomeWindow: NSObject, NSWindowDelegate {
       field.widthAnchor.constraint(equalToConstant: 360).isActive = true
       return field
     }
-    let what = sentence(NSTextField(wrappingLabelWithString: ""), "你和你的 agent 共用的资料库：带进来的资料、做出来的东西都放在这里，每样都记得是怎么来的。", .labelColor)
-    let how = sentence(NSTextField(wrappingLabelWithString: ""), "选一个文件夹当库，空的或已经放着资料的都行；之后 Pneuma Base 待在菜单栏里。", .secondaryLabelColor)
+    let what = sentence(NSTextField(wrappingLabelWithString: ""), "人与 Agent 共用的资料库：导入的资料和生成的内容集中保存，每个条目都记录来源。", .labelColor)
+    let how = sentence(NSTextField(wrappingLabelWithString: ""), "选择一个文件夹作为资料库，空文件夹或已有资料的文件夹均可。之后 Pneuma Base 在菜单栏中运行。", .secondaryLabelColor)
     _ = sentence(status, "", .secondaryLabelColor, size: 12)
     status.isHidden = true
 
     picker.target = self
     picker.action = #selector(picked)
     picker.isHidden = true
-    choose.title = "选一个文件夹…"
+    choose.title = "选择文件夹…"
     choose.target = self
     choose.action = #selector(chose)
     choose.bezelStyle = .push
     choose.controlSize = .large
     choose.keyEquivalent = "\r"
-    other.title = "安装别的存储…"
+    other.title = "安装其他存储…"
     other.target = self
     other.action = #selector(installOther)
     other.isBordered = false

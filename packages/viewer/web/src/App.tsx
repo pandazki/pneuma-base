@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { api, ApiError, type State, type Tone } from './api'
 import { Blocks, sameLink, sortAfter } from './blocks'
 import { ActionBar, useActionKeys } from './actions'
-import { ActionDialog, fill, ViewIcon } from './chrome'
+import { ActionDialog, perform, ViewIcon } from './chrome'
 import { Choice, Menu, Resizer, TipLayer, usePresence } from './controls'
 import { DetailPanel } from './detail'
 import { BlockEnvContext, type BlockEnv, type Done } from './env'
@@ -124,7 +124,7 @@ function PathBar({ trail, onGo }: { trail: Crumb[]; onGo(link: Link): void }) {
   )
 }
 
-const SORT_LABELS: Record<SortKey, string> = { name: '名字', modified: '修改时间', kind: '种类', size: '大小' }
+const SORT_LABELS: Record<SortKey, string> = { name: '名称', modified: '修改时间', kind: '类型', size: '大小' }
 
 /** A page of files: list or icons (⌘1, ⌘2), and the sort, as a small menu whose current key, chosen again, turns it round. */
 function LookTools({ look, sorted, onLook, onSort }: { look: FileLook['look']; sorted: { by: SortKey; desc: boolean } | undefined; onLook(look: FileLook['look']): void; onSort(sort: string): void }) {
@@ -183,7 +183,7 @@ function Problems({ problems }: { problems: PluginProblem[] }) {
     <div className="problems" role="alert">
       {problems.map((p, i) => (
         <p key={i}>
-          插件 <span className="font-mono">{p.plugin}</span> 出了问题：{p.message}
+          插件 <span className="font-mono">{p.plugin}</span> 出错：{p.message}
         </p>
       ))}
     </div>
@@ -233,7 +233,7 @@ function Filters({ decl, answered, params, onChange }: { decl: ViewDecl | undefi
     .filter((f) => f.options.length > 1)
   if (filters.length === 0) return null
   return (
-    <div className="filters" role="toolbar" aria-label="过滤">
+    <div className="filters" role="toolbar" aria-label="筛选">
       {filters.map((f) =>
         f.as === 'menu' ? (
           <FilterMenu key={f.name} label={f.label} options={f.options} value={f.value} onChange={(value) => onChange(f.name, value)} />
@@ -249,7 +249,7 @@ function Filters({ decl, answered, params, onChange }: { decl: ViewDecl | undefi
 function ViewSwitch({ entry, current, onSelect }: { entry: ListedView[]; current: string; onSelect(view: string): void }) {
   if (entry.length < 2) return null
   return (
-    <nav className="view-switch" aria-label="这一组的页">
+    <nav className="view-switch" aria-label="本组页面">
       {entry.map((v) => (
         <button key={v.id} type="button" className="icon-btn" aria-label={v.title} aria-current={v.id === current ? 'page' : undefined} data-tip={v.title} onClick={() => onSelect(v.id)}>
           <ViewIcon name={v.icon} />
@@ -270,8 +270,8 @@ function HeadActions({ actions }: { actions: Action[] }) {
 
 /** A view's answer. Keyed by its page where it is used: what a block keeps (a section folded, an answer) belongs to that page, not to the place. */
 function Shown({ result, failed }: { result: ViewResult | null; failed: boolean }) {
-  if (result === null) return failed ? <p className="note" data-tone="bad">这一页没能取到。</p> : <Loading />
-  if (result.outcome === 'no-such-view') return <p className="note">没有这一页。</p>
+  if (result === null) return failed ? <p className="note" data-tone="bad">页面加载失败。</p> : <Loading />
+  if (result.outcome === 'no-such-view') return <p className="note">页面不存在。</p>
   if (result.outcome === 'refused') return <p className="note" data-tone="bad">{result.text}</p>
   return (
     <>
@@ -288,10 +288,10 @@ function Unreachable() {
         <span className="empty-icon">
           <Unplug strokeWidth={1.75} aria-hidden />
         </span>
-        <p className="empty-title">连不上服务</p>
+        <p className="empty-title">无法连接服务</p>
         <p className="empty-hint flex items-center justify-center gap-1.5">
           <LoaderCircle className="spinner" strokeWidth={2} aria-hidden />
-          {IN_SHELL ? '正在重新连接。' : '正在重试。服务是用 pneuma-base view 启动的，关掉了就再启动一次。'}
+          {IN_SHELL ? '正在重新连接。' : '正在重试。服务由 pneuma-base view 启动；服务已停止时，请重新运行该命令。'}
         </p>
       </div>
     </div>
@@ -302,8 +302,8 @@ function Denied() {
   return (
     <div className="screen" role="alert">
       <div className="empty max-w-[480px]">
-        <p className="empty-title">这个地址不对</p>
-        <p className="empty-hint">{IN_SHELL ? '服务换了一个令牌。按 ⌘R 重新载入。' : '地址里缺少令牌，或者服务已经换了一个令牌。用 pneuma-base view 打印出来的地址打开。'}</p>
+        <p className="empty-title">URL 无效</p>
+        <p className="empty-hint">{IN_SHELL ? '服务的 token 已更换。按 ⌘R 重新载入。' : 'URL 中缺少 token，或服务的 token 已更换。请使用 pneuma-base view 输出的 URL 打开。'}</p>
       </div>
     </div>
   )
@@ -315,12 +315,12 @@ function InitScreen({ state, onInit }: { state: State; onInit(plugins: string[])
   return (
     <div className="screen">
       <div className="card init">
-        <h1>这个目录还不是库</h1>
+        <h1>此目录不是资料库</h1>
         <p className="init-dir">{state.dir}</p>
-        <p className="init-about">建成库之后，根目录多一份说明 PNEUMA-BASE.md 和一个 .pneuma-base/ 目录，里面的东西原样留着。</p>
+        <p className="init-about">初始化后，根目录新增资料库说明 PNEUMA-BASE.md 和 .pneuma-base/ 目录，现有内容保持不变。</p>
         {state.available.length > 0 ? (
           <fieldset>
-            <legend>装上这些插件</legend>
+            <legend>启用插件</legend>
             {state.available.map((p) => (
               <label key={p.name}>
                 <input
@@ -334,8 +334,7 @@ function InitScreen({ state, onInit }: { state: State; onInit(plugins: string[])
                     setChosen(next)
                   }}
                 />
-                <span className="font-mono text-[12.5px]">{p.name}</span>
-                {p.title ? <span className="text-ink-3">{p.title}</span> : null}
+                <span>{p.title ?? p.name}</span>
               </label>
             ))}
           </fieldset>
@@ -351,7 +350,7 @@ function InitScreen({ state, onInit }: { state: State; onInit(plugins: string[])
             setBusy(false)
           }}
         >
-          把它建成库
+          初始化资料库
         </button>
       </div>
     </div>
@@ -509,7 +508,7 @@ export function App() {
       const id = busy(action.label)
       let done: Done
       try {
-        const reply = await api.pass(fill(action.call, values, action.inputs), confirmed, (progress, pass) => report(id, progress, () => void api.stop(pass).catch(() => undefined)))
+        const reply = await perform(action, values, confirmed, (progress, pass) => report(id, progress, () => void api.stop(pass).catch(() => undefined)))
         settle(id, reply.tone, reply.text, offerOf(reply.result))
         done = { tone: reply.tone, text: reply.text }
       } catch (error) {
@@ -626,14 +625,14 @@ export function App() {
           onToggle={toggleSide}
         />
         {rail ? null : (
-          <Resizer label="侧栏的宽度" className="resizer-side" value={prefs.side} min={SIDE.min} max={SIDE.max} initial={SIDE.initial} grows="right" onChange={(side) => setPrefs({ side })} onDrag={setResizing} />
+          <Resizer label="侧边栏宽度" className="resizer-side" value={prefs.side} min={SIDE.min} max={SIDE.max} initial={SIDE.initial} grows="right" onChange={(side) => setPrefs({ side })} onDrag={setResizing} />
         )}
         <div className="work">
           <main className="main" data-scrolled={scrolled || undefined} onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}>
             {down ? (
               <div className="down" role="alert">
                 <Unplug strokeWidth={2} aria-hidden />
-                连不上服务，正在重试。下面是最后一次取到的内容。
+                无法连接服务，正在重试。以下为最后一次加载的内容。
               </div>
             ) : null}
             <header className="page-head" data-drag>
@@ -655,12 +654,12 @@ export function App() {
             <div className="page-body">
               <Problems problems={data.problems} />
               <Shown key={current?.view} result={shown.data} failed={shown.failed} />
-              {current?.view === 'config' && shown.data?.outcome === 'shown' ? <MachineSettings /> : null}
+              {current?.view === 'settings' && shown.data?.outcome === 'shown' ? <MachineSettings /> : null}
             </div>
           </main>
           {hasTabs ? (
             <div className="detail-col">
-              <Resizer label="详情的宽度" className="resizer-panel" value={panelWidth} min={PANEL.min} max={PANEL.max} initial={PANEL.initial} grows="left" onChange={(panel) => setPrefs({ panel })} onDrag={setResizing} />
+              <Resizer label="详情面板宽度" className="resizer-panel" value={panelWidth} min={PANEL.min} max={PANEL.max} initial={PANEL.initial} grows="left" onChange={(panel) => setPrefs({ panel })} onDrag={setResizing} />
               <DetailPanel
                 tabs={route.tabs}
                 active={route.active}

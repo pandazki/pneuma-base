@@ -71,8 +71,8 @@ const check = (lib: string) =>
 function library(): string {
   const lib = join(tempDir(), 'lib')
   expect(sb.run(['init', lib]).code).toBe(0)
-  for (const name of ['kept', 'edited', 'moved']) run(lib, ['put', '-', '--to', `${name}.md`, '--brought'], `${name} 1234`)
-  run(lib, ['put', '-', '--to', 'elsewhere/anchor.md', '--brought'], 'anchor')
+  for (const name of ['kept', 'edited', 'moved']) run(lib, ['put', '-', '--to', `${name}.md`, '--imported'], `${name} 1234`)
+  run(lib, ['put', '-', '--to', 'elsewhere/anchor.md', '--imported'], 'anchor')
   mkdirSync(join(lib, 'closed/inner'), { recursive: true })
   writeFileSync(join(lib, 'closed/inner/x.txt'), 'x')
   mkdirSync(join(lib, 'node_modules/pkg'), { recursive: true })
@@ -116,7 +116,7 @@ describe('who learns of change', () => {
     const withListener = check(listened)
     expect(withListener).toEqual(check(alone))
     const titles = withListener.map((s) => s.title)
-    expect(titles).toEqual(['没人登记过的', '没登记的目录', '被直接改过的', '挪过的'])
+    expect(titles).toEqual(['未登记', '未登记的目录', '外部修改', '已移动'])
     expect(JSON.stringify(withListener)).not.toContain('node_modules')
     expect(JSON.stringify(withListener)).not.toContain('y.txt')
     // And the next check, with nothing changed since, agrees too.

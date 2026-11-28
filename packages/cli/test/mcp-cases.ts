@@ -36,13 +36,13 @@ export function ok(r: Run): Run {
 export function library(sb: Sandbox): string {
   const lib = join(tempDir(), 'lib')
   ok(sb.run(['init', lib]))
-  for (const p of ['version', 'sync', 'deploy', 'search']) ok(sb.run(['--library', lib, 'plugin', 'add', p]))
-  ok(sb.run(['--library', lib, 'grant', 'issue', 'g', '--agent', 'claude']))
-  ok(sb.run(['--library', lib, 'grant', 'issue', 'ro', '--agent', 'reader', '--read-only']))
-  ok(sb.run(['--library', lib, 'put', '-', '--to', 'notes/a.md', '--brought', '--source', 'https://example.com/a'], { input: '# 甲\n下单流程\n' }))
-  ok(sb.run(['--library', lib, 'put', '-', '--to', 'notes/b.md', '--made', '--from', 'notes/a.md'], { input: '# 乙\n' }))
+  for (const p of ['version', 'sync', 'deploy', 'search']) ok(sb.run(['--library', lib, 'plugin', 'enable', p]))
+  ok(sb.run(['--library', lib, 'grant', 'create', 'g', '--agent', 'claude']))
+  ok(sb.run(['--library', lib, 'grant', 'create', 'ro', '--agent', 'reader', '--read-only']))
+  ok(sb.run(['--library', lib, 'put', '-', '--to', 'notes/a.md', '--imported', '--source', 'https://example.com/a'], { input: '# 甲\n下单流程\n' }))
+  ok(sb.run(['--library', lib, 'put', '-', '--to', 'notes/b.md', '--generated', '--from', 'notes/a.md'], { input: '# 乙\n' }))
   ok(sb.run(['--library', lib, 'say', 'versioned', 'notes/b.md', '第一版']))
-  ok(sb.run(['--library', lib, 'put', '-', '--to', 'old.md', '--made'], { input: '旧的\n' }))
+  ok(sb.run(['--library', lib, 'put', '-', '--to', 'old.md', '--generated'], { input: '旧的\n' }))
   ok(sb.run(['--library', lib, 'archive', 'old.md']))
   return lib
 }
@@ -62,36 +62,36 @@ export async function sameStart(sb: Sandbox, client: Client): Promise<void> {
   await call(client, 'find', { text: '甲' })
   ok(sb.run(['@g', '--session', BOTH_FACES, 'find', '甲']))
   // Asked once before, so each face's ask below finds the same pending request.
-  ok(sb.run(['@g', '--session', BOTH_FACES, 'ask', '帮手要一份授权', 'grant', 'issue', 'helper', '--agent', 'helper']))
+  ok(sb.run(['@g', '--session', BOTH_FACES, 'ask', '帮手要一份授权', 'grant', 'create', 'helper', '--agent', 'helper']))
 }
 
 /** A tool, its arguments, the command line with the same arguments, and its standard input. In order: later cases see what earlier ones did. */
 export const PARITY_CASES: [string, Record<string, unknown>, string[], string?][] = [
   ['start', { sentence: '改一下 下单流程' }, ['start', '改一下', '下单流程']],
   ['find', { text: 'notes', 'include-archived': true }, ['find', 'notes', '--include-archived']],
-  ['find', { text: '乙', origin: 'made' }, ['find', '乙', '--origin', 'made']],
+  ['find', { text: '乙', origin: 'generated' }, ['find', '乙', '--origin', 'generated']],
   ['inspect', { target: 'notes/b.md' }, ['inspect', 'notes/b.md']],
   // An agent that cannot read files reads a thing through inspect: the tool gains it from the verbs table.
   ['inspect', { target: 'notes/a.md', content: true }, ['inspect', 'notes/a.md', '--content']],
-  ['put', { text: '# 甲\n下单流程\n', to: 'notes/a.md', brought: true }, ['put', '-', '--to', 'notes/a.md', '--brought'], '# 甲\n下单流程\n'],
+  ['put', { text: '# 甲\n下单流程\n', to: 'notes/a.md', imported: true }, ['put', '-', '--to', 'notes/a.md', '--imported'], '# 甲\n下单流程\n'],
   ['put', { what: 'notes/b.md', to: 'notes/a.md' }, ['put', 'notes/b.md', '--to', 'notes/a.md']],
   // An agent declares; what the owner's side saw is the owner's to record.
-  ['put', { what: 'notes/a.md', brought: true, by: 'owner', observed: true }, ['put', 'notes/a.md', '--brought', '--by', 'owner', '--observed']],
+  ['put', { what: 'notes/a.md', imported: true, by: 'owner', observed: true }, ['put', 'notes/a.md', '--imported', '--by', 'owner', '--observed']],
   ['say', { kind: 'note', about: 'notes/a.md', text: '要再核对一遍' }, ['say', 'note', 'notes/a.md', '要再核对一遍']],
-  ['say', { kind: 'from', text: 'notes/b.md', args: { from: ['notes/a.md'] } }, ['say', 'from', 'notes/b.md', '--from', 'notes/a.md']],
+  ['say', { kind: 'basis', text: 'notes/b.md', args: { from: ['notes/a.md'] } }, ['say', 'basis', 'notes/b.md', '--from', 'notes/a.md']],
   ['say', { kind: 'nobody-hears' }, ['say', 'nobody-hears']],
   ['check', { since: '2020-01-01T00:00:00Z' }, ['check', '--since', '2020-01-01T00:00:00Z']],
   ['archive', { path: 'old.md' }, ['archive', 'old.md']],
   ['unarchive', { path: 'notes/a.md' }, ['unarchive', 'notes/a.md']],
   ['archive', { path: 'notes/missing.md' }, ['archive', 'notes/missing.md']],
-  ['ask', { why: '帮手要一份授权', command: ['grant', 'issue', 'helper', '--agent', 'helper'] }, ['ask', '帮手要一份授权', 'grant', 'issue', 'helper', '--agent', 'helper']],
+  ['ask', { why: '帮手要一份授权', command: ['grant', 'create', 'helper', '--agent', 'helper'] }, ['ask', '帮手要一份授权', 'grant', 'create', 'helper', '--agent', 'helper']],
   ['ask', { why: '想清空', command: ['archive', 'purge'] }, ['ask', '想清空', 'archive', 'purge']],
   ['show', {}, ['show']],
   ['show', { view: 'files', params: { dir: 'notes' } }, ['show', 'files', '--dir', 'notes']],
   ['show', { view: 'item', params: { path: 'notes/b.md' } }, ['show', 'item', '--path', 'notes/b.md']],
-  ['show', { view: 'config' }, ['show', 'config']],
+  ['show', { view: 'settings' }, ['show', 'settings']],
   ['version_list', { path: 'notes/b.md' }, ['version', 'list', 'notes/b.md']],
-  ['ledger_held_list', {}, ['ledger', 'held', 'list']],
+  ['ledger_copies_list', {}, ['ledger', 'copies', 'list']],
   ['sync_status', {}, ['sync', 'status']],
   ['deploy_list', {}, ['deploy', 'list']],
   ['search_status', {}, ['search', 'status']],

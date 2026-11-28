@@ -37,6 +37,9 @@
   --chip: rgba(0, 0, 0, 0.04);
   --select: rgba(0, 0, 0, 0.06);
   --row-hover: rgba(0, 0, 0, 0.015);
+  /* A product's own icon: a light ground in both schemes, as app icons have, and the ink of a one-colour mark. */
+  --mark-ground: #f4f4f5;
+  --mark-ink: #18181b;
 
   /* Lines: hairlines between rows and around the panels, and a stronger one for key caps and handles. */
   --line: rgba(0, 0, 0, 0.06);
@@ -117,6 +120,8 @@
   --chip: rgba(255, 255, 255, 0.06);
   --select: rgba(255, 255, 255, 0.08);
   --row-hover: rgba(255, 255, 255, 0.025);
+  --mark-ground: #e9e9ec;
+  --mark-ink: #18181b;
 
   --line: rgba(255, 255, 255, 0.08);
   --line-strong: rgba(255, 255, 255, 0.16);

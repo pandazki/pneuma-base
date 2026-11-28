@@ -1,4 +1,4 @@
-// How the library stands, on the sparse rules (ARCHITECTURE.md「怎么看库」): what
+// How the library stands, on the sparse rules (ARCHITECTURE.md「怎么看资料库」): what
 // changed is learned from storage's cursor, and only the registered things at or in those places and
 // those open directories are looked at; when storage cannot say, storage compares every registered
 // place and every open directory with what the rows expect there (`lookRows` over `tokens` and `seen`)
@@ -86,7 +86,7 @@ export async function foldAll(ctx: PluginContext, out: FoldOut = foldOut()): Pro
     await settle(tx, out)
     if (await tx.commit(page.cursor, cursor)) {
       if (!page.more) return page.cursor
-    } else if (tries > 20) throw new Error('记账插件的行一直在被别的进程改写，没能读到一致的状态')
+    } else if (tries > 20) throw new Error('溯源索引持续被其他进程改写，无法读取一致的状态')
   }
 }
 
@@ -123,8 +123,8 @@ function running(build: Build): boolean {
 
 /** What a rebuild says while it runs, on standard error; the one place a progress channel would take it from. */
 const say = (text: string) => void process.stderr.write(`${text}\n`)
-const howMany = (facts: number | null) => (facts === null ? '' : `：至少 ${facts} 条`)
-const progressLine = (done: number, facts: number | null) => (facts !== null && done < facts ? `已推出 ${done} / ${facts}` : `已推出 ${done}`)
+const howMany = (facts: number | null) => (facts === null ? '' : `：至少 ${facts} 条记录`)
+const progressLine = (done: number, facts: number | null) => (facts !== null && done < facts ? `已处理 ${done} / ${facts}` : `已处理 ${done}`)
 
 /** Waits while another process rebuilds the rows, saying what it says. */
 async function awaitBuild(ctx: PluginContext): Promise<void> {
@@ -135,11 +135,11 @@ async function awaitBuild(ctx: PluginContext): Promise<void> {
     const { rows } = await records.get<Build>('meta', ['build'])
     const build = rows[0]?.value
     if (build === undefined || !running(build)) {
-      if (said && build === undefined) say('记账的行已重建。')
+      if (said && build === undefined) say('溯源索引已重建。')
       return
     }
     if (!said && (build.facts ?? 0) >= SAY_FROM) {
-      say(`另一个进程正在从事实重建记账的行${howMany(build.facts)}。`)
+      say(`另一个进程正在重建溯源索引${howMany(build.facts)}。`)
       said = true
     } else if (said && build.done > told) {
       told = build.done
@@ -171,7 +171,7 @@ async function rebuild(ctx: PluginContext, out: FoldOut): Promise<string | null>
   const facts = page?.files ?? null
   const telling = (facts ?? 0) >= SAY_FROM
   if (telling) {
-    say(`正在从事实重建记账的行${howMany(facts)}。`)
+    say(`正在重建溯源索引${howMany(facts)}。`)
     // A process that waits says the same at once.
     if (!(await records.put({ meta: [{ key: 'build', value: lease(0, facts) }] }, { cursor: claim, expect: claim })).written) return null
   }
@@ -212,7 +212,7 @@ async function rebuild(ctx: PluginContext, out: FoldOut): Promise<string | null>
   }
   tx.set('meta', 'build', null)
   if (!(await saving) || !(await tx.commitInParts(page.cursor, claim))) return null
-  if (telling) say(`记账的行已重建：${done} 条事实，${((performance.now() - started) / 1000).toFixed(1)} 秒。`)
+  if (telling) say(`溯源索引已重建：${done} 条记录，${((performance.now() - started) / 1000).toFixed(1)} 秒。`)
   return page.cursor
 }
 
@@ -245,7 +245,7 @@ export async function inTx(ctx: PluginContext, work: (tx: Tx, settling: Settling
       await settle(tx, touched)
       if (await tx.commit(page.cursor, cursor)) return
     }
-    if (tries > 5) throw new Error('记账插件的行一直在被别的进程改写，没能存下这次看到的')
+    if (tries > 5) throw new Error('溯源索引持续被其他进程改写，无法保存本次检查结果')
   }
 }
 

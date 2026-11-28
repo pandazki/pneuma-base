@@ -36,7 +36,7 @@ export async function archive(req: ArchiveRequest, ctx: Context): Promise<Archiv
   if (bundle !== null) return refused('inside-bundle', bundle)
 
   const [atMain, atArchive] = (await whatIs(store, [original, inArchive])) as [At, At]
-  if (atMain.failed === 'noise') return refused('noise')
+  if (atMain.failed === 'noise') return refused('ignored')
   const main = req.kind === 'archive' ? isThing(atMain) : atMain.kind !== 'none'
   const archived = isThing(atArchive)
   const state: ArchiveState = main ? (archived ? 'both' : 'main') : archived ? 'archived' : 'missing'
@@ -60,7 +60,7 @@ export async function archive(req: ArchiveRequest, ctx: Context): Promise<Archiv
       if (isFailure(held)) return refused('busy')
       hold = held.hold
       const moved = await store.move(from, to, { from: source.entry?.token ?? '', to: slot.expect }, { hold })
-      if (isFailure(moved)) return refused(moved.reason === 'noise' ? 'noise' : moved.reason === 'refused' && action === 'move-out' ? 'original-path-taken' : 'busy')
+      if (isFailure(moved)) return refused(moved.reason === 'noise' ? 'ignored' : moved.reason === 'refused' && action === 'move-out' ? 'original-path-taken' : 'busy')
       await store.release(hold)
       hold = null
       if (action === 'move-out') await dropEmptyParents(store, from)

@@ -35,12 +35,12 @@ beforeAll(async () => {
   await initLibrary(root, { plugins: ['ledger', 'finder'], table, actor: owner, session: session('init'), home })
   lib = (await openLibrary(root, table)) as Library
   const s1 = makeContext(lib, claude, session('s1'), home)
-  await agentFace.say({ kind: 'doing', about: null, text: '写咖啡笔记', args: {} }, s1)
-  await agentFace.put({ kind: 'place', from: text('手冲咖啡要注意水温和研磨度。\n'), to: 'notes/coffee.md', origin: { kind: 'made', from: [], outside: [] } }, s1)
-  await agentFace.put({ kind: 'place', from: text('收据\n'), to: 'misc/receipt.txt', origin: { kind: 'brought', source: null, by: null } }, makeContext(lib, claude, session('s3'), home))
+  await agentFace.say({ kind: 'task', about: null, text: '写咖啡笔记', args: {} }, s1)
+  await agentFace.put({ kind: 'place', from: text('手冲咖啡要注意水温和研磨度。\n'), to: 'notes/coffee.md', origin: { kind: 'generated', from: [], outside: [] } }, s1)
+  await agentFace.put({ kind: 'place', from: text('收据\n'), to: 'misc/receipt.txt', origin: { kind: 'imported', source: null, by: null } }, makeContext(lib, claude, session('s3'), home))
   const s4 = makeContext(lib, claude, session('s4'), home)
-  await agentFace.put({ kind: 'place', from: text('一\n'), to: 'tea/pot.md', origin: { kind: 'made', from: [], outside: [] }, note: '陶瓷壶初稿' }, s4)
-  await agentFace.put({ kind: 'place', from: text('二\n'), to: 'tea/pot.md', origin: { kind: 'made', from: [], outside: [] }, note: '换成玻璃壶后重写' }, s4)
+  await agentFace.put({ kind: 'place', from: text('一\n'), to: 'tea/pot.md', origin: { kind: 'generated', from: [], outside: [] }, note: '陶瓷壶初稿' }, s4)
+  await agentFace.put({ kind: 'place', from: text('二\n'), to: 'tea/pot.md', origin: { kind: 'generated', from: [], outside: [] }, note: '换成玻璃壶后重写' }, s4)
   writeFileSync(join(root, 'notes/loose.md'), '没人登记过\n')
 })
 
@@ -49,8 +49,8 @@ describe('a path only another plugin found', () => {
     const r = await find('怎么冲出好喝的咖啡')
     expect(r.problems).toEqual([])
     const ledgerHits = r.hits.filter((h) => h.by === 'ledger')
-    expect(ledgerHits).toMatchObject([{ path: 'notes/coffee.md', title: 'coffee.md', detail: '做出来的' }])
-    expect(ledgerHits[0]?.group).toMatch(/^场景 s1 · claude-code · \d{4}-\d\d-\d\d \d\d:\d\dZ · 在做：写咖啡笔记$/)
+    expect(ledgerHits).toMatchObject([{ path: 'notes/coffee.md', title: 'coffee.md', detail: '生成' }])
+    expect(ledgerHits[0]?.group).toMatch(/^场景 s1 · claude-code · \d{4}-\d\d-\d\d \d\d:\d\dZ · 任务：写咖啡笔记$/)
     expect(r.hits.filter((h) => h.path === 'notes/loose.md').map((h) => h.by)).toEqual(['finder'])
   })
 })
@@ -58,8 +58,8 @@ describe('a path only another plugin found', () => {
 describe('a find by origin', () => {
   it('gives the ledger’s things that came that way, and no other', async () => {
     const byLedger = async (origin: string) => (await find('', { origin })).hits.filter((h) => h.by === 'ledger').map((h) => h.path)
-    expect((await byLedger('made')).sort()).toEqual(['notes/coffee.md', 'tea/pot.md'])
-    expect(await byLedger('brought')).toEqual(['misc/receipt.txt'])
+    expect((await byLedger('generated')).sort()).toEqual(['notes/coffee.md', 'tea/pot.md'])
+    expect(await byLedger('imported')).toEqual(['misc/receipt.txt'])
   })
 })
 

@@ -42,9 +42,9 @@ describe('the plugins under plugins/ as MCP tools', () => {
       run(dir, 'npm', ['install', '--prefer-offline', '--no-audit', '--no-fund', '--no-package-lock'], npmEnv)
       run(dir, 'npm', ['run', 'build'], npmEnv)
       run(home, process.execPath, [BIN, 'plugin', 'install', join(dir, 'dist')])
-      run(home, process.execPath, [BIN, '--library', lib, 'plugin', 'add', name])
+      run(home, process.execPath, [BIN, '--library', lib, 'plugin', 'enable', name])
     }
-    run(home, process.execPath, [BIN, '--library', lib, 'grant', 'issue', 'g', '--agent', 'claude'])
+    run(home, process.execPath, [BIN, '--library', lib, 'grant', 'create', 'g', '--agent', 'claude'])
     client = new Client({ name: 'pneuma-base-test', version: '0' })
     await client.connect(new StdioClientTransport({ command: process.execPath, args: [BIN, '@g', 'mcp'], env, cwd: home, stderr: 'pipe' }))
   }, 900_000)

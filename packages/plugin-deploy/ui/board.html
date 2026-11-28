@@ -138,9 +138,9 @@
   </head>
   <body>
     <div class="grid" id="cards"></div>
-    <p class="empty muted" id="none" hidden>还没有打开开关的站点。</p>
+    <p class="empty muted" id="none" hidden>暂无开关已开启的站点。</p>
     <section id="offs" hidden>
-      <h3>开关关着的</h3>
+      <h3>开关已关闭</h3>
       <div class="card off" id="off"></div>
     </section>
     <script>
@@ -174,7 +174,7 @@
         svg.setAttribute('height', h)
         svg.setAttribute('viewBox', `0 0 ${w} ${h}`)
         svg.setAttribute('role', 'img')
-        svg.setAttribute('aria-label', `过去 24 小时每小时的请求：${series.join('、')}`)
+        svg.setAttribute('aria-label', `过去 24 小时每小时请求数：${series.join('、')}`)
         const line = document.createElementNS(ns, 'polyline')
         line.setAttribute('class', 'line')
         line.setAttribute('points', series.map((v, i) => `${x(i)},${y(v)}`).join(' '))
@@ -202,7 +202,7 @@
       /** Where a site cannot be framed: who can see it, and a way to open it in a new tab. */
       function privateShot(card, visible) {
         const shot = el('div', { class: 'shot' })
-        const open = card.url ? el('button', { class: 'btn', type: 'button' }, '在新标签页打开') : tag(card.state)
+        const open = card.url ? el('button', { class: 'btn', type: 'button' }, '在新标签页中打开') : tag(card.state)
         if (card.url) open.addEventListener('click', () => pneuma.open(card.url))
         shot.append(el('div', { class: 'private' }, el('span', {}, visible), el('span', {}, open)))
         return shot
@@ -226,7 +226,7 @@
           shot.dataset.src = src ?? ''
           shot.dataset.url = card.url ?? ''
           const frame = src
-            ? el('iframe', { src, title: `${card.path} 的线上页面`, loading: 'lazy', sandbox: 'allow-scripts', tabindex: '-1', referrerpolicy: 'no-referrer' })
+            ? el('iframe', { src, title: `${card.path} 的已发布页面`, loading: 'lazy', sandbox: 'allow-scripts', tabindex: '-1', referrerpolicy: 'no-referrer' })
             : el('div', { class: 'blank' }, tag(card.state))
           if (src) frame.style.transform = `scale(${(shot.clientWidth || 232) / PREVIEW_WIDTH})`
           shot.replaceChildren(frame)
@@ -238,15 +238,15 @@
         const online = card.state.tone === 'good'
         const address = card.url ? el('button', { class: 'link mono address', type: 'button', title: card.url }, card.url) : el('span', { class: 'mono address faint' }, card.site ?? '—')
         if (card.url) address.addEventListener('click', () => pneuma.open(card.url))
-        const requests = card.requests === null ? null : el('span', {}, `${card.requests} 次请求${card.errors ? ` · 错 ${card.errors}` : ''}`)
+        const requests = card.requests === null ? null : el('span', {}, `${card.requests} 次请求${card.errors ? ` · 错误 ${card.errors}` : ''}`)
         const stats = el(
           'div',
           { class: 'stats' },
-          card.release === null ? null : el('span', {}, `第 ${card.release} 版`),
+          card.release === null ? null : el('span', {}, `版本 ${card.release}`),
           requests,
           card.spark ? sparkline(card.spark) : null,
         )
-        const seen = el('span', { class: 'faint grow' }, card.lastAccessAt === null ? (online ? '没人访问过' : '') : `最近访问 ${clock(card.lastAccessAt)}`)
+        const seen = el('span', { class: 'faint grow' }, card.lastAccessAt === null ? (online ? '无访问记录' : '') : `最近访问 ${clock(card.lastAccessAt)}`)
         return el(
           'article',
           { class: 'card site' },
@@ -257,7 +257,7 @@
             el('div', { class: 'row' }, el('span', { class: 'name grow', title: card.path }, card.path), online ? null : tag(card.state)),
             address,
             stats,
-            el('div', { class: 'row' }, seen, switchButton(card.key, '下线')),
+            el('div', { class: 'row' }, seen, switchButton(card.key, '取消发布')),
           ),
         )
       }
@@ -267,7 +267,7 @@
         document.getElementById('none').hidden = data.cards.length > 0
         document.getElementById('offs').hidden = data.off.length === 0
         document.getElementById('off').replaceChildren(
-          ...data.off.map((o) => el('div', { class: 'row' }, el('span', { class: 'mono grow name' }, o.path), tag(o.state), switchButton(o.key, '上线'))),
+          ...data.off.map((o) => el('div', { class: 'row' }, el('span', { class: 'mono grow name' }, o.path), tag(o.state), switchButton(o.key, '发布'))),
         )
         for (const key of [...previews.keys()]) if (!data.cards.some((c) => c.key === key)) previews.delete(key)
       })

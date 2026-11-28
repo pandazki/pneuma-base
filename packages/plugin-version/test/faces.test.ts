@@ -41,7 +41,7 @@ async function library() {
   const call = (): OwnerCall => ({ ctx: as(owner), table, env: {}, viaGrant: false, confirm: async () => true })
   const owned = (name: string, positional: string[], flags: Record<string, string[]> = {}) => ownerFace.dispatch(call(), name, { positional, flags })
   const put = (content: string, to: string) =>
-    agentFace.put({ kind: 'place', from: { kind: 'stdin', content: new TextEncoder().encode(content) }, to, origin: { kind: 'made', from: [], outside: [] } }, as())
+    agentFace.put({ kind: 'place', from: { kind: 'stdin', content: new TextEncoder().encode(content) }, to, origin: { kind: 'generated', from: [], outside: [] } }, as())
   const declare = (path: string) => agentFace.say({ kind: 'versioned', about: null, text: path, args: {} }, as())
   return { root, dir, owned, put, declare, plugin, as }
 }
@@ -74,7 +74,7 @@ describe('version prune, confirmed', () => {
       [3, false],
       [4, false],
     ])
-    expect(await owned('version prune', ['a.md'], { keep: ['5'] })).toMatchObject({ outcome: 'done', text: 'a.md 留着的只有 2 版，没有要清的。' })
+    expect(await owned('version prune', ['a.md'], { keep: ['5'] })).toMatchObject({ outcome: 'done', text: 'a.md 仅保留 2 个版本，无需清除。' })
     expect(await owned('version prune', ['a.md'], {})).toMatchObject({ outcome: 'refused', reason: 'usage' })
   })
 })
@@ -93,7 +93,7 @@ describe('version prune and what a crash left', () => {
     // The operations here are dated 2026-11-25T02:…, so a copy made now is not an hour old for them.
     const pruned = await owned('version prune', ['a.md'], { keep: ['2'] })
     expect(pruned).toMatchObject({ outcome: 'done', data: { pruned: [1], leftovers: 2 } })
-    expect((pruned as any).text).toContain('2 份中断时留下的复制')
+    expect((pruned as any).text).toContain('2 个中断时残留的副本')
     expect(Object.keys(readTree(pending))).toEqual(['fresh'])
     const again = await owned('version prune', ['a.md'], { keep: ['1'] })
     expect(again).toMatchObject({ outcome: 'done', data: { pruned: [2], leftovers: 0 } })
@@ -112,7 +112,7 @@ describe('archive purge', () => {
     expect(check.sections.filter((s) => s.plugin === 'version')).toEqual([])
     // Its versions stay in the store and no command reaches them; the refusal says that, not that it was never declared.
     for (const input of ['_archive/a.md', 'a.md']) {
-      expect(await owned('version list', [input])).toMatchObject({ outcome: 'refused', reason: 'gone', text: expect.stringContaining('_archive/a.md 随归档区清掉了。它的 1 版内容还在版本存放里') })
+      expect(await owned('version list', [input])).toMatchObject({ outcome: 'refused', reason: 'gone', text: expect.stringContaining('_archive/a.md 已随清空归档删除。其 1 个版本的内容仍在版本存储中') })
     }
   })
 })
@@ -132,14 +132,14 @@ describe('the item panel section', () => {
     expect(kinds(section?.blocks ?? [])).toEqual(['timeline', 'actions'])
     const timeline = only(section?.blocks ?? [], 'timeline')
     expect(timeline?.entries.map((e) => [e.title.text, e.tag?.text ?? null])).toEqual([
-      ['第 3 版', '当前'],
-      ['第 2 版', null],
-      ['第 1 版', null],
+      ['版本 3', '当前'],
+      ['版本 2', null],
+      ['版本 1', null],
     ])
     const [exported, restored] = only(section?.blocks ?? [], 'actions')?.actions ?? []
-    expect(exported).toMatchObject({ label: '导出到库外', call: { face: 'owner', command: 'version export', args: { positional: ['a.md'], flags: { version: ['{version}'], to: ['{to}'] } } } })
+    expect(exported).toMatchObject({ label: '导出', call: { face: 'owner', command: 'version export', args: { positional: ['a.md'], flags: { version: ['{version}'], to: ['{to}'] } } } })
     expect(exported?.inputs.map((i) => i.name)).toEqual(['version', 'to'])
-    expect(restored).toMatchObject({ label: '放回这一版', call: { face: 'owner', command: 'version restore', args: { positional: ['a.md'], flags: { version: ['{version}'] } } } })
+    expect(restored).toMatchObject({ label: '恢复此版本', call: { face: 'owner', command: 'version restore', args: { positional: ['a.md'], flags: { version: ['{version}'] } } } })
     const choice = restored?.inputs[0]
     expect(choice?.options?.map((o) => o.value)).toEqual(['3', '2', '1'])
     expect(choice?.value).toBe('2')
@@ -155,20 +155,20 @@ describe('the item panel section', () => {
     await agentFace.check({ since: null, includeArchived: false }, as())
     const after = await version.onItemView?.('a.md' as LibraryPath, plugin())
     expect(kinds(after?.blocks ?? [])).toEqual(['timeline', 'actions'])
-    expect(only(after?.blocks ?? [], 'timeline')?.entries[0]?.lines).toContain('在工具之外改的')
+    expect(only(after?.blocks ?? [], 'timeline')?.entries[0]?.lines).toContain('外部修改')
   })
 
   it('a path inside a bundle shows the bundle; an archived thing offers export and pruning only', async () => {
     const { dir, put, plugin, as } = await library()
     writeTree(join(dir, 'site'), { 'index.html': '1' })
-    await agentFace.put({ kind: 'place', from: { kind: 'directory', path: join(dir, 'site') }, to: 'sites/a', origin: { kind: 'made', from: [], outside: [] } }, as())
+    await agentFace.put({ kind: 'place', from: { kind: 'directory', path: join(dir, 'site') }, to: 'sites/a', origin: { kind: 'generated', from: [], outside: [] } }, as())
     await agentFace.say({ kind: 'versioned', about: null, text: 'sites/a', args: {} }, as())
     const inside = await version.onItemView?.('sites/a/index.html' as LibraryPath, plugin())
     expect(only(inside?.blocks ?? [], 'actions')?.actions[0]?.call).toMatchObject({ args: { positional: ['sites/a'] } })
     await put('x', 'b.md')
     await agentFace.archive({ kind: 'archive', path: 'sites/a' }, as())
     const archived = await version.onItemView?.('_archive/sites/a' as LibraryPath, plugin())
-    expect(only(archived?.blocks ?? [], 'actions')?.actions.map((a) => a.label)).toEqual(['导出到库外', '只留最近几版'])
+    expect(only(archived?.blocks ?? [], 'actions')?.actions.map((a) => a.label)).toEqual(['导出', '仅保留最近版本'])
   })
 
   it('an undeclared thing offers the declaration, which works as a say; no thing, no section', async () => {
@@ -197,20 +197,20 @@ describe('the page of versioned things', () => {
     await agentFace.archive({ kind: 'archive', path: 'c.md' }, as())
     await import('node:fs/promises').then((fs) => fs.rm(join(root, 'd.md')))
     expect(existsSync(join(root, 'd.md'))).toBe(false)
-    expect(version.views?.map((v) => v.id)).toEqual(['version.things'])
+    expect(version.views?.map((v) => v.id)).toEqual(['version.items'])
 
     const rows = async (archived: string) => {
-      const page = await version.onView?.({ view: 'version.things', params: { archived } }, plugin())
+      const page = await version.onView?.({ view: 'version.items', params: { archived } }, plugin())
       const table = only(page?.blocks ?? [], 'table')
       // Each state, and whether it is the usual one the page leaves unsaid: every change written down.
       return table?.rows.map((r) => [r.cells.path?.text, r.cells.versions?.text, r.cells.state?.tag?.text ?? r.cells.state?.text, r.cells.state?.normal === true]).sort()
     }
     expect(await rows('hide')).toEqual([
-      ['a.md', '2 版', '已记下', true],
-      ['b.md', '1 版', '有没记下的改动', false],
-      ['d.md', '1 版', '不在', false],
+      ['a.md', '2 个版本', '已记录', true],
+      ['b.md', '1 个版本', '有未记录的修改', false],
+      ['d.md', '1 个版本', '已缺失', false],
     ])
-    expect(await rows('show')).toContainEqual(['_archive/c.md', '1 版', '已归档', false])
+    expect(await rows('show')).toContainEqual(['_archive/c.md', '1 个版本', '已归档', false])
   })
 
   it('lists the versioned things a page at a time, with the way to the next page', async () => {
@@ -219,11 +219,11 @@ describe('the page of versioned things', () => {
       await put(name, name)
       await declare(name)
     }
-    const first = await version.onView?.({ view: 'version.things', params: {}, size: 2 }, plugin())
+    const first = await version.onView?.({ view: 'version.items', params: {}, size: 2 }, plugin())
     const table = only(first?.blocks ?? [], 'table')
     expect(table?.rows).toHaveLength(2)
     expect(table?.page).toMatchObject({ first: 1, shown: 2, total: 3 })
-    const rest = await version.onView?.({ view: 'version.things', params: table?.page?.next?.params ?? {}, size: 2 }, plugin())
+    const rest = await version.onView?.({ view: 'version.items', params: table?.page?.next?.params ?? {}, size: 2 }, plugin())
     expect(only(rest?.blocks ?? [], 'table')?.rows).toHaveLength(1)
   })
 })

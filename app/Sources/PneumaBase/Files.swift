@@ -247,7 +247,7 @@ final class FileActions {
       menu.addItem(.separator())
       menu.addItem(Self.entry("快速查看") { [weak self] in self?.command("preview") })
       menu.addItem(Self.entry("在访达中显示") { [weak self] in self?.opener.reveal(urls) })
-      menu.addItem(Self.entry("拷贝路径") { [weak self] in self?.opener.copy(urls.map(\.path).joined(separator: "\n")) })
+      menu.addItem(Self.entry("复制路径") { [weak self] in self?.opener.copy(urls.map(\.path).joined(separator: "\n")) })
     }
     for (i, item) in items.enumerated() {
       let firstDanger = item.danger && !items[..<i].contains { $0.danger }

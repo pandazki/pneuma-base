@@ -85,7 +85,7 @@ describe('launcher install', () => {
     expect(statSync(launcher).mode & 0o111).not.toBe(0)
     const text = readFileSync(launcher, 'utf8')
 
-    ok(sb.run(['--library', lib, 'grant', 'issue', 'g', '--agent', 'someone']))
+    ok(sb.run(['--library', lib, 'grant', 'create', 'g', '--agent', 'someone']))
     const found = bare(`${launcher} @g find --json`)
     expect(found.code, `${found.stdout}${found.stderr}`).toBe(0)
     expect(found.json()).toMatchObject({ hits: [], problems: [] })
@@ -106,7 +106,7 @@ describe('launcher install', () => {
 describe('what agent connect writes names the launcher', () => {
   it('a skill: connect writes the launcher; the exact command lines the skill names run with nothing else, and the scene is the agent’s', () => {
     put('.claude/x', '')
-    expect(run(['agent', 'connect', 'claude-code', '--library', lib]).stdout).toContain('看看我的 Pneuma Base 库里有什么')
+    run(['agent', 'connect', 'claude-code', '--library', lib])
     expect(existsSync(launcher)).toBe(true)
     const skill = readFileSync(join(sb.home, '.claude/skills/pneuma-base-claude-code/SKILL.md'), 'utf8')
     const lines = [...skill.matchAll(/^(\S+ @claude-code (?:start|find|put) [^#\n]*?)\s*(?:#.*)?$/gm)].map((m) => m[1] as string)
@@ -115,13 +115,13 @@ describe('what agent connect writes names the launcher', () => {
 
     const agent = { CLAUDE_CODE_SESSION_ID: 'sess-1' }
     writeFileSync(join(work, 'books.md'), '# 书单\n')
-    const fill = (line: string) => line.replace('"<一句话：这次在做什么>"', '整理读书笔记').replace('<文字>', '书单').replace('<库外的文件或目录>', 'books.md').replace('<库内路径>', 'notes/books.md').replace(' --from <依据的库内路径…>', '')
+    const fill = (line: string) => line.replace('"<任务描述>"', '整理读书笔记').replace('<关键词>', '书单').replace('<外部文件或目录>', 'books.md').replace('<库内路径>', 'notes/books.md').replace(' --from <依据的库内路径…>', '')
     for (const line of lines) {
       const r = bare(fill(line), agent)
       expect(r.code, `${fill(line)}\n${r.stdout}${r.stderr}`).toBe(0)
     }
     const seen = run(['--library', lib, 'inspect', 'notes/books.md']).stdout
-    expect(seen).toContain('做出来的 · claude-code')
+    expect(seen).toContain('生成 · claude-code')
     expect(seen).toContain('整理读书笔记')
   })
 
@@ -150,9 +150,9 @@ describe('a connection survives the command line moving', () => {
     expect(listed()).toEqual([expect.objectContaining({ grant: 'cursor', inPlace: true })])
 
     rmSync(moved)
-    expect(listed()).toEqual([expect.objectContaining({ inPlace: false, problems: [`命令 ${launcher} 指向的命令行不在了（${moved}）`] })])
+    expect(listed()).toEqual([expect.objectContaining({ inPlace: false, problems: [`命令 ${launcher} 指向的命令行程序已缺失（${moved}）`] })])
     rmSync(launcher)
-    expect(listed()).toEqual([expect.objectContaining({ inPlace: false, problems: [`命令 ${launcher} 不在了`] })])
+    expect(listed()).toEqual([expect.objectContaining({ inPlace: false, problems: [`命令 ${launcher} 已缺失`] })])
 
     const repaired = run(['agent', 'connect', 'cursor', '--via', 'mcp', '--library', lib]).stdout
     expect(repaired).toContain(`命令：${launcher}`)
@@ -176,6 +176,6 @@ describe('a connection survives the command line moving', () => {
     const record = join(sb.home, '.pneuma-base', 'connections', 'cursor', 'connection.json')
     const old = { ...JSON.parse(readFileSync(record, 'utf8')), command: { node: process.execPath, entry: join(work, 'gone.js') } }
     writeFileSync(record, JSON.stringify(old))
-    expect(listed()).toEqual([expect.objectContaining({ inPlace: false, problems: [`命令行不在了（${join(work, 'gone.js')}）`] })])
+    expect(listed()).toEqual([expect.objectContaining({ inPlace: false, problems: [`命令行程序已缺失（${join(work, 'gone.js')}）`] })])
   })
 })

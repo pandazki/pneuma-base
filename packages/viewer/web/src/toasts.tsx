@@ -288,7 +288,7 @@ function ToastItem({ toast, y, scale, behind, hidden, height, z, onMeasure, onCl
             </button>
           ) : null}
         </div>
-        <button type="button" className="toast-close" aria-label="关闭" tabIndex={behind ? -1 : 0} onClick={onClose}>
+        <button type="button" className="toast-close" aria-label="关闭" data-tip="关闭" tabIndex={behind ? -1 : 0} onClick={onClose}>
           <X strokeWidth={2.5} aria-hidden />
         </button>
       </div>
@@ -320,7 +320,7 @@ function PassMeter({ progress, stopping, onStop, tabbable }: { progress: PassPro
         <span style={share === null ? undefined : { width: `${(share * 100).toFixed(1)}%` }} />
       </div>
       <button type="button" className="btn btn-sm" disabled={stopping} tabIndex={tabbable ? 0 : -1} onClick={onStop}>
-        {stopping ? '正在停下…' : '停下'}
+        {stopping ? '正在停止…' : '停止'}
       </button>
     </div>
   )

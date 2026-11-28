@@ -64,14 +64,14 @@ type Refused = { refused: PutRefusal; subject: string; notes: Note[]; problems: 
 
 const refuse = (refused: PutRefusal, subject: string, problems: PluginProblem[] = [], notes: Note[] = []): Refused => ({ refused, subject, notes, problems })
 
-/** A storage refusal or failure as put's: noise is noise, a hold or a changed expectation is busy, a directory over the limit is too many. */
+/** A storage refusal or failure as put's: storage's noise is ignored, a hold or a changed expectation is busy, a directory over the limit is too many. */
 function refusalOf(failure: StorageFailure, subject: string): Refused {
-  if (failure.reason === 'noise') return refuse('noise', subject)
+  if (failure.reason === 'noise') return refuse('ignored', subject)
   if (failure.reason === 'held' || failure.reason === 'refused' || failure.reason === 'busy') return refuse('busy', subject)
   if (failure.reason === 'too_many') return refuse('too-many', `${subject}（至少 ${failure.at_least ?? THING_FILES} 个文件）`)
   if (failure.reason === 'no_such_place' || failure.reason === 'not_a_file' || failure.reason === 'not_a_dir') return refuse('no-such-file', subject)
   if (failure.reason === 'outside') return refuse('outside-library', subject)
-  throw new Error(`存储没能做这次放入（${failure.reason}${failure.detail ? `：${failure.detail}` : ''}）：${subject}`)
+  throw new Error(`存储未能完成添加（${failure.reason}${failure.detail ? `：${failure.detail}` : ''}）：${subject}`)
 }
 
 /**
@@ -144,7 +144,7 @@ async function register(req: Extract<PutRequest, { kind: 'register' }>, ctx: Con
   const origin = await parseOrigin(ctx, store, req.origin)
   if ('refused' in origin) return origin
   const at = await whatIsOne(store, target.path)
-  if (at.failed === 'noise') return refuse('noise', req.path)
+  if (at.failed === 'noise') return refuse('ignored', req.path)
   const s = stateOfAt(at)
   const action = PUT_TABLE.register[s === 'file' || s === 'bundle' ? 'same' : s]
   if (typeof action === 'object') return refuse(action.refuse, req.path)
@@ -181,7 +181,7 @@ async function registerFiles(req: Extract<PutRequest, { kind: 'register' }>, sto
     after = page.more.after
   }
   const [first, ...more] = puts
-  if (first === undefined) return refuse('no-such-file', `${req.path}（这一层没有文件）`)
+  if (first === undefined) return refuse('no-such-file', `${req.path}（此层级没有文件）`)
   return { put: first, more, copied: false, notes: [], problems: [] }
 }
 
@@ -230,7 +230,7 @@ async function place(req: Extract<PutRequest, { kind: 'place' }>, ctx: Context, 
   const incoming = await incomingOf(ctx, store, req.from)
   if ('refused' in incoming) return incoming
   const at = await whatIsOne(store, target.path)
-  if (at.failed === 'noise') return refuse('noise', req.to)
+  if (at.failed === 'noise') return refuse('ignored', req.to)
   const source = req.from.kind === 'stdin' ? { kind: 'stdin' as const } : { kind: req.from.kind, path: req.from.path }
   const note = given(req.note ?? null)
 
@@ -297,9 +297,9 @@ async function move(req: Extract<PutRequest, { kind: 'move' }>, ctx: Context, st
   const to = await writable(ctx, store, req.to)
   if ('refused' in to) return to
   const [source, there] = await whatIs(store, [from.path, to.path]) as [At, At]
-  if (source.failed === 'noise') return refuse('noise', req.from)
+  if (source.failed === 'noise') return refuse('ignored', req.from)
   if (source.kind !== 'file' && source.kind !== 'bundle') return refuse('no-such-file', req.from)
-  if (there.failed === 'noise') return refuse('noise', req.to)
+  if (there.failed === 'noise') return refuse('ignored', req.to)
   const action: PutAction = PUT_TABLE.move[there.kind === 'none' ? 'missing' : there.kind === 'folder' ? 'folder' : there.kind === 'other' ? 'other-kind' : there.kind === source.kind ? 'different' : 'other-kind']
   if (typeof action === 'object') return refuse(action.refuse, req.to)
   const hold = await holdFor(store, holds, [from.path, to.path], source.kind === 'file' ? HOLD_FILE_MS : HOLD_DIR_MS)
@@ -326,7 +326,7 @@ const given = (text: string | null) => (text === null || text.trim() === '' ? nu
  * inside a bundle names the bundle, which is the thing. Empty fields count as not given.
  */
 async function parseOrigin(ctx: Context, store: Storage, origin: Origin<string>): Promise<Origin | Refused> {
-  if (origin.kind === 'brought') return { kind: 'brought', source: given(origin.source), by: given(origin.by) }
+  if (origin.kind === 'imported') return { kind: 'imported', source: given(origin.source), by: given(origin.by) }
   const { root } = ctx.library
   const from: LibraryPath[] = []
   for (const input of origin.from.flatMap((f) => given(f) ?? [])) {
@@ -336,7 +336,7 @@ async function parseOrigin(ctx: Context, store: Storage, origin: Origin<string>)
     if (thing === null) return refuse('no-such-file', input)
     from.push(thing)
   }
-  return { kind: 'made', from, outside: origin.outside.flatMap((o) => given(o) ?? []) }
+  return { kind: 'generated', from, outside: origin.outside.flatMap((o) => given(o) ?? []) }
 }
 
 /** The thing at `path`, or the bundle it lies in, looked for in the main area and then archived; named as `path` is. */

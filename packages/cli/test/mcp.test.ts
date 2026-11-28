@@ -37,7 +37,7 @@ describe('the tool list', () => {
 
   it('refuses a management command called by name with the reason and words of the command line: the kernel’s, a plugin’s, a destructive one', async () => {
     const commands = ownerFace.commands([...builtinPlugins.values()])
-    const management = ['grant issue', 'deploy on', 'archive purge'].map((name) => commands.find((c) => c.name === name && (c.destructive || c.ownerOnly)))
+    const management = ['grant create', 'deploy publish', 'archive purge'].map((name) => commands.find((c) => c.name === name && (c.destructive || c.ownerOnly)))
     for (const c of management) {
       if (c === undefined) throw new Error('a sample is no longer a management command')
       const r = await call(client, c.name.replaceAll(' ', '_'))
@@ -55,15 +55,15 @@ describe('the tool list', () => {
       type: 'object',
       properties: {
         path: { type: 'string', description: '库内路径' },
-        version: { type: 'string', description: '第几版', pattern: '^(?:[1-9][0-9]*)$' },
-        to: { type: 'string', description: '库外的目录或文件' },
+        version: { type: 'string', description: '版本号', pattern: '^(?:[1-9][0-9]*)$' },
+        to: { type: 'string', description: '外部目录或文件' },
       },
       required: ['path', 'version', 'to'],
       additionalProperties: false,
     })
     const put = (await client.listTools()).tools.find((t) => t.name === 'put')
     expect(put?.inputSchema.required).toBeUndefined()
-    expect(Object.keys(put?.inputSchema.properties ?? {})).toEqual(['what', 'to', 'brought', 'made', 'source', 'by', 'from', 'from-outside', 'note', 'observed', 'text', 'base64'])
+    expect(Object.keys(put?.inputSchema.properties ?? {})).toEqual(['what', 'to', 'imported', 'generated', 'source', 'by', 'from', 'from-external', 'note', 'observed', 'text', 'base64'])
     const inspect = (await client.listTools()).tools.find((t) => t.name === 'inspect')
     expect(inspect?.inputSchema).toMatchObject({ properties: { target: { type: 'string' }, file: { type: 'string' }, content: { type: 'boolean' } }, required: ['target'] })
     const ask = (await client.listTools()).tools.find((t) => t.name === 'ask')
@@ -92,7 +92,7 @@ describe('a tool and the command line with the same arguments', () => {
   it('a usage error is the command line’s, as a refusal', async () => {
     for (const [tool, args, argv] of [
       ['version_list', {}, ['version', 'list']],
-      ['put', { text: 'x' }, ['put', '-', '--made']],
+      ['put', { text: 'x' }, ['put', '-', '--generated']],
       ['show', { view: 'no-such-page' }, ['show', 'no-such-page']],
     ] as const) {
       const cli = sb.run(['@g', ...argv], { input: 'x' })
@@ -105,8 +105,8 @@ describe('a tool and the command line with the same arguments', () => {
   })
 
   it('a read-only grant is refused a put as on the command line', async () => {
-    const cli = sb.run(['@ro', 'put', '-', '--to', 'r.md', '--made', '--json'], { input: 'r' })
-    const r = await call(reader, 'put', { text: 'r', to: 'r.md', made: true })
+    const cli = sb.run(['@ro', 'put', '-', '--to', 'r.md', '--generated', '--json'], { input: 'r' })
+    const r = await call(reader, 'put', { text: 'r', to: 'r.md', generated: true })
     expect(cli.json()).toMatchObject({ outcome: 'refused', reason: 'outside-grant' })
     expect(r.isError).toBe(true)
     expect(r.structuredContent).toEqual(cli.json())
@@ -126,29 +126,29 @@ describe.each(['legacy', 'modern'] as const)('a whole task through a real MCP cl
 
   it('reads the instructions, works the library, is refused management, and is one scene of the grant’s agent', async () => {
     const instructions = client.getInstructions() ?? ''
-    expect(instructions.startsWith('你经 MCP 连着一个 Pneuma Base 库')).toBe(true)
+    expect(instructions.startsWith('此 MCP 连接对应一个 Pneuma Base 资料库')).toBe(true)
     expect(instructions.endsWith(readFileSync(join(lib, 'PNEUMA-BASE.md'), 'utf8'))).toBe(true)
     expect(client.getProtocolEra()).toBe(era)
 
-    expect(textOf(await call(client, 'start', { sentence: '写一份下单流程的说明' }))).toContain('【记下】')
-    const put = await call(client, 'put', { text: '# 下单流程说明\n', to: 'docs/flow.md', made: true, from: ['notes/a.md'] })
+    expect(textOf(await call(client, 'start', { sentence: '写一份下单流程的说明' }))).toContain('【已记录】')
+    const put = await call(client, 'put', { text: '# 下单流程说明\n', to: 'docs/flow.md', generated: true, from: ['notes/a.md'] })
     expect(put.structuredContent).toMatchObject({ outcome: 'accepted', path: 'docs/flow.md', copied: true })
     expect(readFileSync(join(lib, 'docs/flow.md'), 'utf8')).toBe('# 下单流程说明\n')
-    const bytes = await call(client, 'put', { base64: Buffer.from([0, 1, 2, 255]).toString('base64'), to: 'docs/blob.bin', made: true })
+    const bytes = await call(client, 'put', { base64: Buffer.from([0, 1, 2, 255]).toString('base64'), to: 'docs/blob.bin', generated: true })
     expect(bytes.isError).toBe(false)
     expect([...readFileSync(join(lib, 'docs/blob.bin'))]).toEqual([0, 1, 2, 255])
     expect(textOf(await call(client, 'find', { text: 'flow' }))).toContain('docs/flow.md')
-    expect(textOf(await call(client, 'inspect', { target: 'docs/flow.md' }))).toContain('做出来的 · claude')
+    expect(textOf(await call(client, 'inspect', { target: 'docs/flow.md' }))).toContain('生成 · claude')
     expect(await call(client, 'say', { kind: 'note', about: 'docs/flow.md', text: '初稿' })).toMatchObject({ isError: false, structuredContent: { outcome: 'heard' } })
     expect((await call(client, 'check')).isError).toBe(false)
     expect(textOf(await call(client, 'show', { view: 'files', params: { dir: 'docs' } }))).toContain('flow.md')
     expect(await call(client, 'search_status')).toMatchObject({ isError: false, structuredContent: { outcome: 'done' } })
-    expect(await call(client, 'grant_issue', { name: 'x', agent: 'y' })).toMatchObject({ isError: true, structuredContent: { reason: 'agent-session' } })
+    expect(await call(client, 'grant_create', { name: 'x', agent: 'y' })).toMatchObject({ isError: true, structuredContent: { reason: 'agent-session' } })
 
     const claude = sceneRows(sb, lib).filter((row) => row.actor.name === 'claude')
     expect(claude).toHaveLength(1)
     expect(claude[0].text).toBe('写一份下单流程的说明')
-    expect(claude[0].meta[0].text).toBe('放入 2 样')
+    expect(claude[0].meta[0].text).toBe('添加 2 个条目')
   })
 
   // What does not depend on the era, once: the plugin added below reads a resource in the modern era.
@@ -156,7 +156,7 @@ describe.each(['legacy', 'modern'] as const)('a whole task through a real MCP cl
     it('a second connection on the same day is a scene of its own', async () => {
       const other = await connect(sb, 'g', era)
       try {
-        expect(textOf(await call(other, 'start', { sentence: '另一件事' }))).toContain('【记下】')
+        expect(textOf(await call(other, 'start', { sentence: '另一件事' }))).toContain('【已记录】')
       } finally {
         await other.close()
       }
@@ -167,7 +167,7 @@ describe.each(['legacy', 'modern'] as const)('a whole task through a real MCP cl
       const resources = (await client.listResources()).resources
       expect(resources.map((r) => r.uri)).toContain('pneuma-base://library/description')
       expect(resources.map((r) => r.uri)).toContain('pneuma-base://library/show/files')
-      expect(resources.map((r) => r.uri)).not.toContain('pneuma-base://library/show/config')
+      expect(resources.map((r) => r.uri)).not.toContain('pneuma-base://library/show/settings')
       const description = await client.readResource({ uri: 'pneuma-base://library/description' })
       expect(description.contents[0]).toMatchObject({ text: client.getInstructions() })
       const files = await client.readResource({ uri: 'pneuma-base://library/show/files' })
@@ -184,7 +184,7 @@ describe.each(['legacy', 'modern'] as const)('a plugin added while connected (%s
     sb = sandbox()
     lib = join(tempDir(), 'lib')
     ok(sb.run(['init', lib]))
-    ok(sb.run(['--library', lib, 'grant', 'issue', 'g', '--agent', 'claude']))
+    ok(sb.run(['--library', lib, 'grant', 'create', 'g', '--agent', 'claude']))
     client = await connect(sb, 'g', era)
   })
   afterAll(() => client?.close())
@@ -199,10 +199,10 @@ describe.each(['legacy', 'modern'] as const)('a plugin added while connected (%s
     else await client.subscribeResource({ uri: 'pneuma-base://library/description' })
     expect((await client.listTools()).tools.map((t) => t.name)).not.toContain('version_list')
 
-    ok(sb.run(['--library', lib, 'plugin', 'add', 'version']))
+    ok(sb.run(['--library', lib, 'plugin', 'enable', 'version']))
     await expect.poll(() => [...new Set(heard)].sort(), { timeout: 15_000, interval: 200 }).toEqual(['description', 'resources', 'tools'])
     expect((await client.listTools()).tools.map((t) => t.name)).toContain('version_list')
     const description = await client.readResource({ uri: 'pneuma-base://library/description' })
-    expect((description.contents[0] as { text: string }).text).toContain('这个库装了**版本**插件')
+    expect((description.contents[0] as { text: string }).text).toContain('此资料库已启用**版本管理**插件')
   })
 })

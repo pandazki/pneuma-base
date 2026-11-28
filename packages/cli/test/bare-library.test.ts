@@ -24,24 +24,24 @@ describe('a library with no plugin', () => {
 
   it('put copies a file in, or takes the content from standard input, and accepts with no notes', () => {
     writeFileSync(join(outside, 'stripe.html'), '<html>stripe</html>')
-    const r = agent(['put', 'stripe.html', '--to', 'payments/sources/stripe.html', '--brought', '--source', 'https://stripe.com'])
+    const r = agent(['put', 'stripe.html', '--to', 'payments/sources/stripe.html', '--imported', '--source', 'https://stripe.com'])
     expect(r.code, r.stderr).toBe(0)
     expect(r.json()).toMatchObject({ outcome: 'accepted', path: 'payments/sources/stripe.html', copied: true, notes: [], problems: [] })
     expect(readFileSync(join(lib, 'payments/sources/stripe.html'), 'utf8')).toBe('<html>stripe</html>')
-    const stdin = agent(['put', '-', '--to', 'notes/idea.md', '--made'], { input: '# idea\n' })
+    const stdin = agent(['put', '-', '--to', 'notes/idea.md', '--generated'], { input: '# idea\n' })
     expect(stdin.code, stdin.stderr).toBe(0)
     expect(readFileSync(join(lib, 'notes/idea.md'), 'utf8')).toBe('# idea\n')
   })
 
   it('find finds nothing with no plugin: the kernel walks no folder to match names', () => {
-    agent(['put', '-', '--to', 'payments/comparison.md', '--made'], { input: 'a' })
+    agent(['put', '-', '--to', 'payments/comparison.md', '--generated'], { input: 'a' })
     const r = agent(['find', 'comparison'])
     expect(r.code, r.stderr).toBe(0)
     expect(r.json()).toEqual({ hits: [], problems: [] })
   })
 
   it('inspect gives the facts of the file itself and no sections; the fingerprint only with the content', () => {
-    agent(['put', '-', '--to', 'a.md', '--made'], { input: 'hello' })
+    agent(['put', '-', '--to', 'a.md', '--generated'], { input: 'hello' })
     const r = agent(['inspect', 'a.md'])
     expect(r.code, r.stderr).toBe(0)
     expect(r.json()).toMatchObject({
@@ -53,12 +53,12 @@ describe('a library with no plugin', () => {
   })
 
   it('say is not heard, with the named reason and the fixed sentence, in the readable output too', () => {
-    const r = agent(['say', 'decided', '主人决定用 Paddle'])
+    const r = agent(['say', 'decision', '主人决定用 Paddle'])
     expect(r.code, r.stderr).toBe(0)
-    expect(r.json()).toEqual({ outcome: 'not-heard', reason: 'no-plugin-for-kind', note: '这个库没配能记下这句话的插件', problems: [] })
+    expect(r.json()).toEqual({ outcome: 'not-heard', reason: 'no-plugin-for-kind', note: '此资料库没有可记录此内容的插件', problems: [] })
     const text = sb.run(['--library', lib, 'say', 'note', 'x'], { cwd: outside })
     expect(text.code).toBe(0)
-    expect(text.stdout).toContain('这个库没配能记下这句话的插件')
+    expect(text.stdout).toContain('此资料库没有可记录此内容的插件')
   })
 
   it('check reports no sections', () => {
@@ -68,7 +68,7 @@ describe('a library with no plugin', () => {
   })
 
   it('archive moves the file into _archive/ under the same relative path', () => {
-    agent(['put', '-', '--to', 'drafts/v1.md', '--made'], { input: 'v1' })
+    agent(['put', '-', '--to', 'drafts/v1.md', '--generated'], { input: 'v1' })
     const r = agent(['archive', 'drafts/v1.md'])
     expect(r.code, r.stderr).toBe(0)
     expect(r.json()).toMatchObject({ outcome: 'accepted', from: 'drafts/v1.md', to: '_archive/drafts/v1.md', notes: [], problems: [] })
@@ -77,7 +77,7 @@ describe('a library with no plugin', () => {
   })
 
   it('start composes say, check and find and answers without error', () => {
-    agent(['put', '-', '--to', 'payments/comparison.md', '--made'], { input: 'a' })
+    agent(['put', '-', '--to', 'payments/comparison.md', '--generated'], { input: 'a' })
     const r = agent(['start', '对比 payments 方案'])
     expect(r.code, r.stderr).toBe(0)
     const out = r.json()

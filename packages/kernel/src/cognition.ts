@@ -13,7 +13,7 @@ const LIBRARY_PATH = '{{库的路径}}'
 const COMMAND = '{{命令}}'
 
 /** The description is a file of the library, not of one grant, so it names the grant generically. */
-export const DESCRIPTION_GRANT_NAME = '<你的授权名>'
+export const DESCRIPTION_GRANT_NAME = '<授权名称>'
 
 /**
  * PNEUMA-BASE.md, assembled only from the configuration and the installed plugins' cognition
@@ -44,7 +44,7 @@ function assembleDescription(library: Pick<Library, 'config' | 'plugins'>, parag
 export async function describeLibrary(ctx: Context): Promise<{ text: string; problems: PluginProblem[] }> {
   const said = await eachPlugin(ctx, async (plugin, pctx) => {
     const paragraph = plugin.cognition && plugin.onDescribe ? await plugin.onDescribe(pctx) : null
-    if (paragraph !== null && typeof paragraph !== 'string') throw new Error(`onDescribe 答的不是文字或 null：${JSON.stringify(paragraph)}`)
+    if (paragraph !== null && typeof paragraph !== 'string') throw new Error(`onDescribe 的答复须为字符串或 null：${JSON.stringify(paragraph)}`)
     return paragraph?.trim() || null
   })
   return { text: assembleDescription(ctx.library, new Map(said.values.map(({ plugin, value }) => [plugin, value]))), problems: said.problems }
@@ -60,10 +60,10 @@ function replacedKept(plugins: Library['plugins']): 'bare' | 'some' | 'every' {
 function configuration(library: Pick<Library, 'config' | 'plugins'>): string {
   const lines = library.config.plugins.map((name) => {
     const plugin = library.plugins.find((p) => p.name === name)
-    if (!plugin) return `- \`${name}\`：这个 pneuma-base 里没有这个插件，它暂时不起作用`
-    return `- \`${name}\`：${plugin.cognition?.title ?? '没有说明'}`
+    if (!plugin) return `- \`${name}\`：此 pneuma-base 中没有该插件，暂不生效`
+    return `- \`${name}\`：${plugin.cognition?.title ?? '无说明'}`
   })
-  return ['## 这个库现在的配置', '', '装了这些插件，各自的说明在上文：', '', ...lines].join('\n')
+  return ['## 资料库当前配置', '', '已启用以下插件，说明见上文：', '', ...lines].join('\n')
 }
 
 /**

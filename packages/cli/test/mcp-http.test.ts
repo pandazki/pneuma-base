@@ -92,7 +92,7 @@ describe.each(['legacy', 'modern'] as const)('MCP over HTTP answers as over stdi
 
   // The full list runs over standard input and output in mcp.test.ts; over HTTP, one case of each kind.
   it('answers a read, a write, a refusal and a page as the command line does', async () => {
-    for (const argv of ['find notes --include-archived', 'put - --to notes/a.md --brought', 'archive notes/missing.md', 'show files --dir notes']) {
+    for (const argv of ['find notes --include-archived', 'put - --to notes/a.md --imported', 'archive notes/missing.md', 'show files --dir notes']) {
       const c = PARITY_CASES.find((p) => p[2].join(' ') === argv)
       if (c === undefined) throw new Error(`no parity case ${argv}`)
       await expectParity(sb, http.client, c)
@@ -100,8 +100,8 @@ describe.each(['legacy', 'modern'] as const)('MCP over HTTP answers as over stdi
   })
 
   it('refuses a management command called by name as over stdio', async () => {
-    const overHttp = await call(http.client, 'grant_issue', { name: 'x', agent: 'y' })
-    const overStdio = await call(stdio, 'grant_issue', { name: 'x', agent: 'y' })
+    const overHttp = await call(http.client, 'grant_create', { name: 'x', agent: 'y' })
+    const overStdio = await call(stdio, 'grant_create', { name: 'x', agent: 'y' })
     expect(overHttp).toMatchObject({ isError: true, structuredContent: { outcome: 'refused', reason: 'agent-session' } })
     expect(overHttp.structuredContent).toEqual(overStdio.structuredContent)
     expect(textOf(overHttp)).toBe(textOf(overStdio))
@@ -120,14 +120,14 @@ describe('a legacy connection', () => {
 
   it('is one scene of the grant’s agent for all its calls', async () => {
     const { client } = await connectHttp(server, 'g', 'legacy')
-    expect(textOf(await call(client, 'start', { sentence: '整理下单流程' }))).toContain('【记下】')
-    expect(await call(client, 'put', { text: '# 流程\n', to: 'docs/flow.md', made: true })).toMatchObject({ isError: false })
+    expect(textOf(await call(client, 'start', { sentence: '整理下单流程' }))).toContain('【已记录】')
+    expect(await call(client, 'put', { text: '# 流程\n', to: 'docs/flow.md', generated: true })).toMatchObject({ isError: false })
     expect(await call(client, 'say', { kind: 'note', about: 'docs/flow.md', text: '初稿' })).toMatchObject({ isError: false })
     await client.close()
     const claude = sceneRows(sb, lib).filter((row) => row.actor.name === 'claude')
     expect(claude).toHaveLength(1)
     expect(claude[0].text).toBe('整理下单流程')
-    expect(claude[0].meta[0].text).toBe('放入 1 样')
+    expect(claude[0].meta[0].text).toBe('添加 1 个条目')
   })
 
   it('lives by its session id: needed after initialize, 404 when unknown or ended by DELETE, 400 with an era it does not serve', async () => {
@@ -211,11 +211,11 @@ describe('a 2026-07-28 request', () => {
 
   it('works in the scene `?session=` names; with none, each call is the agent’s scene of the day', async () => {
     const { client } = await connectHttp(server, 'g', 'modern', 'named-scene')
-    expect(textOf(await call(client, 'start', { sentence: '整理支付服务' }))).toContain('【记下】')
-    expect(await call(client, 'put', { text: '# 支付\n', to: 'docs/pay.md', made: true })).toMatchObject({ isError: false })
+    expect(textOf(await call(client, 'start', { sentence: '整理支付服务' }))).toContain('【已记录】')
+    expect(await call(client, 'put', { text: '# 支付\n', to: 'docs/pay.md', generated: true })).toMatchObject({ isError: false })
     await client.close()
     const anonymous = await connectHttp(server, 'g', 'modern')
-    expect(await call(anonymous.client, 'put', { text: '# 别的\n', to: 'docs/other.md', made: true })).toMatchObject({ isError: false })
+    expect(await call(anonymous.client, 'put', { text: '# 别的\n', to: 'docs/other.md', generated: true })).toMatchObject({ isError: false })
     await anonymous.client.close()
     const scenes = [...new Set(factsOf(lib).map((f) => f.scene as string))]
     expect(scenes).toContain('named-scene')
@@ -233,7 +233,7 @@ describe.each(['legacy', 'modern'] as const)('a plugin added while connected ove
     sb = sandbox()
     lib = join(tempDir(), 'lib')
     ok(sb.run(['init', lib]))
-    ok(sb.run(['--library', lib, 'grant', 'issue', 'g', '--agent', 'claude']))
+    ok(sb.run(['--library', lib, 'grant', 'create', 'g', '--agent', 'claude']))
     http = await connectHttp(await serveHttp(sb, lib), 'g', era)
   })
   afterAll(() => http?.client.close())
@@ -243,7 +243,7 @@ describe.each(['legacy', 'modern'] as const)('a plugin added while connected ove
     http.client.setNotificationHandler('notifications/tools/list_changed', () => void heard.push('tools'))
     if (era === 'modern') await http.client.listen({ toolsListChanged: true })
     expect((await http.client.listTools()).tools.map((t) => t.name)).not.toContain('version_list')
-    ok(sb.run(['--library', lib, 'plugin', 'add', 'version']))
+    ok(sb.run(['--library', lib, 'plugin', 'enable', 'version']))
     await expect.poll(() => heard, { timeout: 15_000, interval: 200 }).toContain('tools')
     expect((await http.client.listTools()).tools.map((t) => t.name)).toContain('version_list')
   })

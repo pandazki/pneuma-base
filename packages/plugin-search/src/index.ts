@@ -50,7 +50,7 @@ async function onArchive(req: AcceptedArchive, ctx: PluginContext): Promise<null
 }
 
 /**
- * 查找: find matches the content of the registered things' text files, ranked by bm25, and by meaning
+ * 搜索: find matches the content of the registered things' text files, ranked by bm25, and by meaning
  * when the owner sets an embedder. What it heard registered is facts in its record place; the index
  * lives in the cache directory outside the library.
  */
@@ -58,18 +58,18 @@ export const search: Plugin = {
   contract: CONTRACT,
   name: pluginName('search'),
   version: PNEUMA_BASE_VERSION,
-  title: '查找',
-  summary: '按正文找，配好后也按意思找',
-  about: '在登记过的文本文件的正文里找，按相关度排；主人配了嵌入器时也按意思找。',
-  cognition: { title: '查找', text: readFileSync(new URL('../cognition/search-section.md', import.meta.url), 'utf8') },
+  title: '搜索',
+  summary: '全文检索，可启用语义检索',
+  about: '在已登记的文本文件中进行全文检索，按相关度排序；配置 embedding 后可进行语义检索。',
+  cognition: { title: '搜索', text: readFileSync(new URL('../cognition/search-section.md', import.meta.url), 'utf8') },
   storage: [
     { dir: 'facts', kind: 'body' },
     { dir: 'embedder', kind: 'body' },
   ],
   statements: [],
   ownerCommands: searchCommands,
-  secrets: [{ name: KEY_SECRET, description: 'http 嵌入服务的密钥，作 Bearer 令牌发给它；服务不要密钥就不用设' }],
-  views: [{ id: STATUS_VIEW, title: '查找', icon: 'search', nav: true, filters: [], with: 'config' }],
+  secrets: [{ name: KEY_SECRET, title: 'API 密钥', description: 'HTTP embedding 服务的密钥，作为 Bearer token 发送；服务无需密钥时不必设置' }],
+  views: [{ id: STATUS_VIEW, title: '搜索', icon: 'search', nav: true, filters: [], with: 'settings' }],
 
   onPut,
   onArchive,
@@ -93,7 +93,7 @@ export const search: Plugin = {
   },
 
   async onView(req, ctx) {
-    if (req.view !== STATUS_VIEW) throw new Error(`查找插件没有这个视图：${req.view}`)
+    if (req.view !== STATUS_VIEW) throw new Error(`搜索插件不存在此视图：${req.view}`)
     return statusView(ctx)
   },
 

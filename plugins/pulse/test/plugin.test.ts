@@ -22,9 +22,9 @@ const env = (at: string, name = 'a', kind: 'agent' | 'owner' = 'agent') => ({ id
 
 test('stored lines that are not records say why', () => {
   assert.deepEqual(parseActivity({ what: 'put', path: 'a.md' }), { what: 'put', path: 'a.md' })
-  assert.equal(parseActivity({ what: 'move', path: 'a.md' }), '不是一条活动记录')
+  assert.equal(parseActivity({ what: 'move', path: 'a.md' }), '不是有效的活动记录')
   assert.deepEqual(parseClear({ cleared: true }), { cleared: true })
-  assert.equal(parseClear({}), '不是一条清空记录')
+  assert.equal(parseClear({}), '不是有效的清空记录')
 })
 
 test('a clear hides everything at or before it, also records synced in later', () => {
@@ -43,7 +43,7 @@ test('the grid has 30 local days ending today, and counts per day', () => {
   assert.equal(grid.reduce((n, d) => n + d.count, 0), 2)
 })
 
-test('actors are counted apart, the owner shown as 主人, most active first', () => {
+test('actors are counted apart, the owner shown as 我, most active first', () => {
   const rows = byActor([
     { ...env('2026-11-01T00:00:00.000Z', 'codex'), what: 'put', path: 'a' },
     { ...env('2026-11-02T00:00:00.000Z', 'claude-code'), what: 'put', path: 'b' },
@@ -52,7 +52,7 @@ test('actors are counted apart, the owner shown as 主人, most active first', (
   ])
   assert.deepEqual(
     rows.map((r) => [r.name, r.total, r.put, r.archive]),
-    [['claude-code', 2, 1, 1], ['codex', 1, 1, 0], ['主人', 1, 1, 0]],
+    [['claude-code', 2, 1, 1], ['codex', 1, 1, 0], ['我', 1, 1, 0]],
   )
 })
 
@@ -81,9 +81,9 @@ test('puts and archives are counted per actor; moves and taking back are not', a
     const done = await r
     assert.equal(done.code, 0, done.stderr || done.stdout)
   }
-  await ok(sb.agent('claude-code', 's1', ['put', '-', '--to', 'notes/a.md', '--made'], { input: '# a\n' }))
-  await ok(sb.agent('claude-code', 's1', ['put', '-', '--to', 'notes/b.md', '--made'], { input: '# b\n' }))
-  await ok(sb.agent('codex', 's2', ['put', '-', '--to', 'notes/c.md', '--made'], { input: '# c\n' }))
+  await ok(sb.agent('claude-code', 's1', ['put', '-', '--to', 'notes/a.md', '--generated'], { input: '# a\n' }))
+  await ok(sb.agent('claude-code', 's1', ['put', '-', '--to', 'notes/b.md', '--generated'], { input: '# b\n' }))
+  await ok(sb.agent('codex', 's2', ['put', '-', '--to', 'notes/c.md', '--generated'], { input: '# c\n' }))
   await ok(sb.agent('codex', 's2', ['archive', 'notes/c.md']))
   await ok(sb.agent('codex', 's2', ['unarchive', 'notes/c.md']))
   await ok(sb.agent('claude-code', 's1', ['put', 'notes/b.md', '--to', 'notes/b2.md']))
@@ -98,7 +98,7 @@ test('puts and archives are counted per actor; moves and taking back are not', a
   // The same days in words, for the command line and screen readers: the total, the active days, the busiest, each day's count.
   const today = (data.days.at(-1) as unknown as { day: string }).day
   const label = `${Number(today.slice(5, 7))} 月 ${Number(today.slice(8))} 日`
-  assert.equal(heat.text, `最近 ${DAYS} 天的放入和归档：4 次，有活动的天数：1。最忙的一天是 ${label}：4 次。\n每天（按这台机器的时区分天）：${label} 4 次`)
+  assert.equal(heat.text, `最近 ${DAYS} 天的添加和归档：4 次，活跃天数：1。最活跃的一天：${label}，4 次。\n每日（按本机时区）：${label} 4 次`)
   const table = find(shown.blocks, 'table')
   assert.deepEqual(
     table?.rows.map((r) => [r.cells.who!.text, r.cells.total!.text, r.cells.put!.text, r.cells.archive!.text]),
@@ -129,13 +129,13 @@ test('clearing is destructive: refused for an agent and without confirmation, do
   const pressed = await viewer.act(clear)
   await viewer.stop()
   assert.equal(pressed.result.outcome, 'done', pressed.text)
-  assert.equal(pressed.result.text, '已清空 4 条活动记录，之后的活动从现在算起。')
+  assert.equal(pressed.result.text, '已清空 4 条活动记录，此后的活动从现在开始计算。')
 
   const after = await page()
   assert.equal(after.subtitle, `最近 ${DAYS} 天 0 次`)
   assert.equal(find(after.blocks, 'table')?.rows.length, 0)
 
-  const put = await sb.agent('codex', 's3', ['put', '-', '--to', 'notes/d.md', '--made'], { input: '# d\n' })
+  const put = await sb.agent('codex', 's3', ['put', '-', '--to', 'notes/d.md', '--generated'], { input: '# d\n' })
   assert.equal(put.code, 0, put.stderr)
   assert.equal((await page()).subtitle, `最近 ${DAYS} 天 1 次`)
 })
@@ -147,7 +147,7 @@ test('records an earlier version wrote in activity/ still count, beside the ones
     mkdirSync(dir, { recursive: true })
     const at = new Date(Date.now() - 60_000).toISOString()
     writeFileSync(join(dir, '20261101000000000-abcdef01.jsonl'), `${JSON.stringify({ id: 'f_old', at, actor: { kind: 'agent', name: 'codex' }, session: 'old', what: 'put', path: 'notes/old.md' })}\n`)
-    const put = await own.agent('claude-code', 's1', ['put', '-', '--to', 'notes/new.md', '--made'], { input: '# new\n' })
+    const put = await own.agent('claude-code', 's1', ['put', '-', '--to', 'notes/new.md', '--generated'], { input: '# new\n' })
     assert.equal(put.code, 0, put.stderr)
     const viewer = await own.viewer()
     const shown = (await viewer.view(PAGE)) as Shown

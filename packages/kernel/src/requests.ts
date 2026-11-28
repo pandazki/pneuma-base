@@ -2,10 +2,11 @@
 // approves or declines with one act. They are the kernel's, so they work with no plugin, and travel with
 // the folder and with sync: facts of the kernel's record place `requests`, only appended, which several
 // writers share without conflict; each request's state is a row derived from them.
-// ARCHITECTURE.md「请主人做」.
+// ARCHITECTURE.md「请所有者做」.
 import { randomBytes } from 'node:crypto'
 import type { OwnerCommandInfo } from './owner.js'
 import { checkArgs } from './params.js'
+import { argsNow, commandNow } from './renamed.js'
 import { storageOf } from './storage.js'
 import {
   formOf,
@@ -63,12 +64,12 @@ function invocation(ctx: Pick<Context, 'actor'> & { library: Library | null }): 
   const { actor, library } = ctx
   const grant = actor.kind === 'agent' && actor.grant !== null ? library?.config.grants.find((g) => g.id === actor.grant) : undefined
   if (grant) return `pneuma-base @${grant.name}`
-  return ['pneuma-base', '--library', library === null ? '<库的目录>' : quote(library.root), ...(actor.kind === 'agent' ? ['--as', quote(actor.name)] : [])].join(' ')
+  return ['pneuma-base', '--library', library === null ? '<资料库目录>' : quote(library.root), ...(actor.kind === 'agent' ? ['--as', quote(actor.name)] : [])].join(' ')
 }
 
 /** The line that asks the owner for this command, as the refusal of it in an agent's session ends. */
 export function askLine(ctx: Pick<Context, 'actor'> & { library: Library | null }, name: string, args: OwnerArgs): string {
-  return `${invocation(ctx)} ask "<为什么>" ${commandLine(name, args)}`
+  return `${invocation(ctx)} ask "<原因>" ${commandLine(name, args)}`
 }
 
 // ---- reading ----
@@ -113,7 +114,9 @@ function folded(id: RequestId, lines: readonly Line[]): OwnerRequest | null {
       : withdrawn !== undefined
         ? { kind: 'withdrawn', at: withdrawn.at }
         : { kind: 'pending' }
-  const { by, at, why, command: name, args } = asked
+  const { by, at, why } = asked
+  const name = commandNow(asked.command)
+  const args = argsNow(name, asked.args)
   return { id, by, at, why, command: name, args, line: commandLine(name, args), status, seen: status.kind !== 'pending' && sorted.some((l) => l.kind === 'seen') }
 }
 
@@ -156,7 +159,7 @@ async function caughtUp(root: string): Promise<void> {
         const waiting = (await records.where<RequestRow>('requests', 'asker', askerKey(line.by), { limit: 10_000 })).rows.map((r) => touched.get(r.value.id) ?? r.value)
         for (const t of touched.values()) if (!waiting.some((w) => w.id === t.id) && fieldsOf(t).asker === askerKey(line.by)) waiting.push(t)
         const pending = waiting.filter((w) => w.id !== id && fieldsOf(w).pending === '1')
-        const same = pending.find((w) => folded(w.id, w.lines)?.line === commandLine(line.command, line.args))
+        const same = pending.find((w) => folded(w.id, w.lines)?.line === commandLine(commandNow(line.command), argsNow(commandNow(line.command), line.args)))
         if (same !== undefined) row.same = same.id
         else if (pending.length >= MAX_PENDING) row.over = true
       }
@@ -166,7 +169,7 @@ async function caughtUp(root: string): Promise<void> {
     const rows: Row[] = [...touched.values()].map((row) => ({ key: row.id, fields: fieldsOf(row), value: row }))
     const put = await records.put({ requests: rows, ...(cursor === null ? { meta: [{ key: 'version', value: ROWS_VERSION }] } : {}) }, { cursor: batch.cursor, expect: cursor })
     if (put.written && !batch.more) return
-    if (tries > 50) throw new Error('请求的行一直在被别的进程改写')
+    if (tries > 50) throw new Error('请求记录持续被其他进程改写')
   }
 }
 
@@ -229,14 +232,14 @@ export function endText(r: OwnerRequest): string {
   const s = r.status
   switch (s.kind) {
     case 'pending':
-      return '在等主人决定'
+      return '待处理'
     case 'withdrawn':
       return `已撤回（${when(s.at)}）`
     case 'declined':
-      return `已拒绝（${when(s.at)}）${s.reason === null ? '' : `，理由：${s.reason}`}`
+      return `已拒绝（${when(s.at)}）${s.reason === null ? '' : `，原因：${s.reason}`}`
     case 'approved': {
       const o = s.outcome
-      const answered = o.outcome === 'failed' ? `运行时出错：${o.message}` : o.outcome === 'refused' ? `命令被拒绝（${o.reason}）：${oneLine(o.text)}` : `运行的结果：${oneLine(o.text)}`
+      const answered = o.outcome === 'failed' ? `运行时出错：${o.message}` : o.outcome === 'refused' ? `命令被拒绝（${o.reason}）：${oneLine(o.text)}` : `运行结果：${oneLine(o.text)}`
       return `已批准（${when(s.at)}），${answered}`
     }
   }
@@ -253,9 +256,9 @@ const refusal = (reason: Refused['reason'], text: string): Refused => ({ outcome
 
 /** Why `c` cannot be asked for, or null when it can: owner-only, losing no data, and not marked as the owner's in person. */
 function notAskable(c: OwnerCommandInfo, ctx: Context): Refused | null {
-  if (c.destructive) return refusal('red-line', `「${c.name}」会丢数据，是红线：只有主人能做，要主人当面确认，不能请主人代批。真需要的话直接告诉主人。`)
-  if (!c.ownerOnly) return refusal('run-it-yourself', `「${c.name}」你自己就能运行，不用请主人：${invocation(ctx)} ${c.name}${c.usage === null ? '' : ` ${c.usage}`}`)
-  if (!c.askable) return refusal('not-askable', `「${c.name}」不能请主人代批：它要主人自己在终端里做。真需要的话直接告诉主人。`)
+  if (c.destructive) return refusal('red-line', `「${c.name}」将丢失数据，属于限制操作：仅所有者可执行，需当面确认，不能提交请求代批。如确有需要，请直接告知所有者。`)
+  if (!c.ownerOnly) return refusal('run-it-yourself', `「${c.name}」可直接执行，无需请求所有者：${invocation(ctx)} ${c.name}${c.usage === null ? '' : ` ${c.usage}`}`)
+  if (!c.askable) return refusal('not-askable', `「${c.name}」不能提交请求代批：须由所有者在自己的终端中执行。如确有需要，请直接告知所有者。`)
   return null
 }
 
@@ -265,13 +268,13 @@ function notAskable(c: OwnerCommandInfo, ctx: Context): Refused | null {
  */
 export async function ask(req: AskRequest, ctx: Context, commands: readonly OwnerCommandInfo[]): Promise<AskResult> {
   const by = askerOf(ctx.actor)
-  if (by === null) return refusal('not-an-agent', 'ask 是 agent 请主人做事用的；你是主人，直接运行那条命令就行。')
+  if (by === null) return refusal('not-an-agent', 'ask 用于 Agent 向所有者提交请求；所有者可直接运行该命令。')
   const { root } = ctx.library
   if (req.kind === 'withdraw') return withdraw(root, req.id, by, ctx.now)
   const c = commands.find((x) => x.name === req.command)
-  if (c === undefined) return refusal('unknown-command', `没有这条主人命令：${req.command}。${invocation(ctx)} --help 列出这个库能用的。`)
+  if (c === undefined) return refusal('unknown-command', `所有者命令 ${req.command} 不存在。${invocation(ctx)} --help 列出此资料库可用的命令。`)
   const why = req.why.trim()
-  const wrong = notAskable(c, ctx) ?? (why === '' ? refusal('usage', 'ask 要写为什么：一句话，主人据它决定批不批。') : null)
+  const wrong = notAskable(c, ctx) ?? (why === '' ? refusal('usage', 'ask 须写明原因，所有者据此决定是否批准。') : null)
   if (wrong !== null) return wrong
   const checked = checkArgs(c.name, c.params, req.args)
   if ('usage' in checked) return refusal('usage', checked.usage)
@@ -279,7 +282,7 @@ export async function ask(req: AskRequest, ctx: Context, commands: readonly Owne
   const mine = await pendingRequests(root, by)
   const same = mine.find((r) => r.line === line)
   if (same) return { outcome: 'asked', request: same, again: true, problems: [] }
-  const tooMany = refusal('too-many', `你已经有 ${MAX_PENDING} 个请求在等主人决定。等主人处理，或用 ask --withdraw <请求号> 撤回不再需要的。`)
+  const tooMany = refusal('too-many', `已有 ${MAX_PENDING} 个请求等待所有者处理。请等待处理，或用 ask --withdraw <请求编号> 撤回不再需要的请求。`)
   if (mine.length >= MAX_PENDING) return tooMany
   const asked = { kind: 'asked' as const, at: ctx.now, by, session: ctx.session.id, why, command: c.name, args: req.args }
   const id = `r-${randomBytes(4).toString('hex')}` as RequestId
@@ -297,9 +300,9 @@ export async function ask(req: AskRequest, ctx: Context, commands: readonly Owne
 
 async function withdraw(root: string, id: string, by: Asker, now: Instant): Promise<AskResult> {
   const r = await requestNamed(root, id)
-  if (r === null) return refusal('no-such-request', `没有请求 ${id}。`)
-  if (!sameAsker(r.by, by)) return refusal('not-yours', `请求 ${id} 是 ${r.by.name} 提的，只有提的那个 agent 能撤回。`)
-  if (!isPending(r)) return refusal('not-pending', `请求 ${id} ${endText(r)}，不能再撤回。`)
+  if (r === null) return refusal('no-such-request', `请求 ${id} 不存在。`)
+  if (!sameAsker(r.by, by)) return refusal('not-yours', `请求 ${id} 由 ${r.by.name} 提交，仅提交该请求的 Agent 可撤回。`)
+  if (!isPending(r)) return refusal('not-pending', `请求 ${id} ${endText(r)}，无法撤回。`)
   await append(root, r.id, { kind: 'withdrawn', at: now })
   return { outcome: 'withdrawn', request: { ...r, status: { kind: 'withdrawn', at: now } }, problems: [] }
 }
@@ -323,9 +326,9 @@ export async function requestsFor(ctx: Context): Promise<CheckResult['requests']
 
 // ---- the owner's side ----
 
-const ID = { name: 'id', hint: '请求号', required: true } as const
+const ID = { name: 'id', hint: '请求编号', required: true } as const
 export const APPROVE = { name: 'request approve', params: { positional: [ID] } } as const
-export const DECLINE = { name: 'request decline', params: { positional: [ID, { name: 'reason', hint: '理由' }] } } as const
+export const DECLINE = { name: 'request decline', params: { positional: [ID, { name: 'reason', hint: '原因' }] } } as const
 
 const approveAction = (id: RequestId): Action => ({ label: '批准', tone: 'default', confirm: null, ...formOf(APPROVE, { fixed: { id } }) })
 const declineAction = (id: RequestId): Action => ({ label: '拒绝', tone: 'default', confirm: null, ...formOf(DECLINE, { fixed: { id } }) })
@@ -342,6 +345,6 @@ export async function requestAsks(library: Library): Promise<Ask[]> {
 export const pendingLines = (r: OwnerRequest) => [
   `- ${r.why}（${r.by.name}）`,
   `    ${r.line}`,
-  `    $ request approve ${r.id}  # 批准（只给主人）（推荐）`,
-  `    $ request decline ${r.id} [<理由>]  # 拒绝（只给主人）`,
+  `    $ request approve ${r.id}  # 批准（仅所有者）（推荐）`,
+  `    $ request decline ${r.id} [<原因>]  # 拒绝（仅所有者）`,
 ]

@@ -20,7 +20,7 @@ function success(result) {
 
 async function put(sb, path, input) {
   const result = await sb.agent('author', 'seed', [
-    'put', '-', '--to', path, '--made', '--json',
+    'put', '-', '--to', path, '--generated', '--json',
   ], { input })
   assert.equal(success(result).outcome, 'accepted')
 }
@@ -109,7 +109,7 @@ test('带标记的目录内按源文件打开面板，归档只改变默认 chec
   await writeFile(join(bundle, 'assets/logo.svg'), '<svg/>')
   await writeFile(join(bundle, 'index.htm'), '<img src="assets/logo.svg"><a href="help.md">帮助</a>')
   const putBundle = await sb.agent('author', 'seed', [
-    'put', bundle, '--to', 'web', '--made', '--json',
+    'put', bundle, '--to', 'web', '--generated', '--json',
   ])
   assert.equal(success(putBundle).outcome, 'accepted')
 

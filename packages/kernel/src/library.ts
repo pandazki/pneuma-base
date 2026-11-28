@@ -52,7 +52,7 @@ export async function saveConfig(root: string, config: LibraryConfig, table: Plu
     const { declaration, token } = await store.declaration.read()
     const written = await store.declaration.write({ ...(declaration ?? {}), ...config }, token ?? 'empty')
     if ('token' in written) break
-    if (tries > 5) throw new Error(`库的声明一直在被别的进程改写，没能写进去：${root}`)
+    if (tries > 5) throw new Error(`资料库声明持续被其他进程改写，写入失败：${root}`)
   }
   const library = libraryOf(root, config, table)
   return { library, problems: await writeDescription({ ...at, library }) }
@@ -72,7 +72,7 @@ export async function writeDescription(ctx: Context): Promise<PluginProblem[]> {
     const expect = isFailure(there) ? await tokenThere(store) : there.token
     const written = await store.write(DESCRIPTION_FILE, { data: text }, expect)
     if (!isFailure(written)) return problems
-    if (written.reason !== 'refused' || tries > 5) throw new Error(`没能写说明 ${DESCRIPTION_FILE}（${written.reason}）`)
+    if (written.reason !== 'refused' || tries > 5) throw new Error(`写入资料库说明 ${DESCRIPTION_FILE} 失败（${written.reason}）`)
   }
 }
 

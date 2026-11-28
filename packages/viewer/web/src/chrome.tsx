@@ -1,5 +1,5 @@
 // The parts around the blocks: icons, the modal layer, the action dialog.
-import type { Action, ActionInput, Call } from '@pneuma-base/kernel'
+import type { Action, ActionInput, Call, PassProgress } from '@pneuma-base/kernel'
 import type { IconName } from '@pneuma-base/sdk'
 import {
   Activity,
@@ -16,10 +16,12 @@ import {
   CloudOff,
   CloudUpload,
   Code,
+  Copy,
   CornerLeftUp,
   Database,
   Download,
   Ellipsis,
+  ExternalLink,
   Eye,
   File,
   FileText,
@@ -47,6 +49,7 @@ import {
   MessageSquarePlus,
   Package,
   Pencil,
+  Plug,
   Plus,
   Power,
   Puzzle,
@@ -71,6 +74,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { api, type CallReply } from './api'
 import { FilterChoice, Segmented } from './controls'
 
 /** The icon of each name in the sdk's `ICON_NAMES`, every one and no other. */
@@ -89,10 +93,12 @@ const ICONS: Record<IconName, LucideIcon> = {
   'cloud-off': CloudOff,
   'cloud-upload': CloudUpload,
   code: Code,
+  copy: Copy,
   'corner-left-up': CornerLeftUp,
   database: Database,
   download: Download,
   ellipsis: Ellipsis,
+  'external-link': ExternalLink,
   eye: Eye,
   file: File,
   'file-text': FileText,
@@ -120,6 +126,7 @@ const ICONS: Record<IconName, LucideIcon> = {
   'message-square-plus': MessageSquarePlus,
   package: Package,
   pencil: Pencil,
+  plug: Plug,
   plus: Plus,
   power: Power,
   'refresh-cw': RefreshCw,
@@ -169,6 +176,18 @@ export function fill(call: Call, values: Record<string, string>, inputs: ActionI
     return v
   }
   return walk(call) as Call
+}
+
+/**
+ * Runs an action with its values, hearing the progress of a named whole pass it may run. One that writes
+ * a file (`save`) hands the file over instead: its input for the file is left to the server.
+ */
+export async function perform(action: Action, values: Record<string, string>, confirmed: boolean, onProgress: (p: PassProgress, pass: string) => void): Promise<CallReply> {
+  const { save } = action
+  if (save === undefined) return api.pass(fill(action.call, values, action.inputs), confirmed, onProgress)
+  const rest = Object.fromEntries(Object.entries(values).filter(([name]) => name !== save.input))
+  const name = save.name.replace(/\{([^{}]+)\}/g, (whole, input: string) => rest[input] ?? whole)
+  return (await api.save(fill(action.call, rest, action.inputs), confirmed, save.input, name)) ?? { tone: 'good', text: `已导出 ${name}`, result: null }
 }
 
 const initial = (inputs: ActionInput[]) => Object.fromEntries(inputs.map((i) => [i.name, i.value ?? i.options?.[0]?.value ?? '']))
@@ -282,7 +301,7 @@ export function ActionDialog({ action, preset = {}, leaving, onCancel, onSubmit 
   const form = useRef<HTMLFormElement | null>(null)
   const danger = action.tone === 'danger'
   const hidden = hiddenInputs(action.inputs, values)
-  const shown = action.inputs.filter((i) => !hidden.has(i.name))
+  const shown = action.inputs.filter((i) => !hidden.has(i.name) && i.name !== action.save?.input)
   const wrong = new Set(shown.filter((i) => mismatched(i, values[i.name] ?? '')).map((i) => i.name))
   // A choice of many whose filter matches nothing has nothing chosen.
   const unchosen = shown.some((i) => i.options !== null && i.options.length > FEW && !i.options.some((o) => o.value === values[i.name]))
@@ -312,14 +331,14 @@ export function ActionDialog({ action, preset = {}, leaving, onCancel, onSubmit 
 <p id="dialog-confirm">{action.confirm}</p>
             ) : null}
           </div>
-          <button type="button" className="icon-btn" aria-label="关闭" onClick={onCancel}>
+          <button type="button" className="icon-btn" aria-label="关闭" data-tip="关闭" onClick={onCancel}>
             <X strokeWidth={2} aria-hidden />
           </button>
         </div>
         {shown.length > 0 ? (
           <div className="dialog-body">
             {shown.map((input) => {
-              const hint = wrong.has(input.name) && !input.hint ? '格式不对。' : input.hint
+              const hint = wrong.has(input.name) && !input.hint ? '格式错误' : input.hint
               const hintId = hint ? `hint-${input.name}` : undefined
               // An input whose label is empty says itself, as a choice of named kinds does: no label is drawn, and the dialog's title names it.
               const label = input.label || name

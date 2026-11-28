@@ -22,10 +22,10 @@ export type Activity = { what: 'put' | 'archive'; path: string }
 export type Clear = { cleared: true }
 
 export function parseActivity(raw: Record<string, unknown>): Activity | string {
-  return (raw.what === 'put' || raw.what === 'archive') && typeof raw.path === 'string' ? { what: raw.what, path: raw.path } : '不是一条活动记录'
+  return (raw.what === 'put' || raw.what === 'archive') && typeof raw.path === 'string' ? { what: raw.what, path: raw.path } : '不是有效的活动记录'
 }
 export function parseClear(raw: Record<string, unknown>): Clear | string {
-  return raw.cleared === true ? { cleared: true } : '不是一条清空记录'
+  return raw.cleared === true ? { cleared: true } : '不是有效的清空记录'
 }
 
 const activity = (ctx: PluginContext) => recordStore(ctx, 'activity', parseActivity)
@@ -49,7 +49,7 @@ async function current(ctx: PluginContext) {
 }
 
 /** Who did it, as a person reads it. */
-export const who = (actor: RecordActor): string => (actor.kind === 'owner' ? '主人' : actor.name)
+export const who = (actor: RecordActor): string => (actor.kind === 'owner' ? '我' : actor.name)
 
 /** `YYYY-MM-DD` of a moment in this process's local time. */
 /**
@@ -60,9 +60,9 @@ export function heatText(grid: readonly { day: string; count: number }[], total:
   const label = (d: { day: string; count: number }) => `${Number(d.day.slice(5, 7))} 月 ${Number(d.day.slice(8))} 日`
   const active = grid.filter((d) => d.count > 0)
   const peak = active.reduce<{ day: string; count: number } | null>((best, d) => (best === null || d.count > best.count ? d : best), null)
-  const head = `最近 ${DAYS} 天的放入和归档：${total} 次，有活动的天数：${active.length}。`
-  if (peak === null) return `${head}还没有活动。`
-  return [`${head}最忙的一天是 ${label(peak)}：${peak.count} 次。`, `每天（按这台机器的时区分天）：${active.map((d) => `${label(d)} ${d.count} 次`).join('，')}`].join('\n')
+  const head = `最近 ${DAYS} 天的添加和归档：${total} 次，活跃天数：${active.length}。`
+  if (peak === null) return `${head}暂无活动。`
+  return [`${head}最活跃的一天：${label(peak)}，${peak.count} 次。`, `每日（按本机时区）：${active.map((d) => `${label(d)} ${d.count} 次`).join('，')}`].join('\n')
 }
 
 export function dayOf(at: Date): string {
@@ -100,7 +100,7 @@ export function byActor(records: readonly (Envelope & Activity)[]) {
 
 const clear = defineCommand({
   name: `${NAME} clear`,
-  summary: '清空活动热度的全部记录，不能撤回',
+  summary: '清空活动热度的全部记录，不可撤销',
   params: {},
   destructive: true,
   ownerOnly: false,
@@ -108,14 +108,14 @@ const clear = defineCommand({
     const before = (await current(ctx)).length
     const store = clears(ctx)
     await store.append([store.stamp(ctx, { cleared: true })])
-    return { outcome: 'done', text: before === 0 ? '没有要清空的记录；之后的活动从现在算起。' : `已清空 ${before} 条活动记录，之后的活动从现在算起。`, data: { cleared: before } }
+    return { outcome: 'done', text: before === 0 ? '无可清空的记录；此后的活动从现在开始计算。' : `已清空 ${before} 条活动记录，此后的活动从现在开始计算。`, data: { cleared: before } }
   },
 })
 
 const CLEAR: Action = {
   label: '清空记录',
   tone: 'danger',
-  confirm: '清空活动热度的全部记录？清空之后不能撤回。',
+  confirm: '清空活动热度的全部记录？此操作不可撤销。',
   inputs: [],
   call: { face: 'owner', command: clear.name, args: { positional: [], flags: {} } },
 }
@@ -129,7 +129,7 @@ export default definePlugin({
   contract: CONTRACT,
   name: NAME,
   version: '0.1.0',
-  summary: '记下每次放入和归档是谁、什么时候、哪样东西，用一页格子图看最近 30 天的活动热度。',
+  summary: '记录每次添加和归档的执行者、时间和条目，以格子图显示最近 30 天的活动热度。',
   cognition: { title: '活动热度', text: cognition },
   storage: [
     { dir: 'facts', kind: 'body' },
@@ -156,7 +156,7 @@ export default definePlugin({
 
   /** Reads the records and writes nothing. */
   async onView(req, ctx) {
-    if (req.view !== PAGE) return { title: '活动热度', subtitle: null, blocks: [{ kind: 'empty', title: '没有这一页', hint: req.view }] }
+    if (req.view !== PAGE) return { title: '活动热度', subtitle: null, blocks: [{ kind: 'empty', title: '页面不存在', hint: req.view }] }
     const now = new Date(ctx.now)
     const all = await current(ctx)
     const grid = days(all, now)
@@ -168,17 +168,17 @@ export default definePlugin({
       { kind: 'custom', entry: 'heat.html', height: 190, text: heatText(grid, total), data: { days: grid, total }, actions: {} },
       {
         kind: 'section',
-        title: '按 agent',
-        note: '最近 30 天，每次放入或归档算一次',
+        title: '按执行者',
+        note: '最近 30 天，每次添加或归档计一次',
         count: actors.length,
         actions: [],
         blocks: [
           {
             kind: 'table',
             columns: [
-              { key: 'who', label: '谁' },
+              { key: 'who', label: '执行者' },
               { key: 'total', label: '次数' },
-              { key: 'put', label: '放入', optional: true },
+              { key: 'put', label: '添加', optional: true },
               { key: 'archive', label: '归档', optional: true },
               { key: 'last', label: '最近一次', optional: true },
             ],
@@ -194,7 +194,7 @@ export default definePlugin({
               link: null,
               actions: [],
             })),
-            empty: '最近 30 天没有放入或归档。',
+            empty: '最近 30 天暂无添加或归档',
           },
         ],
       },

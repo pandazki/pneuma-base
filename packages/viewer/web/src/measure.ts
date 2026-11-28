@@ -111,7 +111,7 @@ const TODAY_SHAPES = ['00 分钟前', '今天 00:00']
 
 function cellWidth(cell: Cell, first: boolean, moments: Map<string, number>): number {
   // A cell that says who is its mark alone in a table (cells.tsx).
-  const markOnly = cell.actor !== undefined && (cell.text === '' || cell.text === cell.actor.name)
+  const markOnly = cell.actor !== undefined
   const text = cell.at ? shortTime(cell.at) : markOnly ? '' : cell.text
   const font = cellFont(cell, first)
   const moment = (shapes: string[]) => Math.max(...shapes.map((shape) => momentWidth(shape, font, moments)))

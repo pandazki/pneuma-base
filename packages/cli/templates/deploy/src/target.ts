@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url'
 import { defineTarget, STATUS, switchAction, type Target } from '@pneuma-base/sdk/kit'
 
 export const localTarget = defineTarget({
-  kind: 'local',
+  kind: 'folder',
   label: '本地文件夹',
   icon: 'folder',
   params: [{ name: 'to', hint: '目录', kind: 'value', required: true }],
@@ -15,13 +15,13 @@ export const localTarget = defineTarget({
   /** What the owner's `target set` flags configure, checked before it is stored. */
   async configure({ to }, ctx) {
     const dir = resolve(ctx.session.cwd, to)
-    if ((await ctx.tools.resolve(dir)) !== null) return { ok: false, reason: 'inside-library', text: `发布的目录不能在库里：${dir}` }
+    if ((await ctx.tools.resolve(dir)) !== null) return { ok: false, reason: 'inside-library', text: `发布目录不能位于资料库中：${dir}` }
     return { ok: true, config: { to: dir } }
   },
 
   /** A stored configuration, parsed at the boundary, opened for one hook or command. */
   open(config, env): Target {
-    if (typeof config.to !== 'string') throw new Error('本地目录的配置要写 to')
+    if (typeof config.to !== 'string') throw new Error('本地目录的配置缺少 to')
     const to = config.to
     return {
       key: `local:${to}`,
@@ -50,8 +50,8 @@ export const localTarget = defineTarget({
             entry: 'panel.html',
             height: 72,
             // What the panel shows, in words: the command line prints it, and screen readers read it.
-            text: [`${all.filter((l) => l.status === 'online').length} / ${all.length} 在线，发布到 ${to}`, ...all.map((l) => `${l.thing.path}：${STATUS[l.status].text}`)].join('\n'),
-            data: { to, online: all.filter((l) => l.status === 'online').length, things: all.map((l) => ({ key: l.thing.id, path: l.thing.path, state: STATUS[l.status] })) },
+            text: [`${all.filter((l) => l.status === 'published').length} / ${all.length} 个已发布，部署目标：${to}`, ...all.map((l) => `${l.thing.path}：${STATUS[l.status].text}`)].join('\n'),
+            data: { to, published: all.filter((l) => l.status === 'published').length, things: all.map((l) => ({ key: l.thing.id, path: l.thing.path, state: STATUS[l.status] })) },
             actions: Object.fromEntries(
               all.flatMap((l) => {
                 const action = switchAction(env.plugin, l)

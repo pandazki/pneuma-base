@@ -3,6 +3,7 @@
 // through them: a bundle's absorbed things, a source's dependents. ARCHITECTURE.md「存放和行」.
 import { originalPath, type LibraryPath, type Place } from '@pneuma-base/kernel'
 import { actorKey, inOrder, isAct, isTold, mayBeNews, newsKey, requestOf, turned, type Basis, type Fact, type FactActor, type ItemId, type LedgerOrigin } from './facts.js'
+import { commandNow } from './words.js'
 import {
   ancestors,
   archived,
@@ -29,7 +30,7 @@ import {
   type SeenRow,
 } from './model.js'
 import type { Tx } from './rows.js'
-import { agentOf, countReuse, hourOf, hourRow, OPEN_COUNTERS, putHour, requestTo, snapshot, type RequestRow } from './stats.js'
+import { agentOf, countReuse, hourOf, hourRow, OPEN_COUNTERS, OWNER_KEY, putHour, requestTo, snapshot, type RequestRow } from './stats.js'
 
 /**
  * What a fold changed that the rows' other parts follow: marks to settle, open directories whose strays
@@ -51,7 +52,7 @@ const SAID_KEPT = 8
 const SCENE_ITEMS = 20
 const SCENE_SOURCES = 500
 
-const whoName = (a: FactActor) => (a.kind === 'owner' ? '主人' : a.name)
+const whoName = (a: FactActor) => (a.kind === 'owner' ? OWNER_KEY : a.name)
 const originLine = (f: Fact & { origin: LedgerOrigin }): OriginLine => ({ origin: lean(f.origin), how: f.how, at: f.at, scene: f.scene, actor: f.actor, where: f.where ?? null })
 const historyKey = (item: ItemId, f: Pick<Fact, 'at' | 'id'>) => `${item}|${f.at}|${f.id}`
 const basisOfOrigin = (origin: LedgerOrigin): Basis => (origin.kind === 'made' ? origin.basis : NO_BASIS)
@@ -242,7 +243,7 @@ class Folding {
       case 'owner.op': {
         if (!f.readOnly && !scene.ops.some((op) => op.command === f.command && actorKey(op.actor) === actorKey(f.actor))) scene.ops.push({ command: f.command, actor: f.actor })
         this.tx.set('scenes', scene.id, scene)
-        if (f.command === 'ledger held drop' && f.refused === undefined) await this.dropHeld()
+        if (commandNow(f.command) === 'ledger copies drop' && f.refused === undefined) await this.dropHeld()
         return
       }
       case 'unowned.left':

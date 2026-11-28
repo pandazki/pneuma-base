@@ -66,7 +66,7 @@ describe('an owner-only command', () => {
       [{ env: { ANTIGRAVITY_CONVERSATION_ID: 'a' } }, 'ANTIGRAVITY_CONVERSATION_ID'],
       [{ env: { ANTIGRAVITY_AGENT: '1' } }, 'ANTIGRAVITY_AGENT'],
       [{ viaGrant: true }, '授权'],
-      [{ ctx: agent }, 'agent codex'],
+      [{ ctx: agent }, 'Agent codex'],
     ] as const) {
       expect(await ownerFace.dispatch(call(f, { ...overrides, confirm }), 'switch on', NO_ARGS)).toMatchObject({ outcome: 'refused', reason: 'agent-session', text: expect.stringContaining(sign) })
     }
@@ -76,7 +76,7 @@ describe('an owner-only command', () => {
 
   it('covers the kernel’s grant, plugin, secret, agent, request, pairing and storage commands, but not skill install or plugin list', () => {
     const owners = ownerFace.commands([]).filter((c) => c.ownerOnly).map((c) => c.name)
-    expect(owners).toEqual(['grant issue', 'grant revoke', 'plugin add', 'plugin remove', 'archive purge', 'plugin install', 'plugin uninstall', 'secret set', 'secret list', 'secret remove', 'agent detect', 'agent connect', 'agent disconnect', 'agent list', 'launcher install', 'request list', 'request approve', 'request decline', 'pair list', 'pair allow', 'pair decline', 'noise add', 'noise remove', 'storage list', 'storage install', 'storage remove', 'storage update'])
+    expect(owners).toEqual(['grant create', 'grant revoke', 'plugin enable', 'plugin disable', 'archive purge', 'plugin install', 'plugin uninstall', 'secret set', 'secret list', 'secret remove', 'agent detect', 'agent connect', 'agent disconnect', 'agent list', 'launcher install', 'request list', 'request approve', 'request decline', 'pair list', 'pair allow', 'pair decline', 'ignore add', 'ignore remove', 'storage list', 'storage install', 'storage remove', 'storage update'])
   })
 })
 
@@ -88,10 +88,10 @@ describe('the owner event', () => {
     events.length = 0
     f.write('_archive/a.md', 'a')
     f.write('_archive/d/b.md', 'b')
-    await ownerFace.dispatch(call(f, { table: new Map([['recorder', recorder]]) }), 'grant issue', { positional: ['g'], flags: { agent: ['x'] } })
+    await ownerFace.dispatch(call(f, { table: new Map([['recorder', recorder]]) }), 'grant create', { positional: ['g'], flags: { agent: ['x'] } })
     await ownerFace.dispatch(call(f), 'archive purge', NO_ARGS)
     expect(events).toMatchObject([
-      { face: 'owner', command: 'grant issue', destructive: false },
+      { face: 'owner', command: 'grant create', destructive: false },
       { face: 'owner', command: 'archive purge', destructive: true, result: { outcome: 'done', data: { removed: 2, paths: ['_archive/a.md', '_archive/d/b.md'] } } },
     ])
   })
@@ -124,7 +124,7 @@ describe('the single exit', () => {
     // A source nobody can read: storage fails the copy, and the put throws.
     const source = outsideFile('a')
     chmodSync(source, 0o000)
-    const put = agentFace.put({ kind: 'place', from: { kind: 'file', path: source }, to: 'a.md', origin: { kind: 'made', from: [], outside: [] } }, f.ctx)
+    const put = agentFace.put({ kind: 'place', from: { kind: 'file', path: source }, to: 'a.md', origin: { kind: 'generated', from: [], outside: [] } }, f.ctx)
     await expect(put).rejects.toThrow()
     chmodSync(source, 0o644)
     expect(events).toHaveLength(1)
@@ -142,7 +142,7 @@ describe('the owner face’s one entry', () => {
     })
     const f = await fixture([shadow])
     const names = ownerFace.commands(f.library.plugins).map((c) => `${c.by}:${c.name}`)
-    const kernel = ['grant issue', 'grant revoke', 'plugin add', 'plugin remove', 'plugin catch-up', 'skill install', 'archive purge', 'plugin install', 'plugin uninstall', 'plugin list', 'secret set', 'secret list', 'secret remove', 'agent detect', 'agent connect', 'agent disconnect', 'agent list', 'launcher install', 'request list', 'request approve', 'request decline', 'pair list', 'pair allow', 'pair decline', 'noise list', 'noise add', 'noise remove', 'storage list', 'storage install', 'storage remove', 'storage update']
+    const kernel = ['grant create', 'grant revoke', 'plugin enable', 'plugin disable', 'plugin backfill', 'skill install', 'archive purge', 'plugin install', 'plugin uninstall', 'plugin list', 'secret set', 'secret list', 'secret remove', 'agent detect', 'agent connect', 'agent disconnect', 'agent list', 'launcher install', 'request list', 'request approve', 'request decline', 'pair list', 'pair allow', 'pair decline', 'ignore list', 'ignore add', 'ignore remove', 'storage list', 'storage install', 'storage remove', 'storage update']
     expect(names).toEqual([...kernel.map((n) => `kernel:${n}`), 'shadow:shadow list'])
     expect(await ownerFace.dispatch(call(f), 'shadow list', NO_ARGS)).toMatchObject({ outcome: 'done', text: 'listed' })
     expect(await ownerFace.dispatch(call(f, { confirm: async () => false }), 'archive purge', NO_ARGS)).toMatchObject({ outcome: 'refused', reason: 'not-confirmed' })
@@ -160,7 +160,7 @@ describe('the owner face’s one entry', () => {
 describe('skill install', () => {
   it('takes ~ in the directory as the home directory, as a shell would', async () => {
     const f = await fixture()
-    await ownerFace.dispatch(call(f), 'grant issue', { positional: ['claude'], flags: { agent: ['claude-code'] } })
+    await ownerFace.dispatch(call(f), 'grant create', { positional: ['claude'], flags: { agent: ['claude-code'] } })
     await f.reopen()
     const home = process.env.HOME
     process.env.HOME = f.home

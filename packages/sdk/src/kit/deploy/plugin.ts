@@ -1,5 +1,5 @@
 // A complete deploy plugin from a name and its targets: an agent declares a thing deployable, the
-// owner's switch decides whether it is online, and what is switched on follows the library's
+// owner's switch decides whether it is published, and what is switched on follows the library's
 // current content. README.md in this folder.
 import { CONTRACT, pluginName } from '../../index.js'
 import type { IconName } from '../../icons.js'
@@ -8,15 +8,15 @@ import type { Action, Plugin, PluginAsk, PluginNoteAnswer, SayAnswer, SecretDecl
 import { askedOf, commands, declarable, switchName, SWITCH_PARAMS } from './commands.js'
 import { newThingId } from './facts.js'
 import { foldedRecords } from './folded.js'
-import { declaredAt, factsOf, look, looks, record, settle, targetFile, thingsAt, withRun, type Kit } from './reconcile.js'
+import { adapterOf, declaredAt, factsOf, look, looks, record, settle, targetFile, thingsAt, withRun, type Kit } from './reconcile.js'
 import type { TargetAdapter } from './target.js'
-import { cognitionText, followed, lookText, skippedText, staysOnline, unsettledText } from './words.js'
+import { cognitionText, followed, lookText, skippedText, staysPublished, unsettledText } from './words.js'
 import { itemSection, sitesPage, sitesView, targetPage, targetPages, viewDecls } from './views.js'
 
 export type DeployOptions = {
   /** The plugin's title for people: in the description, on its page, its item section and the configuration page. Defaults to 部署. */
   readonly title?: string
-  /** The heading of its cognition section, `<what>：<how>`. Defaults to 上线：主人开关. */
+  /** The heading of its cognition section, `<what>：<how>`. Defaults to 发布：由所有者决定. */
   readonly heading?: string
   /** A paragraph added to the cognition section, for what agents should know whatever the target. A kind's own goes in its `cognition`. */
   readonly cognition?: string
@@ -35,10 +35,10 @@ function secretsOf(kit: Kit): { secrets?: SecretDecl[] } {
   return all.size === 0 ? {} : { secrets: [...all.values()] }
 }
 
-/** The owner's switch for one thing, as a button: 上线 or 不上线. */
+/** The owner's switch for one thing, as a button: 发布 or 不发布. */
 function switchAction(kit: Kit, path: string, on: boolean): Action {
   const { inputs, call } = formOf({ name: switchName(kit.name, on), params: SWITCH_PARAMS }, { fixed: { path } })
-  return { label: on ? '上线' : '不上线', tone: 'default', confirm: null, inputs, call }
+  return { label: on ? '发布' : '不发布', tone: 'default', confirm: null, inputs, call }
 }
 
 /** Several answers as one: their notes in one, every problem. Null for none. */
@@ -71,25 +71,25 @@ export function deployPlugin(name: string, targets: TargetAdapter | readonly Tar
     ...(options.summary === undefined ? {} : { summary: options.summary }),
     ...(options.about === undefined ? {} : { about: options.about }),
     ...(options.ui === undefined ? {} : { ui: options.ui }),
-    cognition: { title: kit.title, text: cognitionText(kit, options.heading ?? '上线：主人开关', options.cognition ?? null) },
+    cognition: { title: kit.title, text: cognitionText(kit, options.heading ?? '发布：由所有者决定', options.cognition ?? null) },
     storage: [{ dir: '.', kind: 'body' }],
     statements: ['deployable'],
     ownerCommands: commands(kit),
     ...secretsOf(kit),
     views: viewDecls(kit, options.icon ?? 'globe'),
 
-    /** `say deployable <path> [一句话]`: a thing in the library may go online. Declaring puts nothing online. */
+    /** `say deployable <path> [说明]`: a thing in the library may be published. Declaring publishes nothing. */
     async onSay(req, ctx) {
       const input = req.about ?? req.text
-      if (input === null) return refused('要写是哪样东西：say deployable <库内路径>')
+      if (input === null) return refused('缺少条目：say deployable <库内路径>')
       const thing = await declarable(ctx.tools, input, '声明')
       if ('refused' in thing) return refused(thing.refused)
       const { path } = thing
       return withRun(kit, ctx, async (run) => {
         const known = run.d.byPath.get(path)
-        if (known !== undefined) return heard(`${path} 早已声明可以部署：${lookText(await look(run, known))}`)
+        if (known !== undefined) return heard(`${path} 已声明可部署：${lookText(await look(run, known))}`)
         record(run, { kind: 'declare', thing: newThingId(), path, note: req.about === null ? null : req.text })
-        return heard(`${path} 可以部署了。它现在不在线；上不上线由主人决定。`)
+        return heard(`${path} 已声明可部署。当前未发布，由所有者决定是否发布。`)
       })
     },
 
@@ -104,21 +104,21 @@ export function deployPlugin(name: string, targets: TargetAdapter | readonly Tar
         const answers: PluginNoteAnswer[] = []
         for (const path of paths) {
           const id = run.d.byPath.get(path)
-          const answer = id === undefined ? null : followed(kit, await settle(run, id), ctx, req.kind === 'move' ? '挪动' : '放入')
+          const answer = id === undefined ? null : followed(kit, await settle(run, id), ctx, req.kind === 'move' ? '移动' : '添加')
           if (answer !== null) answers.push(answer)
         }
         return joined(answers)
       })
     },
 
-    /** An archived thing goes offline; one taken back follows its switch again. */
+    /** An archived thing is unpublished; one unarchived follows its switch again. */
     async onArchive(req, ctx) {
       if (!req.moved) return null
       return withRun(kit, ctx, async (run) => {
         const id = run.d.byPath.get(req.from)
         if (id === undefined) return null
         record(run, { kind: 'move', thing: id, from: req.from, to: req.to })
-        return followed(kit, await settle(run, id), ctx, req.kind === 'archive' ? '归档' : '取回')
+        return followed(kit, await settle(run, id), ctx, req.kind === 'archive' ? '归档' : '取消归档')
       })
     },
 
@@ -136,11 +136,11 @@ export function deployPlugin(name: string, targets: TargetAdapter | readonly Tar
       return withRun(kit, ctx, async (run) => {
         const unsettled = unsettledText(kit, await looks(run), run.target !== null)
         const skipped = skippedText(kit, run.skipped)
-        return [...(unsettled ? [{ title: '线上和库里不一致', ...unsettled }] : []), ...(skipped ? [{ title: `${kit.title}记录里读不懂的行`, ...skipped }] : [])]
+        return [...(unsettled ? [{ title: '部署目标与资料库不一致', ...unsettled }] : []), ...(skipped ? [{ title: `${kit.title}记录中无法解析的行`, ...skipped }] : [])]
       })
     },
 
-    /** Each thing declared deployable whose switch the owner never set, while it is in the library: put it online, or keep it off. */
+    /** Each thing declared deployable whose switch the owner never set, while it is in the library: publish it, or keep it off. */
     async onAsks(ctx) {
       const { d } = await foldedRecords(ctx, factsOf(ctx))
       const waiting = [...d.things.values()].filter((t) => !t.decided && ctx.tools.regionOf(t.path) === 'content')
@@ -148,10 +148,10 @@ export function deployPlugin(name: string, targets: TargetAdapter | readonly Tar
       const asks: PluginAsk[] = []
       for (const [i, thing] of waiting.entries()) {
         if (present[i] === null) continue
-        const by = thing.declaredBy === 'owner' ? '' : `${thing.declaredBy} 说 `
+        const by = thing.declaredBy === 'owner' ? '' : `${thing.declaredBy} 声明 `
         asks.push({
           key: `${kit.name}:${thing.id}`,
-          text: `${by}${thing.path} 可以部署，还没上线。要上线吗？`,
+          text: `${by}${thing.path} 可部署，未发布。是否发布？`,
           about: thing.path,
           actions: [switchAction(kit, thing.path, true), switchAction(kit, thing.path, false)],
           suggested: 0,
@@ -171,30 +171,30 @@ export function deployPlugin(name: string, targets: TargetAdapter | readonly Tar
           if (r.problem?.kind === 'failed') failed.push(`${path}：${r.problem.message}`)
           record(run, { kind: 'remove', thing: id })
         }
-        if (failed.length > 0) throw new Error(`随归档区清掉的东西，线上的站点没能撤下（${kit.name} sync 会再试）：${failed.join('；')}`)
+        if (failed.length > 0) throw new Error(`随归档清除的条目，其站点取消发布失败（${kit.name} sync 会重试）：${failed.join('；')}`)
       })
     },
 
-    /** Removing the plugin leaves its sites online, unfollowed: it refuses while any is, and says which. */
+    /** Disabling the plugin leaves its sites published, unfollowed: it refuses while any is, and says which. */
     // The connected kind's own paragraph, such as what PneumaSpace asks of a site, while it is connected.
     ...(kit.targets.some((t) => t.cognition !== undefined)
       ? {
           async onDescribe(ctx: Parameters<NonNullable<Plugin['onDescribe']>>[0]) {
             const stored = await targetFile(ctx).read()
-            return kit.targets.find((t) => t.kind === stored?.target.kind)?.cognition ?? null
+            return (stored === null ? undefined : adapterOf(kit, stored.target.kind))?.cognition ?? null
           },
         }
       : {}),
 
     async onRemove(ctx) {
-      const online = await withRun(kit, ctx, async (run) => staysOnline(kit, await looks(run)))
-      return online === null ? undefined : { refuse: online }
+      const published = await withRun(kit, ctx, async (run) => staysPublished(kit, await looks(run)))
+      return published === null ? undefined : { refuse: published }
     },
 
     async onView(req, ctx) {
       if (req.view === sitesView(kit)) return withRun(kit, ctx, sitesPage, true)
       const page = pages.find((p) => p.id === req.view)
-      if (page === undefined) return { title: kit.title, subtitle: null, blocks: [{ kind: 'empty', title: '没有这一页', hint: req.view }] }
+      if (page === undefined) return { title: kit.title, subtitle: null, blocks: [{ kind: 'empty', title: '页面不存在', hint: req.view }] }
       return withRun(kit, ctx, (run) => targetPage(run, page), true)
     },
 

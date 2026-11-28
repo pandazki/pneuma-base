@@ -164,7 +164,7 @@ describe('find with filters', () => {
     const seen: Record<string, string>[] = []
     const f = await fixture([plugin('reader', { onFind: async (req) => (seen.push(req.filters), []) })])
     f.write('a.md', 'a')
-    expect(paths(await agentFace.find(request('a', 'terms', { origin: 'made' }), f.ctx))).toEqual([])
-    expect(seen).toEqual([{ origin: 'made' }])
+    expect(paths(await agentFace.find(request('a', 'terms', { origin: 'generated' }), f.ctx))).toEqual([])
+    expect(seen).toEqual([{ origin: 'generated' }])
   })
 })

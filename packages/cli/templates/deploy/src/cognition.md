@@ -4,4 +4,4 @@
   paragraph at its end, for what an agent should know about this target and nothing else. An agent
   reads it, not a person. src/index.ts takes these comments out before the text is used.
 -->
-发布的目录是主人在自己的机器上设的。站点在线时，`inspect` 给出它在那个目录里的地址。
+发布目录由所有者在本机设置。站点已发布时，`inspect` 返回其在发布目录中的地址。

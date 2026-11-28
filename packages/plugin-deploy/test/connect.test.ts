@@ -26,7 +26,7 @@ async function site(sb: Sandbox, path: string, files: Record<string, string>): P
   const dir = join(sb.work, path.replaceAll('/', '-'))
   await mkdir(dir, { recursive: true })
   for (const [name, content] of Object.entries(files)) await writeFile(join(dir, name), content)
-  for (const args of [['put', dir, '--to', path, '--made'], ['say', 'deployable', path]]) assert.equal((await sb.agent('claude-code', 's1', args)).code, 0)
+  for (const args of [['put', dir, '--to', path, '--generated'], ['say', 'deployable', path]]) assert.equal((await sb.agent('claude-code', 's1', args)).code, 0)
 }
 
 /** Every file under a directory, as text. */
@@ -53,7 +53,7 @@ it('finds a PneumaSpace installed from this machine and connects it in one comma
   const list = await sb.owner(['deploy', 'target', 'list', '--json'])
   assert.deepEqual(list.json.data, { connected: null, found: [{ kind: 'cloudflare', label: 'space.example.com', values: { host: 'space.example.com' } }] })
   const set = await sb.owner(['deploy', 'target', 'set', '--kind', 'cloudflare', '--host', 'space.example.com', '--json'])
-  assert.equal(set.json.text, '已连上 space.example.com。', set.stdout)
+  assert.equal(set.json.text, '已连接 space.example.com。', set.stdout)
   assert.deepEqual([fake.state.logins, fake.state.logouts], [1, 1])
   assert.deepEqual(JSON.parse(await readFile(configOf(sb), 'utf8')), {
     format: 1,
@@ -62,14 +62,14 @@ it('finds a PneumaSpace installed from this machine and connects it in one comma
   })
 
   await site(sb, 'sites/shop', { 'index.html': '<h1>店</h1>' })
-  const on = await sb.owner(['deploy', 'on', 'sites/shop', '--json'])
-  assert.equal(on.json.text, `已上线 sites/shop → ${origin}/apps/library-sites-shop/`, on.stdout)
+  const on = await sb.owner(['deploy', 'publish', 'sites/shop', '--json'])
+  assert.equal(on.json.text, `已发布 sites/shop → ${origin}/apps/library-sites-shop/`, on.stdout)
   assert.equal((await fake.browse(on.json.data.url)).text, '<h1>店</h1>')
 
   await writeFile(owner, JSON.stringify({ origin, account: fake.account, key: 'not-the-key', tenantId: fake.tenant }))
   await writeFile(join(sb.library, 'sites/shop/index.html'), '<h1>新店</h1>')
   const sync = await sb.owner(['deploy', 'sync', '--json'])
-  assert.match(sync.json.text, /账户或密钥不对/, sync.stdout)
+  assert.match(sync.json.text, /账户或密钥错误/, sync.stdout)
   assert.equal((await fake.browse(on.json.data.url)).text, '<h1>店</h1>')
 })
 
@@ -83,17 +83,17 @@ it('a key typed when connecting is checked, kept on this machine, and in no file
     said.push(r.stdout, r.stderr)
     return r
   }
-  assert.deepEqual((await set()).json, { outcome: 'refused', reason: 'no-key', text: '没有账户密钥。', problems: [] })
+  assert.deepEqual((await set()).json, { outcome: 'refused', reason: 'no-key', text: '缺少账户密钥。', problems: [] })
   const wrong = await set('not-the-key\n')
   assert.equal(wrong.json.reason, 'unreachable')
-  assert.match(wrong.json.text, /拒绝了账户 demo 的登录：账户或密钥不对。$/)
+  assert.match(wrong.json.text, /拒绝账户 demo 登录：账户或密钥错误。$/)
   assert.equal(existsSync(configOf(sb)), false)
 
   const right = await set(`${fake.key}\n`)
-  assert.equal(right.json.text, `已连上 ${new URL(origin).host}。`, right.stdout)
+  assert.equal(right.json.text, `已连接 ${new URL(origin).host}。`, right.stdout)
   await site(sb, 'sites/shop', { 'index.html': '<h1>店</h1>' })
   // Kept on this machine: the publish needs nothing typed.
-  const on = await sb.owner(['deploy', 'on', 'sites/shop', '--json'])
+  const on = await sb.owner(['deploy', 'publish', 'sites/shop', '--json'])
   said.push(on.stdout, on.stderr)
   assert.equal(on.json.outcome, 'done', on.stdout)
   assert.ok(!said.join('\n').includes(fake.key))
@@ -104,11 +104,11 @@ it('a key typed when connecting is checked, kept on this machine, and in no file
 it('a destination that does not answer as PneumaSpace is refused in one sentence, and nothing is stored', async () => {
   const sb = await fresh()
   const nothing = await sb.serve(() => new Response('not here', { status: 404 }))
-  const refused = await sb.owner(['deploy', 'target', 'set', '--kind', 'machine', '--admin', nothing, '--json'])
+  const refused = await sb.owner(['deploy', 'target', 'set', '--kind', 'self-hosted', '--admin', nothing, '--json'])
   assert.deepEqual([refused.json.reason, refused.json.text], ['unreachable', `${nothing} 不是 PneumaSpace 的管理地址。`])
   assert.equal(existsSync(configOf(sb)), false)
   const admin = await sb.serve(fakeSpace())
-  assert.equal((await sb.owner(['deploy', 'target', 'set', '--kind', 'machine', '--admin', admin, '--json'])).json.text, `已连上 ${new URL(admin).host}。`)
+  assert.equal((await sb.owner(['deploy', 'target', 'set', '--kind', 'self-hosted', '--admin', admin, '--json'])).json.text, `已连接 ${new URL(admin).host}。`)
 })
 
 it('both kinds of PneumaSpace refuse a site with no index.html at its top, before anything is sent', async () => {
@@ -117,7 +117,7 @@ it('both kinds of PneumaSpace refuse a site with no index.html at its top, befor
   /** Each kind: how it is connected, and how many apps its stand-in holds. */
   const kinds: [string, (sb: Sandbox) => Promise<string[]>, () => Promise<number>][] = [
     [
-      'machine',
+      'self-hosted',
       async (sb) => ['--admin', (admin = await sb.serve(fakeSpace()))],
       async () => ((await (await fetch(`${admin}/api/apps`)).json()) as unknown[]).length,
     ],
@@ -134,8 +134,8 @@ it('both kinds of PneumaSpace refuse a site with no index.html at its top, befor
     const sb = await fresh()
     assert.equal((await sb.owner(['deploy', 'target', 'set', '--kind', kind, ...(await flags(sb))])).code, 0)
     await site(sb, 'sites/home', { 'home.html': '<h1>家</h1>' })
-    const on = await sb.owner(['deploy', 'on', 'sites/home', '--json'])
-    assert.deepEqual([on.json.reason, on.json.text], ['publish-failed', '已打开 sites/home 的开关，没能发布：站点顶上没有 index.html。'], kind)
+    const on = await sb.owner(['deploy', 'publish', 'sites/home', '--json'])
+    assert.deepEqual([on.json.reason, on.json.text], ['publish-failed', '已开启 sites/home 的开关，发布失败：站点根目录缺少 index.html。'], kind)
     assert.equal(await apps(), 0, kind)
   }
 })

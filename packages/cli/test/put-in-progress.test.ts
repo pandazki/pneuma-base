@@ -1,5 +1,5 @@
 // A put lands its file before its record. The kernel marks the path while the put runs, and check
-// leaves a path being put out of 没人登记过的 and 被直接改过的. Sampled the way
+// leaves a path being put out of 未登记 and 外部修改. Sampled the way
 // app/experiments/put-race.mjs measured the gap: check runs over and over while an agent puts files
 // one after another, new ones and new content over ones it put before.
 import { writeFileSync } from 'node:fs'
@@ -35,7 +35,7 @@ it('check never reports a path being put as nobody’s or as changed directly', 
       const r =
         i % 4 === 2
           ? await agent(`race/${i - 1}.txt`, '--to', `race/moved/${i - 1}.txt`)
-          : (writeFileSync(from, body(i, 1)), await agent(from, '--to', `race/${i % 4 === 3 ? `moved/${i - 2}` : i}.txt`, '--made'))
+          : (writeFileSync(from, body(i, 1)), await agent(from, '--to', `race/${i % 4 === 3 ? `moved/${i - 2}` : i}.txt`, '--generated'))
       expect(r.code, r.stdout).toBe(0)
     }
     putting = false
@@ -63,8 +63,8 @@ it('check never reports a path being put as nobody’s or as changed directly', 
     rows.push(...feedRowsIn(feed.groups))
     params = feed.page?.next?.params ?? null
   }
-  const moves = rows.filter((row: any) => row.text.startsWith('挪 '))
+  const moves = rows.filter((row: any) => row.act === 'moved')
   expect(moves.map((row: any) => row.actor.name)).toEqual(Array(puts / 4).fill('race-agent'))
 }, 180_000)
 
-const STRAYS = ['没人登记过的', '被直接改过的', '不在了的', '挪过的']
+const STRAYS = ['未登记', '外部修改', '已缺失', '已移动']

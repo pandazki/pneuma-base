@@ -1,4 +1,4 @@
-// The home page's 「开始」: the steps of getting started, worked out from the library and this machine
+// The home page's 「快速开始」: the steps of getting started, worked out from the library and this machine
 // each time the page is shown, so nothing keeps a flag. The kernel knows two: whether an agent is
 // connected to this library, and whether anything is in it. A part of the home page adds its own
 // steps by answering a `steps` block, as the ledger does for whether an agent has worked here yet;
@@ -6,6 +6,7 @@
 import { formOf, isFailure, type Action, type Block, type Step } from '@pneuma-base/sdk'
 import { connectionFacts, WAY_WORD } from './agent-commands.js'
 import { endpointOf } from './endpoint.js'
+import { placeAction } from './files-page.js'
 import { KERNEL_COMMANDS } from './owner-commands.js'
 import { sentenceBlock } from './pairing.js'
 import { CONNECTABLE, lookedFor, signsOf, waysOf, type Way } from './products.js'
@@ -18,16 +19,16 @@ export const INBOX = 'inbox'
 
 const shellWord = (v: string) => (/^[\w@%+=:,./~-]+$/u.test(v) ? v : `'${v.replaceAll("'", `'\\''`)}'`)
 
-/** 接上 in one click: the product fixed, nothing asked; the agents page offers the same with a form for the area and read-only. */
+/** 连接 in one click: the product fixed, nothing asked; the agents page offers the same with a form for the area and read-only. */
 function connectAction(product: string): Action {
   const { inputs, call } = formOf(KERNEL_COMMANDS.find((c) => c.name === 'agent connect') ?? { name: 'agent connect', params: {} }, {
     fixed: { product, name: false, area: false, 'read-only': false, via: false },
   })
-  return { label: '接上', tone: 'default', confirm: null, inputs, call }
+  return { label: '连接', tone: 'default', confirm: null, inputs, call, as: 'icon', icon: 'plug' }
 }
 
 /**
- * Connect your agent: each product found on this machine, with 接上, or 已接上 and how; while an
+ * Connect your agent: each product found on this machine, with 连接, or 已连接 and how; while an
  * endpoint runs for this library, the sentence any agent connects itself by. Done once an agent can
  * use the library: a product connected, or a grant issued by hand, as the agents page lists both.
  */
@@ -38,22 +39,22 @@ async function connectStep({ ctx, table, env }: ViewerCall): Promise<Step> {
     const way = mine[0]?.way ?? (waysOf(p)[0] as Way)
     const connected = mine.length > 0
     return {
-      // Where 接上 writes is the agents page's to say; here, only whether it is done.
+      // Where 连接 writes is the agents page's to say; here, only whether it is done.
       cell: { text: p.title, actor: { kind: 'agent' as const, name: p.name } },
-      note: connected ? `已接上 · ${WAY_WORD[way]} · 授权 ${mine.map((c) => c.grant).join('、')}` : null,
+      note: connected ? `已连接 · ${WAY_WORD[way]} · 授权 ${mine.map((c) => c.grant).join('、')}` : null,
       actions: connected ? [] : [connectAction(p.name)],
     }
   })
   const missing = CONNECTABLE.filter((p) => !shown.some((x) => x.p === p))
   const blocks: Block[] =
     items.length === 0
-      ? [{ kind: 'text', tone: 'neutral', text: `这台机器上还没找到能接上的 agent（看了 ${missing.map((p) => `${p.title}：${lookedFor(p)}`).join('；')}）。装上一个、打开过一次之后，回到这里接上。` }]
+      ? [{ kind: 'text', tone: 'neutral', text: `本机未检测到可连接的 Agent（已检查 ${missing.map((p) => `${p.title}：${lookedFor(p)}`).join('；')}）。安装并至少打开一次后，可在此连接。` }]
       : [{ kind: 'list', items }]
   const endpoint = await endpointOf(ctx.home, ctx.library.root)
-  if (endpoint !== null) blocks.push(sentenceBlock(endpoint.url, '首页的「等你决定」里'))
+  if (endpoint !== null) blocks.push(sentenceBlock(endpoint.url, '首页的「待处理」中'))
   const byHand = ctx.library.config.grants.filter((g) => !connections.some((c) => c.grant === g.name)).map((g) => g.agent)
   const titles = [...new Set([...connections.map((c) => c.title), ...byHand])]
-  return { key: 'connect', title: '接上你的 agent', done: titles.length > 0, summary: titles.length > 0 ? `已接上 ${titles.join('、')}` : null, blocks }
+  return { key: 'connect', title: '连接 Agent', done: titles.length > 0, summary: titles.length > 0 ? `已连接 ${titles.join('、')}` : null, blocks }
 }
 
 /** How many entries of the root the step looks at: it only asks whether anything is there. */
@@ -69,13 +70,13 @@ async function firstThingStep({ ctx }: ViewerCall): Promise<Step> {
   const page = await storageOf(root).overview('', { limit: FIRST_LOOK })
   const things = isFailure(page) ? [] : page.entries.filter((e) => !KERNEL_ENTRIES.has(e.place) && !e.place.startsWith('.'))
   const atLeast = !isFailure(page) && page.more !== null ? '至少 ' : ' '
-  const command = `pneuma-base put <文件或文件夹> --to ${INBOX}/<名字> --brought --by owner --library ${shellWord(root)}`
+  const command = `pneuma-base put <文件或文件夹> --to ${INBOX}/<名称> --imported --by owner --library ${shellWord(root)}`
   return {
     key: 'first',
-    title: '放进第一样东西',
+    title: '添加第一个条目',
     done: things.length > 0,
-    summary: things.length > 0 ? `库的根目录里有${atLeast}${things.length} 样东西` : null,
-    blocks: [{ kind: 'drop', to: INBOX, command }],
+    summary: things.length > 0 ? `资料库根目录中有${atLeast}${things.length} 个条目` : null,
+    blocks: [{ kind: 'drop', to: INBOX, command, action: { ...placeAction(INBOX), label: '从本机添加…', as: 'primary' } }],
   }
 }
 
@@ -85,7 +86,7 @@ export async function kernelSteps(call: ViewerCall): Promise<Step[]> {
 }
 
 /**
- * The 「开始」 part from the kernel's steps and the `steps` blocks the home parts answered, which leave
+ * The 「快速开始」 part from the kernel's steps and the `steps` blocks the home parts answered, which leave
  * those parts; null once every step is done. The rest of each part stays as it was.
  */
 export function startPart(own: readonly Step[], parts: readonly Block[]): { start: Block | null; rest: Block[] } {
@@ -95,5 +96,5 @@ export function startPart(own: readonly Step[], parts: readonly Block[]): { star
   const left = steps.filter((s) => !s.done).length
   if (left === 0) return { start: null, rest }
   const note = `${steps.length - left} / ${steps.length}`
-  return { start: { kind: 'section', title: '开始', note, count: null, blocks: [{ kind: 'steps', steps }], actions: [] }, rest }
+  return { start: { kind: 'section', title: '快速开始', note, count: null, blocks: [{ kind: 'steps', steps }], actions: [] }, rest }
 }

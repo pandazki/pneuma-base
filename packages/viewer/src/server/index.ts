@@ -8,7 +8,7 @@ import { extname, isAbsolute, join, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { dropEndpoint, libraryFile, openLibrary, PREFERRED_PORT, recordEndpoint, stopListening, type Env, type Instant, type PluginTable } from '@pneuma-base/kernel'
 import { agentRoutes, type McpEndpoint } from './agent.js'
-import { call, changes, init, passOf, state, stop, tableOf, view, type Served } from './api.js'
+import { call, changes, init, passOf, save, state, stop, tableOf, view, type Served } from './api.js'
 import { addedStamp, pluginUiFile } from './files.js'
 import { readBody, sendJson, TooLarge } from './http.js'
 import { listenLoopback } from './listen.js'
@@ -189,6 +189,12 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, served: 
       const body = await readJson(req)
       return passOf(body) === null ? sendJson(res, await call(served, body)) : streamCall(res, served, body)
     }
+    case 'POST /api/save': {
+      const saved = await save(served, await readJson(req))
+      if (!('file' in saved)) return sendJson(res, saved)
+      res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': saved.file.length, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' })
+      return void res.end(saved.file)
+    }
     case 'POST /api/stop':
       return sendJson(res, stop(served, await readJson(req)))
     case 'GET /api/file':
@@ -212,7 +218,7 @@ async function staticFile(res: ServerResponse, webRoot: string, pathname: string
   if (!s?.isFile()) {
     if (pathname === '/') {
       res.writeHead(503, { 'content-type': 'text/plain; charset=utf-8' })
-      return void res.end('管理界面还没有构建。在 pneuma-base 的仓库里运行 pnpm build。')
+      return void res.end('管理界面未构建。请在 pneuma-base 仓库中运行 pnpm build。')
     }
     return sendJson(res, { status: 404, json: { error: 'not found' } })
   }

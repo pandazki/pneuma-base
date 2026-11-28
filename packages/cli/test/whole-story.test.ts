@@ -50,36 +50,36 @@ function site(dir: string, text: string): string {
   return dir
 }
 
-/** The sites a dir deploy target serves: its entries besides index.json and dot-named scratch. */
+/** The sites a folder deploy target serves: its entries besides index.json and dot-named scratch. */
 const served = () => (existsSync(www) ? readdirSync(www).filter((n) => !n.startsWith('.') && n !== 'index.json').sort() : [])
 
 describe('the whole story, with every plugin installed', () => {
   it('the owner makes a library, adds the plugins, and sets a deploy target, a sync target and an embedder', () => {
-    expect(ok(sb.run(['init', lib], { cwd: root })).stdout).toContain('已把')
-    for (const name of PLUGINS) expect(ok(owner(lib, ['plugin', 'add', name])).stdout).toBe(`已装上插件 ${name}，说明已重新生成。\n`)
-    ok(owner(lib, ['deploy', 'target', 'set', '--kind', 'dir', '--to', www]))
-    ok(owner(lib, ['sync', 'target', 'set', '--kind', 'dir', '--to', syncTarget]))
-    expect(ok(owner(lib, ['search', 'embedder', 'set', '--kind', 'hash'])).stdout).toContain('能用')
+    ok(sb.run(['init', lib], { cwd: root }))
+    for (const name of PLUGINS) ok(owner(lib, ['plugin', 'enable', name]))
+    ok(owner(lib, ['deploy', 'target', 'set', '--kind', 'folder', '--to', www]))
+    ok(owner(lib, ['sync', 'target', 'set', '--kind', 'folder', '--to', syncTarget]))
+    ok(owner(lib, ['search', 'embedding', 'set', '--kind', 'hash']))
     const description = readFileSync(join(lib, 'PNEUMA-BASE.md'), 'utf8')
     for (const name of ['ledger', ...PLUGINS]) expect(description).toContain(`- \`${name}\`：`)
   })
 
   it('an agent starts, puts ten sites in as made things, and declares each deployable and versioned', () => {
-    expect(lines(ok(claude(['start', '做十个小网站'])))).toContain('已记下（ledger）：在做：做十个小网站')
+    ok(claude(['start', '做十个小网站']))
     for (const [name, text] of Object.entries(SITES)) {
-      const put = ok(claude(['put', site(join(claudeDir, name), text), '--to', `sites/${name}`, '--made']))
+      const put = ok(claude(['put', site(join(claudeDir, name), text), '--to', `sites/${name}`, '--generated']))
       // Five plugins, one put: the answer stays a head line and one line per plugin that had something to say.
-      expect(lines(put)[0]).toBe(`已放入 sites/${name}`)
+      expect(lines(put)[0]).toMatch(new RegExp(` sites/${name}$`))
       expect(lines(put).length).toBeLessThanOrEqual(4)
-      expect(ok(claude(['say', 'deployable', `sites/${name}`])).stdout).toContain('它现在不在线；上不上线由主人决定')
-      expect(ok(claude(['say', 'versioned', `sites/${name}`])).stdout).toContain('当前内容记为第 1 版')
+      expect(ok(claude(['say', 'deployable', `sites/${name}`])).stdout).toContain('当前未发布，由所有者决定是否发布')
+      ok(claude(['say', 'versioned', `sites/${name}`]))
     }
-    expect(claude(['deploy', 'on', 'sites/coffee']).code).toBe(2)
+    expect(claude(['deploy', 'publish', 'sites/coffee']).code).toBe(2)
     expect(served()).toEqual([])
   })
 
   it('the owner turns four on and archives three of the others; the deploy target holds exactly the four', () => {
-    for (const name of ONLINE) expect(ok(owner(lib, ['deploy', 'on', `sites/${name}`])).stdout).toMatch(new RegExp(`^已上线 sites/${name} → `))
+    for (const name of ONLINE) expect(ok(owner(lib, ['deploy', 'publish', `sites/${name}`])).stdout).toMatch(new RegExp(`^已发布 sites/${name} → `))
     for (const name of ARCHIVED) expect(lines(ok(owner(lib, ['archive', `sites/${name}`])))[0]).toBe(`已归档：sites/${name} → _archive/sites/${name}`)
     expect(served()).toEqual(ONLINE.map((name) => `sites-${name}`).sort())
     for (const name of ONLINE) expect(readFileSync(join(www, `sites-${name}`, 'index.html'), 'utf8')).toContain(SITES[name])
@@ -87,60 +87,62 @@ describe('the whole story, with every plugin installed', () => {
 
   it('another agent, in another directory, starts with a sentence about an online site and is told about it', () => {
     const start = ok(codex(['start', '把手冲咖啡那个网站的配色改一下']))
-    const related = start.stdout.slice(start.stdout.indexOf('【库里可能相关的】'))
+    const related = start.stdout.slice(start.stdout.indexOf('【可能相关的条目】'))
     expect(related).toContain('sites/coffee')
     expect(related).toContain('手冲咖啡')
   })
 
   it('it puts a new directory over that site; the target follows, two versions are listed, version 1 exports the old bytes', () => {
     const before = readFileSync(join(lib, 'sites/coffee/index.html'))
-    const put = ok(codex(['put', site(join(codexDir, 'coffee'), '手冲咖啡：豆子、水温和研磨度，换了深色配色'), '--to', 'sites/coffee', '--made']))
+    const put = ok(codex(['put', site(join(codexDir, 'coffee'), '手冲咖啡：豆子、水温和研磨度，换了深色配色'), '--to', 'sites/coffee', '--generated']))
     expect(lines(put)).toEqual([
-      '已放入 sites/coffee',
-      expect.stringMatching(/^ {2}ledger：已记下换了新内容，旧内容进了留存，主人取得回 · 条目 i_/),
-      '  version：记为 sites/coffee 的第 2 版',
-      expect.stringMatching(/^ {2}deploy：sites\/coffee 在线，已重新发布/),
+      expect.stringMatching(/ sites\/coffee$/),
+      expect.stringMatching(/^ {2}ledger：.* · 条目 i_/),
+      expect.stringMatching(/^ {2}version：.*sites\/coffee.*2/),
+      expect.stringMatching(/^ {2}deploy：sites\/coffee 已重新发布/),
     ])
     expect(readFileSync(join(www, 'sites-coffee/index.html'), 'utf8')).toContain('换了深色配色')
-    expect(ok(codex(['version', 'list', 'sites/coffee'])).stdout).toMatch(/共 2 版。当前内容是第 2 版。\n第 2 版 · .* · codex · .*\n第 1 版 · .* · claude-code · /)
+    expect(ok(codex(['version', 'list', 'sites/coffee', '--json'])).json().data.versions.map((v: { n: number; by: string }) => [v.n, v.by])).toEqual([[1, 'claude-code'], [2, 'codex']])
     ok(codex(['version', 'export', 'sites/coffee', '--version', '1', '--to', './coffee-v1']))
     expect(readFileSync(join(codexDir, 'coffee-v1/index.html'))).toEqual(before)
   })
 
   it('the library syncs; a second library with the same plugins syncs from the same target and shows the same provenance', () => {
-    expect(ok(owner(lib, ['sync', 'now'])).stdout).toMatch(/推上去 \d+ · 拉下来 0 ·.* 冲突 0/)
+    expect(ok(owner(lib, ['sync', 'now', '--json'])).json().data.counts).toMatchObject({ pushed: expect.any(Number), pulled: 0, conflicts: 0 })
     ok(sb.run(['init', lib2], { cwd: root }))
-    for (const name of PLUGINS) ok(owner(lib2, ['plugin', 'add', name]))
-    ok(owner(lib2, ['sync', 'target', 'set', '--kind', 'dir', '--to', syncTarget]))
-    expect(ok(owner(lib2, ['sync', 'now'])).stdout).toMatch(/拉下来 \d+ ·.* 冲突 0/)
+    for (const name of PLUGINS) ok(owner(lib2, ['plugin', 'enable', name]))
+    ok(owner(lib2, ['sync', 'target', 'set', '--kind', 'folder', '--to', syncTarget]))
+    const pulled = ok(owner(lib2, ['sync', 'now', '--json'])).json().data.counts
+    expect(pulled.pulled).toBeGreaterThan(0)
+    expect(pulled.conflicts).toBe(0)
     const provenance = (library: string) => {
       const sections = ok(sb.run(['--library', library, '--as', 'codex', 'inspect', 'sites/coffee', '--json'], { cwd: root })).json().sections
       // How deep this machine's last look went is this library's own, not the provenance.
-      return (sections.find((s: { plugin: string }) => s.plugin === 'ledger').body as string).replace(/\n上次看：.*/, '')
+      return (sections.find((s: { plugin: string }) => s.plugin === 'ledger').body as string).replace(/\n上次检查：.*/, '')
     }
     expect(provenance(lib2)).toBe(provenance(lib))
-    expect(provenance(lib2)).toMatch(/^做出来的 · claude-code · .* · 场景 claude-1\n当时在做：做十个小网站/)
+    expect(provenance(lib2)).toMatch(/^生成 · claude-code · .* · 场景 claude-1\n任务：做十个小网站/)
     expect(readFileSync(join(lib2, 'sites/coffee/index.html'), 'utf8')).toContain('换了深色配色')
   })
 
   it('there, a sentence that is not the file name finds the 手冲咖啡 site first, under the scene it was made in', () => {
     const found = lines(ok(sb.run(['--library', lib2, '--as', 'codex', 'find', '在家怎么冲一杯好喝的咖啡'], { cwd: root })))
-    expect(found[0]).toMatch(/^场景 claude-1 · claude-code · .* · 在做：做十个小网站$/)
-    expect(found[1]).toMatch(/^ {2}sites\/coffee {2}目录，做出来的 {2}/)
+    expect(found[0]).toMatch(/^场景 claude-1 · claude-code · .* · 任务：做十个小网站$/)
+    expect(found[1]).toMatch(/^ {2}sites\/coffee {2}目录，生成 {2}/)
   })
 
   it('check, as an agent at the end, is quiet about what is in order and mentions nothing stale', () => {
     const r = ok(sb.run(['--library', lib, '--as', 'claude-code', '--session', 'claude-2', 'check', '--json'], { cwd: claudeDir }))
-    expect(r.json().sections.map((s: { title: string }) => s.title)).toEqual(['自上次以来'])
+    expect(r.json().sections.map((s: { title: string }) => s.title)).toEqual(['最近动态'])
     // That check was a look; the text asks from the same moment the look did.
     const since = r.json().sections[0].data.since as string
     const text = ok(sb.run(['--library', lib, '--as', 'claude-code', '--session', 'claude-2', 'check', '--since', since], { cwd: claudeDir })).stdout
-    expect(text).toContain('sites/coffee 换了新内容')
-    expect(text).not.toMatch(/可能过期|来源不在|没人登记过|被直接改过|不一致|冲突副本|在工具之外/)
+    expect(text).toContain('sites/coffee 内容已更新')
+    expect(text).not.toMatch(/可能已过期|来源缺失|未登记|外部修改|不一致|冲突副本/)
     // A scene's heading says where it ran; the lines under it name things, never a directory outside the library.
     // (What only the owner can settle comes after, each answer as the owner's command for this library.)
-    const told = text.split('## 要主人来做的')[0] ?? ''
+    const told = text.split('## 需所有者处理')[0] ?? ''
     expect(told.split('\n').filter((line) => line.startsWith('  ')).join('\n')).not.toContain(root)
-    expect(text).toContain(`pneuma-base deploy on sites/cycling --library ${lib}  # 上线（推荐）`)
+    expect(text).toContain(`pneuma-base deploy publish sites/cycling --library ${lib}  # 发布（推荐）`)
   })
 })

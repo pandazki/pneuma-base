@@ -28,7 +28,7 @@ async function library(): Promise<{ sb: Sandbox; fake: ReturnType<typeof fakeClo
   for (const name of ['shop', 'blog', 'docs']) {
     await mkdir(join(sb.work, name))
     await writeFile(join(sb.work, name, 'index.html'), `<h1>${name}</h1>`)
-    expect((await sb.owner(['put', name, '--to', `sites/${name}`, '--brought'])).code).toBe(0)
+    expect((await sb.owner(['put', name, '--to', `sites/${name}`, '--imported'])).code).toBe(0)
   }
   return { sb, fake, origin }
 }
@@ -55,37 +55,37 @@ async function shown(sb: Sandbox, args: string[]): Promise<{ actions: Action[]; 
 
 const labels = (actions: Action[]) => actions.map((a) => a.label)
 
-it('every button of 部署, connecting, putting online, waiting and taken down, and of the panel of a site nobody declared, is in show as its command', async () => {
+it('every button of 部署, connecting, publishing, waiting and unpublished, and of the panel of a site nobody declared, is in show as its command', async () => {
   const { sb, fake } = await library()
 
   // Nothing connected: what this machine has, another PneumaSpace, and the loose kinds in the menu.
   const none = await shown(sb, ['deploy.sites'])
-  expect(labels(none.actions)).toEqual(['连上', '连上…', '本地文件夹…', '自己的命令…'])
-  expect(none.text).toContain('$ deploy target set --kind cloudflare --host space.example.com  # 连上（只给主人）')
+  expect(labels(none.actions)).toEqual(['连接', '连接…', '本地文件夹…', '自定义命令…'])
+  expect(none.text).toContain('$ deploy target set --kind cloudflare --host space.example.com  # 连接（仅所有者）')
 
   // Connected and empty: put one online, and the destination's menu.
   expect((await sb.owner(['deploy', 'target', 'set', '--kind', 'cloudflare', '--host', 'space.example.com'])).code).toBe(0)
   const empty = await shown(sb, ['deploy.sites'])
-  expect(labels(empty.actions)).toEqual(['上线一样东西', '换一个…', '应用名前缀…', '断开'])
+  expect(labels(empty.actions)).toEqual(['发布条目', '更换部署目标…', '应用名称前缀…', '断开连接'])
 
-  // Three online, one of them changed from outside and its upload refused: 重试, and each row's switch.
-  for (const name of ['shop', 'blog', 'docs']) expect((await sb.owner(['deploy', 'on', `sites/${name}`])).code).toBe(0)
+  // Three published, one of them changed from outside and its upload refused: 重试, and each row's switch.
+  for (const name of ['shop', 'blog', 'docs']) expect((await sb.owner(['deploy', 'publish', `sites/${name}`])).code).toBe(0)
   fake.state.failNextPut = true
   await writeFile(join(sb.library, 'sites/shop/index.html'), '<h1>新的小店</h1>')
   await sb.owner(['deploy', 'sync'])
   const three = await shown(sb, ['deploy.sites'])
-  expect(labels(three.actions)).toEqual(['上线一样东西', '重试', '换一个…', '应用名前缀…', '断开', '下线', '下线', '下线'])
+  expect(labels(three.actions)).toEqual(['发布条目', '重试', '更换部署目标…', '应用名称前缀…', '断开连接', '取消发布', '取消发布', '取消发布'])
   expect(three.text).toMatch(/shop\s+\[待发布（.+）\]/)
   for (const name of ['shop', 'blog', 'docs']) expect(three.text).toContain(`/apps/library-sites-${name}/`)
 
   // Taken down, a site is nobody's to put online until the owner says so; its panel offers it.
-  expect((await sb.owner(['deploy', 'off', 'sites/docs'])).code).toBe(0)
+  expect((await sb.owner(['deploy', 'unpublish', 'sites/docs'])).code).toBe(0)
   await mkdir(join(sb.work, 'new'))
   await writeFile(join(sb.work, 'new', 'index.html'), '<h1>new</h1>')
-  expect((await sb.owner(['put', 'new', '--to', 'sites/new', '--brought'])).code).toBe(0)
+  expect((await sb.owner(['put', 'new', '--to', 'sites/new', '--imported'])).code).toBe(0)
   const panel = await shown(sb, ['item', '--path', 'sites/new'])
-  expect(labels(panel.actions)).toContain('上线…')
-  expect(panel.text).toContain('$ deploy on sites/new  # 上线…（只给主人）；先问：把 new 发到 space.example.com？')
+  expect(labels(panel.actions)).toContain('发布…')
+  expect(panel.text).toContain('$ deploy publish sites/new  # 发布…（仅所有者）；需确认：发布 new 到 space.example.com？')
 })
 
 it('reading the destinations changes nothing: no file of the library or its records, no sign-in', async () => {
@@ -104,7 +104,7 @@ it('reading the destinations changes nothing: no file of the library or its reco
     const logins = fake.state.logins
     const read = await sb.owner(['deploy', 'target', 'list'])
     expect(read.code).toBe(0)
-    expect(read.stdout).toContain(connected ? '连着 space.example.com' : '这台机器上有 space.example.com')
+    expect(read.stdout).toContain(connected ? '已连接 space.example.com' : '本机检测到 space.example.com')
     expect(await state()).toEqual(before)
     expect(fake.state.logins).toBe(logins)
   }

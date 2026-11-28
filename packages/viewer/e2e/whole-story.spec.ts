@@ -28,24 +28,24 @@ function storyLibrary(pb: Cli): { lib: string; www: string } {
   const syncTarget = join(root, 'sync-target')
   mkdirSync(syncTarget)
   pb.run(['init', lib])
-  for (const name of ['version', 'deploy', 'sync', 'search']) pb.run(['plugin', 'add', name, '--library', lib])
-  pb.run(['deploy', 'target', 'set', '--kind', 'dir', '--to', www, '--library', lib])
-  pb.run(['sync', 'target', 'set', '--kind', 'dir', '--to', syncTarget, '--library', lib])
-  pb.run(['search', 'embedder', 'set', '--kind', 'hash', '--library', lib])
+  for (const name of ['version', 'deploy', 'sync', 'search']) pb.run(['plugin', 'enable', name, '--library', lib])
+  pb.run(['deploy', 'target', 'set', '--kind', 'folder', '--to', www, '--library', lib])
+  pb.run(['sync', 'target', 'set', '--kind', 'folder', '--to', syncTarget, '--library', lib])
+  pb.run(['search', 'embedding', 'set', '--kind', 'hash', '--library', lib])
   const agent = (as: string, args: string[]) => pb.run(['--library', lib, '--as', as, '--session', `${as}-1`, ...args], { cwd: root })
   agent('claude-code', ['start', '做十个小网站'])
   for (const [name, text] of Object.entries(SITES)) {
     write(root, `made/${name}/index.html`, `<!doctype html><title>${text}</title><h1>${text}</h1>\n`)
-    agent('claude-code', ['put', join(root, 'made', name), '--to', `sites/${name}`, '--made'])
+    agent('claude-code', ['put', join(root, 'made', name), '--to', `sites/${name}`, '--generated'])
     agent('claude-code', ['say', 'deployable', `sites/${name}`])
   }
   // The coffee site's panel shows its versions.
   agent('claude-code', ['say', 'versioned', 'sites/coffee'])
-  for (const name of ['coffee', 'hiking', 'books']) pb.run(['--library', lib, 'deploy', 'on', `sites/${name}`])
+  for (const name of ['coffee', 'hiking', 'books']) pb.run(['--library', lib, 'deploy', 'publish', `sites/${name}`])
   for (const name of ['plants', 'music', 'camping']) pb.run(['--library', lib, 'archive', `sites/${name}`])
   agent('codex', ['start', '把手冲咖啡那个网站的配色改一下'])
   write(root, 'codex/coffee/index.html', `<!doctype html><h1>${SITES.coffee}，换了深色配色</h1>\n`)
-  agent('codex', ['put', join(root, 'codex/coffee'), '--to', 'sites/coffee', '--made'])
+  agent('codex', ['put', join(root, 'codex/coffee'), '--to', 'sites/coffee', '--generated'])
   pb.run(['--library', lib, 'sync', 'now'])
   return { lib, www }
 }
@@ -62,7 +62,7 @@ test('the whole story in the UI: every plugin’s page, the deploy switch, a sit
   const panel = page.getByRole('complementary', { name: '详情' })
 
   // Every plugin's page is in the navigation: the home page, the plugins' in configuration order, then the kernel's.
-  expect(await navTitles(page)).toEqual(['首页', '库', '活动', '文件', 'Agent', '有版本的东西', '部署', '配置'])
+  expect(await navTitles(page)).toEqual(['首页', '资料库', '活动', '文件', 'Agent', '版本管理', '部署', '设置'])
 
   // The deploy page: the seven sites in the content, the archived ones offline and so not there; an address for each one online.
   await nav.getByRole('button', { name: '部署' }).click()
@@ -75,24 +75,24 @@ test('the whole story in the UI: every plugin’s page, the deploy switch, a sit
 
   // Turn pets on from the page: the target gets it, and an agent's check reports the owner's operation.
   await state('pets').getByRole('switch').click()
-  await expect(page.getByRole('status')).toContainText('已上线 sites/pets')
+  await expect(page.getByRole('status')).toContainText('已发布 sites/pets')
   await expect(state('pets')).toContainText('sites-pets')
   expect(served(www)).toEqual(['sites-books', 'sites-coffee', 'sites-hiking', 'sites-pets'])
   expect(readFileSync(join(www, 'sites-pets/index.html'), 'utf8')).toContain(SITES.pets)
   const check = pb.run(['--library', lib, '--as', 'claude-code', '--session', 'claude-code-2', 'check']).stdout
-  expect(check).toMatch(/主人面的操作 deploy on：已上线 sites\/pets → /)
+  expect(check).toMatch(/pneuma-base deploy publish sites\/pets/)
   await page.getByRole('status').getByRole('button', { name: '关闭' }).click()
 
   // A site's panel: the ledger's provenance, the version timeline and the deploy section together.
   await state('coffee').getByText('coffee', { exact: true }).click()
   await expect(panel.getByTestId('panel-title')).toHaveText('coffee')
-  const provenance = panel.getByRole('region', { name: '来历', exact: true })
-  await expect(provenance).toContainText('做出来的')
+  const provenance = panel.getByRole('region', { name: '溯源', exact: true })
+  await expect(provenance).toContainText('生成')
   await expect(provenance).toContainText('做十个小网站')
-  await expect(provenance.getByRole('region', { name: '留存' })).toBeVisible()
+  await expect(provenance.getByRole('region', { name: '历史副本' })).toBeVisible()
   const versions = panel.getByRole('region', { name: '版本', exact: true })
-  await expect(versions).toContainText('第 2 版')
-  await expect(versions).toContainText('第 1 版')
+  await expect(versions).toContainText('版本 2')
+  await expect(versions).toContainText('版本 1')
   // Online is how it should be: the section says its address and nothing of its state.
   const deploy = panel.getByRole('region', { name: '部署', exact: true })
   await expect(deploy).toContainText('sites-coffee')
@@ -100,19 +100,19 @@ test('the whole story in the UI: every plugin’s page, the deploy switch, a sit
   await panel.getByRole('button', { name: '关闭详情' }).click()
 
   // The sync and search pages render.
-  await openShared(page, '配置', '同步')
+  await openShared(page, '设置', '同步')
   await expect(main.getByRole('heading', { name: '同步', exact: true })).toBeVisible()
   await expect(main).toContainText('sync-target')
-  await expect(main.getByRole('button', { name: '现在同步' })).toBeVisible()
-  await openShared(page, '配置', '查找')
-  await expect(main.getByRole('heading', { name: '查找', exact: true })).toBeVisible()
+  await expect(main.getByRole('button', { name: '立即同步' })).toBeVisible()
+  await openShared(page, '设置', '搜索')
+  await expect(main.getByRole('heading', { name: '搜索', exact: true })).toBeVisible()
   await expect(main).toContainText('hash')
 
   // Bundles on the files and archive pages: each site is one row.
   await nav.getByRole('button', { name: '文件' }).click()
   await main.getByRole('row', { name: /^sites/ }).dblclick()
   await expect(main.getByRole('row', { name: /coffee/ })).toContainText('1 项')
-  await openShared(page, '文件', '归档区')
+  await openShared(page, '文件', '已归档')
   await main.getByRole('row', { name: /^sites\// }).dblclick()
   await expect(main.getByRole('row')).toHaveCount(4) // the header and the three archived sites
 })
