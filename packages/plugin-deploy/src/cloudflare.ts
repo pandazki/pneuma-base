@@ -92,7 +92,7 @@ function holder(app: AppSummary, user: string, mine: Manager): string | null {
 const planeOf = (origin: string): Plane => ({
   requests: '请求（累计）',
   framed: false,
-  visible: `这个地址只有登录了 ${origin} 的账户看得到，管理界面里框不出它的预览；在新标签页打开，浏览器要先登录那个 PneumaSpace。`,
+  visible: `登录了 ${new URL(origin).host} 的账户才看得到。`,
   // Each drawing signs in once, and PneumaSpace takes 40 sign-ins from a machine in ten minutes.
   refresh: 60,
 })

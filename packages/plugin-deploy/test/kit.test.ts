@@ -501,9 +501,13 @@ describe('the plugin the kit makes', () => {
     expect(items[1]?.cell.link).toEqual({ view: 'item', params: { path: 'sites/shop' }, target: 'panel' })
     expect(own).toMatchObject({ kind: 'custom', entry: 'chart.html', data: { sites: 3 } })
 
+    // The panel: the address on one line, then the target's fields and blocks.
     const section = await plugin.onItemView?.('sites/shop' as LibraryPath, l.pctx())
-    expect(section?.blocks.find((b): b is Extract<Block, { kind: 'fields' }> => b.kind === 'fields')?.fields.at(-1)).toEqual({ label: '文件数', value: { text: '2' } })
-    expect(section?.blocks.at(-1)).toEqual({ kind: 'text', tone: 'info', text: '假的目标的说明' })
+    expect(section?.blocks).toEqual([
+      { kind: 'fields', line: true, fields: [{ label: '地址', value: { text: shop, mono: true, href: shop, copy: true } }] },
+      { kind: 'fields', fields: [{ label: '文件数', value: { text: '2' } }] },
+      { kind: 'text', tone: 'info', text: '假的目标的说明' },
+    ])
   })
 
   it('marks a thing not as it should be with why, offers 重试 only while something waits, and says so when nothing is declared', async () => {
@@ -523,6 +527,17 @@ describe('the plugin the kit makes', () => {
       ['重试', 'icon'],
     ])
     expect(things?.kind === 'list' && things.items[0]?.cell.tag).toEqual({ text: '待发布', tone: 'warn', tip: '开关开着，线上不是当前的内容' })
+    // The panel says the mark, its reason and the address in one line.
+    const panel = await plugin.onItemView?.(P, l.pctx())
+    expect(panel?.blocks[0]).toEqual({
+      kind: 'fields',
+      line: true,
+      fields: [
+        { label: '状态', value: { text: '', tag: { text: '待发布', tone: 'warn' } } },
+        { label: '为什么', value: { text: '开关开着，线上不是当前的内容' } },
+        { label: '地址', value: expect.objectContaining({ text: url(siteName(P)) }) },
+      ],
+    })
     fake.fail = false
     await l.cmd('fake sync')
     const [settled] = await page()
@@ -655,7 +670,7 @@ describe('connecting a destination', () => {
     expect(items.map((i) => [i.cell.text, i.cell.icon ?? null, i.actions.map((a) => [a.label, a.as ?? null])])).toEqual([
       ['one.example.com', 'cloud', [['连上', 'primary']]],
       ['two.example.com', 'cloud', [['连上', 'primary']]],
-      ['别的 假的地方', null, [['连上…', null]]],
+      ['别的 假的地方', 'cloud', [['连上…', null]]],
     ])
     // The group's dialog: the kind by its choice, then the fields of the kind chosen, the key last, sent as what is read hidden.
     const other = items[2]?.actions[0]
@@ -839,7 +854,7 @@ describe('what a target shows', () => {
     expect(itemsOf(page?.blocks ?? []).map((i) => i.cell.tag?.text)).toEqual([`在服务 ${a}`])
 
     const section = await plugin.onItemView?.(`_archive/${R}` as LibraryPath, l.pctx())
-    const fields = section?.blocks.find((b): b is Extract<Block, { kind: 'fields' }> => b.kind === 'fields')?.fields ?? []
+    const fields = section?.blocks.flatMap((b) => (b.kind === 'fields' ? b.fields : [])) ?? []
     expect(fields.find((f) => f.label === '说明')?.value.text).toBe(`撤下了 ${r}`)
 
     asks.length = 0

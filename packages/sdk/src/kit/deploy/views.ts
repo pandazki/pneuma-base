@@ -9,7 +9,7 @@ import { SWITCH_PARAMS, switchName } from './commands.js'
 import { connectAction, connectFound, disconnectAction, foundAll, settingAction, type FoundOf } from './connect.js'
 import { look, looks, thingPath, thingsAt, type Kit, type Run } from './reconcile.js'
 import type { Look, TargetAdapter, TargetPage } from './target.js'
-import { MEANING, STATUS } from './words.js'
+import { MEANING } from './words.js'
 
 export const sitesView = (kit: Kit) => `${kit.name}.sites`
 
@@ -48,14 +48,12 @@ function refreshOf(run: Run): { refresh?: number } {
   return refresh === null ? {} : { refresh }
 }
 
-/** How many are online, when any is: the rest are offline, which goes unsaid. */
+/** How many have an address, when any has: what is online, whether or not it is the current content. */
 const subtitleOf = (all: readonly Look[]) => {
-  const online = all.filter((l) => l.status === 'online').length
+  const online = all.filter((l) => l.url !== null).length
   return online === 0 ? null : `${online} 样在线`
 }
 
-/** Offline is where a thing rests until the owner turns it on: the panel leaves it unsaid, the text form says it. */
-const stateCell = (l: Look): Cell => (l.status === 'offline' ? { text: STATUS.offline.text, muted: true, normal: true } : { text: '', tag: STATUS[l.status] })
 /** The address opens in a new tab when it is a web address, and can always be copied. */
 const addressOf = (url: string): Cell => ({ text: url, mono: true, ...(/^https?:\/\//.test(url) ? { href: url } : {}), copy: true })
 const addressCell = (l: Look): Cell => (l.url ? addressOf(l.url) : { text: '—', muted: true, normal: true })
@@ -88,7 +86,7 @@ async function whereTo(run: Run): Promise<Block> {
   for (const name of groups) {
     const kinds = kit.targets.filter((t) => t.group?.name === name)
     const any = found.some((f) => kinds.includes(f.adapter))
-    items.push({ cell: { text: any ? `别的 ${name}` : name }, note: null, actions: [connectAction(kit, kinds, '连上…', { choose: (t) => t.group?.choice ?? t.label })] })
+    items.push({ cell: { text: any ? `别的 ${name}` : name, ...iconOf(kinds[0]) }, note: null, actions: [connectAction(kit, kinds, '连上…', { choose: (t) => t.group?.choice ?? t.label })] })
   }
   const loose = kit.targets.filter((t) => t.group === undefined)
   // With nothing found and no group, the kinds themselves are the rows.
@@ -185,34 +183,37 @@ export async function targetPage(run: Run, page: TargetPage): Promise<ViewAnswer
   return { title: page.title, subtitle: subtitleOf(all), blocks: [...warning, ...draw(all)], ...refreshOf(run) }
 }
 
+/** What the panel would draw of `fields`: a normal value is not drawn. */
+type Fields = Extract<Block, { kind: 'fields' }>['fields']
+const shownOnly = (fields: Fields): Fields => fields.filter((f) => f.value.normal !== true)
+
 /**
- * The item panel's section for a thing at `path`: a declared one's state, switch and address; a
- * directory thing in the content nobody declared, while a destination is connected, putting it online
- * from the panel's menu; null for anything else.
+ * The item panel's section for a thing at `path`: a declared one's mark and address, what its target
+ * shows of it, and its switch in the panel's menu; a directory thing in the content nobody declared,
+ * while a destination is connected, putting it online from the panel's menu; null for anything else.
  */
 export async function itemSection(run: Run, path: LibraryPath): Promise<ItemSection | null> {
   const id = run.d.byPath.get(path)
   if (id === undefined) return undeclaredSection(run, path)
   const l = await look(run, id)
   const view = run.target?.view
-  const fields: Extract<Block, { kind: 'fields' }>['fields'] = [
-    { label: '状态', value: stateCell(l) },
-    { label: '开关', value: { text: l.thing.on ? '开' : '关', ...(l.thing.on ? {} : { normal: true as const }) } },
+  const mark = markOf(run, l)
+  // The row's mark with its reason, and the address: one line, as on the page. Online and offline say nothing.
+  const line = shownOnly([
+    { label: '状态', value: mark ? { text: '', tag: { text: mark.text, tone: mark.tone } } : { text: '', normal: true } },
+    { label: '为什么', value: mark?.tip ? { text: mark.tip } : { text: '', normal: true } },
     { label: '地址', value: addressCell(l) },
-    ...(l.site ? [{ label: '站点名', value: { text: l.site, mono: true } }] : []),
-    ...(view?.fields?.(l) ?? []),
+  ])
+  const fields = shownOnly(view?.fields?.(l) ?? [])
+  const meaning = l.status === 'archived' ? MEANING.archived(l) : null
+  // A thing that says nothing has no part in the panel; its switch is still in the panel's menu.
+  const blocks: Block[] = [
+    ...(line.length > 0 ? [{ kind: 'fields' as const, fields: line, line: true as const }] : []),
+    ...(fields.length > 0 ? [{ kind: 'fields' as const, fields }] : []),
+    ...(meaning ? [{ kind: 'text' as const, tone: 'neutral' as const, text: meaning }] : []),
+    ...(view?.item?.(l) ?? []),
   ]
-  const meaning = MEANING[l.status](l)
-  const actions = switchActions(run.kit, l)
-  return {
-    title: run.kit.title,
-    blocks: [
-      { kind: 'fields', fields },
-      ...(meaning ? [{ kind: 'text' as const, tone: 'neutral' as const, text: meaning }] : []),
-      ...(actions.length > 0 ? [{ kind: 'actions' as const, actions }] : []),
-      ...(view?.item?.(l) ?? []),
-    ],
-  }
+  return { title: run.kit.title, blocks, actions: switchActions(run.kit, l).map((a) => ({ ...a, as: 'menu' as const })) }
 }
 
 /** A directory thing of the content nobody declared, as the panel of the thing itself shows it: 上线… in its menu, while there is somewhere to put it. */

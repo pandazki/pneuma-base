@@ -89,7 +89,7 @@ describe('the buttons that give each verb and command a place', () => {
 
   it('the panel of a directory thing nobody declared puts it online', async () => {
     await press(await viewer.item('sites/shop'), '上线…')
-    expect(words(await viewer.item('sites/shop', { plugin: 'deploy' }))).toContain('在线')
+    expect(words(await viewer.item('sites/shop', { plugin: 'deploy' }))).toContain('sites-shop')
   })
 
   it('the version section notes the current version and keeps only the latest few', async () => {

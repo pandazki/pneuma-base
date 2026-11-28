@@ -93,9 +93,10 @@ test('the whole story in the UI: every plugin’s page, the deploy switch, a sit
   const versions = panel.getByRole('region', { name: '版本', exact: true })
   await expect(versions).toContainText('第 2 版')
   await expect(versions).toContainText('第 1 版')
+  // Online is how it should be: the section says its address and nothing of its state.
   const deploy = panel.getByRole('region', { name: '部署', exact: true })
-  await expect(deploy).toContainText('在线')
   await expect(deploy).toContainText('sites-coffee')
+  await expect(deploy).not.toContainText('在线')
   await panel.getByRole('button', { name: '关闭详情' }).click()
 
   // The sync and search pages render.

@@ -173,7 +173,7 @@ describe('the Cloudflare kind against a stand-in', () => {
     assert.equal(live(), 4)
   })
 
-  it('the pages: no framed preview, who can see the site, the upload allowance, a board card without a preview', async () => {
+  it('the pages: no framed preview, who can see the site, the release online, a board card without a preview; the upload allowance unsaid while most of it is left', async () => {
     const viewer = await sb.viewer()
     const page = await viewer.view('deploy.sites')
     assert.equal(page.outcome === 'shown' && page.refresh, 60)
@@ -181,16 +181,18 @@ describe('the Cloudflare kind against a stand-in', () => {
     const item = await viewer.item('sites/demo', { plugin: 'deploy' })
     assert.deepEqual(item.outcome === 'shown' && item.problems, [])
     assert.equal(blocks(item).some((b) => b.kind === 'embed'), false)
-    assert.ok(blocks(item).some((b) => b.kind === 'text' && b.text.startsWith(`这个地址只有登录了 ${origin} 的账户看得到`)))
+    assert.ok(blocks(item).some((b) => b.kind === 'text' && b.text === `登录了 ${new URL(origin).host} 的账户才看得到。`))
     const fields = blocks(item).flatMap((b) => (b.kind === 'fields' ? b.fields : []))
     assert.equal(fields.find((f) => f.label === '地址')?.value.href, url)
-    // Four tickets: release 1, release 2, the upload that failed, and its retry.
-    assert.match(fields.find((f) => f.label === '上传额度')?.value.text ?? '', /^用了 4\/200 次，包合计 \d+\.\d KiB\/10\.0 MiB$/)
-    assert.equal(fields.find((f) => f.label === '版本')?.value.text, '第 4 版')
+    // Four of 200 tickets used: release 1, release 2, the upload that failed, and its retry.
+    assert.equal(fields.find((f) => f.label === '上传额度'), undefined)
+    const releases = blocks(item).find((b) => b.kind === 'section' && b.title === '发布记录')
+    const timeline = releases?.kind === 'section' ? releases.blocks.find((b) => b.kind === 'timeline') : undefined
+    assert.deepEqual(timeline?.kind === 'timeline' && timeline.entries.filter((e) => e.tag?.text === '线上').map((e) => e.title.text), ['第 4 版'])
     const board = blocks(await viewer.view('deploy.board')).find((b) => b.kind === 'custom')
     assert.ok(board?.kind === 'custom')
     const data = board.data as BoardData
-    assert.match(data.visible ?? '', /只有登录了/)
+    assert.match(data.visible ?? '', /账户才看得到/)
     assert.deepEqual(data.cards.map((c) => [c.path, c.url, c.release]), [['sites/demo', url, 4]])
     await viewer.stop()
   })

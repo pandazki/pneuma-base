@@ -31,20 +31,18 @@ export type Seen = {
  */
 export type Plane = { requests: string; framed: boolean; visible: string | null; refresh?: number }
 
-const dash: Cell = { text: '—', muted: true }
+/** Nothing to say: not drawn. */
+const dash: Cell = { text: '—', muted: true, normal: true }
 const THERE: Record<string, string> = { registered: '在服务', removed: '已撤下，发布记录还在', draft: '建好了，还没发布过', purging: '正在清除' }
 
 const MiB = 1024 * 1024
 const size = (bytes: number) => (bytes >= MiB ? `${(bytes / MiB).toFixed(1)} MiB` : `${(bytes / 1024).toFixed(1)} KiB`)
 
 const cell = {
-  release: (s: Seen | null): Cell => {
-    if (s?.takenBy) return { text: '', tag: { text: '名字被占用', tone: 'bad' } }
-    return s?.live ? { text: `第 ${s.live.release} 版` } : dash
-  },
   requests: (s: Seen | null): Cell => {
     const live = s?.live
-    if (live?.requests == null) return dash
+    // None is what 没人访问过 says.
+    if (live?.requests == null || (live.requests === 0 && !live.errors)) return dash
     return { text: `${live.requests}${live.errors ? ` · 错 ${live.errors}` : ''}` }
   },
   lastAccess: (s: Seen | null): Cell => {
@@ -54,15 +52,19 @@ const cell = {
   },
 }
 
-function fields(plane: Plane, s: Seen | null): { label: string; value: Cell }[] {
-  const there: Cell = s?.takenBy ? { text: s.takenBy } : s ? { text: THERE[s.status] ?? s.status } : { text: '没有这个应用', muted: true }
+/**
+ * What the panel says of a site beside its address: its traffic, where PneumaSpace does not have it as
+ * it should, and its upload allowance once most of it is used. Which release is live is in 发布记录;
+ * a name someone else holds is the row's mark.
+ */
+function fields(plane: Plane, l: Look, s: Seen | null): { label: string; value: Cell }[] {
+  const there: Cell = s === null ? (l.thing.on ? { text: '没有这个应用', muted: true } : dash) : s.status === 'registered' || s.takenBy ? dash : { text: THERE[s.status] ?? s.status }
+  const full = s?.uploads ? Math.max(s.uploads.used / s.uploads.max, s.uploads.bytes / s.uploads.limit) >= 0.8 : false
   return [
-    { label: '版本', value: cell.release(s) },
     { label: plane.requests, value: cell.requests(s) },
     { label: '最近访问', value: cell.lastAccess(s) },
     { label: 'PneumaSpace 里', value: there },
-    ...(s?.uploads ? [{ label: '上传额度', value: { text: `用了 ${s.uploads.used}/${s.uploads.max} 次，包合计 ${size(s.uploads.bytes)}/${size(s.uploads.limit)}` } }] : []),
-    ...(s?.observedAt ? [{ label: '状态取自', value: { text: instant(s.observedAt), at: instant(s.observedAt) } }] : []),
+    ...(s?.uploads ? [{ label: '上传额度', value: { text: `用了 ${s.uploads.used}/${s.uploads.max} 次，包合计 ${size(s.uploads.bytes)}/${size(s.uploads.limit)}`, ...(full ? {} : { normal: true as const }) } }] : []),
   ]
 }
 
@@ -75,7 +77,7 @@ function itemBlocks(plane: Plane, l: Look, s: Seen | null): Block[] {
     blocks.push({
       kind: 'section',
       title: '发布记录',
-      note: '每次内容变了，PneumaSpace 记下新的一版。线上放哪一版跟着库里的内容；要放回旧内容，先在库里取回它。',
+      note: null,
       count: releases.length,
       collapse: 'open',
       blocks: [
@@ -84,7 +86,7 @@ function itemBlocks(plane: Plane, l: Look, s: Seen | null): Block[] {
           entries: releases.map((r) => ({
             at: instant(r.publishedAt),
             title: { text: `第 ${r.number} 版` },
-            lines: [`内容 ${r.content.slice(0, 12)}`],
+            lines: [],
             tag: r.number === s?.live?.release ? { text: '线上', tone: 'good' as const } : null,
           })),
         },
@@ -173,7 +175,7 @@ function boardBlock(plane: Plane, all: readonly Look<Seen>[], plugin: string): B
 export function viewOf(plane: Plane, plugin: string): TargetView<Seen> {
   return {
     mark: (l) => (l.detail?.takenBy ? { text: '名字被占用', tone: 'bad', tip: l.detail.takenBy } : null),
-    fields: (l) => fields(plane, l.detail),
+    fields: (l) => fields(plane, l, l.detail),
     item: (l) => itemBlocks(plane, l, l.detail),
     pages: { board: (all) => [boardBlock(plane, all, plugin)] },
     ...(plane.refresh === undefined ? {} : { refresh: plane.refresh }),

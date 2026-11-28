@@ -76,21 +76,21 @@ describe('the deploy.sites view', () => {
 })
 
 describe('the deploy section of the item panel', () => {
-  it('for a declared thing: its state, address and switch', async () => {
+  it('for a declared thing online: its address, nothing said of its state, its switch in the menu', async () => {
     const section = await deploy.onItemView?.('sites/s1' as LibraryPath, pctx)
     expect(section?.title).toBe('部署')
-    const fields = section?.blocks.find((b): b is Extract<Block, { kind: 'fields' }> => b.kind === 'fields')?.fields ?? []
-    expect(fields.find((f) => f.label === '状态')?.value.tag).toEqual({ text: '在线', tone: 'good' })
-    expect(fields.find((f) => f.label === '地址')?.value.text).toMatch(/sites-s1\/$/)
-    const actions = section?.blocks.find((b): b is Extract<Block, { kind: 'actions' }> => b.kind === 'actions')?.actions ?? []
-    expect(ownerCall(actions[0])).toEqual({ command: 'deploy off', positional: ['sites/s1'] })
+    const [line] = section?.blocks.filter((b): b is Extract<Block, { kind: 'fields' }> => b.kind === 'fields') ?? []
+    expect(line?.line).toBe(true)
+    expect(line?.fields.map((f) => f.label)).toEqual(['地址'])
+    expect(line?.fields[0]?.value.text).toMatch(/sites-s1\/$/)
+    expect(section?.blocks.some((b) => b.kind === 'actions')).toBe(false)
+    expect(section?.actions?.map((a) => [a.label, a.as, ownerCall(a)])).toEqual([['下线', 'menu', { command: 'deploy off', positional: ['sites/s1'] }]])
   })
 
-  it('for an archived declared thing, under its archive path, with no 上线 while its switch is off', async () => {
+  it('for an archived declared thing switched off, under its archive path: nothing to say, and no 上线', async () => {
     const section = await deploy.onItemView?.('_archive/sites/s2' as LibraryPath, pctx)
-    const fields = section?.blocks.find((b): b is Extract<Block, { kind: 'fields' }> => b.kind === 'fields')?.fields ?? []
-    expect(fields.find((f) => f.label === '状态')?.value.tag?.text).toBe('已归档')
-    expect(section?.blocks.some((b) => b.kind === 'actions')).toBe(false)
+    expect(section?.blocks.filter((b) => b.kind === 'fields')).toEqual([])
+    expect(section?.actions).toEqual([])
   })
 
   it('for a directory thing nobody declared: 上线… in its menu; for no thing, or a file inside a bundle, nothing', async () => {
