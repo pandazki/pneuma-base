@@ -1010,26 +1010,29 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | 导出 | 做什么 |
 | --- | --- |
 | `recordStore(ctx, 名字, parse)` | 只追加的记录库（3.7），记在插件记录处的事实里，每条带 `store: 名字`，一个插件可以有几个。`stamp(ctx, 内容)` 盖上 `id`、`at`、`actor`、`session`，还不写。`actor` 是 `{ kind, name }`：agent 的 `name` 是它的名字，比如 `claude-code`；主人的 `kind` 和 `name` 都是 `owner`。`append(记录)` 把几条写成一次。`since(游标, limit)` 答游标之后的一页 `{ records, skipped, cursor, more }`（`limit` 缺省 1000），游标对不上时 `null`，从 `null` 重来；存下 `cursor`，下次接着读。`read()` 一页一页地读全部，答 `{ records, skipped }`。`skipped` 是读不懂的，每条 `{ at, reason }`，原样留着。`parse` 收到一条的对象，答内容，或一句为什么不是。`.pneuma-base/<插件名>/<名字>/` 下的 jsonl 文件也照样读，在从头读的第一页里 |
-| `configFile(ctx, 名字, parse)` | 整份替换的配置文件（3.7），在插件记录处的 `own` 里，`名字` 相对 `.pneuma-base/<插件名>/`。`read()` 没有文件时 `null`，不是 JSON 或 `parse` 抛错时抛错；`write(值)` 经 `own.write` 整份写，带着上次读到的令牌，中间别人写过就重新看一眼那里的令牌再写，最后一次写的算数；连着三次撞上别处的写就抛错 |
+| `configFile(ctx, 名字, parse)` | 整份替换的配置文件（3.7），在插件记录处的 `own` 里，`名字` 相对 `.pneuma-base/<插件名>/`。`read()` 没有文件时 `null`，不是 JSON 或 `parse` 抛错时抛错；`write(值)` 经 `own.write` 整份写，带着上次读到的令牌，中间别人写过就重新看一眼那里的令牌再写，最后一次写的算数；连着三次撞上别处的写就抛错。`remove()` 删掉它，没有时什么都不做 |
 | `deployPlugin(名字, 目标, 选项)` | 给一个插件名和一种或几种目标，交回一个完整的部署插件 |
 | `defineTarget(目标)` | 写一种目标，见下面 |
 | `STATUS`、`switchAction(插件名, look)` | 部署库的页上每种状态的标签，和一样东西的开关动作，目标自己画的块用它们说一样的状态、给一样的开关 |
+| `Found`、`TargetGroup`、`Typed` | 目标的 `found` 答的一项，`group`，`configure` 第三个参数的类型 |
 | `siteName`、`want`、`plan`、`statusOf` | 部署库的决定，纯函数：缺省的站点名，目标上该有什么，要做的几步，状态 |
 
 ### 部署库
 
-部署库替你做和目标无关的一切：agent 用 `say deployable <库内路径> [一句话]` 声明一样东西可以部署，声明不让它上线；主人用开关决定它在不在线；开着的东西，目标上跟着库里当前的内容，放入、挪、归档、取回之后都对一遍。记录、主人命令、页面、条目面板里的一节、认知段都是它的。一个部署插件只写它的目标。
+部署库替你做和目标无关的一切：主人在它的页上连上一个目标，把一样东西上线、下线；agent 用 `say deployable <库内路径> [一句话]` 声明一样东西可以部署，声明不让它上线；开着的东西，目标上跟着库里当前的内容，放入、挪、归档、取回之后都对一遍。记录、主人命令、页面、条目面板里的一节、认知段都是它的。一个部署插件只写它的目标。
 
 它给的主人命令，`<名字>` 是插件名：
 
 | 命令 | 标志 | 做什么 |
 | --- | --- | --- |
-| `<名字> on <库内路径>`、`<名字> off <库内路径>` | `ownerOnly` | 打开或关上开关，并发布或下线 |
-| `<名字> target set [--kind <kind>] <目标的开关>` | `ownerOnly`、`setup` | 配目标；只有一种目标时可以不写 `--kind`。答复提醒还没设的必需密钥，可选的只说要用时怎么设 |
+| `<名字> on <库内路径>`、`<名字> off <库内路径>` | `ownerOnly` | 打开或关上开关，并发布或下线；主人打开没声明的东西时先记声明 |
+| `<名字> target set [--kind <kind>] <目标的开关>` | `ownerOnly`、`setup` | 连上目标；只有一种目标时可以不写 `--kind`。目标答不上来时什么都不存 |
+| `<名字> target list` | `readOnly` | 连着的目标，和这台机器上找到的 |
+| `<名字> target remove` | `ownerOnly`、`setup` | 断开；线上的不撤下 |
 | `<名字> sync` | 谁都能用 | 把全部声明过的东西对一遍 |
 | `<名字> list` | `readOnly` | 列出声明过的东西、状态和地址 |
 
-它的页是 `<名字>.sites`：目标一节，可部署的东西一张表，表里每行一个开关。
+它的页是 `<名字>.sites`。没连目标时只有「发到哪里」：这台机器上找到的目标一行一个「连上」，每组目标一行「别的 <组名>」和「连上…」，别的几种在菜单里。连着时页头是「上线一样东西」（有东西等着时另有「重试」），下面是目标那一行（菜单里「换一个…」、设置、「断开」），再下面每样东西一行：名字、文件夹、标记、地址、开关。条目面板里是标记和地址、目标的字段和块，开关在面板的菜单里；没声明的目录东西在菜单里有「上线…」。全文在部署库的 `README.md`。
 
 它问主人（`onAsks`）：声明了可以部署、主人从没动过开关、还在库里（不在归档区）的东西，每样一件「<谁> 说 <路径> 可以部署，还没上线。要上线吗？」，回答是「上线」（推荐，`<名字> on`）和「不上线」（`<名字> off`）。哪个回答都记一条开关，开关本来关着也记，之后不再问这一样。所以它们出现在首页的「等你决定」和 agent 的 `check` 里，agent 告诉主人，主人点一下或在终端里跑一条命令。它在自己的记录处写 `config.json`（目标，用 `configFile` 整份替换）和记录库 `facts`（用 `recordStore`），都是本体；跑符合性检查时把 `config.json` 列进 `configuration`。
 
@@ -1053,11 +1056,17 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `TargetAdapter` 的字段 | 是什么 |
 | --- | --- |
 | `kind` | `target set --kind` 的值，随配置存下 |
-| `label` | 发布到哪种地方，给人看：「一个本地目录」 |
-| `params` | `target set` 在 `--kind` 之后的开关，一份 `FlagParam[]`。命令的参数表、帮助、页面上的表单和核对都从这里来；有几种目标时，选定的那种必填的开关才必填 |
+| `label` | 这种目标给人看的名字，用在对话框和菜单里：「本地文件夹」 |
+| `icon` | 可选，目标那一行和找到的那几行的图标 |
+| `group` | 可选，`{ name, choice }`：同组的几种合成一行「别的 <name>」，对话框里按 `choice` 选；不在组里的是菜单里的「<label>…」 |
+| `params` | `target set` 在 `--kind` 之后的开关，一份 `FlagParam[]`。命令的参数表、帮助、页面上的对话框和核对都从这里来；有几种目标时，选定的那种必填的开关才必填 |
+| `form` | 可选，对话框问的开关和次序；没写就是必填的那些 |
 | `secrets` | 它读的密钥，可以标 `optional: true`。部署库把它们声明成插件的密钥，`secret set` 和配置页就认得 |
+| `asked` | 可选，`{ name, hint }`：`target set` 不显示地读一次的密钥（3.4 的 `params.secret`），对话框里放在最后。`configure` 读到了又答应了，部署库把它存成这台机器上的那个密钥（`ctx.secrets.set`）；它不进配置、记录和答复 |
+| `found(ctx)` | 可选，这台机器上找得到的这种目标，每个 `{ label, values }`，`values` 是连上它的开关。只读找它们要读的 |
+| `cognition` | 可选，连着这种目标时认知段后面多的一段（`onDescribe`） |
 | `views` | 可选，目标自己的页，每项 `{ name, title, icon }`。每页是导航里的一项，排在部署库的页之后，视图编号 `<插件名>.<name>`；`name` 用小写字母、数字、连字符，不得是 `sites` |
-| `configure(值, ctx)` | 把核过的值变成要存的配置（一个 JSON 对象），或答 `{ ok: false, reason, text }`。可以带 `note`：一句给主人的话，`target set` 的答复用它代替部署库对没设的密钥的提醒，用在凭据能从几处来的目标上，说这次用哪一处、都没有时运行什么 |
+| `configure(值, ctx, typed)` | 把核过的值变成要存的配置（一个 JSON 对象），或答 `{ ok: false, reason, text }`。连上前在这里问目标一次，答不上来就拒绝，什么都不存。`typed()` 读 `asked` 的密钥，没输入是 `null`。可以带 `note`：一句给主人的话，代替部署库对没设的必需密钥的提醒 |
 | `open(配置, env)` | 在边界上解析存下的配置，交回这一次钩子或命令用的 `Target`；读不懂就抛错 |
 
 `env` 是 `{ ctx, scratch, plugin, secret }`：`ctx` 是这次的上下文，`scratch` 是库外给它用的临时目录，`plugin` 是插件名（它的命令以此开头），`secret(名字)` 读主人在这台机器上设的密钥。必需的密钥没设时 `secret` 以一句说明用哪条命令设的错误拒绝，开关的答复里是 `publish-failed` 带这句话；可选的没设时读出 `null`，类型是 `string | null`。要密钥的目标从不在开关里要它。
@@ -1065,7 +1074,9 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `Target` 的字段 | 是什么 |
 | --- | --- |
 | `key` | 记录按它区分目标：换了 `key`，旧目标上的站点不再算 |
-| `label` | 什么、在哪，一行给人看 |
+| `label` | 目标那一行写什么：主机名、文件夹，或这种目标自己的话 |
+| `local` | 可选，`label` 是这台机器上的路径，那一行显示最后一段 |
+| `settings` | 可选，连上之后还能改的开关，每个 `{ flag, hint, value }` 是那一行菜单里的「<hint>…」，用存下的开关再跑一次 `target set` |
 | `publish(站点名, 目录, meta)` | 把目录发布成这个站点，换掉它原来的内容，答 `{ url }`。目录是部署库复制到缓存目录下的临时副本：文件是存储的清单（`content` 带 `manifest`，4.2）按内容规则算进的那些，不带标记文件、噪音、`.gitignore` 排除的和符号链接；每个文件用 `storage.read` 写过去，再对清单里的指纹。`meta` 有内容编号 `content`、库内路径、时刻，和按路径的 UTF-8 字节排好的 `files`（每项 `{ path, abs }`，`abs` 是复制件里的文件），就是复制件里的全部文件 |
 | `remove(站点名)` | 下线；下线一个它没在服务的站点不算错 |
 | `siteName(路径)` | 可选，换掉缺省的站点名：库内路径小写，别的字符换成 `-`，路径不干净或太长时加 sha256 的前 6 位，最长 58 个字符 |
@@ -1084,8 +1095,8 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 
 | `view` 的字段 | 是什么 |
 | --- | --- |
-| `columns`、`cells(look)` | 表格里在路径、状态、地址之后的列，和每行按列的 `key` 填的格 |
-| `fields(look)` | 条目面板里在状态、开关、地址、站点名之后的字段 |
+| `mark(look)` | 一行的标记（`Tag`，带 `tip`），部署库的状态说不出的，比如名字被别人占着；`null` 是没有 |
+| `fields(look)` | 条目面板里地址下面的字段；正常的值（`normal: true`）不画 |
 | `before(全部)`、`page(全部)` | 部署库的页上，在它的几节之前、之后的块；`custom` 块要插件的 `ui` |
 | `pages` | 按名字给目标的 `views` 里每页的块：`pages[name](全部)`。配的目标不画某一页时，那一页说明这一点 |
 | `item(look)` | 条目面板里这一节最后的块 |
@@ -1102,144 +1113,53 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `unreachable` | 读不到目标时的原因 |
 | `detail` | `serving` 对它的站点说的 `detail`：先取它正在其下服务的站点，再取它的路径有的、归档的东西曾有的站点名。所以归档了的、待下线的东西也有。在页和面板之外是 `null` |
 
-`switchAction(插件名, look)` 是表格里的那个开关：`{ label: '打开' 或 '关上', tone: 'default', confirm: null, inputs: [], call: { face: 'owner', command: '<插件名> on' 或 '<插件名> off', args: { positional: [路径], flags: {} } }, as: 'icon', icon: 'power' }`，画成一个电源图标，`label` 进提示；归档了又关着的东西没有开关，答 `null`。
+`switchAction(插件名, look)` 是一行的那个开关：`{ label: '上线' 或 '下线', tone: 'default', confirm: null, inputs: [], call: { face: 'owner', command: '<插件名> on' 或 '<插件名> off', args: { positional: [路径], flags: {} } }, as: 'icon', icon: 'power' }`；归档了又关着的东西没有开关，答 `null`。
 
-PneumaSpace 插件（`space`）就是一个部署插件，带两种目标：一台机器上的 PneumaSpace（`--kind machine`）和 Cloudflare 上的 PneumaSpace（`--kind cloudflare`）。前一种用 PneumaSpace 的管理接口发布，`identify` 用上传的包的 sha256 作内容编号，`serving` 问 PneumaSpace 真在服务什么，令牌是可选的密钥，表格和面板里加了版本这些格，另有一页「看板」。下面是这一种的代码，省掉了两处：它打的是字节只由文件决定的 tar 包，这里把文件依次连起来；站点的地址它从 PneumaSpace 的入口算，这里从管理地址算。后一种以主人的账户登录控制台接口，用 `configure` 的 `note` 说账户密钥从哪里来，用 `close` 在一次运行结束时退出登录。
+自带的部署插件 `deploy` 带四种目标，是一个完整的例子：Cloudflare 上的和一台机器上的 PneumaSpace 一组（`group`），前一种的 `found` 读这台机器装过的、`asked` 读账户密钥、`configure` 登录一次核对、`close` 退出登录，两种都有 `serving`、`identify`、应用名前缀的 `settings`、`mark`（名字被占用）和 `cognition`；本地文件夹（`local`）和自己的命令不报告。第三方要写的只有下面这些：
 
 ```ts
-import { createHash } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
-import type { Block, Cell, LibraryPath } from '@pneuma-base/sdk'
-import { STATUS, defineTarget, deployPlugin, siteName, switchAction, type ContentId, type Look, type Served, type SiteFile, type SiteName, type Target } from '@pneuma-base/sdk/kit'
+import { defineTarget, deployPlugin, type Target } from '@pneuma-base/sdk/kit'
 
-/** A row of PneumaSpace's `GET /api/apps`, and what `GET /api/apps/<name>` adds. */
-type AppRow = { name: string; address: string; requests: number | null }
-type AppDetail = { app: { status: string; owner: string; current: number | null }; releases: { number: number; bundle: string }[] }
-/** What `serving` tells of a site beside content and address; the views draw it. */
-type Seen = { row: AppRow; owner: string; release: number | null; spark: number[] | null }
-
-/** `<prefix>-<the kit's site name>`, cut to PneumaSpace's 40 characters with six of the path's sha256 when too long. */
-function appName(prefix: string, path: LibraryPath): SiteName {
-  const whole = `${prefix}-${siteName(path)}`
-  if (whole.length <= 40) return whole as SiteName
-  return `${whole.slice(0, 33).replace(/-+$/, '')}-${createHash('sha256').update(path).digest('hex').slice(0, 6)}` as SiteName
-}
-
-/** The site as PneumaSpace takes it, and its id, known before any upload. */
-async function bundleOf(files: readonly SiteFile[]): Promise<{ body: Buffer; id: ContentId }> {
-  const body = Buffer.concat(await Promise.all(files.map((f) => readFile(f.abs))))
-  return { body, id: createHash('sha256').update(body).digest('hex') as ContentId }
-}
-
-const releaseCell = (s: Seen | null): Cell => (s?.release == null ? { text: '—', muted: true } : { text: `第 ${s.release} 版` })
-
-/** The board, drawn by ui/board.html: each thing not archived, with the kit's state tag and switch. */
-function board(all: readonly Look<Seen>[], plugin: string): Block {
-  const shown = all.filter((l) => l.status !== 'archived')
-  const actions = Object.fromEntries(
-    shown.flatMap((l) => {
-      const action = switchAction(plugin, l)
-      return action === null ? [] : [[l.thing.id, action] as const]
-    }),
-  )
-  const data = shown.map((l) => ({ key: l.thing.id, path: l.thing.path, url: l.url, state: STATUS[l.status], spark: l.detail?.spark ?? null }))
-  const text = data.map((d) => `${d.path}：${d.state.text}${d.url === null ? '' : ` · ${d.url}`}`).join('\n') || '还没有声明可以部署的东西。'
-  return { kind: 'custom', entry: 'board.html', height: 330, text, data, actions }
-}
-
-const spaceTarget = defineTarget({
-  kind: 'machine',
-  label: '一台机器上的 PneumaSpace',
+const exampleTarget = defineTarget({
+  kind: 'example',
+  label: '示例服务',
+  icon: 'cloud',
   params: [
-    { name: 'admin', hint: '管理地址', kind: 'value', required: true, pattern: 'https?://\\S+' },
-    { name: 'prefix', hint: '应用名前缀', kind: 'value', required: true, pattern: '[a-z](?:[a-z0-9-]{0,14}[a-z0-9])?' },
+    { name: 'api', hint: '地址', kind: 'value', required: true, pattern: 'https?://\\S+' },
+    { name: 'project', hint: '项目', kind: 'value', required: true },
   ],
-  secrets: [{ name: 'token', description: 'PneumaSpace 不在本地模式时的访问令牌，作为 Bearer 发出', optional: true }],
-  views: [{ name: 'board', title: '看板', icon: 'layout-grid' }],
-
-  async configure({ admin, prefix }) {
-    return { ok: true, config: { admin: admin.replace(/\/+$/, ''), prefix } }
+  secrets: [{ name: 'token', description: '示例服务的令牌' }],
+  asked: { name: 'token', hint: '令牌' },
+  async configure({ api, project }, ctx, typed) {
+    const token = (await typed()) ?? (await ctx.secrets.get('token'))
+    if (token === null) return { ok: false, reason: 'no-key', text: '没有令牌。' }
+    const reply = await fetch(`${api}/projects/${project}`, { headers: { authorization: `Bearer ${token}` } })
+    if (!reply.ok) return { ok: false, reason: 'unreachable', text: `示例服务拒绝了项目 ${project}：${reply.status}。` }
+    return { ok: true, config: { api, project } }
   },
-
-  open(config, env): Target<Seen> {
-    const { admin, prefix } = config
-    if (typeof admin !== 'string' || typeof prefix !== 'string') throw new Error('PneumaSpace 的配置要写 admin、prefix')
-    const owner = `service:pneuma-base.${env.ctx.library.config.id}`
-    /** One call of the admin API; null for 404. The token is optional: null while the owner has not set it. */
-    async function call(method: string, path: string, body?: string | Uint8Array): Promise<unknown> {
-      const token = await env.secret('token')
-      const reply = await fetch(`${admin}${path}`, { method, body, headers: token === null ? {} : { authorization: `Bearer ${token}` } })
-      if (reply.status === 404) return null
-      if (!reply.ok) throw new Error(`PneumaSpace 拒绝了 ${method} ${path}：${reply.status}`)
-      return reply.json()
+  open(config, env): Target {
+    const [api, project] = [String(config.api), String(config.project)]
+    const call = async (method: string, path: string) => {
+      const reply = await fetch(`${api}/projects/${project}${path}`, { method, headers: { authorization: `Bearer ${await env.secret('token')}` } })
+      if (!reply.ok) throw new Error(`示例服务拒绝了 ${method} ${path}：${reply.status}`)
+      return reply
     }
-    const rows = async () => new Map(((await call('GET', '/api/apps')) as AppRow[]).map((r) => [r.name, r]))
-    const app = async (site: SiteName) => (await call('GET', `/api/apps/${site}`)) as AppDetail | null
-    /** The app, unless another library or a person holds its name. */
-    const ours = async (site: SiteName) => {
-      const held = await app(site)
-      if (held !== null && held.app.owner !== owner) throw new Error(`应用名 ${site} 在 PneumaSpace 上属于 ${held.app.owner}，不是这个库，所以不动它`)
-      return held
-    }
-
     return {
-      key: `pneuma-space:${admin}#${prefix}`,
-      label: `PneumaSpace ${admin}，前缀 ${prefix}`,
-      siteName: (path) => appName(prefix, path),
-      identify: async (files) => (await bundleOf(files)).id,
-
-      async publish(site, _dir, meta) {
-        const { body, id } = await bundleOf(meta.files)
-        if (id !== meta.content) throw new Error(`复制出来的内容和决定发布的不同：${id} 不是 ${meta.content}`)
-        await ours(site)
-        await call('POST', '/api/bundles', body)
-        await call('PUT', `/api/apps/${site}/release`, JSON.stringify({ bundle: id, owner }))
-        const row = (await rows()).get(site)
-        return { url: row === undefined ? null : new URL(row.address, admin).href }
+      key: `example:${api}/${project}`,
+      label: project,
+      async publish(site) {
+        // 把 meta.files 打成服务收的样子再传；这里省掉打包。
+        await call('PUT', `/sites/${site}`)
+        return { url: `${api}/sites/${project}/${site}/` }
       },
-
-      /** Removes, never purges: the releases stay, and publishing again brings the app back. */
       async remove(site) {
-        const held = await ours(site)
-        if (held?.app.status === 'registered') await call('POST', `/api/apps/${site}/remove`)
-      },
-
-      /** What PneumaSpace serves for each site; the request series, which only the board draws, only for an answer that is drawn. */
-      async serving(sites, ask) {
-        const all = await rows()
-        const told = new Map<SiteName, Served<Seen>>()
-        for (const site of sites) {
-          const row = all.get(site)
-          const held = row === undefined ? null : await app(site)
-          if (row === undefined || held === null) continue
-          const live = held.app.owner === owner && held.app.status === 'registered' ? held.releases.find((r) => r.number === held.app.current) : undefined
-          const usage = live && ask.detail ? ((await call('GET', `/api/usage?app=${site}`)) as { buckets: { requests: number }[] } | null) : null
-          const detail: Seen = { row, owner: held.app.owner, release: live?.number ?? null, spark: usage?.buckets.map((b) => b.requests) ?? null }
-          told.set(site, { content: live ? (live.bundle as ContentId) : null, url: live ? new URL(row.address, admin).href : null, detail })
-        }
-        return told
-      },
-
-      view: {
-        columns: [{ key: 'release', label: '版本' }, { key: 'requests', label: '24 小时请求', optional: true }],
-        cells: (l) => ({ release: releaseCell(l.detail), requests: { text: String(l.detail?.row.requests ?? '—') } }),
-        fields: (l) => [{ label: 'PneumaSpace 里', value: l.detail === null ? { text: '没有这个应用', muted: true } : { text: `属于 ${l.detail.owner}`, mono: true } }],
-        pages: { board: (all) => [board(all, env.plugin)] },
+        await call('DELETE', `/sites/${site}`)
       },
     }
   },
 })
 
-export default deployPlugin('space', spaceTarget, {
-  title: 'PneumaSpace',
-  heading: '上线到 PneumaSpace：主人开关',
-  cognition: '在线的网站是 PneumaSpace 上的一个应用，地址在 `/apps/<应用名>/` 下面，所以网站里的链接要写相对路径；目录里要有 `index.html`。',
-  icon: 'cloud-upload',
-  summary: '把网站发到 PneumaSpace 上',
-  about: '声明了可以部署的东西由主人开关上线，作为 PneumaSpace 上的应用。',
-  ui: fileURLToPath(new URL('./ui/', import.meta.url)),
-})
+export default deployPlugin('example', exampleTarget, { title: '部署', icon: 'cloud-upload', summary: '把网站发到示例服务' })
 ```
 
 `plugin new <目录> --kind deploy` 生成的项目是部署库加一种发布到本地目录的目标，在 `src/target.ts` 里，换成真的目标就改那里：
@@ -1338,7 +1258,7 @@ test('the plugin follows the standard', async () => {
 
 `blocks` 不在浏览器里跑 `custom` 页（3.6）。不用浏览器跑页的脚本，要一份 DOM 的实现，比如 jsdom；测试工具没有带它，因为它大，又只是近似浏览器。插件要在自己的测试里跑页，自己装它。
 
-目标是网络服务的插件，在 `setup` 里用 `serve` 起一个替身，把目标设到它的地址，不连真的服务就能跑符合性检查。第 5 节的 `space` 可以这样查：钩子和视图只问到 `GET /api/apps`，答一个空表就够；真的插件的替身答它会调的每个接口，并先打开一个站点，所以视图是带着在线的应用查的。
+目标是网络服务的插件，在 `setup` 里用 `serve` 起一个替身，把目标设到它的地址，不连真的服务就能跑符合性检查。第 5 节的示例目标可以这样查：连上时它问一次项目，替身对什么都答 200 就够；真的插件的替身答它会调的每个接口，并先打开一个站点，所以视图是带着在线的应用查的。
 
 ```ts
 import assert from 'node:assert/strict'
@@ -1348,13 +1268,12 @@ import { conformance } from '@pneuma-base/sdk/testkit'
 
 const dist = fileURLToPath(new URL('../dist/', import.meta.url))
 
-test('the plugin follows the standard, with PneumaSpace stood in for', async () => {
+test('the plugin follows the standard, with the service stood in for', async () => {
   const report = await conformance(dist, {
     async setup({ sandbox }) {
-      const admin = await sandbox.serve(async (request) =>
-        new URL(request.url).pathname === '/api/apps' ? Response.json([]) : Response.json({ error: 'not found' }, { status: 404 }),
-      )
-      const set = await sandbox.owner(['space', 'target', 'set', '--admin', admin, '--prefix', 'conf'])
+      const api = await sandbox.serve(async () => Response.json({}))
+      // The token is typed hidden: here it comes on standard input.
+      const set = await sandbox.owner(['example', 'target', 'set', '--api', api, '--project', 'conf'], { input: 'a-token\n' })
       assert.equal(set.code, 0, set.stderr)
     },
     configuration: ['config.json'],

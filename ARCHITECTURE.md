@@ -927,9 +927,9 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 
 ### 部署
 
-`packages/plugin-deploy`，名字 `deploy`。agent 用 `say deployable <库内路径> [一句话]` 声明一样东西可以部署，声明不让它上线；主人的开关决定在不在线；开着的东西，目标上跟着库里当前的内容。
+`packages/plugin-deploy`，名字 `deploy`。主人在部署页连上一个目标（这台机器装过的 PneumaSpace 一下就连上），把自己的一样目录东西上线、下线，看到它的地址；agent 用 `say deployable <库内路径> [一句话]` 声明一样东西可以部署，声明不让它上线；主人的开关决定在不在线；开着的东西，目标上跟着库里当前的内容。
 
-它是 sdk 的部署库加两种目标：`deployPlugin('deploy', [dirTarget, commandTarget])`。部署库（`packages/sdk/src/kit/deploy/`）拿插件名和目标交回整个插件，第三方只写目标；它不导入内核，读写都经 `tools.storage`。决定表、状态表、状态 × 操作的全化表、站点名规则和目标接口在那里的 `README.md`。几个部署插件都认领 `deployable`，第二个在 `plugin add` 时以 `name-taken` 拒绝；要发到几种地方，是一个插件带几种目标。
+它是 sdk 的部署库加四种目标：`deployPlugin('deploy', [cloudflareTarget, machineTarget, dirTarget, commandTarget])`。部署库（`packages/sdk/src/kit/deploy/`）拿插件名和目标交回整个插件，第三方只写目标；它不导入内核，读写都经 `tools.storage`。决定表、状态表、状态 × 操作的全化表、站点名规则和目标接口在那里的 `README.md`。几个部署插件都认领 `deployable`，第二个在 `plugin add` 时以 `name-taken` 拒绝；要发到几种地方，是一个插件带几种目标。
 
 | 钩子 | 它做什么 |
 | --- | --- |
@@ -939,23 +939,32 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 | `onAsks` | 主人从没动过开关的，每样问「<路径> 可以部署，还没上线。要上线吗？」，推荐「上线」，另一个「不上线」；两个都记下开关 |
 | `onPurged` | 先撤下站点，再去掉声明；撤不下就报错，`deploy sync` 再试 |
 | `onRemove` | 还有站点在线时拒绝卸下；`plugin remove deploy --anyway` 照样卸 |
-| `onView`、`onItemView` | 页 `deploy.sites` 和目标自己的页；面板里状态、开关、地址，没声明的给「声明可以部署」 |
+| `onView`、`onItemView` | 页 `deploy.sites` 和目标自己的页；面板里标记、地址和目标的字段，开关在面板的菜单里，没声明的目录东西在菜单里给「上线…」 |
+| `onDescribe` | 连着的那种目标的 `cognition` |
 
-目标失败时放入、挪、归档照样成功：答复带 `problems`，命令行退出码 3，并说上线等主人跑 `deploy sync`。没配目标只是一句答复。
+目标失败时放入、挪、归档照样成功：答复带 `problems`，命令行退出码 3；给 agent 的说上线等主人跑 `deploy sync`，给主人的不提命令（页上那一行有「重试」）。没配目标只是一句答复。
 
 目标上该有什么只看开关、在不在归档区、路径上有没有东西（`model.ts` 的 `want`）。对账（`plan`）先发布再撤旧名，一样就不动；开关、放、挪、归档、`deploy sync` 都跑它，所以重跑结果一样。`deploy sync` 另撤下当前目标上不属于任何声明的站点。状态：在线、待发布、离线、待下线、已归档、不在，目标读不到时不知道。
 
 | 命令 | 谁能用 | 做什么 |
 | --- | --- | --- |
-| `deploy on <库内路径>`、`deploy off <库内路径>` | 只有主人 | 开关，并发布或下线 |
-| `deploy target set --kind dir --to <目录>` | 只有主人 | 目标是一个本地目录 |
-| `deploy target set --kind command --publish <命令>… --unpublish <命令>… [--url <模板>] [--timeout <秒>]` | 只有主人 | 目标是一对命令 |
+| `deploy on <库内路径>`、`deploy off <库内路径>` | 只有主人 | 开关，并发布或下线；主人打开没声明的东西时先记声明 |
+| `deploy target set --kind cloudflare (--host <主机> \| --credentials <凭据文件> \| --origin <地址> --account <账户>) [--prefix <前缀>]` | 只有主人 | Cloudflare 上的 PneumaSpace；没有 `--host` 和 `--credentials` 时账户密钥不显示地读进来 |
+| `deploy target set --kind machine --admin <地址> [--prefix <前缀>] [--public <公开地址>]` | 只有主人 | 一台机器上的 PneumaSpace |
+| `deploy target set --kind dir --to <目录>` | 只有主人 | 本地文件夹 |
+| `deploy target set --kind command --publish <命令>… --unpublish <命令>… [--url <模板>] [--timeout <秒>]` | 只有主人 | 自己的命令 |
+| `deploy target list` | 主人和 agent，只读 | 连着的目标，这台机器上找到的 |
+| `deploy target remove` | 只有主人 | 断开；线上的不撤下 |
 | `deploy sync` | 主人和 agent | 把全部声明对一遍 |
 | `deploy list` | 主人和 agent，只读 | 声明过的东西、状态、地址 |
 
-- 开关在目标失败时照样记下，以 `publish-failed`、`unpublish-failed` 或 `no-target` 拒绝；没声明的是 `not-declared`。`target set` 的参数由各种目标的开关拼成，`--kind` 只有一种时可不写；选定那种的必填开关由部署库核对（`usage`）。答复提醒没设的密钥，换目标时说开着的还没发到新目标、旧目标上的没撤。
+- 开关在目标失败时照样记下，以 `publish-failed`、`unpublish-failed` 或 `no-target` 拒绝；关上没声明的是 `not-declared`。`target set` 的参数由各种目标的开关拼成，`--kind` 只有一种时可不写；选定那种的必填开关由部署库核对（`usage`）。连上前先问目标一次（登录、`/api/health`），答不上来就拒绝，什么都不存。答复说事实：`已连上 space.example.com。`，换目标时加上开着的几样还没发到这里、旧目标上的几样没撤。
 
-**目标。** 接口是 `TargetAdapter`（`defineTarget`）：`params`、`configure`、`secrets`，打开后是 `publish(站点名, 内容目录, meta)` 和 `remove(站点名)`，可选 `identify`、`serving`、`view`。目标的 `secrets` 成为插件的 `secrets`，经 `pneuma-base secret set <插件名> <名字>` 设。有 `serving` 的目标按它报告的对账，读不到时不动，页面每 30 秒刷新。自带的两种都不报告：
+**目标。** 接口是 `TargetAdapter`（`defineTarget`）：`params`、`configure`、`secrets`，页上用的 `label`、`icon`、`group`、`form`、`found`、`asked`、`cognition`，打开后是 `publish(站点名, 内容目录, meta)` 和 `remove(站点名)`，可选 `identify`、`serving`、`view`、`settings`。目标的 `secrets` 成为插件的 `secrets`，经 `pneuma-base secret set <插件名> <名字>` 设；`asked` 的那个在连上时不显示地读进来，连上了才存成这台机器上的密钥。有 `serving` 的目标按它报告的对账，读不到时不动，页面每 30 秒刷新（Cloudflare 上的每 60 秒）。
+
+- `cloudflare`、`machine`：PneumaSpace，一组，见 `packages/plugin-deploy/README.md`。都报告自己在服务什么。`found` 读 `~/.pneuma-space/hosts/` 这一层，有 `owner.json` 的目录各是一个装过的；`--host` 连上时只记主机名，每次登录都从那个文件重新读密钥。应用名前缀缺省取库文件夹的名字，是连上之后的一个设置。站点顶上没有 `index.html` 时发布之前就拒绝。
+
+本地的两种不报告：
 
 - `dir`：写 `<目录>/<站点名>/` 和 `index.json`（`format: 1`），先写 `.tmp-` 名再换上；地址是 `file://`。目录不能在库里，也不能包含库（`inside-library`）。
 - `command`：按引号规则切词，不经 shell 运行；`{dir}`、`{name}` 换成内容复制件和站点名；下线在空目录里跑；超时缺省 120 秒；`--url` 的 `{name}` 换成站点名。
@@ -964,7 +973,7 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 
 | 存放（`.pneuma-base/deploy/`） | 内容 |
 | --- | --- |
-| `config.json` | 目标 `{ format: 1, target: { kind, … } }`，经 `configFile` 带预期整份写，冲突重试最多 3 次，后写的算数 |
+| `config.json` | 目标 `{ format: 1, target: { kind, … }, given }`，`given` 是主人给的开关，不含密钥；经 `configFile` 带预期整份写，冲突重试最多 3 次，后写的算数；断开时删掉 |
 | `facts/` | 经 `recordStore` 写：`declare`、`switch`、`move`、`remove`、`publish`、`unpublish`；读不懂的原样留着，`check` 里列出 |
 
 不报告的目标，「上面有什么」来自对当前目标（按 `key`）的发布与下线记录；换目标后开着的都成待发布。事实折成行（`folded.ts`）：`things` 是声明了的，`alias` 是两台机器各声明一次的同一路径，`sites` 是每个目标上的每个站，`fold` 记着折到的最后一个事实的 id 和读不懂的行。每次钩子、命令和页面从行取，只折游标之后的新事实；折按事实的 id 排，新事实里有排在已折的之前的（同步带来的别的机器的），就从头折一遍。行另有 `identified`。
@@ -1485,7 +1494,7 @@ $PNEUMA_BASE_HOME/
 
 - 门本身（`storage.ts`）；这台机器上的存储提供者（`providers.ts`、`provider-install.ts`）；存储能答之前的库的地址（`address.ts`）；调用方写的绝对路径（`paths.ts`）；放的来源在库外（`outside.ts`）；包自己的文字（`cognition.ts`）；插件向存储要了什么的日志（`tool-log.ts`）。
 - 本机 `$PNEUMA_BASE_HOME` 下的状态：授权、endpoint、配对、密钥、插件、本机的命令、连接的记录（`machine-files.ts`、`grants.ts`、`endpoint.ts`、`pairing.ts`、`secrets.ts`、`plugin-table.ts`、`launcher.ts`、`connections.ts`）；agent 产品的配置、技能目录和对话（`products.ts`、`agent-commands.ts`）；主人命令写到主人指定处的技能文件（`owner-commands.ts`）。
-- 插件在库外的东西：记账插件读 agent 的对话、写主人指定的导出文件；版本插件导出到主人指定处或还原用的临时目录；查找插件缓存里的索引；同步插件的目标和它缓存里的基线；部署库读进插件缓存的 `stage/`，部署插件的目标，`space` 的凭据文件。
+- 插件在库外的东西：记账插件读 agent 的对话、写主人指定的导出文件；版本插件导出到主人指定处或还原用的临时目录；查找插件缓存里的索引；同步插件的目标和它缓存里的基线；部署库读进插件缓存的 `stage/`，部署插件的目标，PneumaSpace 的凭据文件和 `~/.pneuma-space/hosts/` 下装过的那几个。
 - 面：界面的服务读建好的网页和插件的 `ui` 目录；命令行看人敲的词是不是一个目录，`plugin new` 在人指定处写插件项目；测试工具在临时目录里造沙盒库、像人的文件管理器那样从库外看插件改了什么。
 
 测试和脚本不查：测试代表库外的世界（agent 自己的工具也会往库里写），脚本是建、测、演示用的。
