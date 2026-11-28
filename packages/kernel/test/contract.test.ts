@@ -63,9 +63,9 @@ describe('the loader of a plugin outside the repository', () => {
 
   it('loads a plugin that declares the contract this kernel supports, and refuses one without a contract, with one it does not support, or written against contract 1, naming the section of the standard that says what changes', async () => {
     expect(await why({})).toBeNull()
-    expect(await why({}, ['contract'])).toMatch(/没有写 contract.*第 2 版/)
-    expect(await why({ contract: 3 })).toMatch(/contract 是 3.*只认识第 2 版/)
-    expect(await why({ contract: 1 })).toMatch(/contract 是 1.*只跑第 2 版.*PLUGINS\.md 的「从第 1 版到第 2 版」一节/)
+    expect(await why({}, ['contract'])).toMatch(/缺少 contract.*第 2 版/)
+    expect(await why({ contract: 3 })).toMatch(/contract 为 3.*仅支持第 2 版/)
+    expect(await why({ contract: 1 })).toMatch(/contract 为 1.*仅运行第 2 版.*PLUGINS\.md 的「从第 1 版到第 2 版」一节/)
   })
 
   it('refuses the shapes it can check without calling a hook, naming each', async () => {
@@ -74,20 +74,20 @@ describe('the loader of a plugin outside the repository', () => {
       [{ statements: 'echo' }, /statements 不是列表/],
       [{ storage: [{ dir: 'state', kind: 'forever' }] }, /storage/],
       [{ cognition: { title: '回声' } }, /cognition/],
-      [{ views: [{ id: 'other.page', title: '', icon: '', nav: true, filters: [] }] }, /视图 other\.page 不以 echo\. 开头/],
-      [{ ownerCommands: [{ ...GOOD.ownerCommands[0], name: 'now' }] }, /主人命令「now」不以「echo 」开头/],
+      [{ views: [{ id: 'other.page', title: '', icon: '', nav: true, filters: [] }] }, /视图 other\.page 未以 echo\. 开头/],
+      [{ ownerCommands: [{ ...GOOD.ownerCommands[0], name: 'now' }] }, /所有者命令「now」未以「echo 」开头/],
       [{ ownerCommands: [{ ...GOOD.ownerCommands[0], run: 'not a function' }] }, /run/],
-      [{ ownerCommands: [{ name: 'echo now', summary: '', destructive: false, ownerOnly: false, run: 'RUN' }] }, /主人命令「echo now」没有 params/],
+      [{ ownerCommands: [{ name: 'echo now', summary: '', destructive: false, ownerOnly: false, run: 'RUN' }] }, /所有者命令「echo now」缺少 params/],
       [{ onSay: 'not a function' }, /onSay 不是函数/],
-      [{ statements: ['echo', 'echo'] }, /echo.*写了两次/],
-      [{ version: 1 }, /version 不是文字/],
+      [{ statements: ['echo', 'echo'] }, /echo.*重复声明/],
+      [{ version: 1 }, /version 不是字符串/],
     ]
     for (const [parts, reason] of cases) expect(await why(parts), JSON.stringify(parts)).toMatch(reason)
   })
 
   it('checks a built-in plugin as it checks one of this machine: one that breaks a rule is a fault of this pneuma-base, and throws', async () => {
     const odd = plugin('odd', { ownerCommands: [{ name: 'held list', summary: '', params: {}, destructive: false, ownerOnly: false, run: async () => ({ outcome: 'done', text: '' }) }] })
-    await expect(kernel.loadPlugins(tempDir('pb-k-home-'), new Map([['odd', odd]]))).rejects.toThrow(/自带插件 odd 过不了插件的核对：主人命令「held list」不以「odd 」开头/)
+    await expect(kernel.loadPlugins(tempDir('pb-k-home-'), new Map([['odd', odd]]))).rejects.toThrow(/内置插件 odd 未通过插件校验：所有者命令「held list」未以「odd 」开头/)
   })
 
   it('refuses a command name the kernel uses', async () => {
@@ -95,7 +95,7 @@ describe('the loader of a plugin outside the repository', () => {
     mkdirSync(join(home, 'plugins', 'plugin'), { recursive: true })
     const command = '{ name: "plugin enable", summary: "", destructive: false, ownerOnly: false, run: async () => ({ outcome: "done", text: "" }) }'
     writeFileSync(join(home, 'plugins', 'plugin', 'index.js'), `export default { contract: 2, name: 'plugin', cognition: null, storage: [], statements: [], ownerCommands: [${command}] }\n`)
-    expect(await kernel.whyNotLoaded(home, 'plugin')).toMatch(/主人命令「plugin enable」是内核自己的/)
+    expect(await kernel.whyNotLoaded(home, 'plugin')).toMatch(/所有者命令「plugin enable」为内核命令/)
   })
 })
 
@@ -277,8 +277,8 @@ describe('a name a plugin claims', () => {
     const r = await kernel.ownerFace.dispatch(owners(f, table), 'plugin enable', { positional: ['second'], flags: {} })
     expect(r).toMatchObject({ outcome: 'refused', reason: 'name-taken' })
     if (r.outcome !== 'refused') return
-    expect(r.text).toContain('「说」的种类「deployable」已归插件 first')
-    expect(r.text).toContain('主人命令「first on」已归插件 first')
+    expect(r.text).toContain('记录类型「deployable」已属于插件 first')
+    expect(r.text).toContain('所有者命令「first on」已属于插件 first')
     expect(r.text).not.toContain('second-only')
     expect(JSON.parse(f.read('.pneuma-base/config.json')).plugins).toEqual(['first'])
   })
@@ -288,7 +288,7 @@ describe('a name a plugin claims', () => {
     const table = new Map<string, sdk.Plugin>([['first', first], ['second', second]])
     const r = await kernel.initLibrary(root, { plugins: ['first', 'second'], table, actor: owner, session, home: tempDir('pb-k-home-') })
     expect(r).toMatchObject({ outcome: 'refused', reason: 'name-taken' })
-    expect(r.text).toContain('插件 second 的「说」的种类「deployable」已归插件 first')
+    expect(r.text).toContain('插件 second 的记录类型「deployable」已属于插件 first')
     expect(existsSync(join(root, '.pneuma-base'))).toBe(false)
   })
 
@@ -303,7 +303,7 @@ describe('a name a plugin claims', () => {
     const said = await kernel.agentFace.say({ kind: 'deployable', about: null, text: null, args: {} }, f.ctx)
     expect(said).toMatchObject({ outcome: 'heard', by: 'first' })
     const listed = said.problems.filter((p) => p.plugin === 'second').map((p) => p.message)
-    expect(listed).toEqual([expect.stringContaining('「说」的种类「deployable」已归插件 first'), expect.stringContaining('主人命令「first on」已归插件 first')])
+    expect(listed).toEqual([expect.stringContaining('记录类型「deployable」已属于插件 first'), expect.stringContaining('所有者命令「first on」已属于插件 first')])
     expect(await kernel.agentFace.say({ kind: 'second-only', about: null, text: null, args: {} }, f.ctx)).toMatchObject({ outcome: 'heard', by: 'second' })
     const commands = kernel.ownerFace.commands(f.library.plugins).filter((c) => c.by !== 'kernel').map((c) => `${c.by}: ${c.name}`)
     expect(commands).toEqual(['first: first on', 'second: second off'])
@@ -364,9 +364,9 @@ describe('a plugin’s own lifecycle', () => {
     // What the page offers beside the refusal: the same command with --force, asking first with the plugin's sentence.
     if (refused.outcome !== 'refused') return
     expect(refused.offer).toEqual({
-      label: '仍然卸下',
+      label: '仍然停用',
       tone: 'danger',
-      confirm: `插件 holder 说：${warning}\n仍然卸下吗？`,
+      confirm: `插件 holder 提示：${warning}\n仍然停用？`,
       inputs: [],
       call: { face: 'owner', command: 'plugin disable', args: { positional: ['holder'], flags: { force: true } } },
     })

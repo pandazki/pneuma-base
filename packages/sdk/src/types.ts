@@ -566,7 +566,7 @@ export interface Plugin {
   readonly name: PluginName
   /** Its own version, for people. */
   readonly version?: string
-  /** The name a person would say, such as 记账 for `ledger`; its `name` stays the identifier. */
+  /** The name a person would say, such as 溯源 for `ledger`; its `name` stays the identifier. */
   readonly title?: string
   /** What it does, in a short Chinese line for people: about twenty characters at most. */
   readonly summary?: string

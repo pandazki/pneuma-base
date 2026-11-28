@@ -152,7 +152,7 @@ export async function allowPlan(home: string, env: Env, library: Library, produc
     positional: [product],
     flags: { name: [grant], via: [way], ...(access.area === null ? {} : { area: [access.area] }), ...(access.readOnly ? { 'read-only': true as const } : {}) },
   }
-  return { grant, way, where: known === null ? NOTHING_WRITTEN : `写在 ${whereOf(known, way, grant, env)}`, args, line: commandLine('agent connect', args) }
+  return { grant, way, where: known === null ? NOTHING_WRITTEN : `写入 ${whereOf(known, way, grant, env)}`, args, line: commandLine('agent connect', args) }
 }
 
 // ---- asking ----
@@ -168,12 +168,12 @@ async function pollLine(home: string, p: Pairing): Promise<string> {
 }
 
 async function requestedText(home: string, p: Pairing, again: boolean): Promise<string> {
-  const head = again ? `同一个请求已经在等主人决定，配对码不变：${p.code}。` : `已请求接入这个库，配对码 ${p.code}。`
+  const head = again ? `相同的请求正在等待所有者处理，配对码不变：${p.code}。` : `已请求接入此资料库，配对码 ${p.code}。`
   return [
     head,
-    '把配对码给你的用户看：主人在 Pneuma Base 的首页上看到同一个码，核对后点「允许」。',
-    `然后每隔几秒问一次，直到不再是 waiting：${await pollLine(home, p)}`,
-    `到 ${when(p.expires)} 还没人允许就过期。`,
+    '向用户展示配对码：所有者在 Pneuma Base 首页看到同一配对码，核对后点击「允许」。',
+    `然后每隔几秒查询一次，直到状态不再是 waiting：${await pollLine(home, p)}`,
+    `${when(p.expires)} 前未获允许则过期。`,
   ].join('\n')
 }
 
@@ -188,17 +188,17 @@ async function libraryRoot(dir: string): Promise<string | null> {
 
 export async function requestPairing(req: PairRequest): Promise<PairRequested> {
   const { home, product, via, now } = req
-  if (!GRANT_NAME.test(product)) return refusal('usage', `不是一个产品名：${product}（小写字母或数字开头，只用小写字母、数字和连字符）`)
+  if (!GRANT_NAME.test(product)) return refusal('usage', `不是有效的产品名称：${product}（须以小写字母或数字开头，仅含小写字母、数字和连字符）`)
   const why = req.why.replace(/\p{Cc}/gu, ' ').trim()
   const length = [...why].length
-  if (length === 0 || length > WHY_LIMIT) return refusal('usage', `要写为什么：一句话，1 到 ${WHY_LIMIT} 个字，主人据它决定允不允许。`)
+  if (length === 0 || length > WHY_LIMIT) return refusal('usage', `须写明原因：1 到 ${WHY_LIMIT} 个字，所有者据此决定是否允许。`)
   const library = await libraryRoot(req.library)
-  if (library === null) return refusal('not-a-library', `${req.library} 不是一个库。`)
+  if (library === null) return refusal('not-a-library', `${req.library} 不是资料库。`)
   return alone(join(dirOf(home), '.asking'), async () => {
     const waiting = (await readPairings(home)).filter((p) => pairingState(p, now) === 'waiting')
     const same = waiting.find((p) => p.product === product && p.library === library)
     if (same) return { outcome: 'requested', pairing: same, again: true, text: await requestedText(home, same, true) }
-    if (waiting.length >= MAX_WAITING) return refusal('too-many', `这台机器上已经有 ${MAX_WAITING} 个配对在等主人决定。请你的用户先处理首页上等着的，或过几分钟再请求。`)
+    if (waiting.length >= MAX_WAITING) return refusal('too-many', `本机已有 ${MAX_WAITING} 个配对等待所有者处理。请用户先处理首页上的待处理配对，或几分钟后再请求。`)
     let code = newCode()
     while (waiting.some((p) => p.code === code)) code = newCode()
     const expires = new Date(Date.parse(now) + LIFETIME_MS).toISOString() as Instant
@@ -220,28 +220,28 @@ function connectedFacts(home: string, p: Pairing, d: Extract<PairingDecision, { 
     command: reach.command,
     mcp: reach.mcp,
     read: join(p.library, DESCRIPTION_FILE),
-    next: `每件事开始时运行：${reach.command} start "<一句话>"。`,
+    next: `每项任务开始时运行：${reach.command} start "<任务描述>"。`,
   }
 }
 
 function answerText(p: Pairing, state: PairingState, poll: string, connected: Connected | null): string {
   switch (state) {
     case 'waiting':
-      return `在等主人决定。把配对码 ${p.code} 给你的用户看：主人在 Pneuma Base 的首页上核对后点「允许」。每隔几秒再问一次：${poll}。到 ${when(p.expires)} 还没人允许就过期。`
+      return `等待所有者处理。向用户展示配对码 ${p.code}：所有者在 Pneuma Base 首页核对后点击「允许」。每隔几秒查询一次：${poll}。${when(p.expires)} 前未获允许则过期。`
     case 'expired':
-      return '这次配对已经过期（10 分钟没人允许）。要接上，重新请求一次。'
+      return '此配对已过期（10 分钟内未获允许）。如需连接，请重新请求。'
     case 'declined': {
-      const reason = p.decision?.outcome === 'declined' && p.decision.reason !== null ? `，理由：${p.decision.reason}` : ''
-      return `主人拒绝了这次接入${reason}。不要再请求。`
+      const reason = p.decision?.outcome === 'declined' && p.decision.reason !== null ? `，原因：${p.decision.reason}` : ''
+      return `所有者已拒绝此接入请求${reason}。不要再次请求。`
     }
     case 'connected': {
       const c = connected as Connected
       return [
-        `已接上，授权名 ${c.grant}（${WAY_WORD[c.way]}）。`,
-        `之后每条命令都这样运行：${c.command} <动词> …`,
-        `先读 ${c.read}。`,
-        `只能接 MCP 的应用：${c.mcp.url === null ? '' : `${c.mcp.url}，或者 `}${c.mcp.stdio}`,
-        `接着：${c.next}`,
+        `已连接，授权名称 ${c.grant}（${WAY_WORD[c.way]}）。`,
+        `之后每条命令按此格式运行：${c.command} <命令> …`,
+        `先读取 ${c.read}。`,
+        `仅支持 MCP 的应用：${c.mcp.url === null ? '' : `${c.mcp.url}，或 `}${c.mcp.stdio}`,
+        `下一步：${c.next}`,
       ].join('\n')
     }
   }
@@ -260,7 +260,7 @@ export async function pairingAnswer(home: string, id: string, now: Instant): Pro
 
 // ---- on the owner's pages ----
 
-const ID = { name: 'id', hint: '配对号', required: true } as const
+const ID = { name: 'id', hint: '配对编号', required: true } as const
 export const PAIR_ALLOW = {
   name: 'pair allow',
   params: {
@@ -268,11 +268,11 @@ export const PAIR_ALLOW = {
     flags: [
       { name: 'area', hint: '子文件夹', kind: 'value' },
       { name: 'read-only', hint: '只读', kind: 'boolean' },
-      { name: 'name', hint: '授权名，缺省是产品名', kind: 'value', pattern: GRANT_NAME.source },
+      { name: 'name', hint: '授权名称，默认为产品名称', kind: 'value', pattern: GRANT_NAME.source },
     ],
   },
 } as const
-export const PAIR_DECLINE = { name: 'pair decline', params: { positional: [ID, { name: 'reason', hint: '理由' }] } } as const
+export const PAIR_DECLINE = { name: 'pair decline', params: { positional: [ID, { name: 'reason', hint: '原因' }] } } as const
 
 const allowAction = (id: PairingId): Action => ({ label: '允许', tone: 'default', confirm: null, ...formOf(PAIR_ALLOW, { fixed: { id, name: false } }) })
 const declineAction = (id: PairingId): Action => ({ label: '拒绝', tone: 'default', confirm: null, ...formOf(PAIR_DECLINE, { fixed: { id } }) })
@@ -280,7 +280,7 @@ export const pairingActions = (id: PairingId): Action[] => [allowAction(id), dec
 
 /** What a waiting pairing asks the owner, in one sentence: who, the code, why, and what allowing does. */
 export const askText = (p: Pairing, plan: AllowPlan) =>
-  `${titleOf(p.product)} 想接入这个库：允许吗？配对码 ${p.code}。为什么：${p.why}。允许就发授权 ${plan.grant}，以「${WAY_WORD[plan.way]}」接上，${plan.where}。`
+  `${titleOf(p.product)} 请求接入此资料库，是否允许？配对码 ${p.code}。原因：${p.why}。允许后将新建授权 ${plan.grant}，以「${WAY_WORD[plan.way]}」连接，${plan.where}。`
 
 /** The pairings of the library at `root`, oldest first. */
 export const pairingsOf = async (home: string, root: string): Promise<Pairing[]> => (await readPairings(home)).filter((p) => p.library === root)
@@ -299,5 +299,5 @@ export async function pairingAsks(home: string, env: Env, library: Library, now:
 /** The one sentence the owner says to any agent, to copy, and how it goes on from there. `where`: where the owner allows it. */
 export const sentenceBlock = (url: string, where: string): Block => ({
   kind: 'list',
-  items: [{ cell: { text: sentenceFor(url), copy: true, icon: 'message-square-plus' }, note: `发给任何 agent，它会请求接入；核对配对码后在${where}允许。`, actions: [] }],
+  items: [{ cell: { text: sentenceFor(url), copy: true, icon: 'message-square-plus' }, note: `发送给任意 Agent 后，Agent 将请求接入；核对配对码后在${where}允许。`, actions: [] }],
 })

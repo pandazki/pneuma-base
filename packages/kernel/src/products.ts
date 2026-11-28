@@ -61,11 +61,11 @@ export type Reopening = {
 }
 
 /** One sentence the owner says to the agent once it is connected. */
-export const FIRST_WORDS = '看看我的 Pneuma Base 库里有什么。'
+export const FIRST_WORDS = '查看我的 Pneuma Base 资料库中有哪些内容。'
 
 /** What Codex needs before it can write the library from its sandbox. */
 export function codexHint(root: string): string {
-  return `Codex 在沙箱里运行，这个库要是它能写的目录之一，比如：codex --add-dir ${root}`
+  return `Codex 在沙箱中运行，此资料库须为其可写目录之一，例如：codex --add-dir ${root}`
 }
 
 /**
@@ -88,14 +88,14 @@ export const AGENT_PRODUCTS: readonly AgentProduct[] = [
     mcp: { file: '.claude.json', format: 'json', key: 'mcpServers', type: 'stdio' },
     mcpUrl: { file: '.claude.json', format: 'json', key: 'mcpServers', type: 'http' },
     next: {
-      skill: `Claude Code 在当前会话里就看得到新技能（看不到就新开一个会话）。对它说一句：「${FIRST_WORDS}」`,
-      mcp: `开一个新的 Claude Code 会话：它在会话开始时读 MCP 服务。然后对它说一句：「${FIRST_WORDS}」`,
-      'mcp-http': `开一个新的 Claude Code 会话：它在会话开始时读 MCP 服务。然后对它说一句：「${FIRST_WORDS}」`,
+      skill: `新技能在 Claude Code 的当前会话中即可使用（未出现时新开一个会话）。然后发出第一条指令：「${FIRST_WORDS}」`,
+      mcp: `新开一个 Claude Code 会话：Claude Code 在会话开始时读取 MCP 服务。然后发出第一条指令：「${FIRST_WORDS}」`,
+      'mcp-http': `新开一个 Claude Code 会话：Claude Code 在会话开始时读取 MCP 服务。然后发出第一条指令：「${FIRST_WORDS}」`,
     },
     guide: [
-      'Claude Code 的 WebFetch 取不了 127.0.0.1 上的地址：在 Bash 里用 curl。',
-      '库按 CLAUDE_CODE_SESSION_ID 认出会话，所以这次对话就是一个场景；子代理带着主会话的会话号，算在同一个场景里。',
-      '接上之后技能在当前会话里就出现；没出现就开一个新会话。',
+      'Claude Code 的 WebFetch 无法访问 127.0.0.1 上的地址：在 Bash 中使用 curl。',
+      '资料库按 CLAUDE_CODE_SESSION_ID 识别会话，因此本次对话即一个场景；子代理带有主会话的会话 ID，计入同一场景。',
+      '连接后技能即出现在当前会话中；未出现时新开一个会话。',
     ],
     // Resume: `claude --help` (2.1.332), "-r, --resume [value]  Resume a conversation by session ID";
     // code.claude.com/docs/en/sessions: "You can run claude --resume <session-id> from any directory",
@@ -115,13 +115,13 @@ export const AGENT_PRODUCTS: readonly AgentProduct[] = [
     mcp: { file: '.codex/config.toml', format: 'toml', key: 'mcp_servers' },
     mcpUrl: { file: '.codex/config.toml', format: 'toml', key: 'mcp_servers' },
     next: {
-      skill: `Codex 自己会发现新装的技能，没出现就重启它。然后对它说一句：「${FIRST_WORDS}」`,
-      mcp: `重启 Codex，开一个新会话。然后对它说一句：「${FIRST_WORDS}」`,
-      'mcp-http': `重启 Codex，开一个新会话。然后对它说一句：「${FIRST_WORDS}」`,
+      skill: `Codex 会自动发现新安装的技能，未出现时重启 Codex。然后发出第一条指令：「${FIRST_WORDS}」`,
+      mcp: `重启 Codex 并新开一个会话。然后发出第一条指令：「${FIRST_WORDS}」`,
+      'mcp-http': `重启 Codex 并新开一个会话。然后发出第一条指令：「${FIRST_WORDS}」`,
     },
     notice: codexHint,
     guide: [
-      'Codex 的沙箱可能拦下 curl 访问 127.0.0.1（网络），也可能拦下命令行的那种（它要写 $PNEUMA_BASE_HOME）。被拦了，就请你的用户批准在沙箱外运行那一条命令。',
+      'Codex 的沙箱可能拦截 curl 对 127.0.0.1 的访问（网络），也可能拦截命令行（需写入 $PNEUMA_BASE_HOME）。被拦截时，请用户批准在沙箱外运行该命令。',
     ],
     // Link: the Codex app (ChatGPT.app, com.openai.codex, 26.1111) registers the scheme codex in its
     // Info.plist; learn.chatgpt.com/docs/reference/commands: "codex://threads/<thread-id>  A local chat.
@@ -138,8 +138,8 @@ export const AGENT_PRODUCTS: readonly AgentProduct[] = [
     transcript: null,
     found: { folder: 'Library/Application Support/Claude' },
     mcp: { file: 'Library/Application Support/Claude/claude_desktop_config.json', format: 'json', key: 'mcpServers' },
-    next: { mcp: `完全退出 Claude Desktop 再打开：它要重启才读新的配置。然后对它说一句：「${FIRST_WORDS}」` },
-    guide: ['Claude Desktop 不能运行命令，也连不上 127.0.0.1：请主人在 Pneuma Base 应用里把它接上（首页或 Agent 页的「接上」），然后完全退出 Claude Desktop 再打开。'],
+    next: { mcp: `完全退出并重新打开 Claude Desktop：重启后才会读取新配置。然后发出第一条指令：「${FIRST_WORDS}」` },
+    guide: ['Claude Desktop 无法运行命令，也无法连接 127.0.0.1：请所有者在 Pneuma Base 应用中连接 Claude Desktop（首页或 Agent 页的「连接」），然后完全退出并重新打开 Claude Desktop。'],
   },
   {
     name: 'cursor',
@@ -152,13 +152,13 @@ export const AGENT_PRODUCTS: readonly AgentProduct[] = [
     mcp: { file: '.cursor/mcp.json', format: 'json', key: 'mcpServers', type: 'stdio' },
     mcpUrl: { file: '.cursor/mcp.json', format: 'json', key: 'mcpServers' },
     next: {
-      skill: `Cursor 在启动时发现技能：完全退出 Cursor 再打开。然后对它说一句：「${FIRST_WORDS}」`,
-      mcp: `完全退出 Cursor 再打开。然后对它说一句：「${FIRST_WORDS}」`,
-      'mcp-http': `完全退出 Cursor 再打开。然后对它说一句：「${FIRST_WORDS}」`,
+      skill: `Cursor 在启动时发现技能：完全退出并重新打开 Cursor。然后发出第一条指令：「${FIRST_WORDS}」`,
+      mcp: `完全退出并重新打开 Cursor。然后发出第一条指令：「${FIRST_WORDS}」`,
+      'mcp-http': `完全退出并重新打开 Cursor。然后发出第一条指令：「${FIRST_WORDS}」`,
     },
     guide: [
-      'Cursor 在启动时发现技能：接上之后完全退出 Cursor 再打开。',
-      '它的 MCP 配置认地址：主人也可以用 agent connect cursor --via mcp-http 让它经本机的地址接上。',
+      'Cursor 在启动时发现技能：连接后完全退出并重新打开 Cursor。',
+      'Cursor 的 MCP 配置支持 URL：所有者也可用 agent connect cursor --via mcp-http 通过本机地址连接。',
     ],
   },
   { name: 'antigravity', title: 'Antigravity', session: 'ANTIGRAVITY_CONVERSATION_ID', markers: ['ANTIGRAVITY_AGENT'], transcript: null },
@@ -204,15 +204,15 @@ export const homeOf = (env: Env): string => resolve(env.HOME || homedir())
 export function signsOf(p: AgentProduct, env: Env): string[] {
   const signs: string[] = []
   const { program, folder } = p.found ?? {}
-  if (program !== undefined && onPath(program, env)) signs.push(`PATH 上有 ${program}`)
-  if (folder !== undefined && isDir(join(homeOf(env), folder))) signs.push(`有 ~/${folder}`)
+  if (program !== undefined && onPath(program, env)) signs.push(`PATH 中有 ${program}`)
+  if (folder !== undefined && isDir(join(homeOf(env), folder))) signs.push(`存在 ~/${folder}`)
   return signs
 }
 
 /** Where the product was looked for, in words. */
 export function lookedFor(p: AgentProduct): string {
   const { program, folder } = p.found ?? {}
-  return [...(program === undefined ? [] : [`PATH 上的 ${program}`]), ...(folder === undefined ? [] : [`~/${folder}`])].join('、')
+  return [...(program === undefined ? [] : [`PATH 中的 ${program}`]), ...(folder === undefined ? [] : [`~/${folder}`])].join('、')
 }
 
 function onPath(program: string, env: Env): boolean {

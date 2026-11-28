@@ -1,6 +1,7 @@
 // A plugin's views and the page one of them gives, for the viewer face and the home page alike.
 import { checkBlocks, checkFilters, checkOpen, checkRefresh, checkTrail, callableIn } from './blocks.js'
 import { catchingUp, catchingUpCount } from './catch-up.js'
+import { pluginTitle } from './claims.js'
 import { messageOf, pluginContext } from './pipeline.js'
 import { kernelAction } from './view-parts.js'
 import type { ViewerCall } from './viewer.js'
@@ -42,7 +43,7 @@ export async function pluginPage(plugin: Plugin, decl: ViewDecl, req: ViewReques
     const blocks: Block[] =
       behind === undefined
         ? checked.blocks
-        : [{ kind: 'section', title: '装上之前登记的', note: catchingUpCount(behind), count: null, blocks: [], actions: [kernelAction('plugin backfill', '接着补', { fixed: { plugin: plugin.name } })] }, ...checked.blocks]
+        : [{ kind: 'section', title: '启用前已登记的条目', note: catchingUpCount(behind), count: null, blocks: [], actions: [kernelAction('plugin backfill', '继续', { fixed: { plugin: plugin.name } })] }, ...checked.blocks]
     const { refresh, problems: refreshProblems } = checkRefresh((answer as ViewAnswer).refresh, plugin)
     const { filters, problems: filterProblems } = checkFilters((answer as ViewAnswer).filters, decl, plugin)
     const { open, problems: openProblems } = checkOpen((answer as ViewAnswer).open, plugin)
@@ -56,6 +57,6 @@ export async function pluginPage(plugin: Plugin, decl: ViewDecl, req: ViewReques
     }
   } catch (error) {
     const message = messageOf(error)
-    return shown(decl.title, null, [{ kind: 'empty', title: `插件 ${plugin.name} 出错了，没能给出这一页`, hint: message }], [{ plugin: plugin.name, message }])
+    return shown(decl.title, null, [{ kind: 'empty', title: `插件 ${pluginTitle(plugin)} 出错，无法显示此页`, hint: message }], [{ plugin: plugin.name, message }])
   }
 }

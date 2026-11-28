@@ -34,7 +34,7 @@ import {
   type Section,
 } from '@pneuma-base/sdk'
 
-export const NO_HEARER = '这个库没配能记下这句话的插件'
+export const NO_HEARER = '此资料库没有可记录此内容的插件'
 
 /** The seven verbs. Each ends at the pipeline's single exit, which sends its event (K5). */
 export const agentFace: AgentFace = {
@@ -83,7 +83,7 @@ async function annotate(req: FindRequest, ctx: Context, found: Hit[]): Promise<{
     const fits = (h: PluginHit): h is PluginHit & { path: LibraryPath } => h.path !== null && asked.has(h.path)
     return {
       hits: answered.filter(fits).map((h): Annotation => ({ ...h, by: plugin.name })),
-      problems: answered.filter((h) => !fits(h)).map((h) => ({ plugin: plugin.name, message: `onFound 答了${h.path === null ? '一条没有路径的命中' : `没问它的路径 ${h.path}`}，没有采用` })),
+      problems: answered.filter((h) => !fits(h)).map((h) => ({ plugin: plugin.name, message: `onFound 返回了${h.path === null ? '没有路径的命中' : `未查询的路径 ${h.path}`}，未采用` })),
     }
   })
   return { hits: heard.values.flatMap(({ value }) => value.hits), problems: [...heard.problems, ...heard.values.flatMap(({ value }) => value.problems)] }
@@ -211,7 +211,7 @@ async function say(req: SayRequest, ctx: Context): Promise<SayResult> {
     return {
       outcome: 'not-heard',
       reason: 'plugin-failed',
-      note: `插件 ${hearer.name} 没能记下这句话`,
+      note: `插件 ${hearer.name} 记录失败`,
       problems: [{ plugin: hearer.name, message: messageOf(error) }],
     }
   }
@@ -224,7 +224,7 @@ async function check(req: CheckRequest, ctx: Context): Promise<CheckResult> {
   for (const plugin of ctx.library.plugins) {
     const c = behind.get(plugin.name)
     if (c === undefined || plugin.onCheck === undefined) continue
-    const section = { title: '装上之前登记的', body: catchingUpLine(c) }
+    const section = { title: '启用前已登记的条目', body: catchingUpLine(c) }
     const at = heard.values.find((v) => v.plugin === plugin.name)
     if (at) at.value = [...at.value, section]
     else heard.values.push({ plugin: plugin.name, value: [section] })

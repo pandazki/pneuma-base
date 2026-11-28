@@ -3,6 +3,7 @@
 import { posix } from 'node:path'
 import { fileFacts, noiseRule } from './agent.js'
 import { callableIn, checkBlocks, type Callable } from './blocks.js'
+import { pluginTitle } from './claims.js'
 import { closedAnswers, levelPage, rowPlace, thingName } from './files-page.js'
 import { originalPath, parseLibraryPath, regionOf } from './paths.js'
 import { messageOf, pluginContext } from './pipeline.js'
@@ -15,7 +16,7 @@ import type { ViewerCall } from './viewer.js'
 import { isDescribed, isFailure, type Action, type Block, type Cell, type Context, type FileFacts, type LibraryPath, type PluginName, type PluginProblem, type TableRow } from '@pneuma-base/sdk'
 
 const archiveAction = (kind: 'archive' | 'unarchive', path: LibraryPath): Action => ({
-  label: kind === 'archive' ? '归档' : '取回',
+  label: kind === 'archive' ? '归档' : '取消归档',
   tone: 'default',
   confirm: null,
   inputs: [],
@@ -27,7 +28,7 @@ const archiveAction = (kind: 'archive' | 'unarchive', path: LibraryPath): Action
 
 /** Fetching a placeholder's content to this machine: inspect asked for the content with fetch. */
 const fetchAction = (path: LibraryPath): Action => ({
-  label: '取回内容',
+  label: '下载内容',
   tone: 'default',
   confirm: null,
   inputs: [],
@@ -36,10 +37,10 @@ const fetchAction = (path: LibraryPath): Action => ({
 
 /** Moving a thing within the library: put with --to, the whole of a bundle with it. */
 const moveAction = (path: LibraryPath): Action => ({
-  label: '挪到',
+  label: '移动',
   tone: 'default',
   confirm: null,
-  inputs: [field('to', '新的库内路径', { value: path })],
+  inputs: [field('to', '新路径', { value: path })],
   call: { face: 'agent', verb: 'put', request: { kind: 'move', from: path, to: '{to}' } },
   as: 'icon',
   icon: 'folder-input',
@@ -83,7 +84,7 @@ async function pluginSections(ctx: Context, path: LibraryPath, callable: Callabl
     } catch (error) {
       const message = messageOf(error)
       problems.push({ plugin: plugin.name, message })
-      blocks.push(section(`插件 ${plugin.name}`, [{ kind: 'empty', title: `插件 ${plugin.name} 出错了，没能给出它知道的`, hint: message }], plugin.name))
+      blocks.push(section(`插件 ${pluginTitle(plugin)}`, [{ kind: 'empty', title: `插件 ${pluginTitle(plugin)} 出错，无法显示其内容`, hint: message }], plugin.name))
     }
   }
   return { blocks, actions, problems }
@@ -102,15 +103,15 @@ export function facetFields(facets: Record<string, unknown> | undefined, modifie
   for (const [name, facet] of Object.entries(facets ?? {})) {
     if (!isObject(facet)) continue
     if (name === 'fs') {
-      // Made in the same minute it was last changed says nothing more than 改于 does.
-      if (typeof facet.created === 'string' && (modifiedAt === null || when(facet.created) !== when(modifiedAt))) out.push({ label: '建于', value: { text: when(facet.created), at: facet.created as FileFacts['modifiedAt'] } })
+      // Made in the same minute it was last changed says nothing more than 修改时间 does.
+      if (typeof facet.created === 'string' && (modifiedAt === null || when(facet.created) !== when(modifiedAt))) out.push({ label: '创建时间', value: { text: when(facet.created), at: facet.created as FileFacts['modifiedAt'] } })
     } else if (name === 'macos') {
-      for (const url of strings(facet.where_from)) out.push({ label: '下载自', value: /^https?:\/\//.test(url) ? { text: url, href: url } : { text: url, mono: true } })
-      if (typeof facet.quarantine === 'string') out.push({ label: '带进来的程序', value: { text: facet.quarantine } })
+      for (const url of strings(facet.where_from)) out.push({ label: '下载来源', value: /^https?:\/\//.test(url) ? { text: url, href: url } : { text: url, mono: true } })
+      if (typeof facet.quarantine === 'string') out.push({ label: '下载应用', value: { text: facet.quarantine } })
       const tags = strings(facet.tags)
       if (tags.length > 0) out.push({ label: '标签', value: { text: tags.join('、'), icon: 'tag' } })
     } else if (name === 'placeholder') {
-      out.push({ label: '这台机器上', value: { text: elsewhereText(facet), icon: 'cloud-off', tag: { text: '只有占位', tone: 'warn' } } })
+      out.push({ label: '本机', value: { text: elsewhereText(facet), icon: 'cloud-off', tag: { text: '未下载', tone: 'warn' } } })
     } else {
       for (const [key, value] of Object.entries(facet)) out.push({ label: `${name}.${key}`, value: { text: plain(value), mono: true, muted: true } })
     }
@@ -120,7 +121,7 @@ export function facetFields(facets: Record<string, unknown> | undefined, modifie
 
 /** What sets a thing apart from the usual, in one line: that it is archived. What kind of thing it is, the panel's icon says. */
 function departure(facts: FileFacts): Block[] {
-  return facts.archived ? [{ kind: 'text', tone: 'neutral', text: '已归档：取回之后才能改动。' }] : []
+  return facts.archived ? [{ kind: 'text', tone: 'neutral', text: '已归档：取消归档后才能修改。' }] : []
 }
 
 /**
@@ -130,7 +131,7 @@ function departure(facts: FileFacts): Block[] {
  */
 async function levelSection(ctx: Context, dir: LibraryPath, params: Record<string, string>, rows: number, inThing: boolean): Promise<Block> {
   const level = await levelPage(ctx.library.root, dir, params, rows, 'item', new Set(), 'panel')
-  if (level === null) return section('里面', [{ kind: 'text', tone: 'warn', text: '读不了这个目录的这一层。' }])
+  if (level === null) return section('内容', [{ kind: 'text', tone: 'warn', text: '无法读取目录内容。' }])
   const tableRows: TableRow[] = level.listed.map((listed) => {
     const { entry, kind } = listed
     const name = nameOf(entry.place)
@@ -152,10 +153,10 @@ async function levelSection(ctx: Context, dir: LibraryPath, params: Record<strin
   const count = level.paging.atLeast ? null : level.paging.total
   return {
     kind: 'section',
-    title: '里面',
+    title: '内容',
     note: null,
     count,
-    blocks: [{ kind: 'table', columns: [{ key: 'path', label: '名字' }, { key: 'size', label: '大小' }], rows: tableRows, empty: '这个目录是空的。', page: level.paging }],
+    blocks: [{ kind: 'table', columns: [{ key: 'path', label: '名称' }, { key: 'size', label: '大小' }], rows: tableRows, empty: '目录为空', page: level.paging }],
     actions: [],
   }
 }
@@ -173,11 +174,11 @@ async function thingSections(ctx: Context, facts: FileFacts, bundle: LibraryPath
   const record: Block = {
     kind: 'fields',
     fields: [
-      ...(bundle !== null ? [{ label: '在', value: { text: bundle, mono: true, icon: 'package' as const, link: itemLink(bundle) } }] : []),
-      { label: '种类', value: { text: facts.kind === 'bundle' ? '一样东西（带标记的目录）' : '文件' } },
+      ...(bundle !== null ? [{ label: '位置', value: { text: bundle, mono: true, icon: 'package' as const, link: itemLink(bundle) } }] : []),
+      { label: '类型', value: { text: facts.kind === 'bundle' ? '条目（带标记的目录）' : '文件' } },
       ...(facts.size !== null ? [{ label: '大小', value: { text: sizeText(facts.size) } }] : []),
-      { label: '改于', value: modified(facts.modifiedAt) },
-      ...(facts.fingerprint !== null ? [{ label: '指纹', value: { text: facts.fingerprint.slice(0, 16), mono: true, muted: true } }] : []),
+      { label: '修改时间', value: modified(facts.modifiedAt) },
+      ...(facts.fingerprint !== null ? [{ label: '内容哈希', value: { text: facts.fingerprint.slice(0, 16), mono: true, muted: true } }] : []),
     ],
   }
   // Folded unless storage told something worth reading, such as where it was downloaded from.
@@ -197,21 +198,21 @@ async function placePanel(ctx: Context, path: LibraryPath, params: Record<string
   const title = `${posix.basename(path)}/`
   if (at.failed === 'noise') {
     const rule = await noiseRule(store, path)
-    const text = 'name' in rule ? `库的噪音：任何一层叫 ${rule.name} 的都不算库里的东西。` : `库的噪音：${rule.path} 和它里面的一切不算库里的东西。`
-    const remove = kernelAction('ignore remove', '不再当作噪音', 'name' in rule ? { fixed: { name: rule.name, path: false } } : { fixed: { path: rule.path, name: false } })
+    const text = 'name' in rule ? `已被忽略：任意层级中名为 ${rule.name} 的文件或目录不属于资料库。` : `已被忽略：${rule.path} 及其中的全部内容不属于资料库。`
+    const remove = kernelAction('ignore remove', '取消忽略', 'name' in rule ? { fixed: { name: rule.name, path: false } } : { fixed: { path: rule.path, name: false } })
     return { ...shown(title, path, [{ kind: 'text', tone: 'neutral', text }, { kind: 'actions', actions: [remove] }]), icon: 'folder' }
   }
   if (at.kind !== 'folder') return null
   const recorded = keepsRecords(ctx.library)
   if (!recorded || (await openDirectories(ctx)).includes(path)) {
-    const open: Block = { kind: 'list', items: [{ cell: { text: '在文件页打开', icon: 'folder', link: folderLink(path) }, note: null, actions: [] }] }
-    const text = recorded ? '文件夹，里面有登记过的东西。' : '文件夹。'
+    const open: Block = { kind: 'list', items: [{ cell: { text: '在文件页中打开', icon: 'folder', link: folderLink(path) }, note: null, actions: [] }] }
+    const text = recorded ? '文件夹，包含已登记的条目。' : '文件夹。'
     return { ...shown(title, path, [{ kind: 'text', tone: 'neutral', text }, open, await levelSection(ctx, path, params, rows, false), ...known.blocks], known.problems), icon: 'folder' }
   }
   const probe = await store.probe(path)
-  const found = isFailure(probe) ? '读不了这个目录。' : `${probeWords(probe)}。`
+  const found = isFailure(probe) ? '无法读取目录。' : `${probeWords(probe)}。`
   const answers = (await closedAnswers(ctx, [path])).get(path) ?? []
-  const blocks: Block[] = [{ kind: 'text', tone: 'warn', text: `没登记。${found}` }, { kind: 'actions', actions: answers }, await levelSection(ctx, path, params, rows, false), ...known.blocks]
+  const blocks: Block[] = [{ kind: 'text', tone: 'warn', text: `未登记。${found}` }, { kind: 'actions', actions: answers }, await levelSection(ctx, path, params, rows, false), ...known.blocks]
   return { ...shown(title, path, blocks, known.problems), icon: 'folder-dot' }
 }
 
@@ -232,8 +233,8 @@ export async function itemPage(params: Record<string, string>, { ctx }: ViewerCa
   if (!facts) {
     const place = path === null || regionOf(path) !== 'content' ? null : await placePanel(ctx, path, params, rows, known)
     if (place !== null) return place
-    const missing: Block = { kind: 'text', tone: 'warn', text: `${target || '这个路径'} 上没有文件：不在，或已经除掉了。` }
-    return shown(posix.basename(target) || '一样东西', target || null, [...head([]), missing, ...known.blocks], known.problems)
+    const missing: Block = { kind: 'text', tone: 'warn', text: `${target || '该路径'} 上没有文件：不存在或已删除。` }
+    return shown(posix.basename(target) || '条目', target || null, [...head([]), missing, ...known.blocks], known.problems)
   }
   const original = facts.archived ? (originalPath(facts.path) ?? facts.path) : facts.path
   const bundle = facts.kind === 'file' ? await enclosingBundle(storageOf(root), facts.path) : null

@@ -48,9 +48,9 @@ export function looksLikeAgentSession(env: Env, viaGrant: boolean): boolean {
 
 /** What shows the call comes from an agent session, in words for the refusal; null when nothing does. */
 export function agentSessionSign(env: Env, viaGrant: boolean): string | null {
-  if (viaGrant) return '调用带着授权'
+  if (viaGrant) return '调用带有授权'
   const name = [...SESSION_VARIABLES, ...RECOGNISED.flatMap((p) => p.markers)].find((n) => Boolean(env[n]))
-  return name === undefined ? null : `环境里有 ${name}`
+  return name === undefined ? null : `环境中有 ${name}`
 }
 
 /**
@@ -58,18 +58,16 @@ export function agentSessionSign(env: Env, viaGrant: boolean): string | null {
  * defence, K7), or an actor named an agent with `--as`. Null when nothing does.
  */
 export function agentSign(env: Env, viaGrant: boolean, actor: Actor): string | null {
-  return agentSessionSign(env, viaGrant) ?? (actor.kind === 'agent' ? `调用者是 agent ${actor.name}` : null)
+  return agentSessionSign(env, viaGrant) ?? (actor.kind === 'agent' ? `调用者为 Agent ${actor.name}` : null)
 }
-
-/** Why an owner-only command, or a page of management, is not an agent's to use. */
-export const OWNER_DECIDES = '是替主人做的决定'
 
 /**
  * The refusal, in an agent's session, of what only the owner does: an owner command, or a page of
- * management, in the same words. `ask`: the line that asks the owner for it, when it may be asked for.
+ * management, in the same words. `why`: what makes it the owner's beyond being the owner's to decide,
+ * such as losing data; `ask`: the line that asks the owner for it, when it may be asked for.
  */
-export function ownerOnlyRefusal(name: string, why: string, sign: string, ask: string | null = null): string {
-  const head = `「${name}」${why}，只有主人能做，不能在 agent 的会话里做（${sign}）。`
-  if (ask !== null) return `${head}要主人来做，写明为什么，请主人批准：\n${ask}`
-  return `${head}需要的话告诉主人；主人在自己的终端里做，或在自己的终端里运行 pneuma-base view 用界面做。`
+export function ownerOnlyRefusal(name: string, why: string | null, sign: string, ask: string | null = null): string {
+  const head = `「${name}」${why === null ? '' : `${why}，`}仅所有者可执行，不能在 Agent 会话中执行（${sign}）。`
+  if (ask !== null) return `${head}可提交请求，写明原因，由所有者批准：\n${ask}`
+  return `${head}请所有者在自己的终端中执行，或运行 pneuma-base view 在管理界面中操作。`
 }

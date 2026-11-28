@@ -11,7 +11,7 @@ import { rankHits, searchTerms, SENTENCE_HITS } from './terms.js'
 import { enclosingBundle, markBundle, THING_FILES, THING_RULE, whatIs } from './things.js'
 
 /** Hears storage's progress on one read or write of the place, for the operation's named whole pass. */
-export type StorageHeard = (place: Place, verb: '读' | '写', progress: StorageProgress) => void
+export type StorageHeard = (place: Place, verb: '读取' | '写入', progress: StorageProgress) => void
 
 /**
  * The channel of a named whole pass as a plugin gets it: its own reports go through as they are, and
@@ -42,16 +42,16 @@ const DEEP = { rule: THING_RULE, limit: THING_FILES }
 /** One area as a plugin sees it: a directory's content always counted by the rule things follow. */
 function placeStore(area: Area, own: PluginName, heard?: StorageHeard): PlaceStore {
   const source = (from: WriteSource): Source => ('place' in from ? { place: from.place, ...(from.own ? { records: own } : {}) } : from)
-  const progress = (place: Place, verb: '读' | '写') => (heard === undefined ? {} : { progress: (p: StorageProgress) => heard(place, verb, p) })
+  const progress = (place: Place, verb: '读取' | '写入') => (heard === undefined ? {} : { progress: (p: StorageProgress) => heard(place, verb, p) })
   return {
     glance: (places) => area.glance(places),
     overview: (place, opts) => area.overview(place, opts),
     look: (places, opts = {}) => area.look(places, opts.deep ? { deep: DEEP } : {}),
     lookRows: (table, field, { deep, ...opts } = {}) => area.lookRows({ place: own, table, field }, { ...opts, ...(deep ? { deep: DEEP } : {}) }),
-    content: (place, opts = {}) => area.content(place, { rule: THING_RULE, limit: opts.limit ?? THING_FILES, ...(opts.manifest === undefined ? {} : { manifest: opts.manifest }), ...progress(place, '读') }),
+    content: (place, opts = {}) => area.content(place, { rule: THING_RULE, limit: opts.limit ?? THING_FILES, ...(opts.manifest === undefined ? {} : { manifest: opts.manifest }), ...progress(place, '读取') }),
     read: (place, opts) => area.read(place, opts),
     write: (place, from, expect, opts = {}) =>
-      area.write(place, source(from), expect, { rule: THING_RULE, limit: opts.limit ?? THING_FILES, ...(opts.hold === undefined ? {} : { hold: opts.hold }), ...progress(place, '写') }),
+      area.write(place, source(from), expect, { rule: THING_RULE, limit: opts.limit ?? THING_FILES, ...(opts.hold === undefined ? {} : { hold: opts.hold }), ...progress(place, '写入') }),
     move: (from, to, expect, opts) => area.move(from, to, expect, opts),
     remove: (place, expect, opts) => area.remove(place, expect, opts),
   }

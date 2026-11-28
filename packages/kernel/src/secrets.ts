@@ -12,8 +12,8 @@ export const SECRET_LIMIT = 64 * 1024
 export const secretsDir = (home: string, plugin: string) => join(home, 'secrets', plugin)
 
 function fileOf(home: string, plugin: string, name: string): string {
-  if (!PLUGIN_NAME.test(plugin)) throw new Error(`不是插件名：${plugin}`)
-  if (!SECRET_NAME.test(name)) throw new Error(`不是密钥名（小写字母、数字和连字符，字母开头）：${name}`)
+  if (!PLUGIN_NAME.test(plugin)) throw new Error(`不是有效的插件名称：${plugin}`)
+  if (!SECRET_NAME.test(name)) throw new Error(`不是有效的密钥名称（须以字母开头，仅含小写字母、数字和连字符）：${name}`)
   return join(secretsDir(home, plugin), name)
 }
 

@@ -71,7 +71,7 @@ function refusalOf(failure: StorageFailure, subject: string): Refused {
   if (failure.reason === 'too_many') return refuse('too-many', `${subject}（至少 ${failure.at_least ?? THING_FILES} 个文件）`)
   if (failure.reason === 'no_such_place' || failure.reason === 'not_a_file' || failure.reason === 'not_a_dir') return refuse('no-such-file', subject)
   if (failure.reason === 'outside') return refuse('outside-library', subject)
-  throw new Error(`存储没能做这次放入（${failure.reason}${failure.detail ? `：${failure.detail}` : ''}）：${subject}`)
+  throw new Error(`存储未能完成添加（${failure.reason}${failure.detail ? `：${failure.detail}` : ''}）：${subject}`)
 }
 
 /**
@@ -181,7 +181,7 @@ async function registerFiles(req: Extract<PutRequest, { kind: 'register' }>, sto
     after = page.more.after
   }
   const [first, ...more] = puts
-  if (first === undefined) return refuse('no-such-file', `${req.path}（这一层没有文件）`)
+  if (first === undefined) return refuse('no-such-file', `${req.path}（此层级没有文件）`)
   return { put: first, more, copied: false, notes: [], problems: [] }
 }
 

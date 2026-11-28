@@ -34,15 +34,15 @@ export type Manifest = { name: string; version: string; contract: number; addres
 export function parseManifest(raw: unknown): Manifest | string {
   const m = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>
   if (m.format !== 1) return 'format 不是 1'
-  if (typeof m.name !== 'string' || !PROVIDER_NAME.test(m.name)) return 'name 不是一个提供者的名字（小写字母开头，只用小写字母、数字和连字符）'
-  if (typeof m.version !== 'string' || !/^[A-Za-z0-9._+-]+$/.test(m.version) || m.version === 'provider.json') return 'version 不是一个发布的标签'
-  if (typeof m.contract !== 'number') return 'contract 不是一个数'
-  if (!Array.isArray(m.addresses) || m.addresses.length === 0 || !m.addresses.every((a) => typeof a === 'string' && ADDRESS_FORM.test(a))) return 'addresses 不是地址写法的列表'
-  if (typeof m.executables !== 'object' || m.executables === null) return 'executables 不是一个对象'
+  if (typeof m.name !== 'string' || !PROVIDER_NAME.test(m.name)) return 'name 不是有效的提供者名称（须以小写字母开头，仅含小写字母、数字和连字符）'
+  if (typeof m.version !== 'string' || !/^[A-Za-z0-9._+-]+$/.test(m.version) || m.version === 'provider.json') return 'version 不是有效的发布标签'
+  if (typeof m.contract !== 'number') return 'contract 不是数字'
+  if (!Array.isArray(m.addresses) || m.addresses.length === 0 || !m.addresses.every((a) => typeof a === 'string' && ADDRESS_FORM.test(a))) return 'addresses 不是地址类型的列表'
+  if (typeof m.executables !== 'object' || m.executables === null) return 'executables 不是对象'
   const executables: Manifest['executables'] = {}
   for (const [platform, e] of Object.entries(m.executables as Record<string, unknown>)) {
     const x = (typeof e === 'object' && e !== null ? e : {}) as Record<string, unknown>
-    if (typeof x.asset !== 'string' || !ASSET.test(x.asset) || typeof x.sha256 !== 'string' || !SHA256.test(x.sha256)) return `executables.${platform} 要有 asset（发布里的文件名）和 sha256（64 位小写十六进制）`
+    if (typeof x.asset !== 'string' || !ASSET.test(x.asset) || typeof x.sha256 !== 'string' || !SHA256.test(x.sha256)) return `executables.${platform} 须有 asset（发布中的文件名）和 sha256（64 位小写十六进制）`
     executables[platform] = { asset: x.asset, sha256: x.sha256 }
   }
   return { name: m.name, version: m.version, contract: m.contract, addresses: m.addresses as string[], summary: typeof m.summary === 'string' ? m.summary : null, executables }
@@ -70,11 +70,11 @@ export async function fetchManifest(env: NodeJS.ProcessEnv, release: Release): P
   try {
     response = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(WAIT_MS) })
   } catch (error) {
-    return { reason: 'unreachable', text: `取 ${url} 时连不上：${why(error)}` }
+    return { reason: 'unreachable', text: `无法连接 ${url}：${why(error)}` }
   }
-  const which = release.tag === null ? '最新的发布' : `发布 ${release.tag}`
-  if (response.status === 404) return { reason: 'no-release', text: `${release.repository} 没有${which}，或${which}里没有 ${MANIFEST}（${url} 答 404）` }
-  if (!response.ok) return { reason: 'unreachable', text: `取 ${url} 时答 ${response.status}` }
+  const which = release.tag === null ? '最新发布版本' : `发布版本 ${release.tag}`
+  if (response.status === 404) return { reason: 'no-release', text: `${release.repository} 没有${which}，或${which}中没有 ${MANIFEST}（${url} 返回 404）` }
+  if (!response.ok) return { reason: 'unreachable', text: `请求 ${url} 返回 ${response.status}` }
   let raw: unknown
   try {
     raw = await response.json()
@@ -82,8 +82,8 @@ export async function fetchManifest(env: NodeJS.ProcessEnv, release: Release): P
     return { reason: 'bad-manifest', text: `${url} 不是 JSON：${why(error)}` }
   }
   const manifest = parseManifest(raw)
-  if (typeof manifest === 'string') return { reason: 'bad-manifest', text: `${release.repository} 的 ${MANIFEST} 不对：${manifest}` }
-  if (release.tag !== null && manifest.version !== release.tag) return { reason: 'bad-manifest', text: `${release.repository} 的发布 ${release.tag} 里的 ${MANIFEST} 写的版本是 ${manifest.version}` }
+  if (typeof manifest === 'string') return { reason: 'bad-manifest', text: `${release.repository} 的 ${MANIFEST} 格式错误：${manifest}` }
+  if (release.tag !== null && manifest.version !== release.tag) return { reason: 'bad-manifest', text: `${release.repository} 的发布版本 ${release.tag} 中的 ${MANIFEST} 声明的版本为 ${manifest.version}` }
   return manifest
 }
 
@@ -91,14 +91,14 @@ export async function fetchManifest(env: NodeJS.ProcessEnv, release: Release): P
 async function download(url: string, file: string): Promise<string | Refusal> {
   try {
     const response = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(10 * WAIT_MS) })
-    if (!response.ok || response.body === null) return { reason: response.status === 404 ? 'no-release' : 'unreachable', text: `取 ${url} 时答 ${response.status}` }
+    if (!response.ok || response.body === null) return { reason: response.status === 404 ? 'no-release' : 'unreachable', text: `请求 ${url} 返回 ${response.status}` }
     const hash = createHash('sha256')
     const body = Readable.fromWeb(response.body as import('node:stream/web').ReadableStream<Uint8Array>)
     body.on('data', (chunk: Buffer) => hash.update(chunk))
     await pipeline(body, createWriteStream(file, { mode: 0o700 }))
     return hash.digest('hex')
   } catch (error) {
-    return { reason: 'unreachable', text: `取 ${url} 时断了：${why(error)}` }
+    return { reason: 'unreachable', text: `下载 ${url} 时连接中断：${why(error)}` }
   }
 }
 
@@ -111,12 +111,12 @@ export function candidateOf(repository: string, manifest: Manifest, official: bo
   const executable = manifest.executables[platformKey()]
   if (executable === undefined) {
     const has = Object.keys(manifest.executables).join('、') || '无'
-    return { reason: 'no-executable', text: `${repository} 的 ${manifest.version} 没有给这台机器（${platformKey()}）的程序；它有：${has}` }
+    return { reason: 'no-executable', text: `${repository} 的 ${manifest.version} 没有适用于本机（${platformKey()}）的程序；已提供：${has}` }
   }
   return { repository, manifest, executable, official }
 }
 
-const contractRefusal = (name: string, contract: unknown): Refusal => ({ reason: 'contract-version', text: `${name} 讲的是存储契约第 ${String(contract)} 版，这个 pneuma-base 讲第 ${STORAGE_CONTRACT} 版。` })
+const contractRefusal = (name: string, contract: unknown): Refusal => ({ reason: 'contract-version', text: `${name} 实现存储契约第 ${String(contract)} 版，此 pneuma-base 使用第 ${STORAGE_CONTRACT} 版。` })
 
 /** What the contract suite said of a program: how many checks it met and could not exercise. */
 export type Vetted = { met: number; notExercised: number }
@@ -128,7 +128,7 @@ async function suite(program: string, filter: string | null): Promise<SuiteRun> 
   const r = await runProgram(contractPath(), ['--provider', program, ...(filter === null ? [] : ['--filter', filter])], 30 * WAIT_MS)
   const lines = r.stdout.split('\n')
   const summary = /checks: (\d+) met, (\d+) unmet, (\d+) not exercised/.exec(lines.find((l) => l.startsWith('checks:')) ?? '')
-  if (summary === null || (r.code !== 0 && r.code !== 1)) return { failed: `契约测试没能跑完（退出码 ${r.code ?? '无'}）：${(r.stderr || r.stdout).trim().slice(-400)}` }
+  if (summary === null || (r.code !== 0 && r.code !== 1)) return { failed: `契约测试未能完成（退出码 ${r.code ?? '无'}）：${(r.stderr || r.stdout).trim().slice(-400)}` }
   const unmet = lines.filter((l) => l.startsWith('UNMET')).map((l) => {
     const line = l.replace(/^UNMET\s+/, '').replace(/\s+/g, ' ').slice(0, 300)
     return { name: line.split(' ')[0] as string, line }
@@ -152,7 +152,7 @@ async function vet(program: string): Promise<Vetted | Refusal> {
   }
   if (still.length === 0) return { met: first.met + first.unmet.length, notExercised: first.notExercised }
   const shown = still.slice(0, 5).map((l) => `  ${l}`)
-  return { reason: 'contract-unmet', text: [`契约测试有 ${still.length} 项没过：`, ...shown, ...(still.length > 5 ? [`  还有 ${still.length - 5} 项`] : [])].join('\n') }
+  return { reason: 'contract-unmet', text: [`契约测试有 ${still.length} 项未通过：`, ...shown, ...(still.length > 5 ? [`  另有 ${still.length - 5} 项`] : [])].join('\n') }
 }
 
 /** A scratch directory left by an install that was stopped is this old at least before the next install clears it. */
@@ -182,14 +182,14 @@ export async function installCandidate(home: string, env: NodeJS.ProcessEnv, c: 
     const file = join(scratch, executable.asset)
     const got = await download(assetUrl(env, c.repository, manifest.version, executable.asset), file)
     if (typeof got !== 'string') return got
-    if (got !== executable.sha256) return { reason: 'checksum', text: `取到的程序的校验和是 sha256:${got}，${c.official ? '官方名单' : '清单'}写的是 sha256:${executable.sha256}` }
+    if (got !== executable.sha256) return { reason: 'checksum', text: `下载的程序校验和为 sha256:${got}，${c.official ? '官方名单' : '清单'}中为 sha256:${executable.sha256}` }
     await chmod(file, 0o755)
     const described = await describeProgram(file)
-    if (typeof described === 'string') return { reason: 'describe', text: `程序没有答 describe：${described}` }
+    if (typeof described === 'string') return { reason: 'describe', text: `程序未响应 describe：${described}` }
     if (described.contract !== STORAGE_CONTRACT) return contractRefusal(manifest.name, described.contract)
     const addresses = Array.isArray(described.addresses) ? described.addresses.map(String) : []
     if (described.name !== manifest.name || [...addresses].sort().join(',') !== [...manifest.addresses].sort().join(',')) {
-      return { reason: 'describe', text: `程序的 describe 说它是 ${String(described.name)}，答 ${addresses.join('、') || '无'}；清单写的是 ${manifest.name}，答 ${manifest.addresses.join('、')}` }
+      return { reason: 'describe', text: `程序的 describe 返回名称 ${String(described.name)}，支持 ${addresses.join('、') || '无'}；清单中为 ${manifest.name}，支持 ${manifest.addresses.join('、')}` }
     }
     const vetted = await vet(file)
     if ('reason' in vetted) return vetted

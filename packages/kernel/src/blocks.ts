@@ -5,6 +5,7 @@
 // not know are left as they are.
 import { isAbsolute } from 'node:path'
 import { parseCall } from './call.js'
+import { pluginTitle } from './claims.js'
 import { ownerFace } from './owner.js'
 import { checkArgs } from './params.js'
 import { CHART_SERIES_MAX, FEED_ACTS, type Action, type Block, type Library, type Link, type OwnerParams, type Plugin, type PluginProblem, type ViewAnswer, type ViewDecl } from '@pneuma-base/sdk'
@@ -15,14 +16,14 @@ type Check = (value: unknown, at: string) => string | null
 type Raw = Record<string, unknown>
 const isObject = (v: unknown): v is Raw => typeof v === 'object' && v !== null && !Array.isArray(v)
 
-const string: Check = (v, at) => (typeof v === 'string' ? null : `${at} 应是文字`)
-const number: Check = (v, at) => (typeof v === 'number' && Number.isFinite(v) ? null : `${at} 应是数字`)
-const boolean: Check = (v, at) => (typeof v === 'boolean' ? null : `${at} 应是 true 或 false`)
+const string: Check = (v, at) => (typeof v === 'string' ? null : `${at} 应为字符串`)
+const number: Check = (v, at) => (typeof v === 'number' && Number.isFinite(v) ? null : `${at} 应为数字`)
+const boolean: Check = (v, at) => (typeof v === 'boolean' ? null : `${at} 应为 true 或 false`)
 const anything: Check = () => null
 const oneOf =
   (...values: string[]): Check =>
   (v, at) =>
-    values.includes(v as string) ? null : `${at} 应是 ${values.join('、')} 之一`
+    values.includes(v as string) ? null : `${at} 应为 ${values.join('、')} 之一`
 const nullable =
   (check: Check): Check =>
   (v, at) =>
@@ -30,7 +31,7 @@ const nullable =
 const listOf =
   (check: Check): Check =>
   (v, at) => {
-    if (!Array.isArray(v)) return `${at} 应是列表`
+    if (!Array.isArray(v)) return `${at} 应为列表`
     for (const [i, item] of v.entries()) {
       const wrong = check(item, `${at}[${i}]`)
       if (wrong) return wrong
@@ -40,7 +41,7 @@ const listOf =
 const recordOf =
   (check: Check): Check =>
   (v, at) => {
-    if (!isObject(v)) return `${at} 应是对象`
+    if (!isObject(v)) return `${at} 应为对象`
     for (const [key, item] of Object.entries(v)) {
       const wrong = check(item, `${at}.${key}`)
       if (wrong) return wrong
@@ -51,7 +52,7 @@ const recordOf =
 /** An object with these fields; a key ending in `?` is optional and checked only when given. */
 function shape(fields: Record<string, Check>): Check {
   return (v, at) => {
-    if (!isObject(v)) return `${at} 应是对象`
+    if (!isObject(v)) return `${at} 应为对象`
     for (const [spec, check] of Object.entries(fields)) {
       const optional = spec.endsWith('?')
       const key = optional ? spec.slice(0, -1) : spec
@@ -68,14 +69,14 @@ function shape(fields: Record<string, Check>): Check {
 }
 
 const httpUrl: Check = (v, at) => {
-  if (typeof v !== 'string') return `${at} 应是文字`
+  if (typeof v !== 'string') return `${at} 应为字符串`
   const protocol = URL.canParse(v) ? new URL(v).protocol : null
-  return protocol === 'http:' || protocol === 'https:' ? null : `${at} 不是 http 或 https 的地址`
+  return protocol === 'http:' || protocol === 'https:' ? null : `${at} 不是 http 或 https URL`
 }
 
 /** A pattern as the page applies it: the whole value, with the `u` flag. */
 const pattern: Check = (v, at) => {
-  if (typeof v !== 'string') return `${at} 应是文字`
+  if (typeof v !== 'string') return `${at} 应为字符串`
   try {
     new RegExp(`^(?:${v})$`, 'u')
     return null
@@ -86,9 +87,9 @@ const pattern: Check = (v, at) => {
 
 /** A path inside the plugin's `ui` directory: relative, without `..`. */
 const entry: Check = (v, at) => {
-  if (typeof v !== 'string') return `${at} 应是文字`
+  if (typeof v !== 'string') return `${at} 应为字符串`
   const parts = v.split(/[\\/]/)
-  return v !== '' && !isAbsolute(v) && !parts.includes('..') && !v.includes('\0') ? null : `${at} 应是 ui 目录里的相对路径`
+  return v !== '' && !isAbsolute(v) && !parts.includes('..') && !v.includes('\0') ? null : `${at} 应为 ui 目录中的相对路径`
 }
 
 const tone = oneOf('neutral', 'good', 'warn', 'bad', 'info')
@@ -97,14 +98,14 @@ const link = shape({ view: string, params: recordOf(string), target: oneOf('main
 const actorMark = shape({ kind: oneOf('agent', 'owner'), name: string, 'grant?': string })
 /** Who, as a block says it: a name, or an actor whose mark the page draws. */
 const who: Check = (v, at) => (typeof v === 'string' ? null : actorMark(v, at))
-const truth: Check = (v, at) => (v === true ? null : `${at} 只能是 true`)
+const truth: Check = (v, at) => (v === true ? null : `${at} 只能为 true`)
 const reopen = shape({ url: nullable(string), run: nullable(shape({ command: string, cwd: string })), reveal: string })
 const cell = shape({ text: string, 'mono?': boolean, 'muted?': boolean, 'tag?': tag, 'link?': link, 'at?': string, 'icon?': string, 'href?': string, 'copy?': boolean, 'actor?': actorMark, 'normal?': truth, 'reopen?': reopen, 'local?': truth })
 const paging = shape({ first: number, shown: number, total: number, 'atLeast?': boolean, prev: nullable(link), next: nullable(link) })
 
 const call: Check = (v, at) => {
   const parsed = parseCall(v)
-  return typeof parsed === 'string' ? `${at} 不是一个动词或一条主人命令的调用：${parsed}` : null
+  return typeof parsed === 'string' ? `${at} 不是基本命令或所有者命令的调用：${parsed}` : null
 }
 const input = shape({
   name: string,
@@ -137,7 +138,7 @@ const ask = both(
   shape({ key: string, by: who, text: string, 'command?': string, about: nullable(string), actions, 'suggested?': number }),
   (v, at) => {
     const { suggested, actions: list } = v as { suggested?: number; actions: unknown[] }
-    return suggested === undefined || (Number.isInteger(suggested) && suggested >= 0 && suggested < list.length) ? null : `${at}.suggested 应是 actions 里的一个位置`
+    return suggested === undefined || (Number.isInteger(suggested) && suggested >= 0 && suggested < list.length) ? null : `${at}.suggested 应为 actions 中的索引`
   },
 )
 
@@ -148,9 +149,9 @@ const chart = both(
     const { form, x, series } = v as { form: string; x: string[]; series: { values: number[] }[] }
     if (series.length === 0 || series.length > CHART_SERIES_MAX) return `${at}.series 应有 1 到 ${CHART_SERIES_MAX} 个`
     const uneven = series.findIndex((s) => s.values.length !== x.length)
-    if (uneven >= 0) return `${at}.series[${uneven}].values 应和 x 一样多，${x.length} 个`
+    if (uneven >= 0) return `${at}.series[${uneven}].values 的数量应与 x 相同（${x.length} 个）`
     const negative = form === 'stacked' ? series.findIndex((s) => s.values.some((n) => n < 0)) : -1
-    return negative >= 0 ? `${at}.series[${negative}].values 叠起来的柱不能是负数` : null
+    return negative >= 0 ? `${at}.series[${negative}].values 在堆叠柱状图中不能为负数` : null
   },
 )
 
@@ -214,16 +215,16 @@ export function actionFault(action: Action, callable: Callable, gives: readonly 
   const unasked = strings(action.call)
     .flatMap((s) => [...s.matchAll(PLACEHOLDER)].map((m) => m[1] as string))
     .find((name) => !asked.has(name))
-  if (unasked !== undefined) return `动作「${action.label}」写了 {${unasked}}，却没有叫这个名字的输入`
+  if (unasked !== undefined) return `操作「${action.label}」引用了 {${unasked}}，但没有同名输入`
   const call = parseCall(action.call)
-  if (typeof call === 'string') return `动作「${action.label}」不是一个动词或一条主人命令的调用：${call}`
+  if (typeof call === 'string') return `操作「${action.label}」不是基本命令或所有者命令的调用：${call}`
   if (call.face === 'owner') {
     const params = callable.commands.get(call.command)
-    if (params === undefined) return `动作「${action.label}」调的主人命令「${call.command}」这个库里没有`
+    if (params === undefined) return `操作「${action.label}」调用的所有者命令「${call.command}」在此资料库中不存在`
     const checked = checkArgs(call.command, params, call.args, open)
-    return 'usage' in checked ? `动作「${action.label}」的参数不合「${call.command}」的参数表：${checked.usage.split('\n')[0]}` : null
+    return 'usage' in checked ? `操作「${action.label}」的参数不符合「${call.command}」的参数表：${checked.usage.split('\n')[0]}` : null
   }
-  if (call.verb === 'say' && !open(call.request.kind) && !callable.heard.has(call.request.kind)) return `动作「${action.label}」说的「${call.request.kind}」这个库里没有插件听`
+  if (call.verb === 'say' && !open(call.request.kind) && !callable.heard.has(call.request.kind)) return `操作「${action.label}」记录的「${call.request.kind}」在此资料库中没有插件接收`
   return null
 }
 
@@ -254,12 +255,12 @@ const known = (kind: unknown): kind is Block['kind'] => typeof kind === 'string'
 
 /** What is wrong with one block of `plugin`'s, its own blocks aside; null when nothing is. */
 function wrongWith(value: unknown, where: string, plugin: Plugin, callable: Callable): string | null {
-  if (!isObject(value)) return `${where} 应是对象`
+  if (!isObject(value)) return `${where} 应为对象`
   const { kind } = value
-  if (!known(kind)) return `${where} 是不认识的块：${String(kind)}`
+  if (!known(kind)) return `${where} 是未知的区块类型：${String(kind)}`
   const wrong = KINDS[kind](value, where)
   if (wrong !== null) return wrong
-  if (kind === 'custom' && typeof plugin.ui !== 'string') return `${where} 是 custom 块，插件却没有声明 ui 目录`
+  if (kind === 'custom' && typeof plugin.ui !== 'string') return `${where} 是 custom 区块，但插件未声明 ui 目录`
   for (const action of ownActions(value as Block)) {
     const fault = actionFault(action, callable)
     if (fault !== null) return `${where} 的${fault}`
@@ -281,8 +282,8 @@ export function checkBlocks(blocks: unknown[], plugin: Plugin, callable: Callabl
     const where = `${at}[${i}]`
     const wrong = wrongWith(value, where, plugin, callable)
     if (wrong !== null) {
-      problems.push({ plugin: plugin.name, message: `一块没法显示：${wrong}` })
-      return { kind: 'text', tone: 'bad', text: `插件 ${plugin.name} 的一块没法显示：${wrong}` }
+      problems.push({ plugin: plugin.name, message: `一个区块无法显示：${wrong}` })
+      return { kind: 'text', tone: 'bad', text: `插件 ${pluginTitle(plugin)} 的一个区块无法显示：${wrong}` }
     }
     const block = value as Block
     if (block.kind === 'custom') return { ...block, plugin: plugin.name }
@@ -307,11 +308,11 @@ const answeredFilter = shape({ name: string, options: listOf(shape({ value: stri
 /** A view's `filters`: the options of filters it declares; one that names no declared filter, or is of the wrong shape, is dropped as a problem. */
 export function checkFilters(filters: unknown, decl: ViewDecl, plugin: Plugin): { filters?: NonNullable<ViewAnswer['filters']>; problems: PluginProblem[] } {
   if (filters === undefined) return { problems: [] }
-  if (!Array.isArray(filters)) return { problems: [{ plugin: plugin.name, message: 'filters 应是列表' }] }
+  if (!Array.isArray(filters)) return { problems: [{ plugin: plugin.name, message: 'filters 应为列表' }] }
   const kept: NonNullable<ViewAnswer['filters']> = []
   const problems: PluginProblem[] = []
   for (const [i, f] of filters.entries()) {
-    const wrong = answeredFilter(f, `filters[${i}]`) ?? (decl.filters.some((d) => d.name === (f as { name: string }).name) ? null : `filters[${i}] 说的筛选 ${(f as { name: string }).name} 视图 ${decl.id} 没有声明`)
+    const wrong = answeredFilter(f, `filters[${i}]`) ?? (decl.filters.some((d) => d.name === (f as { name: string }).name) ? null : `filters[${i}] 中的筛选 ${(f as { name: string }).name} 未在视图 ${decl.id} 中声明`)
     if (wrong === null) kept.push(f as NonNullable<ViewAnswer['filters']>[number])
     else problems.push({ plugin: plugin.name, message: wrong })
   }
@@ -333,13 +334,13 @@ const MIN_REFRESH = 5
 /** A view's `open`: a link to a panel, or left out as the plugin's problem. */
 export function checkOpen(open: unknown, plugin: Plugin): { open?: Link; problems: PluginProblem[] } {
   if (open === undefined) return { problems: [] }
-  const wrong = link(open, 'open') ?? ((open as Link).target === 'panel' ? null : 'open 应是开在详情里的链接（target: panel）')
+  const wrong = link(open, 'open') ?? ((open as Link).target === 'panel' ? null : 'open 应为在详情面板中打开的链接（target: panel）')
   return wrong === null ? { open: open as Link, problems: [] } : { problems: [{ plugin: plugin.name, message: wrong }] }
 }
 
 /** A view's `refresh`: at least five seconds; one that is not a number is dropped as a problem. */
 export function checkRefresh(refresh: unknown, plugin: Plugin): { refresh?: number; problems: PluginProblem[] } {
   if (refresh === undefined) return { problems: [] }
-  if (number(refresh, 'refresh') !== null) return { problems: [{ plugin: plugin.name, message: `refresh 应是秒数，不是 ${JSON.stringify(refresh)}` }] }
+  if (number(refresh, 'refresh') !== null) return { problems: [{ plugin: plugin.name, message: `refresh 应为秒数，而非 ${JSON.stringify(refresh)}` }] }
   return { refresh: Math.max(MIN_REFRESH, refresh as number), problems: [] }
 }
