@@ -92,7 +92,7 @@ function Frame({ block, plugin, src }: { block: Custom; plugin: string; src: str
         case 'run': {
           const action = Object.hasOwn(block.actions, message.name) ? block.actions[message.name] : undefined
           if (action) void env.onAction(action, declared(action, message.values))
-          else console.warn(`插件 ${plugin} 的页要做一件这一块没有声明的事：${message.name}`)
+          else console.warn(`插件 ${plugin} 的页面请求了未声明的操作：${message.name}`)
         }
       }
     }
@@ -118,9 +118,9 @@ function Frame({ block, plugin, src }: { block: Custom; plugin: string; src: str
         <span className="empty-icon">
           <PanelTop strokeWidth={1.75} aria-hidden />
         </span>
-        <p className="empty-title">插件 {plugin} 的页没能打开</p>
+        <p className="empty-title">插件 {plugin} 的页面无法打开</p>
         <p className="empty-hint">
-          <span className="font-mono text-[12px]">{block.entry}</span> 没有加载，或者 {READY_MS / 1000} 秒内没有说它准备好了。页面的其余部分不受影响。
+          <span className="font-mono text-[12px]">{block.entry}</span> 未加载，或未在 {READY_MS / 1000} 秒内报告就绪。页面其余部分不受影响。
         </p>
         <p className="empty-hint whitespace-pre-line text-ink-2">{block.text}</p>
       </div>
@@ -131,7 +131,7 @@ function Frame({ block, plugin, src }: { block: Custom; plugin: string; src: str
       <iframe
         ref={frame}
         src={src}
-        title={`插件 ${plugin} 的页`}
+        title={`插件 ${plugin} 的页面`}
         aria-label={block.text}
         sandbox="allow-scripts"
         referrerPolicy="no-referrer"

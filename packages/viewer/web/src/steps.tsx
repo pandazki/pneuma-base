@@ -22,7 +22,7 @@ function Mark({ state }: { state: State }) {
 function StepRow({ step, n, state }: { step: Step; n: number; state: State }) {
   const [open, setOpen] = useState(false)
   const shown = state === 'current' || open
-  const label = `第 ${n} 步，${step.title}，${state === 'done' ? '做完了' : state === 'current' ? '在做' : '还没做'}`
+  const label = `第 ${n} 步，${step.title}，${state === 'done' ? '已完成' : state === 'current' ? '进行中' : '未完成'}`
   return (
     <li className="step" data-state={state} aria-label={label}>
       {state !== 'current' ? (
@@ -72,11 +72,11 @@ export function DropView({ block }: { block: Extract<Block, { kind: 'drop' }> })
   if (!IN_SHELL) {
     return (
       <div className="drop" data-browser>
-        <p className="drop-title">在终端里运行这一行，把文件或文件夹放进 {block.to}/</p>
+        <p className="drop-title">在终端中运行以下命令，将文件或文件夹添加到 {block.to}/</p>
         <div className="drop-command">
           <CellView cell={{ text: block.command, mono: true, copy: true }} />
         </div>
-        <p className="drop-hint">在 Mac 应用里，直接把文件拖到窗口上就行。</p>
+        <p className="drop-hint">在 Mac 应用中，可直接将文件拖到窗口。</p>
       </div>
     )
   }
@@ -86,9 +86,9 @@ export function DropView({ block }: { block: Extract<Block, { kind: 'drop' }> })
         <Upload strokeWidth={1.75} />
       </span>
       <span className="drop-title">
-        把文件或文件夹拖到这里，或 <span className="drop-choose">选择…</span>
+        将文件或文件夹拖到此处，或 <span className="drop-choose">选择…</span>
       </span>
-      <span className="drop-hint">放进 {block.to}/，记成你带进来的；拖到窗口的任何地方都一样</span>
+      <span className="drop-hint">添加到 {block.to}/，标记为我导入；拖到窗口任意位置均可</span>
     </button>
   )
 }

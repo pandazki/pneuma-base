@@ -292,14 +292,14 @@ export function ActionDialog({ action, preset = {}, leaving, onCancel, onSubmit 
 <p id="dialog-confirm">{action.confirm}</p>
             ) : null}
           </div>
-          <button type="button" className="icon-btn" aria-label="关闭" onClick={onCancel}>
+          <button type="button" className="icon-btn" aria-label="关闭" data-tip="关闭" onClick={onCancel}>
             <X strokeWidth={2} aria-hidden />
           </button>
         </div>
         {action.inputs.length > 0 ? (
           <div className="dialog-body">
             {action.inputs.map((input) => {
-              const hint = wrong.has(input.name) && !input.hint ? '格式不对。' : input.hint
+              const hint = wrong.has(input.name) && !input.hint ? '格式错误' : input.hint
               const hintId = hint ? `hint-${input.name}` : undefined
               return input.options ? (
                 <div key={input.name} className="form-field">

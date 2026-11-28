@@ -88,7 +88,7 @@ export function Tray() {
   if (asks.length > 0) hadAsks.current = true
   const feeds = blocks.filter((b) => b.kind === 'feed')
   const rows: FeedRow[] = feeds.flatMap((b) => b.groups.flatMap((g) => g.rows)).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
-  const quiet = feeds.find((b) => b.empty !== '')?.empty ?? '还没有谁做过什么。'
+  const quiet = feeds.find((b) => b.empty !== '')?.empty ?? '暂无新动态'
   const left = blocks.flatMap((b) => (b.kind === 'steps' ? b.steps : [])).filter((s) => !s.done).length
 
   useEffect(() => {
@@ -152,16 +152,16 @@ export function Tray() {
     <BlockEnvContext.Provider value={env}>
       <div className="tray">
         <header ref={head} className="tray-head">
-          <span role="link" tabIndex={0} className="tray-library" onClick={openHome} onKeyDown={(e) => e.key === 'Enter' && openHome()} data-tip="在窗口里打开首页">
+          <span role="link" tabIndex={0} className="tray-library" onClick={openHome} onKeyDown={(e) => e.key === 'Enter' && openHome()} data-tip="打开主窗口">
             <span className="truncate">{name}</span>
           </span>
           {asks.length > 0 ? (
-            <span className="tray-waiting" role="img" aria-label={`${asks.length} 件事等你决定`} data-tip={`${asks.length} 件事等你决定`}>
+            <span className="tray-waiting" role="img" aria-label={`${asks.length} 项待处理`} data-tip={`${asks.length} 项待处理`}>
               {asks.length}
             </span>
           ) : null}
           <span className="tray-tools">
-            <button type="button" className="icon-btn" aria-label="打开窗口" data-tip="打开窗口" onClick={() => tellShell({ type: 'open' })}>
+            <button type="button" className="icon-btn" aria-label="打开主窗口" data-tip="打开主窗口" onClick={() => tellShell({ type: 'open' })}>
               <AppWindow strokeWidth={1.75} aria-hidden />
             </button>
             <button
@@ -183,29 +183,29 @@ export function Tray() {
           <div ref={content} className="tray-content">
             {down ? (
               <p className="tray-note" role="alert">
-                连不上服务，正在重新连接。
+                无法连接服务，正在重新连接。
               </p>
             ) : null}
             {left > 0 ? (
               <span role="link" tabIndex={0} className="tray-row" onClick={openHome} onKeyDown={(e) => e.key === 'Enter' && openHome()}>
                 <CircleDashed strokeWidth={1.75} aria-hidden />
-                <span className="truncate">开始：还有 {left} 步没做</span>
+                <span className="truncate">快速开始：剩余 {left} 步</span>
                 <ChevronRight className="tray-row-chev" strokeWidth={2} aria-hidden />
               </span>
             ) : null}
             {/* Nothing to decide is not said; once something was, the part stays, so an answer's receipt is seen. */}
             {hadAsks.current ? (
-              <section className="tray-part" aria-label="等你决定">
-                <AsksView block={{ kind: 'asks', asks: asks.slice(0, ASKS), empty: '没有要你决定的事了。' }} compact />
+              <section className="tray-part" aria-label="待处理">
+                <AsksView block={{ kind: 'asks', asks: asks.slice(0, ASKS), empty: '暂无待处理事项' }} compact />
                 {asks.length > ASKS ? (
                   <span role="link" tabIndex={0} className="tray-row" onClick={openHome} onKeyDown={(e) => e.key === 'Enter' && openHome()}>
-                    <span className="truncate">还有 {asks.length - ASKS} 件，在窗口里看</span>
+                    <span className="truncate">另有 {asks.length - ASKS} 项，在主窗口中查看</span>
                     <ChevronRight className="tray-row-chev" strokeWidth={2} aria-hidden />
                   </span>
                 ) : null}
               </section>
             ) : null}
-            <section className="tray-part" aria-label="自上次以来">
+            <section className="tray-part" aria-label="最近动态">
               <FeedView block={{ kind: 'feed', groups: rows.length > 0 ? [{ title: '', count: null, rows: rows.slice(0, ROWS) }] : [], empty: quiet }} dense />
             </section>
           </div>

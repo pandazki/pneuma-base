@@ -74,7 +74,7 @@ export function Sidebar({ state, current, rail, down, changedAt, onSelect, onSea
   const listed = [...groups.flatMap((g) => g.views), ...foot]
   const here = entryOf(state.views, current)[0]?.id ?? current
   const tabbable = listed.some((v) => v.id === here) ? here : (listed[0]?.id ?? null)
-  const fresh = down ? '连不上服务' : changedAt ? `自动更新 · ${clockTime(changedAt)} 有变化` : `自动更新：每 ${POLL_MS / 1000} 秒看一次库有没有变`
+  const fresh = down ? '无法连接服务' : changedAt ? `自动更新 · 最近变更 ${clockTime(changedAt)}` : `自动更新：每 ${POLL_MS / 1000} 秒检查资料库变更`
 
   // ↑ ↓ Home End move between the pages; only the current one is in the Tab order.
   const onNavKey = (e: KeyboardEvent) => {
@@ -100,7 +100,7 @@ export function Sidebar({ state, current, rail, down, changedAt, onSelect, onSea
     </button>
   )
   const toggle = (
-    <button type="button" className="icon-btn side-toggle" aria-label={rail ? '展开侧栏' : '收起侧栏'} data-tip={`${rail ? '展开侧栏' : '收起侧栏'}${MAC ? ' ⌃⌘S' : ''}`} onClick={onToggle}>
+    <button type="button" className="icon-btn side-toggle" aria-label={rail ? '展开侧边栏' : '收起侧边栏'} data-tip={`${rail ? '展开侧边栏' : '收起侧边栏'}${MAC ? ' ⌃⌘S' : ''}`} onClick={onToggle}>
       <PanelLeft strokeWidth={1.75} aria-hidden />
     </button>
   )
@@ -115,12 +115,12 @@ export function Sidebar({ state, current, rail, down, changedAt, onSelect, onSea
         ) : null}
         <div className="side-head">
           <Menu
-            label="库"
+            label="资料库"
             entries={[
-              { label: '复制库的路径', icon: <Copy strokeWidth={1.75} />, onSelect: () => void navigator.clipboard.writeText(root).catch(() => undefined) },
+              { label: '复制资料库路径', icon: <Copy strokeWidth={1.75} />, onSelect: () => void navigator.clipboard.writeText(root).catch(() => undefined) },
               { label: '命令面板', icon: <Command strokeWidth={1.75} />, keys: MAC ? '⌘K' : 'Ctrl K', onSelect: onSearch },
               'separator',
-              { label: rail ? '展开侧栏' : '收起侧栏', icon: <PanelLeft strokeWidth={1.75} />, keys: MAC ? '⌃⌘S' : undefined, onSelect: onToggle },
+              { label: rail ? '展开侧边栏' : '收起侧边栏', icon: <PanelLeft strokeWidth={1.75} />, keys: MAC ? '⌃⌘S' : undefined, onSelect: onToggle },
             ]}
             trigger={({ ref, open, toggle: show, onKeyDown }) => (
               <button ref={ref} type="button" className="lib-btn" aria-haspopup="menu" aria-expanded={open} data-tip={state.library?.shown ?? root} onClick={show} onKeyDown={onKeyDown}>

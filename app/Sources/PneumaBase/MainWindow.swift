@@ -298,7 +298,7 @@ extension MainWindow: NSToolbarDelegate, NSSearchFieldDelegate {
   func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
     guard id == Self.findItem else { return nil }
     let item = NSSearchToolbarItem(itemIdentifier: id)
-    item.searchField.placeholderString = "在这一页里查找"
+    item.searchField.placeholderString = "在本页中查找"
     item.searchField.sendsWholeSearchString = true
     item.searchField.delegate = self
     item.searchField.target = self
@@ -504,7 +504,7 @@ private final class DropOverlay: NSView {
   init(frame: NSRect, target: String) {
     super.init(frame: frame)
     wantsLayer = true
-    let label = NSTextField(labelWithString: "松开，放进库的 \(target)，记成你带进来的")
+    let label = NSTextField(labelWithString: "松开以添加到 \(target)，标记为我导入")
     label.font = .systemFont(ofSize: 15, weight: .semibold)
     label.textColor = .controlAccentColor
     label.translatesAutoresizingMaskIntoConstraints = false

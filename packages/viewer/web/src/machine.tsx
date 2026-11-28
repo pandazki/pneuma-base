@@ -99,7 +99,7 @@ function Section({ title, tools, children }: { title: string; tools?: ReactNode;
 function InBrowser() {
   const choice = useSchemeChoice()
   return (
-    <Section title="这个浏览器">
+    <Section title="当前浏览器">
       <Row icon={Palette} name="外观">
         <Appearance value={choice} onChange={chooseScheme} />
       </Row>
@@ -111,12 +111,12 @@ function InShell() {
   const machine = useMachine()
   if (machine === null) return null
   const set = (key: 'ownerFiles' | 'login' | 'pathLink', value: boolean) => tellShell({ type: 'machine-set', key, value })
-  const path = machine.pathLink ?? (machine.launcherOnPath ? '已经在 PATH 上' : null)
+  const path = machine.pathLink ?? (machine.launcherOnPath ? '已在 PATH 中' : null)
   return (
     <Section
-      title="这台机器"
+      title="本机"
       tools={
-        <button type="button" className="icon-btn" aria-label="在设置窗口里打开" data-tip="在设置窗口里打开" onClick={() => tellShell({ type: 'settings' })}>
+        <button type="button" className="icon-btn" aria-label="在设置窗口中打开" data-tip="在设置窗口中打开" onClick={() => tellShell({ type: 'settings' })}>
           <Settings2 strokeWidth={1.75} aria-hidden />
         </button>
       }
@@ -124,14 +124,14 @@ function InShell() {
       <Row icon={Palette} name="外观">
         <Appearance value={machine.appearance} onChange={(value) => tellShell({ type: 'machine-set', key: 'appearance', value })} />
       </Row>
-      <Row icon={FolderInput} name="直接放进来的文件算主人的" note="在访达里放进来的记成你的" about="开着时，在访达里拷进库、或直接改了的文件，会记成你带进来的、你改的（看到的，不是谁说的）。">
-        <Switch name="直接放进来的文件算主人的" on={machine.ownerFiles} onChange={(on) => set('ownerFiles', on)} />
+      <Row icon={FolderInput} name="直接拷入的文件记为我添加" about="启用后，在访达中拷入资料库或直接修改的文件，记为我导入或我修改（检测到）。">
+        <Switch name="直接拷入的文件记为我添加" on={machine.ownerFiles} onChange={(on) => set('ownerFiles', on)} />
       </Row>
-      <Row icon={SquareTerminal} name="在终端里用 pneuma-base" note={path} about="在你 PATH 上的一个文件夹里放一个叫 pneuma-base 的链接，指向本机的命令。放在哪个文件夹，在设置窗口里选。">
-        <Switch name="在终端里用 pneuma-base" on={machine.pathLink !== null} disabled={machine.launcherOnPath} onChange={(on) => set('pathLink', on)} />
+      <Row icon={SquareTerminal} name="安装命令行工具" note={path} about="在 PATH 中的一个文件夹内创建名为 pneuma-base 的链接，指向本机命令。文件夹在设置窗口中选择。">
+        <Switch name="安装命令行工具" on={machine.pathLink !== null} disabled={machine.launcherOnPath} onChange={(on) => set('pathLink', on)} />
       </Row>
-      <Row icon={Power} name="登录时打开" note={machine.loginNote}>
-        <Switch name="登录时打开" on={machine.login} onChange={(on) => set('login', on)} />
+      <Row icon={Power} name="登录时启动" note={machine.loginNote}>
+        <Switch name="登录时启动" on={machine.login} onChange={(on) => set('login', on)} />
       </Row>
     </Section>
   )
