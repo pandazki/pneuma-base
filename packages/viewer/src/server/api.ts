@@ -14,6 +14,7 @@ import {
   parseCall,
   shortDir,
   viewerFace,
+  writeDescription,
   type Actor,
   type Call,
   type Context,
@@ -63,11 +64,16 @@ export async function state(served: Served): Promise<Reply> {
   return reply({ dir: served.dir, library: { root: library.root, shown, id: library.config.id }, views, problems, available: available(table), agentMarks: AGENT_MARKS })
 }
 
-/** The server stays, so it listens to the library's changes: its polls and views, and any command meanwhile, read what it heard. */
+/**
+ * The server stays, so it listens to the library's changes: its polls and views, and any command meanwhile, read what it heard.
+ * Once, when it begins: the description at the root is brought to what this version of the product and the
+ * library's plugins say now, so an agent reads today's commands in a library last set up by an earlier version.
+ */
 function listened(served: Served, library: Library): Library {
   if (!served.listened.has(library.root)) {
     listenTo(library.root)
     served.listened.add(library.root)
+    void writeDescription(ownerContext(library, served)).catch(() => undefined)
   }
   return library
 }
