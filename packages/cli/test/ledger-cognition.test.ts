@@ -10,7 +10,7 @@ const SECTION = readFileSync(fileURLToPath(new URL('../../plugin-ledger/cognitio
 
 describe('the ledger cognition section', () => {
   it('the usages in its table are heard', () => {
-    for (const template of ['`say note "<一句话>"`', '`say note <库内路径> "<备注>"`', '`say basis <库内路径> --from <库内路径…>`', '`put <库内路径> --imported …`', '`say revised <库内路径>`']) {
+    for (const template of ['`say note "<说明>"`', '`say note <库内路径> "<备注>"`', '`say basis <库内路径> --from <库内路径…>`', '`put <库内路径> --imported …`', '`say revised <库内路径>`']) {
       expect(SECTION).toContain(template)
     }
     const sb = sandbox()

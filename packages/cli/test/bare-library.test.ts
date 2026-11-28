@@ -55,10 +55,10 @@ describe('a library with no plugin', () => {
   it('say is not heard, with the named reason and the fixed sentence, in the readable output too', () => {
     const r = agent(['say', 'decision', '主人决定用 Paddle'])
     expect(r.code, r.stderr).toBe(0)
-    expect(r.json()).toEqual({ outcome: 'not-heard', reason: 'no-plugin-for-kind', note: '这个库没配能记下这句话的插件', problems: [] })
+    expect(r.json()).toEqual({ outcome: 'not-heard', reason: 'no-plugin-for-kind', note: '此资料库没有可记录此内容的插件', problems: [] })
     const text = sb.run(['--library', lib, 'say', 'note', 'x'], { cwd: outside })
     expect(text.code).toBe(0)
-    expect(text.stdout).toContain('这个库没配能记下这句话的插件')
+    expect(text.stdout).toContain('此资料库没有可记录此内容的插件')
   })
 
   it('check reports no sections', () => {

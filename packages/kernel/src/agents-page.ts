@@ -129,7 +129,7 @@ export async function agentsPage(_params: Record<string, string>, call: ViewerCa
     rows.push({
       cell: { text: c.title, actor: { kind: 'agent', name: c.product, grant: c.grant }, ...(tag ? { tag } : {}) },
       note,
-      actions: [{ ...kernelAction('agent disconnect', '断开连接', { grant: c.grant, 'keep-grant': false }, { confirm: `断开 ${c.title} 的连接？连接时写入的内容将被移除，授权 ${c.grant} 将被撤销，${c.title} 将无法再使用此资料库。` }), as: 'icon', icon: 'unplug' }],
+      actions: [{ ...kernelAction('agent disconnect', '断开连接', { grant: c.grant, 'keep-grant': false }, { tone: 'danger', confirm: `断开 ${c.title} 的连接？连接时写入的内容将被移除，授权 ${c.grant} 将被撤销，${c.title} 将无法再使用此资料库。` }), icon: 'unplug' }],
     })
   }
   // A grant issued by hand, or left by a connection undone with --keep-grant: the agent it was given to.

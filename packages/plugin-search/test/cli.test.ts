@@ -125,8 +125,8 @@ describe('find matches content (C7)', () => {
     for (const [flags, named] of [
       [['--kind', 'http', '--model', 'm'], '--url'],
       [['--kind', 'http', '--url', 'http://127.0.0.1:9'], '--model'],
-      [['--kind', 'http', '--url', 'http://127.0.0.1:9', '--model', 'm', '--key', 'sk-secret'], '不认识 --key'],
-      [['--kind', 'http', '--url', 'http://127.0.0.1:9', '--model', 'm', '--key-env', 'MY_KEY'], '不认识 --key-env'],
+      [['--kind', 'http', '--url', 'http://127.0.0.1:9', '--model', 'm', '--key', 'sk-secret'], '不支持 --key'],
+      [['--kind', 'http', '--url', 'http://127.0.0.1:9', '--model', 'm', '--key-env', 'MY_KEY'], '不支持 --key-env'],
       [['--kind', 'magic'], 'hash'],
     ] as const) {
       const r = await lib.owner(['search', 'embedding', 'set', ...flags])

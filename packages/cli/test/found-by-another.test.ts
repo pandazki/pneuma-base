@@ -24,8 +24,8 @@ it('a sentence only search matches gives the item under its scene with its origi
 
   const exact = as('codex', 's2', ['find', '水温'])
   expect(exact).toHaveLength(2)
-  expect(exact[0]).toMatch(/^场景 s1 · claude-code · \d{4}-\d\d-\d\d \d\d:\d\dZ · 在做：写咖啡笔记$/)
-  expect(exact[1]).toBe('  notes/coffee.md  做出来的  正文：手冲咖啡要注意水温和研磨度，闷蒸三十秒。')
+  expect(exact[0]).toMatch(/^场景 s1 · claude-code · \d{4}-\d\d-\d\d \d\d:\d\dZ · 任务：写咖啡笔记$/)
+  expect(exact[1]).toBe('  notes/coffee.md  生成  全文：手冲咖啡要注意水温和研磨度，闷蒸三十秒。')
   expect(as('codex', 's2', ['find', '怎么冲出好喝的咖啡'])).toEqual(exact)
 })
 

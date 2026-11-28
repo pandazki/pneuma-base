@@ -57,26 +57,26 @@ describe('a plugin added to a library already in use', () => {
       child.stderr.on('data', (b: Buffer) => {
         const first = stderr === ''
         stderr += b.toString()
-        if (first && stderr.includes('补上装上之前登记的东西')) child.kill('SIGINT')
+        if (first && stderr.includes('正在补录启用前已登记的条目')) child.kill('SIGINT')
       })
       child.on('close', () => done())
     })
-    expect(stdout).toMatch(/search 补了装上之前登记的 \d+ \/ 2001 样；接着补：pneuma-base plugin backfill search/)
+    expect(stdout).toMatch(/search 已补录启用前已登记的 \d+ \/ 2001 个条目；继续补录：pneuma-base plugin backfill search/)
     const found = run(lib, ['find', 'word1998']).stdout
-    expect(found).toMatch(/装上之前登记的 2001 样补了 \d+ 样；接着补：pneuma-base plugin backfill search/)
+    expect(found).toMatch(/启用前已登记的 2001 个条目已补录 \d+ 个；继续补录：pneuma-base plugin backfill search/)
 
     const page = run(lib, ['show', 'search.status']).stdout
-    expect(page).toMatch(/装上之前登记的 2001 样补了 \d+ 样/)
+    expect(page).toMatch(/启用前已登记的 2001 个条目已补录 \d+ 个/)
     expect(page).toContain('plugin backfill search')
 
     const resumed = owner(lib, ['plugin', 'backfill', 'search'])
-    expect(resumed.stdout).toContain('search 补上了装上之前登记的 2001 样。')
+    expect(resumed.stdout).toContain('search 已补录启用前已登记的 2001 个条目。')
     const after = run(lib, ['find', 'word1998']).stdout
     expect(after).toContain('notes/n1998.md')
-    expect(after).not.toContain('接着补')
+    expect(after).not.toContain('继续补录')
     expect(run(lib, ['find', 'deepword']).stdout).toContain('web/site')
     // Catching up again changes nothing it knows.
-    expect(owner(lib, ['plugin', 'backfill', 'search']).stdout).toContain('search 补上了装上之前登记的 2001 样。')
+    expect(owner(lib, ['plugin', 'backfill', 'search']).stdout).toContain('search 已补录启用前已登记的 2001 个条目。')
     expect(run(lib, ['find', 'word1998']).stdout.match(/notes\/n1998\.md/g)).toHaveLength(1)
   })
 
@@ -85,6 +85,6 @@ describe('a plugin added to a library already in use', () => {
     owner(lib, ['plugin', 'enable', 'version'])
     const r = sb.run(['--library', lib, 'plugin', 'backfill', 'version'])
     expect(r.code).toBe(2)
-    expect(r.stdout + r.stderr).toContain('插件 version 不从放里学库里登记了什么，没有要补的。')
+    expect(r.stdout + r.stderr).toContain('（nothing-to-backfill）')
   })
 })

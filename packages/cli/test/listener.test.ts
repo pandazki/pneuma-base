@@ -116,7 +116,7 @@ describe('who learns of change', () => {
     const withListener = check(listened)
     expect(withListener).toEqual(check(alone))
     const titles = withListener.map((s) => s.title)
-    expect(titles).toEqual(['没人登记过的', '没登记的目录', '被直接改过的', '挪过的'])
+    expect(titles).toEqual(['未登记', '未登记的目录', '外部修改', '已移动'])
     expect(JSON.stringify(withListener)).not.toContain('node_modules')
     expect(JSON.stringify(withListener)).not.toContain('y.txt')
     // And the next check, with nothing changed since, agrees too.

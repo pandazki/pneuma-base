@@ -75,7 +75,7 @@ test('the library’s table and a bundle’s first level in the panel page the s
 
   await page.goto(`${url}#view=files&panel=item&panel.path=site`)
   const panel = page.getByRole('complementary', { name: '详情' })
-  const level = panel.getByRole('region', { name: '里面' })
+  const level = panel.getByRole('region', { name: '内容' })
   const turns = level.getByRole('navigation', { name: '分页' })
   await expect(turns).toContainText('1–50，共 55 项')
   await turns.getByRole('button', { name: '下一页' }).click()
@@ -95,38 +95,38 @@ test('a directory with nothing registered in it is one row: what a look found, a
 
   // On the home page it is one question, saying what the look found.
   await page.goto(url)
-  const decide = page.getByRole('region', { name: '等你决定' })
-  await expect(decide).toContainText('proj/ 没登记：13 个文件，像一个项目（package.json、.git）。')
+  const decide = page.getByRole('region', { name: '待处理' })
+  await expect(decide).toContainText('proj/ 未登记：13 个文件，可能是项目目录（package.json、.git）。')
 
   await page.goto(`${url}#view=files`)
   const main = page.getByRole('main')
   const proj = main.getByRole('row', { name: /^proj\// })
-  await expect(proj).toContainText('没登记')
-  await expect(proj).toContainText('13 个文件，像一个项目（package.json、.git）')
+  await expect(proj).toContainText('未登记')
+  await expect(proj).toContainText('13 个文件，可能是项目目录（package.json、.git）')
   // The first answer is the row's button; the other two are in its menu.
-  await expect(proj.getByRole('button', { name: '登记成一样东西' })).toBeVisible()
+  await expect(proj.getByRole('button', { name: '登记为条目' })).toBeVisible()
   await proj.getByRole('button', { name: '更多' }).click()
-  await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['登记里面的文件', '不用管'])
+  await expect(page.getByRole('menu').getByRole('menuitem')).toHaveText(['登记目录内的文件', '忽略'])
   await page.keyboard.press('Escape')
 
-  // 不用管: it joins the library's noise and is gone from the page.
-  await fromMenu(main.getByRole('row', { name: /^junk\// }), '不用管')
-  await expect(page.getByRole('status')).toContainText('已记为噪音：junk')
+  // 忽略: it joins the library's ignore rules and is gone from the page.
+  await fromMenu(main.getByRole('row', { name: /^junk\// }), '忽略')
+  await expect(page.getByRole('status')).toContainText('已忽略：junk')
   await expect(main.getByRole('row', { name: /^junk\// })).toHaveCount(0)
 
-  // 登记里面的文件: it says first what it will register, then what it did; the folder is an open one after.
-  await fromMenu(main.getByRole('row', { name: /^scans\// }), '登记里面的文件')
+  // 登记目录内的文件: it says first what it will register, then what it did; the folder is an open one after.
+  await fromMenu(main.getByRole('row', { name: /^scans\// }), '登记目录内的文件')
   const dialog = page.getByRole('dialog')
-  await expect(dialog).toContainText('要登记 scans/ 里任意深处的全部文件：3 个，不含噪音。')
-  await dialog.getByRole('button', { name: '登记里面的文件' }).click()
-  await expect(page.getByRole('status')).toContainText('已把 scans/里的 3 个文件记为主人带进来的。')
-  await expect(main.getByRole('row', { name: /^scans\// })).not.toContainText('没登记')
+  await expect(dialog).toContainText('将登记 scans/ 中所有层级的全部文件：3 个，不含已忽略的。')
+  await dialog.getByRole('button', { name: '登记目录内的文件' }).click()
+  await expect(page.getByRole('status')).toContainText('已将 scans/ 中的 3 个文件标记为所有者导入。')
+  await expect(main.getByRole('row', { name: /^scans\// })).not.toContainText('未登记')
 
-  // 登记成一样东西: it is one thing now, which opens its panel.
-  await proj.getByRole('button', { name: '登记成一样东西' }).click()
-  await expect(page.getByRole('status')).toContainText('已放好 proj')
+  // 登记为条目: it is one thing now, which opens its panel.
+  await proj.getByRole('button', { name: '登记为条目' }).click()
+  await expect(page.getByRole('status')).toContainText('已添加 proj')
   const thing = main.getByRole('row', { name: /^proj\b/ })
-  await expect(thing).not.toContainText('没登记')
+  await expect(thing).not.toContainText('未登记')
   await thing.click()
   await expect(page.getByRole('complementary', { name: '详情' }).getByTestId('panel-title')).toHaveText('proj')
 })
@@ -144,23 +144,23 @@ test('a named pass says what it will read, shows how far it is with a way to sto
   const notices = page.getByRole('status')
 
   // Registering all of a directory: what a look within its budget found, at least that many, then what it did.
-  await fromMenu(main.getByRole('row', { name: /^big\// }), '登记里面的文件')
-  await expect(page.getByRole('dialog')).toContainText(/要登记 big\/ 里任意深处的全部文件：至少 \d+ 个，不含噪音。/)
-  await page.getByRole('dialog').getByRole('button', { name: '登记里面的文件' }).click()
-  await expect(notices).toContainText('已把 big/里的 20000 个文件记为主人带进来的。')
+  await fromMenu(main.getByRole('row', { name: /^big\// }), '登记目录内的文件')
+  await expect(page.getByRole('dialog')).toContainText(/将登记 big\/ 中所有层级的全部文件：至少 \d+ 个，不含已忽略的。/)
+  await page.getByRole('dialog').getByRole('button', { name: '登记目录内的文件' }).click()
+  await expect(notices).toContainText('已将 big/ 中的 20000 个文件标记为所有者导入。')
 
   // Reading every registered thing's content: how many first, how far it is, and a stop that keeps what was read.
   await page.goto(`${url}#view=ledger.status`)
-  await main.getByRole('button', { name: '按内容查' }).click()
-  await expect(page.getByRole('dialog')).toContainText('要按内容读整个库：20000 样登记过的东西。')
-  await page.getByRole('dialog').getByRole('button', { name: '按内容查' }).click()
+  await main.getByRole('button', { name: '内容检索' }).click()
+  await expect(page.getByRole('dialog')).toContainText('将读取整个资料库的内容：20000 个已登记条目。')
+  await page.getByRole('dialog').getByRole('button', { name: '内容检索' }).click()
   const bar = notices.getByRole('progressbar', { name: '进度' })
   await expect(bar).toBeVisible()
   await expect(bar).toHaveAttribute('aria-valuemax', '20000')
-  await expect(notices).toContainText(/已查 \d+ \/ 20000 样/)
-  await notices.getByRole('button', { name: '停下' }).click()
-  await expect(notices.getByRole('button', { name: '正在停下…' })).toBeDisabled()
-  await expect(notices).toContainText(/停下了：按内容查了整个库的 \d+ \/ 20000 样。/)
+  await expect(notices).toContainText(/已检索 \d+ \/ 20000 个/)
+  await notices.getByRole('button', { name: '停止' }).click()
+  await expect(notices.getByRole('button', { name: '正在停止…' })).toBeDisabled()
+  await expect(notices).toContainText(/已停止：整个资料库已检索 \d+ \/ 20000 个已登记条目。/)
   await expect(bar).toHaveCount(0)
   // What it did stays past the time a notice usually shows, until it is closed; nothing holds the
   // notices meanwhile, as the pointer or the keyboard on them would.
@@ -168,7 +168,7 @@ test('a named pass says what it will read, shows how far it is with a way to sto
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
   await page.clock.runFor(5_000)
   await frames(page)
-  await expect(notices).toContainText('停下了')
+  await expect(notices).toContainText('已停止')
 })
 
 /** Apple's binary property list of a list of strings, as the extended attributes hold it. */
@@ -195,33 +195,33 @@ test('a thing’s panel says its state in words, whether its content was read, a
 
   await page.goto(`${url}#view=files&panel=item&panel.path=report.pdf`)
   const panel = page.getByRole('complementary', { name: '详情' })
-  const ledger = panel.getByRole('region', { name: '来历' })
+  const ledger = panel.getByRole('region', { name: '溯源' })
   // Consistent with the record is the usual state: no state is said. Whether the content was read is in the folded record.
-  await expect(ledger.getByRole('term').filter({ hasText: '现状' })).toHaveCount(0)
-  const record = ledger.getByRole('region', { name: '记录' })
-  await record.getByRole('button', { name: '记录' }).click()
-  await expect(record).toContainText('还没读过')
+  await expect(ledger.getByRole('term').filter({ hasText: '状态' })).toHaveCount(0)
+  const record = ledger.getByRole('region', { name: '记录', exact: true })
+  await record.getByRole('button', { name: '记录', exact: true }).click()
+  await expect(record).toContainText('未读取')
   const facts = panel.getByRole('region', { name: '文件', exact: true })
   await expect(facts.getByRole('link', { name: 'https://example.com/report.pdf' })).toHaveAttribute('href', 'https://example.com/report.pdf')
-  await expect(facts).toContainText('带进来的程序Safari')
+  await expect(facts).toContainText('下载应用Safari')
   await expect(facts).toContainText('标签工作')
 
   // Things rest on it, so reading its content is offered; once read, the panel says so.
-  await panel.getByRole('button', { name: '读内容' }).click()
-  await expect(page.getByRole('status')).toContainText('按内容查了 report.pdf：1 样登记过的东西。')
-  await expect(record).toContainText(/读过 · [0-9a-f]{12}/)
-  await expect(panel.getByRole('button', { name: '读内容' })).toHaveCount(0)
+  await panel.getByRole('button', { name: '读取内容' }).click()
+  await expect(page.getByRole('status')).toContainText('内容检索完成：report.pdf 共 1 个已登记条目。')
+  await expect(record).toContainText(/已读取 · [0-9a-f]{12}/)
+  await expect(panel.getByRole('button', { name: '读取内容' })).toHaveCount(0)
 
   // Changed outside the library: the state says so in words; with its content read before, whether the content differs.
   write(lib, 'report.pdf', '%PDF-1.4 report, edited\n')
   await page.reload()
   const state = ledger.getByRole('definition').first()
-  await expect(state).toContainText('在库外被改过')
-  await expect(state).toContainText('内容和记录的不一样')
+  await expect(state).toContainText('外部修改')
+  await expect(state).toContainText('内容与记录不一致')
   // One never read says only its state was compared.
   write(lib, 'memo.txt', '备忘，改过\n')
   await page.goto(`${url}#view=files&panel=item&panel.path=memo.txt`)
-  await expect(state).toContainText('在库外被改过')
-  await expect(state).toContainText('只比了状态，内容还没读')
-  await expect(panel.getByRole('button', { name: '认下这次改动' })).toBeVisible()
+  await expect(state).toContainText('外部修改')
+  await expect(state).toContainText('仅比较了状态，内容未读取')
+  await expect(panel.getByRole('button', { name: '确认修改' })).toBeVisible()
 })

@@ -136,7 +136,7 @@ export async function navTitles(page: Page): Promise<string[]> {
 /** Opens a page that shares a navigation entry: the entry first, then the page from the head's switch. */
 export async function openShared(page: Page, entry: string, view: string): Promise<void> {
   await page.getByRole('navigation', { name: '导航' }).getByRole('button', { name: entry, exact: true }).click()
-  await page.getByRole('navigation', { name: '这一组的页' }).getByRole('button', { name: view, exact: true }).click()
+  await page.getByRole('navigation', { name: '本组页面' }).getByRole('button', { name: view, exact: true }).click()
   await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toHaveText(new RegExp(`^${view}`))
 }
 

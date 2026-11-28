@@ -34,7 +34,8 @@ const marksOf = (rows: Locator, by: '.feed-line' | 'who') =>
 test('agents get marks that tell them apart: two from the name, or the first later letter that sets them apart, the same on every page', async ({ page, pb }) => {
   const lib = join(tempDir(), 'lib')
   pb.run(['init', lib])
-  for (const agent of ['codex', 'copilot', 'claude-code', 'gemini']) {
+  // Agents of no known product, which get letters; a known product's mark is its own icon.
+  for (const agent of ['mavis', 'marlo', 'tide-pool', 'zephyr']) {
     pb.run(['--library', lib, '--as', agent, 'start', `${agent} 在整理笔记`], { env: { PNEUMA_BASE_SESSION: `s-${agent}` } })
     // Saying what it is doing is no act; a note is, so each is a row on home.
     pb.run(['--library', lib, '--as', agent, 'say', 'note', `${agent} 记一笔`], { env: { PNEUMA_BASE_SESSION: `s-${agent}` } })
@@ -43,12 +44,12 @@ test('agents get marks that tell them apart: two from the name, or the first lat
   await page.goto(`${url}#view=ledger.scenes`)
   const rows = page.getByRole('main').locator('.feed-row')
   await expect(rows).toHaveCount(5)
-  const marks = { 'codex 在整理笔记': 'Cd', 'copilot 在整理笔记': 'Cp', 'claude-code 在整理笔记': 'CC', 'gemini 在整理笔记': 'Ge' }
+  const marks = { 'mavis 在整理笔记': 'Mv', 'marlo 在整理笔记': 'Mr', 'tide-pool 在整理笔记': 'TP', 'zephyr 在整理笔记': 'Ze' }
   expect(await marksOf(rows, '.feed-line')).toMatchObject(marks)
   await page.goto(`${url}#view=home`)
-  const since = page.getByRole('main').getByRole('region', { name: '自上次以来' }).locator('.feed-row')
+  const since = page.getByRole('main').getByRole('region', { name: '最近动态' }).locator('.feed-row')
   await expect(since).toHaveCount(4)
-  expect(await marksOf(since, 'who')).toMatchObject({ codex: 'Cd', copilot: 'Cp', 'claude-code': 'CC', gemini: 'Ge' })
+  expect(await marksOf(since, 'who')).toMatchObject({ mavis: 'Mv', marlo: 'Mr', 'tide-pool': 'TP', zephyr: 'Ze' })
 })
 
 // The two tests that only look at it share one, built once per worker.

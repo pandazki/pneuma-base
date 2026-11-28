@@ -65,7 +65,7 @@ describe('session B, told nothing', () => {
     const text = ok(B(['check', '--since', '2000-01-01T00:00:00Z'])).stdout + ok(B(['find', '把支付服务接进电子书小店'])).stdout
     for (const readable of ['sess-a', 'claude-code', shown(dirA), DOING, DECIDED, 'payments/comparison.md', 'payments/sources/stripe-pricing.html']) expect(text).toContain(readable)
 
-    const since = json.check.sections.find((s: any) => s.title === '自上次以来')
+    const since = json.check.sections.find((s: any) => s.title === '最近动态')
     const sceneA = since.data.scenes.find((s: any) => s.scene === 'sess-a')
     expect(sceneA).toMatchObject({ actors: ['claude-code'], cwds: [dirA] })
     expect(sceneA.facts.filter((f: any) => f.kind === 'item.enter')).toHaveLength(6)
@@ -77,7 +77,7 @@ describe('session B, told nothing', () => {
 
   it('inspect gives who, when, where, what for, the basis and its state, what built on it, and the decision; of a scene, its card', () => {
     const text = ok(B(['inspect', 'payments/comparison.md'])).stdout
-    for (const readable of ['做出来的', 'claude-code', shown(dirA), '场景 sess-a', `当时在做：${DOING}`, `库外：${OUTSIDE}`, '被依据：payments/recommendation.md', `决定：${DECIDED}`]) {
+    for (const readable of ['生成', 'claude-code', shown(dirA), '场景 sess-a', `任务：${DOING}`, `外部：${OUTSIDE}`, '被引用：payments/recommendation.md', `决策：${DECIDED}`]) {
       expect(text).toContain(readable)
     }
     for (const source of Object.keys(SOURCES)) expect(text).toMatch(new RegExp(`${source}\\s+一致`))
@@ -103,7 +103,7 @@ describe('session B, told nothing', () => {
     ok(B(['put', 'integration.md', '--to', 'payments/integration-notes.md', '--generated', '--from', 'payments/recommendation.md']))
 
     const text = ok(B(['inspect', 'payments/integration-notes.md'])).stdout
-    for (const readable of ['做出来的', 'codex', shown(dirB), '场景 sess-b']) expect(text).toContain(readable)
+    for (const readable of ['生成', 'codex', shown(dirB), '场景 sess-b']) expect(text).toContain(readable)
     expect(text).toMatch(/payments\/recommendation\.md\s+一致/)
 
     const own = B(['inspect', 'payments/integration-notes.md', '--json']).json().sections[0].data

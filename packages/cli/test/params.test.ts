@@ -37,10 +37,10 @@ describe('a plugin command with params on the command line', () => {
   it('answers a call that does not fit with exit 1, what is wrong and the usage line, for its own commands as for the kernel’s; help lists that line', () => {
     const plugin = argv(['site', '--colour', 'red'])
     expect(plugin.code, plugin.stdout).toBe(1)
-    expect(plugin.stderr).toContain(`argv show 不认识 --colour。\n${USAGE}`)
+    expect(plugin.stderr).toContain(`argv show 不支持 --colour。\n${USAGE}`)
     const kernel = sb.run(['--library', lib, 'grant', 'create', 'reader'])
     expect(kernel.code).toBe(1)
-    expect(kernel.stderr).toContain('要写 --agent <给谁>。\n用法：grant create <授权名> --agent <给谁> [--area <子文件夹>] [--read-only]')
+    expect(kernel.stderr).toContain('缺少 --agent <授权对象>。\n用法：grant create <授权名称> --agent <授权对象> [--area <子文件夹>] [--read-only]')
     expect(sb.run(['--help', '--library', lib]).stdout).toContain(`  argv show ${USAGE.slice('用法：argv show '.length)}\n      交回收到的参数（argv）`)
   })
 })

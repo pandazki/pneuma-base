@@ -192,7 +192,7 @@ export function writeHistory(lib: string, shape: Shape): { things: number; facts
     if (at > now) at = new Date(now.getTime() - 5 * 60_000)
     const tick = () => (at = new Date(at.getTime() + 60_000))
     if (d === 0) {
-      for (const g of AGENTS) emit(tick(), ownerScene, owner, { kind: 'owner.op', command: 'grant create', summary: `已发授权 ${g.grant}，给 ${g.name}`, destructive: false })
+      for (const g of AGENTS) emit(tick(), ownerScene, owner, { kind: 'owner.op', command: 'grant create', summary: `已新建授权 ${g.grant}，授权对象为 ${g.name}`, destructive: false })
     }
     for (const r of requests.splice(0, today ? requests.length - 1 : requests.length)) {
       const fate = rnd()

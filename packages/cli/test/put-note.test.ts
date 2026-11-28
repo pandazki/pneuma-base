@@ -25,12 +25,12 @@ describe('put --note', () => {
     ok(claude(['put', '-', '--to', 'quote.md', '--generated', '--note', '芯片涨价后重算早鸟价'], 'early bird 129'))
     ok(claude(['put', '-', '--to', 'brief.md', '--imported', '--note', '主人给的需求'], 'brief'))
 
-    const since = ok(codex(['check', '--json'])).json().sections.find((s: any) => s.title === '自上次以来').data
+    const since = ok(codex(['check', '--json'])).json().sections.find((s: any) => s.title === '最近动态').data
     const scene = since.scenes.find((s: any) => s.scene === 's1')
-    expect(scene.facts.map((f: any) => f.text)).toEqual(['放入 quote.md（做出来的）：拉丝铝初稿', 'quote.md 换了新内容：芯片涨价后重算早鸟价', '放入 brief.md（带进来的）：主人给的需求'])
+    expect(scene.facts.map((f: any) => f.text)).toEqual(['生成 quote.md：拉丝铝初稿', 'quote.md 内容已更新：芯片涨价后重算早鸟价', '导入 brief.md：主人给的需求'])
 
     const quote = ok(codex(['inspect', 'quote.md'])).stdout
-    expect(quote).toMatch(/^ {2}[0-9a-f]{8} {2}\S+ \S+ {2}claude-code {2}被换下，在留存里 {2}「拉丝铝初稿」$/m)
+    expect(quote).toMatch(/^ {2}[0-9a-f]{8} {2}\S+ \S+ {2}claude-code {2}已被替换，见历史副本 {2}「拉丝铝初稿」$/m)
     expect(quote).toMatch(/^ {2}[0-9a-f]{8} {2}\S+ \S+ {2}claude-code {2}「芯片涨价后重算早鸟价」$/m)
     expect(quote).not.toContain('备注')
 

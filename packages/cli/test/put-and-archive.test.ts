@@ -86,10 +86,10 @@ describe('a directory as one thing through the command line', () => {
     write(join(outside, 'site-b'), { 'index.html': '<h1>a</h1>', 'css/site.css': 'body{}', 'img/logo.svg': '<svg/>', '.git/HEAD': 'ref: main' })
     expect(agent(['put', 'site-b', '--to', 'sites/b', '--imported'])).toMatchObject({ code: 0 })
     expect(existsSync(join(lib, 'sites/b/.pneuma-item'))).toBe(true)
-    expect(agent(['inspect', 'sites/b']).stdout).toMatch(/^sites\/b · 一样东西（带标记的目录），改于 \d{4}-\d\d-\d\d \d\d:\d\dZ\n第一层，3 项：\n {2}css\/\n {2}img\/\n {2}index\.html {2}10 字节\n$/)
+    expect(agent(['inspect', 'sites/b']).stdout).toMatch(/^sites\/b · 条目（带标记的目录），修改时间 \d{4}-\d\d-\d\d \d\d:\d\dZ\n第一层，共 3 项：\n {2}css\/\n {2}img\/\n {2}index\.html {2}10 字节\n$/)
     const inside = agent(['archive', 'sites/b/index.html'])
     expect(inside.code).toBe(2)
-    expect(inside.stdout).toContain('sites/b 是一样东西')
+    expect(inside.stdout).toContain('拒绝（inside-bundle）：sites/b')
   })
 })
 

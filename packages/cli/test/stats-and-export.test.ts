@@ -65,8 +65,8 @@ describe('ledger stats', () => {
       order: { now: { stale: 0, changed: 0, unknown: 0, archived: 0 } },
     })
     const text = r.json().text as string
-    expect(text).toContain('做出来的 2 样里，2 样依据了库里已有的东西；1 样用了别的会话留下的（50%），1 样用了别的 agent 带来或做出的（50%）。')
-    expect(text).toContain('- claude-code：1 次会话 · 带进来 1 样 · 做出来 1 样 · 决定 1 条 · 备注 1 条 · 请主人做 1 件：拒绝 1 件')
+    expect(text).toContain('生成的 2 个条目中，2 个依据了资料库中已有的条目；1 个引用了其他会话的条目（50%），1 个引用了其他 Agent 导入或生成的条目（50%）。')
+    expect(text).toContain('- claude-code：1 次会话 · 导入 1 个 · 生成 1 个 · 决策 1 条 · 备注 1 条 · 请求 1 项：已拒绝 1 项')
 
     for (const period of ['7d', 'all']) {
       const text = ok(owner(['ledger', 'stats', '--period', period])).stdout
@@ -75,13 +75,14 @@ describe('ledger stats', () => {
         b.kind === 'text' || b.kind === 'chart' ? [b.text] : b.kind === 'list' ? b.items.map((i) => `- ${i.cell.text}：${i.note}`) : b.kind === 'section' ? [b.title] : [],
       )
       expect(said.length, period).toBeGreaterThan(8)
-      for (const sentence of said) expect(text, `${period}: ${sentence}`).toContain(sentence)
+      // The owner is 我 on the page and 所有者 in the command's text.
+      for (const sentence of said.map((t) => t.replaceAll('我', '所有者'))) expect(text, `${period}: ${sentence}`).toContain(sentence)
     }
   })
 
   it('may be run by an agent, and leaves no record, as the page leaves none when it is looked at: reading the statistics twice says the same', () => {
     const before = ok(owner(['ledger', 'stats', '--json'])).json().data
-    expect(ok(as('claude', 'session-a')(['ledger', 'stats'])).stdout).toContain('## 谁做了什么')
+    expect(ok(as('claude', 'session-a')(['ledger', 'stats'])).stdout).toContain('## 操作分布')
     expect(ok(owner(['ledger', 'stats', '--json'])).json().data).toEqual({ ...before, to: expect.any(String) })
     const rows = ok(owner(['show', 'ledger.activity', '--json'])).json().blocks.find((b: Block) => b.kind === 'feed').groups.flatMap((g: { rows: { text: string }[] }) => g.rows)
     expect(rows.filter((row: { text: string }) => row.text.includes('ledger stats'))).toEqual([])
@@ -134,15 +135,15 @@ describe('ledger export', () => {
     const newest = [...shown].sort((a, b) => b.at.localeCompare(a.at) || a.key.localeCompare(b.key))
     expect(acts.map((x) => [x.id, x.at, x.whose])).toEqual(newest.map((x) => [x.key, x.at, x.whose]))
     expect(rows.filter((x) => !acts.includes(x)).map((x) => x.kind)).toEqual(expect.arrayContaining(['said']))
-    // The same sentence as the activity's row, but a record spells out the usual origin the page leaves unsaid; a command's is its answer, the row's the command as given.
-    for (const x of acts.filter((x) => x.kind !== 'owner.op')) expect(x.text?.replace('（做出来的）', '')).toBe(shown.find((s) => s.key === x.id)?.text)
-    expect(rows.filter((x) => x.kind === 'item.enter' && x.text?.includes('（做出来的）')).length).toBeGreaterThan(0)
+    // The same sentence as the activity's row, a thing entered named by its origin's word; a command's is its answer, the row's the command as given.
+    for (const x of acts.filter((x) => x.kind !== 'owner.op')) expect(x.text).toBe(shown.find((s) => s.key === x.id)?.text)
+    expect(rows.filter((x) => x.kind === 'item.enter' && x.text?.startsWith('生成 ')).length).toBeGreaterThan(0)
     expect(Object.keys(rows[0] as object)).toEqual(['id', 'at', 'actor', 'actor_kind', 'grant', 'session', 'kind', 'path', 'text', 'whose', 'request'])
     const put = rows.find((x) => x.kind === 'item.enter' && x.path === 'pay/integration.md')
     expect(put).toMatchObject({ actor: 'codex', actor_kind: 'agent', grant: 'codex', session: 'session-b', whose: 'agent', request: '' })
     const decline = rows.find((x) => x.kind === 'owner.op' && x.text?.includes('request decline'))
     const asked = rows.find((x) => x.kind === 'request')
-    expect(decline).toMatchObject({ actor: '主人', actor_kind: 'owner', grant: '', whose: 'owner' })
+    expect(decline).toMatchObject({ actor: '所有者', actor_kind: 'owner', grant: '', whose: 'owner' })
     expect(decline?.request).toMatch(/^r-[0-9a-f]{8}$/)
     expect(asked?.request).toBe(decline?.request)
 
@@ -182,13 +183,13 @@ describe('ledger export', () => {
     const dir = tempDir('pb-out-')
     const inside = owner(['ledger', 'export', '--to', join(lib, 'audit.csv')])
     expect(inside.code).toBe(2)
-    expect(inside.stdout).toContain('要放在库外')
+    expect(inside.stdout).toContain('拒绝（inside-library）')
     expect(existsSync(join(lib, 'audit.csv'))).toBe(false)
     writeFileSync(join(dir, 'taken.csv'), 'mine')
     const taken = owner(['ledger', 'export', '--to', join(dir, 'taken.csv')])
     expect(taken.code).toBe(2)
     expect(readFileSync(join(dir, 'taken.csv'), 'utf8')).toBe('mine')
-    expect(owner(['ledger', 'export', '--to', join(dir, 'x.csv'), '--since', 'last tuesday']).stdout).toContain('--since 要写一天')
+    expect(owner(['ledger', 'export', '--to', join(dir, 'x.csv'), '--since', 'last tuesday']).stdout).toContain('拒绝（bad-moment）')
     const agent = as('claude', 'session-d')(['ledger', 'export', '--to', join(dir, 'agent.csv')])
     expect(agent.code).toBe(2)
     expect(existsSync(join(dir, 'agent.csv'))).toBe(false)
