@@ -1,5 +1,5 @@
 // The plugin table of this machine: the built-in plugins, and the owner's own plugins in
-// `<home>/plugins/<name>/`. ARCHITECTURE "库外的插件与缓存".
+// `<home>/plugins/<name>/`. ARCHITECTURE.md「资料库外的插件与缓存」.
 import { createHash, randomBytes } from 'node:crypto'
 import { cp, mkdir, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import * as nodeModule from 'node:module'

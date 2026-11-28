@@ -1,5 +1,5 @@
 // What a library path holds as one thing: a regular file, or a directory with the marker (a bundle).
-// ARCHITECTURE "一个目录算一样东西". The kernel owns the marker and the rule a bundle's content follows;
+// ARCHITECTURE.md「一个目录算一个条目」. The kernel owns the marker and the rule a bundle's content follows;
 // storage is asked at the paths named, never walked.
 import { createHash } from 'node:crypto'
 import { isDescribed, isFailure, type Description, type Fingerprint, type Instant, type LibraryPath, type Level, type ManifestEntry, type Place, type StorageReason, type ThingAt, type ThingNow } from '@pneuma-base/sdk'
