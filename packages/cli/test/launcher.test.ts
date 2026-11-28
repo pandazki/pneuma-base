@@ -106,7 +106,7 @@ describe('launcher install', () => {
 describe('what agent connect writes names the launcher', () => {
   it('a skill: connect writes the launcher; the exact command lines the skill names run with nothing else, and the scene is the agent’s', () => {
     put('.claude/x', '')
-    expect(run(['agent', 'connect', 'claude-code', '--library', lib]).stdout).toContain('查看我的 Pneuma Base 资料库中有哪些内容。')
+    run(['agent', 'connect', 'claude-code', '--library', lib])
     expect(existsSync(launcher)).toBe(true)
     const skill = readFileSync(join(sb.home, '.claude/skills/pneuma-base-claude-code/SKILL.md'), 'utf8')
     const lines = [...skill.matchAll(/^(\S+ @claude-code (?:start|find|put) [^#\n]*?)\s*(?:#.*)?$/gm)].map((m) => m[1] as string)

@@ -62,7 +62,7 @@ describe('a plugin installed in the library but unknown to this command line', (
     const r = sb.run(['--library', lib, 'find', '--json'], { cwd: outside })
     expect(r.code).toBe(3)
     expect(r.json().problems).toEqual([{ plugin: 'recorder', message: 'installed in this library but not known to this pneuma-base' }])
-    expect(readFileSync(join(lib, 'PNEUMA-BASE.md'), 'utf8')).not.toContain('没有装任何插件')
+    expect(readFileSync(join(lib, 'PNEUMA-BASE.md'), 'utf8')).not.toContain('未启用任何插件')
     expect(sb.run(['plugin', 'disable', 'recorder', '--library', lib]).code).toBe(0)
     expect(existsSync(join(lib, '.pneuma-base/recorder'))).toBe(true)
   })

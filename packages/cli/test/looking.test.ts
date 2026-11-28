@@ -44,7 +44,7 @@ describe('looking is no act', () => {
     // The row says the command as given, not what it printed.
     const activity = sb.run(['--library', lib, 'show', 'ledger.activity']).stdout
     expect(activity).toContain('pneuma-base plugin enable version')
-    expect(activity).not.toContain('已装上插件')
+    expect(activity).not.toContain('已启用插件')
   })
 
   it('the looking an older ledger recorded is on no page and in no show, and is not counted; the export keeps it', () => {

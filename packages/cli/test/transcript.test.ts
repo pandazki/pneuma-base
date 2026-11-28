@@ -37,20 +37,20 @@ describe('a scene’s conversation', () => {
     const resume = `cd ~/shop && claude --resume ${id}`
 
     const text = ok(sb.run(['--library', lib, 'inspect', id])).stdout
-    expect(text).toContain(`对话：${path}（在这台机器上）\n接着聊：${resume}`)
+    expect(text).toContain(`对话：${path}（在本机）\n继续对话：${resume}`)
     const data = ok(sb.run(['--library', lib, 'inspect', id, '--json'])).json().sections[0].data
     expect(data.conversation).toEqual({ path, resume, machine: expect.any(String), status: 'here' })
 
     const fields = (ok(sb.run(['--library', lib, 'show', 'ledger.scene', '--scene', id, '--json'])).json().blocks as any[]).filter((b) => b.kind === 'fields').flatMap((b) => b.fields) as any[]
     expect(fields).toEqual(expect.arrayContaining([
       // The page, not the verb, says how the Mac app opens it again: Claude Code's resume in the directory it ran in.
-      { label: '对话', value: { text: path, mono: true, copy: true, tag: { text: '在这台机器上', tone: 'neutral' }, reopen: { url: null, run: { command: `claude --resume ${id}`, cwd: project }, reveal: file } } },
-      { label: '接着聊', value: { text: resume, mono: true, copy: true } },
+      { label: '对话', value: { text: path, mono: true, copy: true, tag: { text: '在本机', tone: 'neutral' }, reopen: { url: null, run: { command: `claude --resume ${id}`, cwd: project }, reveal: file } } },
+      { label: '继续对话', value: { text: resume, mono: true, copy: true } },
     ]))
 
     rmSync(file)
-    expect(ok(sb.run(['--library', lib, 'inspect', id])).stdout).toContain(`对话：${path}（这台机器上已经没有了）\n`)
-    expect(ok(sb.run(['--library', lib, 'inspect', id])).stdout).not.toContain('接着聊')
+    expect(ok(sb.run(['--library', lib, 'inspect', id])).stdout).toContain(`对话：${path}（已缺失）\n`)
+    expect(ok(sb.run(['--library', lib, 'inspect', id])).stdout).not.toContain('继续对话')
   })
 
   it('is not there for a session no product gave', () => {

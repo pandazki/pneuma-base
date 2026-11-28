@@ -238,6 +238,6 @@ describe('the words of each kind of block', () => {
     ])
     expect(run(['@helper', 'check', '--json']).json().asks).toMatchObject([{ key: 'asker:site', by: 'asker', about: 'site', suggested: 0 }])
     expect(run(['asker', 'yes', '--library', lib2]).code).toBe(0)
-    expect(run(['@helper', 'check']).stdout).not.toContain('要主人来做的')
+    expect(run(['@helper', 'check']).stdout).not.toContain('需所有者处理')
   })
 })

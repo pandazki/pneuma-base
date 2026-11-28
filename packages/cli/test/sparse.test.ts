@@ -44,9 +44,9 @@ describe('a directory no record points into', () => {
     setUp()
     const check = agent(['check', '--json']).json()
     expect(check.problems).toEqual([])
-    expect(check.sections.find((s: any) => s.title === '没登记的目录').data).toEqual({ count: 1, shown: [{ path: 'vendor' }] })
+    expect(check.sections.find((s: any) => s.title === '未登记的目录').data).toEqual({ count: 1, shown: [{ path: 'vendor' }] })
     const home = owner(['show', 'home']).stdout
-    expect(home).toContain('vendor/ 没登记。')
+    expect(home).toContain('vendor/ 未登记。')
     expect(agent(['start', '看看库里有什么']).stdout).toContain('vendor/')
   })
 
@@ -54,7 +54,7 @@ describe('a directory no record points into', () => {
     setUp()
     owner(['ignore', 'add', 'vendor'])
     // What remains is the news that the owner did it.
-    expect(titles(agent(['check', '--json']))).toEqual(['自上次以来'])
+    expect(titles(agent(['check', '--json']))).toEqual(['最近动态'])
     expect(owner(['ignore', 'list']).stdout).toContain('vendor')
     expect(owner(['show', 'home']).stdout).not.toContain('vendor')
   })
@@ -79,8 +79,8 @@ describe('an agent’s start and check', () => {
     const text = agent(['check']).stdout
     expect(text).toContain('loose-19.md')
     expect(text).not.toContain('loose-20.md')
-    expect(text).toContain('……共 30 样，看全部：show ledger.status --kind unowned')
-    const data = agent(['check', '--json']).json().sections.find((s: any) => s.title === '没人登记过的').data
+    expect(text).toContain('……共 30 个，查看全部：show ledger.status --kind unowned')
+    const data = agent(['check', '--json']).json().sections.find((s: any) => s.title === '未登记').data
     expect(data.count).toBe(30)
     expect(data.shown).toHaveLength(20)
   })
