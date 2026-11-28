@@ -1,13 +1,11 @@
-# 仓库外做出来的两个插件
+# 照第三方的做法写的两个插件
 
-这两个插件都不是这个仓库的工作区成员。每一个都是照第三方的做法做的：只依赖两个包文件（`dist-packages/` 里的命令行和 `@pneuma-base/sdk`），照 [`PLUGINS.md`](../PLUGINS.md) 写，不导入这个仓库的源码。放在这里有两个用处：给插件作者当例子，和当契约的回归测试——契约改坏了，它们的测试会红。
+这两个插件不是这个仓库的工作区成员。它们只依赖两个包文件（`dist-packages/` 里的命令行和 `@pneuma-base/sdk`），照 [`PLUGINS.md`](../PLUGINS.md) 写，不导入这个仓库的源码。它们是插件作者的例子，也是契约的回归测试：契约改坏了，它们的测试会失败。
 
 | 插件 | 做什么 | 怎么来的 |
 | --- | --- | --- |
 | [`links`](links/) | 检查资料库里文件之间的坏链接 | 一个没有任何上下文的 Codex 会话，只拿到两个包文件和 `PROMPT.txt` 里那段话；`NOTES.md` 是它记下的规范的缺口 |
 | [`pulse`](pulse/) | 记录添加和归档，用自己画的热度图显示 | 同上，一个 Claude 会话 |
-
-插件标准是从发布到 PneumaSpace 的那个插件反推出来的。它现在是内置的部署插件的两种目标，在 [`packages/plugin-deploy`](../packages/plugin-deploy/)。
 
 ## 跑它们的测试
 
@@ -20,7 +18,7 @@ npm install
 npm test
 ```
 
-`scripts/test-example-plugins.sh` 把两个都跑一遍，CI 里也跑它。
+`scripts/test-example-plugins.sh` 把两个都跑一遍，发版的 Full 工作流（`.github/workflows/full.yml`）跑它。
 
 `package-lock.json` 不进仓库：包文件每次重打，校验值都会变。
 

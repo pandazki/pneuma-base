@@ -15,7 +15,7 @@ Pneuma Base 插件。每次有条目被添加到资料库（登记、添加、�
 | `activity` | `{ what: 'put' \| 'archive', path }`，加上 `id`、`at`、`actor`、`session` |
 | `clears` | `{ cleared: true }`，加上同样的信封 |
 
-存储把它们写在 `<库>/.pneuma-base/pulse/facts/` 下。以前的版本写在 `activity/`、`clears/` 两个目录里的记录，`recordStore` 读的时候一起读进来，照算。
+存储把它们写在 `<库>/.pneuma-base/pulse/facts/` 下。`recordStore` 也读插件自己的地方里 `activity/`、`clears/` 两个目录下的记录。
 
 清空不删记录（规范 3.7 不许改写、删除自己目录里已有的文件）：它写一条清空记录，`at` 不晚于最近一次清空的活动都不再算。同步过来的旧记录也一样不算。登记一个目录这一层的散文件时，每个文件算一次。
 
