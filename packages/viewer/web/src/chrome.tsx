@@ -273,9 +273,11 @@ export function Layer({ leaving, onDismiss, className = '', children }: { leavin
 /**
  * The form an action opens when it has inputs or asks for confirmation. Submitting it is the
  * in-person confirmation. A question with nothing to fill in starts on 取消, the choice that changes
- * nothing. An input shows while its `when` holds, and is sent empty while it does not.
+ * nothing. An input shows while its `when` holds, and is sent empty while it does not. The label's
+ * 「…」, which says a button opens this form, is not part of its title or its button.
  */
 export function ActionDialog({ action, preset = {}, leaving, onCancel, onSubmit }: { action: Action; preset?: Record<string, string>; leaving: boolean; onCancel(): void; onSubmit(values: Record<string, string>): void }) {
+  const name = action.label.replace(/…$/, '')
   const [values, setValues] = useState(() => ({ ...initial(action.inputs), ...preset }))
   const form = useRef<HTMLFormElement | null>(null)
   const danger = action.tone === 'danger'
@@ -295,7 +297,7 @@ export function ActionDialog({ action, preset = {}, leaving, onCancel, onSubmit 
         ref={form}
         role="dialog"
         aria-modal="true"
-        aria-label={action.label}
+        aria-label={name}
         aria-describedby={action.confirm ? 'dialog-confirm' : undefined}
         className="dialog"
         onSubmit={(e) => {
@@ -305,7 +307,7 @@ export function ActionDialog({ action, preset = {}, leaving, onCancel, onSubmit 
       >
         <div className="dialog-head">
           <div>
-            <h2>{action.label}</h2>
+            <h2>{name}</h2>
             {action.confirm ? (
 <p id="dialog-confirm">{action.confirm}</p>
             ) : null}
@@ -377,7 +379,7 @@ export function ActionDialog({ action, preset = {}, leaving, onCancel, onSubmit 
             取消
           </button>
           <button type="submit" className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`} disabled={wrong.size > 0 || unchosen}>
-            {action.label}
+            {name}
           </button>
         </div>
       </form>

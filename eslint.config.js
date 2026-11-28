@@ -61,6 +61,19 @@ const viewerBoundary = {
   },
 }
 
+// The browser tests may serve a plugin's stand-in for an outside service (its test/fake-*.ts), and nothing else of it.
+const viewerTestsBoundary = {
+  files: ['packages/viewer/e2e/**/*.ts'],
+  rules: {
+    'no-restricted-imports': ['error', {
+      patterns: [
+        viewerBoundary.rules['no-restricted-imports'][1].patterns[0],
+        { ...viewerBoundary.rules['no-restricted-imports'][1].patterns[1], regex: '^(\\.\\./)+(kernel|cli|plugin-[^/]+)(/(?!test/fake-[a-z-]+\\.ts$)|$)' },
+      ],
+    }],
+  },
+}
+
 // The agent routes are open to any program on this machine: they reach neither the owner's routes
 // (api.ts holds the calls and init) nor a face that acts in a library.
 const agentRoutesBoundary = {
@@ -238,6 +251,7 @@ export default tseslint.config(
   kernelBoundary,
   pluginBoundary,
   viewerBoundary,
+  viewerTestsBoundary,
   agentRoutesBoundary,
   webBoundary,
   ...storageDoor,

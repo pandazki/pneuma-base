@@ -237,9 +237,11 @@ async function lookAll(run: Run, ids: readonly ThingId[]): Promise<Seen[]> {
   if (identified.length > 0) await tools.storage.records.put({ [IDENTIFIED]: identified })
   let answer: ReadonlyMap<SiteName, Served> | null = null
   let unreachable: string | null = null
-  if (target?.serving) {
+  const asked = [...new Set(parts.flatMap((p) => p.names))]
+  // Nothing to ask about is no reason to reach the target.
+  if (target?.serving && asked.length > 0) {
     try {
-      answer = await target.serving([...new Set(parts.flatMap((p) => p.names))], { detail: run.view })
+      answer = await target.serving(asked, { detail: run.view })
     } catch (error) {
       unreachable = messageOf(error)
     }
