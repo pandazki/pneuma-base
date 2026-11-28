@@ -39,8 +39,8 @@ export function dirKind(dir: Place, registered: Registered): DirKind {
  * look stopped at its budget, and whether it looks like a project, by the well-known names at its top.
  */
 export function probeWords(p: Probe): string {
-  const files = p.exceeded ? (p.files > 0 ? `至少 ${p.files} 个文件` : `至少 ${p.dirs} 个目录`) : p.files > 0 ? `${p.files} 个文件` : p.dirs > 0 ? `没有文件，${p.dirs} 个目录` : '空的'
-  return p.markers.length === 0 ? files : `${files}，像一个项目（${p.markers.join('、')}）`
+  const files = p.exceeded ? (p.files > 0 ? `至少 ${p.files} 个文件` : `至少 ${p.dirs} 个目录`) : p.files > 0 ? `${p.files} 个文件` : p.dirs > 0 ? `无文件，${p.dirs} 个目录` : '空'
+  return p.markers.length === 0 ? files : `${files}，可能是项目目录（${p.markers.join('、')}）`
 }
 
 /** The kernel's own names at the root, which no listing of the content mentions as anything. */

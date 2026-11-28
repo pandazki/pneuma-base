@@ -24,62 +24,62 @@ const under = (lines: readonly string[]) => lines.map((l) => (l === '' ? '' : ` 
 
 function opening(root: string): string {
   return [
-    `这是你的用户在这台机器上的 Pneuma Base 库，在 ${root}。`,
-    '它是 agent 的资料库和制品库：找到的资料、做出来的东西都放进来，下次从这里找。',
-    '你在库里做的每件事都记在你自己的名字下，主人看得到是哪个 agent 做的。',
-    '要用它，先请主人把你接上（配对）：主人点一下允许，你就有了自己的授权名。',
+    `此处是本机用户的 Pneuma Base 资料库，位于 ${root}。`,
+    'Pneuma Base 是 Agent 的资料库和制品库：检索到的资料和生成的成果添加到此处，之后从此处检索。',
+    'Agent 在资料库中的每项操作都记录在其授权名称下，所有者可查看每项操作的执行者。',
+    '使用前需先连接（配对）：所有者允许后，Agent 获得自己的授权名称。',
   ].join('')
 }
 
 function pairing({ root, home, url }: GuideFacts, product: string): string {
   const launcher = quote(launcherPath(home))
-  const cli = `${launcher} pair request ${product} "<为什么>" --library ${quote(root)}`
+  const cli = `${launcher} pair request ${product} "<原因>" --library ${quote(root)}`
   const status = `${launcher} pair status <id>`
-  const ask = url === null ? sh(cli) : [...sh(`curl -s -X POST ${url}/pair -H 'content-type: application/json' -d '{"product": "${product}", "why": "<一句话>"}'`), '', '能运行命令的，也可以用命令行：', '', ...sh(cli)]
-  const poll = url === null ? sh(status) : [...sh(`curl -s ${url}/pair/<id>`), '', `或者 \`${status}\`。`]
+  const ask = url === null ? sh(cli) : [...sh(`curl -s -X POST ${url}/pair -H 'content-type: application/json' -d '{"product": "${product}", "why": "<原因>"}'`), '', '可运行命令的 Agent 也可使用命令行：', '', ...sh(cli)]
+  const poll = url === null ? sh(status) : [...sh(`curl -s ${url}/pair/<id>`), '', `或运行 \`${status}\`。`]
   return [
-    '## 接上（配对）',
+    '## 连接（配对）',
     '',
-    '1. 请求接入，说你是哪个产品、为什么要接上：',
+    '1. 请求接入，写明产品名称和接入原因：',
     '',
-    ...under([...ask, '', '答复里有 `id` 和 `code`。']),
-    '2. 把 `code`（形如 `123-456`）给你的用户看：主人在 Pneuma Base 的首页上看到同一个码，核对后点「允许」。',
-    '3. 每隔几秒问一次，直到 `state` 不再是 `waiting`：',
+    ...under([...ask, '', '答复中包含 `id` 和 `code`。']),
+    '2. 向用户展示 `code`（形如 `123-456`）：所有者在 Pneuma Base 首页看到同一配对码，核对后点击「允许」。',
+    '3. 每隔几秒查询一次，直到 `state` 不再是 `waiting`：',
     '',
     ...under([
       ...poll,
       '',
-      '- `connected`：接上了。答复里有你的授权名、之后运行的命令和先读什么。',
-      '- `declined`：主人拒绝了，不要再请求。',
-      '- `expired`：10 分钟没人允许，过期了；要接上，重新请求一次。',
+      '- `connected`：已连接。答复中包含授权名称、之后运行的命令和需先读取的文件。',
+      '- `declined`：所有者已拒绝，不要再次请求。',
+      '- `expired`：10 分钟内未获允许，已过期；如需连接，请重新请求。',
     ]),
   ].join('\n')
 }
 
 function afterwards({ root, home }: GuideFacts, grant: string, note: string | null): string {
-  const read = `先读 ${join(root, DESCRIPTION_FILE)}：库的规矩和动词都在里面。${note ?? ''}每件事开始时运行：`
-  return ['## 接上之后', '', read, '', ...sh(`${quote(launcherPath(home))} @${grant} start "<一句话>"`)].join('\n')
+  const read = `先读取 ${join(root, DESCRIPTION_FILE)}：其中包含资料库的规则和基本命令。${note ?? ''}每项任务开始时运行：`
+  return ['## 连接之后', '', read, '', ...sh(`${quote(launcherPath(home))} @${grant} start "<任务描述>"`)].join('\n')
 }
 
 function generic(facts: GuideFacts, product: string): string[] {
   const { root, home, url } = facts
   const launcher = quote(launcherPath(home))
   const where = (p: AgentProduct) => (url === null ? `\`${launcher} guide ${p.name} --library ${quote(root)}\`` : guideUrl(url, p.name))
-  const products = ['## 各产品的说明', '', '有你的产品的，照它的说明做：', '', ...GUIDED.map((p) => `- ${p.title}（${p.name}）：${where(p)}`), '', '别的产品照这一页做，接上之后经 MCP 用这个库（见下面「只能接 MCP 的应用」）。'].join('\n')
+  const products = ['## 各产品的说明', '', '已列出的产品按其说明操作：', '', ...GUIDED.map((p) => `- ${p.title}（${p.name}）：${where(p)}`), '', '其他产品按本页操作，连接后通过 MCP 使用此资料库（见下文「仅支持 MCP 的应用」）。'].join('\n')
   const http =
     url === null
-      ? '- MCP（streamable HTTP）：Pneuma Base 应用或 `pneuma-base view` 开着时才有地址，到时再读一遍这份说明。'
-      : `- MCP（streamable HTTP）：\`${mcpUrl(url, '<授权名>')}\`；加 \`?session=<名字>\` 给这次会话起个名字，一个名字是一个场景。`
-  const mcp = ['## 只能接 MCP 的应用', '', '接上之后，不能运行命令、只能接 MCP 的应用这样连：', '', http, `- MCP（标准输入输出）：\`${launcher} @<授权名> mcp\``].join('\n')
-  return [`# Pneuma Base：${basename(root)}`, opening(root), pairing(facts, product), products, afterwards(facts, '<授权名>', null), mcp]
+      ? '- MCP（streamable HTTP）：仅在 Pneuma Base 应用或 `pneuma-base view` 运行时提供地址，届时重新读取本说明。'
+      : `- MCP（streamable HTTP）：\`${mcpUrl(url, '<授权名称>')}\`；加 \`?session=<名称>\` 为本次会话命名，一个名称对应一个场景。`
+  const mcp = ['## 仅支持 MCP 的应用', '', '连接后，无法运行命令、仅支持 MCP 的应用按以下方式连接：', '', http, `- MCP（标准输入输出）：\`${launcher} @<授权名称> mcp\``].join('\n')
+  return [`# Pneuma Base：${basename(root)}`, opening(root), pairing(facts, product), products, afterwards(facts, '<授权名称>', null), mcp]
 }
 
 function productGuide(facts: GuideFacts, p: AgentProduct): string[] {
   const way = waysOf(p)[0] as Way
-  const how = ['## 在这里怎么接上', '', `主人允许之后，${p.title} 以「${WAY_WORD[way]}」接上：写在 ${whereOf(p, way, p.name, facts.env)}。`].join('\n')
-  const likely = `你的授权名多半是 ${p.name}（以产品命名；这台机器上已经有同名的，会是 ${p.name}-2 这样的，以配对的答复为准）。`
-  const known = ['## 已知的', '', ...[...(p.guide ?? []), ...(p.notice ? [p.notice(facts.root)] : [])].map((l) => `- ${l}`)].join('\n')
-  return [`# Pneuma Base：${basename(facts.root)}（给 ${p.title}）`, opening(facts.root), how, pairing(facts, p.name), afterwards(facts, p.name, likely), known]
+  const how = ['## 连接方式', '', `所有者允许后，${p.title} 以「${WAY_WORD[way]}」连接：写入 ${whereOf(p, way, p.name, facts.env)}。`].join('\n')
+  const likely = `授权名称通常为 ${p.name}（以产品命名；本机已有同名授权时为 ${p.name}-2 等，以配对的答复为准）。`
+  const known = ['## 注意事项', '', ...[...(p.guide ?? []), ...(p.notice ? [p.notice(facts.root)] : [])].map((l) => `- ${l}`)].join('\n')
+  return [`# Pneuma Base：${basename(facts.root)}（适用于 ${p.title}）`, opening(facts.root), how, pairing(facts, p.name), afterwards(facts, p.name, likely), known]
 }
 
 /**

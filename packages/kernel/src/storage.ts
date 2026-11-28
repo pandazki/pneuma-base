@@ -98,7 +98,7 @@ class Served {
       if (this.child !== child) return
       this.child = null
       this.subscription = null
-      const error = new Error(`存储的程序停了（${why}）${this.stderr ? `：${this.stderr.trim()}` : ''}`)
+      const error = new Error(`存储程序已停止（${why}）${this.stderr ? `：${this.stderr.trim()}` : ''}`)
       for (const w of this.waiting.values()) w.reject(error)
       this.waiting.clear()
     }
@@ -175,7 +175,7 @@ export class StorageError extends Error {
     op: string,
     readonly answer: StorageFailure,
   ) {
-    super(`存储答 ${op}：${answer.reason}${answer.detail ? `（${answer.detail}）` : ''}`)
+    super(`存储操作 ${op} 失败：${answer.reason}${answer.detail ? `（${answer.detail}）` : ''}`)
   }
 }
 

@@ -62,4 +62,4 @@ export const guideUrl = (origin: string, product: string | null = null): string 
 export const mcpUrl = (origin: string, grant: string): string => `${origin}/mcp/${grant}`
 
 /** The one sentence the owner says to any agent. */
-export const sentenceFor = (origin: string): string => `读一下 ${guideUrl(origin)}，接上我的 Pneuma Base 库。`
+export const sentenceFor = (origin: string): string => `读取 ${guideUrl(origin)}，连接我的 Pneuma Base 资料库。`

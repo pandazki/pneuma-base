@@ -62,7 +62,7 @@ const checkedBuiltins = new WeakSet<Plugin>()
 function checkBuiltin(name: string, plugin: Plugin): void {
   if (checkedBuiltins.has(plugin)) return
   const wrong = whatIsWrong(plugin, name)
-  if (wrong.length > 0) throw new Error(`自带插件 ${name} 过不了插件的核对：${wrong.join('；')}`)
+  if (wrong.length > 0) throw new Error(`内置插件 ${name} 未通过插件校验：${wrong.join('；')}`)
   checkedBuiltins.add(plugin)
 }
 
@@ -123,7 +123,7 @@ async function stampOf(dir: string): Promise<string> {
  * null to take the name it gives.
  */
 export async function loadDir(dir: string, name: string | null): Promise<Plugin | { failed: string }> {
-  if (!(await regularFile(join(dir, 'index.js')))) return { failed: `${dir} 里没有 index.js` }
+  if (!(await regularFile(join(dir, 'index.js')))) return { failed: `${dir} 中缺少 index.js` }
   let file = join(dir, 'index.js')
   let module: { default?: unknown }
   try {
@@ -140,7 +140,7 @@ export async function loadDir(dir: string, name: string | null): Promise<Plugin 
     return { failed: `加载 ${file} 时出错：${error instanceof Error ? error.message : String(error)}` }
   }
   const wrong = whatIsWrong(module.default, name)
-  return wrong.length === 0 ? (module.default as Plugin) : { failed: `${file} 的缺省导出不是能用的插件：${wrong.join('；')}` }
+  return wrong.length === 0 ? (module.default as Plugin) : { failed: `${file} 的默认导出不是有效的插件：${wrong.join('；')}` }
 }
 
 // ---- installing on this machine ----
@@ -222,7 +222,7 @@ function eachOf(items: unknown, what: string, wrong: string[], entry: (v: unknow
     if (problem !== null) wrong.push(problem)
     const claimed = id(item)
     if (claimed === undefined) continue
-    if (seen.has(claimed)) wrong.push(`${String(claimed)} 写了两次`)
+    if (seen.has(claimed)) wrong.push(`${String(claimed)} 重复声明`)
     seen.add(claimed)
   }
 }
@@ -238,32 +238,32 @@ function eachOf(items: unknown, what: string, wrong: string[], entry: (v: unknow
  * answers and whether it throws (K8), and where the plugin writes.
  */
 function whatIsWrong(p: unknown, name: string | null): string[] {
-  if (!isObject(p)) return ['它不是一个对象']
+  if (!isObject(p)) return ['不是对象']
   const wrong: string[] = []
   const check = (ok: boolean, what: string) => {
     if (!ok) wrong.push(what)
   }
   const supported = `第 ${SUPPORTED_CONTRACTS.join('、')} 版`
-  if (p.contract === undefined) wrong.push(`没有写 contract，即它按哪一版插件契约写的；这个 pneuma-base 认识${supported}`)
-  else if (p.contract === 1) wrong.push(`contract 是 1：这个 pneuma-base 只跑第 ${CONTRACT} 版插件契约。要改的地方见${FROM_1}`)
-  else check(SUPPORTED_CONTRACTS.includes(p.contract as number), `contract 是 ${JSON.stringify(p.contract)}，这个 pneuma-base 只认识${supported}插件契约`)
-  if (name !== null) check(p.name === name, `名字是 ${JSON.stringify(p.name)}，不是目录名 ${name}`)
-  else check(isText(p.name) && PLUGIN_NAME.test(p.name), `名字 ${JSON.stringify(p.name)} 不是插件名：小写字母开头，只用小写字母、数字和连字符`)
+  if (p.contract === undefined) wrong.push(`缺少 contract，即插件依据的插件契约版本；此 pneuma-base 支持${supported}`)
+  else if (p.contract === 1) wrong.push(`contract 为 1：此 pneuma-base 仅运行第 ${CONTRACT} 版插件契约。需修改之处见${FROM_1}`)
+  else check(SUPPORTED_CONTRACTS.includes(p.contract as number), `contract 为 ${JSON.stringify(p.contract)}，此 pneuma-base 仅支持${supported}插件契约`)
+  if (name !== null) check(p.name === name, `名称为 ${JSON.stringify(p.name)}，与目录名 ${name} 不一致`)
+  else check(isText(p.name) && PLUGIN_NAME.test(p.name), `名称 ${JSON.stringify(p.name)} 不是有效的插件名称：须以小写字母开头，仅含小写字母、数字和连字符`)
   const own = isText(p.name) ? p.name : String(name)
-  check(!RESERVED_PLUGIN_NAMES.includes(own), `名字 ${own} 是命令行或内核自己用的词，插件不能叫这个`)
-  for (const key of ['version', 'title', 'summary', 'about']) check(optional(p[key], isText), `${key} 不是文字`)
-  check(optional(p.keeps, (v) => v === 'every' || v === 'some'), 'keeps 只能是 every 或 some')
+  check(!RESERVED_PLUGIN_NAMES.includes(own), `名称 ${own} 为命令行或内核保留，插件不能使用`)
+  for (const key of ['version', 'title', 'summary', 'about']) check(optional(p[key], isText), `${key} 不是字符串`)
+  check(optional(p.keeps, (v) => v === 'every' || v === 'some'), 'keeps 只能为 every 或 some')
   const c = p.cognition
   check(c === null || (isObject(c) && isText(c.title) && isText(c.text)), 'cognition 既不是 null 也不是 { title, text }')
-  eachOf(p.storage, 'storage', wrong, (d) => (isObject(d) && isText(d.dir) && (d.kind === 'body' || d.kind === 'cache') ? null : `storage 的每一项要是 { dir, kind: 'body' | 'cache' }`))
-  eachOf(p.statements, 'statements', wrong, (k) => (isText(k) && k !== '' ? null : 'statements 的每一项要是不空的文字'), (k) => k)
+  eachOf(p.storage, 'storage', wrong, (d) => (isObject(d) && isText(d.dir) && (d.kind === 'body' || d.kind === 'cache') ? null : `storage 的每一项须为 { dir, kind: 'body' | 'cache' }`))
+  eachOf(p.statements, 'statements', wrong, (k) => (isText(k) && k !== '' ? null : 'statements 的每一项须为非空字符串'), (k) => k)
   eachOf(p.ownerCommands, 'ownerCommands', wrong, (cmd) => commandWrong(cmd, own), (cmd) => (isObject(cmd) ? cmd.name : undefined))
   if (p.views !== undefined) eachOf(p.views, 'views', wrong, (v) => viewWrong(v, own), (v) => (isObject(v) ? v.id : undefined))
   if (p.secrets !== undefined) {
     const secretWrong = (s: unknown) =>
       isObject(s) && isText(s.name) && SECRET_NAME.test(s.name) && isText(s.description) && optional(s.title, isText) && (s.optional === undefined || typeof s.optional === 'boolean')
         ? null
-        : 'secrets 的每一项要是 { name, description }，可以带文字的 title 和 optional: true 或 false；name 用小写字母开头，只用小写字母、数字和连字符'
+        : 'secrets 的每一项须为 { name, description }，可带字符串 title 和 optional: true 或 false；name 须以小写字母开头，仅含小写字母、数字和连字符'
     eachOf(p.secrets, 'secrets', wrong, secretWrong, (s) => (isObject(s) ? s.name : undefined))
   }
   for (const hook of Object.keys(HOOKS)) check(optional(p[hook], (v) => typeof v === 'function'), `${hook} 不是函数`)
@@ -271,42 +271,42 @@ function whatIsWrong(p: unknown, name: string | null): string[] {
 }
 
 function commandWrong(cmd: unknown, plugin: string): string | null {
-  if (!isObject(cmd) || !isText(cmd.name)) return 'ownerCommands 的每一项要是带名字的主人命令'
+  if (!isObject(cmd) || !isText(cmd.name)) return 'ownerCommands 的每一项须为带 name 的所有者命令'
   const name = cmd.name
-  if (!name.startsWith(`${plugin} `)) return `主人命令「${name}」不以「${plugin} 」开头`
-  if ((KERNEL_COMMAND_NAMES as readonly string[]).includes(name)) return `主人命令「${name}」是内核自己的`
+  if (!name.startsWith(`${plugin} `)) return `所有者命令「${name}」未以「${plugin} 」开头`
+  if ((KERNEL_COMMAND_NAMES as readonly string[]).includes(name)) return `所有者命令「${name}」为内核命令`
   const typed = isText(cmd.summary) && isBoolean(cmd.destructive) && isBoolean(cmd.ownerOnly) && typeof cmd.run === 'function'
   const flags = optional(cmd.readOnly, isBoolean) && optional(cmd.setup, isBoolean) && optional(cmd.askable, (v) => v === false)
-  if (!typed || !flags) return `主人命令「${name}」要有文字的 summary、真假的 destructive 和 ownerOnly、函数 run，readOnly 和 setup 是真假，askable 没有或是 false`
-  if (!optional(cmd.act, isAct)) return `主人命令「${name}」的 act 要有 kind（${FEED_ACTS.join('、')} 之一），object 和 name 没有或是文字`
-  if (cmd.params === undefined) return `主人命令「${name}」没有 params：每条命令都声明它的参数，什么都不带的写 params: {}`
+  if (!typed || !flags) return `所有者命令「${name}」须有字符串 summary、布尔值 destructive 和 ownerOnly、函数 run；readOnly 和 setup 为布尔值，askable 省略或为 false`
+  if (!optional(cmd.act, isAct)) return `所有者命令「${name}」的 act 须有 kind（${FEED_ACTS.join('、')} 之一），object 和 name 省略或为字符串`
+  if (cmd.params === undefined) return `所有者命令「${name}」缺少 params：每条命令须声明参数，无参数时写 params: {}`
   const wrong = paramsWrong(cmd.params)
-  return wrong === null ? null : `主人命令「${name}」的 params：${wrong}`
+  return wrong === null ? null : `所有者命令「${name}」的 params：${wrong}`
 }
 
 const FLAG_NAME = /^[a-z][a-z0-9-]*$/
 
 /** What is wrong with a command's `params`, in Chinese; null when nothing is. */
 function paramsWrong(params: unknown): string | null {
-  if (!isObject(params)) return '要是 { positional, flags }'
+  if (!isObject(params)) return '须为 { positional, flags }'
   const positional = params.positional ?? []
   const flags = params.flags ?? []
-  if (!Array.isArray(positional) || !Array.isArray(flags)) return 'positional 和 flags 要是列表'
+  if (!Array.isArray(positional) || !Array.isArray(flags)) return 'positional 和 flags 须为列表'
   const names = new Set<string>()
   const named = (p: unknown, what: string): string | null => {
-    if (!isObject(p) || !isText(p.name) || p.name === '' || !isText(p.hint)) return `${what}的每一项要有文字的 name 和 hint`
-    if (names.has(p.name)) return `${p.name} 写了两次`
+    if (!isObject(p) || !isText(p.name) || p.name === '' || !isText(p.hint)) return `${what}的每一项须有字符串 name 和 hint`
+    if (names.has(p.name)) return `${p.name} 重复声明`
     names.add(p.name)
-    return optional(p.required, isBoolean) && optional(p.pattern, isPattern) ? null : `${p.name} 的 required 要是真假，pattern 要是正则表达式`
+    return optional(p.required, isBoolean) && optional(p.pattern, isPattern) ? null : `${p.name} 的 required 须为布尔值，pattern 须为正则表达式`
   }
   let optionalSeen = false
   for (const [i, p] of positional.entries()) {
     const wrong = named(p, '位置参数')
     if (wrong !== null) return wrong
     const a = p as Record<string, unknown>
-    if (!optional(a.many, isBoolean)) return `${String(a.name)} 的 many 要是真假`
-    if (a.many === true && i !== positional.length - 1) return `只有最后一个位置参数能是 many：${String(a.name)}`
-    if (a.required === true && optionalSeen) return `必填的位置参数 ${String(a.name)} 不能在可省的后面`
+    if (!optional(a.many, isBoolean)) return `${String(a.name)} 的 many 须为布尔值`
+    if (a.many === true && i !== positional.length - 1) return `仅最后一个位置参数可为 many：${String(a.name)}`
+    if (a.required === true && optionalSeen) return `必填位置参数 ${String(a.name)} 不能位于可选参数之后`
     if (a.required !== true) optionalSeen = true
   }
   for (const f of flags) {
@@ -314,21 +314,21 @@ function paramsWrong(params: unknown): string | null {
     if (wrong !== null) return wrong
     const flag = f as Record<string, unknown>
     const id = String(flag.name)
-    if (!FLAG_NAME.test(id)) return `--${id} 不是能用的名字：小写字母开头，只用小写字母、数字和连字符`
-    if (GLOBAL_FLAG_NAMES.includes(id)) return `--${id} 是每条命令都有的，不能再声明`
-    if (flag.kind !== 'value' && flag.kind !== 'list' && flag.kind !== 'boolean') return `--${id} 的 kind 只能是 value、list 或 boolean`
-    if (flag.kind === 'boolean' && (flag.required !== undefined || flag.pattern !== undefined)) return `--${id} 是开关，不能 required，也没有 pattern`
+    if (!FLAG_NAME.test(id)) return `--${id} 不是有效名称：须以小写字母开头，仅含小写字母、数字和连字符`
+    if (GLOBAL_FLAG_NAMES.includes(id)) return `--${id} 是全局参数，不能重复声明`
+    if (flag.kind !== 'value' && flag.kind !== 'list' && flag.kind !== 'boolean') return `--${id} 的 kind 只能为 value、list 或 boolean`
+    if (flag.kind === 'boolean' && (flag.required !== undefined || flag.pattern !== undefined)) return `--${id} 为开关，不能设置 required 或 pattern`
     if (flag.options !== undefined) {
       const ok = flag.kind === 'value' && Array.isArray(flag.options) && flag.options.length > 0 && flag.options.every((o) => isObject(o) && isText(o.value) && isText(o.label))
-      if (!ok) return `--${id} 的 options 只给 value，要是不空的 { value, label } 列表`
+      if (!ok) return `--${id} 的 options 仅用于 value，须为非空的 { value, label } 列表`
     }
   }
   return null
 }
 
 function viewWrong(view: unknown, plugin: string): string | null {
-  if (!isObject(view) || !isText(view.id)) return 'views 的每一项要是带 id 的视图'
-  if (!view.id.startsWith(`${plugin}.`)) return `视图 ${view.id} 不以 ${plugin}. 开头`
+  if (!isObject(view) || !isText(view.id)) return 'views 的每一项须为带 id 的视图'
+  if (!view.id.startsWith(`${plugin}.`)) return `视图 ${view.id} 未以 ${plugin}. 开头`
   const ok = isText(view.title) && isText(view.icon) && typeof view.nav === 'boolean' && Array.isArray(view.filters) && optional(view.ownerOnly, isBoolean) && optional(view.home, isBoolean) && optional(view.with, isText)
-  return ok ? null : `视图 ${view.id} 要有文字的 title 和 icon、真假的 nav、列表 filters，ownerOnly 和 home 没有或是真假，with 没有或是文字`
+  return ok ? null : `视图 ${view.id} 须有字符串 title 和 icon、布尔值 nav、列表 filters；ownerOnly 和 home 省略或为布尔值，with 省略或为字符串`
 }

@@ -19,16 +19,16 @@ type Open = (value: string) => boolean
 function wrongWith(name: string, params: OwnerParams, args: OwnerArgs, values: Record<string, OwnerValues[string]>, open: Open): string | null {
   const flags = params.flags ?? []
   const unknown = Object.keys(args.flags).find((f) => !flags.some((d) => d.name === f))
-  if (unknown !== undefined) return `${name} 不认识 --${unknown}。`
+  if (unknown !== undefined) return `${name} 不支持 --${unknown}。`
 
   const positional = params.positional ?? []
   const rest = args.positional.slice(positional.filter((p) => !p.many).length)
-  if (!positional.at(-1)?.many && rest.length > 0) return `${name} 多了参数：${rest.join(' ')}。`
+  if (!positional.at(-1)?.many && rest.length > 0) return `${name} 有多余的参数：${rest.join(' ')}。`
   for (const [i, p] of positional.entries()) {
     const value = p.many ? rest.map(given).filter((v) => v !== null) : given(args.positional[i])
-    if (p.required && (value === null || (Array.isArray(value) && value.length === 0))) return `${name} 少了 ${named(p)}。`
+    if (p.required && (value === null || (Array.isArray(value) && value.length === 0))) return `${name} 缺少 ${named(p)}。`
     const bad = (Array.isArray(value) ? value : value === null ? [] : [value]).find((v) => !open(v) && !matches(p.pattern, v))
-    if (bad !== undefined) return `${named(p)} 写的「${bad}」不对，要整个匹配 ${p.pattern}。`
+    if (bad !== undefined) return `${named(p)} 的值「${bad}」无效，须完整匹配 ${p.pattern}。`
     values[p.name] = value
   }
 
@@ -45,16 +45,16 @@ function flagValue(f: FlagParam, raw: string[] | true | undefined, values: Recor
     // A switch on the command line; a form sends it as the value yes or no.
     const written = raw === true ? 'yes' : raw === undefined ? 'no' : raw.length <= 1 ? (given(raw[0]) ?? 'no') : null
     const one = written !== null && open(written) ? 'yes' : written
-    if (one !== 'yes' && one !== 'no') return `${flag} 不带值。`
+    if (one !== 'yes' && one !== 'no') return `${flag} 不接受值。`
     values[f.name] = one === 'yes'
     return null
   }
   const list = raw === undefined || raw === true ? [] : raw.map(given).filter((v) => v !== null)
-  if (f.kind === 'value' && list.length > 1) return `${flag} 只要一个值。`
-  if (f.required && list.length === 0) return `要写 ${flag}${f.options ? ` ${f.options.map((o) => o.value).join('|')}` : ` <${f.hint}>`}。`
+  if (f.kind === 'value' && list.length > 1) return `${flag} 只接受一个值。`
+  if (f.required && list.length === 0) return `缺少 ${flag}${f.options ? ` ${f.options.map((o) => o.value).join('|')}` : ` <${f.hint}>`}。`
   for (const v of list.filter((v) => !open(v))) {
-    if (f.options && !f.options.some((o) => o.value === v)) return `${flag} 只能是 ${f.options.map((o) => o.value).join('、')}：${v}`
-    if (!matches(f.pattern, v)) return `${flag} 写的「${v}」不对，要整个匹配 ${f.pattern}（${f.hint}）。`
+    if (f.options && !f.options.some((o) => o.value === v)) return `${flag} 只能为 ${f.options.map((o) => o.value).join('、')}：${v}`
+    if (!matches(f.pattern, v)) return `${flag} 的值「${v}」无效，须完整匹配 ${f.pattern}（${f.hint}）。`
   }
   values[f.name] = f.kind === 'list' ? list : (list[0] ?? null)
   return null

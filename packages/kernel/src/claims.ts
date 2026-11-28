@@ -7,9 +7,12 @@ type Claim = { kind: 'statement' | 'command' | 'view'; name: string }
 
 const key = (c: Claim) => `${c.kind}\0${c.name}`
 
+/** The name a person says for a plugin: its title, else its cognition's title, else its identifier. */
+export const pluginTitle = (p: Pick<Plugin, 'name' | 'title' | 'cognition'>): string => p.title ?? p.cognition?.title ?? p.name
+
 /** A claim as the owner reads it. */
 export function said(c: Claim): string {
-  return `${c.kind === 'statement' ? '「说」的种类' : c.kind === 'command' ? '主人命令' : '视图'}「${c.name}」`
+  return `${c.kind === 'statement' ? '记录类型' : c.kind === 'command' ? '所有者命令' : '视图'}「${c.name}」`
 }
 
 /** The names `plugin` claims. A view whose id lacks its `<name>.` prefix claims nothing: the viewer leaves it out. */
@@ -54,7 +57,7 @@ export function settle(plugins: readonly Plugin[]): { plugins: Plugin[]; clashes
     }) as Plugin
     kept.push(trimmed)
     for (const { claim, holder } of taken) {
-      clashes.push({ plugin: plugin.name, message: `${said(claim)}已归插件 ${holder}，这里的同名一项没有接上。一个名字只归一个插件，卸下其中一个就好。` })
+      clashes.push({ plugin: plugin.name, message: `${said(claim)}已属于插件 ${holder}，此处的同名项未生效。一个名称只能属于一个插件，请停用其中一个。` })
     }
   }
   return { plugins: kept, clashes }

@@ -24,8 +24,8 @@ const shWord = (word: string) => `'${word.replaceAll("'", `'\\''`)}'`
 function launcherText({ node, entry, home }: Launcher): string {
   return [
     '#!/bin/sh',
-    '# 这台机器上的 pneuma-base。接上的 agent 按这个路径运行它，路径不变，内容由提供命令行的一方保持最新：',
-    '# Pneuma Base 应用每次启动时，或 pneuma-base launcher install。',
+    '# 本机的 pneuma-base。已连接的 Agent 按此路径运行它；路径不变，内容由提供命令行的一方保持最新：',
+    '# Pneuma Base 应用每次启动时，或运行 pneuma-base launcher install 时。',
     `PNEUMA_BASE_HOME=${shWord(home)}`,
     'export PNEUMA_BASE_HOME',
     `exec ${shWord(node)} ${shWord(entry)} "$@"`,
@@ -62,12 +62,12 @@ async function readLauncher(path: string): Promise<Launcher | null | 'missing'> 
  */
 export async function launcherProblems(path: string): Promise<string[]> {
   const l = await readLauncher(path)
-  if (l === 'missing') return [`命令 ${path} 不在了`]
-  if (l === null) return [`命令 ${path} 读不懂，不是 pneuma-base 写的`]
+  if (l === 'missing') return [`命令 ${path} 已缺失`]
+  if (l === null) return [`命令 ${path} 无法解析，不是 pneuma-base 写入的`]
   return [
-    ...((await exists(l.node)) ? [] : [`命令 ${path} 指向的 node 不在了（${l.node}）`]),
-    ...((await exists(l.entry)) ? [] : [`命令 ${path} 指向的命令行不在了（${l.entry}）`]),
-    ...(resolve(l.home) === resolve(path, '../..') ? [] : [`命令 ${path} 用的是另一个家目录（${l.home}）`]),
+    ...((await exists(l.node)) ? [] : [`命令 ${path} 指向的 node 已缺失（${l.node}）`]),
+    ...((await exists(l.entry)) ? [] : [`命令 ${path} 指向的命令行程序已缺失（${l.entry}）`]),
+    ...(resolve(l.home) === resolve(path, '../..') ? [] : [`命令 ${path} 使用了另一个家目录（${l.home}）`]),
   ]
 }
 
@@ -125,7 +125,7 @@ export const ranText = ({ launcher: l }: Installed): string => `命令：${l.pat
 export const launcherInstall: KernelCommand = command({
   name: 'launcher install',
   act: { kind: 'installed', name: 'pneuma-base 命令' },
-  summary: '让这台机器上的 pneuma-base 命令（$PNEUMA_BASE_HOME/bin/pneuma-base）指向现在这个命令行；接上的 agent 都按它的路径运行',
+  summary: '使本机的 pneuma-base 命令（$PNEUMA_BASE_HOME/bin/pneuma-base）指向当前命令行；已连接的 Agent 均按此路径运行',
   params: {},
   destructive: false,
   ownerOnly: true,
@@ -133,7 +133,7 @@ export const launcherInstall: KernelCommand = command({
   async run(_values, call) {
     const installed = await installLauncher(call.ctx.home, thisCommandLine(call.env))
     const { path, node, entry, home } = installed.launcher
-    const text = installed.changed ? `已写好 ${path}：运行 ${node} ${entry}，家目录 ${home}。接上的 agent 都按这个路径运行它。` : `${path} 已经指向这个命令行，没有改。`
+    const text = installed.changed ? `已写入 ${path}：运行 ${node} ${entry}，家目录 ${home}。已连接的 Agent 均按此路径运行。` : `${path} 已指向当前命令行，未修改。`
     return done(text, installed)
   },
 })

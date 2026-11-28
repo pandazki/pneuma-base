@@ -50,7 +50,7 @@ export async function registerPage(ctx: Context, opts: { after?: string; limit?:
   const quiet: Context = { ...ctx, pass: undefined }
   const limit = Math.min(Math.max(1, Math.floor(opts.limit ?? PAGE)), MOST)
   const page: unknown = await keeper.registered({ after: opts.after ?? null, limit }, pluginContext(quiet, keeper.name))
-  if (!isObject(page) || !Array.isArray(page.things)) throw new Error(`插件 ${keeper.name} 的 registered 答的不是登记的一页`)
+  if (!isObject(page) || !Array.isArray(page.things)) throw new Error(`插件 ${keeper.name} 的 registered 返回的不是已登记条目的分页`)
   const more = isObject(page.more) && typeof page.more.after === 'string' ? { after: page.more.after } : null
   return { things: page.things.flatMap((t) => thingOf(t) ?? []), more, total: isCount(page.total) ? page.total : null, keeper: keeper.name }
 }
@@ -73,7 +73,7 @@ async function progressOf(root: string, names: readonly string[]): Promise<Map<s
       if (f !== null) latest.set(f.plugin, f)
     }
     const put = await records.put({ [TABLE]: [...latest.values()].map((c) => ({ key: c.plugin, value: c })) }, { cursor: batch.cursor, expect: got.cursor })
-    if (!put.written && tries > 20) throw new Error('补上的行一直在被别的进程改写')
+    if (!put.written && tries > 20) throw new Error('补录记录持续被其他进程改写')
   }
 }
 
@@ -91,16 +91,16 @@ export async function catchingUp(ctx: Context): Promise<Map<PluginName, Catching
 const COMMAND = (name: string) => `pneuma-base plugin backfill ${name}`
 
 /** How far a plugin's catching up got, in words. */
-export const catchingUpCount = (c: CatchingUp): string => `装上之前登记的${c.total === null ? '东西' : ` ${c.total} 样`}补了 ${c.done} 样`
+export const catchingUpCount = (c: CatchingUp): string => `启用前已登记的${c.total === null ? '条目' : ` ${c.total} 个条目`}已补录 ${c.done} 个`
 
 /** The one line a plugin's answers carry until its catching up has finished. */
-export const catchingUpLine = (c: CatchingUp): string => `${catchingUpCount(c)}；接着补：${COMMAND(c.plugin)}`
+export const catchingUpLine = (c: CatchingUp): string => `${catchingUpCount(c)}；继续补录：${COMMAND(c.plugin)}`
 
 /** What a run of catching up came to, in one line. */
 export function caughtUpText(name: string, r: CaughtUp, keeper: boolean): string {
-  if (r.nothing) return keeper ? '库里还没有登记过的东西。' : '这个库没装记着登记的插件。'
-  if (r.finished) return `${name} 补上了装上之前登记的 ${r.done} 样。`
-  return `${name} 补了装上之前登记的 ${r.done}${r.total === null ? '' : ` / ${r.total}`} 样；接着补：${COMMAND(name)}`
+  if (r.nothing) return keeper ? '资料库中暂无已登记的条目。' : '此资料库未启用记录登记的插件。'
+  if (r.finished) return `${name} 已补录启用前已登记的 ${r.done} 个条目。`
+  return `${name} 已补录启用前已登记的 ${r.done}${r.total === null ? '' : ` / ${r.total}`} 个条目；继续补录：${COMMAND(name)}`
 }
 
 /**
@@ -124,7 +124,7 @@ export async function catchUp(ctx: Context, plugin: Plugin, how: 'fresh' | 'resu
   if (page.keeper === null || (going === null && page.things.length === 0)) return { done: 0, total: page.total, finished: true, nothing: true, keeper: page.keeper !== null }
   const run = going?.run ?? randomBytes(4).toString('hex')
   const total = page.total ?? going?.total ?? null
-  const text = () => `${plugin.name} 补上装上之前登记的东西：${done}${total === null ? '' : ` / ${total}`} 样`
+  const text = () => `${plugin.name} 正在补录启用前已登记的条目：${done}${total === null ? '' : ` / ${total}`} 个`
   const note = (finished: boolean) => records.append([{ kind: 'catch-up', plugin: plugin.name, run, after, done, total, finished, at: ctx.now }])
   if (going === null) await note(false)
   pctx.pass?.report({ done, total, text: text() })

@@ -62,14 +62,14 @@ describe('a command with params', () => {
     const { run } = await shaped()
     seen.length = 0
     const cases: [string[], Record<string, string[] | true>, string][] = [
-      [[], { to: ['t'] }, 'shape run 少了 <路径>。'],
-      [['A'], { to: ['t'] }, '<路径> 写的「A」不对，要整个匹配 [a-z/]+。'],
-      [['a'], {}, '要写 --to <去哪>。'],
-      [['a'], { to: [''] }, '要写 --to <去哪>。'],
-      [['a'], { to: ['t'], colour: ['red'] }, 'shape run 不认识 --colour。'],
-      [['a'], { to: ['t'], mode: ['c'] }, '--mode 只能是 a、b：c'],
-      [['a'], { to: ['t', 'u'] }, '--to 只要一个值。'],
-      [['a'], { to: ['t'], force: ['maybe'] }, '--force 不带值。'],
+      [[], { to: ['t'] }, 'shape run 缺少 <路径>。'],
+      [['A'], { to: ['t'] }, '<路径> 的值「A」无效，须完整匹配 [a-z/]+。'],
+      [['a'], {}, '缺少 --to <去哪>。'],
+      [['a'], { to: [''] }, '缺少 --to <去哪>。'],
+      [['a'], { to: ['t'], colour: ['red'] }, 'shape run 不支持 --colour。'],
+      [['a'], { to: ['t'], mode: ['c'] }, '--mode 只能为 a、b：c'],
+      [['a'], { to: ['t', 'u'] }, '--to 只接受一个值。'],
+      [['a'], { to: ['t'], force: ['maybe'] }, '--force 不接受值。'],
     ]
     for (const [positional, flags, text] of cases) {
       expect(await run(positional, flags)).toMatchObject({ outcome: 'refused', reason: 'usage', text: `${text}\n${USAGE}` })

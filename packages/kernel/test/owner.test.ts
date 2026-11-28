@@ -66,7 +66,7 @@ describe('an owner-only command', () => {
       [{ env: { ANTIGRAVITY_CONVERSATION_ID: 'a' } }, 'ANTIGRAVITY_CONVERSATION_ID'],
       [{ env: { ANTIGRAVITY_AGENT: '1' } }, 'ANTIGRAVITY_AGENT'],
       [{ viaGrant: true }, '授权'],
-      [{ ctx: agent }, 'agent codex'],
+      [{ ctx: agent }, 'Agent codex'],
     ] as const) {
       expect(await ownerFace.dispatch(call(f, { ...overrides, confirm }), 'switch on', NO_ARGS)).toMatchObject({ outcome: 'refused', reason: 'agent-session', text: expect.stringContaining(sign) })
     }

@@ -26,7 +26,7 @@ export const ADDRESS_FORM = /^[a-z][a-z0-9+.-]{0,30}$/
 
 /** This machine as Node names it: `darwin-arm64`, `linux-x64`. */
 export const platformKey = (): string => `${process.platform}-${process.arch}`
-export const platformName = (key: string): string => (key === 'darwin-arm64' ? 'Apple 芯片的 Mac (darwin-arm64)' : key)
+export const platformName = (key: string): string => (key === 'darwin-arm64' ? 'Apple 芯片的 Mac（darwin-arm64）' : key)
 
 /** The form of an address: the scheme of `<scheme>://…`, else `path`, a folder on this machine. */
 export function addressForm(address: string): string {
@@ -56,14 +56,14 @@ function programOf(name: string, override: string, env: NodeJS.ProcessEnv): stri
 /** The local folder's program, the provider this installation carries. */
 export function corePath(env: NodeJS.ProcessEnv = process.env): string {
   const path = programOf('pneuma-base-core', 'PNEUMA_BASE_CORE', env)
-  if (path === null) throw new Error('存储的程序 pneuma-base-core 不在：在 pneuma-base 的仓库里运行 pnpm build，或用 PNEUMA_BASE_CORE 指明它在哪')
+  if (path === null) throw new Error('存储程序 pneuma-base-core 不存在：请在 pneuma-base 仓库中运行 pnpm build，或用 PNEUMA_BASE_CORE 指定其位置')
   return path
 }
 
 /** The contract suite's program, which vets a provider before it is used. */
 export function contractPath(env: NodeJS.ProcessEnv = process.env): string {
   const path = programOf('pneuma-base-contract', 'PNEUMA_BASE_CONTRACT', env)
-  if (path === null) throw new Error('契约测试的程序 pneuma-base-contract 不在：在 pneuma-base 的仓库里运行 pnpm build，或用 PNEUMA_BASE_CONTRACT 指明它在哪')
+  if (path === null) throw new Error('契约测试程序 pneuma-base-contract 不存在：请在 pneuma-base 仓库中运行 pnpm build，或用 PNEUMA_BASE_CONTRACT 指定其位置')
   return path
 }
 
@@ -80,7 +80,7 @@ function builtFor(): string | null {
 export function platformMismatch(): string | null {
   const built = builtFor()
   if (built === null || built === platformKey()) return null
-  return `这个 pneuma-base 是给 ${platformName(built)} 构建的，这台机器是 ${platformKey()}。`
+  return `此 pneuma-base 为 ${platformName(built)} 构建，本机为 ${platformKey()}。`
 }
 
 // ---- the official list ----
@@ -112,7 +112,7 @@ export function officialProviders(env: NodeJS.ProcessEnv = process.env): Officia
 /** The provider this installation carries, by the official list: the local folder, answering local paths. */
 function builtIn(): OfficialProvider {
   const own = officialProviders().find((p) => p.builtIn)
-  if (own === undefined) throw new Error('官方的存储提供者名单里没有自带的那一个')
+  if (own === undefined) throw new Error('官方存储提供者名单中缺少内置提供者')
   return own
 }
 
@@ -254,12 +254,12 @@ export function providerOf(address: string, home: string = machineHome()): Runna
   const recorded = recordedProvider(home, address)
   if (recorded !== null) {
     const p = all.find((r) => r.name === recorded)
-    if (p === undefined) throw new Error(`库 ${address} 用的存储提供者 ${recorded} 不在这台机器上`)
+    if (p === undefined) throw new Error(`资料库 ${address} 使用的存储提供者 ${recorded} 未安装在本机`)
     return p
   }
   const form = addressForm(address)
   const p = all.find((r) => r.addresses.includes(form))
-  if (p === undefined) throw new Error(`这台机器上没有答 ${form} 这种地址的存储提供者：${address}`)
+  if (p === undefined) throw new Error(`本机没有支持 ${form} 类地址的存储提供者：${address}`)
   return p
 }
 
@@ -268,16 +268,16 @@ export function chooseProvider(home: string, form: string, named: string | null)
   const all = runnable(home)
   if (named !== null) {
     const p = all.find((r) => r.name === named)
-    if (p === undefined) return { reason: 'no-such-provider', text: `这台机器没有叫 ${named} 的存储提供者。有的：${all.map((r) => r.name).join('、')}` }
-    if (!p.addresses.includes(form)) return { reason: 'wrong-address', text: `存储提供者 ${named} 不答 ${form} 这种地址，它答：${p.addresses.join('、')}` }
+    if (p === undefined) return { reason: 'no-such-provider', text: `本机没有名为 ${named} 的存储提供者。已有：${all.map((r) => r.name).join('、')}` }
+    if (!p.addresses.includes(form)) return { reason: 'wrong-address', text: `存储提供者 ${named} 不支持 ${form} 类地址，支持：${p.addresses.join('、')}` }
     return p
   }
   const answering = all.filter((r) => r.addresses.includes(form))
   const own = answering.find((r) => r.builtIn)
   if (own) return own
   if (answering.length === 1) return answering[0] as Runnable
-  if (answering.length === 0) return { reason: 'no-provider', text: `这台机器上没有答 ${form} 这种地址的存储提供者。装上的：${all.map((r) => `${r.name}（${r.addresses.join('、')}）`).join('、')}` }
-  return { reason: 'choose-provider', text: `答 ${form} 这种地址的存储提供者有：${answering.map((r) => r.name).join('、')}。用 --provider <名字> 选一个。` }
+  if (answering.length === 0) return { reason: 'no-provider', text: `本机没有支持 ${form} 类地址的存储提供者。已安装：${all.map((r) => `${r.name}（${r.addresses.join('、')}）`).join('、')}` }
+  return { reason: 'choose-provider', text: `支持 ${form} 类地址的存储提供者：${answering.map((r) => r.name).join('、')}。用 --provider <名称> 选择其一。` }
 }
 
 // ---- asking a program ----
@@ -309,9 +309,9 @@ export async function describeProgram(program: string): Promise<Record<string, u
     const r = await runProgram(program, ['describe', '--root', root], 10_000)
     try {
       const answer = JSON.parse(r.stdout.trim().split('\n').at(-1) ?? '') as Record<string, unknown>
-      return answer.outcome === 'done' ? answer : `答了 ${r.stdout.trim().slice(0, 200)}`
+      return answer.outcome === 'done' ? answer : `返回 ${r.stdout.trim().slice(0, 200)}`
     } catch {
-      return r.code === null ? `没能运行：${r.stderr.trim().slice(0, 200)}` : `没有答 JSON（退出码 ${r.code}）：${(r.stdout || r.stderr).trim().slice(0, 200)}`
+      return r.code === null ? `运行失败：${r.stderr.trim().slice(0, 200)}` : `未返回 JSON（退出码 ${r.code}）：${(r.stdout || r.stderr).trim().slice(0, 200)}`
     }
   } finally {
     await rm(root, { recursive: true, force: true })

@@ -26,7 +26,7 @@ const flagSlot = (f: FlagParam) => {
   return f.required ? `--${f.name} ${value}` : `[--${f.name} ${value}]`
 }
 
-/** How the arguments are written after the command's name, e.g. `<授权名> --agent <给谁> [--read-only]`. */
+/** How the arguments are written after the command's name, e.g. `<授权名称> --agent <授权对象> [--read-only]`. */
 export function usageOf(params: OwnerParams): string {
   return [...(params.positional ?? []).map(slot), ...(params.flags ?? []).map(flagSlot)].join(' ')
 }
