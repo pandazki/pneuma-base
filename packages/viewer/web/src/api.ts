@@ -1,4 +1,5 @@
 // The page's only way to the library: the server's /api, with the token from the page's address.
+import { knowAgentMarks } from './agents'
 import type { Call, ListedView, PassProgress, PluginProblem, ViewRequest, ViewResult } from '@pneuma-base/kernel'
 
 export const TOKEN = new URLSearchParams(window.location.search).get('token') ?? ''
@@ -11,6 +12,8 @@ export type State = {
   views: ListedView[]
   problems: PluginProblem[]
   available: { name: string; title: string | null }[]
+  /** The agents drawn as their product's icon, and the names each goes by. */
+  agentMarks: { product: string; names: string[] }[]
 }
 
 export type Tone = 'good' | 'warn' | 'bad'
@@ -92,7 +95,11 @@ export const api = {
     return streamed(call, confirmed, id, (p) => onProgress(p, id))
   },
   stop: (pass: string) => request<{ running: boolean }>('/api/stop', { pass }),
-  state: () => request<State>('/api/state'),
+  state: () =>
+    request<State>('/api/state').then((s) => {
+      knowAgentMarks(s.agentMarks)
+      return s
+    }),
   view: (req: ViewRequest) => request<ViewResult>(`/api/view?${new URLSearchParams({ ...req.params, view: req.view })}`),
   call: (call: Call, confirmed: boolean) => request<CallReply>('/api/call', { call, confirmed }),
   init: (plugins: string[]) => request<CallReply>('/api/init', { plugins }),

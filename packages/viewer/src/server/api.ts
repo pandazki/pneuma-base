@@ -1,6 +1,7 @@
 // The six endpoints under /api. Each request opens the library afresh: the server holds no state.
 import { hostname } from 'node:os'
 import {
+  AGENT_MARKS,
   agentFace,
   changeStamp,
   identifySession,
@@ -54,11 +55,11 @@ const available = (table: PluginTable) => [...table.values()].map((p) => ({ name
 export async function state(served: Served): Promise<Reply> {
   const table = await tableOf(served)
   const library = await openLibrary(served.dir, table)
-  if (!library) return reply({ dir: served.dir, library: null, views: [], problems: [], available: available(table) })
+  if (!library) return reply({ dir: served.dir, library: null, views: [], problems: [], available: available(table), agentMarks: AGENT_MARKS })
   const { views, problems } = viewerFace.views(library)
   // `shown`: the root as people read it, the home directory as ~; the page cuts it to its room.
   const shown = shortDir(library.root, Number.POSITIVE_INFINITY)
-  return reply({ dir: served.dir, library: { root: library.root, shown, id: library.config.id }, views, problems, available: available(table) })
+  return reply({ dir: served.dir, library: { root: library.root, shown, id: library.config.id }, views, problems, available: available(table), agentMarks: AGENT_MARKS })
 }
 
 /** The server stays, so it listens to the library's changes: its polls and views, and any command meanwhile, read what it heard. */

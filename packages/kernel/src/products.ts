@@ -166,6 +166,28 @@ export const AGENT_PRODUCTS: readonly AgentProduct[] = [
 
 export const productNamed = (name: string): AgentProduct | undefined => AGENT_PRODUCTS.find((p) => p.name === name)
 
+/**
+ * The agents the page draws as their product's own icon, each with the names and short forms an agent
+ * or a grant goes by. The page matches a name whole, then by its first word (codex-work is Codex); any
+ * other name is drawn as its letters. Products connected or paired go by their product name.
+ */
+export const AGENT_MARKS: readonly { readonly product: string; readonly names: readonly string[] }[] = [
+  { product: 'claude-code', names: ['claude-code', 'claude', 'cc'] },
+  { product: 'claude-desktop', names: ['claude-desktop'] },
+  { product: 'codex', names: ['codex'] },
+  { product: 'cursor', names: ['cursor'] },
+  { product: 'gemini-cli', names: ['gemini-cli', 'gemini'] },
+  { product: 'github-copilot', names: ['github-copilot', 'copilot'] },
+  { product: 'grok', names: ['grok'] },
+  { product: 'kimi', names: ['kimi'] },
+  { product: 'qwen-code', names: ['qwen-code', 'qwen'] },
+  { product: 'deepseek', names: ['deepseek'] },
+  { product: 'opencode', names: ['opencode'] },
+  { product: 'antigravity', names: ['antigravity'] },
+  { product: 'windsurf', names: ['windsurf'] },
+  { product: 'cline', names: ['cline'] },
+]
+
 /** The ways a product can be connected, the one used when none is asked for first: a skill, then an MCP server by command, then by address. */
 export const waysOf = (p: AgentProduct): Way[] => [
   ...(p.skills === undefined ? [] : ['skill' as const]),

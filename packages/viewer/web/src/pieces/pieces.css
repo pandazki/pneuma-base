@@ -3,7 +3,7 @@
  * a row of figures, a folder tree, a chart. Only the tokens of theme.css. Not part of the frame kit.
  */
 
-/* ---- the mark of who did something: an agent's letters on a tint of its hue, the owner a grey circle ---- */
+/* ---- the mark of who did something: a known product's icon, else an agent's letters on a tint of its hue; the owner a grey circle ---- */
 
 .actor {
   display: inline-grid;
@@ -44,6 +44,17 @@
   background: var(--ink-2);
   box-shadow: none;
   color: var(--surface);
+}
+/* a known product: its own icon in its own colours */
+.actor[data-kind='product'] {
+  background: var(--mark-ground);
+  box-shadow: inset 0 0 0 0.5px var(--line-strong);
+  color: var(--mark-ink);
+}
+.actor[data-kind='product'] > svg {
+  width: 72%;
+  height: 72%;
+  pointer-events: none;
 }
 :where([data-scheme='dark']) .actor[data-kind='agent'] {
   background: oklch(0.34 0.06 var(--hue));

@@ -20,7 +20,7 @@ export { changeStamp, dirKind, dirsAbove, KERNEL_ENTRIES, openDirectories, openD
 export { BUNDLE_MARKER, fingerprintOfManifest } from './things.js'
 export { elsewhereWords, placeActions } from './view-parts.js'
 export { loadPlugins, whyNotLoaded } from './plugin-table.js'
-export { FIRST_WORDS, reopenOf } from './products.js'
+export { AGENT_MARKS, FIRST_WORDS, reopenOf } from './products.js'
 export { ensureLauncher } from './launcher.js'
 export { dropEndpoint, endpointOf, guideUrl, liveEndpoints, mcpUrl, PREFERRED_PORT, recordEndpoint, sentenceFor, type EndpointRecord } from './endpoint.js'
 export { guideText, type GuideFacts } from './guide.js'

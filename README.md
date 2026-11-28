@@ -103,3 +103,5 @@ cargo test --manifest-path core/Cargo.toml   # 存储：契约测试逐句跑一
 ## 许可
 
 [MIT](LICENSE)
+
+管理界面里 Agent 产品的图标来自 [lobe-icons](https://github.com/lobehub/lobe-icons)（MIT），许可全文和来源见 [`packages/viewer/web/src/agents/NOTICE.md`](packages/viewer/web/src/agents/NOTICE.md)。各产品的名称和图标是其所有者的商标。
