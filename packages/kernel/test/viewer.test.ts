@@ -489,7 +489,7 @@ describe('what a plugin’s view answers is checked (D7)', () => {
       expect.stringContaining('记录的「unheard」在此资料库中没有插件接收'),
       expect.stringContaining('不是基本命令或所有者命令的调用'),
       expect.stringContaining('pattern'),
-      expect.stringContaining('输入 path 的 when 说的 kind 动作里没有'),
+      expect.stringContaining('输入 path 的 when 引用了 kind，但该操作中没有此输入'),
     ])
   })
 
