@@ -1,7 +1,7 @@
 import { basename } from 'node:path'
 import { catchingUp, catchingUpLine } from './catch-up.js'
 import { makeAddress, resolveAddress } from './address.js'
-import { addressForm, chooseProvider, recordLibrary, type Runnable } from './providers.js'
+import { addressForm, chooseProvider, officialProviders, recordLibrary, type Runnable } from './providers.js'
 import { said, takenBy } from './claims.js'
 import { newConfig, saveConfig } from './library.js'
 import { KERNEL_COMMANDS, type Outcome } from './owner-commands.js'
@@ -134,7 +134,7 @@ export async function initLibrary(
   const flags = { ...(opts.plugins.length === 0 ? { bare: true as const } : {}), ...(opts.provider ? { provider: [opts.provider] } : {}) }
   const args: OwnerArgs = { positional: [library.root], flags }
   return performOwner(ctx, 'init', args, { destructive: false, readOnly: false, act: { kind: 'created', object: basename(library.root) } }, async () => ({
-    answer: { outcome: 'done', text: `已将 ${library.root} 初始化为资料库，存储提供者为 ${provider.name}。资料库说明位于 PNEUMA-BASE.md。`, data: { root: library.root, provider: provider.name } },
+    answer: { outcome: 'done', text: `已将 ${library.root} 初始化为资料库，存储提供者为${officialProviders().find((p) => p.name === provider.name)?.summary ?? ` ${provider.name} `}。资料库说明位于 PNEUMA-BASE.md。`, data: { root: library.root, provider: provider.name } },
   }))
 }
 
