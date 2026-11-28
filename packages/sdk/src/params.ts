@@ -1,18 +1,22 @@
 // An owner command's declared arguments, turned into what people read and fill in: the usage line
 // and a form. The kernel checks a call by the same declaration, so the command line, help and the
 // form in the UI cannot disagree.
-import type { ActionInput, Call, FlagParam, OwnerAnswer, OwnerCommand, OwnerParams, ParamOption, ParamValues, PluginContext, PositionalParam } from './types.js'
+import type { ActionInput, Call, CommandArgs, FlagParam, OwnerAnswer, OwnerCommand, OwnerParams, ParamOption, ParamValues, PluginContext, PositionalParam } from './types.js'
 
 /**
  * An owner command whose `run` gets the values typed by its `params`: each by name, a required one a
- * string, an optional one possibly null, a list or `many` a list, a boolean true or false.
+ * string, an optional one possibly null, a list or `many` a list, a boolean true or false; and, third,
+ * what reads the value `params.secret` asks for (`CommandArgs.secret`).
  */
 export function defineCommand<const P extends OwnerParams>(
-  command: Omit<OwnerCommand, 'params' | 'run'> & { readonly params: P; readonly run: (values: ParamValues<P>, ctx: PluginContext) => Promise<OwnerAnswer> },
+  command: Omit<OwnerCommand, 'params' | 'run'> & {
+    readonly params: P
+    readonly run: (values: ParamValues<P>, ctx: PluginContext, secret: CommandArgs['secret']) => Promise<OwnerAnswer>
+  },
 ): OwnerCommand {
   const { run, ...rest } = command
   // The kernel calls `run` only with values it checked against `params`.
-  return { ...rest, run: (args, ctx) => run(args.values as ParamValues<P>, ctx) }
+  return { ...rest, run: (args, ctx) => run(args.values as ParamValues<P>, ctx, args.secret) }
 }
 
 const slot = (a: PositionalParam) => {
@@ -39,6 +43,8 @@ export type FixedValue = string | readonly string[] | boolean
  * labelled with its hint, with its pattern and options; a list or `many` one takes a value per line,
  * a boolean is a choice of 否 or 是. `values` fills inputs before the person sees them; `choices`
  * makes an input a choice of the values that make sense on this page, such as the versions a thing has.
+ * The command's `secret` is a last, hidden input, sent as the call's standard input, unless `fixed`
+ * gives its name `false`.
  */
 export function formOf(
   command: { readonly name: string; readonly params: OwnerParams },
@@ -74,5 +80,9 @@ export function formOf(
     } else if (v === true) flags[f.name] = true
     else if (v !== false) flags[f.name] = text(v)
   }
-  return { inputs, call: { face: 'owner', command: command.name, args: { positional, flags } } }
+  const call: Extract<Call, { face: 'owner' }> = { face: 'owner', command: command.name, args: { positional, flags } }
+  const secret = params.secret
+  if (secret === undefined || fixed[secret.name] === false) return { inputs, call }
+  inputs.push({ name: secret.name, label: secret.hint, placeholder: null, value: null, options: null, secret: true })
+  return { inputs, call: { ...call, stdin: `{${secret.name}}` } }
 }

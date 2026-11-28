@@ -1,6 +1,6 @@
 // The plugin contract as a third party builds against it: the sdk's root export, re-exported by the kernel.
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as sdk from '@pneuma-base/sdk'
 import { describe, expect, it } from 'vitest'
@@ -69,7 +69,13 @@ describe('the loader of a plugin outside the repository', () => {
   })
 
   it('refuses the shapes it can check without calling a hook, naming each', async () => {
+    const command = (parts: Record<string, unknown>) => ({ ownerCommands: [{ ...GOOD.ownerCommands[0], ...parts }] })
+    const host = { flags: [{ name: 'host', hint: '主机', kind: 'value' }] }
     const cases: [Record<string, unknown>, RegExp][] = [
+      [command({ params: { secret: { name: 'Key', hint: '账户密钥' } } }), /params：secret/],
+      [command({ params: { ...host, secret: { name: 'host', hint: '账户密钥' } } }), /host 写了两次/],
+      [command({ params: host, act: { kind: 'connected', object: ['host', 7] } }), /act/],
+      [{ cognition: null, onDescribe: 'HOOK' }, /onDescribe/],
       [{ name: 'other' }, /目录名 echo/],
       [{ statements: 'echo' }, /statements 不是列表/],
       [{ storage: [{ dir: 'state', kind: 'forever' }] }, /storage/],
@@ -380,5 +386,66 @@ describe('a plugin’s own lifecycle', () => {
     await f.reopen()
     expect(await remove('thrower')).toMatchObject({ outcome: 'done', problems: [{ plugin: 'thrower', message: 'remove broke' }] })
     expect(configured(f)).toEqual([])
+  })
+})
+
+describe('a plugin’s paragraph in the description', () => {
+  const calls = (f: Awaited<ReturnType<typeof fixture>>, table: Map<string, sdk.Plugin>): kernel.OwnerCall => ({ ctx: f.ctx, table, env: {}, viaGrant: false, confirm: async () => true })
+  const SECTION = '## 目标：发到哪里\n\n这个库装了**目标**插件。'
+  /** What the target it is set to asks, kept whole in its own place; `refuse` writes it and refuses, `note` writes it in a command that is not setup. */
+  const writes = (answer: 'done' | 'refused') =>
+    async (args: sdk.CommandArgs, ctx: sdk.PluginContext): Promise<sdk.OwnerAnswer> => {
+      const own = ctx.tools.storage.own
+      const [at] = await own.glance(['asks'])
+      await own.write('asks', { data: args.positional[0] ?? '' }, at !== undefined && sdk.isDescribed(at) && at.kind !== 'none' ? (at.token ?? 'empty') : 'empty')
+      return answer === 'done' ? { outcome: 'done', text: '' } : { outcome: 'refused', reason: 'no', text: '' }
+    }
+  const command = (name: string, answer: 'done' | 'refused', setup: boolean): sdk.OwnerCommand => ({
+    name: `target ${name}`,
+    summary: '',
+    params: { positional: [{ name: 'asks', hint: '要求', required: true }] },
+    destructive: false,
+    ownerOnly: true,
+    ...(setup ? { setup: true } : {}),
+    run: writes(answer),
+  })
+  const target = plugin('target', {
+    cognition: { title: '目标', text: SECTION },
+    storage: [{ dir: '.', kind: 'body' }],
+    ownerCommands: [command('set', 'done', true), command('refuse', 'refused', true), command('note', 'done', false)],
+    onDescribe: async (ctx) => {
+      const read = await ctx.tools.storage.own.read('asks')
+      return sdk.isFailure(read) || read.data === null ? null : `目标要求：${Buffer.from(read.data).toString('utf8')}。`
+    },
+  })
+  const description = (f: Awaited<ReturnType<typeof fixture>>) => f.read('PNEUMA-BASE.md')
+  const stamp = (f: Awaited<ReturnType<typeof fixture>>) => statSync(join(f.root, 'PNEUMA-BASE.md'), { bigint: true }).mtimeNs
+
+  it('follows its section whenever the description is written, and is written again after a setup command of its answered done, only when the text changed', async () => {
+    const f = await fixture([target])
+    const table = new Map<string, sdk.Plugin>([['target', target]])
+    const run = (name: string, ...positional: string[]) => kernel.ownerFace.dispatch(calls(f, table), name, { positional, flags: {} })
+    expect(description(f)).toContain(`${SECTION}\n\n## `)
+    expect(await run('target set', '至多 256 个文件')).toMatchObject({ outcome: 'done', problems: [] })
+    expect(description(f)).toContain(`${SECTION}\n\n目标要求：至多 256 个文件。\n\n`)
+    const written = stamp(f)
+    await run('target set', '至多 256 个文件')
+    await run('target refuse', '至多 4 MiB')
+    await run('target note', '顶上有 index.html')
+    expect([stamp(f), description(f)]).toEqual([written, expect.stringContaining('目标要求：至多 256 个文件。')])
+    // A change of the configuration writes the description as the plugin now describes itself.
+    expect(await kernel.ownerFace.dispatch(calls(f, table), 'grant issue', { positional: ['g'], flags: { agent: ['x'] } })).toMatchObject({ outcome: 'done' })
+    expect(description(f)).toContain('目标要求：顶上有 index.html。')
+  })
+
+  it('from a hook that throws adds nothing and is a problem of that plugin; the others’ paragraphs stand', async () => {
+    const broken = plugin('broken', { cognition: { title: '坏的', text: '## 坏的：总出错\n\n这个库装了**坏的**插件。' }, onDescribe: async () => { throw new Error('describe broke') } })
+    const f = await fixture([target])
+    const table = new Map<string, sdk.Plugin>([['target', target], ['broken', broken]])
+    await kernel.ownerFace.dispatch(calls(f, table), 'target set', { positional: ['至多 256 个文件'], flags: {} })
+    const added = await kernel.ownerFace.dispatch(calls(f, table), 'plugin add', { positional: ['broken'], flags: {} })
+    expect(added).toMatchObject({ outcome: 'done', problems: [{ plugin: 'broken', message: 'describe broke' }] })
+    expect(description(f)).toContain('这个库装了**坏的**插件。\n\n## ')
+    expect(description(f)).toContain('目标要求：至多 256 个文件。')
   })
 })

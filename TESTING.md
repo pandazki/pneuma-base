@@ -26,7 +26,7 @@
 2. 一个行为只说一次。内核和插件在进程内调，比起一个命令行进程快得多，同样清楚就放在那里；命令行、HTTP、MCP、浏览器只说自己才有的。已经有人说过的，不在另一层再说一遍。现在各归谁：
    - 放、归档、挪的每一格：`packages/kernel/test/put-table.test.ts`、`archive-table.test.ts`、`bundle.test.ts`、`positions.test.ts`。
    - 门（破坏性的、只给主人的命令）：`packages/kernel/test/owner.test.ts`；命令行上每类一个（`plugin-mechanism.test.ts`），终端的 Ctrl+D（`held-and-owner.test.ts`），HTTP 上的确认（`packages/viewer/test/server.test.ts`），浏览器里的对话框（`destructive.spec.ts`）。
-   - 说明的拼装：`description.test.ts`、`description-commands.test.ts`；各插件不再各测自己那段的来去。
+   - 说明的拼装：`description.test.ts`、`description-commands.test.ts`；插件从自己的记录接的一段（`onDescribe`）：`packages/kernel/test/contract.test.ts`；各插件不再各测自己那段的来去。
    - find 在插件之间的合并和排序：`packages/kernel/test/find.test.ts`；查找插件只测它自己读内容、索引和向量。
    - 部署的状态 × 操作表：`packages/sdk/test/kit-model.test.ts`；同步的规则表：`packages/plugin-sync/test/rules.test.ts`。经插件和命令行的只走每种操作或每种步骤一次。
    - 页的块：内核和各插件的视图测试；块怎样印成字：`show.test.ts`；怎样画、怎样操作：浏览器。
