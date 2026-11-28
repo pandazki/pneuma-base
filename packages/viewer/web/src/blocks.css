@@ -449,6 +449,27 @@ tr:is(:hover, :focus-within, [aria-selected='true']) .row-actions,
 .list > li[data-lead='mark'] .list-note {
   padding-left: 26px;
 }
+/* A row's second cell: at its end, as wide as its text up to most of the row, cut in the middle past that. */
+.list-aside {
+  display: flex;
+  flex: 0 1 auto;
+  justify-content: flex-end;
+  min-width: 0;
+  max-width: 60%;
+}
+/* Its copy button shows while the pointer or the focus is on the row; the room for it stays. */
+.list-aside .copy {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.list > li:is(:hover, :focus-within) .list-aside .copy {
+  opacity: 1;
+}
+@media (hover: none) {
+  .list-aside .copy {
+    opacity: 1;
+  }
+}
 .list-note {
   margin-top: 2px;
   color: var(--ink-3);

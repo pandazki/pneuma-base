@@ -57,7 +57,18 @@ export async function removeSecret(home: string, plugin: string, name: string): 
   return had
 }
 
-/** What `ctx.secrets` is for the plugin `name`: its own secrets, read when asked. */
-export function pluginSecrets(home: string, plugin: string): PluginSecrets {
-  return { get: (name) => readSecret(home, plugin, name) }
+/**
+ * What `ctx.secrets` is for `plugin`: its own secrets, read when asked; kept, only one it `declares`,
+ * only in the context of its owner command (`command`), with the limits `secret set` has.
+ */
+export function pluginSecrets(home: string, plugin: string, declares: readonly string[], command: boolean): PluginSecrets {
+  return {
+    get: (name) => readSecret(home, plugin, name),
+    async set(name, value) {
+      if (!command) throw new Error(`插件 ${plugin} 只能在主人命令里存密钥，钩子和视图里不能`)
+      if (!declares.includes(name)) throw new Error(`插件 ${plugin} 没有声明叫 ${name} 的密钥，不能存它`)
+      if (value === '' || Buffer.byteLength(value) > SECRET_LIMIT) throw new Error(`密钥 ${name} 是空的，或长过 ${SECRET_LIMIT / 1024} KB，没有存`)
+      await writeSecret(home, plugin, name, value)
+    },
+  }
 }

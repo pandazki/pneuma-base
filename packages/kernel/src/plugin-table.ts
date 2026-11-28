@@ -183,6 +183,7 @@ const HOOKS: Record<Hook, true> = {
   onSay: true,
   onCheck: true,
   onAsks: true,
+  onDescribe: true,
   openDirs: true,
   onArchive: true,
   observe: true,
@@ -199,7 +200,8 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 const isText = (v: unknown): v is string => typeof v === 'string'
 const isBoolean = (v: unknown): v is boolean => typeof v === 'boolean'
 const optional = (v: unknown, is: (v: unknown) => boolean) => v === undefined || is(v)
-const isAct = (v: unknown) => isObject(v) && (FEED_ACTS as readonly unknown[]).includes(v.kind) && optional(v.object, isText) && optional(v.name, isText)
+const isObjectName = (v: unknown) => isText(v) || (Array.isArray(v) && v.length > 0 && v.every(isText))
+const isAct = (v: unknown) => isObject(v) && (FEED_ACTS as readonly unknown[]).includes(v.kind) && optional(v.object, isObjectName) && optional(v.name, isText)
 const isPattern = (v: unknown) => {
   if (!isText(v)) return false
   try {
@@ -267,6 +269,7 @@ function whatIsWrong(p: unknown, name: string | null): string[] {
     eachOf(p.secrets, 'secrets', wrong, secretWrong, (s) => (isObject(s) ? s.name : undefined))
   }
   for (const hook of Object.keys(HOOKS)) check(optional(p[hook], (v) => typeof v === 'function'), `${hook} 不是函数`)
+  check(p.onDescribe === undefined || c !== null, 'onDescribe 的一段接在认知段后面，cognition 是 null 时不能有它')
   return wrong
 }
 
@@ -278,7 +281,7 @@ function commandWrong(cmd: unknown, plugin: string): string | null {
   const typed = isText(cmd.summary) && isBoolean(cmd.destructive) && isBoolean(cmd.ownerOnly) && typeof cmd.run === 'function'
   const flags = optional(cmd.readOnly, isBoolean) && optional(cmd.setup, isBoolean) && optional(cmd.askable, (v) => v === false)
   if (!typed || !flags) return `主人命令「${name}」要有文字的 summary、真假的 destructive 和 ownerOnly、函数 run，readOnly 和 setup 是真假，askable 没有或是 false`
-  if (!optional(cmd.act, isAct)) return `主人命令「${name}」的 act 要有 kind（${FEED_ACTS.join('、')} 之一），object 和 name 没有或是文字`
+  if (!optional(cmd.act, isAct)) return `主人命令「${name}」的 act 要有 kind（${FEED_ACTS.join('、')} 之一），object 没有、是文字或文字的列表，name 没有或是文字`
   if (cmd.params === undefined) return `主人命令「${name}」没有 params：每条命令都声明它的参数，什么都不带的写 params: {}`
   const wrong = paramsWrong(cmd.params)
   return wrong === null ? null : `主人命令「${name}」的 params：${wrong}`
@@ -323,7 +326,10 @@ function paramsWrong(params: unknown): string | null {
       if (!ok) return `--${id} 的 options 只给 value，要是不空的 { value, label } 列表`
     }
   }
-  return null
+  const { secret } = params
+  if (secret === undefined) return null
+  if (!isObject(secret) || !isText(secret.name) || !FLAG_NAME.test(secret.name) || !isText(secret.hint)) return 'secret 要是 { name, hint }，name 小写字母开头，只用小写字母、数字和连字符'
+  return names.has(secret.name) ? `${secret.name} 写了两次` : null
 }
 
 function viewWrong(view: unknown, plugin: string): string | null {

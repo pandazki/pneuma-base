@@ -58,14 +58,14 @@ describe('the plugins under plugins/ as MCP tools', () => {
       expect(commands.length, name).toBeGreaterThan(0)
       for (const c of commands) expect(tools.includes(c.name.replaceAll(' ', '_')), c.name).toBe(!c.destructive && !c.ownerOnly)
     }
-    expect(tools).toEqual(expect.arrayContaining(['space_list', 'space_sync']))
-    expect(tools).not.toContain('space_on')
+    expect(tools).toContain('links_list')
+    expect(tools).not.toContain('pulse_clear')
   })
 
   it('runs a plugin’s command as the command line does', async () => {
-    const r = (await client.callTool({ name: 'space_list', arguments: {} })) as { content: { text: string }[]; structuredContent: unknown }
-    const cli = spawnSync(process.execPath, [BIN, '@g', 'space', 'list', '--json'], { cwd: home, env, encoding: 'utf8' })
+    const r = (await client.callTool({ name: 'links_list', arguments: {} })) as { content: { text: string }[]; structuredContent: unknown }
+    const cli = spawnSync(process.execPath, [BIN, '@g', 'links', 'list', '--json'], { cwd: home, env, encoding: 'utf8' })
     expect(r.structuredContent).toEqual(JSON.parse(cli.stdout))
-    expect(r.content[0]?.text).toBe(spawnSync(process.execPath, [BIN, '@g', 'space', 'list'], { cwd: home, env, encoding: 'utf8' }).stdout.trimEnd())
+    expect(r.content[0]?.text).toBe(spawnSync(process.execPath, [BIN, '@g', 'links', 'list'], { cwd: home, env, encoding: 'utf8' }).stdout.trimEnd())
   })
 })

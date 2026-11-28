@@ -8,7 +8,8 @@ import { defineTarget, STATUS, switchAction, type Target } from '@pneuma-base/sd
 
 export const localTarget = defineTarget({
   kind: 'local',
-  label: '一个本地目录',
+  label: '本地文件夹',
+  icon: 'folder',
   params: [{ name: 'to', hint: '目录', kind: 'value', required: true }],
 
   /** What the owner's `target set` flags configure, checked before it is stored. */
@@ -24,7 +25,8 @@ export const localTarget = defineTarget({
     const to = config.to
     return {
       key: `local:${to}`,
-      label: `本地目录 ${to}`,
+      label: to,
+      local: true,
       /** Copies the site beside its place under a temporary name, then swaps it in. */
       async publish(site, dir) {
         await mkdir(to, { recursive: true })
@@ -40,7 +42,7 @@ export const localTarget = defineTarget({
       view: {
         /**
          * A panel of the plugin's own after the kit's sections on its page: each declared thing with the
-         * kit's state tag and switch, so the panel says and does what the table does.
+         * kit's state tag and switch, so the panel says and does what the page's rows do.
          */
         page: (all) => [
           {

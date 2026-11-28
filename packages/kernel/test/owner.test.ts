@@ -97,6 +97,25 @@ describe('the owner event', () => {
   })
 })
 
+describe('an owner command’s act', () => {
+  it('names its row by the first given of the arguments it names, an empty one not given, else by its fixed name', async () => {
+    const events: Event[] = []
+    const flags = ['host', 'origin'].map((name) => ({ name, hint: name, kind: 'value' as const }))
+    const connect = { name: 'target set', summary: '', params: { flags }, act: { kind: 'connected' as const, object: ['host', 'origin'], name: '自己的命令' }, destructive: false, ownerOnly: true, run: async () => ({ outcome: 'done' as const, text: '' }) }
+    const f = await fixture([plugin('target', { ownerCommands: [connect], observe: async (e) => void events.push(e) })])
+    events.length = 0
+    const calls: Record<string, string[]>[] = [{ host: ['space.example.com'], origin: ['https://other.example.com'] }, { host: [''], origin: ['https://space.example.com'] }, { host: [' '] }]
+    for (const given of calls) {
+      await ownerFace.dispatch(call(f), 'target set', { positional: [], flags: given })
+    }
+    expect(events.map((e) => (e.face === 'owner' ? e.act : null))).toEqual([
+      { kind: 'connected', object: 'space.example.com' },
+      { kind: 'connected', object: 'https://space.example.com' },
+      { kind: 'connected', object: '自己的命令' },
+    ])
+  })
+})
+
 describe('the single exit', () => {
   it('sends one failed event when the operation throws, then rethrows', async () => {
     const events: Event[] = []

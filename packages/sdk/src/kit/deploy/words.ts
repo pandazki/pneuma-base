@@ -74,7 +74,8 @@ export const noTarget = (kit: Kit) => `还没配部署目标：${targetSetHint(k
 export function followed(kit: Kit, r: Settled, ctx: PluginContext, done: '放入' | '挪动' | '归档' | '取回'): PluginNoteAnswer | null {
   const { path } = r.thing
   if (r.problem?.kind === 'failed') {
-    const who = ctx.actor.kind === 'agent' ? `这不是你的${done}出了问题，你不用重做；上线要等主人在自己的终端里运行 ${kit.name} sync，需要时告诉主人。` : `目标好了之后运行 ${kit.name} sync。`
+    // The owner reads this on the page too, where the row offers 重试: it names no command.
+    const who = ctx.actor.kind === 'agent' ? `这不是你的${done}出了问题，你不用重做；上线要等主人在自己的终端里运行 ${kit.name} sync，需要时告诉主人。` : ''
     const now = r.status === 'retiring' ? '它还在线上' : r.status === 'pending' ? '线上还不是库里现在的内容' : `现在是${STATUS[r.status].text}`
     return { note: null, problems: [`${done}本身已经成功，只是 ${path} 没能跟着上线：${r.problem.message}。${now}。${who}`] }
   }

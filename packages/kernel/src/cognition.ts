@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
+import { eachPlugin } from './pipeline.js'
 import { quote } from './requests.js'
-import type { Library } from '@pneuma-base/sdk'
+import type { Context, Library, PluginName, PluginProblem } from '@pneuma-base/sdk'
 
 // The texts live in packages/kernel/cognition/, next to src/ and dist/.
 const COGNITION = new URL('../cognition/', import.meta.url)
@@ -16,19 +17,37 @@ export const DESCRIPTION_GRANT_NAME = '<你的授权名>'
 
 /**
  * PNEUMA-BASE.md, assembled only from the configuration and the installed plugins' cognition
- * sections (K6): the kernel's intro, each plugin's section in configuration order, the kernel's
- * rules, and the current configuration. The same-name sentence says what an installed plugin
- * with `revise` keeps: nothing, some things, or every replaced thing.
+ * sections (K6): the kernel's intro, each plugin's section in configuration order, followed by the
+ * paragraph it gave from its own records, the kernel's rules, and the current configuration. The
+ * same-name sentence says what an installed plugin with `revise` keeps: nothing, some things, or every
+ * replaced thing.
  */
-export function assembleDescription(library: Pick<Library, 'config' | 'plugins'>): string {
+function assembleDescription(library: Pick<Library, 'config' | 'plugins'>, paragraphs: ReadonlyMap<PluginName, string>): string {
   const sameName = text(`3-same-name-${replacedKept(library.plugins)}.txt`).trim()
   const parts = [
     text('1-kernel-intro.md'),
-    ...library.plugins.flatMap((p) => (p.cognition ? [p.cognition.text] : [])),
+    ...library.plugins.flatMap((p) => {
+      const paragraph = paragraphs.get(p.name)
+      return p.cognition ? [paragraph === undefined ? p.cognition.text : `${p.cognition.text.trimEnd()}\n\n${paragraph}`] : []
+    }),
     text('3-kernel-rules.md').replace(SAME_NAME, sameName),
     library.config.plugins.length === 0 ? text('4-config-bare.md') : configuration(library),
   ]
   return `${parts.map((p) => p.trimEnd()).join('\n\n').replaceAll(GRANT_NAME, DESCRIPTION_GRANT_NAME)}\n`
+}
+
+/**
+ * The description as the library's plugins describe themselves now: each one with a cognition section
+ * is asked for its paragraph (`onDescribe`). One that throws, or answers something other than text or
+ * null, adds nothing and is its problem (K8).
+ */
+export async function describeLibrary(ctx: Context): Promise<{ text: string; problems: PluginProblem[] }> {
+  const said = await eachPlugin(ctx, async (plugin, pctx) => {
+    const paragraph = plugin.cognition && plugin.onDescribe ? await plugin.onDescribe(pctx) : null
+    if (paragraph !== null && typeof paragraph !== 'string') throw new Error(`onDescribe 答的不是文字或 null：${JSON.stringify(paragraph)}`)
+    return paragraph?.trim() || null
+  })
+  return { text: assembleDescription(ctx.library, new Map(said.values.map(({ plugin, value }) => [plugin, value]))), problems: said.problems }
 }
 
 /** What happens to a replaced thing's content with these plugins: no plugin holds it, some are held, or every one is. */

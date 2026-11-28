@@ -18,19 +18,27 @@ export type Kit = { readonly name: PluginName; readonly title: string; readonly 
 export const onlyTarget = (kit: Kit): TargetAdapter | null => (kit.targets.length === 1 ? (kit.targets[0] ?? null) : null)
 
 /**
- * One hook's, command's or view's work: the records as read, the target, and the facts it adds, written
- * as one file at the end. `view`: it draws a page or the item panel, so looks carry the target's details.
+ * One hook's, command's or view's work: the records as read, the target and how it was set, and the
+ * facts it adds, written as one file at the end. `view`: it draws a page or the item panel, so looks
+ * carry the target's details.
  */
-export type Run = { kit: Kit; ctx: PluginContext; store: RecordStore<FactBody>; d: Deployments; skipped: Skipped[]; target: Target | null; facts: Fact[]; view: boolean }
+export type Run = { kit: Kit; ctx: PluginContext; store: RecordStore<FactBody>; d: Deployments; skipped: Skipped[]; target: Target | null; set: SetAs | null; facts: Fact[]; view: boolean }
 
-/** The configuration file as stored: the target's own configuration, with the kind of target it is. */
-type StoredTarget = { format: 1; target: TargetConfig & { kind: string } }
+/** The flags `target set` was given, `--kind` and the secret aside: what changing one of them sends again. */
+export type Given = Readonly<Record<string, string | readonly string[] | true>>
+/** How the target was set: its kind, and the flags it was given (none for a file an earlier version wrote). */
+export type SetAs = { readonly kind: string; readonly given: Given }
+
+/** The configuration file as stored: the target's own configuration with the kind of target it is, and the flags it was set with. */
+export type StoredTarget = { format: 1; target: TargetConfig & { kind: string }; given?: Given }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+const isGivenValue = (v: unknown) => typeof v === 'string' || v === true || (Array.isArray(v) && v.every((w) => typeof w === 'string'))
 
 function parseStored(raw: unknown): StoredTarget {
   if (!isObject(raw) || !isObject(raw.target) || typeof raw.target.kind !== 'string') throw new Error('not a target configuration')
-  return { format: 1, target: raw.target as StoredTarget['target'] }
+  const given = isObject(raw.given) && Object.values(raw.given).every(isGivenValue) ? { given: raw.given as Given } : {}
+  return { format: 1, target: raw.target as StoredTarget['target'], ...given }
 }
 
 export const targetFile = (ctx: PluginContext) => configFile(ctx, 'config.json', parseStored)
@@ -57,10 +65,10 @@ async function secretOf(kit: Kit, adapter: TargetAdapter, ctx: PluginContext, na
   return value
 }
 
-async function configured(kit: Kit, ctx: PluginContext): Promise<Target | null> {
+async function configured(kit: Kit, ctx: PluginContext): Promise<{ target: Target; set: SetAs } | null> {
   try {
     const stored = await targetFile(ctx).read()
-    return stored && openTarget(kit, stored.target, ctx)
+    return stored && { target: openTarget(kit, stored.target, ctx), set: { kind: stored.target.kind, given: stored.given ?? {} } }
   } catch {
     throw new Error(`部署目标的配置读不懂：.pneuma-base/${kit.name}/config.json`)
   }
@@ -80,11 +88,12 @@ export const factsOf = (ctx: PluginContext): RecordStore<FactBody> => recordStor
 
 /** Loads the records and the target, runs `body`, writes the facts it added and closes the target, also when it throws. `view`: it draws a page or the item panel. */
 export async function withRun<T>(kit: Kit, ctx: PluginContext, body: (run: Run) => Promise<T>, view = false): Promise<T> {
-  const target = await configured(kit, ctx)
+  const set = await configured(kit, ctx)
+  const target = set?.target ?? null
   try {
     const store = factsOf(ctx)
     const { d, skipped } = await foldedRecords(ctx, store)
-    const run: Run = { kit, ctx, store, d, skipped, target, facts: [], view }
+    const run: Run = { kit, ctx, store, d, skipped, target, set: set?.set ?? null, facts: [], view }
     try {
       return await body(run)
     } finally {
@@ -228,9 +237,11 @@ async function lookAll(run: Run, ids: readonly ThingId[]): Promise<Seen[]> {
   if (identified.length > 0) await tools.storage.records.put({ [IDENTIFIED]: identified })
   let answer: ReadonlyMap<SiteName, Served> | null = null
   let unreachable: string | null = null
-  if (target?.serving) {
+  const asked = [...new Set(parts.flatMap((p) => p.names))]
+  // Nothing to ask about is no reason to reach the target.
+  if (target?.serving && asked.length > 0) {
     try {
-      answer = await target.serving([...new Set(parts.flatMap((p) => p.names))], { detail: run.view })
+      answer = await target.serving(asked, { detail: run.view })
     } catch (error) {
       unreachable = messageOf(error)
     }

@@ -67,7 +67,7 @@ agent 带着自己的授权调用，`pneuma-base @<授权名> <动词>`；经 MC
 
 ## 主人还能做什么
 
-- **装插件。** 自带五个：记账（缺省装上）、版本、同步、部署、查找。`pneuma-base plugin add version --library ~/base`；界面的配置页一样能装卸。装上或卸下，`PNEUMA-BASE.md` 跟着重写，agent 读到的就是现在装了的。发布到 PneumaSpace 的 `space` 插件在 [`plugins/space/`](plugins/space/README.md)。
+- **装插件。** 自带五个：记账（缺省装上）、版本、同步、部署、查找。`pneuma-base plugin add version --library ~/base`；界面的配置页一样能装卸。装上或卸下，`PNEUMA-BASE.md` 跟着重写，agent 读到的就是现在装了的。部署能发到 PneumaSpace（Cloudflare 上的或一台机器上的）、本地目录，或主人自己的命令，见 [`packages/plugin-deploy`](packages/plugin-deploy/README.md)。
 - **把库放在别的存储上。** 库的地址是一个文件夹时，存储是自带的本机文件夹。`pneuma-base storage list` 列出这台机器的存储提供者，`pneuma-base storage install <owner>/<repo>` 从一个 GitHub 仓库的发布装一个（对过校验和、过了契约测试才装），见 [`PROVIDERS.md`](PROVIDERS.md)。
 - **接只能接 MCP 的应用。** `pneuma-base agent connect <产品> --via mcp` 登记标准输入输出的 MCP 服务，`--via mcp-http` 登记界面开着时的地址 `http://127.0.0.1:7638/mcp/<授权名>`。产品表里没有的应用，先 `pneuma-base grant issue <授权名> --agent <给谁> --library ~/base`，再在它的 MCP 配置里加一个服务：命令是 `~/.pneuma-base/bin/pneuma-base` 的完整路径，参数 `@<授权名> mcp`。
 - **在终端里看和管。** 界面的每一页也是一条只读的命令：`pneuma-base show --library ~/base` 列出各页。`pneuma-base --help --library ~/base` 列出这个库能用的全部命令。

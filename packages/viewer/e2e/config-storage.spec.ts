@@ -79,7 +79,7 @@ test('storage on the configuration page: where the library is kept, installing a
     await fromMenu(kept, '安装别的存储…')
     const form = page.getByRole('dialog')
     await form.getByRole('textbox').fill('acme/alpha-folder')
-    await form.getByRole('button', { name: '安装别的存储…' }).click()
+    await form.getByRole('button', { name: '安装别的存储', exact: true }).click()
     const notices = page.getByRole('status')
     await expect(notices).toContainText(`存储提供者是一个以你的身份运行的程序，看得到库里的全部内容。要装的是 acme/alpha-folder 的 v1.0.0，校验和 sha256:${sha256(bytes)}。`)
     // Accepting it asks for the same command with that checksum; cancelled, nothing is installed.

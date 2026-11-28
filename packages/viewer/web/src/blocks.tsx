@@ -17,7 +17,7 @@ import { ViewIcon } from './chrome'
 import { useEnv } from './env'
 import { IconGrid, placed, RenameField, useFiles } from './files'
 import { CustomView } from './frame'
-import { fitColumns, naturalColumns, textRoom } from './measure'
+import { cellFont, extras, fitColumns, naturalColumns, textRoom, textWidth } from './measure'
 import { DropView, StepsView } from './steps'
 import { localMoments } from './time'
 
@@ -363,6 +363,21 @@ function SettingSwitch({ name, toggle }: { name: string; toggle: Toggle }) {
  * switch at the end. Among several rows, a row whose actions are only icons and a 「···」 shows them while
  * the pointer or the focus is on it.
  */
+/**
+ * A row's second cell, at its end: as wide as its text when the row has room, at most 60% of the row,
+ * on one line, its text cut in the middle when it does not fit.
+ */
+function Aside({ cell }: { cell: Cell }) {
+  const [measure, width] = useWidth()
+  const fonts = useFontsReady()
+  const natural = useMemo(() => Math.ceil(textWidth(cell.text, cellFont(cell, false)) + extras(cell, true)) + 1, [cell, fonts])
+  return (
+    <div ref={measure} className="list-aside" style={{ flexBasis: natural }}>
+      <CellView cell={cell} line room={Math.max(0, width - extras(cell, true))} />
+    </div>
+  )
+}
+
 function ListView({ block }: { block: Extract<Block, { kind: 'list' }> }) {
   const quiet = (item: ListItem) => block.items.length > 1 && item.toggle === undefined && placeActions(item.actions).main === null
   const items = (
@@ -378,6 +393,7 @@ function ListView({ block }: { block: Extract<Block, { kind: 'list' }> }) {
             </div>
             {item.note ? <p className="list-note">{localMoments(item.note)}</p> : null}
           </div>
+          {item.aside ? <Aside cell={item.aside} /> : null}
           <ActionBar actions={item.actions} className={quiet(item) ? 'row-actions' : ''} />
           {item.toggle ? <SettingSwitch name={item.cell.text} toggle={item.toggle} /> : null}
         </li>

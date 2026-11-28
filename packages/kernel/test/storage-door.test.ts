@@ -33,7 +33,6 @@ const EVERY_PACKAGE = [
   'packages/viewer/src/server/api.ts',
   'packages/viewer/src/server/agent.ts',
   'packages/cli/src/format.ts',
-  'plugins/space/src/views.ts',
   'plugins/pulse/src/index.ts',
   'plugins/links/src/links.js',
   'plugins/another/src/index.ts',
@@ -91,10 +90,10 @@ describe('the storage door', () => {
   it('allows the door, the files that touch only what is no library’s, tests and scripts', async () => {
     const stat = `import { stat } from 'node:fs/promises'\nexport const f = stat\n`
     expect(await doorFaults(`import { spawn } from 'node:child_process'\nimport { existsSync } from 'node:fs'\nexport const f = [spawn, existsSync]\n`, 'packages/kernel/src/storage.ts')).toEqual([])
-    for (const file of ['packages/kernel/src/address.ts', 'packages/kernel/src/secrets.ts', 'packages/plugin-ledger/src/conversation.ts', 'packages/sdk/src/kit/deploy/content.ts', 'packages/plugin-deploy/src/targets.ts', 'packages/sdk/src/testkit/sandbox.ts', 'packages/viewer/src/server/files.ts', 'plugins/space/src/cloudflare.ts']) {
+    for (const file of ['packages/kernel/src/address.ts', 'packages/kernel/src/secrets.ts', 'packages/plugin-ledger/src/conversation.ts', 'packages/sdk/src/kit/deploy/content.ts', 'packages/plugin-deploy/src/targets.ts', 'packages/sdk/src/testkit/sandbox.ts', 'packages/viewer/src/server/files.ts', 'packages/plugin-deploy/src/cloudflare.ts']) {
       expect(await doorFaults(stat, file), file).toEqual([])
     }
-    for (const file of ['packages/cli/test/a.test.ts', 'packages/plugin-sync/test/story.test.ts', 'plugins/space/scripts/build.mjs', 'scripts/bench-line.mjs']) {
+    for (const file of ['packages/cli/test/a.test.ts', 'packages/plugin-sync/test/story.test.ts', 'plugins/pulse/scripts/build.mjs', 'scripts/bench-line.mjs']) {
       expect(await doorFaults(stat, file), file).toEqual([])
     }
   })

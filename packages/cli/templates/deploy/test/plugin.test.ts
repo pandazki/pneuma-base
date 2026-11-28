@@ -37,7 +37,7 @@ test('an agent declares a site; only the owner can switch it on, and then it is 
   assert.equal(existsSync(site), false)
 })
 
-test('its page has the kit’s sections and its own panel, whose switches are the table’s', async () => {
+test('its page has the kit’s rows and its own panel, whose switches are the rows’', async () => {
   const viewer = await sb.viewer()
   const page = await viewer.view(`${plugin.name}.sites`)
   assert.equal(page.outcome, 'shown')
@@ -48,7 +48,7 @@ test('its page has the kit’s sections and its own panel, whose switches are th
   // What the panel draws, in words: pneuma-base show prints it, and screen readers read it.
   assert.match(panel.text, / 在线，发布到 /)
   assert.equal((await viewer.get(`/plugin-ui/${plugin.name}/${panel.entry}`)).status, 200)
-  const table = page.blocks.flatMap((b) => (b.kind === 'section' ? b.blocks : [])).find((b) => b.kind === 'table')
-  assert.ok(table?.kind === 'table')
-  assert.deepEqual(Object.values(panel.actions), table.rows.map((row) => row.actions[0]))
+  const things = page.blocks.find((b) => b.kind === 'list' && b.items.some((i) => i.toggle))
+  assert.ok(things?.kind === 'list')
+  assert.deepEqual(Object.values(panel.actions), things.items.map((i) => i.toggle?.action))
 })

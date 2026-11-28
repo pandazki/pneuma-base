@@ -429,10 +429,10 @@ type AskResult = { outcome: 'asked'; request; again: boolean } | { outcome: 'wit
 
 ### 说明和技能
 
-库根的 `PNEUMA-BASE.md` 是**说明**：写给人和 agent 的那份自我描述，没装软件的 agent 读到它也知道规矩。内核拼出它，经存储写（带预期），每次改配置都重拼（`cognition.ts`）。它由四部分拼成：
+库根的 `PNEUMA-BASE.md` 是**说明**：写给人和 agent 的那份自我描述，没装软件的 agent 读到它也知道规矩。内核拼出它（`cognition.ts`），只在一处写（`library.ts` 的 `writeDescription`）：每次改配置，和插件的 `setup` 命令答了 `done` 之后；拼出的和库里的一样时不写，写时经存储、带预期。MCP 的说明和资源也这样拼。它由四部分拼成：
 
 1. 内核的那几句（`packages/kernel/cognition/1-kernel-intro.md`）：这是你的库，带进来的和做出来的放这里，下次从这里找；动词怎么用；主人在管理界面上看到的每一页都能用 `show` 看。
-2. 每个已装插件的**认知段**，按配置次序。每段以一个说出它带来什么的标题开头（「来历：每样东西从哪来」「版本：留住每一版」），第一句是「这个库装了**X**插件。」。一段不重复别的段管的规矩：归档和 `--include-archived`、「在库外写好再 put」归内核。
+2. 每个已装插件的**认知段**，按配置次序。每段以一个说出它带来什么的标题开头（「来历：每样东西从哪来」「版本：留住每一版」），第一句是「这个库装了**X**插件。」。一段不重复别的段管的规矩：归档和 `--include-archived`、「在库外写好再 put」归内核。有 `onDescribe` 的插件从自己的记录再给一段，接在认知段后面，比如部署目标对上线的东西的要求；每次写说明都问它，抛错的这一段不加，记成它的问题（K8）。
 3. 内核的规矩（`3-kernel-rules.md`）：不要覆盖或删除已有的东西，不用了就归档；要主人做管理的事时怎么用 `ask`，带一个例子。其中同名时的那句话按已装插件的 `keeps` 三选一：没有插件有 `revise`，放入内容不同的同名东西被拒绝；有 `revise` 的都只留一部分，有插件留住时才换上；有一个留住全部，换下的旧内容由插件留着。
 4. 当前的配置：装了哪些插件，各自的说明在哪。
 
@@ -442,7 +442,7 @@ type AskResult = { outcome: 'asked'; request; again: boolean } | { outcome: 'wit
 
 ### 命令表
 
-主人命令都是数据：名字、一句说明、参数表 `params`、是否破坏性（`destructive`）、是否只给主人（`ownerOnly`）、是否只读（`readOnly`，可选：只看，库里库外什么都不改，也不往外拿）、是否配置（`setup`，可选）、能不能被请（`askable: false`，可选）、做了什么（`act`，可选：动作的种类，和哪个参数是它针对的东西，或一个固定的名字，比如「归档」）、`run`。插件的 `OwnerCommand` 和内核自己的同形，只是内核的 `run` 收到整个主人调用（上下文、插件表、环境、是否带授权、怎么问当面确认、怎么读主人另给的值），并可交回重开的库。动词的参数也是数据，和主人命令的参数表同形，在 `packages/cli/src/verbs.ts` 的一张表里。这两样合起来是**命令表**；第 4 层的每个面都由它生成（第 9 节）。
+主人命令都是数据：名字、一句说明、参数表 `params`、是否破坏性（`destructive`）、是否只给主人（`ownerOnly`）、是否只读（`readOnly`，可选：只看，库里库外什么都不改，也不往外拿）、是否配置（`setup`，可选）、能不能被请（`askable: false`，可选）、做了什么（`act`，可选：动作的种类，和哪个参数是它针对的东西（或几个参数里第一个给了的），或一个固定的名字，比如「归档」）、`run`。插件的 `OwnerCommand` 和内核自己的同形，只是内核的 `run` 收到整个主人调用（上下文、插件表、环境、是否带授权、怎么问当面确认、怎么读主人另给的值），并可交回重开的库。动词的参数也是数据，和主人命令的参数表同形，在 `packages/cli/src/verbs.ts` 的一张表里。这两样合起来是**命令表**；第 4 层的每个面都由它生成（第 9 节）。
 
 **内核自己的三十一条**在 `owner-commands.ts`、`agent-commands.ts`、`launcher.ts`、`request-commands.ts`、`pair-commands.ts`、`noise-commands.ts` 和 `storage-commands.ts`：
 
@@ -455,7 +455,7 @@ type AskResult = { outcome: 'asked'; request; again: boolean } | { outcome: 'wit
 
 - 没有这条命令：在任何操作开始前拒绝（`unknown-command`），不发事件。要库的命令没给库，同样在开始前拒绝（`no-library`）。
 - 参数不对：内核在门里、`run` 之前核对（`params.ts`），以 `usage` 拒绝，说出哪一样不对，带参数表生成的用法；命令行把它当用法错误，退出码 1。值去掉两头空白，空的算没给，所以表单留空的一项等于没写；开关在表单里写成值 `yes` 或 `no`。装载插件时核对参数表的形状。
-- 主人另给的值，比如密钥：命令行从标准输入读，在终端里不回显地问；界面的服务取 `Call` 的 `stdin`。它不在参数里，所以不进事件。
+- 主人另给的值，比如密钥：命令行从标准输入读，在终端里不回显地问；界面的服务取 `Call` 的 `stdin`；MCP 没有。它不在参数里，所以不进事件。插件的命令在参数表里写 `secret: { name, hint }`，`run` 拿到的 `secret()` 读它：一次调用最多读一次，去掉末尾一个换行，空的是 `null`；`formOf` 给它一项隐藏的输入，经 `stdin` 送。要留着，主人命令用 `ctx.secrets.set` 存在这台机器上，和 `secret set` 存的一样；钩子和视图的上下文里它抛错。
 - 事件带 `destructive`、`readOnly`、`setup` 三个标志，和命令声明了 `act` 时这次的 `act`（种类，和这次调用给的对象），插件不用自己认哪些命令会丢数据、哪些什么都不改、做了什么。记账插件不记只读的命令：看不是动作；据 `setup` 决定一条算不算给 agent 的消息。列东西和说状态的命令（名字以 `list`、`status` 结尾）都是只读的，`packages/cli/test/looking.test.ts` 走一遍命令表守着；导出往库外拿数据，不是只读的，照样记，但不算给 agent 的消息：它没改动谁在做的东西。
 
 ### 插件机制
@@ -484,6 +484,7 @@ interface Plugin {
   readonly onSay?: (req: SayRequest, ctx: PluginContext) => Promise<SayAnswer>
   readonly onCheck?: (req: CheckRequest, ctx: PluginContext) => Promise<PluginSection[]>
   readonly onAsks?: (ctx: PluginContext) => Promise<PluginAsk[]>          // 只有主人能定的事
+  readonly onDescribe?: (ctx: PluginContext) => Promise<string | null>    // 从自己的记录给说明的一段，接在认知段后面
   readonly onArchive?: (req: AcceptedArchive, ctx: PluginContext) => Promise<PluginNoteAnswer | null>
   readonly observe?: (event: Event, ctx: PluginContext) => Promise<void>  // 两个面的每次操作之后
   readonly onPurged?: (paths: LibraryPath[], ctx: PluginContext) => Promise<void>   // archive purge 删了东西之后
@@ -561,7 +562,7 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 - **装载时核对**不调钩子就能核对的一切（`plugin-table.ts` 的 `whatIsWrong`，清单在 `PLUGINS.md` 第 8 节「装载时核对什么」）；钩子和命令的 `run` 答什么、抛不抛错，插件往哪里写，留到调用时（K8）。自带插件过同一道检查：过不了是这个 pneuma-base 自己的错，`loadPlugins` 抛错。
 - **加载失败**的本机插件不进插件表；装了它的库照「装了但这台机器不认识」处理（K8）：每个答复的 `problems` 里有它，消息是加载失败的原因（`whyNotLoaded`）。
 - **缓存目录** `PluginContext.cacheDir` 是 `$PNEUMA_BASE_HOME/cache/<库的 id>/<插件名>/`。它放在库外，因为库会被同步工具整个同步，而索引这类文件经不起同步。内核不建它；删了只影响时间。
-- **密钥**放在 `$PNEUMA_BASE_HOME/secrets/<插件名>/<密钥名>`，一个密钥一个文件，内容就是值；目录 `0700`，文件 `0600`，先写临时名再改名。放在库外，所以任何同步都带不走；值不出现在任何答复、事件、页里。插件声明的密钥可以标 `optional: true`。主人用 `secret set <插件名> <密钥名>` 设，值从标准输入读，从不取命令行的参数（参数会留在 shell 的历史和进程列表里）；`secret list`、`secret remove` 同样只给主人。界面的配置页设密钥时，值作为命令的标准输入送去（`Call` 的 `stdin`），不进事件。
+- **密钥**放在 `$PNEUMA_BASE_HOME/secrets/<插件名>/<密钥名>`，一个密钥一个文件，内容就是值；目录 `0700`，文件 `0600`，先写临时名再改名。放在库外，所以任何同步都带不走；值不出现在任何答复、事件、页里。插件声明的密钥可以标 `optional: true`。主人用 `secret set <插件名> <密钥名>` 设，值从标准输入读，从不取命令行的参数（参数会留在 shell 的历史和进程列表里）；插件的主人命令也能用 `ctx.secrets.set` 存它从主人那里另读到的值，只存声明了的名字；`secret list`、`secret remove` 同样只给主人。界面的配置页设密钥时，值作为命令的标准输入送去（`Call` 的 `stdin`），不进事件。
 
 **写一个库外的插件**要的都在仓库里，`PLUGINS.md` 从五分钟走通讲到完整的参考：
 
@@ -926,9 +927,9 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 
 ### 部署
 
-`packages/plugin-deploy`，名字 `deploy`。agent 用 `say deployable <库内路径> [一句话]` 声明一样东西可以部署，声明不让它上线；主人的开关决定在不在线；开着的东西，目标上跟着库里当前的内容。
+`packages/plugin-deploy`，名字 `deploy`。主人在部署页连上一个目标（这台机器装过的 PneumaSpace 一下就连上），把自己的一样目录东西上线、下线，看到它的地址；agent 用 `say deployable <库内路径> [一句话]` 声明一样东西可以部署，声明不让它上线；主人的开关决定在不在线；开着的东西，目标上跟着库里当前的内容。
 
-它是 sdk 的部署库加两种目标：`deployPlugin('deploy', [dirTarget, commandTarget])`。部署库（`packages/sdk/src/kit/deploy/`）拿插件名和目标交回整个插件，第三方只写目标；它不导入内核，读写都经 `tools.storage`。决定表、状态表、状态 × 操作的全化表、站点名规则和目标接口在那里的 `README.md`。几个部署插件都认领 `deployable`，第二个在 `plugin add` 时以 `name-taken` 拒绝；要发到几种地方，是一个插件带几种目标。
+它是 sdk 的部署库加四种目标：`deployPlugin('deploy', [cloudflareTarget, machineTarget, dirTarget, commandTarget])`。部署库（`packages/sdk/src/kit/deploy/`）拿插件名和目标交回整个插件，第三方只写目标；它不导入内核，读写都经 `tools.storage`。决定表、状态表、状态 × 操作的全化表、站点名规则和目标接口在那里的 `README.md`。几个部署插件都认领 `deployable`，第二个在 `plugin add` 时以 `name-taken` 拒绝；要发到几种地方，是一个插件带几种目标。
 
 | 钩子 | 它做什么 |
 | --- | --- |
@@ -938,23 +939,32 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 | `onAsks` | 主人从没动过开关的，每样问「<路径> 可以部署，还没上线。要上线吗？」，推荐「上线」，另一个「不上线」；两个都记下开关 |
 | `onPurged` | 先撤下站点，再去掉声明；撤不下就报错，`deploy sync` 再试 |
 | `onRemove` | 还有站点在线时拒绝卸下；`plugin remove deploy --anyway` 照样卸 |
-| `onView`、`onItemView` | 页 `deploy.sites` 和目标自己的页；面板里状态、开关、地址，没声明的给「声明可以部署」 |
+| `onView`、`onItemView` | 页 `deploy.sites` 和目标自己的页；面板里标记、地址和目标的字段，开关在面板的菜单里，没声明的目录东西在菜单里给「上线…」 |
+| `onDescribe` | 连着的那种目标的 `cognition` |
 
-目标失败时放入、挪、归档照样成功：答复带 `problems`，命令行退出码 3，并说上线等主人跑 `deploy sync`。没配目标只是一句答复。
+目标失败时放入、挪、归档照样成功：答复带 `problems`，命令行退出码 3；给 agent 的说上线等主人跑 `deploy sync`，给主人的不提命令（页上那一行有「重试」）。没配目标只是一句答复。
 
 目标上该有什么只看开关、在不在归档区、路径上有没有东西（`model.ts` 的 `want`）。对账（`plan`）先发布再撤旧名，一样就不动；开关、放、挪、归档、`deploy sync` 都跑它，所以重跑结果一样。`deploy sync` 另撤下当前目标上不属于任何声明的站点。状态：在线、待发布、离线、待下线、已归档、不在，目标读不到时不知道。
 
 | 命令 | 谁能用 | 做什么 |
 | --- | --- | --- |
-| `deploy on <库内路径>`、`deploy off <库内路径>` | 只有主人 | 开关，并发布或下线 |
-| `deploy target set --kind dir --to <目录>` | 只有主人 | 目标是一个本地目录 |
-| `deploy target set --kind command --publish <命令>… --unpublish <命令>… [--url <模板>] [--timeout <秒>]` | 只有主人 | 目标是一对命令 |
+| `deploy on <库内路径>`、`deploy off <库内路径>` | 只有主人 | 开关，并发布或下线；主人打开没声明的东西时先记声明 |
+| `deploy target set --kind cloudflare (--host <主机> \| --credentials <凭据文件> \| --origin <地址> --account <账户>) [--prefix <前缀>]` | 只有主人 | Cloudflare 上的 PneumaSpace；没有 `--host` 和 `--credentials` 时账户密钥不显示地读进来 |
+| `deploy target set --kind machine --admin <地址> [--prefix <前缀>] [--public <公开地址>]` | 只有主人 | 一台机器上的 PneumaSpace |
+| `deploy target set --kind dir --to <目录>` | 只有主人 | 本地文件夹 |
+| `deploy target set --kind command --publish <命令>… --unpublish <命令>… [--url <模板>] [--timeout <秒>]` | 只有主人 | 自己的命令 |
+| `deploy target list` | 主人和 agent，只读 | 连着的目标，这台机器上找到的 |
+| `deploy target remove` | 只有主人 | 断开；线上的不撤下 |
 | `deploy sync` | 主人和 agent | 把全部声明对一遍 |
 | `deploy list` | 主人和 agent，只读 | 声明过的东西、状态、地址 |
 
-- 开关在目标失败时照样记下，以 `publish-failed`、`unpublish-failed` 或 `no-target` 拒绝；没声明的是 `not-declared`。`target set` 的参数由各种目标的开关拼成，`--kind` 只有一种时可不写；选定那种的必填开关由部署库核对（`usage`）。答复提醒没设的密钥，换目标时说开着的还没发到新目标、旧目标上的没撤。
+- 开关在目标失败时照样记下，以 `publish-failed`、`unpublish-failed` 或 `no-target` 拒绝；关上没声明的是 `not-declared`。`target set` 的参数由各种目标的开关拼成，`--kind` 只有一种时可不写；选定那种的必填开关由部署库核对（`usage`）。连上前先问目标一次（登录、`/api/health`），答不上来就拒绝，什么都不存。答复说事实：`已连上 space.example.com。`，换目标时加上开着的几样还没发到这里、旧目标上的几样没撤。
 
-**目标。** 接口是 `TargetAdapter`（`defineTarget`）：`params`、`configure`、`secrets`，打开后是 `publish(站点名, 内容目录, meta)` 和 `remove(站点名)`，可选 `identify`、`serving`、`view`。目标的 `secrets` 成为插件的 `secrets`，经 `pneuma-base secret set <插件名> <名字>` 设。有 `serving` 的目标按它报告的对账，读不到时不动，页面每 30 秒刷新。自带的两种都不报告：
+**目标。** 接口是 `TargetAdapter`（`defineTarget`）：`params`、`configure`、`secrets`，页上用的 `label`、`icon`、`group`、`form`、`found`、`asked`、`cognition`，打开后是 `publish(站点名, 内容目录, meta)` 和 `remove(站点名)`，可选 `identify`、`serving`、`view`、`settings`。目标的 `secrets` 成为插件的 `secrets`，经 `pneuma-base secret set <插件名> <名字>` 设；`asked` 的那个在连上时不显示地读进来，连上了才存成这台机器上的密钥。有 `serving` 的目标按它报告的对账，读不到时不动，页面每 30 秒刷新（Cloudflare 上的每 60 秒）。
+
+- `cloudflare`、`machine`：PneumaSpace，一组，见 `packages/plugin-deploy/README.md`。都报告自己在服务什么。`found` 读 `~/.pneuma-space/hosts/` 这一层，有 `owner.json` 的目录各是一个装过的；`--host` 连上时只记主机名，每次登录都从那个文件重新读密钥。应用名前缀缺省取库文件夹的名字，是连上之后的一个设置。站点顶上没有 `index.html` 时发布之前就拒绝。
+
+本地的两种不报告：
 
 - `dir`：写 `<目录>/<站点名>/` 和 `index.json`（`format: 1`），先写 `.tmp-` 名再换上；地址是 `file://`。目录不能在库里，也不能包含库（`inside-library`）。
 - `command`：按引号规则切词，不经 shell 运行；`{dir}`、`{name}` 换成内容复制件和站点名；下线在空目录里跑；超时缺省 120 秒；`--url` 的 `{name}` 换成站点名。
@@ -963,7 +973,7 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 
 | 存放（`.pneuma-base/deploy/`） | 内容 |
 | --- | --- |
-| `config.json` | 目标 `{ format: 1, target: { kind, … } }`，经 `configFile` 带预期整份写，冲突重试最多 3 次，后写的算数 |
+| `config.json` | 目标 `{ format: 1, target: { kind, … }, given }`，`given` 是主人给的开关，不含密钥；经 `configFile` 带预期整份写，冲突重试最多 3 次，后写的算数；断开时删掉 |
 | `facts/` | 经 `recordStore` 写：`declare`、`switch`、`move`、`remove`、`publish`、`unpublish`；读不懂的原样留着，`check` 里列出 |
 
 不报告的目标，「上面有什么」来自对当前目标（按 `key`）的发布与下线记录；换目标后开着的都成待发布。事实折成行（`folded.ts`）：`things` 是声明了的，`alias` 是两台机器各声明一次的同一路径，`sites` 是每个目标上的每个站，`fold` 记着折到的最后一个事实的 id 和读不懂的行。每次钩子、命令和页面从行取，只折游标之后的新事实；折按事实的 id 排，新事实里有排在已折的之前的（同步带来的别的机器的），就从头折一遍。行另有 `identified`。
@@ -1103,8 +1113,8 @@ viewerFace.show(req: ViewRequest, call: { ctx; table; env; viaGrant }): Promise<
 `show <编号>` 和界面走同一个 `viewerFace.show`，文字是块的如实转写（`packages/cli/src/page.ts`）：
 
 - 页的标题、副标题；筛选写成「标签（--名字）：选项 数目 · …」，正在用的标 `*`。
-- 分节是 `#` 标题带数目，下面是说明；字段是「名字：值」；列表的一项是格，下面是说明和括号里的 `about`，设置（`toggle`）写「开着」或「关着」和拨它的命令；`local` 的格写整个路径；语气是警告或出错的文字，前面写「警告：」「错误：」；时刻按命令行的习惯写 UTC 的分钟（`YYYY-MM-DD HH:MMZ`）。
-- 表格对齐成列，带表头，不截短；标签写成 `[标签]`，外部地址照写；行的链接在最后一列，写成打开它的 `show` 命令。
+- 分节是 `#` 标题带数目，下面是说明；字段是「名字：值」；列表的一项是格，有第二格（`aside`）时空两格接在后面，下面是说明和括号里的 `about`，设置（`toggle`）写「开着」或「关着」和拨它的命令；`local` 的格写整个路径；语气是警告或出错的文字，前面写「警告：」「错误：」；时刻按命令行的习惯写 UTC 的分钟（`YYYY-MM-DD HH:MMZ`）。
+- 表格对齐成列，带表头，不截短；标签写成 `[标签]`，带 `tip` 的写成 `[标签（为什么）]`，别处的标签也这样；外部地址照写；行的链接在最后一列，写成打开它的 `show` 命令。
 - 预览写路径，外部页面写地址，空状态写标题和提示，`custom` 写它的 `text`，图表写那句话和一张数表。
 - 时间线和 `feed` 一行一条；树的每个节点印成打开它的命令；步骤写成 `[✓]` 或 `[ ]` 加标题。
 - 块上的每个动作印成做同一件事的命令，比如 `$ ledger register scans --inside  # 登记里面的文件（只给主人）`。agent 的会话会被拒的标「（只给主人）」，要先问的跟着「；先问：」和问话，没填的输入照用法写成 `<提示>`。
@@ -1190,7 +1200,7 @@ viewerFace.show(req: ViewRequest, call: { ctx; table; env; viaGrant }): Promise<
 - `embed` 的地址不是 http 或 https；`custom` 的 `entry` 不是 `ui` 目录里的相对路径，或插件没有 `ui`。
 - `chart` 的系列不是 1 到 4 个（sdk 的 `CHART_SERIES_MAX`），某个系列的数和 `x` 不一样多，叠起来的柱有负数。
 - 输入的 `pattern` 不是正则。
-- 动作的 `call` 不是一个动词或这个库里在的一条主人命令（`parseCall`）；参数不合那条命令的参数表（没填的输入算给了，填的值到分派时再核）；「说」的种类没有插件听；`call` 写了动作没有的输入（表格的 `each` 的动作另有 `{path}`、`{in}`）。
+- 动作的 `call` 不是一个动词或这个库里在的一条主人命令（`parseCall`）；参数不合那条命令的参数表（没填的输入算给了，填的值到分派时再核）；「说」的种类没有插件听；`call` 写了动作没有的输入（表格的 `each` 的动作另有 `{path}`、`{in}`）；输入的 `when` 说到动作没有的输入。
 
 不合的一块换成一段出错的文字，说是哪个插件的块、为什么，并列进问题；页的其余部分照常（K8）。`custom` 块盖上插件名，插件写的不算。答复的 `refresh` 不是数字、`filters` 说了没声明的筛选、`open` 不是开在面板里的链接、`trail` 不是一串名字和链接，都去掉，列进问题。`POST /api/call` 用同一个 `parseCall`。比内核旧的网页遇到不认识的种类，显示成一行字。
 
@@ -1226,16 +1236,18 @@ viewerFace.show(req: ViewRequest, call: { ctx; table; env; viaGrant }): Promise<
 - 表格的每一列先量出自然宽度。放得下就都不截短，多出的宽度给最宽的一列。放不下时，可让的列（`optional`）从后往前让开，再截短文字，最后截短路径，路径截掉的是前面的文件夹；各列都截到最短一档还放不下时，表格横着滚。窄的地方要让路径完整，用列表，不用表格。
 - 没有行的表格只显示它的 `empty`，画成空状态：第一句是标题，其余是说明。
 - 一页的块以 `tree` 开头、后面还有块时，树在左边一栏，其余的在右边；地方不够时树在上面。
-- `feed` 只画不寻常的「谁的动作」：主人批准的、看到的；agent 自己做的和主人自己做的，记号已经说了，不画。行不写名字：记号悬停或聚焦时说名字和授权。组带 `groups` 时是一层小标题，比如活动页一天里的场景，自己的标题画得重一些。行带 `act` 时分开画：动作是图标，东西只写名字（路径的最后一段；主人面的操作是它针对的东西），文件夹灰着写在旁边，和上一行同一个文件夹时不再写；第二行是做的人写的话（`note`），没有时是灰的格；整句话（`text`）在这一行的提示里。不带 `act` 的行照旧是那句话。灰的一行不画 `normal` 的格；什么都不剩时一行只有第一行。时刻在行左边的一列，和上一行显示得一样时不再写；`feed` 窄的时候，时刻挪到灰的一行的开头。组名可点时是一行灰字，不是一条底色，只有一行的组不写个数。
+- `feed` 只画不寻常的「谁的动作」：主人批准的、看到的；agent 自己做的和主人自己做的，记号已经说了，不画。行不写名字：记号悬停或聚焦时说名字和授权。组带 `groups` 时是一层小标题，比如活动页一天里的场景，自己的标题画得重一些。行带 `act` 时分开画：动作是图标，东西只写名字（路径的最后一段；主人面的操作是它针对的东西，里面有 `://` 的整个写，去掉前面的 `https://` 这类），文件夹灰着写在旁边，和上一行同一个文件夹时不再写；第二行是做的人写的话（`note`），没有时是灰的格；整句话（`text`）在这一行的提示里。不带 `act` 的行照旧是那句话。灰的一行不画 `normal` 的格；什么都不剩时一行只有第一行。时刻在行左边的一列，和上一行显示得一样时不再写；`feed` 窄的时候，时刻挪到灰的一行的开头。组名可点时是一行灰字，不是一条底色，只有一行的组不写个数。
 - `asks` 回答之后在原处折成一行回执（回答了什么、答复的那句话、什么时候），记在网页里，页面开着时一直在，即使重取之后它已不在答复里。
 - `drop` 在 Mac 应用里是一块虚线的区域，点了请壳选文件（第 10 节）；浏览器交不出文件，显示 `command`，可复制。
 - `chart` 的颜色按系列的次序取自 `theme.css` 的 `--series-1` 到 `--series-4`，浅色深色各一套，不由插件定。只有一个系列时不画图例；线的末端放得下就直接标系列名，否则画图例。悬停或键盘（←→、Home、End）移到一处，给出每个系列的数和单位；读屏另有一张同样的数表。不做入场动画。一页里接连的几张图，宽的时候并排。
 - `embed` 放在沙箱框架里，能跑脚本；地址和网页不同源时另给 `allow-same-origin`，保留它自己的源，它自己的存储照常能用。带「在新标签页打开」。
 - 输入的 `pattern` 按 `^(?:…)$` 和 `u` 标志整个匹配，`multiple` 的每一行都要，留空不算不匹配。只有一个选项的筛选不画。
+- 对话框里，有 `when` 的输入只在条件成立时显示，不显示的送空值；一个不显示的输入，别的输入的条件看它时它是空的。`options` 不超过 5 个的并排；多过 5 个的是一个筛选框，下面列出名字里含所写的字（不分大小写）的前 20 个，选中的一个亮着，上下键换，回车提交，一个都不含时提交不了。
+- 标签的 `tip` 是它的提示，也是读屏的说明（`aria-description`）。
 - 答复的 `open`：网页打开这一页、面板关着、窗口放得下页和面板（不用把侧栏收成窄条）时，在面板里打开它；换了参数也算又来了一次。它替换当前的历史记录，不多一步「后退」。
 - 带 `page` 的块下面一行：左边「51–100，共 523 项」（只数到一部分时写「至少」），右边上一页、下一页两个按钮，到头的一个灰掉。翻页就是打开 `page` 给的链接：主区的换地址里的 `view.` 参数，面板里的换那个标签的参数；同一个列表翻页时旧的行留着直到新的来。焦点在这一行时 ← → 也翻页。
 - 一个区域（页头、面板的头、一节的标题行、表格的一行）的动作按 `Action.as` 放：图标（名字和键在提示里），「···」菜单（键盘上下、回车、Esc；危险的在最后，隔一条线，照样先问），最多一个文字按钮，标了 `primary` 的实心。`as: 'inline'` 的画成输入框，回车就做，不出对话框，做成了框清空。动作有 `key` 时，页头的在页上按键就做，面板头的在焦点在面板里或不在别处时按键就做，输入框里、菜单和对话框开着时不算。
-- 列表的行：有动作或开关的，悬停时有底色；格以图标或记号开头时，说明从格的字下面起；几行里动作只有图标和「···」的一行，动作在悬停或聚焦时才出现。项的 `about` 是格旁的 ⓘ。项的 `toggle` 是行尾的开关（`role="switch"`，空格和回车都拨），提示写它的动作；拨它走和按钮一样的路（先问 `confirm`，同样的提示），开关当下就动，动作取消或没成时回去，成了就照页的下一次答复。`local` 的格写路径的最后一段，整个路径在提示里，带复制；Mac 应用里另带「在访达中显示」，发给壳。
+- 列表的行：有动作或开关的，悬停时有底色；格以图标或记号开头时，说明从格的字下面起；几行里动作只有图标和「···」的一行，动作在悬停或聚焦时才出现。项的 `about` 是格旁的 ⓘ。项的 `toggle` 是行尾的开关（`role="switch"`，空格和回车都拨），提示写它的动作；拨它走和按钮一样的路（先问 `confirm`，同样的提示），开关当下就动，动作取消或没成时回去，成了就照页的下一次答复。`local` 的格写路径的最后一段，整个路径在提示里，带复制；Mac 应用里另带「在访达中显示」，发给壳。项的 `aside` 在行尾、动作和开关之前：有地方时和它的字一样宽，最多占行的六成，一行，放不下时从中间截短；它的复制按钮在悬停或聚焦时才出现，位置一直留着。
 - `normal` 的格不画，整列都是时那一列让开；`normal` 的字段不画；`normal` 的节整节不画。`fields` 的 `line` 说成一行，值之间一个点，标签在悬停里。节的 `about` 是标题旁的 ⓘ，悬停或聚焦时出提示。表格行的 `group` 画成一行带文件夹图标的小标题，有组时表头只给读屏。有链接的表格行，它的动作在悬停、聚焦或选中时才出现。表格里只说谁的格画成记号，名字和授权在记号的提示里。
 - 筛选不画名字（名字给读屏），个数为 0 的选项不画，除非正选着；`as: 'menu'` 的筛选是一个带当前选项的菜单按钮。几页共用导航的一项（`with`）时，页头右边一排图标在它们之间切换，当前的一个按下。
 - 表格里有链接的行，只有一行在 Tab 的顺序里；上下键、Home、End 在这些行之间走，回车或空格打开，按着 ⌘ 或 Ctrl、或用中键，开在新的标签里。带 `place` 的行不同，见下一条。Esc 先关对话框和命令面板，都没有时关掉右侧面板最前面的标签。对话框开着时 Tab 不出框，关掉后焦点回到原来的按钮。
@@ -1482,7 +1494,7 @@ $PNEUMA_BASE_HOME/
 
 - 门本身（`storage.ts`）；这台机器上的存储提供者（`providers.ts`、`provider-install.ts`）；存储能答之前的库的地址（`address.ts`）；调用方写的绝对路径（`paths.ts`）；放的来源在库外（`outside.ts`）；包自己的文字（`cognition.ts`）；插件向存储要了什么的日志（`tool-log.ts`）。
 - 本机 `$PNEUMA_BASE_HOME` 下的状态：授权、endpoint、配对、密钥、插件、本机的命令、连接的记录（`machine-files.ts`、`grants.ts`、`endpoint.ts`、`pairing.ts`、`secrets.ts`、`plugin-table.ts`、`launcher.ts`、`connections.ts`）；agent 产品的配置、技能目录和对话（`products.ts`、`agent-commands.ts`）；主人命令写到主人指定处的技能文件（`owner-commands.ts`）。
-- 插件在库外的东西：记账插件读 agent 的对话、写主人指定的导出文件；版本插件导出到主人指定处或还原用的临时目录；查找插件缓存里的索引；同步插件的目标和它缓存里的基线；部署库读进插件缓存的 `stage/`，部署插件的目标，`space` 的凭据文件。
+- 插件在库外的东西：记账插件读 agent 的对话、写主人指定的导出文件；版本插件导出到主人指定处或还原用的临时目录；查找插件缓存里的索引；同步插件的目标和它缓存里的基线；部署库读进插件缓存的 `stage/`，部署插件的目标，PneumaSpace 的凭据文件和 `~/.pneuma-space/hosts/` 下装过的那几个。
 - 面：界面的服务读建好的网页和插件的 `ui` 目录；命令行看人敲的词是不是一个目录，`plugin new` 在人指定处写插件项目；测试工具在临时目录里造沙盒库、像人的文件管理器那样从库外看插件改了什么。
 
 测试和脚本不查：测试代表库外的世界（agent 自己的工具也会往库里写），脚本是建、测、演示用的。

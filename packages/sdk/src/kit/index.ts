@@ -10,6 +10,7 @@ export type { Declared, ThingId } from './deploy/facts.js'
 export {
   defineTarget,
   type Configured,
+  type Found,
   type Look,
   type PublishMeta,
   type Served,
@@ -20,8 +21,10 @@ export {
   type TargetAdapter,
   type TargetConfig,
   type TargetEnv,
+  type TargetGroup,
   type TargetPage,
   type TargetView,
+  type Typed,
 } from './deploy/target.js'
 export { STATUS } from './deploy/words.js'
 export { switchAction } from './deploy/views.js'

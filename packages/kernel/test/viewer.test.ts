@@ -320,7 +320,7 @@ describe('bundles in the views', () => {
 
   it('a plugin’s section of the panel of a file inside a bundle is asked about that file, not the bundle', async () => {
     const asked: string[] = []
-    const f = await fixture([plugin('knower', { onItemView: async (path) => (asked.push(path), { title: '知道的', blocks: [] }) })])
+    const f = await fixture([plugin('knower', { onItemView: async (path) => (asked.push(path), { title: '知道的', blocks: [{ kind: 'text', text: path, tone: 'neutral' }] }) })])
     site(f)
     const r = shown(await show(f, 'item', { path: 'site/css/main.css' }))
     expect(asked).toEqual(['site/css/main.css'])
@@ -452,7 +452,7 @@ describe('what a plugin’s view answers is checked (D7)', () => {
     expect(mute.problems).toMatchObject([{ plugin: 'mute', message: expect.stringContaining('缺少 text') }])
   })
 
-  it('refuses a block whose action calls nothing the library runs, arguments its command does not take, a 「说」 no plugin hears, an input it does not ask for, or an input pattern that is not a regular expression', async () => {
+  it('refuses a block whose action calls nothing the library runs, arguments its command does not take, a 「说」 no plugin hears, an input it does not ask for, an input pattern that is not a regular expression, or an input shown by one the action does not have', async () => {
     const tag = { name: 'tagger tag', summary: '打标签', params: { positional: [{ name: 'path', hint: '库内路径', required: true }], flags: [{ name: 'color', hint: '颜色', kind: 'value' as const, options: [{ value: 'red', label: '红' }] }] }, destructive: false, ownerOnly: false, run: async () => ({ outcome: 'done' as const, text: '' }) }
     const owner = (args: { positional: string[]; flags: Record<string, string[] | true> }, inputs: string[] = []) => ({
       label: '按钮',
@@ -475,10 +475,11 @@ describe('what a plugin’s view answers is checked (D7)', () => {
       say('unheard'),
       { ...say('heard'), call: { face: 'agent', verb: 'shout', request: {} } },
       { ...owner({ positional: ['{p}'], flags: {} }, ['p']), inputs: [{ name: 'p', label: '前缀', placeholder: null, value: null, options: null, pattern: '[a-' }] },
+      { ...owner({ positional: ['{path}'], flags: {} }, ['path']), inputs: [{ name: 'path', label: '路径', placeholder: null, value: null, options: null, when: [{ input: 'kind', is: ['file'] }] }] },
     ]
     const f = await fixture([answering('tagger', page(actions), { statements: ['heard'], onSay: async () => ({ outcome: 'heard', note: '' }), ownerCommands: [tag] })])
     const r = shown(await show(f, 'tagger.page'))
-    expect(r.blocks.map((b) => b.kind)).toEqual(['actions', 'actions', 'actions', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text'])
+    expect(r.blocks.map((b) => b.kind)).toEqual(['actions', 'actions', 'actions', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text', 'text'])
     expect(r.problems.map((p) => p.message)).toEqual([
       expect.stringContaining('主人命令「tagger nothing」这个库里没有'),
       expect.stringContaining('少了 <库内路径>'),
@@ -488,6 +489,7 @@ describe('what a plugin’s view answers is checked (D7)', () => {
       expect.stringContaining('说的「unheard」这个库里没有插件听'),
       expect.stringContaining('不是一个动词或一条主人命令的调用'),
       expect.stringContaining('pattern'),
+      expect.stringContaining('输入 path 的 when 说的 kind 动作里没有'),
     ])
   })
 
@@ -562,13 +564,22 @@ describe('the new blocks are checked too (D7)', () => {
     { kind: 'chart', form: 'stacked', text: '放进 4 样。', unit: '', x: ['今天'], series: [{ label: 'a', values: [1] }, { label: 'b', values: [0] }, { label: 'c', values: [2] }, { label: 'd', values: [1] }] },
   ]
 
-  it('lets a feed, stats, a tree, asks, charts, an actor on a cell, link cells, embeds, timeline actions and patterned inputs through as they are, with the filter options the view answered', async () => {
+  it('lets a feed, stats, a tree, asks, charts, an actor on a cell, link cells, embeds, timeline actions, patterned and conditional inputs, a mark’s reason and a row’s second cell through as they are, with the filter options the view answered', async () => {
     const options = [{ value: '', label: '全部', count: 3 }, { value: 'x', label: '某个', count: 1 }]
     const act = { label: '放回', tone: 'default', confirm: '放回这一版？', inputs: [{ name: 'p', label: '前缀', placeholder: null, value: null, options: null, pattern: '[a-z]+', hint: '小写字母' }], call: { face: 'owner', command: 'grant revoke', args: { positional: ['{p}'], flags: {} } } }
+    const kinds = [{ value: 'a', label: '甲' }, { value: 'b', label: '乙' }]
+    const chosen = {
+      ...act,
+      inputs: [
+        { name: 'kind', label: '哪种', placeholder: null, value: null, options: kinds },
+        { name: 'p', label: '前缀', placeholder: null, value: null, options: null, when: [{ input: 'kind', is: ['b'] }] },
+      ],
+    }
     const blocks = [
       { kind: 'fields', fields: [{ label: '地址', value: { text: 'https://example.com/', href: 'https://example.com/', copy: true } }] },
       { kind: 'embed', url: 'http://127.0.0.1:18080/apps/demo/', title: '预览', height: 320 },
-      { kind: 'timeline', entries: [{ at: '2026-11-25T01:00:00.000Z', title: { text: '第 1 版' }, lines: [], tag: null, actions: [act] }] },
+      { kind: 'timeline', entries: [{ at: '2026-11-25T01:00:00.000Z', title: { text: '第 1 版' }, lines: [], tag: null, actions: [act, chosen] }] },
+      { kind: 'list', items: [{ cell: { text: 'shop', tag: { text: '读不到', tone: 'bad', tip: '连不上 space.example.com' } }, note: 'sites', aside: { text: 'https://space.example.com/apps/shop/', href: 'https://space.example.com/apps/shop/', copy: true }, actions: [] }] },
     ]
     const f = await fixture([answering('fine', page([...good, ...blocks], { filters: [{ name: 'who', options }] }))])
     const r = shown(await show(f, 'fine.page'))
@@ -592,6 +603,9 @@ describe('the new blocks are checked too (D7)', () => {
       { kind: 'chart', form: 'stacked', text: '一句', unit: '样', x: ['a'], series: [{ label: 's', values: [-1] }] },
       { kind: 'chart', form: 'line', text: '一句', unit: '样', x: ['a'], series: [{ label: 's', values: ['1'] }] },
       { kind: 'chart', form: 'line', unit: '样', x: ['a'], series: [{ label: 's', values: [1] }] },
+      { kind: 'list', items: [{ cell: { text: 'shop', tag: { text: '读不到', tone: 'bad', tip: 404 } }, note: null, actions: [] }] },
+      { kind: 'list', items: [{ cell: { text: 'shop' }, note: null, actions: [], aside: 'https://space.example.com/' }] },
+      { kind: 'actions', actions: [{ ...archive, inputs: [{ name: 'p', label: '前缀', placeholder: null, value: null, options: null, when: { input: 'kind', is: 'b' } }] }] },
     ]
     const f = await fixture([answering('odd', page(bad, { filters: [{ name: 'nope', options: [] }] }))])
     const r = shown(await show(f, 'odd.page'))

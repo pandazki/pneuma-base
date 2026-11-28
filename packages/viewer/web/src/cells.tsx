@@ -23,8 +23,13 @@ export function Moment({ at, format = shortTime }: { at: string; format?: (iso: 
 
 const TONE_CLASS: Record<Tone, string> = { neutral: '', good: 'tone-good', warn: 'tone-warn', bad: 'tone-bad', info: 'tone-info' }
 
+/** A mark of a state; why it is there, when the tag says, in its tooltip and as its description to a screen reader. */
 export function TagView({ tag }: { tag: Tag }) {
-  return <span className={`tag ${TONE_CLASS[tag.tone]}`}>{tag.text}</span>
+  return (
+    <span className={`tag ${TONE_CLASS[tag.tone]}`} data-tip={tag.tip} aria-description={tag.tip}>
+      {tag.text}
+    </span>
+  )
 }
 
 export const stop = (e: MouseEvent) => e.stopPropagation()
@@ -96,21 +101,23 @@ function LocalPath({ cell }: { cell: Cell }) {
 
 /**
  * One cell. In a table it stays on one line, its text cut short with the whole of it on hover; elsewhere
- * it wraps. An outside address is a link to a new tab; given `room`, it is cut in the middle to fit.
- * Muted text is one step quieter than the text around it. A cell that says who starts with the mark.
- * A path of this machine shows its last part.
+ * it wraps. On one line and given `room`, its text is cut in the middle to fit. An outside address is a
+ * link to a new tab. Muted text is one step quieter than the text around it. A cell that says who
+ * starts with the mark. A path of this machine shows its last part.
  */
 export function CellView({ cell, line = false, first = false, room }: { cell: Cell; line?: boolean; first?: boolean; room?: number }) {
   const { onLink } = useEnv()
   if (cell.local) return <LocalPath cell={cell} />
   const style = `${cell.mono ? 'font-mono text-[12.5px]' : ''} ${cell.muted ? (line ? 'text-ink-3' : 'text-ink-2') : ''}`
   const href = outsideUrl(cell.href)
-  const fitted = href && line && room !== undefined ? fitMiddle(cell.text, cellFont(cell, first), room) : cell.text
+  const middle = line && room !== undefined
+  const fit = (text: string) => (middle ? fitMiddle(text, cellFont(cell, first), room) : text)
+  const fitted = fit(cell.text)
   // In a table a cell that says who is the mark alone, its name in the tooltip: the marks tell the agents apart.
   const markOnly = line && cell.actor !== undefined && (cell.text === '' || cell.text === cell.actor.name)
   const words = markOnly ? '' : cell.text === '' && cell.actor ? cell.actor.name : cell.text
-  // On one line, a path-like text is cut in its folders, so its last part stays readable.
-  const cut = line && cell.mono ? words.lastIndexOf('/') : -1
+  // On one line, a path-like text is cut in its folders, so its last part stays readable, unless it is cut in the middle.
+  const cut = line && cell.mono && !middle ? words.lastIndexOf('/') : -1
   const text = cell.at ? (
     <span className={`${style} ${line ? 'min-w-0 truncate' : ''}`}>
       <Moment at={cell.at} />
@@ -136,6 +143,11 @@ export function CellView({ cell, line = false, first = false, room }: { cell: Ce
       <span className="max-w-full shrink-0 truncate" aria-hidden>
         {words.slice(cut + 1)}
       </span>
+    </span>
+  ) : middle && fit(words) !== words ? (
+    <span className={`${style} min-w-0 overflow-hidden whitespace-nowrap`}>
+      <span className="sr-only">{words}</span>
+      <span aria-hidden>{fit(words)}</span>
     </span>
   ) : (
     <span className={`${style} min-w-0 ${line ? 'truncate' : '[overflow-wrap:anywhere]'}`}>{words}</span>

@@ -71,7 +71,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { Choice } from './controls'
+import { FilterChoice, Segmented } from './controls'
 
 /** The icon of each name in the sdk's `ICON_NAMES`, every one and no other. */
 const ICONS: Record<IconName, LucideIcon> = {
@@ -185,6 +185,25 @@ function mismatched(input: ActionInput, value: string): boolean {
   return (input.multiple ? lines(value) : [value]).some((v) => !re.test(v))
 }
 
+/**
+ * The inputs hidden with these values: each whose `when` some named input's value fails, a hidden
+ * input's value counting as empty, as it is sent.
+ */
+function hiddenInputs(inputs: readonly ActionInput[], values: Record<string, string>): Set<string> {
+  let hidden = new Set<string>()
+  // Each round hides by the last; a hidden input's empty value may hide the ones that name it.
+  for (let round = 0; round <= inputs.length; round++) {
+    const seen = (name: string) => (hidden.has(name) ? '' : (values[name] ?? ''))
+    const next = new Set(inputs.filter((i) => !(i.when ?? []).every((w) => w.is.includes(seen(w.input)))).map((i) => i.name))
+    if (next.size === hidden.size && [...next].every((n) => hidden.has(n))) break
+    hidden = next
+  }
+  return hidden
+}
+
+/** Up to this many options are one choice side by side; more are a filter over a list. */
+const FEW = 5
+
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])'
 
 /**
@@ -253,13 +272,20 @@ export function Layer({ leaving, onDismiss, className = '', children }: { leavin
 
 /**
  * The form an action opens when it has inputs or asks for confirmation. Submitting it is the
- * in-person confirmation. A question with nothing to fill in starts on 取消, the choice that changes nothing.
+ * in-person confirmation. A question with nothing to fill in starts on 取消, the choice that changes
+ * nothing. An input shows while its `when` holds, and is sent empty while it does not. The label's
+ * 「…」, which says a button opens this form, is not part of its title or its button.
  */
 export function ActionDialog({ action, preset = {}, leaving, onCancel, onSubmit }: { action: Action; preset?: Record<string, string>; leaving: boolean; onCancel(): void; onSubmit(values: Record<string, string>): void }) {
+  const name = action.label.replace(/…$/, '')
   const [values, setValues] = useState(() => ({ ...initial(action.inputs), ...preset }))
   const form = useRef<HTMLFormElement | null>(null)
   const danger = action.tone === 'danger'
-  const wrong = new Set(action.inputs.filter((i) => mismatched(i, values[i.name] ?? '')).map((i) => i.name))
+  const hidden = hiddenInputs(action.inputs, values)
+  const shown = action.inputs.filter((i) => !hidden.has(i.name))
+  const wrong = new Set(shown.filter((i) => mismatched(i, values[i.name] ?? '')).map((i) => i.name))
+  // A choice of many whose filter matches nothing has nothing chosen.
+  const unchosen = shown.some((i) => i.options !== null && i.options.length > FEW && !i.options.some((o) => o.value === values[i.name]))
   useEffect(() => {
     const start = action.inputs.length > 0 ? form.current?.querySelector<HTMLElement>('input, textarea, select, [role=radio][tabindex="0"]') : form.current?.querySelector<HTMLElement>('[data-cancel]')
     start?.focus()
@@ -271,17 +297,17 @@ export function ActionDialog({ action, preset = {}, leaving, onCancel, onSubmit 
         ref={form}
         role="dialog"
         aria-modal="true"
-        aria-label={action.label}
+        aria-label={name}
         aria-describedby={action.confirm ? 'dialog-confirm' : undefined}
         className="dialog"
         onSubmit={(e) => {
           e.preventDefault()
-          if (wrong.size === 0) onSubmit(values)
+          if (wrong.size === 0 && !unchosen) onSubmit({ ...values, ...Object.fromEntries([...hidden].map((name) => [name, ''])) })
         }}
       >
         <div className="dialog-head">
           <div>
-            <h2>{action.label}</h2>
+            <h2>{name}</h2>
             {action.confirm ? (
 <p id="dialog-confirm">{action.confirm}</p>
             ) : null}
@@ -290,15 +316,26 @@ export function ActionDialog({ action, preset = {}, leaving, onCancel, onSubmit 
             <X strokeWidth={2} aria-hidden />
           </button>
         </div>
-        {action.inputs.length > 0 ? (
+        {shown.length > 0 ? (
           <div className="dialog-body">
-            {action.inputs.map((input) => {
+            {shown.map((input) => {
               const hint = wrong.has(input.name) && !input.hint ? '格式不对。' : input.hint
               const hintId = hint ? `hint-${input.name}` : undefined
-              return input.options ? (
+              // An input whose label is empty says itself, as a choice of named kinds does: no label is drawn, and the dialog's title names it.
+              const label = input.label || name
+              return input.options && input.options.length > FEW ? (
                 <div key={input.name} className="form-field">
-                  <span className="form-label">{input.label}</span>
-                  <Choice label={input.label} options={input.options} value={values[input.name] ?? ''} onChange={(v) => set(input.name, v)} />
+                  {input.label ? (
+                    <label className="form-label" htmlFor={`input-${input.name}`}>
+                      {input.label}
+                    </label>
+                  ) : null}
+                  <FilterChoice id={`input-${input.name}`} label={label} placeholder={input.placeholder ?? undefined} options={input.options} value={values[input.name] ?? ''} onChange={(v) => set(input.name, v)} />
+                </div>
+              ) : input.options ? (
+                <div key={input.name} className="form-field">
+                  {input.label ? <span className="form-label">{input.label}</span> : null}
+                  <Segmented label={label} options={input.options} value={values[input.name] ?? ''} onChange={(v) => set(input.name, v)} />
                 </div>
               ) : (
                 <div key={input.name} className="form-field">
@@ -345,8 +382,8 @@ export function ActionDialog({ action, preset = {}, leaving, onCancel, onSubmit 
           <button type="button" className="btn" data-cancel onClick={onCancel}>
             取消
           </button>
-          <button type="submit" className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`} disabled={wrong.size > 0}>
-            {action.label}
+          <button type="submit" className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`} disabled={wrong.size > 0 || unchosen}>
+            {name}
           </button>
         </div>
       </form>

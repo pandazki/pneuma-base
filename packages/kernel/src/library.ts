@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { resolveAddress } from './address.js'
 import { settle } from './claims.js'
-import { assembleDescription } from './cognition.js'
+import { describeLibrary } from './cognition.js'
 import { DESCRIPTION_FILE } from './paths.js'
 import { storageOf, type Storage } from './storage.js'
-import { isDescribed, isFailure, PLUGIN_NAME, type Grant, type GrantId, type LibraryConfig, type Library, type LibraryPath, type Plugin, type PluginName, type PluginTable } from '@pneuma-base/sdk'
+import { isDescribed, isFailure, PLUGIN_NAME, type Context, type Grant, type GrantId, type LibraryConfig, type Library, type LibraryPath, type Plugin, type PluginName, type PluginProblem, type PluginTable } from '@pneuma-base/sdk'
 
 /** Where storage keeps the declaration, for messages: the file other programs (the app) look for. */
 export const CONFIG_FILE = '.pneuma-base/config.json'
@@ -40,12 +40,13 @@ function libraryOf(root: string, config: LibraryConfig, table: PluginTable): Lib
 }
 
 /**
- * Writes the configuration into the declaration and regenerates the description from it. Every
+ * Writes the configuration into the declaration and writes the description for it. Every
  * configuration change goes through here, so the description never lags the configuration (K6). Fields
  * this version does not know are kept. Each write expects what it read; one that finds another writer
- * came between reads again and writes again.
+ * came between reads again and writes again. `at`: who acts, in which session, on this machine: the
+ * context the plugins' paragraphs are asked in, with the library as it is now configured.
  */
-export async function saveConfig(root: string, config: LibraryConfig, table: PluginTable): Promise<Library> {
+export async function saveConfig(root: string, config: LibraryConfig, table: PluginTable, at: Omit<Context, 'library'>): Promise<{ library: Library; problems: PluginProblem[] }> {
   const store = storageOf(root)
   for (let tries = 0; ; tries++) {
     const { declaration, token } = await store.declaration.read()
@@ -54,19 +55,31 @@ export async function saveConfig(root: string, config: LibraryConfig, table: Plu
     if (tries > 5) throw new Error(`库的声明一直在被别的进程改写，没能写进去：${root}`)
   }
   const library = libraryOf(root, config, table)
-  await writeDescription(store, assembleDescription(library))
-  return library
+  return { library, problems: await writeDescription({ ...at, library }) }
 }
 
-/** Writes the description at the root, over what is there now; another writer coming between makes it try again. */
-async function writeDescription(store: Storage, text: string): Promise<void> {
+/**
+ * Writes the description at the root as the library's plugins describe it now, only when its text
+ * differs from what is there; another writer coming between makes it look again. Every write of the
+ * description goes through here. Answers the problems of the plugins whose paragraph failed.
+ */
+export async function writeDescription(ctx: Context): Promise<PluginProblem[]> {
+  const store = storageOf(ctx.library.root)
+  const { text, problems } = await describeLibrary(ctx)
   for (let tries = 0; ; tries++) {
-    const [there] = await store.glance([DESCRIPTION_FILE])
-    const expect = there !== undefined && isDescribed(there) && there.kind !== 'none' ? (there.token ?? 'empty') : 'empty'
+    const there = await store.read(DESCRIPTION_FILE)
+    if (!isFailure(there) && there.data !== null && Buffer.from(there.data).toString('utf8') === text) return problems
+    const expect = isFailure(there) ? await tokenThere(store) : there.token
     const written = await store.write(DESCRIPTION_FILE, { data: text }, expect)
-    if (!isFailure(written)) return
+    if (!isFailure(written)) return problems
     if (written.reason !== 'refused' || tries > 5) throw new Error(`没能写说明 ${DESCRIPTION_FILE}（${written.reason}）`)
   }
+}
+
+/** What a write over the description expects when its bytes could not be read, such as when none is there. */
+async function tokenThere(store: Storage): Promise<string> {
+  const [there] = await store.glance([DESCRIPTION_FILE])
+  return there !== undefined && isDescribed(there) && there.kind !== 'none' ? (there.token ?? 'empty') : 'empty'
 }
 
 function parseConfig(raw: unknown): LibraryConfig {

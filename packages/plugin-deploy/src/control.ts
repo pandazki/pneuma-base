@@ -4,8 +4,8 @@
 // session is opened at the first call and signed out by `close`, once per run of the plugin. The key
 // and the cookie stay in this module: no message, record or answer carries them.
 import { randomUUID } from 'node:crypto'
-import { MANAGER } from './name.ts'
-import { MANIFEST, type Digest, type Package } from './package.ts'
+import { MANAGER } from './name.js'
+import { MANIFEST, type Digest, type Package } from './package.js'
 
 const TIMEOUT_MS = 120_000
 
@@ -92,7 +92,7 @@ export class Control {
       throw new ControlError(`连不上 Cloudflare 上的 PneumaSpace ${this.origin}（${what}）：${cause}`)
     }
     const text = await response.text()
-    let data: unknown = null
+    let data: unknown
     try {
       data = text ? JSON.parse(text) : null
     } catch {

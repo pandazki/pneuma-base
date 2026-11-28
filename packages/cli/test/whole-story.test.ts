@@ -79,7 +79,7 @@ describe('the whole story, with every plugin installed', () => {
   })
 
   it('the owner turns four on and archives three of the others; the deploy target holds exactly the four', () => {
-    for (const name of ONLINE) expect(ok(owner(lib, ['deploy', 'on', `sites/${name}`])).stdout).toMatch(new RegExp(`^已打开 sites/${name}：在线`))
+    for (const name of ONLINE) expect(ok(owner(lib, ['deploy', 'on', `sites/${name}`])).stdout).toMatch(new RegExp(`^已上线 sites/${name} → `))
     for (const name of ARCHIVED) expect(lines(ok(owner(lib, ['archive', `sites/${name}`])))[0]).toBe(`已归档：sites/${name} → _archive/sites/${name}`)
     expect(served()).toEqual(ONLINE.map((name) => `sites-${name}`).sort())
     for (const name of ONLINE) expect(readFileSync(join(www, `sites-${name}`, 'index.html'), 'utf8')).toContain(SITES[name])

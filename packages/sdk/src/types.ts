@@ -87,6 +87,12 @@ export type PluginContext = Context & { cacheDir: string; tools: PluginTools; se
 export interface PluginSecrets {
   /** The value of the secret `name`, one the plugin declares; null when the owner has not set it here. */
   get(name: string): Promise<string | null>
+  /**
+   * Keeps `value` as the secret `name` on this machine, as `secret set` keeps it: for an owner command
+   * that took a credential through `OwnerParams.secret`. Throws for a name the plugin does not declare,
+   * an empty value or one longer than `secret set` takes, and in a hook or a view.
+   */
+  set(name: string, value: string): Promise<void>
 }
 
 /**
@@ -476,8 +482,18 @@ export type FlagParam = {
   readonly options?: readonly ParamOption[]
 }
 
-/** How a command's arguments are written. The command line parses by it, the kernel checks by it, and help and forms are made from it. */
-export type OwnerParams = { readonly positional?: readonly PositionalParam[]; readonly flags?: readonly FlagParam[] }
+/**
+ * A value the command reads besides its arguments, such as a credential: typed hidden in a terminal,
+ * standard input elsewhere, a hidden field on the page. `name` names the form's input; `hint` is the
+ * question and the input's label.
+ */
+export type SecretParam = { readonly name: string; readonly hint: string }
+
+/**
+ * How a command's arguments are written. The command line parses by it, the kernel checks by it, and
+ * help and forms are made from it. `secret`: the one value it reads with `CommandArgs.secret`.
+ */
+export type OwnerParams = { readonly positional?: readonly PositionalParam[]; readonly flags?: readonly FlagParam[]; readonly secret?: SecretParam }
 
 /** The checked values of a call, by argument name. */
 export type OwnerValues = { readonly [name: string]: string | readonly string[] | boolean | null }
@@ -491,8 +507,13 @@ export type ParamValues<P extends OwnerParams> = { readonly [A in Each<P['positi
   readonly [F in Each<P['flags']> as NameOf<F>]: FlagValue<F>
 }
 
-/** What an owner command's `run` gets: the arguments as written, and their values by name as checked against `params`. */
-export type CommandArgs = OwnerArgs & { readonly values: OwnerValues }
+/**
+ * What an owner command's `run` gets: the arguments as written, and their values by name as checked
+ * against `params`. `secret`: the value `params.secret` asks for, read when first called and the same
+ * after; less one final newline, and null when empty, when none was given (always from MCP) or when
+ * the command declares none. It is in no argument, event or activity row.
+ */
+export type CommandArgs = OwnerArgs & { readonly values: OwnerValues; readonly secret: () => Promise<string | null> }
 
 /**
  * A command a plugin adds to the owner face. The kernel refuses a destructive one in an agent session
@@ -526,10 +547,10 @@ export interface OwnerCommand {
 
 /**
  * What an owner command does, as its row in the audit says it: the kind of act, drawn as an icon, and
- * what it was done to: the argument named `object` (a positional or a flag of its `params`), else
- * `name`, a fixed name such as 归档.
+ * what it was done to: the argument named `object` (a positional or a flag of its `params`), or the
+ * first given of several named, else `name`, a fixed name such as 归档.
  */
-export type OwnerAct = { readonly kind: FeedAct; readonly object?: string; readonly name?: string }
+export type OwnerAct = { readonly kind: FeedAct; readonly object?: string | readonly string[]; readonly name?: string }
 
 // ---- events ----
 
@@ -593,7 +614,13 @@ export interface Plugin {
    * Read-only: the home page asks on every look, and `check` gives the same to agents.
    */
   readonly onAsks?: (ctx: PluginContext) => Promise<PluginAsk[]>
-  readonly onArchive?: (req: AcceptedArchive, ctx: PluginContext) => Promise<PluginNoteAnswer | null>
+  /**
+   * A paragraph appended to its cognition section, from its own records, such as what the target it is
+   * set to asks of what goes online; null adds nothing. Asked whenever the kernel writes the
+   * description: on a configuration change, and after any of its `setup` commands answered done.
+   */
+  readonly onDescribe?: (ctx: PluginContext) => Promise<string | null>
+  readonly onArchive?:(req: AcceptedArchive, ctx: PluginContext) => Promise<PluginNoteAnswer | null>
   readonly observe?: (event: Event, ctx: PluginContext) => Promise<void>
   /** After `archive purge` deleted things, with their library paths as they were in the archive. */
   readonly onPurged?: (paths: readonly LibraryPath[], ctx: PluginContext) => Promise<void>
@@ -644,7 +671,8 @@ export type PluginTable = ReadonlyMap<string, Plugin>
 // gave them. Changes from the UI go through the two faces above, never through a view.
 
 export type Tone = 'neutral' | 'good' | 'warn' | 'bad' | 'info'
-export type Tag = { text: string; tone: Tone }
+/** `tip`: why the mark is there, such as what could not be reached: the tag's tooltip and accessible description. */
+export type Tag = { text: string; tone: Tone; tip?: string }
 /** Where a click goes: another view, opened in the main area or the side panel. */
 export type Link = { view: string; params: Record<string, string>; target: 'main' | 'panel' }
 /**
@@ -703,7 +731,9 @@ export type Call =
   | { face: 'owner'; command: string; args: OwnerArgs; stdin?: string }
 /**
  * `pattern`: a regular expression a filled value must match whole, each line of a `multiple` one;
- * `hint` says what fits. `secret`: the value is typed hidden, as a password is.
+ * `hint` says what fits. `secret`: the value is typed hidden, as a password is. `when`: the input is
+ * shown only while the value of each named input is one of `is`; hidden, it is sent empty, which is
+ * not given.
  */
 export type ActionInput = {
   name: string
@@ -715,7 +745,10 @@ export type ActionInput = {
   pattern?: string
   hint?: string
   secret?: true
+  when?: readonly InputShown[]
 }
+/** A condition on another input of the same action: its value is one of `is`. */
+export type InputShown = { readonly input: string; readonly is: readonly string[] }
 /**
  * `confirm`: a question the person answers before the call; the answer is the in-person confirmation a
  * destructive command needs.
@@ -826,9 +859,10 @@ export type FeedGroup = { title: string; count: number | null; link?: Link; rows
  * whole, shown on demand beside the cell, as a section's. `toggle`: the row is a setting that is on or
  * off, drawn as a switch at its end; turning it runs `action`, which turns it the other way (asking its
  * `confirm` first), so `action` is the one for the state it is not in. The text form prints the state
- * and the action's command.
+ * and the action's command. `aside`: a second cell at the row's end, before its actions and switch, on
+ * one line, cut in the middle when it does not fit, such as a thing's address.
  */
-export type ListItem = { cell: Cell; note: string | null; actions: Action[]; about?: string; toggle?: { on: boolean; action: Action } }
+export type ListItem = { cell: Cell; note: string | null; actions: Action[]; about?: string; toggle?: { on: boolean; action: Action }; aside?: Cell }
 /** One figure: a label, a number or a short text, and a grey sentence about it. */
 export type Stat = { label: string; value: string; note: string | null }
 /** The most series a chart draws: each takes the next colour of one small palette, the same in every chart. */

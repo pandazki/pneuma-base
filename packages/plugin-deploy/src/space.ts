@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import type { SiteFile } from '@pneuma-base/sdk/kit'
-import { MANAGER } from './name.ts'
+import { MANAGER } from './name.js'
 
 const MANAGER_HEADER = 'x-pneuma-space-manager'
 const MANIFEST = { contract: 1, capabilities: { static: { dir: 'site' } } }
@@ -54,7 +54,7 @@ export class Space {
       throw new SpaceError(`连不上 PneumaSpace ${this.admin}：${cause}`)
     }
     const text = await response.text()
-    let data: unknown = null
+    let data: unknown
     try {
       data = text ? JSON.parse(text) : null
     } catch {
@@ -121,6 +121,12 @@ export class Space {
   /** Takes the address down; releases and bundles stay, so publishing again restores it. */
   async remove(name: string): Promise<void> {
     await this.#call('POST', `/api/apps/${name}/remove`)
+  }
+
+  /** Whether the admin address answers as PneumaSpace does: one request, refused in one sentence when it does not. */
+  async health(): Promise<void> {
+    const { status } = await this.#call('GET', '/api/health')
+    if (status === 404) throw new SpaceError(`${this.admin} 不是 PneumaSpace 的管理地址`)
   }
 
   /** The origin of the ingress in path mode: the admin's host on the port `/api/health` names. */

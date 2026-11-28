@@ -1,6 +1,6 @@
 // C9 and C10 in the UI: the library of the whole story, every plugin installed, seen and worked from
-// the page. Every plugin's page is in the navigation; the deploy page lists the ten sites with their
-// states and its switch puts one online, which an agent then sees in check; a site's panel gathers
+// the page. Every plugin's page is in the navigation; the deploy page lists the seven sites in the
+// content with their addresses and its switch puts one online, which an agent then sees in check; a site's panel gathers
 // the ledger's provenance, the version timeline and the deploy section; the sync and search pages
 // render.
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
@@ -64,28 +64,27 @@ test('the whole story in the UI: every plugin’s page, the deploy switch, a sit
   // Every plugin's page is in the navigation: the home page, the plugins' in configuration order, then the kernel's.
   expect(await navTitles(page)).toEqual(['首页', '库', '活动', '文件', 'Agent', '有版本的东西', '部署', '配置'])
 
-  // The deploy page: the ten sites and their states.
+  // The deploy page: the seven sites in the content, the archived ones offline and so not there; an address for each one online.
   await nav.getByRole('button', { name: '部署' }).click()
-  const sites = main.getByRole('region', { name: '可部署的东西' })
-  await expect(sites.getByRole('row')).toHaveCount(11)
-  const state = (name: string) => sites.getByRole('row', { name: new RegExp(`^(_archive/)?sites/${name}\\b`) })
-  for (const name of ['coffee', 'hiking', 'books']) await expect(state(name)).toContainText('在线')
+  const sites = main.getByRole('listitem').filter({ has: page.getByRole('switch') })
+  await expect(sites).toHaveCount(7)
+  const state = (name: string) => sites.filter({ has: page.getByRole('switch', { name, exact: true }) })
+  for (const name of ['coffee', 'hiking', 'books']) await expect(state(name)).toContainText(`sites-${name}`)
   // Offline is where a site rests until the owner turns it on: its row says no state.
-  for (const name of ['pets', 'cycling', 'recipes', 'photo']) await expect(state(name)).not.toContainText(/在线|已归档|待发布/)
-  for (const name of ['plants', 'music', 'camping']) await expect(state(name)).toContainText('已归档')
+  for (const name of ['pets', 'cycling', 'recipes', 'photo']) await expect(state(name)).not.toContainText(/sites-|待发布/)
 
   // Turn pets on from the page: the target gets it, and an agent's check reports the owner's operation.
-  await state('pets').getByRole('button', { name: '打开' }).click()
-  await expect(page.getByRole('status')).toContainText('已打开 sites/pets')
-  await expect(state('pets')).toContainText('在线')
+  await state('pets').getByRole('switch').click()
+  await expect(page.getByRole('status')).toContainText('已上线 sites/pets')
+  await expect(state('pets')).toContainText('sites-pets')
   expect(served(www)).toEqual(['sites-books', 'sites-coffee', 'sites-hiking', 'sites-pets'])
   expect(readFileSync(join(www, 'sites-pets/index.html'), 'utf8')).toContain(SITES.pets)
   const check = pb.run(['--library', lib, '--as', 'claude-code', '--session', 'claude-code-2', 'check']).stdout
-  expect(check).toMatch(/主人面的操作 deploy on：已打开 sites\/pets：在线/)
+  expect(check).toMatch(/主人面的操作 deploy on：已上线 sites\/pets → /)
   await page.getByRole('status').getByRole('button', { name: '关闭' }).click()
 
   // A site's panel: the ledger's provenance, the version timeline and the deploy section together.
-  await state('coffee').click()
+  await state('coffee').getByText('coffee', { exact: true }).click()
   await expect(panel.getByTestId('panel-title')).toHaveText('coffee')
   const provenance = panel.getByRole('region', { name: '来历', exact: true })
   await expect(provenance).toContainText('做出来的')
@@ -94,9 +93,10 @@ test('the whole story in the UI: every plugin’s page, the deploy switch, a sit
   const versions = panel.getByRole('region', { name: '版本', exact: true })
   await expect(versions).toContainText('第 2 版')
   await expect(versions).toContainText('第 1 版')
+  // Online is how it should be: the section says its address and nothing of its state.
   const deploy = panel.getByRole('region', { name: '部署', exact: true })
-  await expect(deploy).toContainText('在线')
   await expect(deploy).toContainText('sites-coffee')
+  await expect(deploy).not.toContainText('在线')
   await panel.getByRole('button', { name: '关闭详情' }).click()
 
   // The sync and search pages render.

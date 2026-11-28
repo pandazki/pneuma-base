@@ -11,7 +11,8 @@ const SEGMENTS = 4
 
 type ChoiceProps = { label: string; options: Option[]; value: string; onChange(value: string): void }
 
-function Segmented({ label, options, value, onChange }: ChoiceProps) {
+/** Options side by side, the checked one on a grey pill that glides to the next. */
+export function Segmented({ label, options, value, onChange }: ChoiceProps) {
   const group = useRef<HTMLDivElement | null>(null)
   const pill = useRef<HTMLSpanElement | null>(null)
   const current = Math.max(0, options.findIndex((o) => o.value === value))
@@ -78,6 +79,66 @@ function SelectControl({ label, options, value, onChange }: ChoiceProps) {
 /** One choice among `options`, side by side when there are few of them. */
 export function Choice(props: ChoiceProps) {
   return props.options.length <= SEGMENTS ? <Segmented {...props} /> : <SelectControl {...props} />
+}
+
+/** How many options a filtered choice lists at once. */
+const LISTED = 20
+
+/**
+ * One choice among many: a field that filters them by their labels, ignoring case, over a list of the
+ * first matches, one of them chosen. The arrow keys move the choice; Enter submits the form it is in.
+ * Nothing matching, nothing is chosen.
+ */
+export function FilterChoice({ id, label, options, value, onChange, placeholder }: ChoiceProps & { id: string; placeholder?: string }) {
+  const [typed, setTyped] = useState('')
+  const list = useRef<HTMLUListElement | null>(null)
+  const matching = (text: string) => options.filter((o) => o.label.toLowerCase().includes(text.trim().toLowerCase())).slice(0, LISTED)
+  const matches = matching(typed)
+  const at = matches.findIndex((o) => o.value === value)
+  const optionId = (i: number) => `${id}-option-${i}`
+  const choose = (i: number) => {
+    const o = matches[i]
+    if (!o) return
+    onChange(o.value)
+    list.current?.querySelectorAll('[role=option]')[i]?.scrollIntoView({ block: 'nearest' })
+  }
+  const onKeyDown = (e: KeyboardEvent) => {
+    const step = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0
+    if (step === 0) return
+    e.preventDefault()
+    choose(Math.max(0, Math.min(matches.length - 1, at + step)))
+  }
+  return (
+    <div className="filter-choice">
+      <input
+        id={id}
+        className="field"
+        type="text"
+        role="combobox"
+        aria-expanded="true"
+        aria-controls={`${id}-list`}
+        aria-autocomplete="list"
+        aria-activedescendant={at >= 0 ? optionId(at) : undefined}
+        autoComplete="off"
+        aria-label={label}
+        placeholder={placeholder}
+        value={typed}
+        onChange={(e) => {
+          setTyped(e.target.value)
+          const now = matching(e.target.value)
+          if (!now.some((o) => o.value === value)) onChange(now[0]?.value ?? '')
+        }}
+        onKeyDown={onKeyDown}
+      />
+      <ul ref={list} id={`${id}-list`} role="listbox" aria-label={label} className="filter-list">
+        {matches.map((o, i) => (
+          <li key={o.value} id={optionId(i)} role="option" aria-selected={i === at} onMouseDown={(e) => e.preventDefault()} onClick={() => choose(i)}>
+            {o.label}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
 }
 
 /** Whether the page runs on a Mac, where the command key is ⌘. */

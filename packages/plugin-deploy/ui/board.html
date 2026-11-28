@@ -257,7 +257,7 @@
             el('div', { class: 'row' }, el('span', { class: 'name grow', title: card.path }, card.path), online ? null : tag(card.state)),
             address,
             stats,
-            el('div', { class: 'row' }, seen, switchButton(card.key, '关上')),
+            el('div', { class: 'row' }, seen, switchButton(card.key, '下线')),
           ),
         )
       }
@@ -267,7 +267,7 @@
         document.getElementById('none').hidden = data.cards.length > 0
         document.getElementById('offs').hidden = data.off.length === 0
         document.getElementById('off').replaceChildren(
-          ...data.off.map((o) => el('div', { class: 'row' }, el('span', { class: 'mono grow name' }, o.path), tag(o.state), switchButton(o.key, '打开'))),
+          ...data.off.map((o) => el('div', { class: 'row' }, el('span', { class: 'mono grow name' }, o.path), tag(o.state), switchButton(o.key, '上线'))),
         )
         for (const key of [...previews.keys()]) if (!data.cards.some((c) => c.key === key)) previews.delete(key)
       })

@@ -34,7 +34,8 @@ async function overlaps(ctx: PluginContext, dir: string): Promise<boolean> {
 /** `<to>/<site>/…` and `<to>/index.json`. A site is copied to a dot-named temporary name and swapped in. */
 export const dirTarget: TargetAdapter = defineTarget({
   kind: 'dir',
-  label: '一个本地目录',
+  label: '本地文件夹',
+  icon: 'folder',
   params: [{ name: 'to', hint: '目录', kind: 'value', required: true }],
   async configure({ to }, ctx) {
     const dir = resolve(ctx.session.cwd, to)
@@ -58,7 +59,8 @@ function dirAt(to: string): Target {
   }
   return {
     key: `dir:${to}`,
-    label: `本地目录 ${to}`,
+    label: to,
+    local: true,
     async publish(site, dir, meta) {
       await mkdir(to, { recursive: true })
       const tmp = scratchName(site, 'tmp')
@@ -107,7 +109,9 @@ const strings = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 
  */
 export const commandTarget: TargetAdapter = defineTarget({
   kind: 'command',
-  label: '一对发布和下线的命令',
+  label: '自己的命令',
+  icon: 'terminal',
+  form: ['publish', 'unpublish', 'url', 'timeout'],
   params: [
     { name: 'publish', hint: '发布命令，可用 {dir} {name}', kind: 'list', required: true },
     { name: 'unpublish', hint: '下线命令，可用 {name}', kind: 'list', required: true },
@@ -133,7 +137,7 @@ function commandsAt(config: CommandConfig, env: TargetEnv): Target {
   const run = (argv: string[], dir: string, site: SiteName) => runCommand(argv.map((w) => w.replaceAll('{dir}', dir).replaceAll('{name}', site)), dir, config.timeout)
   return {
     key: `command:${JSON.stringify(config.publish)}`,
-    label: `命令 ${config.publish.join(' ')}`,
+    label: '自己的命令',
     async publish(site, dir) {
       await run(config.publish, dir, site)
       return { url: config.url === null ? null : config.url.replaceAll('{name}', site) }

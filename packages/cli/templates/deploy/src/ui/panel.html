@@ -51,7 +51,7 @@
             state.className = `tag tone-${thing.state.tone}`
             state.textContent = thing.state.text
             row.append(path, state)
-            // The kit's switch for it, run as the table's button runs.
+            // The kit's switch for it, run as the row's switch runs.
             const action = actions[thing.key]
             if (action) {
               const button = document.createElement('button')
