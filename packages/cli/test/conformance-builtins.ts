@@ -28,8 +28,9 @@ async function shop({ sandbox, cwd }: SetupContext) {
   write(join(cwd, 'shop/index.html'), '<h1>小店，换了配色</h1>')
 }
 
-const target = (plugin: string) => async ({ sandbox }: SetupContext) => {
-  expect((await sandbox.owner([plugin, 'target', 'set', '--kind', 'dir', '--to', await tempDir(`pb-${plugin}-`)])).code).toBe(0)
+/** A target in a directory outside the library, of the plugin's kind for one: sync's `dir`, deploy's `folder`. */
+const target = (plugin: string, kind: string) => async ({ sandbox }: SetupContext) => {
+  expect((await sandbox.owner([plugin, 'target', 'set', '--kind', kind, '--to', await tempDir(`pb-${plugin}-`)])).code).toBe(0)
 }
 
 /** What each built-in's examples stand on. The ledger's bring a page with curl, which here prints instead of fetching. */
@@ -42,10 +43,10 @@ const SETUP: Record<string, ConformanceOptions['setup']> = {
     expect((await sandbox.agent('setup', 'setup', put, { input: '<html>paddle</html>' })).code).toBe(0)
   },
   version: shop,
-  sync: target('sync'),
+  sync: target('sync', 'dir'),
   async deploy(s) {
     await shop(s)
-    await target('deploy')(s)
+    await target('deploy', 'folder')(s)
   },
   search: undefined,
 }

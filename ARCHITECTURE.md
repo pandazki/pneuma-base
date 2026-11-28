@@ -506,7 +506,7 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 
 内核这边：
 
-- **按配置次序调，一个出错不连累别的。** 每个钩子由 `eachPlugin`（`pipeline.ts`）按配置次序调，一个插件抛错记成它的问题，其余照样调（K8）。答复不写插件名，由内核盖上（`PluginNote`、`PluginSection`、`PluginHit`）。`onPut`、`onArchive` 和 `onFind` 的答复可以在说明或命中旁边带 `problems`：部署插件这样说「放入成功了，上线没跟上」。
+- **按配置次序调，一个出错不连累别的。** 每个钩子由 `eachPlugin`（`pipeline.ts`）按配置次序调，一个插件抛错记成它的问题，其余照样调（K8）。答复不写插件名，由内核盖上（`PluginNote`、`PluginSection`、`PluginHit`）。`onPut`、`onArchive` 和 `onFind` 的答复可以在说明或命中旁边带 `problems`：部署插件这样说「添加已成功，同步到部署目标失败」。
 - **跟着挪和归档的插件用 `onPut`、`onArchive`**：只有这两个钩子收到内核解析过的路径，`observe` 里的请求是调用方写的原样。`onPurged` 让插件不用比命令名；`onAdd`、`onRemove` 让插件听得到自己被装上和卸下。`onRemove` 可以拒绝，但主人总能 `plugin disable <插件名称> --force`：插件提醒，主人决定。
 - **问主人**（`onAsks`）：插件说出它此刻在等主人定的事，每件一句话、关于哪样东西、几个回答（动作）、推荐哪一个。它只读，不写东西：首页每次显示、`check` 每次答都问一遍，插件按自己记的状态答，主人定了下次就不再问。内核按配置次序问（`asks.ts`），像核对块一样核对每一件，盖上插件名。`check` 的答复带着它们（`asks`），命令行印在「需所有者处理」下面，每个回答印成主人在自己终端里跑的命令；首页把它们放在最上面。
 - **`keeps`** 定说明里同名时的那句话：溯源插件是 `every`，版本管理插件是 `some`。
@@ -928,47 +928,47 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 
 ### 部署
 
-`packages/plugin-deploy`，名字 `deploy`。主人在部署页连上一个目标（这台机器装过的 PneumaSpace 一下就连上），把自己的一样目录东西上线、下线，看到它的地址；agent 用 `say deployable <库内路径> [一句话]` 声明一样东西可以部署，声明不让它上线；主人的开关决定在不在线；开着的东西，目标上跟着库里当前的内容。
+`packages/plugin-deploy`，名字 `deploy`。主人在部署页连接一个部署目标（这台机器装过的 PneumaSpace 一下就连接），把自己的一样目录东西发布、取消发布，看到它的地址；agent 用 `say deployable <库内路径> [说明]` 声明一样东西可部署，声明不发布它；主人的开关决定是否发布；开着的东西，目标上跟着库里当前的内容。
 
-它是 sdk 的部署库加四种目标：`deployPlugin('deploy', [cloudflareTarget, machineTarget, dirTarget, commandTarget])`。部署库（`packages/sdk/src/kit/deploy/`）拿插件名和目标交回整个插件，第三方只写目标；它不导入内核，读写都经 `tools.storage`。决定表、状态表、状态 × 操作的全化表、站点名规则和目标接口在那里的 `README.md`。几个部署插件都认领 `deployable`，第二个在 `plugin enable` 时以 `name-taken` 拒绝；要发到几种地方，是一个插件带几种目标。
+它是 sdk 的部署库加四种目标：`deployPlugin('deploy', [cloudflareTarget, selfHostedTarget, folderTarget, commandTarget])`。部署库（`packages/sdk/src/kit/deploy/`）拿插件名和目标交回整个插件，第三方只写目标；它不导入内核，读写都经 `tools.storage`。决定表、状态表、状态 × 操作的全化表、站点名规则和目标接口在那里的 `README.md`。几个部署插件都认领 `deployable`，第二个在 `plugin enable` 时以 `name-taken` 拒绝；要发到几种地方，是一个插件带几种目标。
 
 | 钩子 | 它做什么 |
 | --- | --- |
-| `onSay` | 听 `deployable`；已归档的以「取回之后再声明」拒绝 |
-| `onPut`、`onArchive` | 放入、登记、挪动、归档、取回之后对那样东西对一遍 |
-| `onInspect`、`onCheck` | 状态、地址、开关、站点名；「线上和库里不一致」，读不懂的记录另列一节 |
-| `onAsks` | 主人从没动过开关的，每样问「<路径> 可以部署，还没上线。要上线吗？」，推荐「上线」，另一个「不上线」；两个都记下开关 |
-| `onPurged` | 先撤下站点，再去掉声明；撤不下就报错，`deploy sync` 再试 |
-| `onRemove` | 还有站点在线时拒绝卸下；`plugin disable deploy --force` 照样卸 |
-| `onView`、`onItemView` | 页 `deploy.sites` 和目标自己的页；面板里标记、地址和目标的字段，开关在面板的菜单里，没声明的目录东西在菜单里给「上线…」 |
+| `onSay` | 听 `deployable`；已归档的以「取消归档后再声明」拒绝 |
+| `onPut`、`onArchive` | 添加、登记、移动、归档、取消归档之后对那样东西对一遍 |
+| `onInspect`、`onCheck` | 状态、地址、开关、站点名称；「部署目标与资料库不一致」，读不懂的记录另列一节 |
+| `onAsks` | 主人从没动过开关的，每样问「<路径> 可部署，未发布。是否发布？」，推荐「发布」，另一个「不发布」；两个都记下开关 |
+| `onPurged` | 先取消发布站点，再去掉声明；取消不了就报错，`deploy sync` 再试 |
+| `onRemove` | 还有站点已发布时拒绝停用；`plugin disable deploy --force` 照样停用 |
+| `onView`、`onItemView` | 页 `deploy.sites` 和目标自己的页；面板里标记、地址和目标的字段，开关在面板的菜单里，没声明的目录东西在菜单里给「发布…」 |
 | `onDescribe` | 连着的那种目标的 `cognition` |
 
-目标失败时放入、挪、归档照样成功：答复带 `problems`，命令行退出码 3；给 agent 的说上线等主人跑 `deploy sync`，给主人的不提命令（页上那一行有「重试」）。没配目标只是一句答复。
+目标失败时添加、移动、归档照样成功：答复带 `problems`，命令行退出码 3；给 agent 的说发布等主人跑 `deploy sync`，给主人的不提命令（页上那一行有「重试」）。没连接部署目标只是一句答复。
 
-目标上该有什么只看开关、在不在归档区、路径上有没有东西（`model.ts` 的 `want`）。对账（`plan`）先发布再撤旧名，一样就不动；开关、放、挪、归档、`deploy sync` 都跑它，所以重跑结果一样。`deploy sync` 另撤下当前目标上不属于任何声明的站点。状态：在线、待发布、离线、待下线、已归档、不在，目标读不到时不知道。
+目标上该有什么只看开关、在不在归档区、路径上有没有东西（`model.ts` 的 `want`）。对账（`plan`）先发布再撤旧名，一样就不动；开关、放、挪、归档、`deploy sync` 都跑它，所以重跑结果一样。`deploy sync` 另取消发布当前目标上不属于任何声明的站点。状态：已发布、待发布、未发布、待取消发布、已归档、条目缺失，目标读不到时状态未知（`--json` 里是 `published`、`pending`、`unpublished`、`pending-unpublish`、`archived`、`missing`、`unknown`）。
 
 | 命令 | 谁能用 | 做什么 |
 | --- | --- | --- |
-| `deploy on <库内路径>`、`deploy off <库内路径>` | 只有主人 | 开关，并发布或下线；主人打开没声明的东西时先记声明 |
-| `deploy target set --kind cloudflare (--host <主机> \| --credentials <凭据文件> \| --origin <地址> --account <账户>) [--prefix <前缀>]` | 只有主人 | Cloudflare 上的 PneumaSpace；没有 `--host` 和 `--credentials` 时账户密钥不显示地读进来 |
-| `deploy target set --kind machine --admin <地址> [--prefix <前缀>] [--public <公开地址>]` | 只有主人 | 一台机器上的 PneumaSpace |
-| `deploy target set --kind dir --to <目录>` | 只有主人 | 本地文件夹 |
-| `deploy target set --kind command --publish <命令>… --unpublish <命令>… [--url <模板>] [--timeout <秒>]` | 只有主人 | 自己的命令 |
+| `deploy publish <库内路径>`、`deploy unpublish <库内路径>` | 只有主人 | 开关，并发布或取消发布；主人发布没声明的东西时先记声明 |
+| `deploy target set --kind cloudflare (--host <主机> \| --credentials <凭据文件> \| --origin <地址> --account <账户>) [--prefix <应用名称前缀>]` | 只有主人 | Cloudflare；没有 `--host` 和 `--credentials` 时账户密钥不显示地读进来 |
+| `deploy target set --kind self-hosted --admin <地址> [--prefix <应用名称前缀>] [--public <站点公开地址>]` | 只有主人 | 自托管 |
+| `deploy target set --kind folder --to <目录>` | 只有主人 | 本地文件夹 |
+| `deploy target set --kind command --publish <命令>… --unpublish <命令>… [--url <模板>] [--timeout <秒>]` | 只有主人 | 自定义命令 |
 | `deploy target list` | 主人和 agent，只读 | 连着的目标，这台机器上找到的 |
-| `deploy target remove` | 只有主人 | 断开；线上的不撤下 |
+| `deploy target remove` | 只有主人 | 断开连接；已发布的不取消发布 |
 | `deploy sync` | 主人和 agent | 把全部声明对一遍 |
 | `deploy list` | 主人和 agent，只读 | 声明过的东西、状态、地址 |
 
-- 开关在目标失败时照样记下，以 `publish-failed`、`unpublish-failed` 或 `no-target` 拒绝；关上没声明的是 `not-declared`。`target set` 的参数由各种目标的开关拼成，`--kind` 只有一种时可不写；选定那种的必填开关由部署库核对（`usage`）。连上前先问目标一次（登录、`/api/health`），答不上来就拒绝，什么都不存。答复说事实：`已连上 space.example.com。`，换目标时加上开着的几样还没发到这里、旧目标上的几样没撤。
+- 开关在目标失败时照样记下，以 `publish-failed`、`unpublish-failed` 或 `no-target` 拒绝；关上没声明的是 `not-declared`。`target set` 的参数由各种目标的开关拼成，`--kind` 只有一种时可不写；选定那种的必填开关由部署库核对（`usage`）。连接前先问目标一次（登录、`/api/health`），答不上来就拒绝，什么都不存。答复说事实：`已连接 space.example.com。`，换目标时加上几个待发布、旧目标上的几个未取消发布。旧命令名 `deploy on`、`deploy off` 和旧的 `--kind` 值 `dir`、`machine`，在记录和待处理的请求里经内核的改名表（`packages/kernel/src/renamed.ts`）读作新名字。
 
-**目标。** 接口是 `TargetAdapter`（`defineTarget`）：`params`、`configure`、`secrets`，页上用的 `label`、`icon`、`group`、`form`、`found`、`asked`、`cognition`，打开后是 `publish(站点名, 内容目录, meta)` 和 `remove(站点名)`，可选 `identify`、`serving`、`view`、`settings`。目标的 `secrets` 成为插件的 `secrets`，经 `pneuma-base secret set <插件名> <名字>` 设；`asked` 的那个在连上时不显示地读进来，连上了才存成这台机器上的密钥。有 `serving` 的目标按它报告的对账，读不到时不动，页面每 30 秒刷新（Cloudflare 上的每 60 秒）。
+**目标。** 接口是 `TargetAdapter`（`defineTarget`）：`params`、`configure`、`secrets`，改名前的 `formerly`，页上用的 `label`、`icon`、`group`、`form`、`found`、`asked`、`cognition`，打开后是 `publish(站点名, 内容目录, meta)` 和 `remove(站点名)`，可选 `identify`、`serving`、`view`、`settings`。目标的 `secrets` 成为插件的 `secrets`，经 `pneuma-base secret set <插件名> <名字>` 设；`asked` 的那个在连接时不显示地读进来，连接了才存成这台机器上的密钥。有 `serving` 的目标按它报告的对账，读不到时不动，页面每 30 秒刷新（Cloudflare 上的每 60 秒）。
 
-- `cloudflare`、`machine`：PneumaSpace，一组，见 `packages/plugin-deploy/README.md`。都报告自己在服务什么。`found` 读 `~/.pneuma-space/hosts/` 这一层，有 `owner.json` 的目录各是一个装过的；`--host` 连上时只记主机名，每次登录都从那个文件重新读密钥。应用名前缀缺省取库文件夹的名字，是连上之后的一个设置。站点顶上没有 `index.html` 时发布之前就拒绝。
+- `cloudflare`、`self-hosted`（改名前是 `machine`）：PneumaSpace，一组，见 `packages/plugin-deploy/README.md`。都报告自己在服务什么。`found` 读 `~/.pneuma-space/hosts/` 这一层，有 `owner.json` 的目录各是一个装过的；`--host` 连接时只记主机名，每次登录都从那个文件重新读密钥。应用名称前缀缺省取库文件夹的名字，是连接之后的一个设置。站点顶上没有 `index.html` 时发布之前就拒绝。
 
 本地的两种不报告：
 
-- `dir`：写 `<目录>/<站点名>/` 和 `index.json`（`format: 1`），先写 `.tmp-` 名再换上；地址是 `file://`。目录不能在库里，也不能包含库（`inside-library`）。
-- `command`：按引号规则切词，不经 shell 运行；`{dir}`、`{name}` 换成内容复制件和站点名；下线在空目录里跑；超时缺省 120 秒；`--url` 的 `{name}` 换成站点名。
+- `folder`（改名前是 `dir`，键仍是 `dir:<目录>`）：写 `<目录>/<站点名>/` 和 `index.json`（`format: 1`），先写 `.tmp-` 名再换上；地址是 `file://`。目录不能在库里，也不能包含库（`inside-library`）。
+- `command`：按引号规则切词，不经 shell 运行；`{dir}`、`{name}` 换成内容复制件和站点名；取消发布在空目录里跑；超时缺省 120 秒；`--url` 的 `{name}` 换成站点名。
 
 **什么时候读内容。** 只认开着、没归档的。带标记的目录先深看：行 `identified` 存着上次的深令牌和内容编号，相同就不读。发布前向存储要清单（`content` 带 `manifest`），逐个文件 `read` 进 `<缓存目录>/stage/` 的临时目录，拿 sha256 核对，再交给目标；对不上这次不发。多于 5000 个文件的目录存储答 `too_many`：不发也不撤，状态待发布。
 
@@ -977,7 +977,7 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 | `config.json` | 目标 `{ format: 1, target: { kind, … }, given }`，`given` 是主人给的开关，不含密钥；经 `configFile` 带预期整份写，冲突重试最多 3 次，后写的算数；断开时删掉 |
 | `facts/` | 经 `recordStore` 写：`declare`、`switch`、`move`、`remove`、`publish`、`unpublish`；读不懂的原样留着，`check` 里列出 |
 
-不报告的目标，「上面有什么」来自对当前目标（按 `key`）的发布与下线记录；换目标后开着的都成待发布。事实折成行（`folded.ts`）：`things` 是声明了的，`alias` 是两台机器各声明一次的同一路径，`sites` 是每个目标上的每个站，`fold` 记着折到的最后一个事实的 id 和读不懂的行。每次钩子、命令和页面从行取，只折游标之后的新事实；折按事实的 id 排，新事实里有排在已折的之前的（同步带来的别的机器的），就从头折一遍。行另有 `identified`。
+不报告的目标，「上面有什么」来自对当前目标（按 `key`）的发布与取消发布记录；换目标后开着的都成待发布。事实折成行（`folded.ts`）：`things` 是声明了的，`alias` 是两台机器各声明一次的同一路径，`sites` 是每个目标上的每个站，`fold` 记着折到的最后一个事实的 id 和读不懂的行。每次钩子、命令和页面从行取，只折游标之后的新事实；折按事实的 id 排，新事实里有排在已折的之前的（同步带来的别的机器的），就从头折一遍。行另有 `identified`。
 
 ### 搜索
 

@@ -53,11 +53,10 @@ describe('the assembled description with every plugin installed', () => {
 
   it('gives each plugin one section, in configuration order, each opening with the same sentence and a heading that names what it gives; says 版本 only in the version plugin’s section, and each rule once', () => {
     const titles = ['溯源', '版本管理', '部署', '同步', '搜索']
-    // The deploy plugin is being rebuilt elsewhere and still opens with the sentence of before the wording pass; it is accepted until that lands.
-    const opens = titles.map((t) => [`此资料库已启用**${t}**插件。`, `这个库装了**${t}**插件。`].map((o) => text.indexOf(o)).find((at) => at > 0) ?? -1)
+    const opens = titles.map((t) => text.indexOf(`此资料库已启用**${t}**插件。`))
     expect(opens.every((at) => at > 0)).toBe(true)
     expect(opens).toEqual([...opens].sort((a, b) => a - b))
-    expect(text.match(/(此资料库已启用|这个库装了)\*\*/g)).toHaveLength(titles.length)
+    expect(text.match(/此资料库已启用\*\*/g)).toHaveLength(titles.length)
     for (const at of opens) expect(text.slice(text.lastIndexOf('\n## ', at), at)).toMatch(/^\n## \S+：\S+/)
     expect(text).not.toContain('这个插件还带来')
 
@@ -73,7 +72,7 @@ describe('the assembled description with every plugin installed', () => {
   it('runs every command example as written, in order, and leaves what the examples promise', () => {
     const target = { deploy: join(tempDir('pb-www-'), 'www'), sync: tempDir('pb-sync-') }
     owner(['grant', 'create', 'claude', '--agent', 'claude-code'])
-    owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', target.deploy])
+    owner(['deploy', 'target', 'set', '--kind', 'folder', '--to', target.deploy])
     owner(['sync', 'target', 'set', '--kind', 'dir', '--to', target.sync])
     owner(['search', 'embedding', 'set', '--kind', 'hash'])
 
@@ -117,7 +116,7 @@ describe('the assembled description with every plugin installed', () => {
     expect(versions.map((v: any) => [v.n, v.note, v.same])).toEqual([[1, '第一版', null], [2, '更换配色', null], [3, null, 1]])
     expect(readFileSync(join(cwd, 'shop-v1/index.html'), 'utf8')).toBe(V1)
     expect(readFileSync(join(lib, 'sites/shop/index.html'), 'utf8')).toBe(V1)
-    expect(inspect('sites/shop').find((s: any) => s.plugin === 'deploy').data).toMatchObject({ status: 'offline', on: false })
+    expect(inspect('sites/shop').find((s: any) => s.plugin === 'deploy').data).toMatchObject({ status: 'unpublished', on: false })
     expect(outputs.get([...outputs.keys()].find((c) => c.includes(' find 退款 流程')) as string)).toContain('support/refunds.md')
   })
 })

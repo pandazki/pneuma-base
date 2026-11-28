@@ -23,17 +23,17 @@ before(async () => {
 })
 after(() => sb.cleanup())
 
-test('an agent declares a site; only the owner can switch it on, and then it is published', async () => {
+test('an agent declares a site; only the owner can publish it, and then it is published', async () => {
   const declared = await sb.agent('claude-code', 'session-1', ['say', 'deployable', 'sites/shop', '--json'])
   assert.equal(declared.json.outcome, 'heard', declared.stdout)
   assert.equal((await sb.owner([plugin.name, 'target', 'set', '--to', published, '--json'])).json.outcome, 'done')
-  const byAgent = await sb.agent('claude-code', 'session-1', [plugin.name, 'on', 'sites/shop', '--json'])
+  const byAgent = await sb.agent('claude-code', 'session-1', [plugin.name, 'publish', 'sites/shop', '--json'])
   assert.equal(byAgent.json.outcome, 'refused')
-  const on = await sb.owner([plugin.name, 'on', 'sites/shop', '--json'])
+  const on = await sb.owner([plugin.name, 'publish', 'sites/shop', '--json'])
   assert.equal(on.json.outcome, 'done', on.stdout)
   const site = join(published, 'sites-shop', 'index.html')
   assert.equal(await readFile(site, 'utf8'), '<h1>小店</h1>\n')
-  assert.equal((await sb.owner([plugin.name, 'off', 'sites/shop', '--json'])).json.outcome, 'done')
+  assert.equal((await sb.owner([plugin.name, 'unpublish', 'sites/shop', '--json'])).json.outcome, 'done')
   assert.equal(existsSync(site), false)
 })
 
@@ -46,7 +46,7 @@ test('its page has the kit’s rows and its own panel, whose switches are the ro
   const panel = page.blocks.find((b) => b.kind === 'custom')
   assert.ok(panel?.kind === 'custom')
   // What the panel draws, in words: pneuma-base show prints it, and screen readers read it.
-  assert.match(panel.text, / 在线，发布到 /)
+  assert.match(panel.text, / 个已发布，部署目标：/)
   assert.equal((await viewer.get(`/plugin-ui/${plugin.name}/${panel.entry}`)).status, 200)
   const things = page.blocks.find((b) => b.kind === 'list' && b.items.some((i) => i.toggle))
   assert.ok(things?.kind === 'list')

@@ -51,7 +51,7 @@ export class Space {
       response = await fetch(this.admin + path, { method, headers, body: payload, signal: AbortSignal.timeout(TIMEOUT_MS) })
     } catch (error) {
       const cause = error instanceof Error ? (error.cause instanceof Error ? error.cause.message : error.message) : String(error)
-      throw new SpaceError(`连不上 PneumaSpace ${this.admin}：${cause}`)
+      throw new SpaceError(`无法连接 PneumaSpace ${this.admin}：${cause}`)
     }
     const text = await response.text()
     let data: unknown
@@ -60,7 +60,7 @@ export class Space {
     } catch {
       data = { error: text }
     }
-    if (!response.ok && response.status !== 404) throw new SpaceError(`PneumaSpace 拒绝了 ${method} ${path}：${response.status} ${str(obj(data).error) ?? text}`)
+    if (!response.ok && response.status !== 404) throw new SpaceError(`PneumaSpace 拒绝 ${method} ${path}：${response.status} ${str(obj(data).error) ?? text}`)
     return { status: response.status, data }
   }
 
@@ -70,7 +70,7 @@ export class Space {
     const detail = obj(answer.data)
     const app = obj(detail.app)
     const status = APP_STATUS.find((s) => s === app.status)
-    if (status === undefined) throw new SpaceError(`PneumaSpace 答复的 ${name} 没有认得的状态：${JSON.stringify(app.status)}`)
+    if (status === undefined) throw new SpaceError(`PneumaSpace 返回的 ${name} 状态无法识别：${JSON.stringify(app.status)}`)
     const releases = (Array.isArray(detail.releases) ? detail.releases.map(obj) : []).flatMap((r): Release[] => {
       const number = num(r.number)
       const bundle = str(r.bundle)
@@ -111,10 +111,10 @@ export class Space {
   /** Uploads the bundle, then makes it the app's release: a new release when the content changed, the current one again when not. */
   async publish(name: string, tar: Buffer, bundle: BundleId, owner: string): Promise<number> {
     const uploaded = str(obj((await this.#call('POST', '/api/bundles', { tar })).data).bundle)
-    if (uploaded !== bundle) throw new SpaceError(`PneumaSpace 给这份内容的编号 ${String(uploaded)} 和本地算的 ${bundle} 不同`)
+    if (uploaded !== bundle) throw new SpaceError(`PneumaSpace 返回的内容编号 ${String(uploaded)} 与本地计算的 ${bundle} 不一致`)
     const { status, data } = await this.#call('PUT', `/api/apps/${name}/release`, { json: { image: null, manifest: MANIFEST, bundle, owner, manager: { name: MANAGER } } })
     const number = num(obj(data).number)
-    if (status === 404 || number === null) throw new SpaceError(`PneumaSpace 没有给出 ${name} 的发布：${JSON.stringify(data)}`)
+    if (status === 404 || number === null) throw new SpaceError(`PneumaSpace 未返回 ${name} 的发布：${JSON.stringify(data)}`)
     return number
   }
 
@@ -133,7 +133,7 @@ export class Space {
   async ingress(): Promise<string> {
     this.#health ??= this.#call('GET', '/api/health').then(({ data }) => {
       const port = num(obj(data).ingressPort)
-      if (port === null) throw new SpaceError('PneumaSpace 的 /api/health 没有给出 ingressPort')
+      if (port === null) throw new SpaceError('PneumaSpace 的 /api/health 未返回 ingressPort')
       return port
     })
     const admin = new URL(this.admin)
@@ -163,7 +163,7 @@ function splitPath(path: string): [prefix: string, name: string] {
     const name = path.slice(i + 1)
     if (Buffer.byteLength(prefix) <= 155 && Buffer.byteLength(name) <= 100) return [prefix, name]
   }
-  throw new SpaceError(`文件路径太长，放不进 PneumaSpace 的包：${path}`)
+  throw new SpaceError(`文件路径过长，无法写入 PneumaSpace 的包：${path}`)
 }
 
 function header(path: string, size: number): Buffer {

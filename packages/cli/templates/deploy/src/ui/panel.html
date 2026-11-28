@@ -37,7 +37,7 @@
     </div>
     <script>
       pneuma.onData((data, { actions }) => {
-        document.getElementById('where').textContent = `${data.online} / ${data.things.length} 在线，发布到 ${data.to}`
+        document.getElementById('where').textContent = `${data.published} / ${data.things.length} 个已发布，部署目标：${data.to}`
         document.getElementById('things').replaceChildren(
           ...data.things.map((thing) => {
             const row = document.createElement('div')

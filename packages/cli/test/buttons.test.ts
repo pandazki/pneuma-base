@@ -52,7 +52,7 @@ const originOf = async (path: string) => (await agent(['inspect', path])).sectio
 
 beforeAll(async () => {
   sb = await sandbox({ cli, builtins: ['version', 'deploy'] })
-  await sb.owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', join(sb.work, 'www')])
+  await sb.owner(['deploy', 'target', 'set', '--kind', 'folder', '--to', join(sb.work, 'www')])
   await agent(['put', '-', '--to', 'notes/a.md', '--generated'], '# a\n')
   await agent(['put', '-', '--to', 'notes/plan.md', '--generated'], '# 计划\n')
   await agent(['say', 'versioned', 'notes/plan.md'])
@@ -87,8 +87,8 @@ describe('the buttons that give each verb and command a place', () => {
     for (const said of ['用 Paddle', '下周再看', 'sources/paper.txt', '主人在对话里说的']) expect(panel).toContain(said)
   })
 
-  it('the panel of a directory thing nobody declared puts it online', async () => {
-    await press(await viewer.item('sites/shop'), '上线…')
+  it('the panel of a directory thing nobody declared publishes it', async () => {
+    await press(await viewer.item('sites/shop'), '发布…')
     expect(words(await viewer.item('sites/shop', { plugin: 'deploy' }))).toContain('sites-shop')
   })
 

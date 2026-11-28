@@ -80,7 +80,7 @@ describe('a plugin project from plugin new', () => {
         expect(agent(['say', 'deployable', 'sites/shop']).outcome).toBe('heard')
         const published = join(home, 'published')
         expect(pb([name, 'target', 'set', '--to', published, '--library', lib]).outcome).toBe('done')
-        expect(pb([name, 'on', 'sites/shop', '--library', lib]).outcome).toBe('done')
+        expect(pb([name, 'publish', 'sites/shop', '--library', lib]).outcome).toBe('done')
         expect(readFileSync(join(published, 'sites-shop/index.html'), 'utf8')).toBe('<h1>小店</h1>\n')
         view = `${name}.sites`
       }

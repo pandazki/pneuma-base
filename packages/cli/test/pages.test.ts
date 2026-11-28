@@ -44,7 +44,7 @@ const NO_PLACE: Record<string, string> = {
   ask: '请是 agent 请主人做一条主人命令；主人在界面里直接按那条命令的按钮，用不着请谁',
   'launcher install': '没有要主人决定的：应用每次启动时写它，接上 agent 时缺了也写；从包装的，主人在终端里跑',
   'ledger export': '它写一个库外的文件，页交不出文件，也不替主人选位置；活动页的「导出」给出这条命令，复制到终端里跑',
-  'say deployable': '声明是 agent 的话；主人在部署页按「上线一样东西」，声明和上线是同一下',
+  'say deployable': '声明是 agent 的话；主人在部署页按「发布条目」，声明和发布是同一下',
 }
 
 let sb: Sandbox
@@ -180,7 +180,7 @@ beforeAll(async () => {
   await write(join(sb.home, '.claude/settings.json'), '{}\n')
   await write(join(sb.home, '.cursor/argv.json'), '{}\n')
   owner(['agent', 'connect', 'claude-code'])
-  owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', join(tempDir('pb-www-'), 'www')])
+  owner(['deploy', 'target', 'set', '--kind', 'folder', '--to', join(tempDir('pb-www-'), 'www')])
   owner(['sync', 'target', 'set', '--kind', 'dir', '--to', tempDir('pb-sync-')])
   owner(['search', 'embedding', 'set', '--kind', 'hash'])
   await write(join(work, 'shop/index.html'), '<h1>小店</h1>\n')
@@ -190,9 +190,9 @@ beforeAll(async () => {
   agent(['put', 'blog', '--to', 'sites/blog', '--generated'])
   agent(['say', 'deployable', 'sites/shop'])
   agent(['say', 'deployable', 'sites/blog'])
-  owner(['deploy', 'on', 'sites/shop'])
+  owner(['deploy', 'publish', 'sites/shop'])
   // Another folder: the shop, switched on, is not there yet, so the deploy page offers 重试.
-  owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', join(tempDir('pb-www3-'), 'www')])
+  owner(['deploy', 'target', 'set', '--kind', 'folder', '--to', join(tempDir('pb-www3-'), 'www')])
   agent(['put', '-', '--to', 'sources/pricing.html', '--imported', '--source', 'https://example.com/pricing'], '<p>价格</p>\n')
   agent(['put', '-', '--to', 'notes/plan.md', '--generated', '--from', 'sources/pricing.html', '--note', '第一版'], '# 计划\n')
   agent(['say', 'versioned', 'notes/plan.md', '开始记版本'])
@@ -202,7 +202,7 @@ beforeAll(async () => {
   agent(['put', '-', '--to', 'notes/old.md', '--generated'], '旧的\n')
   agent(['archive', 'notes/old.md'])
   // A request waiting on the owner, so the home page has 批准 and 拒绝.
-  agent(['ask', '要给博客也设一个部署目标', 'deploy', 'target', 'set', '--kind', 'dir', '--to', join(tempDir('pb-www2-'), 'www')])
+  agent(['ask', '要给博客也设一个部署目标', 'deploy', 'target', 'set', '--kind', 'folder', '--to', join(tempDir('pb-www2-'), 'www')])
   // An agent asking to be connected, so the home page has 允许 and 拒绝.
   expect(sb.run(['pair', 'request', 'codex', '想接上这个库', '--library', lib], { cwd: work }).code).toBe(0)
   // A plugin on this machine the library has not installed, and a secret set, so their buttons are on the config page.

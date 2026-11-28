@@ -30,8 +30,8 @@ describe('the sandbox', () => {
       mkdirSync(join(sb.work, 'shop'))
       writeFileSync(join(sb.work, 'shop', 'index.html'), '<h1>小店</h1>\n')
       expect((await sb.agent('claude-code', 's1', ['put', 'shop', '--to', 'sites/shop', '--generated'])).code).toBe(0)
-      expect((await sb.owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', join(sb.work, 'www')])).code).toBe(0)
-      expect((await sb.owner(['deploy', 'on', 'sites/shop'])).code).toBe(0)
+      expect((await sb.owner(['deploy', 'target', 'set', '--kind', 'folder', '--to', join(sb.work, 'www')])).code).toBe(0)
+      expect((await sb.owner(['deploy', 'publish', 'sites/shop'])).code).toBe(0)
       const viewer = await sb.viewer()
 
       const whole = await viewer.item('sites/shop')

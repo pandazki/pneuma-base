@@ -70,8 +70,8 @@ beforeAll(() => {
     expect(ok(agent(['say', 'deployable', `sites/s${i}`]))).toMatchObject({ outcome: 'heard', by: 'deploy' })
   }
   target = join(tempDir('pb-target-'), 'www')
-  ok(owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', target]))
-  for (let i = 0; i < 4; i++) expect(ok(owner(['deploy', 'on', `sites/s${i}`])).text).toContain(`已上线 sites/s${i}`)
+  ok(owner(['deploy', 'target', 'set', '--kind', 'folder', '--to', target]))
+  for (let i = 0; i < 4; i++) expect(ok(owner(['deploy', 'publish', `sites/s${i}`])).text).toContain(`已发布 sites/s${i}`)
 })
 
 describe('ten sites, four switched on, to a dir target', () => {
@@ -92,10 +92,10 @@ describe('ten sites, four switched on, to a dir target', () => {
 
   it('deploy list and inspect tell each site’s state and address', () => {
     const list = ok(owner(['deploy', 'list']))
-    expect(list.text).toMatch(/sites\/s0\s+在线\s+file:/)
-    expect(list.text).toMatch(/sites\/s9\s+离线/)
+    expect(list.text).toMatch(/sites\/s0\s+已发布\s+file:/)
+    expect(list.text).toMatch(/sites\/s9\s+未发布/)
     const section = ok(agent(['inspect', 'sites/s0'])).sections.find((s: any) => s.plugin === 'deploy')
-    expect(section.body).toContain('在线')
+    expect(section.body).toContain('已发布')
     expect(section.body).toContain('file://')
   })
 
@@ -113,11 +113,11 @@ describe('ten sites, four switched on, to a dir target', () => {
   it('the switch is refused for an agent, by name, by grant, or by its session variable, and nothing goes online; an agent may still run deploy sync and deploy list', () => {
     ok(owner(['grant', 'create', 'claude', '--agent', 'claude-code']))
     const attempts = [
-      agent(['deploy', 'on', 'sites/s5']),
-      sb.run(['@claude', 'deploy', 'on', 'sites/s5', '--json'], { cwd: outside }),
-      owner(['deploy', 'on', 'sites/s5'], { CLAUDE_CODE_SESSION_ID: 'abc' }),
-      owner(['deploy', 'on', 'sites/s5'], { CODEX_THREAD_ID: 'xyz' }),
-      agent(['deploy', 'target', 'set', '--kind', 'dir', '--to', join(outside, 'elsewhere')]),
+      agent(['deploy', 'publish', 'sites/s5']),
+      sb.run(['@claude', 'deploy', 'publish', 'sites/s5', '--json'], { cwd: outside }),
+      owner(['deploy', 'publish', 'sites/s5'], { CLAUDE_CODE_SESSION_ID: 'abc' }),
+      owner(['deploy', 'publish', 'sites/s5'], { CODEX_THREAD_ID: 'xyz' }),
+      agent(['deploy', 'target', 'set', '--kind', 'folder', '--to', join(outside, 'elsewhere')]),
     ]
     for (const r of attempts) {
       expect(r.code, r.stdout + r.stderr).toBe(2)
@@ -125,13 +125,13 @@ describe('ten sites, four switched on, to a dir target', () => {
     }
     expect(sitesIn(target)).toEqual(FOUR)
     expect(ok(agent(['deploy', 'sync'])).data).toMatchObject({ changed: 0 })
-    expect(ok(agent(['deploy', 'list'])).text).toMatch(/sites\/s5\s+离线/)
+    expect(ok(agent(['deploy', 'list'])).text).toMatch(/sites\/s5\s+未发布/)
   })
 
   // Moves the four to another target, so it comes last.
   it('deploy sync converges on a new target, and a second run changes nothing', () => {
     const next = join(tempDir('pb-target-'), 'next')
-    ok(owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', next]))
+    ok(owner(['deploy', 'target', 'set', '--kind', 'folder', '--to', next]))
     expect(ok(agent(['check'])).sections.find((s: any) => s.plugin === 'deploy')?.body).toContain('待发布')
 
     expect(ok(owner(['deploy', 'sync'])).data).toMatchObject({ changed: 4 })
@@ -168,11 +168,11 @@ describe('a command target', () => {
     )
     commandTarget(`'${node}' '${pub}' {dir} {name} '${published}'`, `'${node}' '${unpub}' {name} '${published}'`, ['--url', 'https://{name}.example.test'])
 
-    expect(ok(owner(['deploy', 'on', 'sites/s6'])).text).toContain('https://sites-s6.example.test')
+    expect(ok(owner(['deploy', 'publish', 'sites/s6'])).text).toContain('https://sites-s6.example.test')
     expect(readdirSync(published)).toEqual(['sites-s6'])
     expect(tree(join(published, 'sites-s6'))).toEqual(tree(join(lib, 'sites/s6')))
 
-    ok(owner(['deploy', 'off', 'sites/s6']))
+    ok(owner(['deploy', 'unpublish', 'sites/s6']))
     expect(readdirSync(published)).toEqual(['sites-s6.seen'])
     expect(readFileSync(join(published, 'sites-s6.seen'), 'utf8')).toBe('[]')
   })
@@ -181,7 +181,7 @@ describe('a command target', () => {
     const fail = script('fail.mjs', `process.stderr.write('target is down\\n')\nprocess.exit(3)\n`)
     commandTarget(`'${node}' '${fail}' {dir} {name}`, `'${node}' '${fail}' {name}`)
 
-    const on = owner(['deploy', 'on', 'sites/s7'])
+    const on = owner(['deploy', 'publish', 'sites/s7'])
     expect(on.code).toBe(2)
     expect(on.json()).toMatchObject({ outcome: 'refused', reason: 'publish-failed' })
     expect(on.json().text).toContain('target is down')
@@ -199,7 +199,7 @@ describe('a command target', () => {
   it('that runs too long is stopped at its timeout', () => {
     const slow = script('slow.mjs', `setTimeout(() => {}, 20000)\n`)
     commandTarget(`'${node}' '${slow}'`, `'${node}' '${slow}'`, ['--timeout', '1'])
-    const on = owner(['deploy', 'on', 'sites/s8'])
+    const on = owner(['deploy', 'publish', 'sites/s8'])
     expect(on.code).toBe(2)
     expect(on.json()).toMatchObject({ outcome: 'refused', reason: 'publish-failed' })
     expect(on.json().text).toContain('超时')

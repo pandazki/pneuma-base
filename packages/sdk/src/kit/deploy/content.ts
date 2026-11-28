@@ -22,12 +22,12 @@ const MANIFEST_PAGE = 10_000
 /** Why a thing's content is not copied out now, as a sentence for people: it has more files than one thing takes, or it changed while it was read. */
 export class NotStaged extends Error {}
 
-export const changing = (path: LibraryPath) => new NotStaged(`${path} 正在被改动，没有发布`)
+export const changing = (path: LibraryPath) => new NotStaged(`${path} 正在修改，未发布`)
 
 /** A failed answer about a thing's content, as what to throw. */
 function failed(path: LibraryPath, answer: StorageFailure): Error {
-  if (answer.reason === 'too_many') return new NotStaged(`${path} 至少有 ${answer.at_least ?? THING_FILES + 1} 个文件，超过一样东西能有的 ${THING_FILES} 个，没有发布`)
-  return new Error(`没读到 ${path}：${answer.reason}`)
+  if (answer.reason === 'too_many') return new NotStaged(`${path} 至少有 ${answer.at_least ?? THING_FILES + 1} 个文件，超过单个条目的上限 ${THING_FILES} 个，未发布`)
+  return new Error(`无法读取 ${path}：${answer.reason}`)
 }
 
 /** A thing's content files, by their path in the site (sorted by its UTF-8 bytes), with their place and fingerprint; and the content's fingerprint. */
@@ -80,7 +80,7 @@ export async function withStaged<T>(storage: PluginStorage, path: LibraryPath, k
       const abs = join(dir, ...f.path.split('/'))
       await mkdir(dirname(abs), { recursive: true })
       const read = await storage.read(f.place, { to: abs })
-      if (isFailure(read)) throw new Error(`没读到 ${f.place}：${read.reason}`)
+      if (isFailure(read)) throw new Error(`无法读取 ${f.place}：${read.reason}`)
       if ((await sha256Of(abs)) !== f.fingerprint) throw changing(path)
       files.push({ path: f.path, abs })
     }

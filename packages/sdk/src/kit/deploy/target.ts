@@ -80,6 +80,8 @@ export type Typed = () => Promise<string | null>
 export interface TargetAdapter<D = unknown, S extends SecretDecl = SecretDecl> {
   /** The value of `--kind` that chooses it, stored with its configuration. */
   readonly kind: string
+  /** Values of `--kind` it had before a rename: a configuration stored under one of them opens as this kind. */
+  readonly formerly?: readonly string[]
   /** The kind for people, in its dialog and its menu entry: `本地文件夹`. */
   readonly label: string
   /** Its icon on the destination row and on rows of what was found. */

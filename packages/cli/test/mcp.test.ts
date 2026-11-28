@@ -37,7 +37,7 @@ describe('the tool list', () => {
 
   it('refuses a management command called by name with the reason and words of the command line: the kernel’s, a plugin’s, a destructive one', async () => {
     const commands = ownerFace.commands([...builtinPlugins.values()])
-    const management = ['grant create', 'deploy on', 'archive purge'].map((name) => commands.find((c) => c.name === name && (c.destructive || c.ownerOnly)))
+    const management = ['grant create', 'deploy publish', 'archive purge'].map((name) => commands.find((c) => c.name === name && (c.destructive || c.ownerOnly)))
     for (const c of management) {
       if (c === undefined) throw new Error('a sample is no longer a management command')
       const r = await call(client, c.name.replaceAll(' ', '_'))

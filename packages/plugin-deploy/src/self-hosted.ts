@@ -1,8 +1,9 @@
-// PneumaSpace on a machine (its Docker plane): apps through its admin HTTP API. The content id is the
+// PneumaSpace self-hosted on a machine (its Docker plane): apps through its admin HTTP API. Its kind was
+// `machine`; its key is unchanged, so the records of one connected before count. The content id is the
 // sha256 of the bundle tar PneumaSpace is given, and `serving` answers from what PneumaSpace really has,
 // so `deploy sync` repairs a publish that died halfway or an app removed from PneumaSpace's console.
 import { defineTarget, type ContentId, type Served, type SiteName, type Target, type TargetConfig } from '@pneuma-base/sdk/kit'
-import { MACHINE_COGNITION } from './cognition.js'
+import { SELF_HOSTED_COGNITION } from './cognition.js'
 import { NO_INDEX } from './package.js'
 import { appName, defaultPrefix, hostOf, ORIGIN, PREFIX_PARAM, prefixSetting } from './name.js'
 import { bundleOf, ownerOf, Space, SpaceError, type AppDetail, type AppSummary } from './space.js'
@@ -13,13 +14,13 @@ type Config = { admin: string; prefix: string; public: string | null }
 function parseConfig(raw: TargetConfig): Config {
   const { admin, prefix } = raw
   const origin = raw.public ?? null
-  if (typeof admin !== 'string' || typeof prefix !== 'string' || (origin !== null && typeof origin !== 'string')) throw new Error('一台机器上的 PneumaSpace 的配置要写 admin、prefix，可以有 public')
+  if (typeof admin !== 'string' || typeof prefix !== 'string' || (origin !== null && typeof origin !== 'string')) throw new Error('自托管 PneumaSpace 的配置须包含 admin、prefix，可包含 public')
   return { admin, prefix, public: origin }
 }
 
 const PLANE: Plane = { requests: '24 小时请求', framed: true, visible: null }
 
-/** What the views get of an app on a machine. `spark` only for a drawn answer. */
+/** What the views get of a self-hosted app. `spark` only for a drawn answer. */
 function seen(summary: AppSummary, detail: AppDetail | null, mine: boolean, spark: number[] | null): Seen {
   const registered = mine && detail?.status === 'registered'
   return {
@@ -33,19 +34,20 @@ function seen(summary: AppSummary, detail: AppDetail | null, mine: boolean, spar
   }
 }
 
-export const machineTarget = defineTarget({
-  kind: 'machine',
-  label: '一台机器上的 PneumaSpace',
+export const selfHostedTarget = defineTarget({
+  kind: 'self-hosted',
+  formerly: ['machine'],
+  label: '自托管',
   icon: 'server',
-  group: { name: 'PneumaSpace', choice: '一台机器上的' },
+  group: { name: 'PneumaSpace', choice: '自托管' },
   form: ['admin'],
-  cognition: MACHINE_COGNITION,
+  cognition: SELF_HOSTED_COGNITION,
   params: [
     { name: 'admin', hint: '地址', kind: 'value', required: true, pattern: `${ORIGIN}(?:/\\S*)?` },
     PREFIX_PARAM,
-    { name: 'public', hint: '站点的公开地址', kind: 'value', pattern: ORIGIN },
+    { name: 'public', hint: '站点公开地址', kind: 'value', pattern: ORIGIN },
   ],
-  secrets: [{ name: 'token', description: '一台机器上的 PneumaSpace 不在本地模式时的访问令牌，作为 Bearer 发出', optional: true }],
+  secrets: [{ name: 'token', title: '访问 token', description: '自托管 PneumaSpace 不在本地模式时的访问 token，作为 Bearer token 发送', optional: true }],
   // The board is the plugin's page for both kinds; a page is declared once, here, and each kind draws it.
   views: [{ name: 'board', title: '看板', icon: 'layout-grid' }],
 
@@ -65,7 +67,7 @@ export const machineTarget = defineTarget({
     const space = new Space(c.admin, () => env.secret('token'))
     const owner = ownerOf(env.ctx.library.config.id)
     const urlOf = async (address: string) => (/^https?:\/\//.test(address) ? address : (c.public ?? (await space.ingress())) + address)
-    const taken = (site: string, by: string) => new SpaceError(`应用名 ${site} 在 PneumaSpace 上属于 ${by}，不是这个库，所以不动它；换一个前缀，或在 PneumaSpace 上处理那个应用`)
+    const taken = (site: string, by: string) => new SpaceError(`应用名称 ${site} 在 PneumaSpace 上属于 ${by}，不属于此资料库，未做改动；请更换应用名称前缀，或在 PneumaSpace 上处理该应用`)
 
     return {
       key: `pneuma-space:${c.admin}`,
@@ -77,7 +79,7 @@ export const machineTarget = defineTarget({
       async publish(site, _dir, meta) {
         if (!meta.files.some((f) => f.path === 'index.html')) throw new SpaceError(NO_INDEX)
         const { tar, bundle } = await bundleOf(meta.files)
-        if (bundle !== (meta.content as string)) throw new SpaceError(`复制出来的内容和决定发布的不同：${bundle} 不是 ${meta.content}`)
+        if (bundle !== (meta.content as string)) throw new SpaceError(`复制的内容与待发布的内容不一致：${bundle} 不是 ${meta.content}`)
         const detail = await space.app(site)
         if (detail !== null && detail.owner !== owner) throw taken(site, detail.owner)
         await space.publish(site, tar, bundle, owner)

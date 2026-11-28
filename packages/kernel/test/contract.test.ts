@@ -434,7 +434,7 @@ describe('a plugin’s paragraph in the description', () => {
     await run('target note', '顶上有 index.html')
     expect([stamp(f), description(f)]).toEqual([written, expect.stringContaining('目标要求：至多 256 个文件。')])
     // A change of the configuration writes the description as the plugin now describes itself.
-    expect(await kernel.ownerFace.dispatch(calls(f, table), 'grant issue', { positional: ['g'], flags: { agent: ['x'] } })).toMatchObject({ outcome: 'done' })
+    expect(await kernel.ownerFace.dispatch(calls(f, table), 'grant create', { positional: ['g'], flags: { agent: ['x'] } })).toMatchObject({ outcome: 'done' })
     expect(description(f)).toContain('目标要求：顶上有 index.html。')
   })
 
@@ -443,7 +443,7 @@ describe('a plugin’s paragraph in the description', () => {
     const f = await fixture([target])
     const table = new Map<string, sdk.Plugin>([['target', target], ['broken', broken]])
     await kernel.ownerFace.dispatch(calls(f, table), 'target set', { positional: ['至多 256 个文件'], flags: {} })
-    const added = await kernel.ownerFace.dispatch(calls(f, table), 'plugin add', { positional: ['broken'], flags: {} })
+    const added = await kernel.ownerFace.dispatch(calls(f, table), 'plugin enable', { positional: ['broken'], flags: {} })
     expect(added).toMatchObject({ outcome: 'done', problems: [{ plugin: 'broken', message: 'describe broke' }] })
     expect(description(f)).toContain('这个库装了**坏的**插件。\n\n## ')
     expect(description(f)).toContain('目标要求：至多 256 个文件。')

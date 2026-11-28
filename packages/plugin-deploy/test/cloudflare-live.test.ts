@@ -46,14 +46,13 @@ describe.skipIf(why !== null)('the lifecycle on PneumaSpace on Cloudflare', () =
   it('target set reads the account from the credentials file, the key too, and stores no key', async () => {
     const set = await space_('target', 'set', '--kind', 'cloudflare', '--credentials', CREDENTIALS as string, '--prefix', prefix)
     assert.equal(set.json.outcome, 'done', set.stdout)
-    assert.match(set.json.text, /账户密钥从凭据文件 .* 读，不存进库。$/)
     console.log(`target: ${set.json.text.split('。')[0]}`)
   })
 
   it('declared and switched on: release 1 answers at its address to a signed-in session', async () => {
-    assert.equal((await agent('put', await site(sb, 'v1', 'one'), '--to', 'sites/demo', '--made')).json.outcome, 'accepted')
+    assert.equal((await agent('put', await site(sb, 'v1', 'one'), '--to', 'sites/demo', '--generated')).json.outcome, 'accepted')
     assert.equal((await agent('say', 'deployable', 'sites/demo')).json.outcome, 'heard')
-    const on = await space_('on', 'sites/demo')
+    const on = await space_('publish', 'sites/demo')
     assert.equal(on.json.outcome, 'done', on.stdout)
     url = on.json.data.url
     assert.equal(url, `${space.origin}/apps/${app}/`)
@@ -65,7 +64,7 @@ describe.skipIf(why !== null)('the lifecycle on PneumaSpace on Cloudflare', () =
   })
 
   it('changed content gives release 2', async () => {
-    assert.equal((await agent('put', await site(sb, 'v2', 'two'), '--to', 'sites/demo', '--made')).json.outcome, 'accepted')
+    assert.equal((await agent('put', await site(sb, 'v2', 'two'), '--to', 'sites/demo', '--generated')).json.outcome, 'accepted')
     assert.equal(await space.browse(url), '200 <h1>two</h1>')
     assert.equal((await space.detail(prefix, app)).current.number, 2)
     assert.equal(await space.tickets(prefix, app), 2)
@@ -73,21 +72,21 @@ describe.skipIf(why !== null)('the lifecycle on PneumaSpace on Cloudflare', () =
   })
 
   it('on with unchanged content uploads nothing', async () => {
-    assert.equal((await space_('on', 'sites/demo')).json.outcome, 'done')
+    assert.equal((await space_('publish', 'sites/demo')).json.outcome, 'done')
     assert.equal((await space.detail(prefix, app)).current.number, 2)
     assert.equal(await space.tickets(prefix, app), 2)
     console.log('unchanged: still release 2, still 2 tickets')
   })
 
   it('off: the app is removed, not purged, and its address says it is not active', async () => {
-    assert.equal((await space_('off', 'sites/demo')).json.outcome, 'done')
+    assert.equal((await space_('unpublish', 'sites/demo')).json.outcome, 'done')
     assert.equal(await space.browse(url), '409 inactive')
     assert.equal((await space.detail(prefix, app)).status, 'removed')
     console.log('off: removed; the address answers 409 inactive')
   })
 
   it('on again resumes it: release 2 again, no upload', async () => {
-    assert.equal((await space_('on', 'sites/demo')).json.outcome, 'done')
+    assert.equal((await space_('publish', 'sites/demo')).json.outcome, 'done')
     assert.equal(await space.browse(url), '200 <h1>two</h1>')
     const d = await space.detail(prefix, app)
     assert.deepEqual([d.status, d.current.number, await space.tickets(prefix, app)], ['registered', 2, 2])

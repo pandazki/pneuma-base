@@ -29,7 +29,7 @@ function storyLibrary(pb: Cli): { lib: string; www: string } {
   mkdirSync(syncTarget)
   pb.run(['init', lib])
   for (const name of ['version', 'deploy', 'sync', 'search']) pb.run(['plugin', 'enable', name, '--library', lib])
-  pb.run(['deploy', 'target', 'set', '--kind', 'dir', '--to', www, '--library', lib])
+  pb.run(['deploy', 'target', 'set', '--kind', 'folder', '--to', www, '--library', lib])
   pb.run(['sync', 'target', 'set', '--kind', 'dir', '--to', syncTarget, '--library', lib])
   pb.run(['search', 'embedding', 'set', '--kind', 'hash', '--library', lib])
   const agent = (as: string, args: string[]) => pb.run(['--library', lib, '--as', as, '--session', `${as}-1`, ...args], { cwd: root })
@@ -41,7 +41,7 @@ function storyLibrary(pb: Cli): { lib: string; www: string } {
   }
   // The coffee site's panel shows its versions.
   agent('claude-code', ['say', 'versioned', 'sites/coffee'])
-  for (const name of ['coffee', 'hiking', 'books']) pb.run(['--library', lib, 'deploy', 'on', `sites/${name}`])
+  for (const name of ['coffee', 'hiking', 'books']) pb.run(['--library', lib, 'deploy', 'publish', `sites/${name}`])
   for (const name of ['plants', 'music', 'camping']) pb.run(['--library', lib, 'archive', `sites/${name}`])
   agent('codex', ['start', '把手冲咖啡那个网站的配色改一下'])
   write(root, 'codex/coffee/index.html', `<!doctype html><h1>${SITES.coffee}，换了深色配色</h1>\n`)
@@ -75,12 +75,12 @@ test('the whole story in the UI: every plugin’s page, the deploy switch, a sit
 
   // Turn pets on from the page: the target gets it, and an agent's check reports the owner's operation.
   await state('pets').getByRole('switch').click()
-  await expect(page.getByRole('status')).toContainText('已上线 sites/pets')
+  await expect(page.getByRole('status')).toContainText('已发布 sites/pets')
   await expect(state('pets')).toContainText('sites-pets')
   expect(served(www)).toEqual(['sites-books', 'sites-coffee', 'sites-hiking', 'sites-pets'])
   expect(readFileSync(join(www, 'sites-pets/index.html'), 'utf8')).toContain(SITES.pets)
   const check = pb.run(['--library', lib, '--as', 'claude-code', '--session', 'claude-code-2', 'check']).stdout
-  expect(check).toMatch(/pneuma-base deploy on sites\/pets/)
+  expect(check).toMatch(/pneuma-base deploy publish sites\/pets/)
   await page.getByRole('status').getByRole('button', { name: '关闭' }).click()
 
   // A site's panel: the ledger's provenance, the version timeline and the deploy section together.

@@ -62,7 +62,7 @@ function prepare(name, lib, fill) {
   mkdirSync(join(outside, 'sync'), { recursive: true })
   mkdirSync(join(outside, 'sites'), { recursive: true })
   owner('sync', 'target', 'set', '--kind', 'dir', '--to', join(outside, 'sync'))
-  owner('deploy', 'target', 'set', '--kind', 'dir', '--to', join(outside, 'sites'))
+  owner('deploy', 'target', 'set', '--kind', 'folder', '--to', join(outside, 'sites'))
   return { env, owner }
 }
 
@@ -78,7 +78,7 @@ async function bench(name, lib, env, owner) {
   writeFileSync(join(site, 'index.html'), '<h1>一页</h1>\n')
   quiet(['put', site, '--to', 'bench/site', '--generated'])
   quiet(['say', 'deployable', 'bench/site'])
-  owner('deploy', 'on', 'bench/site')
+  owner('deploy', 'publish', 'bench/site')
   const t = performance.now()
   const once = spawnSync(process.execPath, [bin, '--library', lib, 'sync', 'now'], { env, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', maxBuffer: 1 << 26 })
   const first = { ms: performance.now() - t, files: filesUnder(join(scratch, `outside-${name}`, 'sync')), failed: once.status === 0 || once.status === 3 ? null : `exit ${once.status}: ${once.stdout.slice(0, 120)}` }

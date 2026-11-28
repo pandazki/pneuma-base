@@ -99,10 +99,10 @@ for (const plugin of ['version', 'sync', 'deploy', 'search']) {
     const said = call(env, lib, ['say', 'versioned', 'notes/n0777.md'], { agent: true })
     knows = `say versioned notes/n0777.md: ${said.out.trim().split('\n')[0]}`
   } else {
-    call(env, lib, ['deploy', 'target', 'set', '--kind', 'dir', '--to', join(outside, 'sites')])
+    call(env, lib, ['deploy', 'target', 'set', '--kind', 'folder', '--to', join(outside, 'sites')])
     call(env, lib, ['say', 'deployable', 'sites/s3'], { agent: true })
-    const on = call(env, lib, ['deploy', 'on', 'sites/s3'])
-    knows = `deploy on sites/s3: ${on.out.trim().split('\n').at(-1)}`
+    const on = call(env, lib, ['deploy', 'publish', 'sites/s3'])
+    knows = `deploy publish sites/s3: ${on.out.trim().split('\n').at(-1)}`
   }
   rows.push({ plugin, ms: added.ms, said: saidLine(added.out), calls: calls.length, keeper: keeper.length, pages, knows })
 }

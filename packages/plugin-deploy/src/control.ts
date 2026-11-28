@@ -34,15 +34,15 @@ const str = (v: unknown) => (typeof v === 'string' ? v : null)
 
 /** What the owner is told for the refusals they can act on, by the control API's error code. */
 const WORDS: Record<string, string> = {
-  login_failed: '账户或密钥不对',
-  login_limit: '这台机器十分钟里登录超过 40 次，PneumaSpace 暂时不让再登录；过几分钟再试',
-  app_quota: '这个空间的应用数或存储到了上限：撤下的应用也占着位置，只有在 PneumaSpace 上清除不用的应用才空得出来',
-  app_exists: '这个名字已被这个 PneumaSpace 上别的空间的应用占用',
-  artifact_quota: '这个应用的上传额度用完了：每个应用一生最多上传 200 次，包的字节合计也不能超过它分到的存储；只有在 PneumaSpace 上清除这个应用才能重来，发布记录会一起清掉',
-  upload_limit: '没完成的上传太多，等十分钟再试',
-  purging: '这个应用正在清除',
-  managed: '这个应用归别的管理方',
-  unauthorized: '登录失效了',
+  login_failed: '账户或密钥错误',
+  login_limit: '本机十分钟内登录超过 40 次，PneumaSpace 暂时禁止登录；请几分钟后重试',
+  app_quota: '此空间的应用数或存储已达上限：已取消发布的应用仍占用配额，需在 PneumaSpace 上清除不再使用的应用',
+  app_exists: '该名称已被此 PneumaSpace 上其他空间的应用占用',
+  artifact_quota: '此应用的上传配额已用完：每个应用最多上传 200 次，包的合计大小不能超过分配的存储；只有在 PneumaSpace 上清除此应用才能重置，发布历史会一并清除',
+  upload_limit: '未完成的上传过多，请十分钟后重试',
+  purging: '此应用正在清除',
+  managed: '此应用由其他管理方管理',
+  unauthorized: '登录已失效',
 }
 
 const manager = (v: unknown): Manager | null => {
@@ -89,7 +89,7 @@ export class Control {
       response = await fetch(`${this.origin}/api/v1${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(TIMEOUT_MS) })
     } catch (error) {
       const cause = error instanceof Error ? (error.cause instanceof Error ? error.cause.message : error.message) : String(error)
-      throw new ControlError(`连不上 Cloudflare 上的 PneumaSpace ${this.origin}（${what}）：${cause}`)
+      throw new ControlError(`无法连接 Cloudflare 上的 PneumaSpace ${this.origin}（${what}）：${cause}`)
     }
     const text = await response.text()
     let data: unknown
@@ -102,22 +102,22 @@ export class Control {
       const error = obj(obj(data).error)
       const code = str(error.code)
       const words = code === null ? null : WORDS[code]
-      throw new ControlError(`Cloudflare 上的 PneumaSpace 拒绝了${what}：${words ?? `${response.status} ${code ?? ''} ${str(error.message) ?? ''}`.trim()}`, code)
+      throw new ControlError(`Cloudflare 上的 PneumaSpace 拒绝${what}：${words ?? `${response.status} ${code ?? ''} ${str(error.message) ?? ''}`.trim()}`, code)
     }
     return { response, data }
   }
 
   async #signIn(): Promise<Session> {
     const key = await this.#key()
-    const { response, data } = await this.#fetch(`账户 ${this.#account} 的登录`, 'POST', '/auth/login', { account: this.#account, key }, null)
+    const { response, data } = await this.#fetch(`账户 ${this.#account} 登录`, 'POST', '/auth/login', { account: this.#account, key }, null)
     const cookie = response.headers.get('set-cookie')?.split(';')[0] ?? ''
     const me = obj(data)
     const csrf = str(me.csrf)
     const user = str(obj(me.user).id)
     const tenants = (Array.isArray(me.tenants) ? me.tenants : []).map((t) => str(obj(t).id)).filter((t) => t !== null)
     const tenant = this.#tenant !== null && tenants.includes(this.#tenant) ? this.#tenant : tenants[0]
-    if (!cookie.includes('=') || csrf === null || user === null) throw new ControlError(`Cloudflare 上的 PneumaSpace ${this.origin} 的登录没有给出会话`)
-    if (tenant === undefined) throw new ControlError(`账户 ${this.#account} 在 Cloudflare 上的 PneumaSpace ${this.origin} 没有空间`)
+    if (!cookie.includes('=') || csrf === null || user === null) throw new ControlError(`Cloudflare 上的 PneumaSpace ${this.origin} 登录未返回会话`)
+    if (tenant === undefined) throw new ControlError(`账户 ${this.#account} 在 Cloudflare 上的 PneumaSpace ${this.origin} 中没有空间`)
     return { cookie, csrf, user, tenant }
   }
 
@@ -143,7 +143,7 @@ export class Control {
   }
 
   async app(id: string, name: string): Promise<AppDetail> {
-    return this.#detail(await this.#call(`读应用 ${name}`, 'GET', `/apps/${id}`))
+    return this.#detail(await this.#call(`读取应用 ${name}`, 'GET', `/apps/${id}`))
   }
 
   #detail(data: unknown): AppDetail {
@@ -163,32 +163,32 @@ export class Control {
   /** A durable app named `name`, managed by `pneuma-base` with the library's address. */
   async create(name: string, by: Manager): Promise<AppSummary> {
     const { tenant } = await this.#signedIn()
-    return summary(obj(await this.#call(`建应用 ${name}`, 'POST', `/tenants/${tenant}/apps`, { name, manager: by })))
+    return summary(obj(await this.#call(`创建应用 ${name}`, 'POST', `/tenants/${tenant}/apps`, { name, manager: by })))
   }
 
   async act(app: AppSummary, action: Action): Promise<AppDetail> {
-    const what = action.type === 'remove' ? `撤下 ${app.name}` : action.type === 'resume' ? `恢复 ${app.name}` : `把 ${app.name} 放回第 ${action.release} 版的内容`
+    const what = action.type === 'remove' ? `取消发布 ${app.name}` : action.type === 'resume' ? `恢复 ${app.name}` : `将 ${app.name} 恢复到版本 ${action.release}`
     return this.#detail(await this.#call(what, 'POST', `/apps/${app.id}/actions`, action))
   }
 
   /** Uploads the package and makes it the app's new release: an upload ticket, the bytes PUT where it says, then the release. */
   async upload(app: AppSummary, pkg: Package): Promise<void> {
-    const ticket = obj(await this.#call(`给 ${app.name} 领上传票据`, 'POST', `/apps/${app.id}/uploads`, { manifest: MANIFEST, digest: pkg.digest, bytes: pkg.bytes.length }))
+    const ticket = obj(await this.#call(`为 ${app.name} 申请上传票据`, 'POST', `/apps/${app.id}/uploads`, { manifest: MANIFEST, digest: pkg.digest, bytes: pkg.bytes.length }))
     const url = str(ticket.url)
     const uploadId = str(ticket.uploadId)
-    if (url === null || uploadId === null) throw new ControlError(`Cloudflare 上的 PneumaSpace 给 ${app.name} 的上传票据不全`)
+    if (url === null || uploadId === null) throw new ControlError(`Cloudflare 上的 PneumaSpace 返回的 ${app.name} 上传票据不完整`)
     let put: Response
     try {
       put = await fetch(url, { method: 'PUT', headers: Object.fromEntries(Object.entries(obj(ticket.headers)).filter((e): e is [string, string] => typeof e[1] === 'string')), body: new Uint8Array(pkg.bytes), redirect: 'error', signal: AbortSignal.timeout(TIMEOUT_MS) })
     } catch (error) {
-      throw new ControlError(`上传 ${app.name} 的包没有完成：${error instanceof Error ? error.message : String(error)}；线上没有变`)
+      throw new ControlError(`${app.name} 的包上传未完成：${error instanceof Error ? error.message : String(error)}；部署目标上未变更`)
     }
-    if (!put.ok) throw new ControlError(`上传 ${app.name} 的包被拒绝：${put.status}；线上没有变`)
+    if (!put.ok) throw new ControlError(`${app.name} 的包上传被拒绝：${put.status}；部署目标上未变更`)
     await this.#call(`发布 ${app.name}`, 'POST', `/apps/${app.id}/releases`, { uploadId })
   }
 
   async uploads(app: AppSummary): Promise<Uploads | null> {
-    const a = obj(obj(await this.#call(`读 ${app.name} 的用量`, 'GET', `/apps/${app.id}/state`)).artifacts)
+    const a = obj(obj(await this.#call(`读取 ${app.name} 的用量`, 'GET', `/apps/${app.id}/state`)).artifacts)
     const [used, max, reserved, limit] = [num(a.uploads), num(a.maxUploads), num(a.reservedBytes), num(a.limitBytes)]
     // The control API reports three times each: a ticket reserves its size for staging, code and static files.
     return used === null || max === null || reserved === null || limit === null ? null : { used, max, bytes: reserved / 3, limit: limit / 3 }

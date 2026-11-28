@@ -19,24 +19,24 @@ const world = (w: Partial<World>): World => ({ path: P, on: false, archived: fal
 const archivedAt = (path: LibraryPath) => p(`_archive/${path}`)
 
 const STATES = {
-  离线: () => world({}),
-  在线: () => world({ on: true, target: new Map([[S, F1]]) }),
+  未发布: () => world({}),
+  已发布: () => world({ on: true, target: new Map([[S, F1]]) }),
   待发布: () => world({ on: true, target: new Map([[S, OLD]]) }),
-  '已归档（开关关）': () => world({ path: archivedAt(P), archived: true }),
-  '已归档（开关开）': () => world({ path: archivedAt(P), archived: true, on: true }),
-  '待下线（开关关）': () => world({ target: new Map([[S, OLD]]) }),
-  '待下线（已归档）': () => world({ path: archivedAt(P), archived: true, on: true, target: new Map([[S, F1]]) }),
-  '待下线（不在）': () => world({ on: true, content: null, target: new Map([[S, F1]]) }),
-  不在: () => world({ on: true, content: null }),
+  '已归档（开关已关闭）': () => world({ path: archivedAt(P), archived: true }),
+  '已归档（开关已开启）': () => world({ path: archivedAt(P), archived: true, on: true }),
+  '待取消发布（开关已关闭）': () => world({ target: new Map([[S, OLD]]) }),
+  '待取消发布（已归档）': () => world({ path: archivedAt(P), archived: true, on: true, target: new Map([[S, F1]]) }),
+  '待取消发布（条目缺失）': () => world({ on: true, content: null, target: new Map([[S, F1]]) }),
+  条目缺失: () => world({ on: true, content: null }),
 } satisfies Record<string, () => World>
 
 const OPS = {
-  开: (w: World) => ({ ...w, on: true }),
-  关: (w: World) => ({ ...w, on: false }),
-  内容变了: (w: World) => ({ ...w, content: F2 }),
+  发布: (w: World) => ({ ...w, on: true }),
+  取消发布: (w: World) => ({ ...w, on: false }),
+  内容修改: (w: World) => ({ ...w, content: F2 }),
   归档: (w: World) => ({ ...w, path: archivedAt(w.path), archived: true }),
-  取回: (w: World) => ({ ...w, path: p(w.path.replace(/^_archive\//, '')), archived: false }),
-  挪: (w: World) => ({ ...w, path: Q }),
+  取消归档: (w: World) => ({ ...w, path: p(w.path.replace(/^_archive\//, '')), archived: false }),
+  移动: (w: World) => ({ ...w, path: Q }),
 } satisfies Record<string, (w: World) => World>
 
 /** Runs the plan for the world against a target that does every step, or fails at the first. */
@@ -56,38 +56,38 @@ type Cell = [state: keyof typeof STATES, op: keyof typeof OPS, ok: Status, faile
 
 // The applicable cells of the table; the README says why the others cannot happen.
 const CELLS: Cell[] = [
-  ['离线', '开', 'online', 'pending'],
-  ['离线', '关', 'offline', 'offline'],
-  ['离线', '内容变了', 'offline', 'offline'],
-  ['离线', '归档', 'archived', 'archived'],
-  ['离线', '挪', 'offline', 'offline'],
-  ['在线', '开', 'online', 'online'],
-  ['在线', '关', 'offline', 'retiring'],
-  ['在线', '内容变了', 'online', 'pending'],
-  ['在线', '归档', 'archived', 'retiring'],
-  ['在线', '挪', 'online', 'pending'],
-  ['待发布', '开', 'online', 'pending'],
-  ['待发布', '关', 'offline', 'retiring'],
-  ['待发布', '内容变了', 'online', 'pending'],
-  ['待发布', '归档', 'archived', 'retiring'],
-  ['待发布', '挪', 'online', 'pending'],
-  ['已归档（开关关）', '开', 'archived', 'archived'],
-  ['已归档（开关开）', '关', 'archived', 'archived'],
-  ['已归档（开关开）', '取回', 'online', 'pending'],
-  ['已归档（开关关）', '取回', 'offline', 'offline'],
-  ['待下线（开关关）', '开', 'online', 'pending'],
-  ['待下线（开关关）', '关', 'offline', 'retiring'],
-  ['待下线（开关关）', '内容变了', 'offline', 'retiring'],
-  ['待下线（开关关）', '归档', 'archived', 'retiring'],
-  ['待下线（开关关）', '挪', 'offline', 'retiring'],
-  ['待下线（已归档）', '开', 'archived', 'retiring'],
-  ['待下线（已归档）', '关', 'archived', 'retiring'],
-  ['待下线（已归档）', '取回', 'online', 'online'],
-  ['待下线（不在）', '关', 'offline', 'retiring'],
-  ['待下线（不在）', '内容变了', 'online', 'pending'],
-  ['不在', '开', 'missing', 'missing'],
-  ['不在', '关', 'offline', 'offline'],
-  ['不在', '内容变了', 'online', 'pending'],
+  ['未发布', '发布', 'published', 'pending'],
+  ['未发布', '取消发布', 'unpublished', 'unpublished'],
+  ['未发布', '内容修改', 'unpublished', 'unpublished'],
+  ['未发布', '归档', 'archived', 'archived'],
+  ['未发布', '移动', 'unpublished', 'unpublished'],
+  ['已发布', '发布', 'published', 'published'],
+  ['已发布', '取消发布', 'unpublished', 'pending-unpublish'],
+  ['已发布', '内容修改', 'published', 'pending'],
+  ['已发布', '归档', 'archived', 'pending-unpublish'],
+  ['已发布', '移动', 'published', 'pending'],
+  ['待发布', '发布', 'published', 'pending'],
+  ['待发布', '取消发布', 'unpublished', 'pending-unpublish'],
+  ['待发布', '内容修改', 'published', 'pending'],
+  ['待发布', '归档', 'archived', 'pending-unpublish'],
+  ['待发布', '移动', 'published', 'pending'],
+  ['已归档（开关已关闭）', '发布', 'archived', 'archived'],
+  ['已归档（开关已开启）', '取消发布', 'archived', 'archived'],
+  ['已归档（开关已开启）', '取消归档', 'published', 'pending'],
+  ['已归档（开关已关闭）', '取消归档', 'unpublished', 'unpublished'],
+  ['待取消发布（开关已关闭）', '发布', 'published', 'pending'],
+  ['待取消发布（开关已关闭）', '取消发布', 'unpublished', 'pending-unpublish'],
+  ['待取消发布（开关已关闭）', '内容修改', 'unpublished', 'pending-unpublish'],
+  ['待取消发布（开关已关闭）', '归档', 'archived', 'pending-unpublish'],
+  ['待取消发布（开关已关闭）', '移动', 'unpublished', 'pending-unpublish'],
+  ['待取消发布（已归档）', '发布', 'archived', 'pending-unpublish'],
+  ['待取消发布（已归档）', '取消发布', 'archived', 'pending-unpublish'],
+  ['待取消发布（已归档）', '取消归档', 'published', 'published'],
+  ['待取消发布（条目缺失）', '取消发布', 'unpublished', 'pending-unpublish'],
+  ['待取消发布（条目缺失）', '内容修改', 'published', 'pending'],
+  ['条目缺失', '发布', 'missing', 'missing'],
+  ['条目缺失', '取消发布', 'unpublished', 'unpublished'],
+  ['条目缺失', '内容修改', 'published', 'pending'],
 ]
 
 describe('the state × operation table', () => {
@@ -103,22 +103,22 @@ describe('the state × operation table', () => {
     })
     const expected = CELLS.map(([state, op, ok, failed]) => {
       const after = OPS[op](STATES[state]())
-      return [state, op, ok, ok === 'online' ? { [siteName(after.path)]: after.content } : {}, failed, held(after.target)]
+      return [state, op, ok, ok === 'published' ? { [siteName(after.path)]: after.content } : {}, failed, held(after.target)]
     })
     expect(got).toEqual(expected)
   })
 
   it('names each starting state as the table does', () => {
     expect(Object.fromEntries(Object.entries(STATES).map(([name, make]) => [name, status(make())]))).toEqual({
-      离线: 'offline',
-      在线: 'online',
+      未发布: 'unpublished',
+      已发布: 'published',
       待发布: 'pending',
-      '已归档（开关关）': 'archived',
-      '已归档（开关开）': 'archived',
-      '待下线（开关关）': 'retiring',
-      '待下线（已归档）': 'retiring',
-      '待下线（不在）': 'retiring',
-      不在: 'missing',
+      '已归档（开关已关闭）': 'archived',
+      '已归档（开关已开启）': 'archived',
+      '待取消发布（开关已关闭）': 'pending-unpublish',
+      '待取消发布（已归档）': 'pending-unpublish',
+      '待取消发布（条目缺失）': 'pending-unpublish',
+      条目缺失: 'missing',
     })
   })
 })

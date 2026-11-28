@@ -310,7 +310,7 @@ for i in 1 2 3 4 5; do pb --library "$lib" inspect "notes/made-$i.md" | grep -q 
 grep -q "watcher: registered.*notes/" "$log" && fail "the watcher registered an agent's file" || ok "the watcher registered none of them"
 
 pb --library "$lib" plugin enable deploy >/dev/null
-pb --library "$lib" deploy target set --kind dir --to "$work/www" >/dev/null
+pb --library "$lib" deploy target set --kind folder --to "$work/www" >/dev/null
 mkdir -p "$work/site" && echo "<h1>shop</h1>" > "$work/site/index.html"
 pb --library "$lib" --as claude-code put "$work/site" --to sites/shop --generated >/dev/null
 pb --library "$lib" --as claude-code say deployable sites/shop >/dev/null
@@ -319,7 +319,7 @@ page_shows home-4.txt "待处理" 10 && ! grep -q "连接 Agent" "$work/home-4.t
 
 hook tray
 wait_for "tray: shown" 5 && ok "a click on the icon opens the panel" || fail "the panel opens"
-page_shows tray.txt "要上线吗" 10 text-tray && grep -q "我的库" "$work/tray.txt" && ok "the panel: the library, the ask" || fail "the panel: $(head -c 300 "$work/tray.txt")"
+page_shows tray.txt "是否发布" 10 text-tray && grep -q "我的库" "$work/tray.txt" && ok "the panel: the library, the ask" || fail "the panel: $(head -c 300 "$work/tray.txt")"
 snap snap-tray tray-app
 
 # The panel: one line a row and no text button but the asks' answers; under a small display's menu
