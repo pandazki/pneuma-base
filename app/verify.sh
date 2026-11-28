@@ -370,6 +370,14 @@ hook "sheet:1"
 logged "sheet: answered 1" && sleep 1.5 && [ "$(pb --library "$lib" agent list 2>&1)" = "$agents_before" ] && ok "取消 on the sheet: nothing changed, agent list is as it was" || fail "取消 on the sheet: $(since_mark | grep 'sheet:' | tail -2) $(pb --library "$lib" agent list 2>&1 | head -5)"
 hook "route:"; sleep 1
 
+# 导出 on the activity page hands the records over as a download, which the window saves where its save panel says.
+hook "route:view=ledger.activity"; sleep 1.5
+mark
+page_eval '(async () => { const wait = (ms) => new Promise((r) => setTimeout(r, ms)); document.querySelector("[aria-label=导出]").click(); await wait(600); [...document.querySelectorAll("[role=dialog] button")].find((b) => b.textContent.trim() === "导出")?.click() })(), "started"' >/dev/null
+logged "download: save panel for 活动记录.csv" 10 && ok "导出 on the activity page: the save panel asks where to save 活动记录.csv" || fail "导出 as a download: $(since_mark | grep -E 'download:|eval:' | tail -3)"
+hook "sheet:1"; logged "download: not saved" 5 || true
+hook "route:"; sleep 1
+
 if [ -n "$shots" ]; then
   mkdir -p "$shots"
   # $1 the picture's name, $2 the hook (capture or capture-tray), $3 what to do in the page before, $4 after.

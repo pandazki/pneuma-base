@@ -303,7 +303,11 @@ extension MainWindow: WKDownloadDelegate {
     guard let window else { return nil }
     let panel = NSSavePanel()
     panel.nameFieldStringValue = suggestedFilename
-    guard await panel.beginSheetModal(for: window) == .OK, let url = panel.url else { return nil }
+    Log.line("download: save panel for \(suggestedFilename)")
+    guard await panel.beginSheetModal(for: window) == .OK, let url = panel.url else {
+      Log.line("download: not saved")
+      return nil
+    }
     try? FileManager.default.removeItem(at: url)
     Log.line("download: to \(url.path)")
     return url
