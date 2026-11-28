@@ -8,19 +8,19 @@ import { defineTarget, STATUS, switchAction, type Target } from '@pneuma-base/sd
 
 export const localTarget = defineTarget({
   kind: 'local',
-  label: '一个本地目录',
+  label: '本地目录',
   params: [{ name: 'to', hint: '目录', kind: 'value', required: true }],
 
   /** What the owner's `target set` flags configure, checked before it is stored. */
   async configure({ to }, ctx) {
     const dir = resolve(ctx.session.cwd, to)
-    if ((await ctx.tools.resolve(dir)) !== null) return { ok: false, reason: 'inside-library', text: `发布的目录不能在库里：${dir}` }
+    if ((await ctx.tools.resolve(dir)) !== null) return { ok: false, reason: 'inside-library', text: `发布目录不能位于资料库中：${dir}` }
     return { ok: true, config: { to: dir } }
   },
 
   /** A stored configuration, parsed at the boundary, opened for one hook or command. */
   open(config, env): Target {
-    if (typeof config.to !== 'string') throw new Error('本地目录的配置要写 to')
+    if (typeof config.to !== 'string') throw new Error('本地目录的配置缺少 to')
     const to = config.to
     return {
       key: `local:${to}`,

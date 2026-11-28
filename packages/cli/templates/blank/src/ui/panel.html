@@ -44,7 +44,7 @@
       // The block's data, now and each time the view is fetched again.
       pneuma.onData((data, { actions }) => {
         $('count').textContent = `${data.count} 条标记`
-        $('latest').textContent = data.latest === null ? '还没有' : `最近一条：${data.latest.text}`
+        $('latest').textContent = data.latest === null ? '暂无标记' : `最近一条：${data.latest.text}`
         // The latest mark's thing opens in the item panel beside the page.
         $('latest').onclick = data.latest === null ? null : () => pneuma.open({ view: 'item', params: { path: data.latest.path }, target: 'panel' })
         $('list').textContent = actions.list ? actions.list.label : '列出全部'

@@ -56,7 +56,7 @@ type VerbPositional = PositionalParam & { readonly words?: true }
  * under one name: `say`'s belong to the plugin that hears the kind, each a list; `show`'s are the
  * page's parameters, each one value. `stdin`: the positional whose value `-` means standard input.
  * `fromEnd`: when fewer positionals are written than declared, the optional ones are filled from the
- * last, as `say <种类> <内容>`. `raw`: the `many` positional that takes the rest of the command line as
+ * last, as `say <类型> <内容>`. `raw`: the `many` positional that takes the rest of the command line as
  * written, flags too, as `ask` takes the owner's command it asks for.
  */
 export type VerbParams = {
@@ -89,16 +89,16 @@ function verb<const P extends VerbParams>(v: Omit<Verb, 'params' | 'run'> & { re
 }
 
 const ORIGIN_HELP =
-  '要说明来历：带进来的用 --imported（可加 --source <出处>、--by owner），做出来的用 --generated（可加 --from <库内路径…>、--from-external "<一句话…>"）。两个只能选一个。'
+  '需声明来源：导入的条目用 --imported（可加 --source <原始来源>、--by owner），生成的条目用 --generated（可加 --from <库内路径…>、--from-external "<说明…>"）。两者只能选其一。'
 
-const OBSERVED_HELP = '--observed 只用来登记库里已有的东西，和 --imported --by owner 一起写：主人这边自动看到、没人说过来历的，比如应用登记主人复制进库的文件。'
+const OBSERVED_HELP = '--observed 仅用于登记资料库中已有的条目，需与 --imported --by owner 同时使用：表示由所有者一侧自动检测到、未声明来源的条目，例如应用登记所有者拷入资料库的文件。'
 
 type OriginValues = { imported: boolean; generated: boolean; source: string | null; by: string | null; from: readonly string[]; 'from-external': readonly string[] }
 
 function originOf(v: OriginValues): Origin<string> | null {
   if (v.imported && v.generated) throw new UsageError(ORIGIN_HELP)
-  if (!v.imported && (v.source !== null || v.by !== null)) throw new UsageError('--source 和 --by 只跟 --imported 一起用。')
-  if (!v.generated && (v.from.length > 0 || v['from-external'].length > 0)) throw new UsageError('--from 和 --from-external 只跟 --generated 一起用。')
+  if (!v.imported && (v.source !== null || v.by !== null)) throw new UsageError('--source 和 --by 只能与 --imported 同时使用。')
+  if (!v.generated && (v.from.length > 0 || v['from-external'].length > 0)) throw new UsageError('--from 和 --from-external 只能与 --generated 同时使用。')
   if (v.imported) return { kind: 'brought', source: v.source, by: v.by }
   if (v.generated) return { kind: 'made', from: [...v.from], outside: [...v['from-external']] }
   return null
@@ -119,32 +119,32 @@ async function putRequest(v: OriginValues & { what: string; to: string | null; n
   const origin = originOf(v)
   if (observed && (origin?.kind !== 'brought' || origin.by !== 'owner' || to !== null || first === '-')) throw new UsageError(OBSERVED_HELP)
   if (first === '-') {
-    if (to === null) throw new UsageError('从标准输入放进来要写 --to <库内路径>。')
+    if (to === null) throw new UsageError('从标准输入添加时需指定 --to <库内路径>。')
     return { kind: 'place', from: { kind: 'stdin', content: await stdin() }, to, origin: requireOrigin(origin), note }
   }
   const local = resolve(cwd, first)
   const onDisk = isAbsolute(first) || existsSync(local)
   if (onDisk && parseLibraryPath(bound.library.root, local) === null) {
-    if (to === null) throw new UsageError('从库外放进来要写 --to <库内路径>。')
+    if (to === null) throw new UsageError('从外部添加时需指定 --to <库内路径>。')
     const kind = statSync(local, { throwIfNoEntry: false })?.isDirectory() ? 'directory' : 'file'
     return { kind: 'place', from: { kind, path: local }, to, origin: requireOrigin(origin), note }
   }
   const path = onDisk ? local : first
   if (to === null) return { kind: 'register', path, origin: requireOrigin(origin), note, ...(observed ? { observed: true as const } : {}) }
-  if (origin || note !== null) throw new UsageError('在库里挪位置不需要 --imported、--generated 或 --note。')
+  if (origin || note !== null) throw new UsageError('在资料库内移动时不使用 --imported、--generated 或 --note。')
   return { kind: 'move', from: path, to }
 }
 
 function sinceOf(value: string | null): Instant | 'last' | null {
   if (value === null || value === 'last') return value
   const t = Date.parse(value)
-  if (Number.isNaN(t)) throw new UsageError(`--since 要写 last 或一个时间，比如 2026-11-25T08:00:00Z：${value}`)
+  if (Number.isNaN(t)) throw new UsageError(`--since 的值应为 last 或时间，例如 2026-11-25T08:00:00Z：${value}`)
   return new Date(t).toISOString() as Instant
 }
 
-const INCLUDE_ARCHIVED = { name: 'include-archived', hint: '也找归档区里的', kind: 'boolean' } as const
+const INCLUDE_ARCHIVED = { name: 'include-archived', hint: '包含已归档', kind: 'boolean' } as const
 
-const ASK_HELP = 'ask 要写为什么，再跟上主人的命令和它的参数：ask "<为什么>" <主人的命令…>；撤回自己提的：ask --withdraw <请求号>。'
+const ASK_HELP = 'ask 需写明原因，后接所有者命令及其参数：ask "<原因>" <所有者命令…>；撤销自己提交的请求：ask --withdraw <请求编号>。'
 
 /** The owner command the words name, and its arguments read by its params; words that name none are left for the kernel to refuse. */
 function askedCommand(words: readonly string[], library: Library): { command: string; args: OwnerArgs } {
@@ -170,9 +170,9 @@ const archiving = (kind: 'archive' | 'unarchive', summary: string): Verb =>
 export const VERBS: readonly Verb[] = [
   verb({
     name: 'start',
-    summary: '开始一件事：记下在做什么，看库的变化与状况，找库里可能相关的',
+    summary: '开始一项任务：记录任务描述，查看资料库的变化与状态，搜索可能相关的条目',
     readOnly: false,
-    params: { positional: [{ name: 'sentence', hint: '一句话，说要做什么', required: true, words: true }] },
+    params: { positional: [{ name: 'sentence', hint: '任务描述', required: true, words: true }] },
     run: async ({ sentence }, { bound: { library, ctx } }) => {
       const say = await agentFace.say({ kind: 'task', about: null, text: sentence, args: {} }, ctx)
       const check = await agentFace.check({ since: 'last', includeArchived: false }, ctx)
@@ -182,15 +182,15 @@ export const VERBS: readonly Verb[] = [
   }),
   verb({
     name: 'find',
-    summary: '找库里以前的资料和成果：名字里含任一段文字的，和插件知道的',
+    summary: '搜索资料库中已有的资料和成果：名称含任一关键词的条目，以及插件返回的结果',
     readOnly: true,
     params: {
-      positional: [{ name: 'text', hint: '文字', words: true }],
+      positional: [{ name: 'text', hint: '关键词', words: true }],
       flags: [
         INCLUDE_ARCHIVED,
-        { name: 'scene', hint: '场景号：只要这个场景的', kind: 'value' },
-        { name: 'origin', hint: 'imported 或 generated：只要带进来的或做出来的', kind: 'value' },
-        { name: 'page', hint: `第几页，每页 ${FIND_ROWS} 样；不写是第 1 页`, kind: 'value', pattern: '[1-9][0-9]{0,5}' },
+        { name: 'scene', hint: '场景编号：仅限该场景的条目', kind: 'value' },
+        { name: 'origin', hint: 'imported 或 generated：仅限导入或生成的条目', kind: 'value' },
+        { name: 'page', hint: `页码，每页 ${FIND_ROWS} 个条目；默认为第 1 页`, kind: 'value', pattern: '[1-9][0-9]{0,5}' },
       ],
     },
     run: async ({ text, scene, origin, 'include-archived': includeArchived, page }, { bound: { ctx } }) => {
@@ -202,41 +202,41 @@ export const VERBS: readonly Verb[] = [
   }),
   verb({
     name: 'inspect',
-    summary: '看关于一样东西知道的一切；加 content 也给它的内容，给读不了文件的 agent',
+    summary: '查看条目的全部信息；加 content 时同时返回其内容，供无法读取文件的 Agent 使用',
     readOnly: true,
     params: {
       positional: [
-        { name: 'target', hint: '库内路径、条目号或场景号', required: true },
-        { name: 'file', hint: '带标记的目录里的一个文件，相对这个目录，跟 content 一起写' },
+        { name: 'target', hint: '库内路径、条目编号或场景编号', required: true },
+        { name: 'file', hint: '带标记的目录中的文件，路径相对于该目录，需与 content 同时使用' },
       ],
       flags: [
-        { name: 'content', hint: '也给内容：UTF-8 文字给全文，别的给大小和种类，带标记的目录给文件清单', kind: 'boolean' },
-        { name: 'fetch', hint: '内容不在这台机器上时先取回来，跟 content 一起写', kind: 'boolean' },
+        { name: 'content', hint: '同时返回内容：UTF-8 文本返回全文，其他文件返回大小和类型，带标记的目录返回文件列表', kind: 'boolean' },
+        { name: 'fetch', hint: '内容未下载时先下载，需与 content 同时使用', kind: 'boolean' },
       ],
     },
     run: async ({ target, file, content, fetch }, { bound: { ctx } }) => {
-      if (file !== null && !content) throw new UsageError(`${file}：目录里的文件跟 --content 一起写：inspect ${target} --content ${file}`)
-      if (fetch && !content) throw new UsageError(`--fetch 跟 --content 一起写：inspect ${target} --content --fetch`)
+      if (file !== null && !content) throw new UsageError(`${file}：读取目录中的文件需使用 --content：inspect ${target} --content ${file}`)
+      if (fetch && !content) throw new UsageError(`--fetch 需与 --content 同时使用：inspect ${target} --content --fetch`)
       const r = await agentFace.inspect({ target, ...(content ? { content: { file, ...(fetch ? { fetch: true } : {}) } } : {}) }, ctx)
       return { json: r, lines: inspectText(target, r, file), exit: exitOf(r) }
     },
   }),
   verb({
     name: 'put',
-    summary: '把库外的文件或目录、或一段内容放进库里，说明来历；或登记库里已有的，或在库里挪位置',
+    summary: '将外部文件、目录或一段内容添加到资料库并声明来源；或登记资料库中已有的条目；或在资料库内移动条目',
     readOnly: false,
     params: {
-      positional: [{ name: 'what', hint: '这台机器上库外的文件或目录（写绝对路径），或库内路径；- 是标准输入', required: true }],
+      positional: [{ name: 'what', hint: '本机的外部文件或目录（绝对路径），或库内路径；- 表示标准输入', required: true }],
       flags: [
-        { name: 'to', hint: '放到的库内路径；在库里挪位置时是新路径', kind: 'value' },
-        { name: 'imported', hint: '带进来的：网页、文档、主人给的文件', kind: 'boolean' },
-        { name: 'generated', hint: '做出来的', kind: 'boolean' },
-        { name: 'source', hint: '出处，跟 imported 一起写', kind: 'value' },
-        { name: 'by', hint: '谁带进来的，只能写 owner，跟 imported 一起写', kind: 'value' },
-        { name: 'from', hint: '依据库里的哪些，库内路径，跟 generated 一起写', kind: 'list' },
-        { name: 'from-external', hint: '依据库外的什么，各一句话，跟 generated 一起写', kind: 'list' },
-        { name: 'note', hint: '一句话，说这次放入改了什么', kind: 'value' },
-        { name: 'observed', hint: '来历是主人这边自动看到的，不是谁说的；只给主人，跟 imported 和 by owner 一起写', kind: 'boolean' },
+        { name: 'to', hint: '目标库内路径；在资料库内移动时为新路径', kind: 'value' },
+        { name: 'imported', hint: '导入：网页、文档、所有者提供的文件', kind: 'boolean' },
+        { name: 'generated', hint: '生成：基于其他条目或资料生成的成果', kind: 'boolean' },
+        { name: 'source', hint: '原始来源，需与 imported 同时使用', kind: 'value' },
+        { name: 'by', hint: '导入者，仅可为 owner，需与 imported 同时使用', kind: 'value' },
+        { name: 'from', hint: '依据的条目（库内路径），需与 generated 同时使用', kind: 'list' },
+        { name: 'from-external', hint: '外部依据，每项一条说明，需与 generated 同时使用', kind: 'list' },
+        { name: 'note', hint: '本次修改的说明', kind: 'value' },
+        { name: 'observed', hint: '来源由所有者一侧自动检测，而非声明；仅所有者，需与 imported 和 by owner 同时使用', kind: 'boolean' },
       ],
       stdin: 'what',
     },
@@ -248,15 +248,15 @@ export const VERBS: readonly Verb[] = [
   }),
   verb({
     name: 'say',
-    summary: '对库说一句话，由听得懂这个种类的插件记下',
+    summary: '提交一条陈述，由处理该类型的插件记录',
     readOnly: false,
     params: {
       positional: [
-        { name: 'kind', hint: '种类，比如 task、note', required: true },
-        { name: 'about', hint: '关于什么：库内路径或别的标识' },
+        { name: 'kind', hint: '类型，例如 task、note', required: true },
+        { name: 'about', hint: '对象：库内路径或其他标识' },
         { name: 'text', hint: '内容' },
       ],
-      more: { name: 'args', hint: '听这个种类的插件的开关，各写成值的列表，比如 {"from": ["a.md", "b.md"]}；不带值的开关写空列表', each: 'list' },
+      more: { name: 'args', hint: '处理该类型的插件的选项，每项写成值的列表，例如 {"from": ["a.md", "b.md"]}；无值的选项写空列表', each: 'list' },
       fromEnd: true,
     },
     run: async ({ kind, about, text, args }, { bound: { ctx } }) => {
@@ -266,40 +266,40 @@ export const VERBS: readonly Verb[] = [
   }),
   verb({
     name: 'check',
-    summary: '库的变化与状况',
+    summary: '资料库的变化与状态',
     readOnly: true,
     params: {
-      positional: [{ name: 'dir', hint: '只和 --deep 一起写：深查哪个目录，不写是整个库' }],
+      positional: [{ name: 'dir', hint: '仅与 --deep 同时使用：深度检查的目录，默认为整个资料库' }],
       flags: [
-        { name: 'since', hint: '从什么时候起：last（上次查之后）或一个时间，比如 2026-11-25T08:00:00Z', kind: 'value' },
+        { name: 'since', hint: '开始时间：last（上次检查之后）或时间，例如 2026-11-25T08:00:00Z', kind: 'value' },
         INCLUDE_ARCHIVED,
-        { name: 'deep', hint: '深查：读每样登记过的东西的内容，比出真正改了的；先说要读多少，可以随时打断', kind: 'boolean' },
+        { name: 'deep', hint: '深度检查：读取每个已登记条目的内容，找出实际修改的条目；开始前给出读取量，可随时中断', kind: 'boolean' },
       ],
     },
     run: async ({ dir, since, 'include-archived': includeArchived, deep }, { bound: { library, ctx } }) => {
-      if (dir !== null && !deep) throw new UsageError('目录只和 --deep 一起写：check --deep <目录>')
+      if (dir !== null && !deep) throw new UsageError('目录参数仅与 --deep 同时使用：check --deep <目录>')
       const scope = dir === null || dir === '.' ? null : parseLibraryPath(library.root, dir)
-      if (dir !== null && dir !== '.' && scope === null) throw new UsageError(`这不是库里的目录：${dir}`)
+      if (dir !== null && dir !== '.' && scope === null) throw new UsageError(`不是资料库中的目录：${dir}`)
       const r = await agentFace.check({ since: sinceOf(since), includeArchived, ...(deep ? { deep: { dir: scope } } : {}) }, ctx)
       return { ...checkAnswer(r, ownerFace.commands(library.plugins), library.root), exit: exitOf(r) }
     },
   }),
-  archiving('archive', '不用了，把一样东西归档：不删，默认的找和查不再带它'),
-  archiving('unarchive', '把归档的东西取回原来的路径'),
+  archiving('archive', '归档不再使用的条目：不删除，默认的搜索和检查不再包含它'),
+  archiving('unarchive', '取消归档，将条目恢复到原路径'),
   verb({
     name: 'ask',
-    summary: '请主人做一条只有主人能做的命令：写明为什么，跟上那条命令和它的参数；主人在首页上批准或拒绝，结果在你下次 check 里',
+    summary: '请求所有者执行一条仅所有者可执行的命令：写明原因，后接该命令及其参数；所有者在首页批准或拒绝，结果见下次 check',
     readOnly: false,
     params: {
       positional: [
-        { name: 'why', hint: '为什么：一句话，主人据它决定批不批' },
-        { name: 'command', hint: '主人的命令和它的参数，照命令行的写法，比如 plugin enable version', many: true },
+        { name: 'why', hint: '原因：所有者据此决定是否批准' },
+        { name: 'command', hint: '所有者命令及其参数，按命令行写法，例如 plugin enable version', many: true },
       ],
-      flags: [{ name: 'withdraw', hint: '撤回自己提的、还在等的一个请求：请求号', kind: 'value' }],
+      flags: [{ name: 'withdraw', hint: '撤销自己提交的待处理请求：请求编号', kind: 'value' }],
       raw: 'command',
     },
     run: async ({ why, command, withdraw }, { bound: { library, ctx } }) => {
-      if (withdraw !== null && (why !== null || command.length > 0)) throw new UsageError('撤回只写 ask --withdraw <请求号>。')
+      if (withdraw !== null && (why !== null || command.length > 0)) throw new UsageError('撤销请求的写法为 ask --withdraw <请求编号>。')
       if (withdraw === null && (why === null || command.length === 0)) throw new UsageError(ASK_HELP)
       const req: AskRequest = withdraw !== null ? { kind: 'withdraw', id: withdraw } : { kind: 'ask', why: why as string, ...askedCommand(command, library) }
       const r = await agentFace.ask(req, ctx)
@@ -309,11 +309,11 @@ export const VERBS: readonly Verb[] = [
   }),
   verb({
     name: 'show',
-    summary: '看主人在管理界面上看到的一页，只读；不写编号列出这个库的页',
+    summary: '查看所有者在管理界面中看到的页面，只读；不写页面 ID 时列出此资料库的页面',
     readOnly: true,
     params: {
-      positional: [{ name: 'view', hint: '页的编号' }],
-      more: { name: 'params', hint: '页的参数，比如条目面板 {"path": "notes/a.md"}', each: 'value' },
+      positional: [{ name: 'view', hint: '页面 ID' }],
+      more: { name: 'params', hint: '页面参数，例如条目面板 {"path": "notes/a.md"}', each: 'value' },
     },
     run: async ({ view, params }, { bound: { library, ctx, viaGrant }, table, env }) => {
       if (view === null) {
@@ -322,7 +322,7 @@ export const VERBS: readonly Verb[] = [
       }
       // The text form shows the first rows of a long list and the command for more, as --json does.
       const r = await viewerFace.show({ view, params: { ...params }, size: TEXT_ROWS }, { ctx, table, env, viaGrant })
-      if (r.outcome === 'no-such-view') throw new UsageError(`这个库没有这一页：${view}。pneuma-base show 列出这个库的页。`)
+      if (r.outcome === 'no-such-view') throw new UsageError(`此资料库没有该页面：${view}。pneuma-base show 列出此资料库的页面。`)
       if (r.outcome === 'refused') return answer(r, [`拒绝（${r.reason}）：${r.text}`])
       const decl = viewerFace.views(library).views.find((v) => v.id === view)
       return { json: r, lines: pageText(r, ownerFace.commands(library.plugins), { view, params: { ...params } }, decl), exit: exitOf(r) }

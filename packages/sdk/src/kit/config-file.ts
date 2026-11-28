@@ -31,7 +31,7 @@ export function configFile<T>(ctx: PluginContext, name: Place, parse: (raw: unkn
     async read() {
       const answer = await own.read(name)
       if (isFailure(answer)) {
-        if (answer.reason !== 'no_such_place') throw new Error(`${name} 读不出来：${answer.reason}`)
+        if (answer.reason !== 'no_such_place') throw new Error(`无法读取 ${name}：${answer.reason}`)
         known = 'empty'
         return null
       }
@@ -39,7 +39,7 @@ export function configFile<T>(ctx: PluginContext, name: Place, parse: (raw: unkn
       const chunks = [answer.data ?? new Uint8Array()]
       for (let offset = answer.length; offset < answer.size; ) {
         const more = await own.read(name, { offset })
-        if (isFailure(more) || more.data === null || more.length === 0) throw new Error(`${name} 读到一半变了`)
+        if (isFailure(more) || more.data === null || more.length === 0) throw new Error(`${name} 在读取过程中被修改`)
         chunks.push(more.data)
         offset += more.length
       }
@@ -54,10 +54,10 @@ export function configFile<T>(ctx: PluginContext, name: Place, parse: (raw: unkn
           known = written.entry.token ?? null
           return
         }
-        if (written.reason !== 'refused') throw new Error(`${name} 写不进去：${written.reason}`)
+        if (written.reason !== 'refused') throw new Error(`无法写入 ${name}：${written.reason}`)
         expect = await stateNow()
       }
-      throw new Error(`${name} 写的时候连续 ${TRIES} 次遇上别处的写入`)
+      throw new Error(`写入 ${name} 时连续 ${TRIES} 次与其他写入冲突`)
     },
   }
 }

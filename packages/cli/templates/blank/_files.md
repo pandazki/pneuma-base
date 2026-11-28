@@ -1,3 +1,3 @@
-| `src/index.ts` | 插件本体：一种「说」的种类（agent 给东西留标记）、一条带参数表的主人命令（列出标记）、一个用带类型的块的视图，和一个自己画的块 |
-| `src/cognition.md` | 拼进库的说明（`PNEUMA-BASE.md`）的那一段，agent 读它；注释说每一部分做什么，用的时候去掉 |
-| `src/ui/panel.html` | 自己画的块（`src/index.ts` 里块的 `text` 用字说它画的，`pneuma-base show` 印的就是这段）：载入界面给的 `/plugin-kit/frame.js` 和 `/plugin-kit/frame.css`，跟着界面的浅色深色走，按钮跑块里声明的动作，链接打开条目面板；`pneuma` 和能用的类、变量在 `@pneuma-base/sdk/frame` 里有类型和说明 |
+| `src/index.ts` | 插件本体：一种 say 类型（Agent 为条目添加标记）、一条带参数表的所有者命令（列出标记）、一个由带类型的块组成的视图，以及一个自绘块 |
+| `src/cognition.md` | 拼入资料库说明（`PNEUMA-BASE.md`）的认知段，供 Agent 读取；注释说明每部分的作用，使用时删除 |
+| `src/ui/panel.html` | 自绘块（`src/index.ts` 中块的 `text` 以文字描述其绘制的内容，`pneuma-base show` 输出的即为这段文字）：载入界面提供的 `/plugin-kit/frame.js` 和 `/plugin-kit/frame.css`，跟随界面的浅色和深色外观，按钮运行块中声明的操作，链接打开条目面板；`pneuma` 及可用的类、变量的类型和说明见 `@pneuma-base/sdk/frame` |
