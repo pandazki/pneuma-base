@@ -14,6 +14,7 @@ import {
   openLibrary,
   ownerFace,
   pluginContext,
+  type Action,
   type Actor,
   type Block,
   type Instant,
@@ -22,7 +23,7 @@ import {
   type Plugin,
   type Session,
 } from '@pneuma-base/kernel'
-import { defineTarget, deployPlugin, siteName, STATUS, switchAction, type ContentId, type Served, type ServingAsk, type SiteName, type Target, type TargetAdapter, type TargetView } from '@pneuma-base/sdk/kit'
+import { defineTarget, deployPlugin, siteName, STATUS, switchAction, type ContentId, type Served, type ServingAsk, type SiteName, type Target, type TargetAdapter, type TargetConfig, type TargetView } from '@pneuma-base/sdk/kit'
 import { describe, expect, it } from 'vitest'
 
 const owner: Actor = { kind: 'owner' }
@@ -67,8 +68,7 @@ function fakeTarget(opts: Options = {}) {
     ...(opts.view
       ? {
           view: {
-            columns: [{ key: 'files', label: '文件数' }],
-            cells: (l) => ({ files: { text: String(fake.served.get(l.site ?? '')?.files.length ?? 0) } }),
+            mark: (l) => (fake.served.get(l.site ?? '')?.files.length === 1 ? { text: '只有一个文件', tone: 'warn', tip: '假的目标的说明' } : null),
             fields: (l) => [{ label: '文件数', value: { text: String(fake.served.get(l.site ?? '')?.files.length ?? 0) } }],
             page: (all) => [{ kind: 'custom', entry: 'chart.html', height: 120, text: `${all.length} 个站点`, data: { sites: all.length }, actions: {} }],
             item: () => [{ kind: 'text', tone: 'info', text: '假的目标的说明' }],
@@ -101,8 +101,9 @@ async function library(plugin: Plugin, noTarget = false) {
   let lib = await openLibrary(root, table)
   if (!lib) throw new Error('no library')
   const as = (actor: Actor) => makeContext(lib as NonNullable<typeof lib>, actor, session, home, new Date().toISOString() as Instant)
-  const cmd = async (name: string, positional: string[] = [], flags: Record<string, string[] | true> = {}): Promise<OwnerResult> => {
-    const r = await ownerFace.dispatch({ ctx: as(owner), table, env: {}, viaGrant: false, confirm: async () => true }, `${name}`, { positional, flags })
+  /** An owner command; `typed`: what it reads hidden, as a terminal or the page gives it. */
+  const cmd = async (name: string, positional: string[] = [], flags: Record<string, string[] | true> = {}, typed: string | null = null): Promise<OwnerResult> => {
+    const r = await ownerFace.dispatch({ ctx: as(owner), table, home, env: {}, viaGrant: false, confirm: async () => true, readSecret: async () => typed }, `${name}`, { positional, flags })
     lib = (await openLibrary(root, table)) ?? lib
     return r
   }
@@ -357,10 +358,10 @@ describe('the plugin the kit makes', () => {
   it('names its commands, its page and its cognition after itself, and with one kind of target needs no --kind', async () => {
     const { adapter } = fakeTarget()
     const plugin = deployPlugin('fake', adapter, { title: '假部署', heading: '上线到假的地方：主人开关', cognition: '网站里的链接要写相对路径。' })
-    expect(plugin.ownerCommands.map((c) => c.name)).toEqual(['fake on', 'fake off', 'fake sync', 'fake list', 'fake target set'])
+    expect(plugin.ownerCommands.map((c) => c.name)).toEqual(['fake on', 'fake off', 'fake sync', 'fake list', 'fake target set', 'fake target list', 'fake target remove'])
     expect(plugin.ownerCommands.find((c) => c.name === 'fake target set')).toMatchObject({
       params: { flags: [{ name: 'kind', kind: 'value', options: [{ value: 'fake', label: '一个假的目标' }] }, { name: 'where', hint: '名字', kind: 'value', required: true }] },
-      summary: '配部署目标：一个假的目标',
+      summary: '连上部署目标：一个假的目标',
       ownerOnly: true,
       setup: true,
     })
@@ -372,7 +373,7 @@ describe('the plugin the kit makes', () => {
 
     const l = await library(plugin, true)
     expect(await l.cmd('fake list')).toMatchObject({ text: expect.stringContaining('还没配部署目标：fake target set --where <名字>') })
-    expect(await l.cmd('fake target set', [], { where: ['x'] })).toMatchObject({ outcome: 'done', text: '部署目标已设为 假的 x。' })
+    expect(await l.cmd('fake target set', [], { where: ['x'] })).toMatchObject({ outcome: 'done', text: '已连上 假的 x。' })
     expect(await l.cmd('fake target set', [], {})).toMatchObject({ outcome: 'refused', reason: 'usage', text: '要写 --where <名字>。\n用法：fake target set [--kind fake] --where <名字>' })
   })
 
@@ -473,27 +474,59 @@ describe('the plugin the kit makes', () => {
     expect(section?.body.split('\n')).toEqual([expect.stringMatching(/^fake 的记录 \S*broken\.jsonl#2：缺 id、at、actor 或 session$/), `fake 的记录 ${order}：缺 id、at、actor 或 session`])
   })
 
-  it('shows a target’s own columns, fields and blocks, and the address as a link that can be copied', async () => {
+  it('once connected: the destination row, each thing a row with its folder, mark, address and switch, the target’s own mark, fields and blocks', async () => {
     const { adapter } = fakeTarget({ view: true })
     const plugin = deployPlugin('fake', adapter, { ui: '/plugins/fake/ui' })
     expect(plugin.ui).toBe('/plugins/fake/ui')
     const l = await library(plugin)
     await l.site('sites/shop', { 'index.html': '<h1>shop</h1>', 'a.css': 'h1{}' })
-    await l.say('sites/shop')
+    await l.site('sites/one', { 'index.html': '<h1>one</h1>' })
+    await l.put('top.html', 'top')
+    for (const path of ['sites/shop', 'sites/one', 'top.html']) await l.say(path)
     await l.cmd('fake on', ['sites/shop'])
-    const view = await plugin.onView?.({ view: 'fake.sites', params: {} }, l.pctx())
-    const blocks = view?.blocks ?? []
-    const table = blocks.flatMap((b) => (b.kind === 'section' ? b.blocks : [])).find((b): b is Extract<Block, { kind: 'table' }> => b.kind === 'table')
-    expect(table?.columns.map((c) => c.key)).toEqual(['path', 'state', 'address', 'files'])
-    const address = url(siteName('sites/shop' as LibraryPath))
-    expect(table?.rows[0]?.cells).toMatchObject({ files: { text: '2' }, address: { text: address, href: address, copy: true } })
-    expect(blocks.at(-1)).toMatchObject({ kind: 'custom', entry: 'chart.html', data: { sites: 1 } })
-    const setTarget = blocks.find((b): b is Extract<Block, { kind: 'section' }> => b.kind === 'section' && b.title === '目标')?.actions[0]
-    expect(setTarget).toMatchObject({ label: '设部署目标', inputs: [{ name: 'where', label: '名字' }], call: { face: 'owner', command: 'fake target set', args: { flags: { kind: ['fake'], where: ['{where}'] } } } })
+    await l.cmd('fake on', ['sites/one'])
+    const page = await plugin.onView?.({ view: 'fake.sites', params: {} }, l.pctx())
+    expect(page?.subtitle).toBe('2 样在线')
+    const [head, where, things, own] = page?.blocks ?? []
+    expect(head).toMatchObject({ kind: 'actions', head: true, actions: [{ label: '上线一样东西', icon: 'plus', as: 'primary', call: { command: 'fake on' } }] })
+    expect(where).toMatchObject({ kind: 'list', items: [{ cell: { text: '假的 w' }, actions: [{ label: '换一个…', as: 'menu' }, { label: '断开', as: 'menu', confirm: '断开 假的 w？线上的东西不撤下，开关都留着。' }] }] })
+    const shop = url(siteName('sites/shop' as LibraryPath))
+    const items = things?.kind === 'list' ? things.items : []
+    expect(items.map((i) => [i.cell.text, i.note, i.cell.tag?.text ?? null, i.aside ?? null, i.toggle?.on, i.toggle?.action.label])).toEqual([
+      ['one', 'sites', '只有一个文件', expect.objectContaining({ text: url(siteName('sites/one' as LibraryPath)) }), true, '下线'],
+      ['shop', 'sites', null, { text: shop, mono: true, href: shop, copy: true }, true, '下线'],
+      ['top.html', null, null, null, false, '上线'],
+    ])
+    expect(items[0]?.cell.tag?.tip).toBe('假的目标的说明')
+    expect(items[1]?.cell.link).toEqual({ view: 'item', params: { path: 'sites/shop' }, target: 'panel' })
+    expect(own).toMatchObject({ kind: 'custom', entry: 'chart.html', data: { sites: 3 } })
 
     const section = await plugin.onItemView?.('sites/shop' as LibraryPath, l.pctx())
     expect(section?.blocks.find((b): b is Extract<Block, { kind: 'fields' }> => b.kind === 'fields')?.fields.at(-1)).toEqual({ label: '文件数', value: { text: '2' } })
     expect(section?.blocks.at(-1)).toEqual({ kind: 'text', tone: 'info', text: '假的目标的说明' })
+  })
+
+  it('marks a thing not as it should be with why, offers 重试 only while something waits, and says so when nothing is declared', async () => {
+    const { fake, adapter } = fakeTarget()
+    const plugin = deployPlugin('fake', adapter)
+    const l = await library(plugin)
+    const page = async () => (await plugin.onView?.({ view: 'fake.sites', params: {} }, l.pctx()))?.blocks ?? []
+    expect((await page()).at(-1)).toEqual({ kind: 'empty', title: '还没有上线的东西', hint: null })
+    await l.put(P, 'v1')
+    await l.say(P)
+    await l.cmd('fake on', [P])
+    fake.fail = true
+    await l.put(P, 'v2')
+    const [head, , things] = await page()
+    expect(head?.kind === 'actions' && head.actions.map((a) => [a.label, a.as])).toEqual([
+      ['上线一样东西', 'primary'],
+      ['重试', 'icon'],
+    ])
+    expect(things?.kind === 'list' && things.items[0]?.cell.tag).toEqual({ text: '待发布', tone: 'warn', tip: '开关开着，线上不是当前的内容' })
+    fake.fail = false
+    await l.cmd('fake sync')
+    const [settled] = await page()
+    expect(settled?.kind === 'actions' && settled.actions.map((a) => a.label)).toEqual(['上线一样东西'])
   })
 
   it('declares the secrets its target reads; one not set refuses, naming the command that sets it, and one set reaches the target', async () => {
@@ -518,7 +551,7 @@ describe('the plugin the kit makes', () => {
     })
     const plugin = deployPlugin('vault', adapter)
     expect(plugin.secrets).toEqual([{ name: 'token', description: '目标的令牌' }])
-    expect(plugin.ownerCommands.find((c) => c.name === 'vault target set')?.params.flags?.map((f) => f.name)).toEqual(['kind'])
+    expect(plugin.ownerCommands.find((c) => c.name === 'vault target set')?.params).toEqual({ flags: [expect.objectContaining({ name: 'kind' })] })
     const l = await library(plugin, true)
     expect(await l.cmd('vault target set')).toMatchObject({ outcome: 'done', text: expect.stringContaining('还没设：pneuma-base secret set vault token') })
     await l.put(P, 'v1')
@@ -530,6 +563,198 @@ describe('the plugin the kit makes', () => {
     expect(await l.cmd('vault sync')).toMatchObject({ outcome: 'done' })
     expect(tokens).toEqual(['tok-1'])
     expect(await l.list()).toMatchObject([{ path: P, status: 'online' }])
+  })
+})
+
+// ---- connecting a destination ----
+
+/**
+ * Three kinds as a page meets them: alpha and beta share the group 假的地方; alpha finds two destinations
+ * on this machine, asks for a key typed hidden, takes a prefix that can be changed once connected, and
+ * has a paragraph for agents; gamma stands alone and is a folder of this machine.
+ */
+function threeKinds() {
+  const typed: (string | null)[] = []
+  const open = (config: TargetConfig): Target => ({
+    key: `k:${String(config.where)}`,
+    label: String(config.where),
+    ...(config.local === true ? { local: true as const } : {}),
+    ...(typeof config.prefix === 'string' ? { settings: [{ flag: 'prefix', hint: '前缀', value: config.prefix }] } : {}),
+    publish: async (site) => ({ url: url(site) }),
+    remove: async () => {},
+  })
+  const alpha = defineTarget({
+    kind: 'alpha',
+    label: '甲种',
+    icon: 'cloud',
+    group: { name: '假的地方', choice: '甲' },
+    form: ['at'],
+    params: [
+      { name: 'host', hint: '主机', kind: 'value' },
+      { name: 'at', hint: '地址', kind: 'value' },
+      { name: 'prefix', hint: '前缀', kind: 'value' },
+    ],
+    secrets: [{ name: 'key', description: '甲的钥匙', optional: true }],
+    asked: { name: 'key', hint: '钥匙' },
+    cognition: '甲要网站顶上有 index.html。',
+    found: async () => [
+      { label: 'one.example.com', values: { host: 'one.example.com' } },
+      { label: 'two.example.com', values: { host: 'two.example.com' } },
+    ],
+    async configure({ host, at, prefix }, ctx, read) {
+      if (host !== null) return { ok: true, config: { where: host, prefix: prefix ?? 'lib' } }
+      const key = await read()
+      typed.push(key)
+      return (key ?? (await ctx.secrets.get('key'))) === KEY ? { ok: true, config: { where: at, prefix: prefix ?? 'lib' } } : { ok: false, reason: 'refused', text: '钥匙不对' }
+    },
+    open,
+  })
+  const beta = defineTarget({
+    kind: 'beta',
+    label: '乙种',
+    icon: 'server',
+    group: { name: '假的地方', choice: '乙' },
+    params: [{ name: 'admin', hint: '地址', kind: 'value', required: true }],
+    configure: async ({ admin }) => ({ ok: true, config: { where: admin } }),
+    open,
+  })
+  const gamma = defineTarget({
+    kind: 'gamma',
+    label: '丙种',
+    icon: 'folder',
+    params: [{ name: 'to', hint: '目录', kind: 'value', required: true }],
+    configure: async ({ to }) => ({ ok: true, config: { where: to, local: true } }),
+    open,
+  })
+  return { plugin: deployPlugin('fake', [alpha, beta, gamma]), typed }
+}
+
+const KEY = 'k-typed-3f9a51'
+
+/** Presses a button of a page in this process, as the page sends it: each `{input}` filled from `values`, the secret as what is read hidden. */
+async function press(l: Lib, action: Action | undefined, values: Record<string, string> = {}): Promise<OwnerResult> {
+  if (action?.call.face !== 'owner') throw new Error(`not an owner command: ${JSON.stringify(action)}`)
+  const fill = (w: string) => w.replace(/\{(\w+)\}/g, (_, name: string) => values[name] ?? action.inputs.find((i) => i.name === name)?.value ?? '')
+  const flags = Object.fromEntries(Object.entries(action.call.args.flags).map(([k, v]) => [k, v === true ? true : v.map(fill)]))
+  const stdin = action.call.stdin === undefined ? null : fill(action.call.stdin)
+  return l.cmd(action.call.command, action.call.args.positional.map(fill), flags, stdin)
+}
+
+const listsOf = (blocks: readonly Block[]): Extract<Block, { kind: 'list' }>[] =>
+  blocks.flatMap((b) => (b.kind === 'list' ? [b] : b.kind === 'section' ? listsOf(b.blocks) : []))
+
+describe('connecting a destination', () => {
+  it('with nothing connected, the page is where to publish: each destination found, one row per group, the other kinds in the menu; a found one connects in one press', async () => {
+    const { plugin } = threeKinds()
+    const l = await library(plugin, true)
+    const page = async () => (await plugin.onView?.({ view: 'fake.sites', params: {} }, l.pctx()))?.blocks ?? []
+    const [where, ...rest] = await page()
+    expect(rest).toEqual([])
+    expect(where).toMatchObject({ kind: 'section', title: '发到哪里', note: null, count: null, actions: [{ label: '丙种…', as: 'menu' }] })
+    const items = listsOf([where as Block])[0]?.items ?? []
+    expect(items.map((i) => [i.cell.text, i.cell.icon ?? null, i.actions.map((a) => [a.label, a.as ?? null])])).toEqual([
+      ['one.example.com', 'cloud', [['连上', 'primary']]],
+      ['two.example.com', 'cloud', [['连上', 'primary']]],
+      ['别的 假的地方', null, [['连上…', null]]],
+    ])
+    // The group's dialog: the kind by its choice, then the fields of the kind chosen, the key last, sent as what is read hidden.
+    const other = items[2]?.actions[0]
+    expect(other?.inputs.map((i) => [i.name, i.options?.map((o) => o.label) ?? null, i.when ?? null, i.secret ?? null])).toEqual([
+      ['kind', ['甲', '乙'], null, null],
+      ['at', null, [{ input: 'kind', is: ['alpha'] }], null],
+      ['admin', null, [{ input: 'kind', is: ['beta'] }], null],
+      ['key', null, [{ input: 'kind', is: ['alpha'] }], true],
+    ])
+    expect(other?.call).toMatchObject({ args: { flags: { kind: ['{kind}'], at: ['{at}'], admin: ['{admin}'] } }, stdin: '{key}' })
+
+    expect(await press(l, items[0]?.actions[0])).toMatchObject({ outcome: 'done', text: '已连上 one.example.com。' })
+    const [head, row, empty] = await page()
+    expect(head).toMatchObject({ kind: 'actions', head: true })
+    expect(row).toMatchObject({ kind: 'list', items: [{ cell: { text: 'one.example.com', icon: 'cloud' }, actions: [{ label: '换一个…' }, { label: '前缀…' }, { label: '断开' }] }] })
+    expect(empty).toMatchObject({ kind: 'empty' })
+    // Changing kind: all of them by their labels, the one connected chosen; a found one or 别的 and its fields.
+    const change = listsOf([row as Block])[0]?.items[0]?.actions[0]
+    expect(change?.inputs.map((i) => [i.name, i.value, i.options?.map((o) => o.label) ?? null, i.when ?? null])).toEqual([
+      ['kind', 'alpha', ['甲种', '乙种', '丙种'], null],
+      ['host', 'one.example.com', ['one.example.com', 'two.example.com', '别的'], [{ input: 'kind', is: ['alpha'] }]],
+      ['at', null, null, [{ input: 'kind', is: ['alpha'] }, { input: 'host', is: [''] }]],
+      ['admin', null, null, [{ input: 'kind', is: ['beta'] }]],
+      ['to', null, null, [{ input: 'kind', is: ['gamma'] }]],
+      ['key', null, null, [{ input: 'kind', is: ['alpha'] }, { input: 'host', is: [''] }]],
+    ])
+    expect(await press(l, change, { kind: 'gamma', host: '', to: '/srv/www' })).toMatchObject({ outcome: 'done', text: '已连上 /srv/www。' })
+    expect(listsOf(await page())[0]?.items[0]?.cell).toEqual({ text: '/srv/www', icon: 'folder', local: true })
+    // The connected kind's paragraph is the plugin's to add while it is connected.
+    expect(await plugin.onDescribe?.(l.pctx())).toBeNull()
+    await press(l, items[1]?.actions[0])
+    expect(await plugin.onDescribe?.(l.pctx())).toBe('甲要网站顶上有 index.html。')
+  })
+
+  it('keeps the flags it was given and never the typed key; a setting changes from the row’s menu; a destination that refuses keeps nothing', async () => {
+    const { plugin, typed } = threeKinds()
+    const l = await library(plugin, true)
+    const configFile = () => readFileSync(join(l.root, '.pneuma-base/fake/config.json'), 'utf8')
+    const wrong = await l.cmd('fake target set', [], { kind: ['alpha'], at: ['far.example.com'] }, 'not-the-key')
+    expect(wrong).toMatchObject({ outcome: 'refused', reason: 'refused', text: '钥匙不对' })
+    expect(await l.pctx().secrets.get('key')).toBeNull()
+    expect(() => configFile()).toThrow()
+
+    expect(await l.cmd('fake target set', [], { kind: ['alpha'], at: ['far.example.com'] }, `${KEY}\n`)).toMatchObject({ outcome: 'done', text: '已连上 far.example.com。' })
+    expect(typed).toEqual(['not-the-key', KEY])
+    expect(await l.pctx().secrets.get('key')).toBe(KEY)
+    expect(JSON.parse(configFile())).toEqual({ format: 1, target: { kind: 'alpha', where: 'far.example.com', prefix: 'lib' }, given: { at: 'far.example.com' } })
+
+    const row = listsOf((await plugin.onView?.({ view: 'fake.sites', params: {} }, l.pctx()))?.blocks ?? [])[0]?.items[0]
+    const prefix = row?.actions.find((a) => a.label === '前缀…')
+    expect(prefix).toMatchObject({ inputs: [{ name: 'prefix', label: '前缀', value: 'lib' }], call: { args: { flags: { kind: ['alpha'], at: ['far.example.com'], prefix: ['{prefix}'] } } } })
+    expect(prefix?.call.face === 'owner' && prefix.call.stdin).toBeUndefined()
+    // Nothing typed this time: the kind reads null, and the key it keeps is what it uses.
+    expect(await press(l, prefix, { prefix: 'mine' })).toMatchObject({ outcome: 'done' })
+    expect(typed.at(-1)).toBeNull()
+    expect(JSON.parse(configFile()).given).toEqual({ at: 'far.example.com', prefix: 'mine' })
+    expect(configFile()).not.toContain(KEY)
+  })
+
+  it('target list says what is connected and what this machine has, each with its command; target remove forgets the destination and takes nothing down', async () => {
+    const { plugin } = threeKinds()
+    const l = await library(plugin, true)
+    expect(await l.cmd('fake target list')).toMatchObject({
+      outcome: 'done',
+      text: '还没有部署目标。\n这台机器上有 one.example.com：fake target set --kind alpha --host one.example.com\n这台机器上有 two.example.com：fake target set --kind alpha --host two.example.com',
+      data: { connected: null, found: [{ kind: 'alpha', label: 'one.example.com', values: { host: 'one.example.com' } }, expect.objectContaining({ label: 'two.example.com' })] },
+    })
+    await l.cmd('fake target set', [], { kind: ['gamma'], to: ['/srv/my www'] })
+    expect(await l.cmd('fake target list')).toMatchObject({ text: expect.stringMatching(/^连着 \/srv\/my www：fake target set --kind gamma --to '\/srv\/my www'\n/), data: { connected: { kind: 'gamma', label: '/srv/my www' } } })
+    await l.put(P, 'v1')
+    await l.say(P)
+    await l.cmd('fake on', [P])
+    expect(await l.cmd('fake target remove')).toMatchObject({ outcome: 'done', text: '已断开 /srv/my www。线上的 1 样没有撤下。' })
+    expect(await l.list()).toEqual([expect.objectContaining({ path: P, on: true })])
+    expect((await plugin.onView?.({ view: 'fake.sites', params: {} }, l.pctx()))?.blocks[0]).toMatchObject({ kind: 'section', title: '发到哪里' })
+    expect(await l.cmd('fake target remove')).toMatchObject({ outcome: 'refused', reason: 'no-target' })
+  })
+})
+
+describe('the owner putting a thing online', () => {
+  it('declares a thing nobody declared and switches it on in one act; an agent’s declaration stays off; the panel offers 上线… for a directory thing while connected', async () => {
+    const { fake, adapter } = fakeTarget()
+    const plugin = deployPlugin('fake', adapter)
+    const l = await library(plugin, true)
+    await l.site('sites/shop', { 'index.html': '<h1>shop</h1>' })
+    await l.site('sites/blog', { 'index.html': '<h1>blog</h1>' })
+    await l.put(P, 'v1')
+    expect(await plugin.onItemView?.('sites/shop' as LibraryPath, l.pctx())).toBeNull()
+    await l.cmd('fake target set', [], { where: ['w'] })
+    const panel = await plugin.onItemView?.('sites/shop' as LibraryPath, l.pctx())
+    expect(panel).toEqual({ title: '部署', blocks: [], actions: [expect.objectContaining({ label: '上线…', as: 'menu', confirm: '把 shop 发到 假的 w？', call: expect.objectContaining({ command: 'fake on', args: { positional: ['sites/shop'], flags: {} } }) })] })
+    expect(await plugin.onItemView?.(P, l.pctx())).toBeNull()
+
+    expect(await press(l, panel?.actions?.[0])).toMatchObject({ outcome: 'done', text: `已上线 sites/shop → ${url(siteName('sites/shop' as LibraryPath))}` })
+    expect(fake.served.has(siteName('sites/shop' as LibraryPath))).toBe(true)
+    await l.say('sites/blog')
+    expect(await l.list()).toEqual([expect.objectContaining({ path: 'sites/blog', on: false, status: 'offline' }), expect.objectContaining({ path: 'sites/shop', on: true, status: 'online' })])
+    expect(await l.cmd('fake on', ['sites/nothing'])).toMatchObject({ outcome: 'refused', reason: 'not-declared' })
+    expect(await l.cmd('fake off', [Q])).toMatchObject({ outcome: 'refused', reason: 'not-declared' })
   })
 })
 
@@ -580,8 +805,7 @@ function notingTarget(opts: { view?: (env: { plugin: string }) => TargetView<Not
               },
             }),
         view: {
-          columns: [{ key: 'note', label: '说明' }],
-          cells: (l) => ({ note: { text: l.detail?.note ?? '—' } }),
+          mark: (l) => (l.detail ? { text: l.detail.note, tone: 'neutral' } : null),
           fields: (l) => [{ label: '说明', value: { text: l.detail?.note ?? '—' } }],
           ...opts.view?.(env),
         },
@@ -591,7 +815,8 @@ function notingTarget(opts: { view?: (env: { plugin: string }) => TargetView<Not
   return { adapter, asks, served }
 }
 
-const tableOf = (blocks: Block[]) => blocks.flatMap((b) => (b.kind === 'section' ? b.blocks : [])).find((b): b is Extract<Block, { kind: 'table' }> => b.kind === 'table')
+/** The rows of the things on the kit's page: its last list. */
+const itemsOf = (blocks: Block[]) => blocks.filter((b): b is Extract<Block, { kind: 'list' }> => b.kind === 'list').at(-1)?.items ?? []
 
 describe('what a target shows', () => {
   const R = 'c/r.html' as LibraryPath
@@ -611,8 +836,7 @@ describe('what a target shows', () => {
     asks.length = 0
     const page = await plugin.onView?.({ view: 'fake.sites', params: {} }, l.pctx())
     expect(asks).toEqual([{ sites: expect.arrayContaining([a, r]), detail: true }])
-    const notes = Object.fromEntries(tableOf(page?.blocks ?? [])?.rows.map((row) => [row.cells.path?.text, row.cells.note?.text]) ?? [])
-    expect(notes).toEqual({ [P]: `在服务 ${a}`, [`_archive/${R}`]: `撤下了 ${r}` })
+    expect(itemsOf(page?.blocks ?? []).map((i) => i.cell.tag?.text)).toEqual([`在服务 ${a}`])
 
     const section = await plugin.onItemView?.(`_archive/${R}` as LibraryPath, l.pctx())
     const fields = section?.blocks.find((b): b is Extract<Block, { kind: 'fields' }> => b.kind === 'fields')?.fields ?? []
@@ -650,7 +874,7 @@ describe('what a target shows', () => {
       }),
     })
     const plugin = deployPlugin('fake', adapter, { ui: '/plugins/fake/ui' })
-    expect(plugin.views).toEqual([expect.objectContaining({ id: 'fake.sites', nav: true }), { id: 'fake.board', title: '看板', icon: 'layout-grid', nav: true, filters: [] }])
+    expect(plugin.views).toEqual([expect.objectContaining({ id: 'fake.sites', nav: true }), { id: 'fake.board', title: '看板', icon: 'layout-grid', nav: true, filters: [], with: 'fake.sites' }])
 
     const l = await library(plugin, true)
     const unset = await plugin.onView?.({ view: 'fake.board', params: {} }, l.pctx())
@@ -673,11 +897,9 @@ describe('what a target shows', () => {
     ])
 
     const page = await plugin.onView?.({ view: 'fake.sites', params: {} }, l.pctx())
-    expect(page?.blocks[0]).toEqual({ kind: 'text', tone: 'info', text: '在最前面' })
-    const rows = tableOf(page?.blocks ?? [])?.rows ?? []
-    expect(Object.values(custom.actions)).toEqual(rows.map((row) => row.actions[0]))
-    // The same states as the target's own blocks; offline, where a thing rests, is left unsaid on the kit's page.
-    expect(rows.map((row) => row.cells.state?.tag ?? row.cells.state)).toEqual([STATUS.online, { text: STATUS.offline.text, muted: true, normal: true }])
+    expect(page?.blocks[1]).toEqual({ kind: 'text', tone: 'info', text: '在最前面' })
+    // The same switch as the kit's rows.
+    expect(Object.values(custom.actions)).toEqual(itemsOf(page?.blocks ?? []).map((i) => i.toggle?.action))
   })
 
   it('makes its pages ask again every 30 seconds when it reports what it serves, or as often as it says', async () => {
@@ -696,7 +918,7 @@ describe('what a target shows', () => {
     }
   })
 
-  it('declares an optional secret as optional: target set mentions it without asking, or says what configure says in its place, and the target reads null until it is set', async () => {
+  it('declares an optional secret as optional: target set says nothing of it, or what configure says, and the target reads null until it is set', async () => {
     const tokens: (string | null)[] = []
     const adapter = defineTarget({
       kind: 'open',
@@ -717,8 +939,8 @@ describe('what a target shows', () => {
     const plugin = deployPlugin('open', adapter)
     expect(plugin.secrets).toEqual([{ name: 'token', description: '服务要求登录时的令牌', optional: true }])
     const l = await library(plugin, true)
-    const set = await l.cmd('open target set')
-    expect(set).toMatchObject({ outcome: 'done', text: '部署目标已设为 令牌可有可无的目标。可选的密钥 token 没设（服务要求登录时的令牌）；要用时：pneuma-base secret set open token。' })
+    // An optional secret not set goes unsaid.
+    expect(await l.cmd('open target set')).toMatchObject({ outcome: 'done', text: '已连上 令牌可有可无的目标。' })
     await l.put(P, 'v1')
     await l.say(P)
     expect(await l.cmd('open on', [P])).toMatchObject({ outcome: 'done' })
@@ -736,7 +958,7 @@ describe('what a target shows', () => {
       open: () => ({ key: 'keyed', label: '要钥匙的目标', publish: async (site) => ({ url: url(site) }), remove: async () => {} }),
     })
     const k = await library(deployPlugin('keyed', keyed), true)
-    expect(await k.cmd('keyed target set')).toMatchObject({ outcome: 'done', text: '部署目标已设为 要钥匙的目标。钥匙从凭据文件读。' })
+    expect(await k.cmd('keyed target set')).toMatchObject({ outcome: 'done', text: '已连上 要钥匙的目标。钥匙从凭据文件读。' })
   })
 })
 

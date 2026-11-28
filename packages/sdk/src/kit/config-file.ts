@@ -8,6 +8,8 @@ export interface ConfigFile<T> {
   read(): Promise<T | null>
   /** Writes the whole configuration, all of it or none. */
   write(value: T): Promise<void>
+  /** Removes the file; nothing to do when it is not there. */
+  remove(): Promise<void>
 }
 
 /** How many times a write expecting what it read meets a newer write, and reads again, before it gives up. */
@@ -58,6 +60,19 @@ export function configFile<T>(ctx: PluginContext, name: Place, parse: (raw: unkn
         expect = await stateNow()
       }
       throw new Error(`${name} 写的时候连续 ${TRIES} 次遇上别处的写入`)
+    },
+    async remove() {
+      for (let i = 0; i < TRIES; i++) {
+        const now = await stateNow()
+        if (now === 'empty') return
+        const removed = await own.remove(name, now)
+        if (!isFailure(removed) || removed.reason === 'no_such_place') {
+          known = 'empty'
+          return
+        }
+        if (removed.reason !== 'refused') throw new Error(`${name} 删不掉：${removed.reason}`)
+      }
+      throw new Error(`${name} 删的时候连续 ${TRIES} 次遇上别处的写入`)
     },
   }
 }

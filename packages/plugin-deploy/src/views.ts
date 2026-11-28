@@ -2,7 +2,7 @@
 // fields, the release history, a preview of the served page where one can be framed; and its own page,
 // the board (ui/board.html). All of it is drawn from the Seen each kind's `serving` makes of what its
 // API answered. The release history is read-only: which content is online is the library's.
-import { instant, type Block, type Cell, type TableColumn, type Tag } from '@pneuma-base/sdk'
+import { instant, type Block, type Cell, type Tag } from '@pneuma-base/sdk'
 import { STATUS, switchAction, type Look, type TargetView } from '@pneuma-base/sdk/kit'
 
 export type Release = { number: number; publishedAt: number; content: string }
@@ -171,14 +171,7 @@ function boardBlock(plane: Plane, all: readonly Look<Seen>[], plugin: string): B
 
 /** The views of a target on `plane`, for the plugin `plugin`. */
 export function viewOf(plane: Plane, plugin: string): TargetView<Seen> {
-  const columns: TableColumn[] = [
-    { key: 'release', label: '版本' },
-    { key: 'requests', label: plane.requests, optional: true },
-    { key: 'lastAccess', label: '最近访问', optional: true },
-  ]
   return {
-    columns,
-    cells: (l) => ({ release: cell.release(l.detail), requests: cell.requests(l.detail), lastAccess: cell.lastAccess(l.detail) }),
     fields: (l) => fields(plane, l.detail),
     item: (l) => itemBlocks(plane, l, l.detail),
     pages: { board: (all) => [boardBlock(plane, all, plugin)] },

@@ -2,7 +2,7 @@
 // sites go. The kit does the rest (declarations, the owner's switch, the plan, records, commands,
 // views, cognition). README.md in this folder.
 import type { IconName } from '../../icons.js'
-import type { Block, Cell, FlagParam, Instant, LibraryPath, OwnerValues, ParamValues, PluginContext, PluginName, SecretDecl, TableColumn } from '../../types.js'
+import type { Block, Cell, FlagParam, Instant, LibraryPath, OwnerValues, ParamValues, PluginContext, PluginName, SecretDecl, Tag } from '../../types.js'
 import type { ContentId, Held, SiteName, Standing, State } from './model.js'
 import type { Declared } from './facts.js'
 
@@ -60,6 +60,18 @@ export type TargetEnv<S extends SecretDecl = SecretDecl> = {
 /** A page of a target's own in the navigation, after the kit's: its view is `<plugin>.<name>`, drawn by the opened target's `view.pages[name]`. */
 export type TargetPage = { readonly name: string; readonly title: string; readonly icon: IconName }
 
+/** A destination of one kind found on this machine: what its row says, and the flags of `target set` that connect it, nothing typed. */
+export type Found = { readonly label: string; readonly values: Readonly<Record<string, string>> }
+
+/**
+ * Kinds that share a `group` share one row 「别的 <name>」 (just 「<name>」 when none of them found
+ * anything) whose dialog chooses among them by `choice`.
+ */
+export type TargetGroup = { readonly name: string; readonly choice: string }
+
+/** What reads the secret `asked` takes typed hidden, once a call: null when nothing was typed. */
+export type Typed = () => Promise<string | null>
+
 /**
  * One kind of target: how the owner configures it, and how a stored configuration opens. `D` is what
  * its `serving` tells of a site beside content and address, which its views get. Write it with
@@ -68,20 +80,40 @@ export type TargetPage = { readonly name: string; readonly title: string; readon
 export interface TargetAdapter<D = unknown, S extends SecretDecl = SecretDecl> {
   /** The value of `--kind` that chooses it, stored with its configuration. */
   readonly kind: string
-  /** What it publishes to, for people, as in `配部署目标：<label>`: `一个本地目录`. */
+  /** The kind for people, in its dialog and its menu entry: `本地文件夹`. */
   readonly label: string
+  /** Its icon on the destination row and on rows of what was found. */
+  readonly icon?: IconName
+  /** The kinds it shares a row with on the page; without one it is 「<label>…」 in the region's menu. */
+  readonly group?: TargetGroup
+  /** The flags its dialog asks, in order; its required flags when left out. */
+  readonly form?: readonly string[]
   /**
    * Its flags after `<name> target set` and `--kind`. The command's params are made from them, so the
-   * command line, help, the page's form and the check before `configure` all come from here. With
+   * command line, help, the page's dialogs and the check before `configure` all come from here. With
    * several kinds, a required flag is required once its kind is chosen.
    */
   readonly params: readonly FlagParam[]
   /** The secrets it reads through `TargetEnv.secret`. The plugin declares them, so `secret set` and the configuration page know them. */
   readonly secrets?: readonly S[]
+  /**
+   * The secret `target set` takes typed hidden, never as a flag: `name` is one of `secrets`. `configure`
+   * reads it with its third argument; when it read a value and answered ok, the kit keeps the value as
+   * that secret on this machine. It is in no configuration, record or answer.
+   */
+  readonly asked?: { readonly name: string; readonly hint: string }
+  /** Destinations of this kind on this machine, each connected by `target set --kind <kind>` with its `values`. Reads only what finding them needs. */
+  readonly found?: (ctx: PluginContext) => Promise<readonly Found[]>
+  /** A paragraph the plugin's cognition section carries while this kind is connected: what it asks of what goes online. */
+  readonly cognition?: string
   /** Its own pages, each a navigation entry beside the kit's page. Names are lower-case letters, digits and dashes, and not `sites`. */
   readonly views?: readonly TargetPage[]
-  /** The configuration to store from the values of its flags, checked against `params`. */
-  readonly configure: (values: OwnerValues, ctx: PluginContext) => Promise<Configured>
+  /**
+   * The configuration to store from the values of its flags, checked against `params`, or why there is
+   * none; a destination that does not answer is a refusal, and nothing is stored. `typed` reads the
+   * secret `asked` takes.
+   */
+  readonly configure: (values: OwnerValues, ctx: PluginContext, typed: Typed) => Promise<Configured>
   /** Parses a stored configuration at the boundary and opens it for one hook or command. Throws when it is not one of its configurations. */
   readonly open: (config: TargetConfig, env: TargetEnv<S>) => Target<D>
 }
@@ -96,22 +128,26 @@ export function defineTarget<const P extends readonly FlagParam[], const S exten
   adapter: Omit<TargetAdapter<D, S[number]>, 'params' | 'secrets' | 'configure'> & {
     readonly params: P
     readonly secrets?: S
-    readonly configure: (values: ParamValues<{ flags: P }>, ctx: PluginContext) => Promise<Configured>
+    readonly configure: (values: ParamValues<{ flags: P }>, ctx: PluginContext, typed: Typed) => Promise<Configured>
   },
 ): TargetAdapter {
   const { configure, ...rest } = adapter
   // The kit calls `configure` only with values checked against `params`, the required ones given;
   // `env.secret` gives null only for an optional secret; and a target's views get only the details
   // its own `serving` gave. So the adapter is handed on with those types erased.
-  return { ...rest, configure: (values: OwnerValues, ctx: PluginContext) => configure(values as ParamValues<{ flags: P }>, ctx) } as unknown as TargetAdapter
+  return { ...rest, configure: (values: OwnerValues, ctx: PluginContext, typed: Typed) => configure(values as ParamValues<{ flags: P }>, ctx, typed) } as unknown as TargetAdapter
 }
 
 /** A configured target, opened for one hook or command. */
 export interface Target<D = unknown> {
   /** Which target records belong to: what was published to another key does not count here. */
   readonly key: string
-  /** What and where, one line for people: `本地目录 /srv/www`. */
+  /** What the destination row says: the host, the folder, or the kind's own words. */
   readonly label: string
+  /** `label` is a path of this machine: the row shows its last part, the whole on demand. */
+  readonly local?: true
+  /** Flags that can be changed once connected, each 「<hint>…」 in the row's menu, running `target set` again with this one asked, `value` filled in. */
+  readonly settings?: readonly { readonly flag: string; readonly hint: string; readonly value: string }[]
   /** The site name of a library path. Without it, the kit's `siteName`. */
   readonly siteName?: (path: LibraryPath) => SiteName
   /** The content id of a thing's files. Without it, the kernel fingerprint. */
@@ -143,9 +179,6 @@ export interface Target<D = unknown> {
 
 /** What a target adds to the plugin's page, to its own pages and to its section of the item panel. Each function gets looks with their `detail`. */
 export interface TargetView<D = unknown> {
-  /** Columns after the kit's path, state and address; `cells` fills them by key. */
-  readonly columns?: readonly TableColumn[]
-  readonly cells?: (l: Look<D>) => Readonly<Record<string, Cell>>
   /** Fields after the kit's state, switch, address and site name. */
   readonly fields?: (l: Look<D>) => { label: string; value: Cell }[]
   /** Blocks before the kit's sections on its page. */
@@ -156,6 +189,8 @@ export interface TargetView<D = unknown> {
   readonly pages?: Readonly<Record<string, (all: readonly Look<D>[]) => Block[]>>
   /** Blocks at the end of the item panel's section. */
   readonly item?: (l: Look<D>) => Block[]
+  /** The row's mark when the target sees something the kit's states do not say, such as a name someone else holds; null for none. */
+  readonly mark?: (l: Look<D>) => Tag | null
   /** Seconds after which the pages ask again; null for never. Defaults to 30 when the target has `serving`, else never. */
   readonly refresh?: number | null
 }
