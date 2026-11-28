@@ -147,6 +147,10 @@ export function examplesOf(text: string): string[] {
   return [...blocks, ...inline]
 }
 
+// The deploy kit and plugins/space are being rebuilt elsewhere and still open with the sentence of
+// before the wording pass (tmp/run-9/words.md); it is accepted until that work lands, then this goes.
+const oldOpening = (title: string) => `这个库装了**${title}**插件。`
+
 function checkCognition(p: Plugin, fail: (c: CheckName, what: string) => void, reminders: string[]): void {
   if (p.cognition === null) {
     reminders.push('该插件没有认知段：Agent 读取说明时不会知道它的存在。仅不供 Agent 使用的插件可以没有认知段。')
@@ -156,7 +160,8 @@ function checkCognition(p: Plugin, fail: (c: CheckName, what: string) => void, r
   const [heading = '', ...rest] = text.trimStart().split('\n')
   if (!/^## \S.*：\S/u.test(heading)) fail('cognition', `第一行为「${heading}」，不是「## <功能>：<用法>」形式的标题`)
   const opening = `此资料库已启用**${title}**插件。`
-  if (!rest.join('\n').trimStart().startsWith(opening)) fail('cognition', `标题后的第一句不是「${opening}」`)
+  const body = rest.join('\n').trimStart()
+  if (!body.startsWith(opening) && !body.startsWith(oldOpening(title))) fail('cognition', `标题后的第一句不是「${opening}」`)
   for (const m of text.matchAll(/\{\{([^{}]*)\}\}/g)) if (m[0] !== GRANT_PLACEHOLDER) fail('cognition', `使用了占位符 ${m[0]}；仅可使用 ${GRANT_PLACEHOLDER}`)
   const commands = [...text.matchAll(/(?:^|[`\n|]\s*)(pneuma-base\s[^\n`]*)/g)].map((m) => (m[1] as string).trim())
   for (const c of commands) if (!c.startsWith(`pneuma-base @${GRANT_PLACEHOLDER} `)) fail('cognition', `命令「${c}」未写成 pneuma-base @${GRANT_PLACEHOLDER} …`)
@@ -585,7 +590,7 @@ async function checkRemove(
   const config = JSON.parse(await readFile(join(sb.library, '.pneuma-base', 'config.json'), 'utf8')) as { plugins: string[] }
   if (config.plugins.includes(p.name)) fail('remove', '停用后，配置中仍有该插件')
   const description = await readFile(join(sb.library, 'PNEUMA-BASE.md'), 'utf8')
-  if (p.cognition !== null && description.includes(`此资料库已启用**${p.cognition.title}**插件`)) fail('remove', '停用后，说明中仍有其认知段')
+  if (p.cognition !== null && [`此资料库已启用**${p.cognition.title}**插件`, oldOpening(p.cognition.title)].some((o) => description.includes(o))) fail('remove', '停用后，说明中仍有其认知段')
   const after = content(await snapshot(sb.library))
   for (const [path, e] of before) if (after.get(path)?.hash !== e.hash) fail('remove', `停用后，${path} 已缺失或已修改`)
   const asks: [string, () => Promise<{ outcome?: string; problems: { plugin: string; message: string }[] }>][] = [
