@@ -124,7 +124,7 @@ describe('the single exit', () => {
     // A source nobody can read: storage fails the copy, and the put throws.
     const source = outsideFile('a')
     chmodSync(source, 0o000)
-    const put = agentFace.put({ kind: 'place', from: { kind: 'file', path: source }, to: 'a.md', origin: { kind: 'made', from: [], outside: [] } }, f.ctx)
+    const put = agentFace.put({ kind: 'place', from: { kind: 'file', path: source }, to: 'a.md', origin: { kind: 'generated', from: [], outside: [] } }, f.ctx)
     await expect(put).rejects.toThrow()
     chmodSync(source, 0o644)
     expect(events).toHaveLength(1)

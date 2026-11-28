@@ -5,8 +5,8 @@
 import type { Block, Step } from '@pneuma-base/kernel'
 import { Check, ChevronRight, Upload } from 'lucide-react'
 import { useState } from 'react'
+import { ActionBar } from './actions'
 import { Blocks } from './blocks'
-import { CellView } from './cells'
 import { IN_SHELL, tellShell } from './shell'
 
 type State = 'done' | 'current' | 'todo'
@@ -72,11 +72,11 @@ export function DropView({ block }: { block: Extract<Block, { kind: 'drop' }> })
   if (!IN_SHELL) {
     return (
       <div className="drop" data-browser>
-        <p className="drop-title">在终端中运行以下命令，将文件或文件夹添加到 {block.to}/</p>
-        <div className="drop-command">
-          <CellView cell={{ text: block.command, mono: true, copy: true }} />
-        </div>
-        <p className="drop-hint">在 Mac 应用中，可直接将文件拖到窗口。</p>
+        <span className="drop-icon" aria-hidden>
+          <Upload strokeWidth={1.75} />
+        </span>
+        <ActionBar actions={[block.action]} small={false} />
+        <span className="drop-hint">添加到 {block.to}/，标记为我导入</span>
       </div>
     )
   }

@@ -54,7 +54,7 @@ describe('the fingerprint of a bundle, as storage reads it when asked', () => {
 })
 
 describe('placing an outside directory', () => {
-  const brought = { kind: 'brought', source: null, by: null } as const
+  const brought = { kind: 'imported', source: null, by: null } as const
 
   it('leaves no half tree at the target when the copy fails partway', async () => {
     const f = await fixture()
@@ -88,7 +88,7 @@ describe('placing an outside directory', () => {
 })
 
 describe('a bundle in the put table', () => {
-  const brought = { kind: 'brought', source: null, by: null } as const
+  const brought = { kind: 'imported', source: null, by: null } as const
   const reason = (r: PutResult | ArchiveResult) => (r.outcome === 'refused' ? r.reason : 'accepted')
   /** A library holding the bundle sites/a. */
   async function withSite() {
@@ -105,7 +105,7 @@ describe('a bundle in the put table', () => {
     expect(reason(await agentFace.put({ kind: 'move', from: 'sites/a/index.html', to: 'moved.html' }, f.ctx))).toBe('inside-bundle')
     expect(reason(await agentFace.archive({ kind: 'archive', path: 'sites/a/index.html' }, f.ctx))).toBe('inside-bundle')
     expect(readdirSync(join(f.root, 'sites/a')).sort()).toEqual([BUNDLE_MARKER, 'css', 'index.html'])
-    const made = { kind: 'made' as const, from: ['sites/a/index.html'], outside: [] }
+    const made = { kind: 'generated' as const, from: ['sites/a/index.html'], outside: [] }
     expect(reason(await agentFace.put({ kind: 'place', from, to: 'review.md', origin: made }, f.ctx))).toBe('accepted')
   })
 

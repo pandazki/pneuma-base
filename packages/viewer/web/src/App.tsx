@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { api, ApiError, type State, type Tone } from './api'
 import { Blocks, sameLink, sortAfter } from './blocks'
 import { ActionBar, useActionKeys } from './actions'
-import { ActionDialog, fill, ViewIcon } from './chrome'
+import { ActionDialog, perform, ViewIcon } from './chrome'
 import { Choice, Menu, Resizer, TipLayer, usePresence } from './controls'
 import { DetailPanel } from './detail'
 import { BlockEnvContext, type BlockEnv, type Done } from './env'
@@ -508,7 +508,7 @@ export function App() {
       const id = busy(action.label)
       let done: Done
       try {
-        const reply = await api.pass(fill(action.call, values, action.inputs), confirmed, (progress, pass) => report(id, progress, () => void api.stop(pass).catch(() => undefined)))
+        const reply = await perform(action, values, confirmed, (progress, pass) => report(id, progress, () => void api.stop(pass).catch(() => undefined)))
         settle(id, reply.tone, reply.text, offerOf(reply.result))
         done = { tone: reply.tone, text: reply.text }
       } catch (error) {

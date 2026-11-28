@@ -43,7 +43,6 @@ const NO_PLACE: Record<string, string> = {
   'say task': '说的是 agent 这次会话在做什么；人在界面里的操作自成一个主人的场景，场景里记的就是做了哪些操作',
   ask: '请是 agent 请主人做一条主人命令；主人在界面里直接按那条命令的按钮，用不着请谁',
   'launcher install': '没有要主人决定的：应用每次启动时写它，接上 agent 时缺了也写；从包装的，主人在终端里跑',
-  'ledger export': '它写一个库外的文件，页交不出文件，也不替主人选位置；活动页的「导出」给出这条命令，复制到终端里跑',
   'say deployable': '声明是 agent 的话；主人在部署页按「上线一样东西」，声明和上线是同一下',
 }
 
@@ -181,7 +180,7 @@ beforeAll(async () => {
   await write(join(sb.home, '.cursor/argv.json'), '{}\n')
   owner(['agent', 'connect', 'claude-code'])
   owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', join(tempDir('pb-www-'), 'www')])
-  owner(['sync', 'target', 'set', '--kind', 'dir', '--to', tempDir('pb-sync-')])
+  owner(['sync', 'target', 'set', '--kind', 'folder', '--to', tempDir('pb-sync-')])
   owner(['search', 'embedding', 'set', '--kind', 'hash'])
   await write(join(work, 'shop/index.html'), '<h1>小店</h1>\n')
   await write(join(work, 'blog/index.html'), '<h1>博客</h1>\n')

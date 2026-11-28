@@ -74,7 +74,7 @@ describe('the assembled description with every plugin installed', () => {
     const target = { deploy: join(tempDir('pb-www-'), 'www'), sync: tempDir('pb-sync-') }
     owner(['grant', 'create', 'claude', '--agent', 'claude-code'])
     owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', target.deploy])
-    owner(['sync', 'target', 'set', '--kind', 'dir', '--to', target.sync])
+    owner(['sync', 'target', 'set', '--kind', 'folder', '--to', target.sync])
     owner(['search', 'embedding', 'set', '--kind', 'hash'])
 
     // What the examples build on: a pricing page brought in earlier, a site and a support note in the

@@ -23,6 +23,7 @@ import {
   type PassProgress,
   type PluginTable,
 } from '@pneuma-base/kernel'
+import { scratchFile } from './files.js'
 import { archiveSummary, askSummary, inspectSummary, ownerSummary, passSummary, putSummary, readSummary, saySummary, type Summary } from './summary.js'
 
 /**
@@ -157,6 +158,35 @@ export async function call(served: Served, body: unknown, progress?: (p: PassPro
   } finally {
     if (id !== null && served.passes.get(id) === asked) served.passes.delete(id)
   }
+}
+
+/**
+ * Runs an owner command that writes a file (an action's `save`): each argument that is exactly
+ * `{<save>}` names a scratch file, called `name` when the body gives one, whose bytes are the answer
+ * once the command is done. Any other answer is the reply `call` gives.
+ */
+export async function save(served: Served, body: unknown): Promise<Reply | { file: Buffer }> {
+  const table = await tableOf(served)
+  const library = await openLibrary(served.dir, table)
+  if (!library) return NOT_A_LIBRARY
+  const raw = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
+  const parsed = parseCall(raw.call)
+  if (typeof parsed === 'string') return failure(400, parsed)
+  if (typeof raw.save !== 'string' || parsed.face !== 'owner') return failure(400, 'save names no input of an owner command')
+  // Named as the page will save it, which the record of the command then says.
+  const name = typeof raw.name === 'string' && /^[^/\\\0]{1,200}$/.test(raw.name) && raw.name !== '.' && raw.name !== '..' ? raw.name : 'file'
+  const mark = `{${raw.save}}`
+  let answered: Reply = failure(400, `no argument is ${mark}`)
+  const file = await scratchFile(name, async (path) => {
+    const at = (v: string) => (v === mark ? path : v)
+    const flags = Object.fromEntries(Object.entries(parsed.args.flags).map(([k, v]) => [k, v === true ? v : v.map(at)]))
+    const args = { positional: parsed.args.positional.map(at), flags }
+    if (JSON.stringify(args) === JSON.stringify(parsed.args)) return false
+    const { result, summary } = await perform({ ...parsed, args }, raw.confirmed === true, library, table, served)
+    answered = reply({ ...summary, result })
+    return (result as { outcome?: unknown }).outcome === 'done'
+  })
+  return file === null ? answered : { file }
 }
 
 /** Asks the pass the body names to stop after the step under way; `running` says whether one by that id runs. */

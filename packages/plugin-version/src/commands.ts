@@ -72,7 +72,7 @@ export const VERSION_EXPORT = defineCommand({
     if ('outcome' in found) return found
     const { thing, v } = found
     const { target, taken } = await exportTarget(ctx.session.cwd, to, thing.path)
-    if (parseLibraryPath(ctx.library.root, target) !== null) return refused('inside-library', `导出路径须位于资料库之外，${to} 在资料库中。如需在资料库中使用旧版本，请用 version restore。`)
+    if (parseLibraryPath(ctx.library.root, target) !== null) return refused('inside-library', `导出路径须位于资料库之外，${to} 在资料库中。如需在资料库中使用旧版本，请恢复该版本。`)
     if (taken) return refused('would-overwrite', `${target} 已存在，未修改。请使用其他路径。`)
     try {
       await writeOut(ctx, v, target)
@@ -102,7 +102,7 @@ export const VERSION_RESTORE = defineCommand({
       const from = join(scratch, posix.basename(thing.path))
       await writeOut(ctx, v, from)
       const source = { kind: v.kept.kind === 'file' ? ('file' as const) : ('directory' as const), path: from }
-      const r = await ctx.tools.put({ kind: 'place', from: source, to: thing.path, origin: { kind: 'brought', source: `${thing.path} 的版本 ${n}`, by: null } })
+      const r = await ctx.tools.put({ kind: 'place', from: source, to: thing.path, origin: { kind: 'imported', source: `${thing.path} 的版本 ${n}`, by: null } })
       if (r.outcome === 'refused') return refused(r.reason, `恢复 ${thing.path} 失败：添加被拒绝（${r.reason}，${r.subject}）。${problemLines(r.problems)}`)
       await load(ctx)
       const now = await declaredAt(ctx, thing.path)

@@ -119,7 +119,7 @@ const input = shape({
   'secret?': truth,
   'when?': listOf(shape({ input: string, is: listOf(string) })),
 })
-const action = shape({ label: string, tone: oneOf('default', 'danger'), confirm: nullable(string), inputs: listOf(input), call, 'as?': oneOf('primary', 'icon', 'menu', 'inline'), 'icon?': string, 'key?': string })
+const action = shape({ label: string, tone: oneOf('default', 'danger'), confirm: nullable(string), inputs: listOf(input), call, 'as?': oneOf('primary', 'icon', 'menu', 'inline'), 'icon?': string, 'key?': string, 'save?': shape({ input: string, name: string }) })
 const actions = listOf(action)
 
 /** Both checks, the first fault first. */
@@ -181,7 +181,7 @@ const KINDS: Record<Block['kind'], Check> = {
   tree: shape({ param: string, selected: string, nodes: listOf(treeNode) }),
   asks: shape({ asks: listOf(ask), empty: string }),
   steps: shape({ steps: listOf(shape({ key: string, title: string, done: boolean, summary: nullable(string), blocks: listOf(anything) })) }),
-  drop: shape({ to: string, command: string }),
+  drop: shape({ to: string, command: string, action }),
   chart,
 }
 
@@ -224,6 +224,8 @@ export function actionFault(action: Action, callable: Callable, gives: readonly 
   }
   const call = parseCall(action.call)
   if (typeof call === 'string') return `操作「${action.label}」不是基本命令或所有者命令的调用：${call}`
+  const { save } = action
+  if (save !== undefined && (call.face !== 'owner' || !action.inputs.some((i) => i.name === save.input))) return `操作「${action.label}」的 save 须为所有者命令的一个输入，${save.input} 不是`
   if (call.face === 'owner') {
     const params = callable.commands.get(call.command)
     if (params === undefined) return `操作「${action.label}」调用的所有者命令「${call.command}」在此资料库中不存在`
@@ -252,6 +254,8 @@ function ownActions(block: Block): Action[] {
       return block.groups.flatMap((g) => g.rows.flatMap((r) => (r.action ? [r.action] : [])))
     case 'asks':
       return block.asks.flatMap((a) => a.actions)
+    case 'drop':
+      return [block.action]
     default:
       return []
   }

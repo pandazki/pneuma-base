@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { agentFace, isDescribed, type Looked } from '../src/index.js'
 import { fixture, plugin } from './support.js'
 
-const brought = { kind: 'brought', source: null, by: null } as const
+const brought = { kind: 'imported', source: null, by: null } as const
 
 describe('a put holds what it changes while its plugins run', () => {
   it('marks the place held during onPut, and not after', async () => {

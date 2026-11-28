@@ -6,6 +6,7 @@
 import { formOf, isFailure, type Action, type Block, type Step } from '@pneuma-base/sdk'
 import { connectionFacts, WAY_WORD } from './agent-commands.js'
 import { endpointOf } from './endpoint.js'
+import { placeAction } from './files-page.js'
 import { KERNEL_COMMANDS } from './owner-commands.js'
 import { sentenceBlock } from './pairing.js'
 import { CONNECTABLE, lookedFor, signsOf, waysOf, type Way } from './products.js'
@@ -75,7 +76,7 @@ async function firstThingStep({ ctx }: ViewerCall): Promise<Step> {
     title: '添加第一个条目',
     done: things.length > 0,
     summary: things.length > 0 ? `资料库根目录中有${atLeast}${things.length} 个条目` : null,
-    blocks: [{ kind: 'drop', to: INBOX, command }],
+    blocks: [{ kind: 'drop', to: INBOX, command, action: { ...placeAction(INBOX), label: '从本机添加…', as: 'primary' } }],
   }
 }
 

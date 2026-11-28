@@ -22,7 +22,7 @@ import {
   type SayRequest,
   type ThingNow,
 } from '@pneuma-base/kernel'
-import { LEDGER_EXPORT, LEDGER_STATS } from './audit.js'
+import { exportAction, LEDGER_EXPORT, LEDGER_STATS } from './audit.js'
 import { COGNITION } from './cognition.js'
 import { conversationOf } from './conversation.js'
 import { fact, factActor, LEDGER_ACTOR, newItemId, sceneOf, writeFacts, type Basis, type Entered, type Fact, type FactActor, type FactBody, type ItemId, type LedgerOrigin } from './facts.js'
@@ -115,9 +115,9 @@ async function basisOf(w: Writing, from: readonly string[], outside: readonly st
 
 const basisNote = (basis: Basis) => `，依据 ${basis.items.length} 个条目${basis.outside.length ? `、${basis.outside.length} 条外部依据` : ''}`
 
-/** The origin a put said, a made thing's sources as basis rows; the thing's own old content is no basis of itself. */
+/** The origin a put said, in the records' words; a generated thing's sources as basis rows, its own old content no basis of itself. */
 async function originOf(w: Writing, origin: Extract<AcceptedPut, { origin: unknown }>['origin'], self: ItemId | undefined): Promise<LedgerOrigin> {
-  if (origin.kind !== 'made') return origin
+  if (origin.kind === 'imported') return { kind: 'brought', source: origin.source, by: origin.by }
   const basis = await basisOf(w, origin.from, origin.outside)
   // The kernel accepted the put only when every --from file was there; one gone since is a failure to record.
   if ('missing' in basis) throw new Error(`依据的文件已缺失，无法记录来源：${basis.missing}`)
@@ -635,7 +635,7 @@ export const ledger: Plugin = {
       }
       case ACTIVITY_VIEW:
         await stateOf(ctx)
-        return activityAnswer(recs, req.params, grants, titlesOf(ctx), ctx.now, rowsOf(req))
+        return activityAnswer(recs, req.params, grants, titlesOf(ctx), ctx.now, [exportAction()], rowsOf(req))
       case STATS_VIEW: {
         // From the hours' rows alone: no file is read, so the page costs the same however large the library is.
         await stateOf(ctx)

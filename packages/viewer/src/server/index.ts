@@ -8,7 +8,7 @@ import { extname, isAbsolute, join, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { dropEndpoint, libraryFile, openLibrary, PREFERRED_PORT, recordEndpoint, stopListening, type Env, type Instant, type PluginTable } from '@pneuma-base/kernel'
 import { agentRoutes, type McpEndpoint } from './agent.js'
-import { call, changes, init, passOf, state, stop, tableOf, view, type Served } from './api.js'
+import { call, changes, init, passOf, save, state, stop, tableOf, view, type Served } from './api.js'
 import { addedStamp, pluginUiFile } from './files.js'
 import { readBody, sendJson, TooLarge } from './http.js'
 import { listenLoopback } from './listen.js'
@@ -188,6 +188,12 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, served: 
     case 'POST /api/call': {
       const body = await readJson(req)
       return passOf(body) === null ? sendJson(res, await call(served, body)) : streamCall(res, served, body)
+    }
+    case 'POST /api/save': {
+      const saved = await save(served, await readJson(req))
+      if (!('file' in saved)) return sendJson(res, saved)
+      res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': saved.file.length, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' })
+      return void res.end(saved.file)
     }
     case 'POST /api/stop':
       return sendJson(res, stop(served, await readJson(req)))

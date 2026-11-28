@@ -37,7 +37,7 @@ function library(): { lib: string; synced: string; deployed: string } {
   const deployed = tempDir()
   expect(sb.run(['init', lib]).code).toBe(0)
   for (const plugin of ['sync', 'version', 'deploy']) owner(lib, ['plugin', 'enable', plugin])
-  owner(lib, ['sync', 'target', 'set', '--kind', 'dir', '--to', synced])
+  owner(lib, ['sync', 'target', 'set', '--kind', 'folder', '--to', synced])
   owner(lib, ['deploy', 'target', 'set', '--kind', 'dir', '--to', deployed])
   const site = join(tempDir(), 'site')
   mkdirSync(join(site, 'a/b'), { recursive: true })

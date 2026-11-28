@@ -187,12 +187,11 @@ export type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems:
 
 /**
  * `P` is `string` in a request (as the caller wrote it) and `LibraryPath` once the kernel parsed it.
- * The kinds are the records' words: `brought` is what the faces call imported (`put --imported`),
- * `made` generated (`put --generated`).
+ * `imported`: brought in from outside (`put --imported`); `generated`: made from other things (`put --generated`).
  */
 export type Origin<P = LibraryPath> =
-  | { kind: 'brought'; source: string | null; by: string | null }
-  | { kind: 'made'; from: P[]; outside: string[] }
+  | { kind: 'imported'; source: string | null; by: string | null }
+  | { kind: 'generated'; from: P[]; outside: string[] }
 
 /** `directory`: a directory outside the library, placed as one thing (a bundle). */
 export type PlaceSource = { kind: 'file'; path: string } | { kind: 'directory'; path: string } | { kind: 'stdin'; content: Uint8Array }
@@ -766,8 +765,22 @@ export type InputShown = { readonly input: string; readonly is: readonly string[
  * to the menu; a `danger` one always goes to the menu. `icon`: one of `ICON_NAMES`, before the label
  * or alone. `key`: one letter that runs it while its region holds the focus, named in its tooltip and
  * menu entry. The text form prints every action as its command, wherever the page draws it.
+ *
+ * `save`: the owner command writes a file at the input `input`, which the page then does not ask for:
+ * it hands the person the file instead, named `name` (with `{input}` filled as in the call), as a
+ * download in a browser and through the save panel in the app.
  */
-export type Action = { label: string; tone: 'default' | 'danger'; confirm: string | null; inputs: ActionInput[]; call: Call; as?: 'primary' | 'icon' | 'menu' | 'inline'; icon?: IconName; key?: string }
+export type Action = {
+  label: string
+  tone: 'default' | 'danger'
+  confirm: string | null
+  inputs: ActionInput[]
+  call: Call
+  as?: 'primary' | 'icon' | 'menu' | 'inline'
+  icon?: IconName
+  key?: string
+  save?: { input: string; name: string }
+}
 
 /**
  * `group`: rows with the same group stand together under it as a heading, in the order of the first
@@ -907,8 +920,9 @@ export type Step = { key: string; title: string; done: boolean; summary: string 
  * to its value and shows the view again, as a filter does; `selected` is the value it has now.
  * `steps`: the steps of getting started, each with its own blocks, checked as a section's are.
  * `drop`: where the owner brings files in. In the Mac app it is an area files and folders are dropped
- * on, or chosen from, and they are put into the library folder `to` as brought by the owner;
- * elsewhere the page cannot hand over a file, and it shows `command`, which does the same in a terminal.
+ * on, or chosen from, and they are put into the library folder `to` as imported by the owner;
+ * elsewhere the page cannot take a dropped file, and it offers `action`, which puts a file of this
+ * machine by its path. The text form prints `command`, which does the same in a terminal.
  * `chart`: a few numbers over time, as `form` bars side by side, bars stacked, or lines, with one
  * axis in `unit` (such as 样 or 次); `text` is the one sentence that says what it shows, the chart's
  * caption on the page; `show` prints the sentence and a table of the numbers. At most
@@ -940,7 +954,7 @@ export type Block =
   | { kind: 'tree'; param: string; selected: string; nodes: TreeNode[] }
   | { kind: 'asks'; asks: Ask[]; empty: string }
   | { kind: 'steps'; steps: Step[] }
-  | { kind: 'drop'; to: string; command: string }
+  | { kind: 'drop'; to: string; command: string; action: Action }
   | { kind: 'chart'; form: 'bars' | 'stacked' | 'line'; text: string; unit: string; x: string[]; series: ChartSeries[] }
 
 /** `count`: how many things the view shows with this option, given by its answer. */

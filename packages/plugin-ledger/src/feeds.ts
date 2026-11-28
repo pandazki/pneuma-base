@@ -223,7 +223,7 @@ function sayStep(agents: readonly FactActor[]): Block {
  * saying what it is doing is no act: it heads its acts or is their second line. Each filter's options
  * carry how many acts each would show, from the counts the rows keep, so they count the rows.
  */
-export async function activityAnswer(records: Read, params: Record<string, string>, grants: readonly Grant[], titles: ReadonlyMap<string, string>, now: Instant, size = PAGE_ROWS): Promise<ViewAnswer> {
+export async function activityAnswer(records: Read, params: Record<string, string>, grants: readonly Grant[], titles: ReadonlyMap<string, string>, now: Instant, head: readonly Action[], size = PAGE_ROWS): Promise<ViewAnswer> {
   const who = params.who ?? ''
   const agent = params.agent ?? ''
   const { after } = pageAt(params)
@@ -249,19 +249,7 @@ export async function activityAnswer(records: Read, params: Record<string, strin
   const shown = n(who, agent)
   const paging = pagingOf({ view: ACTIVITY_VIEW, params, rows: size, shown: facts.length, next: page.more?.after ?? null, total: shown })
   // How many: the tabs say it.
-  return { title: '活动', subtitle: null, blocks: [exportBlock(now), { kind: 'feed', groups, empty: '无符合条件的记录', page: paging }], filters }
-}
-
-/**
- * 导出, folded: the command that writes every record to a file outside the library, to copy into a
- * terminal. The page has no way to hand the person a file, so it gives the command that does.
- */
-function exportBlock(now: Instant): Block {
-  const d = new Date(now)
-  const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  const command = `pneuma-base ledger export --to ~/Desktop/pneuma-base-活动-${day}.csv`
-  const note = '在终端中运行，将全部记录导出为 CSV，可用表格软件打开；加 --format jsonl 导出为 JSON Lines（每行一条），加 --since、--until 仅导出指定时间段（日期如 2026-11-01，或具体时刻）。'
-  return { kind: 'section', title: '导出', note: null, count: null, collapse: 'closed', blocks: [{ kind: 'list', items: [{ cell: { text: command, mono: true, copy: true }, note, actions: [] }] }], actions: [] }
+  return { title: '活动', subtitle: null, blocks: [{ kind: 'actions', head: true, actions: [...head] }, { kind: 'feed', groups, empty: '无符合条件的记录', page: paging }], filters }
 }
 
 // ---- scenes ----
@@ -273,7 +261,7 @@ export async function scenesAnswer(records: Read, params: Record<string, string>
   const lookup = await lookupOf(records, [], { scenes: page.rows.map((r) => r.value.id) })
   const scenes = page.rows.flatMap((r) => lookup.scenes.get(r.value.id) ?? [])
   if (scenes.length === 0 && after === undefined) {
-    const hint = 'Agent 执行 pneuma-base start "<任务描述>" 开始任务时，此处新增一行：会话、执行者、任务、新增条目数。'
+    const hint = 'Agent 开始任务时，此处新增一行：会话、执行者、任务、新增条目数。'
     return { title: '场景', subtitle: null, blocks: [{ kind: 'empty', title: '暂无场景', hint }] }
   }
   const row = (scene: SceneRow): FeedRow => {

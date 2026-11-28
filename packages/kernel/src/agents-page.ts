@@ -54,7 +54,7 @@ function mayDo(commands: OwnerCommandInfo[], plugins: readonly Plugin[]): Block 
     collapse: 'closed',
     blocks: [
       group('可直接执行', '在 Agent 会话中直接执行', [{ cell: { text: '基本命令', mono: false }, note: VERBS_LINE, actions: [] }, ...commands.filter((c) => !c.destructive && !c.ownerOnly).map(commandItem)]),
-      group('需所有者批准', '所有者的决定：Agent 在会话中用 ask 写明原因并提交请求，请求显示在首页的「待处理」中', commands.filter((c) => c.ownerOnly && !c.destructive).map(askedItem)),
+      group('需所有者批准', '所有者的决定：Agent 写明原因提交请求，请求显示在首页的「待处理」中', commands.filter((c) => c.ownerOnly && !c.destructive).map(askedItem)),
       group('限制', '将丢失数据的操作：仅所有者可执行，且需当面确认', commands.filter((c) => c.destructive).map(commandItem)),
     ],
     actions: [],

@@ -187,8 +187,8 @@ describe('archive with the ledger (C15)', () => {
     const init = await initLibrary(root, { plugins: ['ledger'], table: builtinPlugins, actor: { kind: 'owner' }, session: session('init'), home })
     expect(init.outcome).toBe('done')
     library = (await openLibrary(root, builtinPlugins)) as Library
-    expect(await agentFace.put({ kind: 'place', from: stdin('source'), to: 'sources/s.md', origin: { kind: 'brought', source: 'https://example.com/s', by: null } }, claude())).toMatchObject({ outcome: 'accepted' })
-    expect(await agentFace.put({ kind: 'place', from: stdin('draft from s'), to: 'drafts/a.md', origin: { kind: 'made', from: ['sources/s.md'], outside: [] } }, claude())).toMatchObject({ outcome: 'accepted' })
+    expect(await agentFace.put({ kind: 'place', from: stdin('source'), to: 'sources/s.md', origin: { kind: 'imported', source: 'https://example.com/s', by: null } }, claude())).toMatchObject({ outcome: 'accepted' })
+    expect(await agentFace.put({ kind: 'place', from: stdin('draft from s'), to: 'drafts/a.md', origin: { kind: 'generated', from: ['sources/s.md'], outside: [] } }, claude())).toMatchObject({ outcome: 'accepted' })
     expect(await agentFace.archive({ kind: 'archive', path: 'drafts/a.md' }, claude())).toMatchObject({ outcome: 'accepted' })
   })
 

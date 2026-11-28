@@ -69,8 +69,8 @@ describe('a plugin command run by an agent', () => {
 describe('new content made from the old', () => {
   it('records no basis on itself', async () => {
     const { as } = await library()
-    await agentFace.put({ kind: 'place', from: text('v1'), to: 'site.md', origin: { kind: 'made', from: [], outside: [] } }, as(claude, 's1'))
-    const r = await agentFace.put({ kind: 'place', from: text('v2'), to: 'site.md', origin: { kind: 'made', from: ['site.md'], outside: [] } }, as(claude, 's2'))
+    await agentFace.put({ kind: 'place', from: text('v1'), to: 'site.md', origin: { kind: 'generated', from: [], outside: [] } }, as(claude, 's1'))
+    const r = await agentFace.put({ kind: 'place', from: text('v2'), to: 'site.md', origin: { kind: 'generated', from: ['site.md'], outside: [] } }, as(claude, 's2'))
     expect(r).toMatchObject({ outcome: 'accepted' })
     const body = (await agentFace.inspect({ target: 'site.md' }, as(claude, 's3'))).sections[0]?.body ?? ''
     expect(body).not.toContain('依据：')
@@ -81,8 +81,8 @@ describe('new content made from the old', () => {
 describe('confirmed destructive owner commands', () => {
   it('ledger copies drop deletes the held copies, and an agent sees it in check, where a read-only owner command is no news', async () => {
     const { lib, as, call } = await library()
-    await agentFace.put({ kind: 'place', from: text('old'), to: 'a.md', origin: { kind: 'made', from: [], outside: [] } }, as(claude, 's1'))
-    const replaced = await agentFace.put({ kind: 'place', from: text('new'), to: 'a.md', origin: { kind: 'made', from: [], outside: [] } }, as(claude, 's1'))
+    await agentFace.put({ kind: 'place', from: text('old'), to: 'a.md', origin: { kind: 'generated', from: [], outside: [] } }, as(claude, 's1'))
+    const replaced = await agentFace.put({ kind: 'place', from: text('new'), to: 'a.md', origin: { kind: 'generated', from: [], outside: [] } }, as(claude, 's1'))
     expect(replaced).toMatchObject({ outcome: 'accepted', copied: true })
     expect(existsSync(join(lib.root, '.pneuma-base/ledger/held'))).toBe(true)
 
@@ -97,8 +97,8 @@ describe('confirmed destructive owner commands', () => {
 
   it('archive purge removes the purged items; what was made from them shows its source gone', async () => {
     const { as, call } = await library()
-    await agentFace.put({ kind: 'place', from: text('s'), to: 's.md', origin: { kind: 'brought', source: null, by: null } }, as(claude, 's1'))
-    await agentFace.put({ kind: 'place', from: text('a'), to: 'a.md', origin: { kind: 'made', from: ['s.md'], outside: [] } }, as(claude, 's1'))
+    await agentFace.put({ kind: 'place', from: text('s'), to: 's.md', origin: { kind: 'imported', source: null, by: null } }, as(claude, 's1'))
+    await agentFace.put({ kind: 'place', from: text('a'), to: 'a.md', origin: { kind: 'generated', from: ['s.md'], outside: [] } }, as(claude, 's1'))
     await agentFace.archive({ kind: 'archive', path: 's.md' }, as(claude, 's1'))
     expect(await ownerFace.dispatch(call(), 'archive purge', { positional: [], flags: {} })).toMatchObject({ outcome: 'done' })
 

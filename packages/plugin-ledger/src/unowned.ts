@@ -202,7 +202,7 @@ const filesText = (p: Probe) => `${p.exceeded ? '至少 ' : ''}${p.files} 个`
 export function closedActions(path: LibraryPath, look: Probe | null = null): Action[] {
   const inside = ownerAction('登记目录内的文件', REGISTER, { dir: path, recursive: true })
   return [
-    { label: '登记为条目', tone: 'default', confirm: null, inputs: [], call: { face: 'agent', verb: 'put', request: { kind: 'register', path, origin: { kind: 'brought', source: null, by: 'owner' }, note: null } } },
+    { label: '登记为条目', tone: 'default', confirm: null, inputs: [], call: { face: 'agent', verb: 'put', request: { kind: 'register', path, origin: { kind: 'imported', source: null, by: 'owner' }, note: null } } },
     { ...inside, confirm: `将登记 ${path}/ 中所有层级的全部文件${look === null ? '' : `：${filesText(look)}`}，不含已忽略的。` },
     { label: '忽略', tone: 'default', confirm: null, inputs: [], call: { face: 'owner', command: 'ignore add', args: { positional: [path], flags: {} } } },
   ]

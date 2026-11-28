@@ -77,7 +77,7 @@ function agentWords({ verb, request }: AgentCall, action: Action): string[] {
       const what = request.kind === 'register' ? [v(request.path)] : request.from.kind === 'stdin' ? ['-', '--to', v(request.to)] : [v(request.from.path), '--to', v(request.to)]
       const o = request.origin
       const origin =
-        o.kind === 'brought'
+        o.kind === 'imported'
           ? ['--imported', ...(o.source === null ? [] : optionalFlag('source', o.source, action)), ...(o.by === null ? [] : optionalFlag('by', o.by, action))]
           : ['--generated', ...listFlag('from', o.from, action), ...listFlag('from-external', o.outside, action)]
       const note = request.note === undefined || request.note === null ? [] : optionalFlag('note', request.note, action)

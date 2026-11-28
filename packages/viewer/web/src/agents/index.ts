@@ -18,30 +18,36 @@ import opencode from './opencode.svg?raw'
 import qwenCode from './qwen-code.svg?raw'
 import windsurf from './windsurf.svg?raw'
 
-const ICONS: Readonly<Record<string, string>> = {
-  antigravity,
-  'claude-code': claudeCode,
-  'claude-desktop': claudeDesktop,
-  cline,
-  codex,
-  cursor,
-  deepseek,
-  'gemini-cli': geminiCli,
-  'github-copilot': githubCopilot,
-  grok,
-  kimi,
-  opencode,
-  'qwen-code': qwenCode,
-  windsurf,
-}
+/** An icon as the mark draws it: the mark says the name, so the drawing carries none of its own. */
+const quiet = (svg: string) => svg.replace(/<title>[^<]*<\/title>/, '').replace('<svg ', '<svg aria-hidden="true" ')
 
-let byName = new Map<string, string>()
+const ICONS: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries({
+    antigravity,
+    'claude-code': claudeCode,
+    'claude-desktop': claudeDesktop,
+    cline,
+    codex,
+    cursor,
+    deepseek,
+    'gemini-cli': geminiCli,
+    'github-copilot': githubCopilot,
+    grok,
+    kimi,
+    opencode,
+    'qwen-code': qwenCode,
+    windsurf,
+  }).map(([product, svg]) => [product, quiet(svg)]),
+)
+
+type Mark = { product: string; title: string }
+let byName = new Map<string, Mark>()
 let version = 0
 const listeners = new Set<() => void>()
 
 /** The kernel's table of products and the names each goes by, as the state brings it. */
-export function knowAgentMarks(table: readonly { product: string; names: readonly string[] }[]): void {
-  byName = new Map(table.flatMap((m) => m.names.map((n) => [n, m.product] as const)))
+export function knowAgentMarks(table: readonly { product: string; title: string; names: readonly string[] }[]): void {
+  byName = new Map(table.flatMap((m) => m.names.map((n) => [n, { product: m.product, title: m.title }] as const)))
   version++
   for (const listen of listeners) listen()
 }
@@ -51,10 +57,18 @@ const subscribe = (listen: () => void) => {
   return () => listeners.delete(listen)
 }
 
-/** The icon of the product `name` goes by, matched whole, then by its first word; null for any other name. */
-export function useAgentIcon(name: string): string | null {
+/** The product `name` goes by, matched whole, then by its first word; null for any other name. */
+function useMark(name: string): Mark | null {
   useSyncExternalStore(subscribe, () => version)
   const lower = name.toLowerCase()
-  const product = byName.get(lower) ?? byName.get(lower.split(/[^a-z0-9]+/)[0] ?? '')
-  return product === undefined ? null : (ICONS[product] ?? null)
+  return byName.get(lower) ?? byName.get(lower.split(/[^a-z0-9]+/)[0] ?? '') ?? null
 }
+
+/** The icon of the product `name` goes by; null for any other name. */
+export function useAgentIcon(name: string): string | null {
+  const mark = useMark(name)
+  return mark === null ? null : (ICONS[mark.product] ?? null)
+}
+
+/** The name of the product `name` goes by, as people know it (Claude Code); null for any other name. */
+export const useAgentTitle = (name: string): string | null => useMark(name)?.title ?? null

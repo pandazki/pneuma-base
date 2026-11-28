@@ -24,10 +24,10 @@ async function relayed() {
   if (!lib) throw new Error('no library')
   const ctx = () => makeContext(lib, claude, session('sess-a'), home, next())
   await agentFace.say({ kind: 'task', about: null, text: '给小店选支付服务', args: {} }, ctx())
-  await agentFace.put({ kind: 'place', from: text('stripe'), to: 'src/stripe.html', origin: { kind: 'brought', source: 'https://stripe.com/pricing', by: null } }, ctx())
-  await agentFace.put({ kind: 'place', from: text('old'), to: 'old.md', origin: { kind: 'brought', source: null, by: null } }, ctx())
-  await agentFace.put({ kind: 'place', from: text('cmp'), to: 'comparison.md', origin: { kind: 'made', from: ['src/stripe.html'], outside: ['主人说客户在欧洲'] } }, ctx())
-  await agentFace.put({ kind: 'place', from: text('rec'), to: 'recommendation.md', origin: { kind: 'made', from: ['comparison.md'], outside: [] } }, ctx())
+  await agentFace.put({ kind: 'place', from: text('stripe'), to: 'src/stripe.html', origin: { kind: 'imported', source: 'https://stripe.com/pricing', by: null } }, ctx())
+  await agentFace.put({ kind: 'place', from: text('old'), to: 'old.md', origin: { kind: 'imported', source: null, by: null } }, ctx())
+  await agentFace.put({ kind: 'place', from: text('cmp'), to: 'comparison.md', origin: { kind: 'generated', from: ['src/stripe.html'], outside: ['主人说客户在欧洲'] } }, ctx())
+  await agentFace.put({ kind: 'place', from: text('rec'), to: 'recommendation.md', origin: { kind: 'generated', from: ['comparison.md'], outside: [] } }, ctx())
   await agentFace.say({ kind: 'decision', about: 'comparison.md', text: '用 Paddle', args: {} }, ctx())
   await agentFace.archive({ kind: 'archive', path: 'old.md' }, ctx())
   const show = (view: string, params: Record<string, string> = {}, ctx = makeContext(lib, { kind: 'owner' }, session('ui'), home, next())) => viewerFace.show({ view, params }, { ctx, table, env: {}, viaGrant: false })
@@ -92,9 +92,9 @@ describe('the library page', () => {
     const r = shown(await show('ledger.items'))
     const rows = rowsOf(r)
     expect(rows.map((r) => line(r.cells))).toEqual([
-      { path: 'recommendation.md', origin: '生成', who: 'claude-code', state: '一致', at: '2026-11-25 02:00Z' },
-      { path: 'comparison.md', origin: '生成', who: 'claude-code', state: '一致', at: '2026-11-25 02:00Z' },
-      { path: 'stripe.html', origin: '导入', who: 'claude-code', state: '一致', at: '2026-11-25 02:00Z' },
+      { path: 'recommendation.md', origin: '生成', who: 'Claude Code', state: '一致', at: '2026-11-25 02:00Z' },
+      { path: 'comparison.md', origin: '生成', who: 'Claude Code', state: '一致', at: '2026-11-25 02:00Z' },
+      { path: 'stripe.html', origin: '导入', who: 'Claude Code', state: '一致', at: '2026-11-25 02:00Z' },
     ])
     // A row stands under the folder it is in, said once by the group; the name is all its cell says.
     expect(rows.map((r) => r.group)).toEqual([undefined, undefined, 'src'])
@@ -152,7 +152,7 @@ describe('the ledger’s part of the item panel', () => {
     const provenance = sectionNamed(r.blocks, '溯源')
     // Who, how it came and when, then the scene, each a line; its state only when it departs from the record.
     expect(provenance.blocks.slice(0, 2)).toMatchObject([{ kind: 'fields', line: true }, { kind: 'fields', line: true }])
-    expect(fieldsText(provenance.blocks[0])).toEqual(['执行者:claude-code', '来源:生成', '时间:2026-11-25 02:00Z'])
+    expect(fieldsText(provenance.blocks[0])).toEqual(['执行者:Claude Code', '来源:生成', '时间:2026-11-25 02:00Z'])
     expect(fieldsText(provenance.blocks[1])).toEqual(['场景:给小店选支付服务'])
     expect(fieldIn(provenance.blocks, '场景')?.value.link).toEqual({ view: 'ledger.scene', params: { scene: 'sess-a' }, target: 'panel' })
     expect(fieldIn(provenance.blocks, '状态')).toBeUndefined()
@@ -198,12 +198,12 @@ describe('the ledger’s part of the item panel', () => {
       {
         label: '标记为导入',
         inputs: [{ name: 'source' }, { name: 'by', options: [{ value: 'owner' }, { value: '' }] }],
-        call: { face: 'agent', verb: 'put', request: { kind: 'register', path: 'dropped.md', origin: { kind: 'brought', source: '{source}', by: '{by}' } } },
+        call: { face: 'agent', verb: 'put', request: { kind: 'register', path: 'dropped.md', origin: { kind: 'imported', source: '{source}', by: '{by}' } } },
       },
       {
         label: '标记为生成',
         inputs: [{ name: 'from', multiple: true }, { name: 'outside', multiple: true }],
-        call: { face: 'agent', verb: 'put', request: { kind: 'register', path: 'dropped.md', origin: { kind: 'made', from: ['{from}'], outside: ['{outside}'] } } },
+        call: { face: 'agent', verb: 'put', request: { kind: 'register', path: 'dropped.md', origin: { kind: 'generated', from: ['{from}'], outside: ['{outside}'] } } },
       },
     ])
     expect(shown(await show('item', { path: 'nothing.md' })).blocks.filter((b) => b.kind === 'section')).toEqual([])
@@ -227,7 +227,7 @@ describe('the scenes page', () => {
   it('has one row per session, newest first, by day: who, what it was doing, how many things it put; a row opens its scene, whose page gives its figures that are not nothing, what happened in it, then, folded, who and where', async () => {
     const { show, codex } = await relayed()
     await agentFace.say({ kind: 'task', about: null, text: '把支付服务接进小店', args: {} }, codex())
-    await agentFace.put({ kind: 'place', from: text('int'), to: 'integration.md', origin: { kind: 'made', from: ['recommendation.md'], outside: [] } }, codex())
+    await agentFace.put({ kind: 'place', from: text('int'), to: 'integration.md', origin: { kind: 'generated', from: ['recommendation.md'], outside: [] } }, codex())
     const scenes = feedRows(shown(await show('ledger.scenes')).blocks)
     // The library was made at the real time, after the test's sessions at 02:00Z.
     expect(scenes.map((row) => [nameOf(row.actor), row.text, ...row.meta.map((c) => c.text)])).toEqual([
@@ -281,7 +281,7 @@ describe('the scenes page', () => {
     const lib = await openLibrary(root, table)
     if (!lib) throw new Error('no library')
     const r = shown(await viewerFace.show({ view: 'ledger.scenes', params: {} }, { ctx: makeContext(lib, { kind: 'owner' }, session('ui'), home, next()), table, env: {}, viaGrant: false }))
-    expect(r.blocks).toMatchObject([{ kind: 'empty', hint: expect.stringContaining('start') }])
+    expect(r.blocks).toMatchObject([{ kind: 'empty', hint: expect.stringContaining('Agent 开始任务时') }])
   })
 })
 
@@ -290,9 +290,9 @@ describe('the standing view', () => {
     const { root, show, codex } = await relayed()
     expect(shown(await show('ledger.status')).blocks).toMatchObject([{ kind: 'actions', head: true, actions: [{ label: '深度检查', call: { verb: 'check', request: { deep: { dir: null } } } }] }, { kind: 'empty', title: '暂无待处理事项' }])
 
-    await agentFace.put({ kind: 'place', from: text('src'), to: 'gone-src.md', origin: { kind: 'brought', source: null, by: null } }, codex())
-    await agentFace.put({ kind: 'place', from: text('uses'), to: 'uses-gone.md', origin: { kind: 'made', from: ['gone-src.md'], outside: [] } }, codex())
-    await agentFace.put({ kind: 'place', from: text('moving'), to: 'moving.md', origin: { kind: 'brought', source: null, by: null } }, codex())
+    await agentFace.put({ kind: 'place', from: text('src'), to: 'gone-src.md', origin: { kind: 'imported', source: null, by: null } }, codex())
+    await agentFace.put({ kind: 'place', from: text('uses'), to: 'uses-gone.md', origin: { kind: 'generated', from: ['gone-src.md'], outside: [] } }, codex())
+    await agentFace.put({ kind: 'place', from: text('moving'), to: 'moving.md', origin: { kind: 'imported', source: null, by: null } }, codex())
     writeFileSync(join(root, 'src/stripe.html'), 'stripe, new prices')
     writeFileSync(join(root, 'dropped.md'), 'by hand')
     // A file nobody registered that an archive adopted: in the ledger, origin unknown.
@@ -335,7 +335,7 @@ describe('the standing view', () => {
   // not followed: it is not where it was, and the directory is one line to answer.
   it('does not follow a thing into a directory nobody looked into', async () => {
     const { root, show, codex } = await relayed()
-    await agentFace.put({ kind: 'place', from: text('moving'), to: 'moving.md', origin: { kind: 'brought', source: null, by: null } }, codex())
+    await agentFace.put({ kind: 'place', from: text('moving'), to: 'moving.md', origin: { kind: 'imported', source: null, by: null } }, codex())
     mkdirSync(join(root, 'moved'))
     renameSync(join(root, 'moving.md'), join(root, 'moved/here.md'))
     const r = shown(await show('ledger.status'))
@@ -454,7 +454,7 @@ describe('things nobody registered', () => {
     expect(closed).toMatchObject({ text: 'notes/ 未登记：1 个文件。', about: 'notes' })
     expect(closed?.actions[1]?.confirm).toBe('将登记 notes/ 中所有层级的全部文件：1 个，不含已忽略的。')
     expect(closed?.actions.map((a) => [a.label, a.call])).toEqual([
-      ['登记为条目', { face: 'agent', verb: 'put', request: { kind: 'register', path: 'notes', origin: { kind: 'brought', source: null, by: 'owner' }, note: null } }],
+      ['登记为条目', { face: 'agent', verb: 'put', request: { kind: 'register', path: 'notes', origin: { kind: 'imported', source: null, by: 'owner' }, note: null } }],
       ['登记目录内的文件', { face: 'owner', command: 'ledger register', args: { positional: ['notes'], flags: { recursive: true } } }],
       ['忽略', { face: 'owner', command: 'ignore add', args: { positional: ['notes'], flags: {} } }],
     ])
@@ -499,7 +499,7 @@ describe('things nobody registered', () => {
 describe('held copies and changes in the ledger’s blocks', () => {
   it('say whose content each was: a held copy can be taken back to a new path, as ledger copies restore; a put’s note ends its entry and its activity row; an edit the owner made and an agent recorded names both', async () => {
     const { root, show, codex } = await relayed()
-    await agentFace.put({ kind: 'place', from: text('cmp v2'), to: 'comparison.md', origin: { kind: 'made', from: ['src/stripe.html'], outside: [] }, note: '换了结论' }, codex())
+    await agentFace.put({ kind: 'place', from: text('cmp v2'), to: 'comparison.md', origin: { kind: 'generated', from: ['src/stripe.html'], outside: [] }, note: '换了结论' }, codex())
     const provenance = sectionNamed(shown(await show('item', { path: 'comparison.md' })).blocks, '溯源')
     expect(sectionNamed(provenance.blocks, '历史副本').blocks.find((b) => b.kind === 'list')).toMatchObject({
       items: [
@@ -529,7 +529,7 @@ describe('held copies and changes in the ledger’s blocks', () => {
     writeFileSync(join(root, 'src/stripe.html'), 'stripe, new prices')
     await agentFace.say({ kind: 'revised', about: 'src/stripe.html', text: null, args: { by: ['owner'] } }, codex())
     expect((await activity()).filter((row) => row.text === '记录 src/stripe.html 为所有者直接修改').map((row) => nameOf(row.actor))).toEqual(['codex'])
-    await agentFace.put({ kind: 'place', from: text('stripe v3'), to: 'src/stripe.html', origin: { kind: 'brought', source: null, by: null } }, codex())
+    await agentFace.put({ kind: 'place', from: text('stripe v3'), to: 'src/stripe.html', origin: { kind: 'imported', source: null, by: null } }, codex())
     const stripe = sectionNamed(shown(await show('item', { path: 'src/stripe.html' })).blocks, '溯源')
     expect(sectionNamed(stripe.blocks, '历史记录').blocks[0]).toMatchObject({ entries: [{ tag: { text: '当前' } }, { title: { text: '所有者直接修改' }, actor: { kind: 'owner' }, lines: ['codex 代为记录'] }, {}] })
     expect(sectionNamed(stripe.blocks, '历史副本').blocks.find((b) => b.kind === 'list')).toMatchObject({ items: [{ note: '所有者直接修改的内容，codex 代为记录' }] })
@@ -541,10 +541,10 @@ describe('bundles in the ledger’s blocks', () => {
     const { root, show, codex } = await relayed()
     mkdirSync(join(root, 'site'))
     writeFileSync(join(root, 'site/index.html'), '<h1>hi</h1>')
-    await agentFace.put({ kind: 'register', path: 'site/index.html', origin: { kind: 'brought', source: null, by: null } }, codex())
+    await agentFace.put({ kind: 'register', path: 'site/index.html', origin: { kind: 'imported', source: null, by: null } }, codex())
     // A directory holding a registered thing is open: registering it takes its loose files, unless its marker makes it one thing.
     writeFileSync(join(root, 'site/.pneuma-item'), '')
-    await agentFace.put({ kind: 'register', path: 'site', origin: { kind: 'made', from: ['comparison.md'], outside: [] } }, codex())
+    await agentFace.put({ kind: 'register', path: 'site', origin: { kind: 'generated', from: ['comparison.md'], outside: [] } }, codex())
     writeFileSync(join(root, 'site/later.css'), 'h1{}')
     const rows = rowsOf(await show('ledger.items'))
     expect(rows.map((r) => r.link?.params.path)).not.toContain('site/index.html')

@@ -114,7 +114,7 @@ async function library(plugin: Plugin, noTarget = false) {
   /** The agent puts a file in, or registers new content written at its path. */
   const put = async (path: string, text: string, actor: Actor = claude) => {
     write(path, text)
-    return agentFace.put({ kind: 'register', path, origin: { kind: 'made', from: [], outside: [] } }, as(actor))
+    return agentFace.put({ kind: 'register', path, origin: { kind: 'generated', from: [], outside: [] } }, as(actor))
   }
   const site = async (path: string, files: Record<string, string>) => {
     const src = join(dir, 'src', path)
@@ -122,7 +122,7 @@ async function library(plugin: Plugin, noTarget = false) {
       mkdirSync(dirname(join(src, p)), { recursive: true })
       writeFileSync(join(src, p), c)
     }
-    return agentFace.put({ kind: 'place', from: { kind: 'directory', path: src }, to: path, origin: { kind: 'made', from: [], outside: [] } }, as(claude))
+    return agentFace.put({ kind: 'place', from: { kind: 'directory', path: src }, to: path, origin: { kind: 'generated', from: [], outside: [] } }, as(claude))
   }
   /** The owner sets a secret of the plugin on this machine, through the kernel's command. */
   const secret = (name: string, value: string) =>
@@ -346,7 +346,7 @@ describe('what the kit reads of the library', () => {
       l.write(path, 'v2')
     }
     l.write('c/loose.md', 'new')
-    const put = await agentFace.put({ kind: 'register', path: 'c', origin: { kind: 'made', from: [], outside: [] } }, l.as(claude))
+    const put = await agentFace.put({ kind: 'register', path: 'c', origin: { kind: 'generated', from: [], outside: [] } }, l.as(claude))
     expect(put).toMatchObject({ outcome: 'accepted', notes: [{ plugin: 'fake', text: `${P} 在线，已重新发布：${url(siteName(P))}；${Q} 在线，已重新发布：${url(siteName(Q))}` }] })
     for (const path of [P, Q]) expect(fake.served.get(siteName(path))?.content).toBe(await l.fingerprint(path))
   })

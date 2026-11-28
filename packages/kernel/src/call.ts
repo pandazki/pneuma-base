@@ -18,12 +18,12 @@ const need = (ok: boolean, what: string): void => {
 function origin(raw: unknown): Origin<string> {
   need(isObject(raw), 'origin is not an object')
   const o = raw as Raw
-  if (o.kind === 'brought') {
-    need(isStringOrNull(o.source) && isStringOrNull(o.by), 'brought origin needs source and by, each a string or null')
-    return { kind: 'brought', source: o.source as string | null, by: o.by as string | null }
+  if (o.kind === 'imported') {
+    need(isStringOrNull(o.source) && isStringOrNull(o.by), 'imported origin needs source and by, each a string or null')
+    return { kind: 'imported', source: o.source as string | null, by: o.by as string | null }
   }
-  need(o.kind === 'made' && isStrings(o.from) && isStrings(o.outside), 'origin is neither brought nor made')
-  return { kind: 'made', from: o.from as string[], outside: o.outside as string[] }
+  need(o.kind === 'generated' && isStrings(o.from) && isStrings(o.outside), 'origin is neither imported nor generated')
+  return { kind: 'generated', from: o.from as string[], outside: o.outside as string[] }
 }
 
 /** Only a file can be placed from the page; standard input belongs to the command line. */

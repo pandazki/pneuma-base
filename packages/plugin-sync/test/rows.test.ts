@@ -46,7 +46,7 @@ beforeAll(() => {
   target = join(tempDir(), 'target')
   ok(m.run(['init', lib, '--bare']))
   ok(owner(['plugin', 'enable', 'sync']))
-  ok(owner(['sync', 'target', 'set', '--kind', 'dir', '--to', target]))
+  ok(owner(['sync', 'target', 'set', '--kind', 'folder', '--to', target]))
   // Every content written here is its own, so that no row's content is already kept at another row's path.
   for (const name of ['push', 'pull', 'conflict', 'move']) put(`${name}.md`, `${name} base`)
   sync()

@@ -42,7 +42,7 @@ describe('a plugin added to a library already in use', () => {
   it('sync carries what was put before it', () => {
     const lib = library(300)
     owner(lib, ['plugin', 'enable', 'sync'])
-    owner(lib, ['sync', 'target', 'set', '--kind', 'dir', '--to', tempDir()])
+    owner(lib, ['sync', 'target', 'set', '--kind', 'folder', '--to', tempDir()])
     const now = owner(lib, ['sync', 'now', '--json']).stdout
     expect(JSON.parse(now).data.counts.pushed).toBeGreaterThanOrEqual(301)
   })

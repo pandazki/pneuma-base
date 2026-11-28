@@ -125,7 +125,7 @@ export async function closedAnswers(ctx: Context, dirs: readonly LibraryPath[]):
 }
 
 /** Bringing a file of this machine into the library, as put of a file outside does; the page cannot hand over standard input. */
-const placeAction = (dir: string | null): Action => ({
+export const placeAction = (dir: string | null): Action => ({
   label: '从本机添加',
   tone: 'default',
   confirm: null,
@@ -134,10 +134,7 @@ const placeAction = (dir: string | null): Action => ({
     field('to', '路径', { placeholder: '例如 sources/a.pdf', value: dir === null ? '' : `${dir}/` }),
     field('source', '原始来源', { placeholder: 'URL、书名或其他来源；未知时留空' }),
   ],
-  call: { face: 'agent', verb: 'put', request: { kind: 'place', from: { kind: 'file', path: '{from}' }, to: '{to}', origin: { kind: 'brought', source: '{source}', by: null } } },
-  as: 'icon',
-  icon: 'plus',
-  key: 'n',
+  call: { face: 'agent', verb: 'put', request: { kind: 'place', from: { kind: 'file', path: '{from}' }, to: '{to}', origin: { kind: 'imported', source: '{source}', by: null } } },
 })
 
 // Where a row carries answers the name keeps its room: the size, or what a look found, gives way first.
@@ -202,7 +199,7 @@ export async function filesPage(params: Record<string, string>, { ctx }: ViewerC
     }
   }
   const table: Block = { kind: 'table', columns: FILE_COLUMNS, rows: tableRows, empty: '文件夹为空。可将文件拷入此文件夹，或由 Agent 通过 put 添加。', page: level.paging, sorted: sorting, each: placeActions() }
-  return { ...shown('文件', dir, [{ kind: 'actions', head: true, actions: [placeAction(dir)] }, table]), trail: trailOf('文件', dir, folderLink) }
+  return { ...shown('文件', dir, [{ kind: 'actions', head: true, actions: [{ ...placeAction(dir), as: 'icon', icon: 'plus', key: 'n' }] }, table]), trail: trailOf('文件', dir, folderLink) }
 }
 
 /** One page of one folder of `_archive/`, each thing with the path it came from; to take back one, or to purge them all. */

@@ -13,7 +13,7 @@ export type State = {
   problems: PluginProblem[]
   available: { name: string; title: string | null }[]
   /** The agents drawn as their product's icon, and the names each goes by. */
-  agentMarks: { product: string; names: string[] }[]
+  agentMarks: { product: string; title: string; names: string[] }[]
 }
 
 export type Tone = 'good' | 'warn' | 'bad'
@@ -86,6 +86,32 @@ async function streamed(call: Call, confirmed: boolean, pass: string, onProgress
   throw new Unreachable('无法连接服务')
 }
 
+/**
+ * Runs a call that writes a file at the input `input` (an action's `save`) and hands the file over as
+ * a download named `name`: the browser's downloads, the app's save panel. A call that does not finish
+ * answers its reply instead.
+ */
+async function saved(call: Call, confirmed: boolean, input: string, name: string): Promise<CallReply | null> {
+  let res: Response
+  try {
+    res = await fetch('/api/save', { method: 'POST', headers: { 'x-pneuma-token': TOKEN, 'content-type': 'application/json' }, body: JSON.stringify({ call, save: input, name, confirmed }) })
+  } catch {
+    throw new Unreachable('无法连接服务')
+  }
+  if ((res.headers.get('content-type') ?? '').startsWith('application/json')) {
+    const json = (await res.json().catch(() => null)) as { error?: string } | null
+    if (!res.ok) throw new ApiError(res.status, json?.error ?? res.statusText)
+    return json as CallReply
+  }
+  const url = URL.createObjectURL(await res.blob())
+  const link = Object.assign(document.createElement('a'), { href: url, download: name })
+  document.body.append(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  return null
+}
+
 const passId = () => (typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`)
 
 export const api = {
@@ -102,6 +128,7 @@ export const api = {
     }),
   view: (req: ViewRequest) => request<ViewResult>(`/api/view?${new URLSearchParams({ ...req.params, view: req.view })}`),
   call: (call: Call, confirmed: boolean) => request<CallReply>('/api/call', { call, confirmed }),
+  save: saved,
   init: (plugins: string[]) => request<CallReply>('/api/init', { plugins }),
   rev: () => request<{ rev: string }>('/api/rev'),
   fileUrl: (path: string) => `/api/file?${new URLSearchParams({ path, token: TOKEN })}`,

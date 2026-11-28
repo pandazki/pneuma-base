@@ -29,7 +29,7 @@ function library(w: World, name: string, plugins: string[] = []): Library {
   ok(w.m.run(['init', dir]))
   const owner = (args: string[]) => w.m.run([...args, '--library', dir], { cwd: w.outside })
   for (const p of ['sync', ...plugins]) ok(owner(['plugin', 'enable', p]))
-  ok(owner(['sync', 'target', 'set', '--kind', 'dir', '--to', w.target]))
+  ok(owner(['sync', 'target', 'set', '--kind', 'folder', '--to', w.target]))
   const agent = (args: string[], input?: string) => w.m.run(['--library', dir, '--as', 'claude-code', '--session', `s-${name}`, ...args], { cwd: w.outside, ...(input === undefined ? {} : { input }) })
   const confirmed = (args: string[]) => w.m.run([...args, '--library', dir], { cwd: w.outside, confirm: true })
   return { dir, agent, owner, confirmed }
@@ -283,29 +283,29 @@ describe('refusals', () => {
     const noTarget = owner(['sync', 'now'])
     expect(noTarget.code).toBe(2)
     expect(noTarget.stdout).toContain('拒绝（no-target）')
-    expect(noTarget.stdout).toContain('sync target set --kind dir --to')
+    expect(noTarget.stdout).toContain('sync target set --kind folder --to')
 
-    for (const args of [['--kind', 's3', '--to', w.target], ['--kind', 'dir']]) {
+    for (const args of [['--kind', 's3', '--to', w.target], ['--kind', 'folder']]) {
       const r = owner(['sync', 'target', 'set', ...args])
       expect(r.code, args.join(' ')).toBe(1)
       expect(r.stderr).toContain('用法错误')
     }
     for (const to of [join(dir, 'inner'), dirname(dir)]) {
-      const r = owner(['sync', 'target', 'set', '--kind', 'dir', '--to', to])
+      const r = owner(['sync', 'target', 'set', '--kind', 'folder', '--to', to])
       expect(r.code, to).toBe(2)
       expect(r.stdout).toContain('target-overlaps')
     }
     expect(existsSync(join(dir, 'inner'))).toBe(false)
     const locked = join(w.root, 'locked')
     mkdirSync(locked, { mode: 0o555 })
-    const unreachable = owner(['sync', 'target', 'set', '--kind', 'dir', '--to', join(locked, 'disk', 'base')])
+    const unreachable = owner(['sync', 'target', 'set', '--kind', 'folder', '--to', join(locked, 'disk', 'base')])
     expect(unreachable.code).toBe(2)
     expect(unreachable.stdout).toContain('拒绝（target-unreachable）：无法创建目录')
 
-    ok(owner(['sync', 'target', 'set', '--kind', 'dir', '--to', w.target]))
+    ok(owner(['sync', 'target', 'set', '--kind', 'folder', '--to', w.target]))
     const facts = () => factsOf(dir, 'sync')
     const n = facts().length
-    expect(ok(owner(['sync', 'target', 'set', '--kind', 'dir', '--to', w.target])).stdout).toContain('未更改')
+    expect(ok(owner(['sync', 'target', 'set', '--kind', 'folder', '--to', w.target])).stdout).toContain('未更改')
     expect(facts()).toHaveLength(n)
 
     ok(w.m.run(['--library', dir, '--as', 'claude-code', 'put', '-', '--to', 'x.md', '--generated'], { input: 'x' }))

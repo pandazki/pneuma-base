@@ -23,6 +23,7 @@ import {
   type Library,
   type ListedView,
   type ListItem,
+  type Plugin,
   type PluginProblem,
   type PluginTable,
   type Tag,
@@ -161,11 +162,16 @@ const KERNEL_VIEWS: readonly { decl: ViewDecl; page: KernelPage }[] = [
 ]
 
 export const viewerFace = {
-  /** Every view of the library, each with who gives it: the plugins' first, in configuration order, then the kernel's. */
+  /**
+   * Every view of the library, each with who gives it: the plugins' first, in configuration order, then
+   * the kernel's. A plugin's only page in the navigation is listed under the plugin's name.
+   */
   views(library: Library): ViewList {
     const missing: PluginProblem[] = library.unavailable.map((plugin) => ({ plugin, message: 'installed in this library but not known to this pneuma-base' }))
     const own = pluginViews(library)
-    const views: ListedView[] = [...own.views.map((v) => ({ ...v.decl, by: v.plugin.name })), ...KERNEL_VIEWS.map((v) => ({ ...v.decl, by: 'kernel' as const }))]
+    const only = (plugin: Plugin) => own.views.filter((v) => v.plugin === plugin && v.decl.nav).length === 1
+    const listed = ({ plugin, decl }: (typeof own.views)[number]): ListedView => ({ ...decl, ...(decl.nav && only(plugin) ? { title: pluginTitle(plugin) } : {}), by: plugin.name })
+    const views: ListedView[] = [...own.views.map(listed), ...KERNEL_VIEWS.map((v) => ({ ...v.decl, by: 'kernel' as const }))]
     return { views, problems: [...missing, ...library.clashes, ...own.problems] }
   },
 

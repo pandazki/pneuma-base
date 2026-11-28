@@ -489,7 +489,7 @@ describe('what a plugin’s view answers is checked (D7)', () => {
       expect.stringContaining('记录的「unheard」在此资料库中没有插件接收'),
       expect.stringContaining('不是基本命令或所有者命令的调用'),
       expect.stringContaining('pattern'),
-      expect.stringContaining('输入 path 的 when 说的 kind 动作里没有'),
+      expect.stringContaining('的输入 path 的 when 引用了 kind，但该操作中没有此输入'),
     ])
   })
 
@@ -678,7 +678,7 @@ describe('the home page', () => {
   })
 
   it('checks the blocks inside a part’s steps as a section’s, and a drop as a block of its own', async () => {
-    const f = await fixture([stepper('one', false, [{ kind: 'nope' }, { kind: 'drop', to: 'inbox', command: 'pneuma-base put <文件> --to inbox/<名字>' }])])
+    const f = await fixture([stepper('one', false, [{ kind: 'nope' }, { kind: 'drop', to: 'inbox', command: 'pneuma-base put <文件> --to inbox/<名字>', action: { label: '添加', tone: 'default', confirm: null, inputs: [], call: { face: 'owner', command: 'ignore list', args: { positional: [], flags: {} } } } }])])
     const r = shown(await show(f, 'home'))
     expect(r.problems).toEqual([{ plugin: 'one', message: expect.stringContaining('steps[0].blocks[0] 是未知的区块类型：nope') }])
     const steps = flat(r.blocks).find((b) => b.kind === 'steps')

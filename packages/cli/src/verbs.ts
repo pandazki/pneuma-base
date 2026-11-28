@@ -99,8 +99,8 @@ function originOf(v: OriginValues): Origin<string> | null {
   if (v.imported && v.generated) throw new UsageError(ORIGIN_HELP)
   if (!v.imported && (v.source !== null || v.by !== null)) throw new UsageError('--source 和 --by 只能与 --imported 同时使用。')
   if (!v.generated && (v.from.length > 0 || v['from-external'].length > 0)) throw new UsageError('--from 和 --from-external 只能与 --generated 同时使用。')
-  if (v.imported) return { kind: 'brought', source: v.source, by: v.by }
-  if (v.generated) return { kind: 'made', from: [...v.from], outside: [...v['from-external']] }
+  if (v.imported) return { kind: 'imported', source: v.source, by: v.by }
+  if (v.generated) return { kind: 'generated', from: [...v.from], outside: [...v['from-external']] }
   return null
 }
 
@@ -117,7 +117,7 @@ function requireOrigin(origin: Origin<string> | null): Origin<string> {
 async function putRequest(v: OriginValues & { what: string; to: string | null; note: string | null; observed: boolean }, { bound, cwd, stdin }: VerbCall): Promise<PutRequest> {
   const { what: first, to, note, observed } = v
   const origin = originOf(v)
-  if (observed && (origin?.kind !== 'brought' || origin.by !== 'owner' || to !== null || first === '-')) throw new UsageError(OBSERVED_HELP)
+  if (observed && (origin?.kind !== 'imported' || origin.by !== 'owner' || to !== null || first === '-')) throw new UsageError(OBSERVED_HELP)
   if (first === '-') {
     if (to === null) throw new UsageError('从标准输入添加时需指定 --to <库内路径>。')
     return { kind: 'place', from: { kind: 'stdin', content: await stdin() }, to, origin: requireOrigin(origin), note }

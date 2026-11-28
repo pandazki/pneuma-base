@@ -50,7 +50,7 @@ async function fixture() {
   }
   const register = async (path: string, content: string) => {
     write(path, content)
-    const r = await agentFace.put({ kind: 'register', path, origin: { kind: 'made', from: [], outside: [] } }, ctx)
+    const r = await agentFace.put({ kind: 'register', path, origin: { kind: 'generated', from: [], outside: [] } }, ctx)
     if (r.outcome !== 'accepted') throw new Error(r.reason)
   }
   return { root, target, pctx, owner, write, register, view: () => sync.onView?.({ view: 'sync.status', params: {} }, pctx) }
@@ -64,7 +64,7 @@ const conflict = (copy: string, original: string): SyncFact => ({ kind: 'conflic
 describe('own content', () => {
   it('a record place’s own content travels, but for the directories its plugin declares a cache', async () => {
     const f = await fixture()
-    await f.owner('sync target set', { kind: ['dir'], to: [f.target] })
+    await f.owner('sync target set', { kind: ['folder'], to: [f.target] })
     f.write('.pneuma-base/keeper/notes/a.md', 'kept note')
     f.write('.pneuma-base/keeper/index/db', 'rebuilt anywhere')
     await f.owner('sync now')
@@ -98,13 +98,13 @@ describe('the sync.status view', () => {
     const v = await f.view()
     expect(v?.blocks).toMatchObject([
       { kind: 'empty', title: '未设置同步目标' },
-      { kind: 'actions', head: true, actions: [{ as: 'primary', inputs: [{ name: 'to' }], call: { face: 'owner', command: 'sync target set', args: { flags: { kind: ['dir'], to: ['{to}'] } } } }] },
+      { kind: 'actions', head: true, actions: [{ as: 'primary', inputs: [{ name: 'to' }], call: { face: 'owner', command: 'sync target set', args: { flags: { kind: ['folder'], to: ['{to}'] } } } }] },
     ])
   })
 
   it('shows the target, what a sync would do with a 立即同步 button, and after the sync the last run and nothing pending', async () => {
     const f = await fixture()
-    await f.owner('sync target set', { kind: ['dir'], to: [f.target] })
+    await f.owner('sync target set', { kind: ['folder'], to: [f.target] })
     await f.register('a.md', 'a')
     f.write('stray.md', 'nobody registered it')
     const shownBefore = await f.view()
@@ -128,7 +128,7 @@ describe('the sync.status view', () => {
 
   it('names a target missing on this machine', async () => {
     const f = await fixture()
-    await f.owner('sync target set', { kind: ['dir'], to: [f.target] })
+    await f.owner('sync target set', { kind: ['folder'], to: [f.target] })
     rmSync(f.target, { recursive: true })
     const blocks = (await f.view())?.blocks ?? []
     expect(flat(blocks).find((b) => b.kind === 'text')).toMatchObject({ tone: 'warn', text: expect.stringContaining(`${f.target} 在本机不存在`) })
@@ -136,7 +136,7 @@ describe('the sync.status view', () => {
 
   it('lists the conflict copies a sync made that are still where it made them, each with an archive button', async () => {
     const f = await fixture()
-    await f.owner('sync target set', { kind: ['dir'], to: [f.target] })
+    await f.owner('sync target set', { kind: ['folder'], to: [f.target] })
     const copy = 'n/plan.conflict-other-20261125T080000Z.md'
     f.write(copy, 'theirs')
     f.write('n/look.conflict-other-20261125T080000Z.md', 'named like one, made by nobody')

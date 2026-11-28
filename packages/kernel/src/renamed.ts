@@ -29,6 +29,7 @@ const FLAGS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
 /** Flag values renamed, by the command's name now and the flag's name now. */
 const VALUES: Readonly<Record<string, Readonly<Record<string, Readonly<Record<string, string>>>>>> = {
   'deploy target set': { kind: { dir: 'folder', machine: 'self-hosted' } },
+  'sync target set': { kind: { dir: 'folder' } },
 }
 
 /** A command's name as it is now. */

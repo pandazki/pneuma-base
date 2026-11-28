@@ -36,11 +36,11 @@ beforeAll(async () => {
   lib = (await openLibrary(root, table)) as Library
   const s1 = makeContext(lib, claude, session('s1'), home)
   await agentFace.say({ kind: 'task', about: null, text: '写咖啡笔记', args: {} }, s1)
-  await agentFace.put({ kind: 'place', from: text('手冲咖啡要注意水温和研磨度。\n'), to: 'notes/coffee.md', origin: { kind: 'made', from: [], outside: [] } }, s1)
-  await agentFace.put({ kind: 'place', from: text('收据\n'), to: 'misc/receipt.txt', origin: { kind: 'brought', source: null, by: null } }, makeContext(lib, claude, session('s3'), home))
+  await agentFace.put({ kind: 'place', from: text('手冲咖啡要注意水温和研磨度。\n'), to: 'notes/coffee.md', origin: { kind: 'generated', from: [], outside: [] } }, s1)
+  await agentFace.put({ kind: 'place', from: text('收据\n'), to: 'misc/receipt.txt', origin: { kind: 'imported', source: null, by: null } }, makeContext(lib, claude, session('s3'), home))
   const s4 = makeContext(lib, claude, session('s4'), home)
-  await agentFace.put({ kind: 'place', from: text('一\n'), to: 'tea/pot.md', origin: { kind: 'made', from: [], outside: [] }, note: '陶瓷壶初稿' }, s4)
-  await agentFace.put({ kind: 'place', from: text('二\n'), to: 'tea/pot.md', origin: { kind: 'made', from: [], outside: [] }, note: '换成玻璃壶后重写' }, s4)
+  await agentFace.put({ kind: 'place', from: text('一\n'), to: 'tea/pot.md', origin: { kind: 'generated', from: [], outside: [] }, note: '陶瓷壶初稿' }, s4)
+  await agentFace.put({ kind: 'place', from: text('二\n'), to: 'tea/pot.md', origin: { kind: 'generated', from: [], outside: [] }, note: '换成玻璃壶后重写' }, s4)
   writeFileSync(join(root, 'notes/loose.md'), '没人登记过\n')
 })
 

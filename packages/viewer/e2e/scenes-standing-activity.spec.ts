@@ -3,7 +3,7 @@
 // within five seconds without a reload (a file edited in place, on the page's next fetch: ARCHITECTURE.md「界面的服务」, the
 // poll looks at the facts and the open directories only); the activity page lists recent facts, newest
 // first, the owner's acts marked and an agent's own not, with filters that count what they keep.
-import { renameSync, rmSync, writeFileSync } from 'node:fs'
+import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DECIDED, DOING, expect, navTitles, openShared, relay, test, write } from './support.ts'
 
@@ -21,9 +21,9 @@ test('scenes, standing and activity: what happened and what needs attention', as
   await openShared(page, '活动', '场景')
   await expect(main.getByRole('heading', { level: 1, name: '场景' })).toBeVisible()
   const sceneRow = (text: string) => main.getByRole('listitem').filter({ hasText: text })
-  await expect(sceneRow(DOING).getByRole('img', { name: /^claude-code/ })).toBeVisible()
+  await expect(sceneRow(DOING).getByRole('img', { name: /^Claude Code/ })).toBeVisible()
   await expect(sceneRow(DOING)).toContainText('添加 6 个条目')
-  await expect(sceneRow('把支付服务接进电子书小店').getByRole('img', { name: /^codex/ })).toBeVisible()
+  await expect(sceneRow('把支付服务接进电子书小店').getByRole('img', { name: /^Codex/ })).toBeVisible()
   await expect(sceneRow('所有者操作')).toContainText('grant create')
   await sceneRow(DOING).getByRole('link').click()
   await expect(title).toHaveText(DOING)
@@ -68,7 +68,7 @@ test('scenes, standing and activity: what happened and what needs attention', as
   await panel.getByRole('button', { name: '关闭详情' }).click()
   const rows = main.getByRole('listitem')
   await expect(rows.first().locator('.feed-name')).toHaveText('integration-notes.md')
-  await expect(rows.first().getByRole('img', { name: /^codex/ })).toBeVisible()
+  await expect(rows.first().getByRole('img', { name: /^Codex/ })).toBeVisible()
   const granted = rows.filter({ has: page.locator('.feed-line[title^="pneuma-base grant create "]') })
   await expect(granted.first().getByRole('img', { name: '我' })).toBeVisible()
   // An agent acting on its own is the ordinary case, and goes unmarked.
@@ -79,4 +79,14 @@ test('scenes, standing and activity: what happened and what needs attention', as
   await expect(rows.filter({ hasText: 'integration-notes.md' })).toHaveCount(0)
   await expect(granted).toHaveCount(2)
   await expect(owner).toHaveText(`我${await rows.count()}`)
+
+  // 导出 hands every record over as a file of the format chosen; the page asks for no path.
+  await page.getByRole('button', { name: '导出', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '导出' })
+  await expect(dialog.getByText('外部文件')).toHaveCount(0)
+  const download = page.waitForEvent('download')
+  await dialog.getByRole('button', { name: '导出', exact: true }).click()
+  const file = await download
+  expect(file.suggestedFilename()).toBe('活动记录.csv')
+  expect(readFileSync(await file.path(), 'utf8')).toContain('payments/integration-notes.md')
 })

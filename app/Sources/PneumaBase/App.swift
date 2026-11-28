@@ -95,7 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     alert.messageText = "请将 Pneuma Base 移动到「应用程序」文件夹后再打开"
     alert.informativeText = "应用当前从解压位置直接打开，macOS 在临时位置运行它。已连接的 Agent 按固定路径调用应用；应用退出后临时位置失效，Agent 将无法调用。"
     alert.addButton(withTitle: "退出")
-    alert.addButton(withTitle: "暂不设置")
+    alert.addButton(withTitle: "暂不移动")
     if alert.runModal() == .alertFirstButtonReturn { NSApp.terminate(nil) }
   }
 

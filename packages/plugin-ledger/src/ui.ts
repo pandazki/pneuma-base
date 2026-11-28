@@ -2,6 +2,7 @@
 // its section of the kernel's item panel, and the pieces its feeds share (feeds.ts). Each page is
 // built from the rows it shows, read by query a page at a time.
 import {
+  agentProduct,
   formOf,
   originalPath,
   pageOfList,
@@ -103,10 +104,11 @@ export function actorMark(a: FactActor, grants: readonly Grant[]): ActorMark | s
   return { kind: 'agent', name: a.name, ...(grant === undefined ? {} : { grant }) }
 }
 
-/** A cell that says who: the actor's mark, and its name as the text. */
+/** A cell that says who: the actor's mark, and its name as the text, an agent of a known product by the product's name. */
 export function actorCell(a: FactActor, grants: readonly Grant[]): Cell {
   const mark = actorMark(a, grants)
-  return typeof mark === 'string' ? { text: mark, muted: true } : { text: mark.name, actor: mark }
+  if (typeof mark === 'string') return { text: mark, muted: true }
+  return { text: (mark.kind === 'agent' ? agentProduct(mark.name)?.title : undefined) ?? mark.name, actor: mark }
 }
 
 /** By which grant an actor acted, in words, under the label 授权: its name, area and access; the owner needs none. */
@@ -164,7 +166,7 @@ export function provenanceActions(path: string): Action[] {
         input('source', '原始来源', { placeholder: 'URL、书名或其他来源；未知可留空' }),
         input('by', '导入者', { value: 'owner', options: [{ value: 'owner', label: ME }, { value: '', label: '未知' }] }),
       ],
-      call: { face: 'agent', verb: 'put', request: { kind: 'register', path, origin: { kind: 'brought', source: '{source}', by: '{by}' } } },
+      call: { face: 'agent', verb: 'put', request: { kind: 'register', path, origin: { kind: 'imported', source: '{source}', by: '{by}' } } },
     },
     {
       label: '标记为生成',
@@ -174,7 +176,7 @@ export function provenanceActions(path: string): Action[] {
         input('from', '依据的条目', { placeholder: '路径，每行一个', multiple: true }),
         input('outside', '外部依据', { placeholder: '每行一条，例如：对话中确认的需求', multiple: true }),
       ],
-      call: { face: 'agent', verb: 'put', request: { kind: 'register', path, origin: { kind: 'made', from: ['{from}'], outside: ['{outside}'] } } },
+      call: { face: 'agent', verb: 'put', request: { kind: 'register', path, origin: { kind: 'generated', from: ['{from}'], outside: ['{outside}'] } } },
     },
   ]
 }
@@ -337,7 +339,7 @@ export function itemsAnswer(page: ItemsPage, grants: readonly Grant[]): ViewAnsw
   const empty =
     show !== '' || dir !== ''
       ? '暂无条目'
-      : '暂无已登记条目。Agent 用 put 添加条目；资料库中原有的文件列在「状态」页，可在该页补充来源。'
+      : '暂无已登记条目。资料库中原有的文件列在「状态」页，可在该页登记为条目。'
   const shown = page.counts[show] ?? 0
   const tree: Block = { kind: 'tree', param: 'dir', selected: dir, nodes: [{ value: '', label: '全部', count: null, children: folderTree(page.tree, show === 'archived' ? '_archive/' : '') }] }
   // A folder's count is of everything in it, so only the whole of it has an exact total; a kind of thing in a folder counts as far as the page goes.
@@ -575,7 +577,7 @@ export const STANDING_NOTES: Record<StandingKind, string> = {
   closed: '',
   changed: '文件被绕过资料库直接修改，内容与记录不一致。可确认此修改。',
   missing: '记录中存在，存储中不存在：可能已被删除，或已移动到无法识别的位置。',
-  moved: '条目已移动到新位置。Agent 下次执行 check 时，溯源插件记录新位置。',
+  moved: '条目已移动到新位置，Agent 下次检查时记录新位置。',
 }
 
 /** One row of a kind, opening the thing's panel, with the actions that settle it; a closed directory with what a look into it found. */

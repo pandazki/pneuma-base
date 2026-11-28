@@ -46,7 +46,7 @@ it('loads the records and the target an earlier version wrote', async () => {
     const src = join(dir, 'src', path)
     mkdirSync(src, { recursive: true })
     writeFileSync(join(src, 'index.html'), text)
-    expect(await agentFace.put({ kind: 'place', from: { kind: 'directory', path: src }, to: path, origin: { kind: 'made', from: [], outside: [] } }, ctx)).toMatchObject({ outcome: 'accepted' })
+    expect(await agentFace.put({ kind: 'place', from: { kind: 'directory', path: src }, to: path, origin: { kind: 'generated', from: [], outside: [] } }, ctx)).toMatchObject({ outcome: 'accepted' })
   }
   const own = join(root, '.pneuma-base', 'deploy')
   mkdirSync(join(own, 'facts'), { recursive: true })

@@ -44,7 +44,7 @@ export const asOneThing = (path: LibraryPath): Action => ({
   tone: 'default',
   confirm: null,
   inputs: [],
-  call: { face: 'agent', verb: 'put', request: { kind: 'register', path, origin: { kind: 'brought', source: null, by: 'owner' }, note: null } },
+  call: { face: 'agent', verb: 'put', request: { kind: 'register', path, origin: { kind: 'imported', source: null, by: 'owner' }, note: null } },
 })
 
 /** Leaving a directory alone: it joins the library's noise, so nothing mentions it again. */

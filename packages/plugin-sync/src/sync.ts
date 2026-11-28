@@ -207,12 +207,13 @@ export function countsText(c: Omit<Counts, 'skipped'>): string {
 
 export const when = (at: string) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`
 
-/** Why a plan is not ready, for a person or an agent. */
-export function notReadyText(prepared: Exclude<Prepared, Ready>, machine: string): string {
-  if (prepared.kind === 'no-target') return '未设置同步目标。所有者用 sync target set --kind dir --to <目录> 设置。'
+/** Why a plan is not ready; with `command`, as a command's answer, naming the command that sets the target, else as the page says it beside its own action. */
+export function notReadyText(prepared: Exclude<Prepared, Ready>, machine: string, command = true): string {
+  const set = command ? '用 sync target set --kind folder --to <目录> ' : ''
+  if (prepared.kind === 'no-target') return command ? `未设置同步目标。所有者${set}设置。` : '未设置同步目标。'
   const { record } = prepared
-  if (prepared.kind === 'target-overlaps') return `同步目标 ${record.target.path} 与资料库目录互相包含，无法同步。请用 sync target set 更换为资料库之外的目录。`
+  if (prepared.kind === 'target-overlaps') return `同步目标 ${record.target.path} 与资料库目录互相包含，无法同步。请${set}更换为资料库之外的目录。`
   if (prepared.kind === 'target-failed') return `读取同步目标 ${record.target.path} 时出错：${prepared.message}`
-  const elsewhere = record.machine === machine ? '请挂载该目录所在的磁盘，或用 sync target set 更换。' : `该目标在机器 ${record.machine} 上设置；请用 sync target set --kind dir --to <目录> 设置本机路径。`
+  const elsewhere = record.machine === machine ? `请挂载该目录所在的磁盘，或${set}更换同步目标。` : `该目标在机器 ${record.machine} 上设置；请${set}设置本机路径。`
   return `同步目标 ${record.target.path} 在本机不存在。${elsewhere}`
 }

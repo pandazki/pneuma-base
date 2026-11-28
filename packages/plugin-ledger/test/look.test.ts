@@ -42,7 +42,7 @@ async function library() {
   let second = 0
   const now = () => new Date(Date.parse('2026-11-27T03:00:00.000Z') + 1000 * second++).toISOString() as Instant
   const agent = (id = 'work') => makeContext(lib, claude, session(id), home, now())
-  const put = (path: string, content: string) => agentFace.put({ kind: 'place', from: text(content), to: path, origin: { kind: 'brought', source: null, by: null } }, agent())
+  const put = (path: string, content: string) => agentFace.put({ kind: 'place', from: text(content), to: path, origin: { kind: 'imported', source: null, by: null } }, agent())
   const check = (deep?: { dir: string | null }) => agentFace.check({ since: 'last', includeArchived: false, ...(deep ? { deep: deep as never } : {}) }, agent('checker'))
   const run = (command: string, positional: string[], flags: Record<string, string[] | true> = {}) =>
     ownerFace.dispatch({ ctx: makeContext(lib, { kind: 'owner' }, session('owner'), home, now()), table, env: {}, viaGrant: false, confirm: async () => true }, command, { positional, flags })
@@ -97,7 +97,7 @@ describe('check, by position', () => {
     const { write, agent, check } = await library()
     write('site/index.html', '<h1>hi</h1>')
     write('site/.pneuma-item', '')
-    await agentFace.put({ kind: 'register', path: 'site', origin: { kind: 'brought', source: null, by: null } }, agent())
+    await agentFace.put({ kind: 'register', path: 'site', origin: { kind: 'imported', source: null, by: null } }, agent())
     expect(told(await check())).not.toContain('site')
     write('site/style.css', 'h1{}')
     const r = await checkUntil(check, (x) => section(x, '外部修改').includes('site'))
@@ -158,7 +158,7 @@ describe('check --deep, by position', () => {
     await l.put('notes/n.md', 'n')
     l.write('site/index.html', '<h1>hi</h1>')
     l.write('site/.pneuma-item', '')
-    await agentFace.put({ kind: 'register', path: 'site', origin: { kind: 'brought', source: null, by: null } }, l.agent())
+    await agentFace.put({ kind: 'register', path: 'site', origin: { kind: 'imported', source: null, by: null } }, l.agent())
     l.write('notes/loose.md', 'loose')
     l.write('notes/proj/x.md', 'x')
     l.write('node_modules/y.js', 'y')
@@ -196,7 +196,7 @@ describe('registering', () => {
     write('notes/c.md', 'c')
     write('notes/deeper/d.md', 'd')
     reads.length = 0
-    const r = await agentFace.put({ kind: 'register', path: 'notes', origin: { kind: 'brought', source: null, by: 'owner' } }, agent())
+    const r = await agentFace.put({ kind: 'register', path: 'notes', origin: { kind: 'imported', source: null, by: 'owner' } }, agent())
     expect(r.outcome).toBe('accepted')
     expect(reads).toEqual([])
     const after = await check()

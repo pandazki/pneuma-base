@@ -171,22 +171,29 @@ export const productNamed = (name: string): AgentProduct | undefined => AGENT_PR
  * or a grant goes by. The page matches a name whole, then by its first word (codex-work is Codex); any
  * other name is drawn as its letters. Products connected or paired go by their product name.
  */
-export const AGENT_MARKS: readonly { readonly product: string; readonly names: readonly string[] }[] = [
-  { product: 'claude-code', names: ['claude-code', 'claude', 'cc'] },
-  { product: 'claude-desktop', names: ['claude-desktop'] },
-  { product: 'codex', names: ['codex'] },
-  { product: 'cursor', names: ['cursor'] },
-  { product: 'gemini-cli', names: ['gemini-cli', 'gemini'] },
-  { product: 'github-copilot', names: ['github-copilot', 'copilot'] },
-  { product: 'grok', names: ['grok'] },
-  { product: 'kimi', names: ['kimi'] },
-  { product: 'qwen-code', names: ['qwen-code', 'qwen'] },
-  { product: 'deepseek', names: ['deepseek'] },
-  { product: 'opencode', names: ['opencode'] },
-  { product: 'antigravity', names: ['antigravity'] },
-  { product: 'windsurf', names: ['windsurf'] },
-  { product: 'cline', names: ['cline'] },
+export const AGENT_MARKS: readonly { readonly product: string; readonly title: string; readonly names: readonly string[] }[] = [
+  { product: 'claude-code', title: 'Claude Code', names: ['claude-code', 'claude', 'cc'] },
+  { product: 'claude-desktop', title: 'Claude Desktop', names: ['claude-desktop'] },
+  { product: 'codex', title: 'Codex', names: ['codex'] },
+  { product: 'cursor', title: 'Cursor', names: ['cursor'] },
+  { product: 'gemini-cli', title: 'Gemini CLI', names: ['gemini-cli', 'gemini'] },
+  { product: 'github-copilot', title: 'GitHub Copilot', names: ['github-copilot', 'copilot'] },
+  { product: 'grok', title: 'Grok', names: ['grok'] },
+  { product: 'kimi', title: 'Kimi', names: ['kimi'] },
+  { product: 'qwen-code', title: 'Qwen Code', names: ['qwen-code', 'qwen'] },
+  { product: 'deepseek', title: 'DeepSeek', names: ['deepseek'] },
+  { product: 'opencode', title: 'OpenCode', names: ['opencode'] },
+  { product: 'antigravity', title: 'Antigravity', names: ['antigravity'] },
+  { product: 'windsurf', title: 'Windsurf', names: ['windsurf'] },
+  { product: 'cline', title: 'Cline', names: ['cline'] },
 ]
+
+/** The product an agent's name goes by, matched whole, then by its first word, as the page draws its mark; null for any other name. */
+export function agentProduct(name: string): { product: string; title: string } | null {
+  const lower = name.toLowerCase()
+  const first = lower.split(/[^a-z0-9]+/)[0] ?? ''
+  return AGENT_MARKS.find((m) => m.names.includes(lower)) ?? AGENT_MARKS.find((m) => m.names.includes(first)) ?? null
+}
 
 /** The ways a product can be connected, the one used when none is asked for first: a skill, then an MCP server by command, then by address. */
 export const waysOf = (p: AgentProduct): Way[] => [

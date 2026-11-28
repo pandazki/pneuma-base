@@ -18,8 +18,8 @@ test('the items page and the provenance chain of a relayed library', async ({ pa
   const row = (path: string) => main.getByRole('row', { name: new RegExp(`^${path.slice(path.lastIndexOf('/') + 1).replaceAll('.', '\\.')}\\b`) })
   await expect(main.getByRole('row', { name: /^payments\/sources$/ })).toBeVisible()
   await expect(row('payments/integration-notes.md')).not.toContainText('导入')
-  await expect(row('payments/integration-notes.md').getByRole('img', { name: /^codex/ })).toBeVisible()
-  await expect(row('payments/comparison.md').getByRole('img', { name: /^claude-code/ })).toBeVisible()
+  await expect(row('payments/integration-notes.md').getByRole('img', { name: /^Codex/ })).toBeVisible()
+  await expect(row('payments/comparison.md').getByRole('img', { name: /^Claude Code/ })).toBeVisible()
   await expect(row('payments/comparison.md')).not.toContainText('一致')
   await expect(row('payments/sources/stripe-pricing.html')).toContainText('导入')
   // With room, nothing in the table is cut short.

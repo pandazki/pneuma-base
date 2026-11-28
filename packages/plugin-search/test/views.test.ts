@@ -28,7 +28,7 @@ async function library() {
       writeFileSync(join(root, path), content)
     },
     register: async (path: string) => {
-      const r = await agentFace.put({ kind: 'register', path, origin: { kind: 'made', from: [], outside: [] } }, (await open()).ctx)
+      const r = await agentFace.put({ kind: 'register', path, origin: { kind: 'generated', from: [], outside: [] } }, (await open()).ctx)
       if (r.outcome !== 'accepted') throw new Error(`not registered: ${r.reason}`)
     },
     dropCache: async () => rmSync((await open()).pctx.cacheDir, { recursive: true, force: true }),

@@ -17,7 +17,7 @@ export const TARGET_SET = defineCommand({
   summary: '设置同步目标：本机的一个目录',
   params: {
     flags: [
-      { name: 'kind', hint: '类型', kind: 'value', required: true, options: [{ value: 'dir', label: 'dir：本机目录' }] },
+      { name: 'kind', hint: '类型', kind: 'value', required: true, options: [{ value: 'folder', label: '本地文件夹' }] },
       { name: 'to', hint: '目录', kind: 'value', required: true },
     ],
   },
@@ -38,7 +38,7 @@ export const TARGET_SET = defineCommand({
     if (mine?.target.path === path) return done(`同步目标已是目录 ${path}，未更改。`, { target: mine.target })
     const fact: TargetFact = { ...envelope(ctx), kind: 'target.set', target: { kind: 'dir', path } }
     await writeFacts(ctx, [fact])
-    return done(`已将本机（${machine}）的同步目标设为目录 ${path}。用 sync now 同步。`, { target: fact.target })
+    return done(`已将本机（${machine}）的同步目标设为目录 ${path}。`, { target: fact.target })
   },
 })
 

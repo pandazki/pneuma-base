@@ -58,7 +58,7 @@ describe('the whole story, with every plugin installed', () => {
     ok(sb.run(['init', lib], { cwd: root }))
     for (const name of PLUGINS) ok(owner(lib, ['plugin', 'enable', name]))
     ok(owner(lib, ['deploy', 'target', 'set', '--kind', 'dir', '--to', www]))
-    ok(owner(lib, ['sync', 'target', 'set', '--kind', 'dir', '--to', syncTarget]))
+    ok(owner(lib, ['sync', 'target', 'set', '--kind', 'folder', '--to', syncTarget]))
     ok(owner(lib, ['search', 'embedding', 'set', '--kind', 'hash']))
     const description = readFileSync(join(lib, 'PNEUMA-BASE.md'), 'utf8')
     for (const name of ['ledger', ...PLUGINS]) expect(description).toContain(`- \`${name}\`：`)
@@ -111,7 +111,7 @@ describe('the whole story, with every plugin installed', () => {
     expect(ok(owner(lib, ['sync', 'now', '--json'])).json().data.counts).toMatchObject({ pushed: expect.any(Number), pulled: 0, conflicts: 0 })
     ok(sb.run(['init', lib2], { cwd: root }))
     for (const name of PLUGINS) ok(owner(lib2, ['plugin', 'enable', name]))
-    ok(owner(lib2, ['sync', 'target', 'set', '--kind', 'dir', '--to', syncTarget]))
+    ok(owner(lib2, ['sync', 'target', 'set', '--kind', 'folder', '--to', syncTarget]))
     const pulled = ok(owner(lib2, ['sync', 'now', '--json'])).json().data.counts
     expect(pulled.pulled).toBeGreaterThan(0)
     expect(pulled.conflicts).toBe(0)

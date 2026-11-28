@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { agentFace, type AcceptedPut, type InspectResult, type PlaceOverExisting, type Plugin, type PutResult } from '../src/index.js'
 import { fixture, plugin, type Fixture } from './support.js'
 
-const brought = { kind: 'brought', source: null, by: null } as const
+const brought = { kind: 'imported', source: null, by: null } as const
 const sha = (text: string) => createHash('sha256').update(text).digest('hex')
 
 /** A contract-2 plugin that records what it is told, says `notes` is open, and keeps a copy before any replacement. */
@@ -92,7 +92,7 @@ describe('put, registering what is already there', () => {
   it("corrects the origin of a registered file and registers a bundle again, reading none of either; registers an open directory's loose files of its one level as files; registers a directory nobody looked into as one thing, reading none of it; refuses an ignored place", async () => {
     const { f, seen } = await setUp()
     unreadable(f, 'a.md')
-    expect(outcome(await agentFace.put({ kind: 'register', path: 'a.md', origin: { kind: 'brought', source: 'mail', by: null } }, f.ctx))).toBe('accepted')
+    expect(outcome(await agentFace.put({ kind: 'register', path: 'a.md', origin: { kind: 'imported', source: 'mail', by: null } }, f.ctx))).toBe('accepted')
     const file = seen.at(-1)
     expect(file).toMatchObject({ kind: 'register', path: 'a.md', fingerprint: null, origin: { source: 'mail' } })
     expect(file?.kind === 'register' && file.now.token).toBeTruthy()

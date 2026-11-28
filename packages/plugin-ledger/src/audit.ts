@@ -2,7 +2,7 @@
 // run too), and every row of the activity as a file outside the library (`ledger export`).
 import { homedir } from 'node:os'
 import { isAbsolute, relative, resolve } from 'node:path'
-import { defineCommand, type Grant, type OwnerAnswer, type PluginContext } from '@pneuma-base/kernel'
+import { defineCommand, formOf, type Action, type Grant, type OwnerAnswer, type PluginContext } from '@pneuma-base/kernel'
 import { createOutside } from './export-file.js'
 import { requestOf, type Fact } from './facts.js'
 import { whoseOf } from './feeds.js'
@@ -149,3 +149,12 @@ export const LEDGER_EXPORT = defineCommand({
     return done(`已将 ${n} 条记录导出到 ${path}（${kind === 'csv' ? 'CSV' : 'JSON Lines'}）。`, { to: path, format: kind, rows: n, columns: EXPORT_COLUMNS })
   },
 })
+
+const PERIOD_HINT = '日期或时刻，例如 2026-11-01；留空为不限'
+
+/** 导出 on the activity page: every record of the period chosen, in the format chosen, as a file the page hands over. */
+export function exportAction(): Action {
+  const { inputs, call } = formOf(LEDGER_EXPORT, { values: { format: 'csv' } })
+  const shown = inputs.map((i) => (i.name === 'since' || i.name === 'until' ? { ...i, placeholder: PERIOD_HINT } : i))
+  return { label: '导出', tone: 'default', confirm: null, inputs: shown, call, as: 'icon', icon: 'download', save: { input: 'to', name: '活动记录.{format}' } }
+}

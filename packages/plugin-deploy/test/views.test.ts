@@ -42,7 +42,7 @@ beforeAll(async () => {
     const site = join(dir, name)
     mkdirSync(site)
     writeFileSync(join(site, 'index.html'), `<h1>${name}</h1>`)
-    await agentFace.put({ kind: 'place', from: { kind: 'directory', path: site }, to: `sites/${name}`, origin: { kind: 'made', from: [], outside: [] } }, as(claude))
+    await agentFace.put({ kind: 'place', from: { kind: 'directory', path: site }, to: `sites/${name}`, origin: { kind: 'generated', from: [], outside: [] } }, as(claude))
   }
   for (const name of ['s1', 's2', 's3']) await agentFace.say({ kind: 'deployable', about: `sites/${name}`, text: null, args: {} }, as(claude))
   const call = { ctx: as(owner), table, home, env: {}, viaGrant: false, confirm: async () => false }

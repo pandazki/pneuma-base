@@ -44,7 +44,7 @@ test('the app opens on the home page: what waits on the owner, what agents did s
   await expect(since.getByRole('button', { name: '把支付服务接进电子书小店' })).toBeVisible()
   // Who is the row's mark; its name is in the mark's tooltip, not repeated in the row. The act is an icon, the thing its name, the whole sentence the tooltip.
   const put = since.getByRole('listitem').filter({ hasText: 'integration-notes.md' }).filter({ has: page.getByRole('img', { name: '生成' }) })
-  await expect(put.getByRole('img', { name: /^codex/ })).toBeVisible()
+  await expect(put.getByRole('img', { name: /^Codex/ })).toBeVisible()
   await expect(put.locator('.feed-line')).toHaveAttribute('title', /^生成 payments\/integration-notes\.md/)
   // The heading says what the scene was doing; the same sentence is not a row under it as well.
   await expect(since.getByRole('listitem').filter({ hasText: `任务：${DOING}` })).toHaveCount(0)

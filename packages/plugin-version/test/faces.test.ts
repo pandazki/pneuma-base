@@ -41,7 +41,7 @@ async function library() {
   const call = (): OwnerCall => ({ ctx: as(owner), table, env: {}, viaGrant: false, confirm: async () => true })
   const owned = (name: string, positional: string[], flags: Record<string, string[]> = {}) => ownerFace.dispatch(call(), name, { positional, flags })
   const put = (content: string, to: string) =>
-    agentFace.put({ kind: 'place', from: { kind: 'stdin', content: new TextEncoder().encode(content) }, to, origin: { kind: 'made', from: [], outside: [] } }, as())
+    agentFace.put({ kind: 'place', from: { kind: 'stdin', content: new TextEncoder().encode(content) }, to, origin: { kind: 'generated', from: [], outside: [] } }, as())
   const declare = (path: string) => agentFace.say({ kind: 'versioned', about: null, text: path, args: {} }, as())
   return { root, dir, owned, put, declare, plugin, as }
 }
@@ -161,7 +161,7 @@ describe('the item panel section', () => {
   it('a path inside a bundle shows the bundle; an archived thing offers export and pruning only', async () => {
     const { dir, put, plugin, as } = await library()
     writeTree(join(dir, 'site'), { 'index.html': '1' })
-    await agentFace.put({ kind: 'place', from: { kind: 'directory', path: join(dir, 'site') }, to: 'sites/a', origin: { kind: 'made', from: [], outside: [] } }, as())
+    await agentFace.put({ kind: 'place', from: { kind: 'directory', path: join(dir, 'site') }, to: 'sites/a', origin: { kind: 'generated', from: [], outside: [] } }, as())
     await agentFace.say({ kind: 'versioned', about: null, text: 'sites/a', args: {} }, as())
     const inside = await version.onItemView?.('sites/a/index.html' as LibraryPath, plugin())
     expect(only(inside?.blocks ?? [], 'actions')?.actions[0]?.call).toMatchObject({ args: { positional: ['sites/a'] } })

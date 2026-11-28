@@ -11,7 +11,7 @@ import type { DiskState } from './versions.js'
 
 export const THINGS_VIEW: ViewDecl = {
   id: 'version.items',
-  title: '受版本管理的条目',
+  title: '版本管理',
   icon: 'git-branch',
   nav: true,
   filters: [{ name: 'archived', label: '已归档', options: [{ value: 'hide', label: '使用中' }, { value: 'show', label: '包含已归档' }], default: 'hide' }],
@@ -134,6 +134,6 @@ export function thingsPage(things: { thing: Thing; state: DiskState }[], page: P
     { key: 'latest', label: '时间' },
     { key: 'state', label: '状态' },
   ]
-  const empty = '暂无受版本管理的条目。Agent 用 say versioned <库内路径> 启用版本管理。'
+  const empty = '暂无受版本管理的条目。可在条目面板中启用版本管理。'
   return { title: THINGS_VIEW.title, subtitle: null, blocks: [{ kind: 'table', columns, rows, empty, page }] }
 }

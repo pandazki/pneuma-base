@@ -24,7 +24,7 @@ const setTarget = (current: string | null): Action => ({
   label: current === null ? '设置同步目标' : '更换同步目标',
   tone: 'default',
   confirm: null,
-  ...formOf(TARGET_SET, { fixed: { kind: 'dir' }, values: current === null ? {} : { to: current } }),
+  ...formOf(TARGET_SET, { fixed: { kind: 'folder' }, values: current === null ? {} : { to: current } }),
 })
 
 const RESOLVE = '比较两份内容，将需要的内容写回原文件，再归档冲突副本。'
@@ -41,7 +41,7 @@ const PENDING_ROWS = [
 /** What a sync now would do, by kind, with the button that does it; or why it cannot. */
 function pendingBlock(prepared: Prepared, machine: string): Block {
   const section = (note: string | null, count: number | null, blocks: Block[]): Block => ({ kind: 'section', title: '待同步', note, count, blocks, actions: [syncNow] })
-  if (prepared.kind !== 'ready') return section(null, null, [{ kind: 'text', tone: 'warn', text: notReadyText(prepared, machine) }])
+  if (prepared.kind !== 'ready') return section(null, null, [{ kind: 'text', tone: 'warn', text: notReadyText(prepared, machine, false) }])
   const pending = pendingOf(prepared.plan)
   const rows = PENDING_ROWS.map(([key, label]) => ({ key, cells: { what: { text: label }, count: { text: String(pending[key]), mono: true } }, link: null, actions: [] }))
   const table: Block = { kind: 'table', columns: [{ key: 'what', label: '操作' }, { key: 'count', label: '数量' }], rows, empty: '已同步' }

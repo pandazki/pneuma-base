@@ -326,7 +326,7 @@ const given = (text: string | null) => (text === null || text.trim() === '' ? nu
  * inside a bundle names the bundle, which is the thing. Empty fields count as not given.
  */
 async function parseOrigin(ctx: Context, store: Storage, origin: Origin<string>): Promise<Origin | Refused> {
-  if (origin.kind === 'brought') return { kind: 'brought', source: given(origin.source), by: given(origin.by) }
+  if (origin.kind === 'imported') return { kind: 'imported', source: given(origin.source), by: given(origin.by) }
   const { root } = ctx.library
   const from: LibraryPath[] = []
   for (const input of origin.from.flatMap((f) => given(f) ?? [])) {
@@ -336,7 +336,7 @@ async function parseOrigin(ctx: Context, store: Storage, origin: Origin<string>)
     if (thing === null) return refuse('no-such-file', input)
     from.push(thing)
   }
-  return { kind: 'made', from, outside: origin.outside.flatMap((o) => given(o) ?? []) }
+  return { kind: 'generated', from, outside: origin.outside.flatMap((o) => given(o) ?? []) }
 }
 
 /** The thing at `path`, or the bundle it lies in, looked for in the main area and then archived; named as `path` is. */

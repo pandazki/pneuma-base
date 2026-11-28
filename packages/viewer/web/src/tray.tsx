@@ -11,7 +11,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { api, type State } from './api'
 import { AsksView } from './pieces/asks'
 import { FeedView } from './pieces/feed'
-import { ActionDialog, fill } from './chrome'
+import { ActionDialog, perform } from './chrome'
 import { usePresence } from './controls'
 import { BlockEnvContext, type BlockEnv, type Done } from './env'
 import { tellShell } from './shell'
@@ -117,7 +117,7 @@ export function Tray() {
       const id = busy(action.label)
       let done: Done
       try {
-        const reply = await api.pass(fill(action.call, values, action.inputs), confirmed, (progress, pass) => report(id, progress, () => void api.stop(pass).catch(() => undefined)))
+        const reply = await perform(action, values, confirmed, (progress, pass) => report(id, progress, () => void api.stop(pass).catch(() => undefined)))
         settle(id, reply.tone, reply.text)
         done = { tone: reply.tone, text: reply.text }
       } catch (error) {

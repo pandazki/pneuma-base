@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { agentFace, ownerFace, type AcceptedPut, type GrantId, type PlaceOverExisting, type PutResult, type ReviseOutcome } from '../src/index.js'
 import { fixture, outsideFile, plugin, type Fixture } from './support.js'
 
-const brought = { kind: 'brought', source: null, by: null } as const
+const brought = { kind: 'imported', source: null, by: null } as const
 const sha = { a: 'ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb' }
 
 function refused(r: PutResult) {
@@ -30,11 +30,11 @@ describe('an origin from a form', () => {
     f.write('src.md', 's')
     f.write('a.md', 'a')
     f.write('b.md', 'b')
-    await agentFace.put({ kind: 'register', path: 'a.md', origin: { kind: 'brought', source: '  ', by: '' } }, f.ctx)
-    await agentFace.put({ kind: 'register', path: 'b.md', origin: { kind: 'made', from: ['src.md', ''], outside: ['', ' 主人说的 '] } }, f.ctx)
+    await agentFace.put({ kind: 'register', path: 'a.md', origin: { kind: 'imported', source: '  ', by: '' } }, f.ctx)
+    await agentFace.put({ kind: 'register', path: 'b.md', origin: { kind: 'generated', from: ['src.md', ''], outside: ['', ' 主人说的 '] } }, f.ctx)
     expect(seen.map((r) => r.kind === 'register' && r.origin)).toEqual([
-      { kind: 'brought', source: null, by: null },
-      { kind: 'made', from: ['src.md'], outside: ['主人说的'] },
+      { kind: 'imported', source: null, by: null },
+      { kind: 'generated', from: ['src.md'], outside: ['主人说的'] },
     ])
   })
 })
@@ -116,7 +116,7 @@ describe('place', () => {
     const f = await fixture()
     f.write('src.md', 's')
     f.write('_archive/old.md', 'o')
-    const made = (from: string[]) => ({ kind: 'made' as const, from, outside: [] })
+    const made = (from: string[]) => ({ kind: 'generated' as const, from, outside: [] })
     const src = { kind: 'file', path: outsideFile('a') } as const
     const r = await agentFace.put({ kind: 'place', from: src, to: 'a.md', origin: made(['src.md', 'gone.md']) }, f.ctx)
     expect(r).toMatchObject({ outcome: 'refused', reason: 'no-such-file', subject: 'gone.md' })

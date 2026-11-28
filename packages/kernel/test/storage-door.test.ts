@@ -106,7 +106,8 @@ describe('the storage door', () => {
       ['Config.swift', /atPath: (node|cli)\)|Data\(contentsOf: url\(config\)\)|at: config\.appDir|FileHandle\(forWritingTo: url\)/],
       // The link to the launcher in a folder on PATH.
       ['Settings.swift', /./],
-      ['MainWindow.swift', /Bundle\.main/],
+      // The destination the save panel chose for a download, which the panel asked to replace.
+      ['MainWindow.swift', /Bundle\.main|removeItem\(at: url\)/],
       // A file dropped from outside, before it comes in.
       ['App.swift', /getxattr\(url\.path|downloadAddress\(of: url\)/],
       // The provider's input.

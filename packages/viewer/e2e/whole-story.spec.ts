@@ -30,7 +30,7 @@ function storyLibrary(pb: Cli): { lib: string; www: string } {
   pb.run(['init', lib])
   for (const name of ['version', 'deploy', 'sync', 'search']) pb.run(['plugin', 'enable', name, '--library', lib])
   pb.run(['deploy', 'target', 'set', '--kind', 'dir', '--to', www, '--library', lib])
-  pb.run(['sync', 'target', 'set', '--kind', 'dir', '--to', syncTarget, '--library', lib])
+  pb.run(['sync', 'target', 'set', '--kind', 'folder', '--to', syncTarget, '--library', lib])
   pb.run(['search', 'embedding', 'set', '--kind', 'hash', '--library', lib])
   const agent = (as: string, args: string[]) => pb.run(['--library', lib, '--as', as, '--session', `${as}-1`, ...args], { cwd: root })
   agent('claude-code', ['start', '做十个小网站'])
@@ -62,7 +62,7 @@ test('the whole story in the UI: every plugin’s page, the deploy switch, a sit
   const panel = page.getByRole('complementary', { name: '详情' })
 
   // Every plugin's page is in the navigation: the home page, the plugins' in configuration order, then the kernel's.
-  expect(await navTitles(page)).toEqual(['首页', '资料库', '活动', '文件', 'Agent', '受版本管理的条目', '部署', '设置'])
+  expect(await navTitles(page)).toEqual(['首页', '资料库', '活动', '文件', 'Agent', '版本管理', '部署', '设置'])
 
   // The deploy page: the seven sites in the content, the archived ones offline and so not there; an address for each one online.
   await nav.getByRole('button', { name: '部署' }).click()
