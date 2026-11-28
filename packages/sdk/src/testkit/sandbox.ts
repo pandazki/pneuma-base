@@ -230,7 +230,7 @@ async function startViewer(cli: string, library: string, opts: { cwd: string; en
       return section?.kind === 'section' ? { ...whole, title: section.title, blocks: section.blocks, problems } : { ...whole, blocks: [], problems }
     },
     async act(action, values = {}) {
-      const call = fill(action.call, { ...initial(action.inputs), ...values }, action.inputs)
+      const call = fill(action.call, shownOnly(action.inputs, { ...initial(action.inputs), ...values }), action.inputs)
       const reply = await fetch(new URL('/api/call', url.origin), {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-pneuma-token': token },
@@ -260,6 +260,18 @@ function stopChild(child: ChildProcess): Promise<void> {
 // As the management page fills a call (packages/viewer/web/src/chrome.tsx, `fill` and `initial`).
 
 const initial = (inputs: readonly ActionInput[]) => Object.fromEntries(inputs.map((i) => [i.name, i.value ?? i.options?.[0]?.value ?? '']))
+
+/** The values with each input its `when` hides emptied, a hidden input's value counting as empty. */
+function shownOnly(inputs: readonly ActionInput[], values: Record<string, string>): Record<string, string> {
+  let hidden = new Set<string>()
+  for (let round = 0; round <= inputs.length; round++) {
+    const seen = (name: string) => (hidden.has(name) ? '' : (values[name] ?? ''))
+    const next = new Set(inputs.filter((i) => !(i.when ?? []).every((w) => w.is.includes(seen(w.input)))).map((i) => i.name))
+    if (next.size === hidden.size && [...next].every((n) => hidden.has(n))) break
+    hidden = next
+  }
+  return { ...values, ...Object.fromEntries([...hidden].map((name) => [name, ''])) }
+}
 
 const lines = (text: string) =>
   text

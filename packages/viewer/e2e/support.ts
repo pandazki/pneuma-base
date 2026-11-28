@@ -1,5 +1,7 @@
 // What the end-to-end tests stand on: temporary folders, the real command line, and its view server.
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -120,6 +122,29 @@ export const test = base.extend<{ pb: Cli }, { relayUrl: string }>({
 })
 
 export { expect } from '@playwright/test'
+
+/** An outside service stood in for by a fetch handler, served from the test's own process on a loopback port. */
+export async function standIn(handler: (request: Request) => Promise<Response>): Promise<{ url: string; stop(): Promise<void> }> {
+  let origin = ''
+  const server = createServer(async (req, res) => {
+    const chunks: Buffer[] = []
+    for await (const chunk of req) chunks.push(chunk as Buffer)
+    const headers = new Headers()
+    for (const [name, value] of Object.entries(req.headers)) for (const one of [value ?? []].flat()) headers.append(name, one)
+    const body = chunks.length === 0 ? null : new Uint8Array(Buffer.concat(chunks))
+    const answer = await handler(new Request(new URL(req.url ?? '/', origin), { method: req.method ?? 'GET', headers, body }))
+    res.writeHead(answer.status, Object.fromEntries(answer.headers))
+    res.end(Buffer.from(await answer.arrayBuffer()))
+  })
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done))
+  origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const stop = () =>
+    new Promise<void>((done) => {
+      server.close(() => done())
+      server.closeAllConnections()
+    })
+  return { url: origin, stop }
+}
 
 /** Two frames of the page: what its timers or its last answer set going has rendered, and any fetch it led to has started. */
 export async function frames(page: Page): Promise<void> {

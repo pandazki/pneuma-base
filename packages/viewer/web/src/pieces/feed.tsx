@@ -132,8 +132,10 @@ function Head({ group }: { group: FeedGroup }) {
   )
 }
 
-/** The folder of a library path, '' at the root, and its last part. */
+/** The folder of a library path, '' at the root, and its last part; an address, such as an act's object, is one name without its scheme. */
 const split = (path: string) => {
+  const scheme = path.indexOf('://')
+  if (scheme >= 0) return { folder: '', name: path.slice(scheme + 3) }
   const cut = path.lastIndexOf('/')
   return { folder: cut < 0 ? '' : path.slice(0, cut), name: cut < 0 ? path : path.slice(cut + 1) }
 }

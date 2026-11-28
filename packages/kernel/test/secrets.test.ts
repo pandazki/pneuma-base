@@ -4,7 +4,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ownerFace, viewerFace, type Event, type MachineContext, type OwnerCall, type OwnerResult } from '../src/index.js'
+import { defineCommand, ownerFace, viewerFace, type Event, type MachineContext, type OwnerCall, type OwnerParams, type OwnerResult, type PluginContext } from '../src/index.js'
 import { fixture, owner, plugin, session, tempDir } from './support.js'
 
 const TOKEN = 'tok-5c1e7-only-here'
@@ -92,6 +92,78 @@ describe('secret list and secret remove', () => {
     expect(await ownerFace.dispatch(machine(home), 'secret remove', { positional: ['vault', 'token'], flags: {} })).toMatchObject({ outcome: 'done', data: { removed: true } })
     expect(await ownerFace.dispatch(machine(home), 'secret remove', { positional: ['vault', 'token'], flags: {} })).toMatchObject({ outcome: 'done', data: { removed: false } })
     expect(contents(home)).toEqual([])
+  })
+})
+
+describe('a command that reads a secret', () => {
+  type Read = { first: string | null; again: string | null }
+  const reads: Read[] = []
+  const reader = (name: string, params: OwnerParams) =>
+    defineCommand({
+      name,
+      summary: '',
+      params,
+      destructive: false,
+      ownerOnly: true,
+      run: async (_values, _ctx, secret) => {
+        reads.push({ first: await secret(), again: await secret() })
+        return { outcome: 'done', text: 'read' }
+      },
+    })
+  const keyring = plugin('keyring', {
+    ownerCommands: [reader('keyring login', { secret: { name: 'key', hint: '账户密钥' } }), reader('keyring look', {})],
+    observe: async (e) => void events.push(e),
+  })
+
+  it('reads it once, asking with its hint, less one final newline, empty as none; one that declares none reads nothing; it is in neither the event nor the answer', async () => {
+    const f = await fixture([keyring])
+    const asked: string[] = []
+    const given = (value: string | null): Partial<OwnerCall> => ({ readSecret: async (q) => (asked.push(q), value) })
+    const run = (name: string, overrides: Partial<OwnerCall>) => ownerFace.dispatch({ ...machine(f.home), ctx: f.ctx, ...overrides }, name, { positional: [], flags: {} })
+    reads.length = 0
+    events.length = 0
+    const answers = [await run('keyring login', given(`${TOKEN}\n`)), await run('keyring login', given('')), await run('keyring login', given(null)), await run('keyring login', { readSecret: undefined }), await run('keyring look', given(TOKEN))]
+    expect(reads).toEqual([
+      { first: TOKEN, again: TOKEN },
+      { first: null, again: null },
+      { first: null, again: null },
+      { first: null, again: null },
+      { first: null, again: null },
+    ])
+    expect(asked).toEqual(['账户密钥（输入时不显示）：', '账户密钥（输入时不显示）：', '账户密钥（输入时不显示）：'])
+    expect(JSON.stringify([answers, events])).not.toContain(TOKEN)
+  })
+})
+
+describe('a plugin keeping a secret it was given', () => {
+  const failures: string[] = []
+  const keep = (name: string) => async (_args: unknown, ctx: PluginContext) => {
+    await ctx.secrets.set(name, TOKEN)
+    return { outcome: 'done' as const, text: 'kept' }
+  }
+  const keeper = plugin('keeper', {
+    secrets: [{ name: 'token', description: '外面服务的令牌' }],
+    ownerCommands: [
+      { name: 'keeper keep', summary: '', params: {}, destructive: false, ownerOnly: true, run: keep('token') },
+      { name: 'keeper stray', summary: '', params: {}, destructive: false, ownerOnly: true, run: keep('other') },
+    ],
+    views: [{ id: 'keeper.page', title: '一页', icon: 'key', nav: false, filters: [] }],
+    onView: async (_req, ctx) => {
+      await ctx.secrets.set('token', 'from-a-view').catch((error: Error) => void failures.push(error.message))
+      return { title: '一页', subtitle: null, blocks: [] }
+    },
+  })
+
+  it('keeps one it declares as secret set does, from an owner command only: an undeclared name, or a view, is refused with a throw', async () => {
+    const f = await fixture([keeper])
+    const call = { ...machine(f.home), ctx: f.ctx, table: new Map([['keeper', keeper]]) }
+    expect(await ownerFace.dispatch(call, 'keeper keep', { positional: [], flags: {} })).toMatchObject({ outcome: 'done' })
+    const file = join(f.home, 'secrets', 'keeper', 'token')
+    expect([readFileSync(file, 'utf8'), statSync(file).mode & 0o777]).toEqual([TOKEN, 0o600])
+    await expect(ownerFace.dispatch(call, 'keeper stray', { positional: [], flags: {} })).rejects.toThrow('other')
+    await viewerFace.show({ view: 'keeper.page', params: {} }, { ctx: f.ctx, table: call.table, env: {}, viaGrant: false })
+    expect(failures).toHaveLength(1)
+    expect(readFileSync(file, 'utf8')).toBe(TOKEN)
   })
 })
 

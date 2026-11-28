@@ -97,7 +97,7 @@ export function fakeCloudflare(options: { apps?: number } = {}) {
     let size = 0
     for (const f of pkg.files) {
       const path = f.path
-      if (typeof path !== 'string' || path.length > 300 || /[\u0000-\u001f\\]/.test(path) || path.split('/').some((p) => !p || p === '.' || p === '..')) return 'Invalid relative path.'
+      if (typeof path !== 'string' || path.length > 300 || [...path].some((c) => c.charCodeAt(0) < 0x20 || c === '\\') || path.split('/').some((p) => !p || p === '.' || p === '..')) return 'Invalid relative path.'
       if (typeof f.body !== 'string') return 'File body must be base64.'
       size += f.body.length
       if (size > LIMIT) return 'Package is too large.'

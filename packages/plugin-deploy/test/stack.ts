@@ -1,12 +1,14 @@
-// The PneumaSpace the tests publish to: the acceptance stack unless SPACE_ADMIN names another. Every
-// app a test publishes is named `pbs-…`, under a prefix of its own, and is removed and purged after.
+// The PneumaSpace the tests publish to: the one SPACE_ADMIN names, such as the acceptance stack; with
+// none named, nothing is asked and the tests skip. Every app a test publishes is named `pbs-…`, under
+// a prefix of its own, and is removed and purged after.
 import { randomBytes } from 'node:crypto'
 
-export const ADMIN = process.env.SPACE_ADMIN ?? 'http://127.0.0.1:18081'
+export const ADMIN = process.env.SPACE_ADMIN ?? ''
 const MANAGER = { 'x-pneuma-space-manager': 'pneuma-base' }
 
 /** Why the stack cannot be used, for a test's skip message; null when it answers. */
 export async function unreachable(): Promise<string | null> {
+  if (ADMIN === '') return '没设 SPACE_ADMIN：要跑一台机器上的 PneumaSpace 的生命周期和页面测试，把它设成那台 PneumaSpace 的管理地址'
   try {
     const r = await fetch(`${ADMIN}/api/health`, { signal: AbortSignal.timeout(3000) })
     return r.ok ? null : `PneumaSpace ${ADMIN} 答复 ${r.status}`

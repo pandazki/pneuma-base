@@ -68,7 +68,7 @@ const SLACK = 4 // rounding and font fallback
 const SQUARE = 28 // an icon button, or the 「···」
 
 /** What a cell draws besides its text: who did it, its icon, its tag and its copy button, with their gaps. */
-function extras(cell: Cell, text: boolean): number {
+export function extras(cell: Cell, text: boolean): number {
   let w = cell.actor ? ACTOR + (text || cell.icon ? GAP : 0) : 0
   if (cell.icon) w += ICON + (text ? GAP : 0)
   if (cell.copy) w += (text || w > 0 ? GAP : 0) + COPY

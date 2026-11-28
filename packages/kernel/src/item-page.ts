@@ -74,7 +74,8 @@ async function pluginSections(ctx: Context, path: LibraryPath, callable: Callabl
       if (answer === null) continue
       if (!answered(answer)) throw new Error('onItemView answered something that is not a section')
       const checked = checkBlocks(answer.blocks, plugin, callable)
-      blocks.push(section(answer.title, checked.blocks, plugin.name))
+      // A part with only actions for the panel's head says nothing of its own.
+      if (checked.blocks.length > 0) blocks.push(section(answer.title, checked.blocks, plugin.name))
       problems.push(...checked.problems)
       const own = checkBlocks([{ kind: 'actions', actions: answer.actions ?? [] }], plugin, callable, 'actions')
       const [row] = own.blocks

@@ -5,10 +5,10 @@ import { CONTRACT, pluginName } from '../../index.js'
 import type { IconName } from '../../icons.js'
 import { formOf } from '../../params.js'
 import type { Action, Plugin, PluginAsk, PluginNoteAnswer, SayAnswer, SecretDecl } from '../../types.js'
-import { commands, switchName, SWITCH_PARAMS } from './commands.js'
+import { askedOf, commands, declarable, switchName, SWITCH_PARAMS } from './commands.js'
 import { newThingId } from './facts.js'
 import { foldedRecords } from './folded.js'
-import { declaredAt, factsOf, look, looks, record, settle, thingPath, thingsAt, withRun, type Kit } from './reconcile.js'
+import { declaredAt, factsOf, look, looks, record, settle, targetFile, thingsAt, withRun, type Kit } from './reconcile.js'
 import type { TargetAdapter } from './target.js'
 import { cognitionText, followed, lookText, skippedText, staysOnline, unsettledText } from './words.js'
 import { itemSection, sitesPage, sitesView, targetPage, targetPages, viewDecls } from './views.js'
@@ -18,7 +18,7 @@ export type DeployOptions = {
   readonly title?: string
   /** The heading of its cognition section, `<what>：<how>`. Defaults to 上线：主人开关. */
   readonly heading?: string
-  /** A paragraph added to the cognition section, for what agents should know about this target. */
+  /** A paragraph added to the cognition section, for what agents should know whatever the target. A kind's own goes in its `cognition`. */
   readonly cognition?: string
   /** The page's icon. Defaults to globe. */
   readonly icon?: IconName
@@ -57,6 +57,7 @@ const refused = (note: string): SayAnswer => ({ outcome: 'not-heard', reason: 'r
 export function deployPlugin(name: string, targets: TargetAdapter | readonly TargetAdapter[], options: DeployOptions = {}): Plugin {
   const kit: Kit = { name: pluginName(name), title: options.title ?? '部署', targets: 'kind' in targets ? [targets] : targets }
   if (kit.targets.length === 0) throw new Error('a deploy plugin needs at least one kind of target')
+  askedOf(kit)
   const pages = targetPages(kit)
   for (const [i, p] of pages.entries()) {
     if (!/^[a-z][a-z0-9-]*$/.test(p.name) || p.name === 'sites') throw new Error(`a target's page is named in lower-case letters, digits and dashes, and not sites: ${p.name}`)
@@ -81,13 +82,9 @@ export function deployPlugin(name: string, targets: TargetAdapter | readonly Tar
     async onSay(req, ctx) {
       const input = req.about ?? req.text
       if (input === null) return refused('要写是哪样东西：say deployable <库内路径>')
-      const { tools } = ctx
-      const path = await thingPath(tools, input)
-      if (path === null) return refused(`${input} 不在库的内容里`)
-      if (tools.regionOf(path) === 'archive') return refused(`${path} 已归档；取回之后再声明`)
-      const [here, archived] = await thingsAt(tools, [path, tools.archivedPath(path)])
-      if (!here && archived) return refused(`${path} 已归档；取回之后再声明`)
-      if (!here) return refused(`库里没有这样东西：${input}`)
+      const thing = await declarable(ctx.tools, input, '声明')
+      if ('refused' in thing) return refused(thing.refused)
+      const { path } = thing
       return withRun(kit, ctx, async (run) => {
         const known = run.d.byPath.get(path)
         if (known !== undefined) return heard(`${path} 早已声明可以部署：${lookText(await look(run, known))}`)
@@ -179,6 +176,16 @@ export function deployPlugin(name: string, targets: TargetAdapter | readonly Tar
     },
 
     /** Removing the plugin leaves its sites online, unfollowed: it refuses while any is, and says which. */
+    // The connected kind's own paragraph, such as what PneumaSpace asks of a site, while it is connected.
+    ...(kit.targets.some((t) => t.cognition !== undefined)
+      ? {
+          async onDescribe(ctx: Parameters<NonNullable<Plugin['onDescribe']>>[0]) {
+            const stored = await targetFile(ctx).read()
+            return kit.targets.find((t) => t.kind === stored?.target.kind)?.cognition ?? null
+          },
+        }
+      : {}),
+
     async onRemove(ctx) {
       const online = await withRun(kit, ctx, async (run) => staysOnline(kit, await looks(run)))
       return online === null ? undefined : { refuse: online }

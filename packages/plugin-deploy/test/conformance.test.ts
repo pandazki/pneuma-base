@@ -1,21 +1,24 @@
-// The standard's behavioural rules, checked on the built plugin (npm test builds it first), once for
-// each kind of target, each with PneumaSpace in memory (fake-space.ts, fake-cloudflare.ts), so it
-// needs no running service. A site is switched on first, so the views are checked with an app online.
-// When a check fails, report.text says what and why.
+// The standard's behavioural rules, checked on the built-in plugin through the built command line, once
+// for each kind of PneumaSpace, each with PneumaSpace in memory (fake-space.ts, fake-cloudflare.ts), so
+// it needs no running service. A site is switched on first, so the views are checked with an app
+// online. When a check fails, report.text says what and why. The local directory's run is
+// packages/cli/test/conformance-deploy.test.ts.
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { conformance, type Sandbox } from '@pneuma-base/sdk/testkit'
-import { fakeCloudflare } from './fake-cloudflare.ts'
-import { fakeSpace } from './fake-space.ts'
+import { expect, it } from 'vitest'
+import { deploy } from '../src/index.js'
+import { fakeCloudflare } from './fake-cloudflare.js'
+import { fakeSpace } from './fake-space.js'
 
-const dist = fileURLToPath(new URL('../dist/', import.meta.url))
+const cli = fileURLToPath(new URL('../../cli/dist/bin.js', import.meta.url))
 
-/** Conformance with a site switched on after `target`, which sets the target and answers its arguments of `space target set`. */
+/** Conformance with a site switched on after `target`, which sets the target and answers its arguments of `deploy target set`. */
 async function check(target: (sandbox: Sandbox) => Promise<string[]>) {
-  const report = await conformance(dist, {
+  const report = await conformance({ builtin: deploy }, {
+    cli,
     async setup({ sandbox }) {
       await mkdir(join(sandbox.work, 'shop'), { recursive: true })
       await writeFile(join(sandbox.work, 'shop', 'index.html'), '<h1>小店</h1>\n')
@@ -24,22 +27,21 @@ async function check(target: (sandbox: Sandbox) => Promise<string[]>) {
       for (const r of [
         await agent('put', join(sandbox.work, 'shop'), '--to', 'sites/shop', '--made'),
         await agent('say', 'deployable', 'sites/shop'),
-        await owner('space', 'target', 'set', ...(await target(sandbox))),
-        await owner('space', 'on', 'sites/shop'),
+        await owner('deploy', 'target', 'set', ...(await target(sandbox))),
+        await owner('deploy', 'on', 'sites/shop'),
       ]) {
         assert.equal(r.code, 0, r.stdout + r.stderr)
       }
     },
     configuration: ['config.json'],
   })
-  console.log(report.text)
-  assert.ok(report.ok, report.text)
+  expect(report.checks.filter((c) => !c.ok), report.text).toEqual([])
 }
 
-test('the plugin follows the standard, publishing to PneumaSpace on a machine', () =>
+it('the plugin follows the standard, publishing to PneumaSpace on a machine', () =>
   check(async (sandbox) => ['--kind', 'machine', '--admin', await sandbox.serve(fakeSpace()), '--prefix', 'pbs-conf']))
 
-test('the plugin follows the standard, publishing to PneumaSpace on Cloudflare', () =>
+it('the plugin follows the standard, publishing to PneumaSpace on Cloudflare', () =>
   check(async (sandbox) => {
     const fake = fakeCloudflare()
     const origin = await sandbox.serve(fake.handler)

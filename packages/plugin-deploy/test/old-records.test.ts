@@ -57,7 +57,7 @@ it('loads the records and the target an earlier version wrote', async () => {
   const list = await ownerFace.dispatch(call, 'deploy list', { positional: [], flags: {} })
   expect(list).toMatchObject({
     outcome: 'done',
-    text: `目标：本地目录 ${www}\nshop/b  在线  file://${www}/shop-b/\nsites/a  在线  file://${www}/sites-a/`,
+    text: `目标：${www}\nshop/b  在线  file://${www}/shop-b/\nsites/a  在线  file://${www}/sites-a/`,
     data: [
       { path: 'shop/b', status: 'online', on: true, site: 'shop-b' },
       { path: 'sites/a', status: 'online', on: true, site: 'sites-a' },

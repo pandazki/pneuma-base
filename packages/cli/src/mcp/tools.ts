@@ -3,7 +3,7 @@
 // pages as resources. Management is not listed, and a call to it by name meets the owner face's gate.
 // ARCHITECTURE.md「MCP 服务」.
 import {
-  assembleDescription,
+  describeLibrary,
   identifyActor,
   loadPlugins,
   makeContext,
@@ -25,7 +25,7 @@ import type { Face, JsonSchema, Resource, ResourceText, Tool, ToolResult } from 
 /** Written for this face, ahead of the library's description: how its command lines become tools, how put takes content, where management is. */
 const PREAMBLE = [
   '此 MCP 连接对应一个 Pneuma Base 资料库，下文是该资料库的说明。',
-  '说明中的每条命令行 `pneuma-base @<授权名称> <命令> …` 对应同名工具，参数相同：位置参数和选项均写成同名属性（`--include-archived` 写成 `include-archived`），所有者命令名称中的空格换成 `_`（`space list` 对应工具 `space_list`）；`@<授权名称>` 已由本连接确定，无需填写。',
+  '说明中的每条命令行 `pneuma-base @<授权名称> <命令> …` 对应同名工具，参数相同：位置参数和选项均写成同名属性（`--include-archived` 写成 `include-archived`），所有者命令名称中的空格换成 `_`（`deploy list` 对应工具 `deploy_list`）；`@<授权名称>` 已由本连接确定，无需填写。',
   '`put` 添加本机的外部文件或目录时，`what` 填写其绝对路径；直接添加一段内容时不填 `what`，文本填在 `text`，字节以 base64 编码填在 `base64`，并填写 `to`。',
   '经 MCP 无法读取磁盘上的资料库文件，查看内容用 `inspect` 加 `content: true`；带标记的目录先返回文件列表，再用 `file` 读取其中一个文件。',
   '本连接是一次会话，所有操作均记录在当前授权名称下；新建授权、启用或停用插件、设置密钥、清空归档等管理操作由所有者在管理界面中执行，此处不提供相应工具。',
@@ -35,7 +35,7 @@ const PREAMBLE = [
 const DESCRIPTION_URI = 'pneuma-base://library/description'
 const PAGE_URI = 'pneuma-base://library/show/'
 
-/** An owner command's tool name: its words joined with `_`, as `space list` is `space_list`. */
+/** An owner command's tool name: its words joined with `_`, as `deploy list` is `deploy_list`. */
 const toolName = (command: string) => command.replaceAll(' ', '_')
 
 /** What an agent's session may run: neither destructive nor only the owner's. */
@@ -189,7 +189,7 @@ export function libraryFace({ grant, home, builtins, env, cwd, session }: Librar
 
   async function instructions(): Promise<string> {
     const at = await now()
-    return `${PREAMBLE}\n\n${'exit' in at ? at.lines.join('\n') : assembleDescription(at.bound.library)}`
+    return `${PREAMBLE}\n\n${'exit' in at ? at.lines.join('\n') : (await describeLibrary(at.bound.ctx)).text}`
   }
 
   return {

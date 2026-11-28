@@ -1,6 +1,6 @@
 // Test-only plugins. Run by Node's type stripping, so only erasable TypeScript here.
 import { fileURLToPath } from 'node:url'
-import { isDescribed, isFailure, pluginName, type Action, type Block, type Event, type Instant, type LibraryPath, type OwnerCommand, type Plugin, type PluginContext } from '@pneuma-base/kernel'
+import { formOf, isDescribed, isFailure, pluginName, type Action, type Block, type Event, type Instant, type LibraryPath, type OwnerCommand, type Plugin, type PluginContext } from '@pneuma-base/kernel'
 
 /** A file of the plugin's own record place as text, through storage; null when it is not there. */
 async function readOwn(ctx: PluginContext, place: string): Promise<string | null> {
@@ -127,6 +127,43 @@ async function newThings(ctx: PluginContext): Promise<Block[]> {
   ]
 }
 
+/** A command whose form has a choice that shows fields, a choice of many and a secret: it says what it was given, and its row is named by the first given of two. */
+const pick: OwnerCommand = {
+  name: 'pager pick',
+  summary: 'Say what was picked.',
+  act: { kind: 'connected', object: ['site', 'origin'], name: '挑的' },
+  params: {
+    flags: [
+      { name: 'kind', hint: '哪种', kind: 'value', options: [{ value: 'site', label: '网站' }, { value: 'folder', label: '文件夹' }] },
+      { name: 'site', hint: '网站', kind: 'value' },
+      { name: 'origin', hint: '地址', kind: 'value' },
+    ],
+    secret: { name: 'key', hint: '账户密钥' },
+  },
+  destructive: false,
+  ownerOnly: false,
+  run: async (args) => ({ outcome: 'done', text: `选了 ${JSON.stringify(args.values)}，密钥 ${((await args.secret()) ?? '').length} 个字` }),
+}
+
+/** The newest marks: a tag that says why, a row's second cell, and a form whose fields follow a choice. */
+function marks(): Block[] {
+  const address = (path: string) => ({ text: `https://space.example.com/apps/${path}/`, href: `https://space.example.com/apps/${path}/`, copy: true as const, mono: true as const })
+  const sites = Array.from({ length: 30 }, (_, i) => ({ value: `sites/site-${i + 1}`, label: `sites/site-${i + 1}` }))
+  const form = formOf(pick, { choices: { site: sites } })
+  const when = (input: string, is: string) => [{ input, is: [is] }]
+  const inputs = form.inputs.map((i) => (i.name === 'site' ? { ...i, when: when('kind', 'site') } : i.name === 'origin' ? { ...i, when: when('kind', 'folder') } : i.name === 'key' ? { ...i, when: when('kind', 'site') } : i))
+  return [
+    {
+      kind: 'list',
+      items: [
+        { cell: { text: 'shop' }, note: 'sites', aside: address('pb-shop-with-a-rather-long-application-name'), actions: [], toggle: { on: true, action: ping('下线') } },
+        { cell: { text: 'blog', tag: { text: '读不到', tone: 'bad', tip: '连不上 space.example.com' } }, note: null, aside: address('pb-blog'), actions: [] },
+      ],
+    },
+    { kind: 'actions', actions: [{ label: '挑一个', tone: 'default', confirm: null, inputs, call: form.call }] },
+  ]
+}
+
 /** Declares one view that uses every kind of block, and one kind no page knows; one with each newer thing; and two for how often a view is asked. */
 export const pager: Plugin = {
   contract: 2,
@@ -151,17 +188,20 @@ export const pager: Plugin = {
     },
     { name: 'pager restore', summary: 'Pretend to put a release back.', params: { flags: [{ name: 'release', hint: '第几版', kind: 'value' }] }, destructive: false, ownerOnly: false, run: async (args) => ({ outcome: 'done', text: `已放回第 ${String(args.flags.release)} 版` }) },
     { name: 'pager prefix', summary: 'Pretend to set a prefix.', params: { positional: [{ name: 'prefix', hint: '前缀' }] }, destructive: false, ownerOnly: false, run: async (args) => ({ outcome: 'done', text: `前缀是 ${args.positional[0] ?? ''}` }) },
+    pick,
   ],
   views: [
     { id: 'pager.blocks', title: '块的样例', icon: 'flask-conical', nav: true, filters: [] },
     { id: 'pager.new', title: '新的块', icon: 'layers', nav: true, filters: [] },
     { id: 'pager.still', title: '不自己更新的页', icon: 'clock', nav: false, filters: [] },
     { id: 'pager.ticking', title: '自己更新的页', icon: 'refresh-cw', nav: false, filters: [] },
+    { id: 'pager.marks', title: '标记和第二格', icon: 'tag', nav: false, filters: [] },
   ],
   onItemView: async (path) => ({ title: '插件 pager 画的', blocks: [counter({ count: 0, note: `面板里的 ${path}` })] }),
   onView: async (req, ctx) => {
     if (req.view === 'pager.new') return { title: '新的块', subtitle: '链接、外部页面、带动作的时间线、带校验的输入、插件自己画的页', blocks: await newThings(ctx) }
     if (req.view === 'pager.still') return { title: '不自己更新的页', subtitle: null, blocks: [{ kind: 'text', text: '只在库变了或做了操作之后才重取。', tone: 'neutral' }] }
+    if (req.view === 'pager.marks') return { title: '标记和第二格', subtitle: null, blocks: marks() }
     if (req.view === 'pager.ticking') return { title: '自己更新的页', subtitle: null, blocks: [{ kind: 'text', text: '每 5 秒重取一次。', tone: 'neutral' }], refresh: 5 }
     return {
       title: '块的样例',

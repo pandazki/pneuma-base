@@ -3,10 +3,12 @@
 // refuses them in an agent session. Every command declares its arguments; `target set` takes them
 // from the kinds of target.
 import { defineCommand } from '../../params.js'
-import type { FlagParam, OwnerAnswer, OwnerCommand, OwnerValues, SecretDecl } from '../../types.js'
-import { closeTarget, declaredAt, looks, onlyTarget, openTarget, record, setSecret, settle, sweep, targetFile, withRun, type Done, type Kit, type Settled } from './reconcile.js'
-import type { TargetKey } from './facts.js'
-import type { TargetAdapter } from './target.js'
+import type { FlagParam, LibraryPath, OwnerAnswer, OwnerCommand, OwnerValues, PluginTools, SecretDecl, SecretParam } from '../../types.js'
+import { foundAll, setCommand, targetRemoveName, targetSetName } from './connect.js'
+import { newThingId, type TargetKey } from './facts.js'
+import { siteName } from './model.js'
+import { closeTarget, declaredAt, looks, onlyTarget, openTarget, record, setSecret, settle, sweep, targetFile, thingPath, thingsAt, withRun, type Done, type Given, type Kit, type Run, type Settled } from './reconcile.js'
+import type { Target, TargetAdapter } from './target.js'
 import { kindUsage, lookText, noTarget, STATUS } from './words.js'
 
 const done = (text: string, data?: unknown): OwnerAnswer => ({ outcome: 'done', text, ...(data === undefined ? {} : { data }) })
@@ -19,29 +21,54 @@ function doneText(path: string, d: Done): string {
 export const switchName = (plugin: string, on: boolean) => `${plugin} ${on ? 'on' : 'off'}`
 export const SWITCH_PARAMS = { positional: [{ name: 'path', hint: '库内路径', required: true }] } as const
 
+/** The thing an input names, as one that can be declared deployable: in the content, there now. `then`: what may follow once it is taken back. */
+export async function declarable(tools: PluginTools, input: string, then: string): Promise<{ path: LibraryPath } | { refused: string }> {
+  const path = await thingPath(tools, input)
+  if (path === null) return { refused: `${input} 不在库的内容里` }
+  const archivedText = { refused: `${path} 已归档；取回之后再${then}` }
+  if (tools.regionOf(path) === 'archive') return archivedText
+  const [here, archived] = await thingsAt(tools, [path, tools.archivedPath(path)])
+  if (!here && archived) return archivedText
+  if (!here) return { refused: `库里没有这样东西：${input}` }
+  return { path }
+}
+
+/** What the owner is told after the switch: the address once online, the fact once offline, else the state. */
+function switchedText(r: Settled, on: boolean): string {
+  const { path } = r.thing
+  if (on && r.status === 'online') return `已上线 ${path}${r.url ? ` → ${r.url}` : ''}`
+  if (!on && r.status === 'offline') return `已下线 ${path}。`
+  return `已${on ? '打开' : '关上'} ${path} 的开关：${lookText(r)}`
+}
+
 function switchCommand(kit: Kit, on: boolean): OwnerCommand {
   const [verb, effect] = on ? ['打开', '发布'] : ['关上', '下线']
   return defineCommand({
     name: switchName(kit.name, on),
     act: { kind: on ? 'on' : 'off', object: 'path' },
-    summary: on ? '打开开关：发布一样可部署的东西，之后线上跟着它的内容' : '关上开关：把一样东西从目标上撤下',
+    summary: on ? '上线一样东西，之后线上跟着它的内容；没声明过的，主人上线就是声明' : '下线一样东西',
     params: SWITCH_PARAMS,
     destructive: false,
     ownerOnly: true,
     async run({ path: input }, ctx) {
       return withRun(kit, ctx, async (run) => {
-        const id = await declaredAt(run, input)
-        if (id === null) return refused('not-declared', `${input} 没有声明过可以部署。先 say deployable ${input}。`)
+        let id = await declaredAt(run, input)
+        if (id === null) {
+          if (!on) return refused('not-declared', `${input} 没有声明过可以部署。`)
+          // The owner putting a thing online declares it: one act, in the owner's name.
+          const thing = await declarable(ctx.tools, input, '上线')
+          if ('refused' in thing) return refused('not-declared', thing.refused)
+          id = newThingId()
+          record(run, { kind: 'declare', thing: id, path: thing.path, note: null })
+        }
         // Switching off what was never switched still records the owner's decision, so nobody asks again.
         const thing = run.d.things.get(id)
         if (thing?.on !== on || !thing.decided) record(run, { kind: 'switch', thing: id, on })
         const r = await settle(run, id)
         const path = r.thing.path
-        if (r.problem?.kind === 'no-target') return refused('no-target', `已${verb} ${path} 的开关，但没有${effect}。${noTarget(kit)}，再 ${kit.name} sync。`)
-        if (r.problem?.kind === 'failed') {
-          return refused(on ? 'publish-failed' : 'unpublish-failed', `已${verb} ${path} 的开关，但${effect}失败：${r.problem.message}。现在是${STATUS[r.status].text}；目标好了之后运行 ${kit.name} sync。`)
-        }
-        return done(`已${verb} ${path}：${lookText(r)}`, { path, status: r.status, site: r.site, url: r.url })
+        if (r.problem?.kind === 'no-target') return refused('no-target', `已${verb} ${path} 的开关；还没有部署目标，没有${effect}。`)
+        if (r.problem?.kind === 'failed') return refused(on ? 'publish-failed' : 'unpublish-failed', `已${verb} ${path} 的开关，没能${effect}：${r.problem.message}。`)
+        return done(switchedText(r, on), { path, status: r.status, site: r.site, url: r.url })
       })
     },
   })
@@ -102,8 +129,6 @@ function listCommand(kit: Kit): OwnerCommand {
   })
 }
 
-export const targetSetName = (kit: Kit) => `${kit.name} target set`
-
 /** `--kind`, a choice of the kit's kinds; required unless it has only one. */
 export function kindFlag(kit: Kit): FlagParam {
   return { name: 'kind', hint: '种类', kind: 'value', ...(onlyTarget(kit) ? {} : { required: true }), options: kit.targets.map((t) => ({ value: t.kind, label: t.label })) }
@@ -133,7 +158,24 @@ function targetFlags(kit: Kit): FlagParam[] {
   return [...flags.values()]
 }
 
+/** The secret `target set` takes typed: the one the kinds that ask for one share. Throws when two ask for different ones, or one asks for a secret it does not declare. */
+export function askedOf(kit: Kit): SecretParam | undefined {
+  const asking = kit.targets.filter((t) => t.asked !== undefined)
+  const [first] = asking
+  for (const t of asking) {
+    const a = t.asked as SecretParam
+    if (!(t.secrets ?? []).some((s) => s.name === a.name)) throw new Error(`the ${t.kind} target asks for the secret ${a.name}, which it does not declare`)
+    if (a.name !== first?.asked?.name || a.hint !== first.asked.hint) throw new Error('two kinds of target ask for different secrets')
+  }
+  return first?.asked
+}
+
 const given = (v: OwnerValues[string] | undefined) => v !== undefined && v !== null && v !== false && !(Array.isArray(v) && v.length === 0)
+
+/** The flags of the kind chosen that were given, `--kind` aside: what the configuration keeps to set it again. */
+function givenOf(t: TargetAdapter, values: OwnerValues): Given {
+  return Object.fromEntries(t.params.flatMap((f) => (given(values[f.name]) ? [[f.name, values[f.name] as string | readonly string[] | true]] : [])))
+}
 
 /** What is wrong with the values for the kind chosen: a flag of another kind given, or one of its own required flags left out. */
 function kindWrong(kit: Kit, t: TargetAdapter, values: OwnerValues): string | null {
@@ -145,52 +187,108 @@ function kindWrong(kit: Kit, t: TargetAdapter, values: OwnerValues): string | nu
   return missing === undefined ? null : `--kind ${t.kind} 要写 --${missing.name}。${how}`
 }
 
-/** What `target set` says of the target's secrets the owner has not set: a required one as missing, an optional one as there to set when needed. */
-function secretNotes(kit: Kit, unset: readonly SecretDecl[]): string[] {
+/** What `target set` says of the required secrets the target reads that the owner has not set. */
+function secretNote(kit: Kit, unset: readonly SecretDecl[]): string[] {
   const required = unset.filter((s) => s.optional !== true).map((s) => s.name)
-  const optional = unset.filter((s) => s.optional === true)
-  return [
-    ...(required.length === 0 ? [] : [`这个目标要用密钥 ${required.join('、')}，还没设：${required.map((name) => setSecret(kit, name)).join('；')}。`]),
-    ...optional.map((s) => `可选的密钥 ${s.name} 没设（${s.description}）；要用时：${setSecret(kit, s.name)}。`),
-  ]
+  return required.length === 0 ? [] : [`这个目标要用密钥 ${required.join('、')}，还没设：${required.map((name) => setSecret(kit, name)).join('；')}。`]
 }
 
+/** How many things switched on in the content the target `t` does not hold under the name it gives them, by the records. */
+function notHere(run: Run, t: Target): number {
+  const sites = run.d.sites.get(t.key as TargetKey)
+  return [...run.d.things.values()].filter((thing) => {
+    if (!thing.on || run.ctx.tools.regionOf(thing.path) !== 'content') return false
+    return sites?.get(t.siteName?.(thing.path) ?? siteName(thing.path))?.thing !== thing.id
+  }).length
+}
+
+/** How many things a target holds sites of, by the records. */
+const heldOn = (run: Run, t: Target) => new Set([...(run.d.sites.get(t.key as TargetKey)?.values() ?? [])].map((s) => s.thing)).size
+
 function targetSetCommand(kit: Kit): OwnerCommand {
+  const asked = askedOf(kit)
   return {
     name: targetSetName(kit),
-    act: { kind: 'set', object: 'to', name: '部署目标' },
-    summary: `配部署目标：${kit.targets.map((t) => t.label).join('，或')}`,
-    params: { flags: targetFlags(kit) },
+    // The row names where it was connected: the first of these a kind takes, else the owner's own commands.
+    act: { kind: 'connected', object: ['host', 'origin', 'admin', 'to'], name: '自己的命令' },
+    summary: `连上部署目标：${kit.targets.map((t) => t.label).join('，或')}`,
+    params: { flags: targetFlags(kit), ...(asked === undefined ? {} : { secret: asked }) },
     destructive: false,
     ownerOnly: true,
     setup: true,
-    async run({ values }, ctx) {
+    async run({ values, secret }, ctx) {
       // The kernel checked --kind against the kinds; it is left out only when there is one.
       const kind = typeof values.kind === 'string' ? values.kind : onlyTarget(kit)?.kind
       const adapter = kit.targets.find((t) => t.kind === kind) as TargetAdapter
       const wrong = kindWrong(kit, adapter, values)
       if (wrong !== null) return refused('usage', wrong)
-      const configured = await adapter.configure(values, ctx)
+      // What was typed for the secret, read only if `configure` asks; a kind that asks for none reads nothing.
+      const typed: { value: string | null } = { value: null }
+      const configured = await adapter.configure(values, ctx, async () => (adapter.asked === undefined ? null : (typed.value = await secret())))
       if (!configured.ok) return refused(configured.reason, configured.text)
+      if (adapter.asked !== undefined && typed.value !== null) await ctx.secrets.set(adapter.asked.name, typed.value)
       const stored = { kind: adapter.kind, ...configured.config }
       const unset: SecretDecl[] = []
       for (const s of adapter.secrets ?? []) if ((await ctx.secrets.get(s.name)) === null) unset.push(s)
-      const secrets = configured.note === undefined ? secretNotes(kit, unset) : [configured.note]
+      const secrets = configured.note === undefined ? secretNote(kit, unset) : [configured.note]
       return withRun(kit, ctx, async (run) => {
-        await targetFile(ctx).write({ format: 1, target: stored })
+        await targetFile(ctx).write({ format: 1, target: stored, given: givenOf(adapter, values) })
         const next = openTarget(kit, stored, ctx)
         await closeTarget(next)
-        const head = `部署目标已设为 ${next.label}。`
-        if (run.target?.key === next.key) return done([head, ...secrets].join(''), { target: stored })
-        const on = [...run.d.things.values()].filter((t) => t.on && ctx.tools.regionOf(t.path) === 'content').length
-        const left = run.target ? (run.d.sites.get(run.target.key as TargetKey)?.size ?? 0) : 0
-        const notes = [...(on > 0 ? [`开着的 ${on} 样还没发到新目标：运行 ${kit.name} sync。`] : []), ...(left > 0 ? [`旧目标上的 ${left} 个站点没有撤下。`] : [])]
-        return done([head, ...secrets, ...notes].join(''), { target: stored })
+        const waiting = notHere(run, next)
+        const old = run.target !== null && run.target.key !== next.key ? heldOn(run, run.target) : 0
+        const notes = [
+          ...(waiting > 0 ? [`开着的 ${waiting} 样还没发到这里。`] : []),
+          ...(old > 0 && run.target ? [`${run.target.label} 上的 ${old} 样没有撤下。`] : []),
+        ]
+        return done([`已连上 ${next.label}。`, ...secrets, ...notes].join(''), { target: stored })
       })
     },
   }
 }
 
+function targetListCommand(kit: Kit): OwnerCommand {
+  return defineCommand({
+    name: `${kit.name} target list`,
+    summary: '列出连着的部署目标，和这台机器上找到的',
+    params: {},
+    destructive: false,
+    ownerOnly: false,
+    readOnly: true,
+    async run(_values, ctx) {
+      return withRun(kit, ctx, async (run) => {
+        const found = await foundAll(kit, ctx)
+        const connected = run.target && run.set ? { kind: run.set.kind, label: run.target.label } : null
+        const lines = [
+          connected && run.set ? `连着 ${connected.label}：${setCommand(kit, { kind: connected.kind, ...run.set.given })}` : '还没有部署目标。',
+          ...found.map((f) => `这台机器上有 ${f.found.label}：${setCommand(kit, { kind: f.adapter.kind, ...f.found.values })}`),
+        ]
+        return done(lines.join('\n'), { connected, found: found.map((f) => ({ kind: f.adapter.kind, label: f.found.label, values: f.found.values })) })
+      })
+    },
+  })
+}
+
+function targetRemoveCommand(kit: Kit): OwnerCommand {
+  return defineCommand({
+    name: targetRemoveName(kit),
+    act: { kind: 'disconnected', name: '部署目标' },
+    summary: '断开部署目标：线上的不撤下，开关都留着',
+    params: {},
+    destructive: false,
+    ownerOnly: true,
+    setup: true,
+    async run(_values, ctx) {
+      return withRun(kit, ctx, async (run) => {
+        if (run.target === null) return refused('no-target', '还没有部署目标。')
+        const left = heldOn(run, run.target)
+        await targetFile(ctx).remove()
+        return done(`已断开 ${run.target.label}。${left > 0 ? `线上的 ${left} 样没有撤下。` : ''}`, { left })
+      })
+    },
+  })
+}
+
 export function commands(kit: Kit): OwnerCommand[] {
-  return [switchCommand(kit, true), switchCommand(kit, false), syncCommand(kit), listCommand(kit), targetSetCommand(kit)]
+  return [switchCommand(kit, true), switchCommand(kit, false), syncCommand(kit), listCommand(kit), targetSetCommand(kit), targetListCommand(kit), targetRemoveCommand(kit)]
 }

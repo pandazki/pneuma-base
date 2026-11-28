@@ -122,4 +122,14 @@ describe('the form the sdk makes from params', () => {
     expect(inputs.find((i) => i.name === 'to')?.value).toBe('here')
     expect(call).toEqual({ face: 'owner', command: 'shape run', args: { positional: ['a'], flags: { force: true, tags: ['{tags}'], mode: ['{mode}'], to: ['{to}'] } } })
   })
+
+  it('asks for the command’s secret last, hidden, and sends it as standard input, unless the caller fixes it to false', () => {
+    const login = { name: 'shape login', params: { flags: [{ name: 'to', hint: '去哪', kind: 'value' as const }], secret: { name: 'key', hint: '账户密钥' } } }
+    const asked = formOf(login)
+    expect(asked.inputs.at(-1)).toEqual({ name: 'key', label: '账户密钥', placeholder: null, value: null, options: null, secret: true })
+    expect(asked.call).toEqual({ face: 'owner', command: 'shape login', args: { positional: [], flags: { to: ['{to}'] } }, stdin: '{key}' })
+    const unasked = formOf(login, { fixed: { key: false } })
+    expect(unasked.inputs.map((i) => i.name)).toEqual(['to'])
+    expect(unasked.call).toEqual({ face: 'owner', command: 'shape login', args: { positional: [], flags: { to: ['{to}'] } } })
+  })
 })

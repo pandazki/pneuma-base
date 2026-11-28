@@ -93,7 +93,7 @@ const entry: Check = (v, at) => {
 }
 
 const tone = oneOf('neutral', 'good', 'warn', 'bad', 'info')
-const tag = shape({ text: string, tone })
+const tag = shape({ text: string, tone, 'tip?': string })
 const link = shape({ view: string, params: recordOf(string), target: oneOf('main', 'panel') })
 const actorMark = shape({ kind: oneOf('agent', 'owner'), name: string, 'grant?': string })
 /** Who, as a block says it: a name, or an actor whose mark the page draws. */
@@ -117,6 +117,7 @@ const input = shape({
   'pattern?': pattern,
   'hint?': string,
   'secret?': truth,
+  'when?': listOf(shape({ input: string, is: listOf(string) })),
 })
 const action = shape({ label: string, tone: oneOf('default', 'danger'), confirm: nullable(string), inputs: listOf(input), call, 'as?': oneOf('primary', 'icon', 'menu', 'inline'), 'icon?': string, 'key?': string })
 const actions = listOf(action)
@@ -167,7 +168,7 @@ const KINDS: Record<Block['kind'], Check> = {
     'each?': shape({ actions, rename: nullable(action) }),
   }),
   fields: shape({ fields: listOf(shape({ label: string, value: cell })), 'line?': truth }),
-  list: shape({ items: listOf(shape({ cell, note: nullable(string), actions, 'about?': string, 'toggle?': shape({ on: boolean, action }) })), 'page?': paging }),
+  list: shape({ items: listOf(shape({ cell, note: nullable(string), actions, 'about?': string, 'toggle?': shape({ on: boolean, action }), 'aside?': cell })), 'page?': paging }),
   timeline: shape({ entries: listOf(shape({ at: string, title: cell, lines: listOf(string), tag: nullable(tag), 'actions?': actions, 'actor?': who })), 'page?': paging }),
   text: shape({ text: string, tone }),
   preview: shape({ path: string }),
@@ -207,8 +208,9 @@ const EACH_GIVES = ['path', 'in']
 /**
  * What is wrong with an action of a well-formed block, or null when it resolves: its call is a verb,
  * or an owner command the library runs with arguments its `params` take, a `say` is of a kind some
- * plugin hears, and every `{input}` it writes is one of its inputs, or of the names the block `gives`
- * it. An input's value is checked when the person gives it.
+ * plugin hears, every `{input}` it writes is one of its inputs, or of the names the block `gives`
+ * it, and every input an input's `when` names is one of its inputs. An input's value is checked when
+ * the person gives it.
  */
 export function actionFault(action: Action, callable: Callable, gives: readonly string[] = []): string | null {
   const asked = new Set([...action.inputs.map((i) => i.name), ...gives])
@@ -216,6 +218,10 @@ export function actionFault(action: Action, callable: Callable, gives: readonly 
     .flatMap((s) => [...s.matchAll(PLACEHOLDER)].map((m) => m[1] as string))
     .find((name) => !asked.has(name))
   if (unasked !== undefined) return `操作「${action.label}」引用了 {${unasked}}，但没有同名输入`
+  for (const input of action.inputs) {
+    const stray = (input.when ?? []).find((w) => !action.inputs.some((i) => i.name === w.input))
+    if (stray !== undefined) return `操作「${action.label}」的输入 ${input.name} 的 when 引用了 ${stray.input}，但该操作中没有此输入`
+  }
   const call = parseCall(action.call)
   if (typeof call === 'string') return `操作「${action.label}」不是基本命令或所有者命令的调用：${call}`
   if (call.face === 'owner') {

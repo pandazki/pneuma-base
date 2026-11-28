@@ -72,11 +72,14 @@ const MiB = 1024 * 1024
 /** Why a site path is one the contract refuses, or null: at most 300 characters in the package, no control characters, no backslash, no empty, `.` or `..` part. */
 function badPath(path: string): string | null {
   if (`${DIR}/${path}`.length > MAX_PATH) return '太长（包里的路径最多 300 个字符）'
-  if (/[\u0000-\u001f]/.test(path)) return '带控制字符'
+  if ([...path].some((c) => c.charCodeAt(0) < 0x20)) return '带控制字符'
   if (path.includes('\\')) return '带反斜杠'
   if (path.split('/').some((p) => p === '' || p === '.' || p === '..')) return '有空的、. 或 .. 的一段'
   return null
 }
+
+/** What both kinds of PneumaSpace refuse: a site served from its top needs a page there. */
+export const NO_INDEX = '站点顶上没有 index.html'
 
 /** What PneumaSpace on Cloudflare would refuse in this site, in words for the owner, with the number and the limit; null when it takes it. */
 export function refusal(files: readonly SiteFile[], pkg: Package): string | null {
@@ -87,5 +90,5 @@ export function refusal(files: readonly SiteFile[], pkg: Package): string | null
     const why = badPath(f.path)
     if (why !== null) return `文件路径 ${JSON.stringify(f.path)} ${why}，Cloudflare 上的 PneumaSpace 不收`
   }
-  return null
+  return files.some((f) => f.path === 'index.html') ? null : NO_INDEX
 }

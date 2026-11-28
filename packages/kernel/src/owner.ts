@@ -3,14 +3,14 @@ import { catchingUp, catchingUpLine } from './catch-up.js'
 import { makeAddress, resolveAddress } from './address.js'
 import { addressForm, chooseProvider, officialProviders, recordLibrary, type Runnable } from './providers.js'
 import { said, takenBy } from './claims.js'
-import { newConfig, saveConfig } from './library.js'
+import { newConfig, saveConfig, writeDescription } from './library.js'
 import { KERNEL_COMMANDS, type Outcome } from './owner-commands.js'
 import { checkArgs } from './params.js'
-import { makeContext, performOwner, pluginContext } from './pipeline.js'
+import { performOwner, pluginContext } from './pipeline.js'
 import { askLine } from './requests.js'
 import { agentSign, ownerOnlyRefusal, type Env } from './session.js'
 import { bindProvider, storageOf } from './storage.js'
-import { usageOf, type Actor, type Context, type OwnerAct, type OwnerActDone, type OwnerArgs, type OwnerParams, type OwnerResult, type OwnerValues, type Plugin, type PluginName, type PluginTable, type Requested, type Session } from '@pneuma-base/sdk'
+import { usageOf, type Actor, type Context, type Instant, type OwnerAct, type OwnerActDone, type OwnerArgs, type OwnerParams, type OwnerResult, type OwnerValues, type Plugin, type PluginName, type PluginTable, type Requested, type Session } from '@pneuma-base/sdk'
 
 /** Who acts, in which session, on this machine, with no library at hand: the context of a command that needs none. */
 export type MachineContext = Omit<Context, 'library'> & { library: null }
@@ -57,12 +57,31 @@ export type OwnerCommandInfo = {
  */
 type Gate = { destructive: boolean; ownerOnly: boolean; readOnly?: boolean; setup?: boolean; askable?: false; act?: OwnerAct }
 
-/** A command's act as this call ran it: what it was done to, from the argument the act names, else its fixed name. */
+/** A command's act as this call ran it: what it was done to, from the first given of the arguments the act names, else its fixed name. */
 function actDone(act: OwnerAct, params: OwnerParams, args: OwnerArgs): OwnerActDone {
-  const at = (params.positional ?? []).findIndex((p) => p.name === act.object)
-  const flag = act.object === undefined ? undefined : args.flags[act.object]
-  const given = at >= 0 ? args.positional[at] : Array.isArray(flag) ? flag[0] : undefined
+  const valueOf = (name: string): string | undefined => {
+    const at = (params.positional ?? []).findIndex((p) => p.name === name)
+    const flag = args.flags[name]
+    // As the kernel reads a value: trimmed, and an empty one, as a form's hidden field sends, not given.
+    const given = (at >= 0 ? args.positional[at] : Array.isArray(flag) ? flag[0] : undefined)?.trim()
+    return given === '' ? undefined : given
+  }
+  const names = act.object === undefined ? [] : typeof act.object === 'string' ? [act.object] : act.object
+  const given = names.map(valueOf).find((v) => v !== undefined)
   return { kind: act.kind, object: given ?? act.name ?? null }
+}
+
+/**
+ * What reads the value `params.secret` asks for, at most once a call: the person's answer to its hint,
+ * less one final newline; null when empty, not given, or not asked for.
+ */
+function secretOf(params: OwnerParams, call: OwnerCall): () => Promise<string | null> {
+  const { secret } = params
+  let read: Promise<string | null> | undefined
+  return () => {
+    read ??= secret === undefined || call.readSecret === undefined ? Promise.resolve(null) : call.readSecret(`${secret.hint}（输入时不显示）：`).then((v) => (v ?? '').replace(/\r?\n$/, '') || null)
+    return read
+  }
 }
 
 const isAskable = (gate: Gate) => gate.ownerOnly && !gate.destructive && gate.askable !== false
@@ -129,12 +148,14 @@ export async function initLibrary(
   await recordLibrary(opts.home, root, provider.name)
   // Storage's part first (ARCHITECTURE.md「库」): its cache area, and the noise declared at the root with the default names.
   await storageOf(root).init()
-  const library = await saveConfig(root, newConfig(opts.plugins as PluginName[]), opts.table)
-  const ctx = makeContext(library, opts.actor, opts.session, opts.home)
+  const at = { actor: opts.actor, session: opts.session, home: opts.home, now: new Date().toISOString() as Instant }
+  const { library, problems } = await saveConfig(root, newConfig(opts.plugins as PluginName[]), opts.table, at)
+  const ctx = { ...at, library }
   const flags = { ...(opts.plugins.length === 0 ? { bare: true as const } : {}), ...(opts.provider ? { provider: [opts.provider] } : {}) }
   const args: OwnerArgs = { positional: [library.root], flags }
   return performOwner(ctx, 'init', args, { destructive: false, readOnly: false, act: { kind: 'created', object: basename(library.root) } }, async () => ({
     answer: { outcome: 'done', text: `已将 ${library.root} 初始化为资料库，存储提供者为${officialProviders().find((p) => p.name === provider.name)?.summary ?? ` ${provider.name} `}。资料库说明位于 PNEUMA-BASE.md。`, data: { root: library.root, provider: provider.name } },
+    problems,
   }))
 }
 
@@ -198,10 +219,12 @@ export const ownerFace = {
       const command = plugin.ownerCommands.find((c) => c.name === name)
       if (!command) continue
       return gated(bound, name, command, args, command.params, async (values) => {
-        const answer = await command.run({ ...args, values }, pluginContext(ctx, plugin.name))
+        const answer = await command.run({ ...args, values, secret: secretOf(command.params, call) }, pluginContext(ctx, plugin.name, { command: true }))
+        // A configuration of the plugin's own may change what its paragraph of the description says.
+        const problems = command.setup === true && answer.outcome === 'done' ? await writeDescription(ctx) : []
         // A plugin still catching up says so in one line under each of its commands' answers.
         const behind = (await catchingUp(ctx)).get(plugin.name)
-        return { answer: behind === undefined ? answer : { ...answer, text: `${answer.text}\n${catchingUpLine(behind)}` } }
+        return { answer: behind === undefined ? answer : { ...answer, text: `${answer.text}\n${catchingUpLine(behind)}` }, problems }
       })
     }
     return refuse('unknown-command', `所有者命令 ${name} 不存在`)

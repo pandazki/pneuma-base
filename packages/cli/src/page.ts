@@ -1,7 +1,7 @@
 // A page of the management UI as the command line prints it: the same typed blocks in words, so an
 // agent reading it knows what the person sees, and every button written as the command line that
 // does the same thing. ARCHITECTURE.md「`show` 的文字」.
-import { commandLine, quote, usageOf, type Action, type ActorMark, type Block, type Call, type Cell, type Crumb, type FeedGroup, type FeedRow, type FlagParam, type Link, type OwnerCommandInfo, type Paging, type PositionalParam, type TreeNode, type ViewDecl, type ViewList, type ViewRequest, type ViewResult } from '@pneuma-base/kernel'
+import { commandLine, quote, usageOf, type Action, type ActorMark, type Block, type Call, type Cell, type Crumb, type FeedGroup, type FeedRow, type FlagParam, type Link, type OwnerCommandInfo, type Paging, type PositionalParam, type Tag, type TreeNode, type ViewDecl, type ViewList, type ViewRequest, type ViewResult } from '@pneuma-base/kernel'
 
 type Shown = Extract<ViewResult, { outcome: 'shown' }>
 type OwnerCall = Extract<Call, { face: 'owner' }>
@@ -132,10 +132,13 @@ export function linkCommand(link: Link): string {
 
 const sameLink = (a: Link | null | undefined, b: Link | null | undefined) => a != null && b != null && linkCommand(a) === linkCommand(b)
 
+/** A tag in words: its text, and why it is there, in brackets. */
+const tagText = (tag: Tag) => `[${tag.text}${tag.tip === undefined ? '' : `（${tag.tip}）`}]`
+
 /** A cell in words: a moment in UTC, else its text, or the actor's name when it has none; its tag, its outside address, and where it leads unless the row leads there. */
 function cellText(cell: Cell, rowLink: Link | null = null): string {
   const parts = [cell.at !== undefined ? minute(cell.at) : cell.text === '' && cell.actor ? cell.actor.name : cell.text]
-  if (cell.tag) parts.push(`[${cell.tag.text}]`)
+  if (cell.tag) parts.push(tagText(cell.tag))
   if (cell.href !== undefined && cell.href !== cell.text) parts.push(cell.href)
   if (cell.link && !sameLink(cell.link, rowLink)) parts.push(`→ ${linkCommand(cell.link)}`)
   return parts.filter((p) => p !== '').join(' ')
@@ -220,7 +223,7 @@ function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: 
     case 'list':
       return [
         ...block.items.flatMap((item) => [
-          `${indent}- ${cellText(item.cell)}`,
+          `${indent}- ${[cellText(item.cell), ...(item.aside === undefined ? [] : [cellText(item.aside)])].join('  ')}`,
           ...(item.note === null ? [] : [`${more}${item.note}`]),
           ...(item.about === undefined ? [] : [`${more}（${item.about}）`]),
           // A setting: whether it is on, and the command that turns it the other way.
@@ -232,7 +235,7 @@ function blockLines(block: Block, commands: readonly OwnerCommandInfo[], depth: 
     case 'timeline':
       return [
         ...block.entries.flatMap((e) => [
-          `${indent}- ${[minute(e.at), ...(e.actor === undefined ? [] : [whoText(e.actor)]), cellText(e.title), ...(e.tag === null ? [] : [`[${e.tag.text}]`])].filter((p) => p !== '').join('  ')}`,
+          `${indent}- ${[minute(e.at), ...(e.actor === undefined ? [] : [whoText(e.actor)]), cellText(e.title), ...(e.tag === null ? [] : [tagText(e.tag)])].filter((p) => p !== '').join('  ')}`,
           ...e.lines.map((l) => `${more}${l}`),
           ...actions(e.actions ?? [], more),
         ]),

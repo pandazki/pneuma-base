@@ -78,7 +78,7 @@ export default definePlugin({
 
 | 件 | 字段 |
 | --- | --- |
-| 3.1 往说明里加一段 | `cognition` |
+| 3.1 往说明里加一段 | `cognition`、`onDescribe` |
 | 3.2 参与六个动词 | `revise`、`onPut`、`onFind`、`onFound`、`onInspect`、`onCheck`、`onArchive` |
 | 3.3 听一种「说」 | `statements`、`onSay` |
 | 3.4 加主人命令 | `ownerCommands` |
@@ -109,6 +109,12 @@ pneuma-base @{{授权的名字}} say marks notes/plan.md "第三节的数字尚�
 - 认知段不得重复内核管的规矩，不得写 `--include-archived` 和「在外部写好」（检查：`cognition`）。内核的那几段已经说了，说两遍会说岔。
 - 认知段不得许诺插件不做的事，必须说清 agent 不该做、做不了的，比如只有主人能开的开关，出了问题该告诉主人还是重试。agent 照说明做，不知道的界限它会去试。这两条查不了，检查列成提醒。
 - 插件可以写 `cognition: null`，那 agent 就不知道它在；只有不给 agent 用的插件才这样做。
+
+**从自己的记录加一段。** 认知段是固定的字；要说出此刻的情形，比如设的部署目标对上线的东西有什么要求，写 `onDescribe(ctx)`：它从自己的记录读，答一段 Markdown 或 `null`。内核拼说明时把这一段接在它的认知段后面，空一行。内核每次写说明都问它：配置变了（建库、装卸插件、发撤授权），和这个插件的 `setup: true` 的主人命令答了 `done` 之后；拼出的字和库里的一样时不写。
+
+- `onDescribe` 只能和不是 `null` 的 `cognition` 一起（检查：`loads`）。这一段接在认知段后面，没有认知段就没有地方放。
+- 这一段和认知段守同样的规矩：只用 `{{授权的名字}}` 这一个占位，不许诺插件不做的事。
+- 它只读，什么都不改。抛错、或答的不是文字也不是 `null` 时，这一段不加，算这个插件的问题，列在写说明的那次操作的答复里。
 
 五个自带插件都装上时，整份说明不到 160 行。
 
@@ -301,10 +307,44 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('greet'), cog
 **被 agent 请。** 只给主人、不破坏的命令，插件不用多写什么，agent 就能请主人做：它在会话里被拒时，拒绝的话最后一行是 `pneuma-base @<授权名称> ask "<原因>" <命令和参数>`；agent 照着提，内核当场按这条命令的参数表核对参数，主人在首页或 `request list` 里批准，命令就以主人此刻的身份照原样跑，`run` 拿到的和主人自己跑时一样，事件多带一个 `request`（3.5）。破坏性的命令不能请，要主人当面确认。不想被请的写 `askable: false`；它只能写 `false`，写别的装载时拒绝（检查：`loads`）。
 
 - `readOnly: true` 的命令必须什么都不改。符合性检查以主人身份跑每条参数都可省的 `readOnly` 命令，它出的问题算在 `hooks` 里，它改了东西算在 `writes` 里。
-- 改了东西的命令写 `act`，活动页的那一行就说它做了什么：`{ kind, object?, name? }`。`kind` 是动作的种类，画成图标（`FEED_ACTS` 里的一个：`on`、`off`、`installed`、`set`、`synced`、`exported`、`removed`、`restored` 这些）；`object` 是参数表里一个位置参数或开关的名字，它的值是这一行的名字（`deploy on <path>` 写 `object: 'path'`）；没有这样的参数时写 `name`，一个固定的名字（`sync now` 写 `name: '同步'`）。不写 `act` 的，那一行的图标是命令，名字是命令名。命令的答复从不上那一行，照给的写法写出的命令在提示和 `show` 里。装载时核对它的形状（检查：`loads`）。
+- 改了东西的命令写 `act`，活动页的那一行就说它做了什么：`{ kind, object?, name? }`。`kind` 是动作的种类，画成图标（`FEED_ACTS` 里的一个：`on`、`off`、`installed`、`set`、`synced`、`exported`、`removed`、`restored` 这些）；`object` 是参数表里一个位置参数或开关的名字，它的值是这一行的名字（`deploy on <path>` 写 `object: 'path'`）；几个参数里给一个的，`object` 写它们的名字的列表，这一行取第一个给了的（空的算没给）；都没给，或没有这样的参数时，用 `name`，一个固定的名字（`sync now` 写 `name: '同步'`）。名字里有 `://` 的，活动页整个画出来，去掉前面的 `https://` 这类，不拆成文件夹和名字。不写 `act` 的，那一行的图标是命令，名字是命令名。命令的答复从不上那一行，照给的写法写出的命令在提示和 `show` 里。装载时核对它的形状（检查：`loads`）。
 - `destructive: true` 的命令可以删、改写插件自己目录里的文件，库里别处的什么都不得动（检查：`writes`）。主人总能丢掉数据。符合性检查以主人身份跑每条参数都可省的破坏性命令，像人在界面里点了确认那样给它当面确认；要参数的，列成提醒。
 
 **谁算 agent。** 调用带着授权、写了 `--as`，或环境里有 `PNEUMA_BASE_SESSION` 或 agent 产品的会话变量（4.1 列出），门就当它在 agent 的会话里，拒绝的话说出是哪一样。管理界面的服务用启动它的 shell 的环境，所以在 agent 的会话里启动的界面同样被拒。
+
+**主人另给的值。** 命令要一个不能写在命令行上的值，比如账户密钥，在参数表里写 `secret: { name, hint }`（4.3），`run` 从 `secret()` 读它；`defineCommand` 把它作 `run` 的第三个参数。在终端里不回显地问「<hint>（输入时不显示）：」，不在终端里读标准输入，从界面来时是表单里那一项隐藏输入的值，经 MCP 总是 `null`。一次调用最多读一次，再调答同一个值；去掉末尾一个换行，空的算没给，是 `null`；命令没声明 `secret` 时也是 `null`，什么都不读。它不在 `values` 和参数里，不进事件和活动页；`run` 不得把它写进答复。要留着它，用 `ctx.secrets.set` 存在这台机器上（3.7）：
+
+```ts
+import { CONTRACT, defineCommand, definePlugin, pluginName } from '@pneuma-base/sdk'
+
+const login = defineCommand({
+  name: 'vault login',
+  summary: '连上保险库，账户密钥存在这台机器上',
+  params: { flags: [{ name: 'origin', hint: '地址', kind: 'value', required: true }], secret: { name: 'key', hint: '账户密钥' } },
+  destructive: false,
+  ownerOnly: true,
+  askable: false,
+  setup: true,
+  async run({ origin }, ctx, secret) {
+    const key = await secret()
+    if (key === null) return { outcome: 'refused', reason: 'no-key', text: '没有读到账户密钥，什么都没改。' }
+    await ctx.secrets.set('key', key)
+    return { outcome: 'done', text: `已连上 ${origin}。` }
+  },
+})
+
+export default definePlugin({
+  contract: CONTRACT,
+  name: pluginName('vault'),
+  cognition: null,
+  storage: [],
+  statements: [],
+  ownerCommands: [login],
+  secrets: [{ name: 'key', description: '保险库的账户密钥' }],
+})
+```
+
+`formOf(login)` 生成的表单最后一项是隐藏输入的「账户密钥」，经 `Call` 的 `stdin` 交给命令（4.4）。
 
 **答复。** `run` 答 `{ outcome: 'done', text, data? }` 或 `{ outcome: 'refused', reason, text, offer? }`。命令行打印 `text`，带 `--json` 时打印整个结果；`data` 给 `--json` 和测试读。`offer` 是被拒绝之后人可以改做的一个动作，界面把它放在拒绝的提示里。
 
@@ -654,7 +694,9 @@ pneuma-base secret list search
 pneuma-base secret remove search key
 ```
 
-`plugin disable` 卸下插件后，它名下的目录原样留着；`plugin uninstall` 从这台机器卸掉它后，它的密钥原样留着。
+主人命令拿到的凭证（3.4 的 `secret()`）要留着时，`ctx.secrets.set(名字, 值)` 把它存在这台机器上，和 `secret set` 存的一样。只能存 `secrets` 里声明的名字，值不空、不长过 64 KB，只在主人命令里存；不是这样时它抛错。钩子和视图不存密钥。
+
+`plugin disable` 停用插件后，它名下的目录原样留着；`plugin uninstall` 从这台机器卸掉它后，它的密钥原样留着。
 
 ## 4. 参考：上下文、参数表、块和自己画的页
 
@@ -671,7 +713,7 @@ pneuma-base secret remove search key
 | `home` | 本机的 `$PNEUMA_BASE_HOME`，缺省 `~/.pneuma-base` |
 | `pass` | 可选：这次操作是一趟有名字的全量动作、有人看着时才有。`report({ done, total, atLeast?, text })` 报进度，`total` 不知道时是 `null`；`stopped()` 为真时做完手上这一步就停（3.4）。插件经 `tools.storage` 读写目录时，存储的进度也接在它最后一次报告后面 |
 | `cacheDir` | 插件在库外的缓存目录，内核不建（3.7） |
-| `secrets` | `get(名字)`：主人在这台机器上给它设的密钥，没设是 `null`（3.7） |
+| `secrets` | `get(名字)`：主人在这台机器上给它设的密钥，没设是 `null`；`set(名字, 值)`：主人命令把拿到的凭证存在这台机器上（3.7） |
 | `tools` | 内核的工具，绑在这次操作的库上，见 4.2。插件的记录处经 `tools.storage` 读写，上下文里没有它的路径 |
 
 主人命令的门（3.4）在下面任何一样成立时当调用在 agent 的会话里：带着授权（`pneuma-base @<授权名称> …`）；写了 `--as <名字>`；环境里有这些变量之一，值不空：`PNEUMA_BASE_SESSION`、`CLAUDE_CODE_SESSION_ID`、`CODEX_THREAD_ID`、`ANTIGRAVITY_CONVERSATION_ID`、`CLAUDECODE`、`ANTIGRAVITY_AGENT`。主人在 agent 产品开的终端里用主人命令，先去掉这些变量：
@@ -863,6 +905,8 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `pattern` | 每个值都要整个匹配的正则（`u` 标志） | 同左；`boolean` 没有 |
 | `options` | 没有 | 只给 `value`：不空的 `{ value, label }` 列表，只收这几个值 |
 
+参数表还可以有 `secret: { name, hint }`：命令另读的一个值（3.4）。它不是参数，不进 `values`，用法里不写。`name` 是表单里那一项的名字，合开关名的规则，不和位置参数、开关同名；`hint` 是问话，也是表单里这一项的名字。
+
 一个名字在一条命令里只出现一次。`run` 收到的值：必填的是文字，可省的可能是 `null`，`list` 和 `many` 是列表，`boolean` 是 `true` 或 `false`。值去掉两头空白，空的算没给，所以表单里留空的一项等于没写。少了、多了、不认识、格式不对、不在可选的值里，内核都以 `usage` 拒绝。
 
 内核自己的命令 `KERNEL_COMMAND_NAMES` 是 `grant create`、`grant revoke`、`plugin enable`、`plugin disable`、`plugin backfill`、`skill install`、`archive purge`、`plugin install`、`plugin uninstall`、`plugin list`、`secret set`、`secret list`、`secret remove`、`agent detect`、`agent connect`、`agent disconnect`、`agent list`、`launcher install`、`request list`、`request approve`、`request decline`、`ignore list`、`ignore add`、`ignore remove`、`storage list`、`storage install`、`storage remove`、`storage update`、`pair list`、`pair allow`、`pair decline`。
@@ -874,7 +918,7 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `section` | `title`、`note`（文字或 `null`）、`count`（数字或 `null`）、`blocks`、`actions` | `collapse`：`open` 或 `closed`，可以折起来，值是开始时的样子；`about`：这一节是做什么的，给第一次来的人，界面放在标题旁的 ⓘ 里，悬停或聚焦时显示，`show` 印在标题下的括号里；`normal: true`：这一节此刻没有要人看的（没有要决定的、没有要留意的），界面整节不画，`show` 照印 | 分节；里面的块逐个核对。`note` 留给这一节此刻的内容（比如「上次查看后的新内容」），说明这一节是什么的话放 `about`。节的 `actions` 画在标题那一行：图标、「···」、一个安静的按钮（见 `Action`）；`as: 'inline'` 的动作画成节里第一行的输入框 |
 | `table` | `columns`（每列 `{ key, label }`）、`rows`（每行 `{ key, cells, link, actions }`，`cells` 按列的 `key` 给 `Cell`，`link` 可以是 `null`）、`empty` | 列的 `optional`：放不下时这一列先让开，后面的先让；行的 `group`：同组的行排在一起，组名是它们上面的一行小标题，格里只写组名之后的部分（比如按文件夹分组，格里只写名字），有组时表头只给读屏；`page`：见下面的 `Paging`；行的 `place`（`RowPlace`）：这一行代表库里的一个地方，界面把它当文件，能选中、预览、打开、拖出、右键，页头能在列表和图标之间切换；`sorted`：`{ by, desc }`，带 `place` 的表现在怎么排，`by` 是 `SortKey`，界面让和它同名的列头和页头的小菜单能换排法，换的是视图的参数 `sort`（`SortKey`，前面加 `-` 倒过来），视图要按它排；`each`：`{ actions, rename }`，对表里任何一样东西（`place` 是 `file` 或 `bundle` 的）都能做的动作，说一次，`{path}` 是它的库内路径，`{in}` 是它所在的文件夹带斜杠（根上是空的）；`rename` 是一个动作或 `null`，它唯一的输入 `name` 在原处写在名字上 | 记录表；没有行时只显示 `empty`。一列的格全是 `normal` 时整列让开。有 `link` 的行，动作在悬停或聚焦时才出现。`show` 在表下印一次 `each` 的动作 |
 | `fields` | `fields`（每项 `{ label, value }`，`value` 是 `Cell`） | `line: true`：几个字段说成一行，不带标签，标签进悬停，`show` 照印标签；适合谁、何时、在哪次会话这类一看就懂的值 | 字段组；`normal` 的字段不画 |
-| `list` | `items`（每项 `{ cell, note, actions }`，`note` 可以是 `null`） | `page`；项的 `about`：这一项是什么，说完整，界面放在格旁的 ⓘ 里，`show` 印在说明后面；项的 `toggle`：`{ on, action }`，这一项是一个开或关的设置，界面在行尾画一个开关，拨它就做 `action`（先问它的 `confirm`），所以 `action` 是把它拨到另一边的那个，`show` 印「已启用」或「已停用」和这个动作的命令 | 列表；窄处要路径完整时用它，不用表格。设置写成带 `toggle` 的项：格是名字（可带 `icon`），`note` 是一行短话 |
+| `list` | `items`（每项 `{ cell, note, actions }`，`note` 可以是 `null`） | `page`；项的 `about`：这一项是什么，说完整，界面放在格旁的 ⓘ 里，`show` 印在说明后面；项的 `aside`：这一行的第二格（`Cell`），画在行尾、动作和开关之前，一行，放不下时从中间截短，带 `copy` 时拷贝的按钮在悬停或聚焦时出现，比如一样东西的地址；`show` 印在格后面；项的 `toggle`：`{ on, action }`，这一项是一个开或关的设置，界面在行尾画一个开关，拨它就做 `action`（先问它的 `confirm`），所以 `action` 是把它拨到另一边的那个，`show` 印「已启用」或「已停用」和这个动作的命令 | 列表；窄处要路径完整时用它，不用表格。设置写成带 `toggle` 的项：格是名字（可带 `icon`），`note` 是一行短话 |
 | `timeline` | `entries`（每条 `{ at, title, lines, tag }`，`title` 是 `Cell`，`tag` 可以是 `null`） | 条目的 `actions`、`actor`（谁做的，`ActorMark` 或名字：界面在线上画它的记号，名字进悬停，`show` 印名字）；`page` | 时间线 |
 | `text` | `text`、`tone` | | 一段字 |
 | `preview` | `path`（库内路径） | | 一个文件的预览 |
@@ -893,7 +937,7 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | 类型 | 字段 |
 | --- | --- |
 | `Cell` | `text`；可选 `normal: true`（这是常态的值，比如「一致」「读写」「离线」：页面不画它，一列全是常态就整列让开，`show` 照印）、`mono`、`muted`、`tag`、`link`、`actor`（`ActorMark`，谁做的：文字前画它的记号，`text` 空时显示名字）、`at`（这一格是一个时刻，界面按看的人的本地时间显示，近的写「N 分钟前」「今天 15:34」）、`icon`（`IconName`）、`href`（http 或 https 的地址，新标签页打开，放不下时从中间截短）、`copy: true`（复制 `href`，没有就复制 `text`）、`reopen`（`Reopen`：这一格说的是一个场景，它的对话在这台机器上，Mac 应用在旁边给「打开那次对话」，浏览器不画；用内核的 `reopenOf` 得到）、`local: true`（`text` 是视图所在那台机器上的绝对路径，比如库放在哪：界面只写最后一段，整个路径在提示里，带拷贝，Mac 应用里另带「在访达中显示」；`show` 印整个路径） |
-| `Tag` | `{ text, tone }`，`tone` 是 `neutral`、`good`、`warn`、`bad`、`info`。正常的状态给 `normal: true`，不要给它标签；标签留给偏离正常的 |
+| `Tag` | `{ text, tone }`，`tone` 是 `neutral`、`good`、`warn`、`bad`、`info`；可选 `tip`：为什么有这个标记，比如连不上哪里，界面是它的提示和读屏的说明，`show` 印在标签的字后面的（）里。正常的状态给 `normal: true`，不要给它标签；标签留给偏离正常的 |
 | `ActorMark` | `{ kind: 'agent' \| 'owner', name, grant? }`：agent 画成名字里取的两个字母，底色由名字定，同一个名字总是同一个颜色；主人画成一个灰圆。字母：头两个词的首字母（claude-code 是 CC），一个词的取头两个字母（codex 是 Co），汉字一个就是记号；屏上两个名字的字母一样时，各取首字母加第一个和对方同位不同的字母（codex 和 copilot 是 Cd 和 Cp）。所以不靠颜色也分得开。`grant` 是它凭的授权名 |
 | `FilterOption` | `{ value, label, count? }`：筛选的一个选项，`count` 是选它时有几条。视图答复可以带 `filters: { name, options }[]`，给它声明了的筛选这一次的选项和数目（比如出现过的 agent），界面和 `show` 用它代替声明里的选项；只有一个选项的筛选界面不画 |
 | `Link` | `{ view, params, target }`：打开一个视图，`target` 是 `main`（主区）或 `panel`（右侧面板）。条目面板是视图 `item`，参数 `path` |
@@ -903,11 +947,11 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `Reopen` | `{ url, run, reveal }`：Mac 应用怎么再打开一个场景的对话，按次序用第一种做得成的：`url` 是这台机器上的程序收的链接，`run` 是 `{ command, cwd }`，在默认的终端里、在 `cwd` 里跑，`reveal` 是对话文件，在访达中显示。路径都是绝对的 |
 | `Paging` | `{ first, shown, total, atLeast?, prev, next }`：这些行是一个长列表的一页，从第 `first` 行起，共 `shown` 行；整个列表 `total` 行，`atLeast` 时是至少这么多；`prev`、`next` 是前一页和后一页的 `Link`，到头是 `null`。页的位置在视图的参数里（`after` 和 `back`），所以在地址里。sdk 的 `pagingOf` 从参数生成它，`pageAt` 读出这一页从哪个游标往后，`rowsOf(请求)` 是一页几行：界面 50，`show` 20；一页里几个列表各用一个 `name` 前缀。界面在列表下画「51–100，共 523 项」和前后两个按钮，`show` 印这一句和翻页的命令 |
 | `Action` | `{ label, tone, confirm, inputs, call }`：`tone` 是 `default` 或 `danger`。`confirm` 是点了之后先问的一句话，人点了确认就是破坏性命令要的当面确认。`confirm` 为 `null` 的动作不问：没有输入时点了就做，算没有当面确认，所以破坏性的命令以 `not-confirmed` 拒绝；有输入时先出表单。可选 `icon`（`IconName`）、`key`（一个键：提示和菜单里写出它，所在的区域有焦点时按它就做）、`as`：`primary`（区域里唯一的主按钮，实心）、`icon`（只画图标，`label` 和键进提示；要有 `icon`）、`menu`（进区域的「···」）、`inline`（只有一个文字输入的动作，画成就地写的输入框，回车就做）。不写 `as` 时，区域里第一个画成安静的文字按钮，其余进「···」。`danger` 的总在「···」的最后，隔一条线，照样先问 `confirm`。一个区域（页头、一节、一行）最多一个文字按钮：常用的给图标和键，少用的进菜单。`show` 每个动作照样印成命令 |
-| `ActionInput` | `{ name, label, placeholder, value, options }`；可选 `multiple`（一行一个值）、`pattern` 和 `hint`（不匹配时表单不提交，`hint` 变红）、`secret: true`（输入时不显示） |
+| `ActionInput` | `{ name, label, placeholder, value, options }`；`label` 是空字时表单不画它的标签，用在自己说得清的一项上（几个有名字的种类里选一个），筛选框的提示字用 `placeholder`；可选 `multiple`（一行一个值）、`pattern` 和 `hint`（不匹配时表单不提交，`hint` 变红）、`secret: true`（输入时不显示）、`when`（`{ input, is }` 的列表：说到的每个输入的值都在它的 `is` 里时，这一项才显示；不显示的一项送空值，就是没给；说到的输入一个不是这个动作的，算不合）。`options` 不超过 5 个时并排，选一个；多过 5 个时是一个筛选框，下面列出名字里含所写的字（不分大小写）的前 20 个，选中一个，回车提交，一个都不含时不能提交 |
 | `Call` | `{ face: 'agent', verb, request }`，`request` 是那个动词的请求；或 `{ face: 'owner', command, args: { positional, flags }, stdin? }`。字符串里的 `{输入名}` 换成那个输入的值；正好是 `{输入名}` 的列表元素，`multiple` 的输入一行换成一个元素。带参数的主人命令的表单用 sdk 的 `formOf(命令, { fixed, values, choices })` 生成：每个参数一个输入，`fixed` 里的不问，直接写进 `Call` |
 | `IconName` | `activity`、`archive`、`archive-restore`、`arrow-down-to-line`、`bookmark`、`box`、`chart-column`、`check`、`circle-alert`、`clock`、`cloud`、`cloud-off`、`cloud-upload`、`code`、`copy`、`corner-left-up`、`database`、`download`、`ellipsis`、`external-link`、`eye`、`file`、`file-text`、`flask-conical`、`folder`、`folder-dot`、`folder-input`、`folder-plus`、`gauge`、`git-branch`、`globe`、`hard-drive`、`history`、`house`、`image`、`info`、`key`、`layers`、`layout-grid`、`link`、`link-2`、`list`、`list-plus`、`lock`、`message-square-plus`、`package`、`pencil`、`plug`、`plus`、`power`、`refresh-cw`、`rocket`、`scale`、`scan-search`、`scroll-text`、`search`、`server`、`settings`、`shield`、`sparkles`、`tag`、`terminal`、`trash-2`、`triangle-alert`、`unplug`、`upload`、`users`（lucide 的图标名，sdk 的 `ICON_NAMES`）。界面把别的名字画成拼图 |
 
-内核核对每一块：种类不认识、缺了必需的字段、类型不对、`feed` 的一行同时有 `action` 和 `settled`、`asks` 的 `suggested` 不在回答里、`ActorMark` 的 `kind` 不是 `agent` 或 `owner`、`embed` 的地址不是 http 或 https、`custom` 的 `entry` 爬出 `ui` 目录或插件没有 `ui`、`chart` 的系列不是 1 到 4 个、某个系列的数和 `x` 不一样多、叠起来的柱有负数、输入的 `pattern` 不是正则、动作调的不是一个动词或这个库里在的主人命令、参数不合那条命令的参数表、「说」的种类没有插件听、`call` 写了动作没有的输入（`each` 的动作另有 `{path}` 和 `{in}`）、`trail` 的链接不是一个链接，都算不合。
+内核核对每一块：种类不认识、缺了必需的字段、类型不对、`feed` 的一行同时有 `action` 和 `settled`、`asks` 的 `suggested` 不在回答里、`ActorMark` 的 `kind` 不是 `agent` 或 `owner`、`embed` 的地址不是 http 或 https、`custom` 的 `entry` 爬出 `ui` 目录或插件没有 `ui`、`chart` 的系列不是 1 到 4 个、某个系列的数和 `x` 不一样多、叠起来的柱有负数、输入的 `pattern` 不是正则、动作调的不是一个动词或这个库里在的主人命令、参数不合那条命令的参数表、「说」的种类没有插件听、`call` 写了动作没有的输入（`each` 的动作另有 `{path}` 和 `{in}`）、输入的 `when` 说到动作没有的输入、`trail` 的链接不是一个链接，都算不合。
 
 ### 4.5 自己画的页
 
@@ -966,26 +1010,29 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | 导出 | 做什么 |
 | --- | --- |
 | `recordStore(ctx, 名字, parse)` | 只追加的记录库（3.7），记在插件记录处的事实里，每条带 `store: 名字`，一个插件可以有几个。`stamp(ctx, 内容)` 盖上 `id`、`at`、`actor`、`session`，还不写。`actor` 是 `{ kind, name }`：agent 的 `name` 是它的名字，比如 `claude-code`；主人的 `kind` 和 `name` 都是 `owner`。`append(记录)` 把几条写成一次。`since(游标, limit)` 答游标之后的一页 `{ records, skipped, cursor, more }`（`limit` 缺省 1000），游标对不上时 `null`，从 `null` 重来；存下 `cursor`，下次接着读。`read()` 一页一页地读全部，答 `{ records, skipped }`。`skipped` 是读不懂的，每条 `{ at, reason }`，原样留着。`parse` 收到一条的对象，答内容，或一句为什么不是。`.pneuma-base/<插件名>/<名字>/` 下的 jsonl 文件也照样读，在从头读的第一页里 |
-| `configFile(ctx, 名字, parse)` | 整份替换的配置文件（3.7），在插件记录处的 `own` 里，`名字` 相对 `.pneuma-base/<插件名>/`。`read()` 没有文件时 `null`，不是 JSON 或 `parse` 抛错时抛错；`write(值)` 经 `own.write` 整份写，带着上次读到的令牌，中间别人写过就重新看一眼那里的令牌再写，最后一次写的算数；连着三次撞上别处的写就抛错 |
+| `configFile(ctx, 名字, parse)` | 整份替换的配置文件（3.7），在插件记录处的 `own` 里，`名字` 相对 `.pneuma-base/<插件名>/`。`read()` 没有文件时 `null`，不是 JSON 或 `parse` 抛错时抛错；`write(值)` 经 `own.write` 整份写，带着上次读到的令牌，中间别人写过就重新看一眼那里的令牌再写，最后一次写的算数；连着三次撞上别处的写就抛错。`remove()` 删掉它，没有时什么都不做 |
 | `deployPlugin(名字, 目标, 选项)` | 给一个插件名和一种或几种目标，交回一个完整的部署插件 |
 | `defineTarget(目标)` | 写一种目标，见下面 |
 | `STATUS`、`switchAction(插件名, look)` | 部署库的页上每种状态的标签，和一样东西的开关动作，目标自己画的块用它们说一样的状态、给一样的开关 |
+| `Found`、`TargetGroup`、`Typed` | 目标的 `found` 答的一项，`group`，`configure` 第三个参数的类型 |
 | `siteName`、`want`、`plan`、`statusOf` | 部署库的决定，纯函数：缺省的站点名，目标上该有什么，要做的几步，状态 |
 
 ### 部署库
 
-部署库替你做和目标无关的一切：agent 用 `say deployable <库内路径> [一句话]` 声明一样东西可以部署，声明不让它上线；主人用开关决定它在不在线；开着的东西，目标上跟着库里当前的内容，放入、挪、归档、取回之后都对一遍。记录、主人命令、页面、条目面板里的一节、认知段都是它的。一个部署插件只写它的目标。
+部署库替你做和目标无关的一切：主人在它的页上连上一个目标，把一样东西上线、下线；agent 用 `say deployable <库内路径> [一句话]` 声明一样东西可以部署，声明不让它上线；开着的东西，目标上跟着库里当前的内容，放入、挪、归档、取回之后都对一遍。记录、主人命令、页面、条目面板里的一节、认知段都是它的。一个部署插件只写它的目标。
 
 它给的主人命令，`<名字>` 是插件名：
 
 | 命令 | 标志 | 做什么 |
 | --- | --- | --- |
-| `<名字> on <库内路径>`、`<名字> off <库内路径>` | `ownerOnly` | 打开或关上开关，并发布或下线 |
-| `<名字> target set [--kind <kind>] <目标的开关>` | `ownerOnly`、`setup` | 配目标；只有一种目标时可以不写 `--kind`。答复提醒还没设的必需密钥，可选的只说要用时怎么设 |
+| `<名字> on <库内路径>`、`<名字> off <库内路径>` | `ownerOnly` | 打开或关上开关，并发布或下线；主人打开没声明的东西时先记声明 |
+| `<名字> target set [--kind <kind>] <目标的开关>` | `ownerOnly`、`setup` | 连上目标；只有一种目标时可以不写 `--kind`。目标答不上来时什么都不存 |
+| `<名字> target list` | `readOnly` | 连着的目标，和这台机器上找到的 |
+| `<名字> target remove` | `ownerOnly`、`setup` | 断开；线上的不撤下 |
 | `<名字> sync` | 谁都能用 | 把全部声明过的东西对一遍 |
 | `<名字> list` | `readOnly` | 列出声明过的东西、状态和地址 |
 
-它的页是 `<名字>.sites`：目标一节，可部署的东西一张表，表里每行一个开关。
+它的页是 `<名字>.sites`。没连目标时只有「发到哪里」：这台机器上找到的目标一行一个「连上」，每组目标一行「别的 <组名>」和「连上…」，别的几种在菜单里。连着时页头是「上线一样东西」（有东西等着时另有「重试」），下面是目标那一行（菜单里「换一个…」、设置、「断开」），再下面每样东西一行：名字、文件夹、标记、地址、开关。条目面板里是标记和地址、目标的字段和块，开关在面板的菜单里；没声明的目录东西在菜单里有「上线…」。全文在部署库的 `README.md`。
 
 它问主人（`onAsks`）：声明了可以部署、主人从没动过开关、还在库里（不在归档区）的东西，每样一件「<谁> 说 <路径> 可以部署，还没上线。要上线吗？」，回答是「上线」（推荐，`<名字> on`）和「不上线」（`<名字> off`）。哪个回答都记一条开关，开关本来关着也记，之后不再问这一样。所以它们出现在首页的「待处理」和 agent 的 `check` 里，agent 告诉主人，主人点一下或在终端里跑一条命令。它在自己的记录处写 `config.json`（目标，用 `configFile` 整份替换）和记录库 `facts`（用 `recordStore`），都是本体；跑符合性检查时把 `config.json` 列进 `configuration`。
 
@@ -1009,11 +1056,17 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `TargetAdapter` 的字段 | 是什么 |
 | --- | --- |
 | `kind` | `target set --kind` 的值，随配置存下 |
-| `label` | 发布到哪种地方，给人看：「一个本地目录」 |
-| `params` | `target set` 在 `--kind` 之后的开关，一份 `FlagParam[]`。命令的参数表、帮助、页面上的表单和核对都从这里来；有几种目标时，选定的那种必填的开关才必填 |
+| `label` | 这种目标给人看的名字，用在对话框和菜单里：「本地文件夹」 |
+| `icon` | 可选，目标那一行和找到的那几行的图标 |
+| `group` | 可选，`{ name, choice }`：同组的几种合成一行「其他 <name>」，对话框里按 `choice` 选；不在组里的是菜单里的「<label>…」 |
+| `params` | `target set` 在 `--kind` 之后的开关，一份 `FlagParam[]`。命令的参数表、帮助、页面上的对话框和核对都从这里来；有几种目标时，选定的那种必填的开关才必填 |
+| `form` | 可选，对话框问的开关和次序；没写就是必填的那些 |
 | `secrets` | 它读的密钥，可以标 `optional: true`。部署库把它们声明成插件的密钥，`secret set` 和设置页就认得 |
+| `asked` | 可选，`{ name, hint }`：`target set` 不显示地读一次的密钥（3.4 的 `params.secret`），对话框里放在最后。`configure` 读到了又答应了，部署库把它存成这台机器上的那个密钥（`ctx.secrets.set`）；它不进配置、记录和答复 |
+| `found(ctx)` | 可选，这台机器上找得到的这种目标，每个 `{ label, values }`，`values` 是连上它的开关。只读找它们要读的 |
+| `cognition` | 可选，连着这种目标时认知段后面多的一段（`onDescribe`） |
 | `views` | 可选，目标自己的页，每项 `{ name, title, icon }`。每页是导航里的一项，排在部署库的页之后，视图编号 `<插件名>.<name>`；`name` 用小写字母、数字、连字符，不得是 `sites` |
-| `configure(值, ctx)` | 把核过的值变成要存的配置（一个 JSON 对象），或答 `{ ok: false, reason, text }`。可以带 `note`：一句给主人的话，`target set` 的答复用它代替部署库对没设的密钥的提醒，用在凭据能从几处来的目标上，说这次用哪一处、都没有时运行什么 |
+| `configure(值, ctx, typed)` | 把核过的值变成要存的配置（一个 JSON 对象），或答 `{ ok: false, reason, text }`。连上前在这里问目标一次，答不上来就拒绝，什么都不存。`typed()` 读 `asked` 的密钥，没输入是 `null`。可以带 `note`：一句给主人的话，代替部署库对没设的必需密钥的提醒 |
 | `open(配置, env)` | 在边界上解析存下的配置，交回这一次钩子或命令用的 `Target`；读不懂就抛错 |
 
 `env` 是 `{ ctx, scratch, plugin, secret }`：`ctx` 是这次的上下文，`scratch` 是库外给它用的临时目录，`plugin` 是插件名（它的命令以此开头），`secret(名字)` 读主人在这台机器上设的密钥。必需的密钥没设时 `secret` 以一句说明用哪条命令设的错误拒绝，开关的答复里是 `publish-failed` 带这句话；可选的没设时读出 `null`，类型是 `string | null`。要密钥的目标从不在开关里要它。
@@ -1021,7 +1074,9 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `Target` 的字段 | 是什么 |
 | --- | --- |
 | `key` | 记录按它区分目标：换了 `key`，旧目标上的站点不再算 |
-| `label` | 什么、在哪，一行给人看 |
+| `label` | 目标那一行写什么：主机名、文件夹，或这种目标自己的话 |
+| `local` | 可选，`label` 是这台机器上的路径，那一行显示最后一段 |
+| `settings` | 可选，连上之后还能改的开关，每个 `{ flag, hint, value }` 是那一行菜单里的「<hint>…」，用存下的开关再跑一次 `target set` |
 | `publish(站点名, 目录, meta)` | 把目录发布成这个站点，换掉它原来的内容，答 `{ url }`。目录是部署库复制到缓存目录下的临时副本：文件是存储的清单（`content` 带 `manifest`，4.2）按内容规则算进的那些，不带标记文件、噪音、`.gitignore` 排除的和符号链接；每个文件用 `storage.read` 写过去，再对清单里的指纹。`meta` 有内容编号 `content`、库内路径、时刻，和按路径的 UTF-8 字节排好的 `files`（每项 `{ path, abs }`，`abs` 是复制件里的文件），就是复制件里的全部文件 |
 | `remove(站点名)` | 下线；下线一个它没在服务的站点不算错 |
 | `siteName(路径)` | 可选，换掉缺省的站点名：库内路径小写，别的字符换成 `-`，路径不干净或太长时加 sha256 的前 6 位，最长 58 个字符 |
@@ -1040,8 +1095,8 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 
 | `view` 的字段 | 是什么 |
 | --- | --- |
-| `columns`、`cells(look)` | 表格里在路径、状态、地址之后的列，和每行按列的 `key` 填的格 |
-| `fields(look)` | 条目面板里在状态、开关、地址、站点名之后的字段 |
+| `mark(look)` | 一行的标记（`Tag`，带 `tip`），部署库的状态说不出的，比如名字被别人占着；`null` 是没有 |
+| `fields(look)` | 条目面板里地址下面的字段；正常的值（`normal: true`）不画 |
 | `before(全部)`、`page(全部)` | 部署库的页上，在它的几节之前、之后的块；`custom` 块要插件的 `ui` |
 | `pages` | 按名字给目标的 `views` 里每页的块：`pages[name](全部)`。配的目标不画某一页时，那一页说明这一点 |
 | `item(look)` | 条目面板里这一节最后的块 |
@@ -1058,144 +1113,53 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `unreachable` | 读不到目标时的原因 |
 | `detail` | `serving` 对它的站点说的 `detail`：先取它正在其下服务的站点，再取它的路径有的、归档的东西曾有的站点名。所以归档了的、待下线的东西也有。在页和面板之外是 `null` |
 
-`switchAction(插件名, look)` 是表格里的那个开关：`{ label: '打开' 或 '关上', tone: 'default', confirm: null, inputs: [], call: { face: 'owner', command: '<插件名> on' 或 '<插件名> off', args: { positional: [路径], flags: {} } }, as: 'icon', icon: 'power' }`，画成一个电源图标，`label` 进提示；归档了又关着的东西没有开关，答 `null`。
+`switchAction(插件名, look)` 是一行的那个开关：`{ label: '上线' 或 '下线', tone: 'default', confirm: null, inputs: [], call: { face: 'owner', command: '<插件名> on' 或 '<插件名> off', args: { positional: [路径], flags: {} } }, as: 'icon', icon: 'power' }`；归档了又关着的东西没有开关，答 `null`。
 
-PneumaSpace 插件（`space`）就是一个部署插件，带两种目标：一台机器上的 PneumaSpace（`--kind machine`）和 Cloudflare 上的 PneumaSpace（`--kind cloudflare`）。前一种用 PneumaSpace 的管理接口发布，`identify` 用上传的包的 sha256 作内容编号，`serving` 问 PneumaSpace 真在服务什么，令牌是可选的密钥，表格和面板里加了版本这些格，另有一页「看板」。下面是这一种的代码，省掉了两处：它打的是字节只由文件决定的 tar 包，这里把文件依次连起来；站点的地址它从 PneumaSpace 的入口算，这里从管理地址算。后一种以主人的账户登录控制台接口，用 `configure` 的 `note` 说账户密钥从哪里来，用 `close` 在一次运行结束时退出登录。
+自带的部署插件 `deploy` 带四种目标，是一个完整的例子：Cloudflare 上的和一台机器上的 PneumaSpace 一组（`group`），前一种的 `found` 读这台机器装过的、`asked` 读账户密钥、`configure` 登录一次核对、`close` 退出登录，两种都有 `serving`、`identify`、应用名前缀的 `settings`、`mark`（名字被占用）和 `cognition`；本地文件夹（`local`）和自己的命令不报告。第三方要写的只有下面这些：
 
 ```ts
-import { createHash } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
-import type { Block, Cell, LibraryPath } from '@pneuma-base/sdk'
-import { STATUS, defineTarget, deployPlugin, siteName, switchAction, type ContentId, type Look, type Served, type SiteFile, type SiteName, type Target } from '@pneuma-base/sdk/kit'
+import { defineTarget, deployPlugin, type Target } from '@pneuma-base/sdk/kit'
 
-/** A row of PneumaSpace's `GET /api/apps`, and what `GET /api/apps/<name>` adds. */
-type AppRow = { name: string; address: string; requests: number | null }
-type AppDetail = { app: { status: string; owner: string; current: number | null }; releases: { number: number; bundle: string }[] }
-/** What `serving` tells of a site beside content and address; the views draw it. */
-type Seen = { row: AppRow; owner: string; release: number | null; spark: number[] | null }
-
-/** `<prefix>-<the kit's site name>`, cut to PneumaSpace's 40 characters with six of the path's sha256 when too long. */
-function appName(prefix: string, path: LibraryPath): SiteName {
-  const whole = `${prefix}-${siteName(path)}`
-  if (whole.length <= 40) return whole as SiteName
-  return `${whole.slice(0, 33).replace(/-+$/, '')}-${createHash('sha256').update(path).digest('hex').slice(0, 6)}` as SiteName
-}
-
-/** The site as PneumaSpace takes it, and its id, known before any upload. */
-async function bundleOf(files: readonly SiteFile[]): Promise<{ body: Buffer; id: ContentId }> {
-  const body = Buffer.concat(await Promise.all(files.map((f) => readFile(f.abs))))
-  return { body, id: createHash('sha256').update(body).digest('hex') as ContentId }
-}
-
-const releaseCell = (s: Seen | null): Cell => (s?.release == null ? { text: '—', muted: true } : { text: `第 ${s.release} 版` })
-
-/** The board, drawn by ui/board.html: each thing not archived, with the kit's state tag and switch. */
-function board(all: readonly Look<Seen>[], plugin: string): Block {
-  const shown = all.filter((l) => l.status !== 'archived')
-  const actions = Object.fromEntries(
-    shown.flatMap((l) => {
-      const action = switchAction(plugin, l)
-      return action === null ? [] : [[l.thing.id, action] as const]
-    }),
-  )
-  const data = shown.map((l) => ({ key: l.thing.id, path: l.thing.path, url: l.url, state: STATUS[l.status], spark: l.detail?.spark ?? null }))
-  const text = data.map((d) => `${d.path}：${d.state.text}${d.url === null ? '' : ` · ${d.url}`}`).join('\n') || '还没有声明可以部署的东西。'
-  return { kind: 'custom', entry: 'board.html', height: 330, text, data, actions }
-}
-
-const spaceTarget = defineTarget({
-  kind: 'machine',
-  label: '一台机器上的 PneumaSpace',
+const exampleTarget = defineTarget({
+  kind: 'example',
+  label: '示例服务',
+  icon: 'cloud',
   params: [
-    { name: 'admin', hint: '管理地址', kind: 'value', required: true, pattern: 'https?://\\S+' },
-    { name: 'prefix', hint: '应用名前缀', kind: 'value', required: true, pattern: '[a-z](?:[a-z0-9-]{0,14}[a-z0-9])?' },
+    { name: 'api', hint: '地址', kind: 'value', required: true, pattern: 'https?://\\S+' },
+    { name: 'project', hint: '项目', kind: 'value', required: true },
   ],
-  secrets: [{ name: 'token', description: 'PneumaSpace 不在本地模式时的访问令牌，作为 Bearer 发出', optional: true }],
-  views: [{ name: 'board', title: '看板', icon: 'layout-grid' }],
-
-  async configure({ admin, prefix }) {
-    return { ok: true, config: { admin: admin.replace(/\/+$/, ''), prefix } }
+  secrets: [{ name: 'token', description: '示例服务的令牌' }],
+  asked: { name: 'token', hint: '令牌' },
+  async configure({ api, project }, ctx, typed) {
+    const token = (await typed()) ?? (await ctx.secrets.get('token'))
+    if (token === null) return { ok: false, reason: 'no-key', text: '没有令牌。' }
+    const reply = await fetch(`${api}/projects/${project}`, { headers: { authorization: `Bearer ${token}` } })
+    if (!reply.ok) return { ok: false, reason: 'unreachable', text: `示例服务拒绝了项目 ${project}：${reply.status}。` }
+    return { ok: true, config: { api, project } }
   },
-
-  open(config, env): Target<Seen> {
-    const { admin, prefix } = config
-    if (typeof admin !== 'string' || typeof prefix !== 'string') throw new Error('PneumaSpace 的配置要写 admin、prefix')
-    const owner = `service:pneuma-base.${env.ctx.library.config.id}`
-    /** One call of the admin API; null for 404. The token is optional: null while the owner has not set it. */
-    async function call(method: string, path: string, body?: string | Uint8Array): Promise<unknown> {
-      const token = await env.secret('token')
-      const reply = await fetch(`${admin}${path}`, { method, body, headers: token === null ? {} : { authorization: `Bearer ${token}` } })
-      if (reply.status === 404) return null
-      if (!reply.ok) throw new Error(`PneumaSpace 拒绝了 ${method} ${path}：${reply.status}`)
-      return reply.json()
+  open(config, env): Target {
+    const [api, project] = [String(config.api), String(config.project)]
+    const call = async (method: string, path: string) => {
+      const reply = await fetch(`${api}/projects/${project}${path}`, { method, headers: { authorization: `Bearer ${await env.secret('token')}` } })
+      if (!reply.ok) throw new Error(`示例服务拒绝了 ${method} ${path}：${reply.status}`)
+      return reply
     }
-    const rows = async () => new Map(((await call('GET', '/api/apps')) as AppRow[]).map((r) => [r.name, r]))
-    const app = async (site: SiteName) => (await call('GET', `/api/apps/${site}`)) as AppDetail | null
-    /** The app, unless another library or a person holds its name. */
-    const ours = async (site: SiteName) => {
-      const held = await app(site)
-      if (held !== null && held.app.owner !== owner) throw new Error(`应用名 ${site} 在 PneumaSpace 上属于 ${held.app.owner}，不是这个库，所以不动它`)
-      return held
-    }
-
     return {
-      key: `pneuma-space:${admin}#${prefix}`,
-      label: `PneumaSpace ${admin}，前缀 ${prefix}`,
-      siteName: (path) => appName(prefix, path),
-      identify: async (files) => (await bundleOf(files)).id,
-
-      async publish(site, _dir, meta) {
-        const { body, id } = await bundleOf(meta.files)
-        if (id !== meta.content) throw new Error(`复制出来的内容和决定发布的不同：${id} 不是 ${meta.content}`)
-        await ours(site)
-        await call('POST', '/api/bundles', body)
-        await call('PUT', `/api/apps/${site}/release`, JSON.stringify({ bundle: id, owner }))
-        const row = (await rows()).get(site)
-        return { url: row === undefined ? null : new URL(row.address, admin).href }
+      key: `example:${api}/${project}`,
+      label: project,
+      async publish(site) {
+        // 把 meta.files 打成服务收的样子再传；这里省掉打包。
+        await call('PUT', `/sites/${site}`)
+        return { url: `${api}/sites/${project}/${site}/` }
       },
-
-      /** Removes, never purges: the releases stay, and publishing again brings the app back. */
       async remove(site) {
-        const held = await ours(site)
-        if (held?.app.status === 'registered') await call('POST', `/api/apps/${site}/remove`)
-      },
-
-      /** What PneumaSpace serves for each site; the request series, which only the board draws, only for an answer that is drawn. */
-      async serving(sites, ask) {
-        const all = await rows()
-        const told = new Map<SiteName, Served<Seen>>()
-        for (const site of sites) {
-          const row = all.get(site)
-          const held = row === undefined ? null : await app(site)
-          if (row === undefined || held === null) continue
-          const live = held.app.owner === owner && held.app.status === 'registered' ? held.releases.find((r) => r.number === held.app.current) : undefined
-          const usage = live && ask.detail ? ((await call('GET', `/api/usage?app=${site}`)) as { buckets: { requests: number }[] } | null) : null
-          const detail: Seen = { row, owner: held.app.owner, release: live?.number ?? null, spark: usage?.buckets.map((b) => b.requests) ?? null }
-          told.set(site, { content: live ? (live.bundle as ContentId) : null, url: live ? new URL(row.address, admin).href : null, detail })
-        }
-        return told
-      },
-
-      view: {
-        columns: [{ key: 'release', label: '版本' }, { key: 'requests', label: '24 小时请求', optional: true }],
-        cells: (l) => ({ release: releaseCell(l.detail), requests: { text: String(l.detail?.row.requests ?? '—') } }),
-        fields: (l) => [{ label: 'PneumaSpace 里', value: l.detail === null ? { text: '没有这个应用', muted: true } : { text: `属于 ${l.detail.owner}`, mono: true } }],
-        pages: { board: (all) => [board(all, env.plugin)] },
+        await call('DELETE', `/sites/${site}`)
       },
     }
   },
 })
 
-export default deployPlugin('space', spaceTarget, {
-  title: 'PneumaSpace',
-  heading: '上线到 PneumaSpace：主人开关',
-  cognition: '在线的网站是 PneumaSpace 上的一个应用，地址在 `/apps/<应用名>/` 下面，所以网站里的链接要写相对路径；目录里要有 `index.html`。',
-  icon: 'cloud-upload',
-  summary: '把网站发到 PneumaSpace 上',
-  about: '声明了可以部署的东西由主人开关上线，作为 PneumaSpace 上的应用。',
-  ui: fileURLToPath(new URL('./ui/', import.meta.url)),
-})
+export default deployPlugin('example', exampleTarget, { title: '部署', icon: 'cloud-upload', summary: '把网站发到示例服务' })
 ```
 
 `plugin new <目录> --kind deploy` 生成的项目是部署库加一种发布到本地目录的目标，在 `src/target.ts` 里，换成真的目标就改那里：
@@ -1322,7 +1286,7 @@ test('the plugin follows the standard', async () => {
 
 `blocks` 不在浏览器里跑 `custom` 页（3.6）。不用浏览器跑页的脚本，要一份 DOM 的实现，比如 jsdom；测试工具没有带它，因为它大，又只是近似浏览器。插件要在自己的测试里跑页，自己装它。
 
-目标是网络服务的插件，在 `setup` 里用 `serve` 起一个替身，把目标设到它的地址，不连真的服务就能跑符合性检查。第 5 节的 `space` 可以这样查：钩子和视图只问到 `GET /api/apps`，答一个空表就够；真的插件的替身答它会调的每个接口，并先打开一个站点，所以视图是带着在线的应用查的。
+目标是网络服务的插件，在 `setup` 里用 `serve` 起一个替身，把目标设到它的地址，不连真的服务就能跑符合性检查。第 5 节的示例目标可以这样查：连上时它问一次项目，替身对什么都答 200 就够；真的插件的替身答它会调的每个接口，并先打开一个站点，所以视图是带着在线的应用查的。
 
 ```ts
 import assert from 'node:assert/strict'
@@ -1332,13 +1296,12 @@ import { conformance } from '@pneuma-base/sdk/testkit'
 
 const dist = fileURLToPath(new URL('../dist/', import.meta.url))
 
-test('the plugin follows the standard, with PneumaSpace stood in for', async () => {
+test('the plugin follows the standard, with the service stood in for', async () => {
   const report = await conformance(dist, {
     async setup({ sandbox }) {
-      const admin = await sandbox.serve(async (request) =>
-        new URL(request.url).pathname === '/api/apps' ? Response.json([]) : Response.json({ error: 'not found' }, { status: 404 }),
-      )
-      const set = await sandbox.owner(['space', 'target', 'set', '--admin', admin, '--prefix', 'conf'])
+      const api = await sandbox.serve(async () => Response.json({}))
+      // The token is typed hidden: here it comes on standard input.
+      const set = await sandbox.owner(['example', 'target', 'set', '--api', api, '--project', 'conf'], { input: 'a-token\n' })
       assert.equal(set.code, 0, set.stderr)
     },
     configuration: ['config.json'],
@@ -1425,10 +1388,10 @@ pneuma-base plugin uninstall marks
 | `cognition` | `null`，或 `{ title, text }`，两样都是文字 |
 | `storage` | 列表，每项 `{ dir, kind }`，`kind` 是 `body` 或 `cache` |
 | `statements` | 列表，每项是不空的文字，不重复 |
-| `ownerCommands` | 列表，每项有文字的 `summary`、真假的 `destructive` 和 `ownerOnly`、函数 `run`，`readOnly` 和 `setup` 没有或是真假，`askable` 没有或是 `false`，名字以 `<插件名> ` 开头、不是内核的命令、不重复，参数表合 4.3 |
+| `ownerCommands` | 列表，每项有文字的 `summary`、真假的 `destructive` 和 `ownerOnly`、函数 `run`，`readOnly` 和 `setup` 没有或是真假，`askable` 没有或是 `false`，名字以 `<插件名> ` 开头、不是内核的命令、不重复，参数表合 4.3，`act` 合 3.4 |
 | `views` | 没有，或列表，每项 `{ id, title, icon, nav, filters }`，可以带 `ownerOnly` 和 `home`（真假），`title` 和 `icon` 是文字，`nav` 是真假，`filters` 是列表，`id` 以 `<插件名>.` 开头、不重复 |
 | `secrets` | 没有，或列表，每项 `{ name, description }`，可以带 `title`（文字）和 `optional`（真假），`name` 合 `SECRET_NAME`，不重复 |
-| 钩子 | 给了的都是函数 |
+| 钩子 | 给了的都是函数；`onDescribe` 只和不是 `null` 的 `cognition` 一起 |
 
 留到调用时的：钩子答什么、抛不抛错，插件往哪里写，`ui` 目录在不在。
 

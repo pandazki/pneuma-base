@@ -30,7 +30,8 @@ describe('the sandbox', () => {
       mkdirSync(join(sb.work, 'shop'))
       writeFileSync(join(sb.work, 'shop', 'index.html'), '<h1>小店</h1>\n')
       expect((await sb.agent('claude-code', 's1', ['put', 'shop', '--to', 'sites/shop', '--generated'])).code).toBe(0)
-      expect((await sb.agent('claude-code', 's1', ['say', 'deployable', 'sites/shop'])).code).toBe(0)
+      expect((await sb.owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', join(sb.work, 'www')])).code).toBe(0)
+      expect((await sb.owner(['deploy', 'on', 'sites/shop'])).code).toBe(0)
       const viewer = await sb.viewer()
 
       const whole = await viewer.item('sites/shop')
@@ -40,8 +41,7 @@ describe('the sandbox', () => {
       const deploy = await viewer.item('sites/shop', { plugin: 'deploy' })
       expect(deploy).toMatchObject({ outcome: 'shown', title: '部署', problems: [] })
       const fields = deploy.outcome === 'shown' ? deploy.blocks.find((b) => b.kind === 'fields') : undefined
-      // Offline is where a thing rests: unsaid on the page, still in the value the text form prints.
-      expect(fields?.kind === 'fields' && fields.fields.find((f) => f.label === '状态')?.value).toEqual({ text: '离线', muted: true, normal: true })
+      expect(fields?.kind === 'fields' && fields.fields.find((f) => f.label === '地址')?.value.text).toMatch(/\/www\/sites-shop\/$/)
 
       expect(await viewer.item('sites/shop', { plugin: 'search' })).toMatchObject({ outcome: 'shown', blocks: [], problems: [] })
     } finally {

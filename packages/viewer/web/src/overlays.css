@@ -132,19 +132,38 @@
 .dialog-head + .dialog-foot {
   padding-top: 20px;
 }
-/* A choice among many in a form looks like the field beside it. */
-.form-field .select,
-.form-field .select > select {
-  width: 100%;
+/* A choice among more: the field filters, the list under it holds the first matches, the chosen one lit. */
+.filter-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
-.form-field .select > select {
-  height: 32px;
+.filter-list {
+  max-height: 196px;
+  overflow-y: auto;
+  padding: 3px;
   border-radius: var(--radius-field);
+  background: var(--surface);
   box-shadow: var(--ring-field);
-  font-weight: 400;
 }
-.form-field .select > select:hover:not(:disabled) {
-  box-shadow: var(--ring-field-hover);
+.filter-list:empty {
+  display: none;
+}
+.filter-list > li {
+  padding: 4px 8px;
+  border-radius: var(--radius-item);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+  cursor: default;
+}
+.filter-list > li:hover {
+  background: var(--row-hover);
+}
+.filter-list > li[aria-selected='true'] {
+  background: var(--select);
+  font-weight: 500;
 }
 
 .palette-layer {
