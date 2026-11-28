@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { sandbox, tempDir, type Sandbox } from './helpers.js'
 
 const packages = fileURLToPath(new URL('../..', import.meta.url))
-const part = (path: string) => readFileSync(join(packages, path), 'utf8').trimEnd().replaceAll('{{授权的名字}}', '<你的授权名>')
+const part = (path: string) => readFileSync(join(packages, path), 'utf8').trimEnd().replaceAll('{{授权的名字}}', '<授权名称>')
 const LEDGER_SECTION = part('plugin-ledger/cognition/2-ledger-section.md')
 const SAME_NAME_BARE = part('kernel/cognition/3-same-name-bare.txt')
 const SAME_NAME_SOME = part('kernel/cognition/3-same-name-some.txt')
@@ -28,9 +28,9 @@ describe('the description', () => {
     const text = description(lib)
     const rules = part('kernel/cognition/3-kernel-rules.md').replace('{{同名时怎么办}}', SAME_NAME_BARE)
     expect(text).toBe(`${[part('kernel/cognition/1-kernel-intro.md'), rules, part('kernel/cognition/4-config-bare.md')].join('\n\n')}\n`)
-    for (const promise of ['回到', '可能过期', '记账', 'start', '来自', '依据']) expect(text).not.toContain(promise)
+    for (const promise of ['回到', '可能已过期', '溯源', 'start', '来自', '依据']) expect(text).not.toContain(promise)
     expect(text).not.toContain('{{')
-    expect(text).toContain('你的授权名在你的技能文件里')
+    expect(text).toContain('授权名称记录在技能文件中')
   })
 
   it('says what happens to replaced content as the plugins change: refused with no plugin that revises, some kept, or every one kept (K6); plugin enable brings a plugin’s section and lists it, plugin disable takes both away', () => {
@@ -49,7 +49,7 @@ describe('the description', () => {
     expect(sb.run(['plugin', 'enable', 'ledger', '--library', lib]).code).toBe(0)
     expect(sentence()).toEqual([SAME_NAME_EVERY])
     expect(description(lib)).toContain(LEDGER_SECTION)
-    expect(description(lib)).toContain('- `ledger`：记账与对账')
+    expect(description(lib)).toContain('- `ledger`：溯源')
     expect(sb.run(['plugin', 'disable', 'ledger', '--library', lib]).code).toBe(0)
     expect(sb.run(['plugin', 'disable', 'version', '--library', lib]).code).toBe(0)
     expect(description(lib)).toBe(bare)
@@ -63,8 +63,8 @@ describe('the description', () => {
     expect(agent(['put', '-', '--to', 'a.md', '--generated'], 'one').code).toBe(0)
     const refused = agent(['put', '-', '--to', 'a.md', '--generated'], 'two')
     expect(refused.code).toBe(2)
-    expect(refused.stdout).toContain('没有插件替它留住旧内容')
-    expect(refused.stdout).toContain('version：a.md 没有声明有版本。要改它并留住旧版，先 say versioned a.md，再放。')
+    expect(refused.stdout).toContain('拒绝（would-overwrite）')
+    expect(refused.stdout).toContain('version：a.md 未启用版本管理。如需修改并保留旧版本，请先执行 say versioned a.md，再添加。')
     expect(agent(['say', 'versioned', 'a.md'], '').code).toBe(0)
     expect(agent(['put', '-', '--to', 'a.md', '--generated'], 'two').code).toBe(0)
   })

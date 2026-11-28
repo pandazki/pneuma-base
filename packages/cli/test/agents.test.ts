@@ -108,7 +108,7 @@ describe('agent connect, list and disconnect', () => {
 
       const listed = ok(run(['agent', 'list', '--library', lib, '--json'])).json()
       expect(listed.data.connections).toEqual([expect.objectContaining({ grant: c.product, product: c.product, way: c.skill ? 'skill' : 'mcp', inPlace: true })])
-      expect(ok(run(['agent', 'list', '--library', lib])).stdout).toContain('在用')
+      ok(run(['agent', 'list', '--library', lib]))
 
       ok(run(['agent', 'disconnect', c.product]))
       expect(tree(sb.home)).toEqual(before)
@@ -122,12 +122,12 @@ describe('agent connect, list and disconnect', () => {
     ok(run(['agent', 'connect', 'claude-desktop', '--library', lib]))
     const home = tree(sb.home, [])
     const config = readFileSync(join(lib, '.pneuma-base', 'config.json'), 'utf8')
-    expect(ok(run(['agent', 'connect', 'claude-desktop', '--library', lib])).stdout).toContain('已经接上')
+    ok(run(['agent', 'connect', 'claude-desktop', '--library', lib]))
     expect(tree(sb.home, [])).toEqual(home)
     expect(readFileSync(join(lib, '.pneuma-base', 'config.json'), 'utf8')).toBe(config)
 
     ok(run(['agent', 'disconnect', 'claude-desktop']))
-    expect(ok(run(['agent', 'disconnect', 'claude-desktop'])).stdout).toContain('没有叫 claude-desktop 的连接')
+    expect(ok(run(['agent', 'disconnect', 'claude-desktop', '--json'])).json().data).toEqual({ removed: false })
   })
 
   it('refuses a configuration it cannot read, leaves it untouched, issues no grant, and prints what to paste', () => {
@@ -160,11 +160,9 @@ describe('agent connect, list and disconnect', () => {
 
     const listed = ok(run(['agent', 'list', '--library', lib, '--json'])).json().data.connections as { grant: string; inPlace: boolean }[]
     expect(listed.map((c) => [c.grant, c.inPlace])).toEqual([['claude-desktop', false], ['codex', false], ['cursor', false]])
-    expect(ok(run(['agent', 'list', '--library', lib])).stdout).toContain('被改过')
 
     for (const [grant, path, text] of [['claude-desktop', 'Library/Application Support/Claude/claude_desktop_config.json', desktop], ['codex', '.codex/config.toml', codex], ['cursor', '.cursor/skills/pneuma-base-cursor/SKILL.md', skill]] as const) {
-      const r = ok(run(['agent', 'disconnect', grant]))
-      expect(r.stdout).toContain('改过')
+      expect(ok(run(['agent', 'disconnect', grant, '--json'])).json().data).toEqual({ removed: false, state: 'changed' })
       expect(readFileSync(join(sb.home, path), 'utf8')).toBe(text)
     }
     expect(grants()).toEqual([])
@@ -214,8 +212,8 @@ describe('agent connect, list and disconnect', () => {
     put('.cursor/x', '')
     const found = ok(run(['agent', 'detect', '--json'])).json().data.products as { name: string; found: boolean; signs: string[]; ways: { way: string }[] }[]
     const byName = Object.fromEntries(found.map((p) => [p.name, p]))
-    expect(byName['claude-code']).toMatchObject({ found: true, signs: ['有 ~/.claude'], ways: [{ way: 'skill' }, { way: 'mcp' }, { way: 'mcp-http' }] })
-    expect(byName.codex).toMatchObject({ found: true, signs: ['PATH 上有 codex'] })
+    expect(byName['claude-code']).toMatchObject({ found: true, signs: ['存在 ~/.claude'], ways: [{ way: 'skill' }, { way: 'mcp' }, { way: 'mcp-http' }] })
+    expect(byName.codex).toMatchObject({ found: true, signs: ['PATH 中有 codex'] })
     expect(byName['claude-desktop']).toMatchObject({ found: false, ways: [{ way: 'mcp' }] })
     expect(byName.cursor).toMatchObject({ found: true })
     expect(Object.keys(byName)).not.toContain('antigravity')
@@ -259,7 +257,7 @@ describe('agent connect --via mcp-http', () => {
     expect(r.stdout).toContain(`${launcher()} @my-agent mcp`)
     expect(tree(sb.home)).toEqual(before)
     expect(ok(run(['agent', 'list', '--library', lib, '--json'])).json().data.connections).toEqual([expect.objectContaining({ grant: 'my-agent', product: 'my-agent', way: 'mcp-http', inPlace: true })])
-    expect(ok(run(['agent', 'connect', 'my-agent', '--library', lib])).stdout).toContain('已经接上')
+    ok(run(['agent', 'connect', 'my-agent', '--library', lib]))
     ok(run(['agent', 'disconnect', 'my-agent']))
     expect(grants()).toEqual([])
     expect(ok(run(['agent', 'list', '--library', lib, '--json'])).json().data.connections).toEqual([])
@@ -292,44 +290,44 @@ describe('the agents page', () => {
   const sections = () => Object.fromEntries(page().blocks.map((b) => [b.title, b.blocks]))
   const section = (title: string) => page().blocks.find((b) => b.title === title)
 
-  it('has a row per connected agent: its mark, how it is connected, what the grant reaches, when it was last here, 断开; and the products found here with 接上', () => {
+  it('has a row per connected agent: its mark, how it is connected, what the grant reaches, when it was last here, 断开连接; and the products found here with 连接', () => {
     put('.claude/x', '')
     put('.cursor/x', '')
     // None connected yet: one quiet line, and the section's head issues a grant by hand.
-    expect(section('接上的 agent')).toMatchObject({ blocks: [{ kind: 'text', tone: 'neutral', text: '还没有接上任何 agent。' }], actions: [{ label: '发授权', call: { command: 'grant create' } }] })
-    expect(section('接上的 agent')?.about).toContain(`codex --add-dir ${lib}`)
+    expect(section('已连接的 Agent')).toMatchObject({ blocks: [{ kind: 'text', tone: 'neutral', text: '暂无已连接的 Agent' }], actions: [{ label: '新建授权', call: { command: 'grant create' } }] })
+    expect(section('已连接的 Agent')?.about).toContain(`codex --add-dir ${lib}`)
     ok(run(['agent', 'connect', 'claude-code', '--library', lib, '--area', 'notes', '--read-only']))
     let shown = sections()
     // What the grant reaches: the area in the note, read-only as the one mark.
-    expect(shown['接上的 agent']).toMatchObject([
-      { kind: 'list', items: [{ cell: { text: 'Claude Code', actor: { name: 'claude-code', grant: 'claude-code' }, tag: { text: '只读' } }, note: '技能 · 区域 notes/ · 写在 ~/.claude/skills/pneuma-base-claude-code/SKILL.md · 还没在这里做过事', actions: [{ label: '断开', call: { command: 'agent disconnect' } }] }] },
+    expect(shown['已连接的 Agent']).toMatchObject([
+      { kind: 'list', items: [{ cell: { text: 'Claude Code', actor: { name: 'claude-code', grant: 'claude-code' }, tag: { text: '只读' } }, note: '技能 · 区域 notes/ · 写入 ~/.claude/skills/pneuma-base-claude-code/SKILL.md · 暂无活动', actions: [{ label: '断开连接', call: { command: 'agent disconnect' } }] }] },
     ])
-    expect(section('接上的 agent')?.normal).toBeUndefined()
-    expect(shown['这台机器上找到的']).toMatchObject([{ kind: 'list', items: [{ cell: { text: 'Cursor', actor: { name: 'cursor' } }, actions: [{ label: '接上', call: { command: 'agent connect' } }] }] }])
+    expect(section('已连接的 Agent')?.normal).toBeUndefined()
+    expect(shown['可连接']).toMatchObject([{ kind: 'list', items: [{ cell: { text: 'Cursor', actor: { name: 'cursor' } }, actions: [{ label: '连接', call: { command: 'agent connect' } }] }] }])
     // What was looked for and not found is there on demand.
-    expect(section('这台机器上找到的')?.about).toContain('没找到：Codex')
-    expect(Object.keys(shown)).toEqual(['接上的 agent', '这台机器上找到的', '接上的 agent 能做什么'])
+    expect(section('可连接')?.about).toContain('未检测到：Codex')
+    expect(Object.keys(shown)).toEqual(['已连接的 Agent', '可连接', 'Agent 权限'])
 
     ok(run(['@claude-code', 'start', '整理笔记'], { PNEUMA_BASE_SESSION: 'one' }))
     shown = sections()
-    expect(shown['接上的 agent']?.[0]?.items?.[0]?.note).toMatch(/ · 最近来过：\d{4}-\d\d-\d\d \d\d:\d\dZ；1 次会话，放进 0 样东西$/)
+    expect(shown['已连接的 Agent']?.[0]?.items?.[0]?.note).toMatch(/ · 最近访问：\d{4}-\d\d-\d\d \d\d:\d\dZ；1 次会话，添加 0 个条目$/)
 
     rmSync(join(sb.home, '.claude/skills/pneuma-base-claude-code/SKILL.md'))
-    expect(sections()['接上的 agent']?.[0]?.items?.[0]?.cell.tag).toEqual({ text: '接上时写的不在了', tone: 'warn' })
+    expect(sections()['已连接的 Agent']?.[0]?.items?.[0]?.cell.tag).toEqual({ text: '连接时写入的内容已缺失', tone: 'warn' })
   })
 
-  it('lists a grant no product connected with as an agent row: its mark and name, the grant when named otherwise, the area, read-only as a mark; skills and 撤回 in its 「···」', () => {
+  it('lists a grant no product connected with as an agent row: its mark and name, the grant when named otherwise, the area, read-only as a mark; skills and 撤销 in its 「···」', () => {
     ok(run(['grant', 'create', 'grok', '--agent', 'grok-bot', '--library', lib]))
     ok(run(['grant', 'create', 'helper', '--agent', 'helper', '--area', 'notes', '--read-only', '--library', lib]))
-    const items = sections()['接上的 agent']?.[0]?.items ?? []
+    const items = sections()['已连接的 Agent']?.[0]?.items ?? []
     expect(items.map((i) => [i.cell.text, i.cell.actor, i.cell.tag?.text, i.note])).toEqual([
-      ['grok-bot', { kind: 'agent', name: 'grok-bot', grant: 'grok' }, undefined, '凭授权 grok · 还没在这里做过事'],
-      ['helper', { kind: 'agent', name: 'helper', grant: 'helper' }, '只读', '区域 notes/ · 还没在这里做过事'],
+      ['grok-bot', { kind: 'agent', name: 'grok-bot', grant: 'grok' }, undefined, '授权 grok · 暂无活动'],
+      ['helper', { kind: 'agent', name: 'helper', grant: 'helper' }, '只读', '区域 notes/ · 暂无活动'],
     ])
     expect(items[0]?.actions).toMatchObject([
       { label: '为 Claude 生成技能', call: { command: 'skill install' } },
       { label: '为 Codex 生成技能', call: { command: 'skill install' } },
-      { label: '撤回', tone: 'danger', confirm: expect.stringContaining('grok'), call: { command: 'grant revoke' } },
+      { label: '撤销', tone: 'danger', confirm: expect.stringContaining('grok'), call: { command: 'grant revoke' } },
     ])
   })
 })

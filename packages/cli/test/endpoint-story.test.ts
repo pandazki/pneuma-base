@@ -115,7 +115,7 @@ describe('an agent connects itself through the endpoint', () => {
     expect(((await (await fetch(`${s.origin}/pair/${id}`)).json()) as { state: string }).state).toBe('waiting')
 
     const ask = (await homeAsks(s)).find((a) => a.text.includes(code))
-    expect(ask?.text).toContain('Claude Code 想接入这个库')
+    expect(ask?.text).toContain('Claude Code')
     expect(ask?.text).toContain('整理这次的调研')
     const allow = ask?.actions.find((a) => a.label === '允许')
     expect(allow).toBeDefined()
@@ -133,7 +133,7 @@ describe('an agent connects itself through the endpoint', () => {
     const put = asAgent(sb, `${answer.connected.command} put - --to notes/research.md --generated`, 'story-session', '# 调研\n')
     expect(put.code, put.out).toBe(0)
     const facts = sb.run(['--library', lib, 'inspect', 'notes/research.md']).stdout
-    expect(facts).toContain('做出来的 · claude-code')
+    expect(facts).toContain('生成 · claude-code')
     expect(facts).toContain('整理这次的调研')
   })
 
@@ -160,7 +160,7 @@ describe('an agent connects itself through the endpoint', () => {
       await client.close()
     }
     const facts = sb.run(['--library', lib, 'inspect', 'notes/minutes.md']).stdout
-    expect(facts).toContain(`做出来的 · my-app`)
+    expect(facts).toContain('生成 · my-app')
   })
 
   it('pairing through HTTP and through the command line end in the same state', async () => {

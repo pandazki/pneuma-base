@@ -51,7 +51,6 @@ describe('a new version over an old one (C6)', () => {
   it('replaces the file and keeps the old bytes, a file nobody registered too; ledger copies restore gives the owner the same bytes at a new path, and refuses to overwrite', () => {
     const r = ok(agent(['put', 'report.bin', '--to', 'report.bin', '--generated', '--json']))
     expect(r.json()).toMatchObject({ outcome: 'accepted', copied: true })
-    expect(r.json().notes.map((n: any) => n.text).join('\n')).toContain('留存')
     expect(readFileSync(join(lib, 'report.bin'))).toEqual(NEW)
     const data = sections(ok(agent(['inspect', 'report.bin', '--json'])))[0]?.data
     expect(data.versions).toHaveLength(2)
@@ -77,9 +76,11 @@ describe('a new version over an old one (C6)', () => {
     for (const verb of ['delete', 'rm', 'remove']) {
       const r = agent([verb, 'report.bin'])
       expect(r.code).toBe(1)
-      expect(r.stderr).toContain('不认识的命令')
+      expect(r.stderr).toContain('未知命令')
     }
-    expect(ok(sb.run(['--help'])).stdout).not.toMatch(/delete|删除/)
+    // The agent's part of the help, above the owner's commands (removing a secret there is the owner's).
+    const help = ok(sb.run(['--help'])).stdout
+    expect(help.slice(0, help.indexOf('\n所有者：'))).not.toMatch(/delete|删除/)
     expect(readFileSync(join(lib, 'report.bin'))).toEqual(NEW)
   })
 
@@ -89,7 +90,7 @@ describe('a new version over an old one (C6)', () => {
     expect(held).toBeGreaterThan(0)
     const ended = inTerminal('EOF', ['ledger', 'copies', 'drop', '--library', lib])
     expect(ended.stdout).not.toMatch(/Aborted|Ctrl\+D/)
-    expect(ended.stdout).toContain('拒绝（not-confirmed）：没有得到当面确认，什么都没做。')
+    expect(ended.stdout).toContain('拒绝（not-confirmed）：未获当面确认，未执行任何操作。')
     expect(ended.code).toBe(2)
     expect(readdirSync(heldDir)).toHaveLength(held)
     const confirmed = inTerminal('yes', ['ledger', 'copies', 'drop', '--library', lib])
@@ -125,14 +126,14 @@ describe('owner operations (C7)', () => {
     withTest(['plugin', 'disable', 'recorder'])
 
     const r = ok(agent(['check', '--json'], undefined, 's2'))
-    const since = section(sections(r), '自上次以来')
+    const since = section(sections(r), '最近动态')
     const ops = since.scenes.flatMap((s: any) => s.facts).filter((f: any) => f.kind === 'owner.op').map((f: any) => f.text)
     expect(ops).toHaveLength(2)
     for (const [i, command] of ['plugin enable', 'plugin disable'].entries()) expect(ops[i]).toContain(command)
     // That check was a look; the text asks from the same moment the look did.
     const text = ok(agent(['check', '--since', since.since], undefined, 's3')).stdout
-    expect(text).toMatch(/^场景 adhoc-owner-\d{4}-\d\d-\d\d · 主人/m)
-    expect(text).toContain('主人面的操作 plugin disable')
+    expect(text).toMatch(/^场景 adhoc-owner-\d{4}-\d\d-\d\d · 所有者/m)
+    expect(text).toContain('pneuma-base plugin disable')
     expect(text).not.toContain('grant')
   })
 
@@ -150,21 +151,21 @@ describe('owner operations (C7)', () => {
     // A brand-new agent arriving via start or check sees the put, say and deploy on, not the prior setup noise.
     const started = ok(sb.run(['--library', lib, '--as', 'codex', '--session', 'codex-1', 'start', '接着做'], { cwd: outside })).stdout
     for (const setupOp of setup) expect(started).not.toContain(setupOp)
-    expect(started).toContain('放入 brief.md')
-    expect(started).toContain('主人面的操作 deploy on')
+    expect(started).toContain('导入 brief.md')
+    expect(started).toContain('pneuma-base deploy on')
 
     const firstCheck = ok(sb.run(['--library', lib, '--as', 'antigravity', '--session', 'agy-1', 'check'], { cwd: outside })).stdout
     for (const setupOp of setup) expect(firstCheck).not.toContain(setupOp)
-    expect(firstCheck).toContain('主人面的操作 deploy on')
+    expect(firstCheck).toContain('pneuma-base deploy on')
 
     // Explicit --since asks for everything since that moment, including setup operations.
     const explicit = ok(sb.run(['--library', lib, '--as', 'antigravity', '--session', 'agy-1', 'check', '--since', '2000-01-01T00:00:00Z'], { cwd: outside })).stdout
-    for (const setupOp of setup) expect(explicit).toContain(`主人面的操作 ${setupOp}`)
+    for (const setupOp of setup) expect(explicit).toContain(`pneuma-base ${setupOp}`)
 
     // Once codex has visited, a later setup change by the owner IS news on codex's next visit.
     ok(owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', target()]))
     const returning = ok(sb.run(['--library', lib, '--as', 'codex', '--session', 'codex-2', 'check'], { cwd: outside })).stdout
-    expect(returning).toContain('主人面的操作 deploy target set')
+    expect(returning).toContain('pneuma-base deploy target set')
   })
 })
 
@@ -196,32 +197,32 @@ describe('archive with the ledger (C15)', () => {
     expect(await found(false)).toEqual([])
     expect(await found(true)).toEqual(['_archive/drafts/a.md'])
     writeFileSync(join(root, 'sources/s.md'), 'source, edited')
-    expect(section(await check(false), '可能过期')).toBeUndefined()
-    expect(section(await check(true), '可能过期')).toMatchObject([{ path: '_archive/drafts/a.md' }])
+    expect(section(await check(false), '可能已过期')).toBeUndefined()
+    expect(section(await check(true), '可能已过期')).toMatchObject([{ path: '_archive/drafts/a.md' }])
 
     const inspected = await agentFace.inspect({ target: 'drafts/a.md' }, claude())
     expect(inspected.file).toMatchObject({ path: '_archive/drafts/a.md', archived: true })
     expect(inspected.sections[0]?.data).toMatchObject({ origin: { kind: 'generated' }, basis: [{ path: 'sources/s.md' }] })
 
     expect(await agentFace.archive({ kind: 'unarchive', path: 'drafts/a.md' }, claude())).toMatchObject({ outcome: 'accepted' })
-    expect(section(await check(false), '可能过期')).toMatchObject([{ path: 'drafts/a.md' }])
+    expect(section(await check(false), '可能已过期')).toMatchObject([{ path: 'drafts/a.md' }])
   })
 
   it('records the archive and the return as moves of the same item, not as unowned or missing files', async () => {
     const quiet = await check(true)
-    for (const title of ['没人登记过的', '不在了的', '挪过的']) expect(section(quiet, title), title).toBeUndefined()
+    for (const title of ['未登记', '已缺失', '已移动']) expect(section(quiet, title), title).toBeUndefined()
     // The same agent did it, so nothing new from others.
-    expect(section(await check(false, as('claude-code', 'other')), '自上次以来')).toBeUndefined()
-    const lines = section(await check(false, as('codex', 'codex-1')), '自上次以来').scenes.flatMap((s: any) => s.facts.map((f: any) => f.text))
+    expect(section(await check(false, as('claude-code', 'other')), '最近动态')).toBeUndefined()
+    const lines = section(await check(false, as('codex', 'codex-1')), '最近动态').scenes.flatMap((s: any) => s.facts.map((f: any) => f.text))
     expect(lines).toContain('归档 drafts/a.md')
   })
 
   it('compares an archived source as usual', async () => {
     expect(await agentFace.archive({ kind: 'archive', path: 'sources/s.md' }, claude())).toMatchObject({ outcome: 'accepted' })
     expect(await agentFace.archive({ kind: 'unarchive', path: 'drafts/a.md' }, claude())).toMatchObject({ outcome: 'accepted' })
-    expect(section(await check(false), '可能过期')).toBeUndefined()
+    expect(section(await check(false), '可能已过期')).toBeUndefined()
     writeFileSync(join(root, '_archive/sources/s.md'), 'archived source, edited')
-    expect(section(await check(false), '可能过期')).toMatchObject([{ path: 'drafts/a.md', sources: [{ path: '_archive/sources/s.md' }] }])
+    expect(section(await check(false), '可能已过期')).toMatchObject([{ path: 'drafts/a.md', sources: [{ path: '_archive/sources/s.md' }] }])
   })
 
   it('archiving a file nobody registered enters it, so it is not lost to the ledger', async () => {

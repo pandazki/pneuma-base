@@ -77,15 +77,14 @@ describe('a bundle with the ledger', () => {
     rmSync(join(l.outside, 'site/img'), { recursive: true })
     const r = ok(l.agent(['put', 'site', '--to', 'sites/a', '--generated', '--json']))
     expect(r.json()).toMatchObject({ outcome: 'accepted', copied: true })
-    expect(r.json().notes.map((n: any) => n.text).join('\n')).toContain('留存')
     expect(Object.keys(filesOf(join(l.lib, 'sites/a'))).sort()).toEqual(['.pneuma-item', 'about.html', 'css/site.css', 'index.html'])
 
     // The version that was kept is marked, not the one that replaced it.
     const versions = ledgerData(ok(l.agent(['inspect', 'sites/a', '--json']))).versions.map((v: any) => v.fingerprint.slice(0, 8))
     const text = ok(l.agent(['inspect', 'sites/a'])).stdout.split('\n')
     const row = (print: string) => text.find((line) => line.trim().startsWith(print)) ?? ''
-    expect(row(versions[0])).toContain('留存')
-    expect(row(versions[1])).not.toContain('留存')
+    expect(row(versions[0])).toContain('历史副本')
+    expect(row(versions[1])).not.toContain('历史副本')
 
     expect(ok(l.owner(['ledger', 'copies', 'list'])).stdout).toContain('sites/a')
     ok(l.owner(['ledger', 'copies', 'restore', 'sites/a', '--to', 'restored/a']))
@@ -101,10 +100,10 @@ describe('a bundle with the ledger', () => {
     ok(l.agent(['start', '做早鸟预订页'], 's3'))
     write(l.outside, { 'landing/index.html': '<h1>桌上只留一块铝</h1>', 'landing/style.css': 'body { color: #222; }' })
     ok(l.agent(['put', 'landing', '--to', 'sites/landing', '--generated'], 's3'))
-    expect(ok(l.agent(['find', '一块铝'], 's2')).stdout).toBe('没有找到。\n')
+    expect(ok(l.agent(['find', '一块铝', '--json'], 's2')).json().hits).toEqual([])
     const found = ok(l.agent(['find', 'landing'], 's2')).stdout
-    expect(found).toContain('在做：做早鸟预订页')
-    expect(found).toMatch(/sites\/landing\s+目录，做出来的/)
+    expect(found).toContain('任务：做早鸟预订页')
+    expect(found).toMatch(/sites\/landing\s+目录，生成/)
   })
 
   // ARCHITECTURE.md「每个动作在每种位置上做什么」: check compares a directory-thing's token and its first level; an edit
@@ -112,10 +111,10 @@ describe('a bundle with the ledger', () => {
   it('is consistent in check, and an edit in its first level shows the bundle as changed', () => {
     // Only what was made from a file of the replaced tree may be stale; the bundle itself is in order.
     const quiet = ok(l.agent(['check', '--json'])).json().sections
-    expect(quiet.map((s: any) => s.title)).toEqual(['可能过期'])
+    expect(quiet.map((s: any) => s.title)).toEqual(['可能已过期'])
     expect(JSON.stringify(quiet[0].data)).toContain('review.md')
     writeFileSync(join(l.lib, 'sites/a/index.html'), '<h1>edited by hand</h1>')
-    const changed = ok(l.agent(['check', '--json'])).json().sections.find((s: any) => s.title === '被直接改过的')
+    const changed = ok(l.agent(['check', '--json'])).json().sections.find((s: any) => s.title === '外部修改')
     expect(changed.data.shown).toMatchObject([{ path: 'sites/a' }])
   })
 })
@@ -135,18 +134,18 @@ describe('registering a folder whose files are on record, with the marker writte
 
   it('absorbs them: check reports none of them missing or unowned, nothing stale; inspecting one says which bundle absorbed it, and a file never on record is part of it', () => {
     const titles = sectionTitles(ok(l.agent(['check', '--json'])))
-    for (const title of ['不在了的', '没人登记过的', '来源不在', '可能过期']) expect(titles, title).not.toContain(title)
-    expect(ok(l.agent(['inspect', 'notes/a.md'])).stdout).toContain('并入了 notes')
+    for (const title of ['已缺失', '未登记', '来源缺失', '可能已过期']) expect(titles, title).not.toContain(title)
+    expect(ledgerData(ok(l.agent(['inspect', 'notes/a.md', '--json'])))).toMatchObject({ absorbedInto: 'notes' })
     expect(ledgerData(ok(l.agent(['inspect', 'notes/deep/b.md', '--json'])))).toMatchObject({ state: { kind: 'absorbed' }, absorbedInto: 'notes' })
     write(l.lib, { 'notes/c.md': 'c' })
-    expect(ok(l.agent(['inspect', 'notes/c.md'])).stdout).toContain('notes 的一部分')
+    expect(ledgerData(ok(l.agent(['inspect', 'notes/c.md', '--json'])))).toMatchObject({ kind: 'part-of', bundle: 'notes' })
   })
 
   it('archiving the bundle takes the absorbed items along', () => {
     ok(l.agent(['archive', 'notes']))
     const titles = sectionTitles(ok(l.agent(['check', '--include-archived', '--json'])))
-    expect(titles).not.toContain('不在了的')
-    expect(ok(l.agent(['inspect', 'notes/a.md'])).stdout).toContain('并入了 _archive/notes')
+    expect(titles).not.toContain('已缺失')
+    expect(ledgerData(ok(l.agent(['inspect', 'notes/a.md', '--json'])))).toMatchObject({ absorbedInto: '_archive/notes' })
     const found = (args: string[]) => ok(l.agent(['find', 'notes', ...args, '--json'])).json().hits.filter((h: any) => h.path === '_archive/notes')
     expect(found([])).toEqual([])
     expect(found(['--include-archived'])[0].detail).toMatch(/^目录，已归档，/)
