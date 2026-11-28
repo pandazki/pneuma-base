@@ -32,31 +32,31 @@ const SEEN = '带进来的，主人给的（自动登记）'
 describe('put --observed', () => {
   it('registers a file as brought by the owner, registered automatically, and says so; a later explicit origin replaces it, and the history keeps both', () => {
     copiedIn('page.html', '<p>written by an agent with its own tools</p>')
-    expect(ok(app(['put', 'page.html', '--brought', '--by', 'owner', '--observed'])).stdout).toContain(`已记下：${SEEN}`)
+    expect(ok(app(['put', 'page.html', '--imported', '--by', 'owner', '--observed'])).stdout).toContain(`已记下：${SEEN}`)
     expect(ok(codex(['show', 'item', '--path', 'page.html'])).stdout).toContain(`来历：${SEEN}`)
-    expect(ok(claude(['put', 'page.html', '--made', '--from-outside', '主人在对话里要的'])).stdout).toContain(`已更正来历：做出来的，依据库里 0 样、库外 1 句；先前是自动登记的：${SEEN}`)
+    expect(ok(claude(['put', 'page.html', '--generated', '--from-external', '主人在对话里要的'])).stdout).toContain(`已更正来历：做出来的，依据库里 0 样、库外 1 句；先前是自动登记的：${SEEN}`)
     const inspect = ok(codex(['inspect', 'page.html'])).stdout
     expect(inspect).toMatch(/^做出来的 · claude-code · .* · 场景 s1$/m)
     expect(inspect).toMatch(new RegExp(`^先前：${SEEN} · 主人 · .* · 场景 app$`, 'm'))
   })
 
-  it('is refused in an agent’s session, and goes only with --brought --by owner on a path in the library', () => {
+  it('is refused in an agent’s session, and goes only with --imported --by owner on a path in the library', () => {
     copiedIn('a.txt', 'a')
-    const refused = claude(['put', 'a.txt', '--brought', '--by', 'owner', '--observed'])
+    const refused = claude(['put', 'a.txt', '--imported', '--by', 'owner', '--observed'])
     expect(refused.code).toBe(2)
     expect(refused.stdout).toContain('拒绝（agent-session）')
-    expect(sb.run(['--library', lib, 'put', 'a.txt', '--brought', '--by', 'owner', '--observed'], { env: { CLAUDECODE: '1' } }).code).toBe(2)
-    expect(app(['put', 'a.txt', '--made', '--observed']).code).toBe(1)
-    expect(app(['put', 'a.txt', '--brought', '--observed']).code).toBe(1)
+    expect(sb.run(['--library', lib, 'put', 'a.txt', '--imported', '--by', 'owner', '--observed'], { env: { CLAUDECODE: '1' } }).code).toBe(2)
+    expect(app(['put', 'a.txt', '--generated', '--observed']).code).toBe(1)
+    expect(app(['put', 'a.txt', '--imported', '--observed']).code).toBe(1)
     const outside = join(tempDir('pb-outside-'), 'b.txt')
     writeFileSync(outside, 'b')
-    expect(app(['put', outside, '--to', 'b.txt', '--brought', '--by', 'owner', '--observed']).code).toBe(1)
+    expect(app(['put', outside, '--to', 'b.txt', '--imported', '--by', 'owner', '--observed']).code).toBe(1)
   })
 })
 
 describe('say revised --observed', () => {
   it('is refused in an agent’s session; records a direct change seen by the app, which check then no longer reports; a later explicit say revised replaces it, keeping who first saw it', () => {
-    ok(claude(['put', '-', '--to', 'draft.md', '--made'], 'first'))
+    ok(claude(['put', '-', '--to', 'draft.md', '--generated'], 'first'))
     copiedIn('draft.md', 'changed in place')
     expect(claude(['say', 'revised', 'draft.md', '--observed', '--json']).json()).toMatchObject({ outcome: 'not-heard', reason: 'refused' })
     expect(ok(app(['say', 'revised', 'draft.md', '--observed'])).stdout).toContain('已记下 draft.md 被直接改了，自动登记')

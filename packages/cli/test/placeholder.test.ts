@@ -70,7 +70,7 @@ beforeAll(async () => {
   writeFileSync(fetched, '')
   sb = await sandbox({ cli, env: { PNEUMA_BASE_CORE: proxy, REAL_CORE: realCore, FETCHED: fetched } })
   for (const name of ['report', 'notes']) {
-    const r = await sb.agent('claude-code', 's1', ['put', '-', '--to', `cloud/${name}.placeholder`, '--made'], { input: `the bytes of the ${name}\n` })
+    const r = await sb.agent('claude-code', 's1', ['put', '-', '--to', `cloud/${name}.placeholder`, '--generated'], { input: `the bytes of the ${name}\n` })
     expect(r.code, r.stdout + r.stderr).toBe(0)
   }
 })

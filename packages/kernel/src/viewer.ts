@@ -5,7 +5,7 @@ import { agentsPage } from './agents-page.js'
 import { archivePage, filesPage } from './files-page.js'
 import { homePage } from './home.js'
 import { itemPage } from './item-page.js'
-import { noiseSection } from './noise-commands.js'
+import { ignoreSection } from './ignore-commands.js'
 import { DESCRIPTION_FILE } from './paths.js'
 import { machineDirOf } from './plugin-table.js'
 import { pluginPage, pluginViews, shown, type KernelPage, type Shown } from './plugin-views.js'
@@ -91,8 +91,8 @@ function pluginsSection({ library }: Context, table: PluginTable): Block {
     const note = [p?.summary ?? p?.cognition?.title ?? null, fromMachine ? (p?.version ?? null) : null].filter((s) => s !== null).join(' · ')
     const about = [p?.about ?? '', title === name ? '' : `命令行里叫 ${name}。`].join('')
     const page = here ? pages.find((v) => v.plugin.name === name) : undefined
-    const remove = kernelAction('plugin remove', '卸下', { fixed: { plugin: name, anyway: false } })
-    const add = kernelAction('plugin add', '装上', { fixed: { plugin: name } })
+    const remove = kernelAction('plugin disable', '卸下', { fixed: { plugin: name, force: false } })
+    const add = kernelAction('plugin enable', '装上', { fixed: { plugin: name } })
     return {
       cell: {
         text: title,
@@ -104,8 +104,8 @@ function pluginsSection({ library }: Context, table: PluginTable): Block {
       ...(about === '' ? {} : { about }),
       toggle: { on: here, action: here ? remove : add },
       actions: [
-        // A plugin that learns what is registered from puts can catch up on what was registered before it, again at any time.
-        ...(here && p?.catchUp !== undefined ? [{ ...kernelAction('plugin catch-up', '补上装上之前登记的', { fixed: { plugin: name } }), as: 'menu' as const, icon: 'history' as const }] : []),
+        // A plugin that learns what is registered from puts can backfill what was registered before it, again at any time.
+        ...(here && p?.catchUp !== undefined ? [{ ...kernelAction('plugin backfill', '补上装上之前登记的', { fixed: { plugin: name } }), as: 'menu' as const, icon: 'history' as const }] : []),
         // One installed on this machine leaves it once no library here uses it.
         ...(!here && fromMachine ? [kernelAction('plugin uninstall', '从这台机器卸掉', { fixed: { plugin: name }, tone: 'danger', confirm: `从这台机器卸掉插件 ${name}？这台机器上别的库装着它的，会报它不可用。` })] : []),
       ],
@@ -123,8 +123,8 @@ function pluginsSection({ library }: Context, table: PluginTable): Block {
   }
 }
 
-/** Settings: the plugins, their secrets, where the library is kept with its noise; then, folded, the library's id and the file that describes it. */
-async function configPage(_params: Record<string, string>, { ctx, table }: ViewerCall): Promise<Shown> {
+/** Settings: the plugins, their secrets, where the library is kept with its ignore rules; then, folded, the library's id and the file that describes it. */
+async function settingsPage(_params: Record<string, string>, { ctx, table }: ViewerCall): Promise<Shown> {
   const { root, config } = ctx.library
   const record: Block = {
     kind: 'section',
@@ -144,7 +144,7 @@ async function configPage(_params: Record<string, string>, { ctx, table }: Viewe
     ],
   }
   const secrets = await secretsSection(ctx)
-  return shown('配置', null, [pluginsSection(ctx, table), ...(secrets ? [secrets] : []), await storageSection(ctx, [await noiseSection(root)]), record])
+  return shown('配置', null, [pluginsSection(ctx, table), ...(secrets ? [secrets] : []), await storageSection(ctx, [await ignoreSection(root)]), record])
 }
 
 // ---- the face ----
@@ -155,7 +155,7 @@ const KERNEL_VIEWS: readonly { decl: ViewDecl; page: KernelPage }[] = [
   { decl: { id: 'files', title: '文件', icon: 'folder', nav: true, filters: [] }, page: filesPage },
   { decl: { id: 'archive', title: '归档区', icon: 'archive', nav: true, filters: [], with: 'files' }, page: archivePage },
   { decl: { id: 'agents', title: 'Agent', icon: 'users', nav: true, filters: [], ownerOnly: true }, page: agentsPage },
-  { decl: { id: 'config', title: '配置', icon: 'settings', nav: true, filters: [], ownerOnly: true }, page: configPage },
+  { decl: { id: 'settings', title: '配置', icon: 'settings', nav: true, filters: [], ownerOnly: true }, page: settingsPage },
   { decl: { id: 'item', title: '一样东西', icon: 'file', nav: false, filters: [] }, page: itemPage },
 ]
 

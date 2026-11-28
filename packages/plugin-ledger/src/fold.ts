@@ -3,6 +3,7 @@
 // through them: a bundle's absorbed things, a source's dependents. ARCHITECTURE.md「存放和行」.
 import { originalPath, type LibraryPath, type Place } from '@pneuma-base/kernel'
 import { actorKey, inOrder, isAct, isTold, mayBeNews, newsKey, requestOf, turned, type Basis, type Fact, type FactActor, type ItemId, type LedgerOrigin } from './facts.js'
+import { commandNow } from './words.js'
 import {
   ancestors,
   archived,
@@ -242,7 +243,7 @@ class Folding {
       case 'owner.op': {
         if (!f.readOnly && !scene.ops.some((op) => op.command === f.command && actorKey(op.actor) === actorKey(f.actor))) scene.ops.push({ command: f.command, actor: f.actor })
         this.tx.set('scenes', scene.id, scene)
-        if (f.command === 'ledger held drop' && f.refused === undefined) await this.dropHeld()
+        if (commandNow(f.command) === 'ledger copies drop' && f.refused === undefined) await this.dropHeld()
         return
       }
       case 'unowned.left':

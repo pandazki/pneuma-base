@@ -37,7 +37,7 @@ async function newLibrary(plugins: 'search' | 'ledger+search' = 'search'): Promi
   const agent = (args: string[], opts: RunOptions = {}) => sb.run(['--library', dir, '--as', 'claude-code', ...args], { cwd: outside, ...opts })
   const owner = (args: string[], opts: RunOptions = {}) => sb.run([...args, '--library', dir], opts)
   ok(await sb.run(plugins === 'search' ? ['init', dir, '--bare'] : ['init', dir]))
-  ok(await owner(['plugin', 'add', 'search']))
+  ok(await owner(['plugin', 'enable', 'search']))
   const hits = async (...args: string[]) => ok(await agent(['find', ...args, '--json'])).json().hits as Hit[]
   return {
     sb,
@@ -45,8 +45,8 @@ async function newLibrary(plugins: 'search' | 'ledger+search' = 'search'): Promi
     outside,
     agent,
     owner,
-    put: async (path, content) => ok(await agent(['put', '-', '--to', path, '--made'], { input: content })),
-    register: async (path) => ok(await agent(['put', join(dir, path), '--made'])),
+    put: async (path, content) => ok(await agent(['put', '-', '--to', path, '--generated'], { input: content })),
+    register: async (path) => ok(await agent(['put', join(dir, path), '--generated'])),
     hits,
     paths: async (...args) => (await hits(...args)).filter((h) => h.by === 'search').map((h) => h.path),
     cacheDir: () => join(sb.home, '.pneuma-base', 'cache', libraryId(dir), 'search'),
@@ -81,7 +81,7 @@ describe('find matches content (C7)', () => {
     for (const image of ['a.png', 'b.png', 'c.png']) writeFileSync(join(site, 'assets', image), Buffer.alloc(400 * 1024, 0xff))
     writeFileSync(join(site, 'index.html'), '<!doctype html><html><head><title>手工皂工作室</title><style>.x{color:red}</style></head><body><h1>冷制皂</h1><p>橄榄油&amp;椰子油，熟成六周。</p></body></html>')
     writeFileSync(join(site, 'about', 'team.html'), '<p>两个人的小工作室。</p>')
-    ok(await lib.agent(['put', site, '--to', 'sites/soap', '--made'])) // a directory's put says how far its reading got on stderr
+    ok(await lib.agent(['put', site, '--to', 'sites/soap', '--generated'])) // a directory's put says how far its reading got on stderr
     const filler = Array.from({ length: 40_000 }, (_, i) => `filler line ${i} of the log`).join('\n')
     writeFileSync(join(lib.dir, 'big.log'), `alphaword starts the log\n${filler}\nomegaword ends it\n`)
     putErrors.push((await lib.register('big.log')).stderr)
@@ -129,7 +129,7 @@ describe('find matches content (C7)', () => {
       [['--kind', 'http', '--url', 'http://127.0.0.1:9', '--model', 'm', '--key-env', 'MY_KEY'], '不认识 --key-env'],
       [['--kind', 'magic'], 'hash'],
     ] as const) {
-      const r = await lib.owner(['search', 'embedder', 'set', ...flags])
+      const r = await lib.owner(['search', 'embedding', 'set', ...flags])
       expect(r.code, flags.join(' ')).toBe(1)
       expect(r.stderr).toContain(named)
     }
@@ -137,10 +137,10 @@ describe('find matches content (C7)', () => {
   })
 
   it('has no destructive command: an agent with a grant runs status and rebuild; the embedder is the owner’s to choose', async () => {
-    ok(await lib.owner(['grant', 'issue', 'claude', '--agent', 'claude-code']))
+    ok(await lib.owner(['grant', 'create', 'claude', '--agent', 'claude-code']))
     const viaGrant = (args: string[]) => lib.sb.run(['@claude', ...args], { cwd: lib.outside, env: { CLAUDE_CODE_SESSION_ID: 's-1' } })
     for (const args of [['search', 'status'], ['search', 'rebuild']]) ok(await viaGrant(args))
-    for (const args of [['search', 'embedder', 'set', '--kind', 'hash'], ['search', 'embedder', 'clear']]) {
+    for (const args of [['search', 'embedding', 'set', '--kind', 'hash'], ['search', 'embedding', 'clear']]) {
       const r = await viaGrant([...args, '--json'])
       expect(r.code).toBe(2)
       expect(r.json()).toMatchObject({ outcome: 'refused', reason: 'agent-session' })
@@ -151,14 +151,14 @@ describe('find matches content (C7)', () => {
     await lib.put('journal/a.md', 'bilby burrows\n')
     await lib.put('journal/deep/b.md', 'bilby diet\n')
     writeFileSync(join(lib.dir, 'journal', '.pneuma-item'), '{"format":1}\n')
-    ok(await lib.agent(['put', join(lib.dir, 'journal'), '--brought']))
+    ok(await lib.agent(['put', join(lib.dir, 'journal'), '--imported']))
     expect(await lib.paths('bilby')).toEqual(['journal'])
     ok(await lib.owner(['search', 'rebuild']))
     expect(await lib.paths('bilby')).toEqual(['journal'])
   })
 
   it('gives the same hits when the cache is deleted, holds something that is no index, or answers several finds at once', async () => {
-    ok(await lib.owner(['search', 'embedder', 'set', '--kind', 'hash']))
+    ok(await lib.owner(['search', 'embedding', 'set', '--kind', 'hash']))
     const queries = [['退款'], ['哪里', '退钱']]
     const before: Hit[][] = []
     for (const q of queries) before.push(await lib.hits(...q))
@@ -196,7 +196,7 @@ describe('what find indexes: the registered things, read when put or when storag
     await lib.register('loose.md')
     expect(await lib.paths('quokka')).toEqual(['loose.md'])
 
-    const putPlan = (text: string) => readsBy((opts) => lib.agent(['put', '-', '--to', 'notes/plan.md', '--made'], { ...opts, input: text }))
+    const putPlan = (text: string) => readsBy((opts) => lib.agent(['put', '-', '--to', 'notes/plan.md', '--generated'], { ...opts, input: text }))
     expect(await putPlan('第一版：先做袋熊的页面\n')).toEqual(['notes/plan.md'])
     expect(await readsBy((opts) => lib.agent(['find', '袋熊'], opts))).toEqual([])
     expect(await lib.paths('袋熊')).toEqual(['notes/plan.md'])
@@ -216,7 +216,7 @@ describe('what find indexes: the registered things, read when put or when storag
     mkdirSync(site, { recursive: true })
     writeFileSync(join(site, 'index.html'), '<p>wombat burrows</p>')
     writeFileSync(join(site, 'about.html'), '<p>about the wombat</p>')
-    ok(await lib.agent(['put', site, '--to', 'sites/w', '--made']))
+    ok(await lib.agent(['put', site, '--to', 'sites/w', '--generated']))
 
     ok(await lib.agent(['put', 'notes/a.md', '--to', 'notes/b.md']))
     expect(await lib.paths('platypus')).toEqual(['notes/b.md'])
@@ -242,7 +242,7 @@ describe('how much find reads', () => {
   it('reads at most 200 files in one call, leaves the rest for the next, and reads none when nothing changed', async () => {
     mkdirSync(join(lib.dir, 'many'))
     for (let i = 0; i < 250; i++) writeFileSync(join(lib.dir, 'many', `f${String(i).padStart(3, '0')}.md`), `numbat ${i}\n`)
-    expect(await readsBy((opts) => lib.agent(['put', join(lib.dir, 'many'), '--made'], opts))).toHaveLength(200)
+    expect(await readsBy((opts) => lib.agent(['put', join(lib.dir, 'many'), '--generated'], opts))).toHaveLength(200)
     expect(await status()).toMatchObject({ files: 200, pending: 1 })
     expect(await readsBy((opts) => lib.agent(['find', 'numbat'], opts))).toHaveLength(50)
     expect(await status()).toMatchObject({ files: 250, pending: 0 })
@@ -255,7 +255,7 @@ describe('how much find reads', () => {
   it('does not read a directory thing of more than 5000 files, and says so on the item panel and the status', async () => {
     mkdirSync(join(lib.dir, 'huge', 'sub'), { recursive: true })
     for (let i = 0; i < 5001; i++) writeFileSync(join(lib.dir, 'huge', 'sub', `f${i}.md`), `dingo ${i}\n`)
-    expect(await readsBy((opts) => lib.agent(['put', join(lib.dir, 'huge'), '--made'], opts))).toEqual([])
+    expect(await readsBy((opts) => lib.agent(['put', join(lib.dir, 'huge'), '--generated'], opts))).toEqual([])
     expect(await readsBy((opts) => lib.agent(['find', 'dingo'], opts))).toEqual([])
     expect(await lib.paths('dingo')).toEqual([])
     expect(await status()).toMatchObject({ pending: 0, tooMany: 1 })
@@ -297,9 +297,9 @@ describe('who tells find what changed', () => {
     const make = async () => {
       const l = join(tempDir(), 'lib')
       ok(await sb.run(['init', l, '--bare']))
-      ok(await sb.run(['plugin', 'add', 'search', '--library', l]))
-      for (const name of ['kept', 'edited', 'gone']) ok(await as(l, ['put', '-', '--to', `${name}.md`, '--made'], { input: `${name} lyrebird\n` }))
-      ok(await as(l, ['put', site, '--to', 'sites/k', '--made']))
+      ok(await sb.run(['plugin', 'enable', 'search', '--library', l]))
+      for (const name of ['kept', 'edited', 'gone']) ok(await as(l, ['put', '-', '--to', `${name}.md`, '--generated'], { input: `${name} lyrebird\n` }))
+      ok(await as(l, ['put', site, '--to', 'sites/k', '--generated']))
       return l
     }
     const listened = await make()
@@ -353,7 +353,7 @@ describe('find by meaning (C7)', () => {
   it('with no embedder there is no hit by meaning; with the hash embedder a sentence finds the closest thing; its configuration is in the library and its vectors in the cache', async () => {
     const sentence = '我想喝杯现磨咖啡' // no word of it is a word of the shops; 咖啡 is half of 咖啡豆
     expect(await lib.hits(sentence)).toEqual([])
-    ok(await lib.owner(['search', 'embedder', 'set', '--kind', 'hash']))
+    ok(await lib.owner(['search', 'embedding', 'set', '--kind', 'hash']))
     // The other shops share a character pair or two by chance: far less near, so left out.
     expect(await lib.hits(sentence)).toEqual([{ path: 'shops/coffee.md', title: 'coffee.md', by: 'search', group: null, detail: '按意思：# 豆子与烘焙' }])
     const recordDir = join(lib.dir, '.pneuma-base', 'search', 'embedder')
@@ -362,12 +362,12 @@ describe('find by meaning (C7)', () => {
     expect(JSON.parse(readFileSync(join(recordDir, records[0] as string), 'utf8'))).toMatchObject({ embedder: { kind: 'hash' } })
     expect(readdirSync(lib.cacheDir()).some((name) => name.endsWith('.sqlite'))).toBe(true)
 
-    ok(await lib.owner(['search', 'embedder', 'clear']))
+    ok(await lib.owner(['search', 'embedding', 'clear']))
     expect(await lib.hits(sentence)).toEqual([])
   })
 
   it('finds by meaning through an OpenAI-compatible server, embedding each piece once per embedder; the key is a secret of this machine, never in the library', async () => {
-    const set = () => lib.owner(['search', 'embedder', 'set', '--kind', 'http', '--url', `${server.url}/v1`, '--model', 'concepts-1'])
+    const set = () => lib.owner(['search', 'embedding', 'set', '--kind', 'http', '--url', `${server.url}/v1`, '--model', 'concepts-1'])
     expect(ok(await set()).stdout).toContain('pneuma-base secret set search key')
     ok(await lib.sb.run(['secret', 'set', 'search', 'key'], { input: 'test-key-123' }))
     const withKey = ok(await set()).stdout
@@ -399,7 +399,7 @@ describe('find by meaning (C7)', () => {
 
     const rebuilt = await lib.owner(['search', 'rebuild'])
     expect(rebuilt.code).toBe(2)
-    expect(rebuilt.stdout).toMatch(/^拒绝（embedder-failed）：已重建索引：3 个文件，其中文本 3 个，3 块。按意思的向量没建完（0 \/ 3 块）：嵌入服务连不上/)
+    expect(rebuilt.stdout).toMatch(/^拒绝（embedding-failed）：已重建索引：3 个文件，其中文本 3 个，3 块。按意思的向量没建完（0 \/ 3 块）：嵌入服务连不上/)
   })
 })
 

@@ -146,8 +146,8 @@ describe('the owner allows or declines', () => {
 
 describe('on the pages', () => {
   it('a waiting pairing is the first ask on the home page: the product’s mark, the code, the reason, what allowing does, 允许 and 拒绝', () => {
-    ok(run(['--library', lib, 'grant', 'issue', 'claude', '--agent', 'claude']))
-    ok(run(['@claude', 'ask', '要装版本插件', 'plugin', 'add', 'version'], { PNEUMA_BASE_SESSION: 's' }))
+    ok(run(['--library', lib, 'grant', 'create', 'claude', '--agent', 'claude']))
+    ok(run(['@claude', 'ask', '要装版本插件', 'plugin', 'enable', 'version'], { PNEUMA_BASE_SESSION: 's' }))
     const { id, code } = requested('claude-code')
     const [ask, second] = asksOf(home().blocks)
     expect(second?.key).toMatch(/^request:/)

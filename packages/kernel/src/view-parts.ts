@@ -48,7 +48,7 @@ export const asOneThing = (path: LibraryPath): Action => ({
 })
 
 /** Leaving a directory alone: it joins the library's noise, so nothing mentions it again. */
-export const leaveAlone = (path: LibraryPath): Action => kernelAction('noise add', '不用管', { fixed: { path, name: false } })
+export const leaveAlone = (path: LibraryPath): Action => kernelAction('ignore add', '不用管', { fixed: { path, name: false } })
 
 const PROVIDERS: Record<string, string> = { icloud: 'iCloud', dropbox: 'Dropbox', googledrive: 'Google Drive', onedrive: 'OneDrive', box: 'Box' }
 export const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)

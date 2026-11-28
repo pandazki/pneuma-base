@@ -43,7 +43,7 @@ pneuma-base --help
 
 2. **接上一个 agent。** 「开始」的第一步列出这台机器上找到的 agent（Claude Code、Codex、Cursor、Claude Desktop），点一个的「接上」。它发一份以产品命名的授权，把技能装进那个产品读技能的目录，不读技能的把 MCP 服务登记进它的配置。命令行上是 `pneuma-base agent connect claude-code --library ~/base`。也可以把首页上那句话说给任何一个 agent：「读一下 http://127.0.0.1:7638/guide，接上我的 Pneuma Base 库。」它读说明、请你允许；你在首页「等你决定」里核对它给你看的配对码，点「允许」，它就以自己的名字接上了。Codex 在沙箱里运行，启动时要把库加进可写目录：`codex --add-dir ~/base`。
 
-3. **放进一样东西。** 从 Finder 拖一个文件到窗口的任何地方，它放进库的 `inbox/`，记成你带进来的。直接在 Finder 里把文件拷进库的文件夹也行：应用看到了，几秒后把它登记成你带进来的（自动登记）。命令行上是 `pneuma-base --library ~/base put ~/Downloads/报告.pdf --to inbox/报告.pdf --brought`。
+3. **放进一样东西。** 从 Finder 拖一个文件到窗口的任何地方，它放进库的 `inbox/`，记成你带进来的。直接在 Finder 里把文件拷进库的文件夹也行：应用看到了，几秒后把它登记成你带进来的（自动登记）。命令行上是 `pneuma-base --library ~/base put ~/Downloads/报告.pdf --to inbox/报告.pdf --imported`。
 
 4. **对 agent 说一句。** 在接上的 agent 里说「看看我的 Pneuma Base 库里有什么。」它读库根的 `PNEUMA-BASE.md`，跑 `start`，看到你放的东西，接着用；它做出来的东西也放回库里，写明依据了什么。之后首页的「自上次以来」列出 agent 做了什么，「等你决定」列出要你定的事。
 
@@ -56,7 +56,7 @@ agent 带着自己的授权调用，`pneuma-base @<授权名> <动词>`；经 MC
 | `start "<一句话>"` | 开工：记下在做什么，看库里有什么变化和要留意的，找可能相关的 |
 | `find <文字>` | 按名字、说过的话、来历找；装了查找插件时也找正文 |
 | `inspect <库内路径>` | 一样东西是什么、从哪来、什么来自它；`--content` 带上内容 |
-| `put <文件> --to <库内路径> --made --from <依据…>` | 放进库里，说清来历：`--brought` 带进来的，`--made` 做出来的 |
+| `put <文件> --to <库内路径> --generated --from <依据…>` | 放进库里，说清来历：`--imported` 带进来的，`--generated` 做出来的 |
 | `say <种类> …` | 说一件事：在做什么、决定、备注；插件听它们各自的种类，比如 `say versioned`、`say deployable` |
 | `check` | 自上次以来库里变了什么，什么可能过期，主人决定了什么 |
 | `archive <库内路径>` | 不要了就归档：不删，默认找不到，`unarchive` 取回 |
@@ -67,9 +67,9 @@ agent 带着自己的授权调用，`pneuma-base @<授权名> <动词>`；经 MC
 
 ## 主人还能做什么
 
-- **装插件。** 自带五个：记账（缺省装上）、版本、同步、部署、查找。`pneuma-base plugin add version --library ~/base`；界面的配置页一样能装卸。装上或卸下，`PNEUMA-BASE.md` 跟着重写，agent 读到的就是现在装了的。发布到 PneumaSpace 的 `space` 插件在 [`plugins/space/`](plugins/space/README.md)。
+- **装插件。** 自带五个：记账（缺省装上）、版本、同步、部署、查找。`pneuma-base plugin enable version --library ~/base`；界面的配置页一样能装卸。装上或卸下，`PNEUMA-BASE.md` 跟着重写，agent 读到的就是现在装了的。发布到 PneumaSpace 的 `space` 插件在 [`plugins/space/`](plugins/space/README.md)。
 - **把库放在别的存储上。** 库的地址是一个文件夹时，存储是自带的本机文件夹。`pneuma-base storage list` 列出这台机器的存储提供者，`pneuma-base storage install <owner>/<repo>` 从一个 GitHub 仓库的发布装一个（对过校验和、过了契约测试才装），见 [`PROVIDERS.md`](PROVIDERS.md)。
-- **接只能接 MCP 的应用。** `pneuma-base agent connect <产品> --via mcp` 登记标准输入输出的 MCP 服务，`--via mcp-http` 登记界面开着时的地址 `http://127.0.0.1:7638/mcp/<授权名>`。产品表里没有的应用，先 `pneuma-base grant issue <授权名> --agent <给谁> --library ~/base`，再在它的 MCP 配置里加一个服务：命令是 `~/.pneuma-base/bin/pneuma-base` 的完整路径，参数 `@<授权名> mcp`。
+- **接只能接 MCP 的应用。** `pneuma-base agent connect <产品> --via mcp` 登记标准输入输出的 MCP 服务，`--via mcp-http` 登记界面开着时的地址 `http://127.0.0.1:7638/mcp/<授权名>`。产品表里没有的应用，先 `pneuma-base grant create <授权名> --agent <给谁> --library ~/base`，再在它的 MCP 配置里加一个服务：命令是 `~/.pneuma-base/bin/pneuma-base` 的完整路径，参数 `@<授权名> mcp`。
 - **在终端里看和管。** 界面的每一页也是一条只读的命令：`pneuma-base show --library ~/base` 列出各页。`pneuma-base --help --library ~/base` 列出这个库能用的全部命令。
 
 ## 别的文档

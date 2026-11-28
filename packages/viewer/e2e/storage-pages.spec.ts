@@ -63,7 +63,7 @@ test('the library’s table and a bundle’s first level in the panel page the s
   for (let i = 1; i <= 55; i++) write(lib, `site/p${pad(i)}.html`, `<p>${i}</p>\n`)
   write(lib, 'site/.pneuma-item', '{"format":1}\n')
   const url = await ledgerLibrary(pb, lib)
-  pb.run(['ledger', 'register', 'notes', '--inside', '--library', lib])
+  pb.run(['ledger', 'register', 'notes', '--recursive', '--library', lib])
   await page.goto(`${url}#view=ledger.items&view.dir=notes`)
   const main = page.getByRole('main')
   const pager = main.getByRole('navigation', { name: '分页' })
@@ -150,7 +150,7 @@ test('a named pass says what it will read, shows how far it is with a way to sto
   await expect(notices).toContainText('已把 big/里的 20000 个文件记为主人带进来的。')
 
   // Reading every registered thing's content: how many first, how far it is, and a stop that keeps what was read.
-  await page.goto(`${url}#view=ledger.standing`)
+  await page.goto(`${url}#view=ledger.status`)
   await main.getByRole('button', { name: '按内容查' }).click()
   await expect(page.getByRole('dialog')).toContainText('要按内容读整个库：20000 样登记过的东西。')
   await page.getByRole('dialog').getByRole('button', { name: '按内容查' }).click()
@@ -191,7 +191,7 @@ test('a thing’s panel says its state in words, whether its content was read, a
   const url = await ledgerLibrary(pb, lib)
   // Registered as it lies: no content read. Something made from it rests on it.
   pb.run(['ledger', 'register', '.', '--library', lib])
-  pb.run(['--library', lib, '--as', 'claude-code', 'put', '-', '--to', 'notes/summary.md', '--made', '--from', 'report.pdf'], { cwd: outside, input: '# 摘要\n' })
+  pb.run(['--library', lib, '--as', 'claude-code', 'put', '-', '--to', 'notes/summary.md', '--generated', '--from', 'report.pdf'], { cwd: outside, input: '# 摘要\n' })
 
   await page.goto(`${url}#view=files&panel=item&panel.path=report.pdf`)
   const panel = page.getByRole('complementary', { name: '详情' })

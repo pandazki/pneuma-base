@@ -23,12 +23,12 @@ async function relayed() {
   const lib = await openLibrary(root, table)
   if (!lib) throw new Error('no library')
   const ctx = () => makeContext(lib, claude, session('sess-a'), home, next())
-  await agentFace.say({ kind: 'doing', about: null, text: '给小店选支付服务', args: {} }, ctx())
+  await agentFace.say({ kind: 'task', about: null, text: '给小店选支付服务', args: {} }, ctx())
   await agentFace.put({ kind: 'place', from: text('stripe'), to: 'src/stripe.html', origin: { kind: 'brought', source: 'https://stripe.com/pricing', by: null } }, ctx())
   await agentFace.put({ kind: 'place', from: text('old'), to: 'old.md', origin: { kind: 'brought', source: null, by: null } }, ctx())
   await agentFace.put({ kind: 'place', from: text('cmp'), to: 'comparison.md', origin: { kind: 'made', from: ['src/stripe.html'], outside: ['主人说客户在欧洲'] } }, ctx())
   await agentFace.put({ kind: 'place', from: text('rec'), to: 'recommendation.md', origin: { kind: 'made', from: ['comparison.md'], outside: [] } }, ctx())
-  await agentFace.say({ kind: 'decided', about: 'comparison.md', text: '用 Paddle', args: {} }, ctx())
+  await agentFace.say({ kind: 'decision', about: 'comparison.md', text: '用 Paddle', args: {} }, ctx())
   await agentFace.archive({ kind: 'archive', path: 'old.md' }, ctx())
   const show = (view: string, params: Record<string, string> = {}, ctx = makeContext(lib, { kind: 'owner' }, session('ui'), home, next())) => viewerFace.show({ view, params }, { ctx, table, env: {}, viaGrant: false })
   /** Later work by codex in another scene. */
@@ -111,13 +111,13 @@ describe('the library page', () => {
         name: 'show',
         options: [
           { value: '', label: '全部', count: 3 },
-          { value: 'brought', label: '带进来的', count: 1 },
-          { value: 'made', label: '做出来的', count: 2 },
+          { value: 'imported', label: '带进来的', count: 1 },
+          { value: 'generated', label: '做出来的', count: 2 },
           { value: 'archived', label: '已归档', count: 1 },
         ],
       },
     ])
-    expect(rowsOf(await show('ledger.items', { show: 'brought' })).map((r) => r.link?.params.path)).toEqual(['src/stripe.html'])
+    expect(rowsOf(await show('ledger.items', { show: 'imported' })).map((r) => r.link?.params.path)).toEqual(['src/stripe.html'])
     const archived = rowsOf(await show('ledger.items', { show: 'archived' }))
     expect(archived.map((r) => line(r.cells).path)).toEqual(['old.md 已归档'])
     expect(archived[0]?.link?.params.path).toBe('_archive/old.md')
@@ -216,7 +216,7 @@ describe('the ledger’s part of the item panel', () => {
     const before = facts()
     await show('ledger.items', { show: 'archived' })
     for (const path of ['comparison.md', 'dropped.md', 'old.md']) await show('item', { path })
-    for (const view of ['home', 'ledger.scenes', 'ledger.standing', 'ledger.activity']) shown(await show(view))
+    for (const view of ['home', 'ledger.scenes', 'ledger.status', 'ledger.activity']) shown(await show(view))
     shown(await show('ledger.scene', { scene: 'sess-a' }))
     expect(facts()).toBe(before)
   })
@@ -225,7 +225,7 @@ describe('the ledger’s part of the item panel', () => {
 describe('the scenes page', () => {
   it('has one row per session, newest first, by day: who, what it was doing, how many things it put; a row opens its scene, whose page gives its figures that are not nothing, what happened in it, then, folded, who and where', async () => {
     const { show, codex } = await relayed()
-    await agentFace.say({ kind: 'doing', about: null, text: '把支付服务接进小店', args: {} }, codex())
+    await agentFace.say({ kind: 'task', about: null, text: '把支付服务接进小店', args: {} }, codex())
     await agentFace.put({ kind: 'place', from: text('int'), to: 'integration.md', origin: { kind: 'made', from: ['recommendation.md'], outside: [] } }, codex())
     const scenes = feedRows(shown(await show('ledger.scenes')).blocks)
     // The library was made at the real time, after the test's sessions at 02:00Z.
@@ -287,7 +287,7 @@ describe('the scenes page', () => {
 describe('the standing view', () => {
   it('says there is nothing to look at when all is in order; then has a section for each kind of thing to look at, each row opening the item panel and offering what settles it', async () => {
     const { root, show, codex } = await relayed()
-    expect(shown(await show('ledger.standing')).blocks).toMatchObject([{ kind: 'actions', head: true, actions: [{ label: '按内容查', call: { verb: 'check', request: { deep: { dir: null } } } }] }, { kind: 'empty', title: '没有要处理的事' }])
+    expect(shown(await show('ledger.status')).blocks).toMatchObject([{ kind: 'actions', head: true, actions: [{ label: '按内容查', call: { verb: 'check', request: { deep: { dir: null } } } }] }, { kind: 'empty', title: '没有要处理的事' }])
 
     await agentFace.put({ kind: 'place', from: text('src'), to: 'gone-src.md', origin: { kind: 'brought', source: null, by: null } }, codex())
     await agentFace.put({ kind: 'place', from: text('uses'), to: 'uses-gone.md', origin: { kind: 'made', from: ['gone-src.md'], outside: [] } }, codex())
@@ -301,7 +301,7 @@ describe('the standing view', () => {
     rmSync(join(root, 'gone-src.md'))
     renameSync(join(root, 'moving.md'), join(root, 'src/here.md'))
 
-    const r = shown(await show('ledger.standing'))
+    const r = shown(await show('ledger.status'))
     const sections = r.blocks.filter((b) => b.kind === 'section')
     expect(sections.map((s) => s.kind === 'section' && `${s.title}:${s.count}`)).toEqual(['可能过期:1', '来源不在:1', '上游有标记:1', '没人登记过的:2', '被直接改过的:1', '不在了的:1', '挪过的:1'])
     // Each a list of things: the path opening the item panel, a note only where it says more than the section.
@@ -337,7 +337,7 @@ describe('the standing view', () => {
     await agentFace.put({ kind: 'place', from: text('moving'), to: 'moving.md', origin: { kind: 'brought', source: null, by: null } }, codex())
     mkdirSync(join(root, 'moved'))
     renameSync(join(root, 'moving.md'), join(root, 'moved/here.md'))
-    const r = shown(await show('ledger.standing'))
+    const r = shown(await show('ledger.status'))
     expect(r.blocks.filter((b) => b.kind === 'section').map((s) => s.kind === 'section' && `${s.title}:${s.count}`)).toEqual(['没登记的目录:1', '不在了的:1'])
     expect(listIn(sectionNamed(r.blocks, '没登记的目录')).map((i) => [i.cell.text, i.actions?.map((a) => a.label)])).toEqual([['moved/', ['登记成一样东西', '登记里面的文件', '不用管']]])
   })
@@ -352,10 +352,10 @@ describe('the activity page', () => {
     expect(rows.slice(1, 4).map((row) => [nameOf(row.actor), row.whose, row.act, row.path, row.note, row.text, ...row.meta.map((c) => c.text)])).toEqual([
       ['claude-code', 'agent', 'archived', 'old.md', undefined, '归档 old.md', '没带授权'],
       ['claude-code', 'agent', 'decision', 'comparison.md', '用 Paddle', '决定：用 Paddle（关于 comparison.md）', '没带授权'],
-      ['claude-code', 'agent', 'made', 'recommendation.md', undefined, '放入 recommendation.md', '没带授权'],
+      ['claude-code', 'agent', 'generated', 'recommendation.md', undefined, '放入 recommendation.md', '没带授权'],
     ])
     expect(rows[1]?.link).toEqual({ view: 'item', params: { path: '_archive/old.md' }, target: 'panel' })
-    expect(rows.find((row) => row.act === 'doing')).toBeUndefined()
+    expect(rows.find((row) => row.act === 'task')).toBeUndefined()
     const feed = flat(shown(await show('ledger.activity')).blocks).find((b) => b.kind === 'feed')
     const scenes = feed?.kind === 'feed' ? feed.groups.flatMap((day) => day.groups ?? []) : []
     expect(scenes.filter((g) => g.title !== '').map((g) => [g.title, g.count, g.link])).toEqual([['给小店选支付服务', 6, { view: 'ledger.scene', params: { scene: 'sess-a' }, target: 'panel' }]])
@@ -397,7 +397,7 @@ describe('the ledger’s part of the home page', () => {
     expect(listIn(seen).map((i) => [i.cell.text, i.cell.link])).toEqual([['看全部活动', { view: 'ledger.activity', params: {}, target: 'main' }]])
 
     // A scene saying what it is doing is no act, so nothing yet; its one act is then that row, naming the scene, in a list without a heading; the section counts it.
-    await agentFace.say({ kind: 'doing', about: null, text: '整理首页文案', args: {} }, claudeIn('sess-c'))
+    await agentFace.say({ kind: 'task', about: null, text: '整理首页文案', args: {} }, claudeIn('sess-c'))
     expect(sectionNamed(shown(await asCodex()).blocks, '自上次以来')).toMatchObject({ count: null, blocks: [{ kind: 'feed', groups: [] }, { kind: 'list' }] })
     await agentFace.say({ kind: 'note', about: null, text: '首页先不动', args: {} }, claudeIn('sess-c'))
     const doing = sectionNamed(shown(await asCodex()).blocks, '自上次以来')
@@ -408,13 +408,13 @@ describe('the ledger’s part of the home page', () => {
     writeFileSync(join(root, 'src/stripe.html'), 'stripe, new prices')
     const attention = sectionNamed(shown(await asCodex()).blocks, '需要留意')
     expect(listIn(attention).map((i) => [i.cell.text, i.cell.link])).toEqual([
-      ['1 样可能过期', { view: 'ledger.standing', params: { kind: 'stale' }, target: 'main' }],
-      ['1 样上游有标记', { view: 'ledger.standing', params: { kind: 'upstream' }, target: 'main' }],
-      ['1 样被直接改过的', { view: 'ledger.standing', params: { kind: 'changed' }, target: 'main' }],
+      ['1 样可能过期', { view: 'ledger.status', params: { kind: 'stale' }, target: 'main' }],
+      ['1 样上游有标记', { view: 'ledger.status', params: { kind: 'upstream' }, target: 'main' }],
+      ['1 样被直接改过的', { view: 'ledger.status', params: { kind: 'changed' }, target: 'main' }],
     ])
-    expect(sectionNamed(shown(await show('ledger.standing', { kind: 'changed' })).blocks, '被直接改过的').count).toBe(1)
+    expect(sectionNamed(shown(await show('ledger.status', { kind: 'changed' })).blocks, '被直接改过的').count).toBe(1)
     // One kind alone: the deep pass that tells a real change from a touch, then that kind's section.
-    expect(shown(await show('ledger.standing', { kind: 'changed' })).blocks.map((b) => b.kind)).toEqual(['actions', 'section'])
+    expect(shown(await show('ledger.status', { kind: 'changed' })).blocks.map((b) => b.kind)).toEqual(['actions', 'section'])
   })
 })
 
@@ -448,14 +448,14 @@ describe('things nobody registered', () => {
     expect(loose).toMatchObject({ by: '记账与对账', text: '库的根目录有 2 个文件还没登记。都记为你带进来的吗？', suggested: 0 })
     expect(loose?.actions.map((a) => [a.label, a.call])).toEqual([
       ['都记为我带进来的', { face: 'owner', command: 'ledger register', args: { positional: ['.'], flags: {} } }],
-      ['不登记，不再问', { face: 'owner', command: 'ledger leave', args: { positional: ['.'], flags: {} } }],
+      ['不登记，不再问', { face: 'owner', command: 'ledger dismiss', args: { positional: ['.'], flags: {} } }],
     ])
     expect(closed).toMatchObject({ text: 'notes/ 没登记：1 个文件。', about: 'notes' })
     expect(closed?.actions[1]?.confirm).toBe('要登记 notes/ 里任意深处的全部文件：1 个，不含噪音。')
     expect(closed?.actions.map((a) => [a.label, a.call])).toEqual([
       ['登记成一样东西', { face: 'agent', verb: 'put', request: { kind: 'register', path: 'notes', origin: { kind: 'brought', source: null, by: 'owner' }, note: null } }],
-      ['登记里面的文件', { face: 'owner', command: 'ledger register', args: { positional: ['notes'], flags: { inside: true } } }],
-      ['不用管', { face: 'owner', command: 'noise add', args: { positional: ['notes'], flags: {} } }],
+      ['登记里面的文件', { face: 'owner', command: 'ledger register', args: { positional: ['notes'], flags: { recursive: true } } }],
+      ['不用管', { face: 'owner', command: 'ignore add', args: { positional: ['notes'], flags: {} } }],
     ])
     // Nothing else to look at, said without claiming the unregistered things match a record.
     expect(sectionNamed(shown(await show('home')).blocks, '需要留意').blocks).toEqual([{ kind: 'text', tone: 'neutral', text: '没有要留意的：登记过的东西都和记录的一样。' }])
@@ -471,15 +471,15 @@ describe('things nobody registered', () => {
     expect(fieldIn(came, '来历')?.value.text).toBe('带进来的，主人给的')
     const rows = feedRows(shown(await show('ledger.activity')).blocks)
     expect(rows.map((r) => r.text).filter((t) => t.includes('ledger register') || t.includes('放入'))).toEqual([
-      'pneuma-base ledger register notes --inside',
+      'pneuma-base ledger register notes --recursive',
       'pneuma-base ledger register .',
     ])
     // Each says what it did to what: brought in, the folder.
     expect(rows.filter((r) => r.text.includes('ledger register')).map((r) => [r.act, r.path])).toEqual([
-      ['brought', 'notes'],
-      ['brought', '.'],
+      ['imported', 'notes'],
+      ['imported', '.'],
     ])
-    expect(shown(await show('ledger.standing')).blocks).toMatchObject([{ kind: 'actions' }, { kind: 'empty' }])
+    expect(shown(await show('ledger.status')).blocks).toMatchObject([{ kind: 'actions' }, { kind: 'empty' }])
   })
 
   it('left as they are: not asked about again, still on the standing page; a later pile is asked about anew', async () => {
@@ -489,14 +489,14 @@ describe('things nobody registered', () => {
     expect(await run(leave)).toMatchObject({ outcome: 'done', data: { left: 2 } })
     const closedOnly = ['notes/ 没登记：2 个文件。']
     expect((await asks()).map((a) => a.text)).toEqual(closedOnly)
-    expect(sectionNamed(shown(await show('ledger.standing')).blocks, '没人登记过的').count).toBe(2)
+    expect(sectionNamed(shown(await show('ledger.status')).blocks, '没人登记过的').count).toBe(2)
     writeFileSync(join(root, 'later.md'), 'dropped in later')
     expect((await asks()).map((a) => a.text)).toEqual(['库的根目录有 1 个文件还没登记。都记为你带进来的吗？', ...closedOnly])
   })
 })
 
 describe('held copies and changes in the ledger’s blocks', () => {
-  it('say whose content each was: a held copy can be taken back to a new path, as ledger held restore; a put’s note ends its entry and its activity row; an edit the owner made and an agent recorded names both', async () => {
+  it('say whose content each was: a held copy can be taken back to a new path, as ledger copies restore; a put’s note ends its entry and its activity row; an edit the owner made and an agent recorded names both', async () => {
     const { root, show, codex } = await relayed()
     await agentFace.put({ kind: 'place', from: text('cmp v2'), to: 'comparison.md', origin: { kind: 'made', from: ['src/stripe.html'], outside: [] }, note: '换了结论' }, codex())
     const provenance = sectionNamed(shown(await show('item', { path: 'comparison.md' })).blocks, '来历')
@@ -509,7 +509,7 @@ describe('held copies and changes in the ledger’s blocks', () => {
             {
               label: '取回到新路径',
               inputs: [{ name: 'to', value: expect.stringMatching(/^comparison\.[0-9a-f]{8}\.md$/) }],
-              call: { face: 'owner', command: 'ledger held restore', args: { positional: [expect.stringMatching(/^i_/)], flags: { fingerprint: [expect.stringMatching(/^[0-9a-f]{64}$/)], to: ['{to}'] } } },
+              call: { face: 'owner', command: 'ledger copies restore', args: { positional: [expect.stringMatching(/^i_/)], flags: { fingerprint: [expect.stringMatching(/^[0-9a-f]{64}$/)], to: ['{to}'] } } },
             },
           ],
         },

@@ -21,7 +21,7 @@ npm install
 npm run build                                                         # 2. 构建：类型检查，再打包到 dist/
 npm test                                                              # 3. 测试：先构建，再跑 test/ 下的测试
 npm run install-local                                                 # 4. 装到这台机器：构建，再 pneuma-base plugin install dist
-npx -- pneuma-base plugin add {{name}} --library <库的目录>              # 5. 在一个库里启用
+npx -- pneuma-base plugin enable {{name}} --library <库的目录>              # 5. 在一个库里启用
 ```
 
 - 装到这台机器和在库里启用都只给主人：在 agent 的会话里会被拒绝。

@@ -44,12 +44,12 @@ const NEW = Buffer.from('the new version\n')
 describe('a new version over an old one (C6)', () => {
   beforeAll(() => {
     fresh()
-    ok(agent(['put', '-', '--to', 'report.bin', '--made'], OLD))
+    ok(agent(['put', '-', '--to', 'report.bin', '--generated'], OLD))
     writeFileSync(join(outside, 'report.bin'), NEW)
   })
 
-  it('replaces the file and keeps the old bytes, a file nobody registered too; ledger held restore gives the owner the same bytes at a new path, and refuses to overwrite', () => {
-    const r = ok(agent(['put', 'report.bin', '--to', 'report.bin', '--made', '--json']))
+  it('replaces the file and keeps the old bytes, a file nobody registered too; ledger copies restore gives the owner the same bytes at a new path, and refuses to overwrite', () => {
+    const r = ok(agent(['put', 'report.bin', '--to', 'report.bin', '--generated', '--json']))
     expect(r.json()).toMatchObject({ outcome: 'accepted', copied: true })
     expect(r.json().notes.map((n: any) => n.text).join('\n')).toContain('留存')
     expect(readFileSync(join(lib, 'report.bin'))).toEqual(NEW)
@@ -58,17 +58,17 @@ describe('a new version over an old one (C6)', () => {
     expect(data.held).toHaveLength(1)
     expect(readFileSync(join(lib, data.held[0]))).toEqual(OLD)
 
-    expect(ok(owner(['ledger', 'held', 'list'])).stdout).toContain('report.bin')
-    expect(owner(['ledger', 'held', 'restore', 'report.bin', '--to', 'report.bin']).code).toBe(2)
+    expect(ok(owner(['ledger', 'copies', 'list'])).stdout).toContain('report.bin')
+    expect(owner(['ledger', 'copies', 'restore', 'report.bin', '--to', 'report.bin']).code).toBe(2)
     expect(readFileSync(join(lib, 'report.bin'))).toEqual(NEW)
-    ok(owner(['ledger', 'held', 'restore', 'report.bin', '--to', 'restored/report.bin']))
+    ok(owner(['ledger', 'copies', 'restore', 'report.bin', '--to', 'restored/report.bin']))
     expect(readFileSync(join(lib, 'restored/report.bin'))).toEqual(OLD)
     const restored = sections(ok(agent(['inspect', 'restored/report.bin', '--json'])))[0]?.data
-    expect(restored.origin).toMatchObject({ kind: 'brought', by: 'owner' })
+    expect(restored.origin).toMatchObject({ kind: 'imported', by: 'owner' })
 
     writeFileSync(join(lib, 'dropped.md'), 'by hand')
     writeFileSync(join(outside, 'dropped.md'), 'by the agent')
-    ok(agent(['put', 'dropped.md', '--to', 'dropped.md', '--made']))
+    ok(agent(['put', 'dropped.md', '--to', 'dropped.md', '--generated']))
     const dropped = sections(ok(agent(['inspect', 'dropped.md', '--json'])))[0]?.data
     expect(readFileSync(join(lib, dropped.held[0]), 'utf8')).toBe('by hand')
   })
@@ -87,12 +87,12 @@ describe('a new version over an old one (C6)', () => {
     const heldDir = join(lib, '.pneuma-base/ledger/held')
     const held = readdirSync(heldDir).length
     expect(held).toBeGreaterThan(0)
-    const ended = inTerminal('EOF', ['ledger', 'held', 'drop', '--library', lib])
+    const ended = inTerminal('EOF', ['ledger', 'copies', 'drop', '--library', lib])
     expect(ended.stdout).not.toMatch(/Aborted|Ctrl\+D/)
     expect(ended.stdout).toContain('拒绝（not-confirmed）：没有得到当面确认，什么都没做。')
     expect(ended.code).toBe(2)
     expect(readdirSync(heldDir)).toHaveLength(held)
-    const confirmed = inTerminal('yes', ['ledger', 'held', 'drop', '--library', lib])
+    const confirmed = inTerminal('yes', ['ledger', 'copies', 'drop', '--library', lib])
     expect(confirmed.code, confirmed.stdout).toBe(0)
     expect(existsSync(heldDir) ? readdirSync(heldDir) : []).toEqual([])
   })
@@ -119,31 +119,31 @@ describe('owner operations (C7)', () => {
   it('appear in an agent’s check after its last visit when they change the content or the capabilities', () => {
     ok(agent(['start', '整理资料']))
     const withTest = (args: string[]) => ok(sb.runWithTestPlugins([...args, '--library', lib], { cwd: outside }))
-    withTest(['plugin', 'add', 'recorder'])
-    withTest(['grant', 'issue', 'helper', '--agent', 'codex'])
+    withTest(['plugin', 'enable', 'recorder'])
+    withTest(['grant', 'create', 'helper', '--agent', 'codex'])
     withTest(['grant', 'revoke', 'helper'])
-    withTest(['plugin', 'remove', 'recorder'])
+    withTest(['plugin', 'disable', 'recorder'])
 
     const r = ok(agent(['check', '--json'], undefined, 's2'))
     const since = section(sections(r), '自上次以来')
     const ops = since.scenes.flatMap((s: any) => s.facts).filter((f: any) => f.kind === 'owner.op').map((f: any) => f.text)
     expect(ops).toHaveLength(2)
-    for (const [i, command] of ['plugin add', 'plugin remove'].entries()) expect(ops[i]).toContain(command)
+    for (const [i, command] of ['plugin enable', 'plugin disable'].entries()) expect(ops[i]).toContain(command)
     // That check was a look; the text asks from the same moment the look did.
     const text = ok(agent(['check', '--since', since.since], undefined, 's3')).stdout
     expect(text).toMatch(/^场景 adhoc-owner-\d{4}-\d\d-\d\d · 主人/m)
-    expect(text).toContain('主人面的操作 plugin remove')
+    expect(text).toContain('主人面的操作 plugin disable')
     expect(text).not.toContain('grant')
   })
 
   it('omits setup commands that ran before an agent’s first visit, while keeping content and online state changes', () => {
-    const setup = ['plugin add', 'deploy target set']
+    const setup = ['plugin enable', 'deploy target set']
     const target = () => join(tempDir('pb-www-'), 'www')
-    ok(owner(['plugin', 'add', 'deploy']))
+    ok(owner(['plugin', 'enable', 'deploy']))
     ok(owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', target()]))
 
     writeFileSync(join(outside, 'brief.md'), 'brief\n')
-    ok(agent(['put', 'brief.md', '--to', 'brief.md', '--brought'], undefined, 'claude-1'))
+    ok(agent(['put', 'brief.md', '--to', 'brief.md', '--imported'], undefined, 'claude-1'))
     ok(agent(['say', 'deployable', 'brief.md'], undefined, 'claude-1'))
     ok(owner(['deploy', 'on', 'brief.md']))
 
@@ -201,7 +201,7 @@ describe('archive with the ledger (C15)', () => {
 
     const inspected = await agentFace.inspect({ target: 'drafts/a.md' }, claude())
     expect(inspected.file).toMatchObject({ path: '_archive/drafts/a.md', archived: true })
-    expect(inspected.sections[0]?.data).toMatchObject({ origin: { kind: 'made' }, basis: [{ path: 'sources/s.md' }] })
+    expect(inspected.sections[0]?.data).toMatchObject({ origin: { kind: 'generated' }, basis: [{ path: 'sources/s.md' }] })
 
     expect(await agentFace.archive({ kind: 'unarchive', path: 'drafts/a.md' }, claude())).toMatchObject({ outcome: 'accepted' })
     expect(section(await check(false), '可能过期')).toMatchObject([{ path: 'drafts/a.md' }])
@@ -228,7 +228,7 @@ describe('archive with the ledger (C15)', () => {
     writeFileSync(join(root, 'loose.md'), 'loose')
     expect(await agentFace.archive({ kind: 'archive', path: 'loose.md' }, claude())).toMatchObject({ outcome: 'accepted' })
     const data = (await agentFace.inspect({ target: 'loose.md' }, claude())).sections[0]?.data
-    expect(data).toMatchObject({ origin: { kind: 'adopted' }, archived: true, path: '_archive/loose.md' })
+    expect(data).toMatchObject({ origin: { kind: 'unknown' }, archived: true, path: '_archive/loose.md' })
     expect(existsSync(join(root, '_archive/loose.md'))).toBe(true)
   })
 })

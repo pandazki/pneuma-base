@@ -71,8 +71,8 @@ const check = (lib: string) =>
 function library(): string {
   const lib = join(tempDir(), 'lib')
   expect(sb.run(['init', lib]).code).toBe(0)
-  for (const name of ['kept', 'edited', 'moved']) run(lib, ['put', '-', '--to', `${name}.md`, '--brought'], `${name} 1234`)
-  run(lib, ['put', '-', '--to', 'elsewhere/anchor.md', '--brought'], 'anchor')
+  for (const name of ['kept', 'edited', 'moved']) run(lib, ['put', '-', '--to', `${name}.md`, '--imported'], `${name} 1234`)
+  run(lib, ['put', '-', '--to', 'elsewhere/anchor.md', '--imported'], 'anchor')
   mkdirSync(join(lib, 'closed/inner'), { recursive: true })
   writeFileSync(join(lib, 'closed/inner/x.txt'), 'x')
   mkdirSync(join(lib, 'node_modules/pkg'), { recursive: true })

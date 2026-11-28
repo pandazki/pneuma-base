@@ -143,7 +143,7 @@ export async function agentsPage(_params: Record<string, string>, call: ViewerCa
     about: `没发任何授权时，谁都能用整个库。断开会拿掉接上时写进那个产品的技能或 MCP 服务，再撤回授权；接上之后被你改过的，原样留着。${codexHint(root)}`,
     count: rows.length,
     blocks: rows.length > 0 ? [{ kind: 'list', items: rows }] : [{ kind: 'text', tone: 'neutral', text: '还没有接上任何 agent。' }],
-    actions: [{ ...kernelAction('grant issue', '发授权', {}), as: 'icon', icon: 'plus' }],
+    actions: [{ ...kernelAction('grant create', '发授权', {}), as: 'icon', icon: 'plus' }],
   }
 
   const found = CONNECTABLE.map((p) => ({ p, signs: signsOf(p, env) }))

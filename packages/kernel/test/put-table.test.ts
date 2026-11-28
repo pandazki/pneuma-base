@@ -15,7 +15,7 @@ function refused(r: PutResult) {
 async function asGrantee(f: Fixture, area: string | null, readOnly = false) {
   const r = await ownerFace.dispatch(
     { ctx: f.ctx, table: new Map(), env: {}, viaGrant: false, confirm: async () => false },
-    'grant issue',
+    'grant create',
     { positional: ['claude'], flags: { agent: ['claude-code'], ...(area === null ? {} : { area: [area] }), ...(readOnly ? { 'read-only': true as const } : {}) } },
   )
   if (r.outcome !== 'done') throw new Error(r.text)

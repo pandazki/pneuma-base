@@ -11,7 +11,7 @@ let sb: Sandbox
 
 before(async () => {
   sb = await sandbox({ plugins: [dist] })
-  const put = await sb.agent('claude-code', 'session-1', ['put', '-', '--to', 'notes/plan.md', '--made'], { input: '# 计划\n' })
+  const put = await sb.agent('claude-code', 'session-1', ['put', '-', '--to', 'notes/plan.md', '--generated'], { input: '# 计划\n' })
   assert.equal(put.code, 0, put.stderr)
 })
 after(() => sb.cleanup())

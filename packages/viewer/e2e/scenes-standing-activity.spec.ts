@@ -24,7 +24,7 @@ test('scenes, standing and activity: what happened and what needs attention', as
   await expect(sceneRow(DOING).getByRole('img', { name: /^claude-code/ })).toBeVisible()
   await expect(sceneRow(DOING)).toContainText('放入 6 样')
   await expect(sceneRow('把支付服务接进电子书小店').getByRole('img', { name: /^codex/ })).toBeVisible()
-  await expect(sceneRow('主人面的操作')).toContainText('grant issue')
+  await expect(sceneRow('主人面的操作')).toContainText('grant create')
   await sceneRow(DOING).getByRole('link').click()
   await expect(title).toHaveText(DOING)
   // Only the figures that are not nothing; a session of under a minute does not say how long it took.
@@ -69,7 +69,7 @@ test('scenes, standing and activity: what happened and what needs attention', as
   const rows = main.getByRole('listitem')
   await expect(rows.first().locator('.feed-name')).toHaveText('integration-notes.md')
   await expect(rows.first().getByRole('img', { name: /^codex/ })).toBeVisible()
-  const granted = rows.filter({ has: page.locator('.feed-line[title^="pneuma-base grant issue "]') })
+  const granted = rows.filter({ has: page.locator('.feed-line[title^="pneuma-base grant create "]') })
   await expect(granted.first().getByRole('img', { name: '主人' })).toBeVisible()
   // An agent acting on its own is the ordinary case, and goes unmarked.
   await expect(main.getByText('自己做的')).toHaveCount(0)

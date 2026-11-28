@@ -9,7 +9,7 @@ import { expect, openShared, tempDir, test, type Cli } from './support.ts'
 function month(pb: Cli): string {
   const lib = join(tempDir(), 'lib')
   pb.run(['init', lib])
-  for (const [grant, agent] of [['claude', 'claude-code'], ['codex', 'codex'], ['gemini', 'gemini']]) pb.run(['--library', lib, 'grant', 'issue', grant as string, '--agent', agent as string])
+  for (const [grant, agent] of [['claude', 'claude-code'], ['codex', 'codex'], ['gemini', 'gemini']]) pb.run(['--library', lib, 'grant', 'create', grant as string, '--agent', agent as string])
   writeHistory(lib, { days: 29, sessions: 2.2, seed: 11 })
   return lib
 }
@@ -65,7 +65,7 @@ test('a library with nothing recorded says so in one sentence; a week with nothi
   await expect(main.getByText('还没有可以统计的记录')).toBeVisible()
 
   // Weeks of use that ended a month ago: the last 7 days have nothing, and say so.
-  for (const [grant, agent] of [['claude', 'claude-code'], ['codex', 'codex'], ['gemini', 'gemini']]) pb.run(['--library', lib, 'grant', 'issue', grant as string, '--agent', agent as string])
+  for (const [grant, agent] of [['claude', 'claude-code'], ['codex', 'codex'], ['gemini', 'gemini']]) pb.run(['--library', lib, 'grant', 'create', grant as string, '--agent', agent as string])
   rmSync(join(lib, '.pneuma-base/ledger/facts'), { recursive: true, force: true })
   writeHistory(lib, { days: 20, sessions: 2, seed: 3, now: new Date(Date.now() - 40 * 86_400_000) })
   await page.goto(`${url}#view=ledger.stats&view.period=7d`)

@@ -15,7 +15,7 @@ test('the plugin follows the standard', async () => {
     async setup({ sandbox }) {
       await mkdir(join(sandbox.work, 'shop'), { recursive: true })
       await writeFile(join(sandbox.work, 'shop', 'index.html'), '<h1>小店</h1>\n')
-      const put = await sandbox.agent('setup', 'setup', ['put', join(sandbox.work, 'shop'), '--to', 'sites/shop', '--made'])
+      const put = await sandbox.agent('setup', 'setup', ['put', join(sandbox.work, 'shop'), '--to', 'sites/shop', '--generated'])
       assert.equal(put.code, 0, put.stderr)
       const set = await sandbox.owner(['{{name}}', 'target', 'set', '--to', join(sandbox.work, 'published')])
       assert.equal(set.code, 0, set.stderr)

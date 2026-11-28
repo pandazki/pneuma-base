@@ -17,4 +17,4 @@
 - 不要动 `.pneuma-base/` 里的任何东西。配置、插件、授权、清理是主人的事。
 - 没有 `pneuma-base` 这个命令时：把文件直接放进库里就行，别的不用做。
 
-要主人做一件管理的事，用 `ask` 写明为什么，跟上那条命令，比如 `pneuma-base @{{授权的名字}} ask "codex 也要用这个库" grant issue codex --agent codex`。主人批准就照原样运行，结果在你下次 `check` 的「你提的请求」里。
+要主人做一件管理的事，用 `ask` 写明为什么，跟上那条命令，比如 `pneuma-base @{{授权的名字}} ask "codex 也要用这个库" grant create codex --agent codex`。主人批准就照原样运行，结果在你下次 `check` 的「你提的请求」里。

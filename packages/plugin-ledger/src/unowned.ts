@@ -145,19 +145,19 @@ async function registerInside(ctx: PluginContext, dir: Place, input: string): Pr
 
 export const REGISTER = defineCommand({
   name: 'ledger register',
-  act: { kind: 'brought', object: 'dir' },
-  summary: '把还没登记的散文件记为主人带进来的；写一个目录只登记它这一层的；加 --inside 登记这个目录里的全部文件，先说有多少，再报进度，Ctrl-C 停下',
+  act: { kind: 'imported', object: 'dir' },
+  summary: '把还没登记的散文件记为主人带进来的；写一个目录只登记它这一层的；加 --recursive 登记这个目录里的全部文件，先说有多少，再报进度，Ctrl-C 停下',
   params: {
     positional: [{ name: 'dir', hint: '库内的目录，. 是库的根目录；不写是所有看过的目录' }],
-    flags: [{ name: 'inside', hint: '登记这个目录里任意深处的全部文件，噪音除外', kind: 'boolean' }],
+    flags: [{ name: 'recursive', hint: '登记这个目录里任意深处的全部文件，噪音除外', kind: 'boolean' }],
   },
   destructive: false,
   ownerOnly: true,
-  async run({ dir: input, inside }, ctx) {
+  async run({ dir: input, recursive }, ctx) {
     const dir = await placeOf(ctx, input)
     if (dir === null) return { outcome: 'refused', reason: 'not-in-library', text: `这不是库里的目录：${input}` }
-    if (inside) {
-      if (input === null) return { outcome: 'refused', reason: 'usage', text: '--inside 要写是哪个目录，整个库写 .：ledger register <目录> --inside' }
+    if (recursive) {
+      if (input === null) return { outcome: 'refused', reason: 'usage', text: '--recursive 要写是哪个目录，整个库写 .：ledger register <目录> --recursive' }
       return registerInside(ctx, dir, input)
     }
     await stateOf(ctx)
@@ -167,8 +167,8 @@ export const REGISTER = defineCommand({
   },
 })
 
-export const LEAVE = defineCommand({
-  name: 'ledger leave',
+export const DISMISS = defineCommand({
+  name: 'ledger dismiss',
   act: { kind: 'hidden', object: 'dir', name: '没登记的散文件' },
   summary: '还没登记的散文件照原样留着，不再为它们问主人；写一个目录只管它这一层的',
   params: { positional: [{ name: 'dir', hint: '库内的目录；不写是所有看过的目录' }] },
@@ -199,11 +199,11 @@ const filesText = (p: Probe) => `${p.exceeded ? '至少 ' : ''}${p.files} 个`
  * says first what it will register, as far as a look into the directory found.
  */
 export function closedActions(path: LibraryPath, look: Probe | null = null): Action[] {
-  const inside = ownerAction('登记里面的文件', REGISTER, { dir: path, inside: true })
+  const inside = ownerAction('登记里面的文件', REGISTER, { dir: path, recursive: true })
   return [
     { label: '登记成一样东西', tone: 'default', confirm: null, inputs: [], call: { face: 'agent', verb: 'put', request: { kind: 'register', path, origin: { kind: 'brought', source: null, by: 'owner' }, note: null } } },
     { ...inside, confirm: `要登记 ${path}/ 里任意深处的全部文件${look === null ? '' : `：${filesText(look)}`}，不含噪音。` },
-    { label: '不用管', tone: 'default', confirm: null, inputs: [], call: { face: 'owner', command: 'noise add', args: { positional: [path], flags: {} } } },
+    { label: '不用管', tone: 'default', confirm: null, inputs: [], call: { face: 'owner', command: 'ignore add', args: { positional: [path], flags: {} } } },
   ]
 }
 
@@ -231,7 +231,7 @@ export async function unownedAsks(ctx: PluginContext): Promise<PluginAsk[]> {
     key: `ledger:unregistered:${dir}`,
     text: `${dirName(dir)}有${partial.has(dir) ? '至少' : ''} ${value.loose.length} 个文件还没登记。都记为你带进来的吗？`,
     about: dir === '' ? null : (dir as LibraryPath),
-    actions: [ownerAction('都记为我带进来的', REGISTER, { dir: dir === '' ? '.' : dir, inside: false }), ownerAction('不登记，不再问', LEAVE, { dir: dir === '' ? '.' : dir })],
+    actions: [ownerAction('都记为我带进来的', REGISTER, { dir: dir === '' ? '.' : dir, recursive: false }), ownerAction('不登记，不再问', DISMISS, { dir: dir === '' ? '.' : dir })],
     suggested: 0,
   }))
   const closed = await standingList(records, 'closed', false, ASKS)
@@ -242,5 +242,5 @@ export async function unownedAsks(ctx: PluginContext): Promise<PluginAsk[]> {
   }
   const places = (page.more === null ? page.rows.length : await records.count('seen', 'loose', 'y')) + closed.count
   if (places <= ASKS) return asks
-  return [...asks.slice(0, ASKS - 1), { key: 'ledger:unregistered:more', text: `还有 ${places - (ASKS - 1)} 个地方有没登记的东西，都在状况页上：pneuma-base show ledger.standing --kind unowned`, about: null, actions: [] }]
+  return [...asks.slice(0, ASKS - 1), { key: 'ledger:unregistered:more', text: `还有 ${places - (ASKS - 1)} 个地方有没登记的东西，都在状况页上：pneuma-base show ledger.status --kind unowned`, about: null, actions: [] }]
 }

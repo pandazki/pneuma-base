@@ -23,14 +23,14 @@ function library(plugins: string[], testPlugins = false) {
   const exec = testPlugins ? sb.runWithTestPlugins : sb.run
   ok(exec(['init', lib, '--bare']))
   const owner = (args: string[], env?: Record<string, string>) => exec([...args, '--library', lib], { cwd: outside, ...(env ? { env } : {}) })
-  for (const plugin of plugins) ok(owner(['plugin', 'add', plugin]))
+  for (const plugin of plugins) ok(owner(['plugin', 'enable', plugin]))
   const agent = (args: string[], input?: string | Buffer) =>
     exec(['--library', lib, '--as', 'claude-code', '--session', 's1', ...args], { cwd: outside, ...(input === undefined ? {} : { input }) })
   return {
     lib,
     owner,
     agent,
-    put: (content: string | Buffer, to: string) => agent(['put', '-', '--to', to, '--made', '--json'], content),
+    put: (content: string | Buffer, to: string) => agent(['put', '-', '--to', to, '--generated', '--json'], content),
     declare: (...args: string[]) => ok(agent(['say', 'versioned', ...args, '--json'])).json(),
     versions: (path: string) => ok(owner(['version', 'list', path, '--json'])).json().data.versions as any[],
     text: (path: string) => readFileSync(join(lib, path), 'utf8'),
@@ -76,10 +76,10 @@ describe('versions of a declared thing (C4)', () => {
     const site = join(outside, 'b-site')
     const V1 = { 'index.html': '<h1>1</h1>', 'css/a.css': 'a{}' }
     writeTree(site, V1)
-    ok(agent(['put', site, '--to', 'b/site', '--made']))
+    ok(agent(['put', site, '--to', 'b/site', '--generated']))
     expect(declare('b/site/index.html').note).toContain('b/site')
     writeTree(site, { 'index.html': '<h1>2</h1>', 'js/b.js': 'b()' })
-    expect(ok(agent(['put', site, '--to', 'b/site', '--made', '--json'])).json()).toMatchObject({ outcome: 'accepted', copied: true })
+    expect(ok(agent(['put', site, '--to', 'b/site', '--generated', '--json'])).json()).toMatchObject({ outcome: 'accepted', copied: true })
     expect(readFileSync(join(lib, 'b/site/index.html'), 'utf8')).toBe('<h1>2</h1>')
     expect(versions('b/site').map((v) => [v.n, v.files])).toEqual([
       [1, 2],
@@ -117,7 +117,7 @@ describe('versions of a declared thing (C4)', () => {
     const { agent, put, declare, versions } = ledgered
     ok(put('v1', 'c/report.md'))
     declare('c/report.md', '初稿')
-    const second = ok(agent(['put', '-', '--to', 'c/report.md', '--made', '--note', '按新成本重算早鸟价', '--json'], 'v2')).json()
+    const second = ok(agent(['put', '-', '--to', 'c/report.md', '--generated', '--note', '按新成本重算早鸟价', '--json'], 'v2')).json()
     expect(second).toMatchObject({ outcome: 'accepted', copied: true })
     expect(second.notes.map((n: any) => n.text).join('\n')).toContain('记为 c/report.md 的第 2 版：「按新成本重算早鸟价」')
     expect(versions('c/report.md').map((v) => [v.n, v.note])).toEqual([
@@ -148,7 +148,7 @@ describe('versions of a declared thing (C4)', () => {
     declare('d/report.md')
     const site = join(outside, 'd-site')
     writeTree(site, { 'index.html': '<h1>1</h1>', 'css/a.css': 'a{}' })
-    ok(agent(['put', site, '--to', 'd/site', '--made']))
+    ok(agent(['put', site, '--to', 'd/site', '--generated']))
     declare('d/site')
     writeFileSync(join(lib, 'd/report.md'), 'edited by hand')
     writeFileSync(join(lib, 'd/site/css/a.css'), 'a{color:red}')
@@ -201,11 +201,11 @@ describe('versions of a declared thing (C4)', () => {
     const { lib, agent, owner, declare, versions } = plain
     const site = join(outside, 'g-site')
     writeTree(site, { 'index.html': '<h1>1</h1>', 'css/a.css': 'a{}' })
-    ok(agent(['put', site, '--to', 'g/site', '--made']))
+    ok(agent(['put', site, '--to', 'g/site', '--generated']))
     declare('g/site')
     writeFileSync(join(lib, 'g/site/css/a.css'), 'a{color:red}')
     writeTree(site, { 'index.html': '<h1>2</h1>' })
-    ok(agent(['put', site, '--to', 'g/site', '--made']))
+    ok(agent(['put', site, '--to', 'g/site', '--generated']))
     expect(versions('g/site').map((v) => [v.n, v.via])).toEqual([
       [1, 'declare'],
       [2, 'outside'],
@@ -260,7 +260,7 @@ describe('versions of a declared thing (C4)', () => {
     ok(put('v1', 'j/report.md'))
     declare('j/report.md')
     ok(put('v2', 'j/report.md'))
-    ok(owner(['grant', 'issue', 'claude', '--agent', 'claude-code']))
+    ok(owner(['grant', 'create', 'claude', '--agent', 'claude-code']))
     ok(sb.run(['@claude', 'version', 'export', 'j/report.md', '--version', '1', '--to', join(outside, 'j-a.md')], { cwd: outside }))
     expect(readFileSync(join(outside, 'j-a.md'), 'utf8')).toBe('v1')
 
@@ -271,7 +271,7 @@ describe('versions of a declared thing (C4)', () => {
     expect(owner(['version', 'prune', 'j/report.md', '--keep', '1']).stdout).toContain('not-confirmed')
     expect(versions('j/report.md').map((v) => v.pruned)).toEqual([false, false])
 
-    ok(owner(['grant', 'issue', 'reader', '--agent', 'claude-code', '--read-only']))
+    ok(owner(['grant', 'create', 'reader', '--agent', 'claude-code', '--read-only']))
     const r = sb.run(['@reader', 'version', 'restore', 'j/report.md', '--version', '1', '--json'], { cwd: outside })
     expect(r.code).toBe(2)
     expect(r.json()).toMatchObject({ outcome: 'refused', reason: 'outside-grant' })
@@ -294,7 +294,7 @@ describe('versions of a declared thing (C4)', () => {
     ok(put('v2', 'report.md'))
     const site = join(outside, 'k-site')
     writeTree(site, V2)
-    ok(agent(['put', site, '--to', 'sites/a', '--made']))
+    ok(agent(['put', site, '--to', 'sites/a', '--generated']))
 
     const dir = join(lib, '.pneuma-base/version')
     for (const content of ['v1', 'v2', ...Object.values(V1), ...Object.values(V2)]) writeTree(dir, { [`objects/${sha(content).slice(0, 2)}/${sha(content)}`]: content })

@@ -23,7 +23,7 @@ function frontMatter(text: string): Record<string, string> {
 describe('skill install', () => {
   it('writes a skill for claude and for codex, and the grant’s local copy', () => {
     for (const [grant, product, agent] of [['claude', 'claude-code', 'claude'], ['codex', 'codex', 'codex']] as const) {
-      expect(sb.run(['grant', 'issue', grant, '--library', lib, '--agent', product]).code).toBe(0)
+      expect(sb.run(['grant', 'create', grant, '--library', lib, '--agent', product]).code).toBe(0)
       const target = tempDir('pb-skills-')
       const r = sb.run(['skill', 'install', grant, '--agent', agent, '--dir', target, '--json'])
       expect(r.code, r.stderr).toBe(0)
@@ -46,7 +46,7 @@ describe('skill install', () => {
   it('accepts any agent name, defaults --agent to the grant’s agent, and refuses an unknown grant or missing --dir', () => {
     const target = tempDir('pb-skills-')
     expect(sb.run(['skill', 'install', 'nobody', '--agent', 'claude', '--dir', target]).code).toBe(2)
-    sb.run(['grant', 'issue', 'agy', '--library', lib, '--agent', 'antigravity'])
+    sb.run(['grant', 'create', 'agy', '--library', lib, '--agent', 'antigravity'])
     expect(sb.run(['skill', 'install', 'agy']).code).toBe(1)
 
     const defaulted = sb.run(['skill', 'install', 'agy', '--dir', target, '--json'])
@@ -63,7 +63,7 @@ describe('skill install', () => {
 describe('grant revoke', () => {
   it('removes the grant and its local copy; a kept copy of a revoked grant is refused, and so is a grant that does not exist', () => {
     expect(sb.run(['grant', 'revoke', 'nobody', '--library', lib]).code).toBe(2)
-    sb.run(['grant', 'issue', 'claude', '--library', lib, '--agent', 'claude-code'])
+    sb.run(['grant', 'create', 'claude', '--library', lib, '--agent', 'claude-code'])
     const file = join(sb.home, '.pneuma-base', 'grants', 'claude.json')
     const r = sb.run(['grant', 'revoke', 'claude', '--library', lib])
     expect(r.code, r.stderr).toBe(0)
@@ -72,7 +72,7 @@ describe('grant revoke', () => {
     expect(sb.run(['@claude', 'find']).stdout).toContain('no-such-grant')
 
     // A local copy kept past the revocation still names the revoked grant's id.
-    sb.run(['grant', 'issue', 'other', '--library', lib, '--agent', 'x'])
+    sb.run(['grant', 'create', 'other', '--library', lib, '--agent', 'x'])
     const otherFile = join(sb.home, '.pneuma-base', 'grants', 'other.json')
     const copy = readFileSync(otherFile, 'utf8')
     sb.run(['grant', 'revoke', 'other', '--library', lib])

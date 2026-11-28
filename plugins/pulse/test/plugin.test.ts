@@ -81,9 +81,9 @@ test('puts and archives are counted per actor; moves and taking back are not', a
     const done = await r
     assert.equal(done.code, 0, done.stderr || done.stdout)
   }
-  await ok(sb.agent('claude-code', 's1', ['put', '-', '--to', 'notes/a.md', '--made'], { input: '# a\n' }))
-  await ok(sb.agent('claude-code', 's1', ['put', '-', '--to', 'notes/b.md', '--made'], { input: '# b\n' }))
-  await ok(sb.agent('codex', 's2', ['put', '-', '--to', 'notes/c.md', '--made'], { input: '# c\n' }))
+  await ok(sb.agent('claude-code', 's1', ['put', '-', '--to', 'notes/a.md', '--generated'], { input: '# a\n' }))
+  await ok(sb.agent('claude-code', 's1', ['put', '-', '--to', 'notes/b.md', '--generated'], { input: '# b\n' }))
+  await ok(sb.agent('codex', 's2', ['put', '-', '--to', 'notes/c.md', '--generated'], { input: '# c\n' }))
   await ok(sb.agent('codex', 's2', ['archive', 'notes/c.md']))
   await ok(sb.agent('codex', 's2', ['unarchive', 'notes/c.md']))
   await ok(sb.agent('claude-code', 's1', ['put', 'notes/b.md', '--to', 'notes/b2.md']))
@@ -135,7 +135,7 @@ test('clearing is destructive: refused for an agent and without confirmation, do
   assert.equal(after.subtitle, `最近 ${DAYS} 天 0 次`)
   assert.equal(find(after.blocks, 'table')?.rows.length, 0)
 
-  const put = await sb.agent('codex', 's3', ['put', '-', '--to', 'notes/d.md', '--made'], { input: '# d\n' })
+  const put = await sb.agent('codex', 's3', ['put', '-', '--to', 'notes/d.md', '--generated'], { input: '# d\n' })
   assert.equal(put.code, 0, put.stderr)
   assert.equal((await page()).subtitle, `最近 ${DAYS} 天 1 次`)
 })
@@ -147,7 +147,7 @@ test('records an earlier version wrote in activity/ still count, beside the ones
     mkdirSync(dir, { recursive: true })
     const at = new Date(Date.now() - 60_000).toISOString()
     writeFileSync(join(dir, '20261101000000000-abcdef01.jsonl'), `${JSON.stringify({ id: 'f_old', at, actor: { kind: 'agent', name: 'codex' }, session: 'old', what: 'put', path: 'notes/old.md' })}\n`)
-    const put = await own.agent('claude-code', 's1', ['put', '-', '--to', 'notes/new.md', '--made'], { input: '# new\n' })
+    const put = await own.agent('claude-code', 's1', ['put', '-', '--to', 'notes/new.md', '--generated'], { input: '# new\n' })
     assert.equal(put.code, 0, put.stderr)
     const viewer = await own.viewer()
     const shown = (await viewer.view(PAGE)) as Shown

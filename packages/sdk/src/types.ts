@@ -178,7 +178,11 @@ export type PluginNoteAnswer = PluginNote | { note: PluginNote | null; problems:
 
 // ---- put ----
 
-/** `P` is `string` in a request (as the caller wrote it) and `LibraryPath` once the kernel parsed it. */
+/**
+ * `P` is `string` in a request (as the caller wrote it) and `LibraryPath` once the kernel parsed it.
+ * The kinds are the records' words: `brought` is what the faces call imported (`put --imported`),
+ * `made` generated (`put --generated`).
+ */
 export type Origin<P = LibraryPath> =
   | { kind: 'brought'; source: string | null; by: string | null }
   | { kind: 'made'; from: P[]; outside: string[] }
@@ -201,11 +205,11 @@ export type PutRequest =
  * `inside-bundle`: the path lies inside a bundle, which changes only as a whole; `subject` is the
  * bundle. A put refused because no plugin held the replaced content carries, as `notes`, why each
  * plugin with `revise` declined. `agent-session`: an agent put with `observed`, which is the owner's.
- * `noise`: the library's noise names the path. `busy`: another write holds the place, or it changed
+ * `ignored`: the library's ignore rules name the path. `busy`: another write holds the place, or it changed
  * while this one went; nothing changed. `too-many`: a directory with more files than one thing takes
  * (5000); `subject` says how many at least.
  */
-export type PutRefusal = 'outside-library' | 'outside-grant' | 'no-such-file' | 'would-overwrite' | 'inside-bundle' | 'agent-session' | 'noise' | 'busy' | 'too-many'
+export type PutRefusal = 'outside-library' | 'outside-grant' | 'no-such-file' | 'would-overwrite' | 'inside-bundle' | 'agent-session' | 'ignored' | 'busy' | 'too-many'
 
 export type PutResult =
   | { outcome: 'accepted'; path: LibraryPath; fingerprint: Fingerprint | null; copied: boolean; notes: Note[]; problems: PluginProblem[] }
@@ -303,12 +307,12 @@ export type Level = { entries: { name: string; kind: 'file' | 'dir' | 'other'; s
 /**
  * A directory that is no thing, as inspect sees it: `open` when something registered lies in it (its
  * first level), `closed` otherwise (a probe within a budget: at least how many files, which project
- * markers at its top). `noise`: a place the library's noise names, and by which name or path.
+ * markers at its top). `ignored`: a place the library's ignore rules name, and by which name or path.
  */
 export type PlaceFacts =
   | { kind: 'open'; path: LibraryPath; level: Level }
   | { kind: 'closed'; path: LibraryPath; files: number; exceeded: boolean; markers: string[] }
-  | { kind: 'noise'; path: LibraryPath; by: { name: string } | { path: string } }
+  | { kind: 'ignored'; path: LibraryPath; by: { name: string } | { path: string } }
 /**
  * A thing's content, as inspect gives it when asked. `text`: a file of UTF-8 text within the kernel's
  * limit (256 KB). `other`: any other file, with its size and the media type its name says, null when
@@ -325,7 +329,7 @@ export type Content =
   | { kind: 'elsewhere'; path: LibraryPath; size: number | null; provider: string | null }
   | { kind: 'unavailable'; path: LibraryPath | null; reason: 'outside-grant' | 'no-such-file' | 'not-a-bundle' }
 /**
- * `file`: the thing the target names. `place`: a directory that is no thing, or noise, when that is
+ * `file`: the thing the target names. `place`: a directory that is no thing, or an ignored place, when that is
  * what the target names. `content` is there only when the request asked for it; `request`, when the
  * target is a request's id.
  */
@@ -416,8 +420,8 @@ export type AskResult =
 // ---- archive ----
 
 export type ArchiveRequest = { kind: 'archive' | 'unarchive'; path: string }
-/** `noise`: the library's noise names the path. `busy`: another write holds it, or it changed while this one went; nothing moved. */
-export type ArchiveRefusal = 'outside-library' | 'outside-grant' | 'no-such-file' | 'original-path-taken' | 'inside-bundle' | 'noise' | 'busy'
+/** `ignored`: the library's ignore rules name the path. `busy`: another write holds it, or it changed while this one went; nothing moved. */
+export type ArchiveRefusal = 'outside-library' | 'outside-grant' | 'no-such-file' | 'original-path-taken' | 'inside-bundle' | 'ignored' | 'busy'
 export type ArchiveResult =
   | { outcome: 'accepted'; from: LibraryPath; to: LibraryPath; moved: boolean; notes: Note[]; problems: PluginProblem[] }
   | { outcome: 'refused'; reason: ArchiveRefusal; subject: string; problems: PluginProblem[] }
@@ -505,7 +509,7 @@ export type CommandArgs = OwnerArgs & { readonly values: OwnerValues }
  * `defineCommand` to get the values typed.
  */
 export interface OwnerCommand {
-  readonly name: string // `<plugin> ` and one or more words, e.g. 'ledger held restore'
+  readonly name: string // `<plugin> ` and one or more words, e.g. 'ledger copies restore'
   readonly summary: string
   readonly params: OwnerParams
   readonly destructive: boolean
@@ -597,17 +601,17 @@ export interface Plugin {
   readonly observe?: (event: Event, ctx: PluginContext) => Promise<void>
   /** After `archive purge` deleted things, with their library paths as they were in the archive. */
   readonly onPurged?: (paths: readonly LibraryPath[], ctx: PluginContext) => Promise<void>
-  /** Once, after `plugin add` installed it. A problem it answers, or a throw, is shown in the answer of `plugin add`, which still succeeds. */
+  /** Once, after `plugin enable` installed it. A problem it answers, or a throw, is shown in the answer of `plugin enable`, which still succeeds. */
   readonly onAdd?: (ctx: PluginContext) => Promise<void | { problems: string[] }>
   /**
-   * Before `plugin remove` takes it out. It may refuse with a Chinese sentence saying why and what to
-   * do first. `plugin remove <name> --anyway` removes it all the same, and the answer repeats the sentence.
+   * Before `plugin disable` takes it out. It may refuse with a Chinese sentence saying why and what to
+   * do first. `plugin disable <name> --force` removes it all the same, and the answer repeats the sentence.
    */
   readonly onRemove?: (ctx: PluginContext) => Promise<void | { refuse: string }>
   /**
    * One page of what was registered before it was added, as `tools.registered` gives it: what it would
    * have learned from the puts it did not hear. The kernel's catching up calls it page after page, on
-   * `plugin add` of a library that has registered things and on `plugin catch-up`; a page may come
+   * `plugin enable` of a library that has registered things and on `plugin backfill`; a page may come
    * again after an interruption, so learning one twice must change nothing.
    */
   readonly catchUp?: (things: readonly RegisteredThing[], ctx: PluginContext) => Promise<void>
@@ -756,15 +760,15 @@ export type TableColumn = { key: string; label: string; optional?: boolean }
  */
 /** The kinds of act a feed row draws as an icon: an agent's on the content, and what an owner command did (`OwnerAct`). */
 export const FEED_ACTS = [
-  'made',
-  'brought',
+  'generated',
+  'imported',
   'changed',
   'moved',
   'archived',
   'restored',
   'note',
   'decision',
-  'doing',
+  'task',
   'basis',
   'removed',
   'command',

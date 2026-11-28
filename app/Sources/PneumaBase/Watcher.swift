@@ -4,7 +4,7 @@ import Foundation
 /// in its long-lived mode (`serve --root <library>`), subscribes from the cursor it last kept, and acts
 /// on the places it hears of. It has no event stream of its own. With 直接放进来的文件算主人的 on, it
 /// records, through the command line, what the owner did to the library outside the tools: a file
-/// that appeared is registered as brought by the owner and seen (`put --brought --by owner --observed`),
+/// that appeared is registered as brought by the owner and seen (`put --imported --by owner --observed`),
 /// a file changed directly is recorded as a change seen (`say revised --observed`), and a new directory
 /// is registered as one thing only when a probe within its budget finds it small and plain (no project
 /// marker at its top); any other directory stays the ledger's question.
@@ -219,7 +219,7 @@ final class Watcher {
     let looking = touched
     touched = []
     Log.line("watcher: looking")
-    let result = await runCli(["--library", library.path, "show", "ledger.standing", "--json"], in: library, config: config)
+    let result = await runCli(["--library", library.path, "show", "ledger.status", "--json"], in: library, config: config)
     guard result.json?["outcome"] as? String == "shown", let blocks = result.json?["blocks"] as? [[String: Any]] else {
       Log.line("watcher: no standing page: \(result.err.prefix(200)) \(String(decoding: result.out.prefix(200), as: UTF8.self))")
       touched.formUnion(looking)
@@ -244,7 +244,7 @@ final class Watcher {
 
     var registered: [String] = [], seen: [String] = []
     for path in unowned.sorted() + small {
-      var args = ["--library", library.path, "--session", config.session, "put", path, "--brought", "--by", "owner", "--observed", "--note", "自动登记", "--json"]
+      var args = ["--library", library.path, "--session", config.session, "put", path, "--imported", "--by", "owner", "--observed", "--note", "自动登记", "--json"]
       if let from = await whereFrom(path) { args += ["--source", from] }
       let r = await runCli(args, in: library, config: config)
       // Someone registered it between the look and this put: the ledger keeps their record and only notes ours.

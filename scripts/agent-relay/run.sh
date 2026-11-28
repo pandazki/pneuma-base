@@ -22,8 +22,8 @@ export PATH="$ROOT/bin:$PATH"
 unset CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID PNEUMA_BASE_SESSION
 
 pneuma-base init "$ROOT/lib" || exit 1
-pneuma-base grant issue studio-claude --library "$ROOT/lib" --agent claude || exit 1
-pneuma-base grant issue studio-codex --library "$ROOT/lib" --agent codex || exit 1
+pneuma-base grant create studio-claude --library "$ROOT/lib" --agent claude || exit 1
+pneuma-base grant create studio-codex --library "$ROOT/lib" --agent codex || exit 1
 pneuma-base skill install studio-claude --agent claude --dir "$DIR_A/.claude/skills" || exit 1
 pneuma-base skill install studio-codex --agent codex --dir "$DIR_B/.agents/skills" || exit 1
 cp "$HERE"/quotes/*.txt "$DIR_A/quotes/"

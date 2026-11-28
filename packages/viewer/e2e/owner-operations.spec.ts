@@ -11,11 +11,11 @@ test('every owner operation from the page leaves a trace an agent sees in check'
   const work = tempDir('pb-e2e-work-')
   const skills = tempDir('pb-e2e-skills-')
   pb.run(['init', lib], { testPlugins: true })
-  pb.run(['grant', 'issue', 'claude', '--library', lib, '--agent', 'claude-code'], { testPlugins: true })
+  pb.run(['grant', 'create', 'claude', '--library', lib, '--agent', 'claude-code'], { testPlugins: true })
   const agent = (args: string[], input?: string) => pb.run(['@claude', ...args], { cwd: work, env: { PNEUMA_BASE_SESSION: 'agent-session' }, testPlugins: true, ...(input === undefined ? {} : { input }) })
-  agent(['put', '-', '--to', 'doc.md', '--made'], 'first version\n')
-  agent(['put', '-', '--to', 'doc.md', '--made'], 'second version\n')
-  agent(['put', '-', '--to', 'notes.md', '--brought'], 'notes\n')
+  agent(['put', '-', '--to', 'doc.md', '--generated'], 'first version\n')
+  agent(['put', '-', '--to', 'doc.md', '--generated'], 'second version\n')
+  agent(['put', '-', '--to', 'notes.md', '--imported'], 'notes\n')
   write(lib, 'dropped.md', 'dropped in by hand\n')
   write(lib, 'summary.md', 'a summary written by hand\n')
   write(lib, 'notes.md', 'notes, edited by hand\n')
@@ -110,7 +110,7 @@ test('every owner operation from the page leaves a trace an agent sees in check'
   const switchedOn = main.getByRole('listitem').filter({ has: page.getByRole('img', { name: '打开' }) }).filter({ hasText: 'pager' }).first()
   await expect(switchedOn).toBeVisible()
   await expect(switchedOn).not.toContainText('已装上')
-  for (const command of ['ledger held restore', 'plugin add', 'plugin remove', 'grant issue', 'grant revoke', 'skill install']) {
+  for (const command of ['ledger copies restore', 'plugin enable', 'plugin disable', 'grant create', 'grant revoke', 'skill install']) {
     // The row says what was done to what; the command as given is its tooltip.
     await expect(main.getByRole('listitem').filter({ has: page.locator(`.feed-line[title^="pneuma-base ${command} "]`) }).first().getByRole('img', { name: '主人' })).toBeVisible()
   }
@@ -118,19 +118,19 @@ test('every owner operation from the page leaves a trace an agent sees in check'
 
   // An agent's check reports what changed content or capabilities, not the grant or the skill.
   const news = agent(['check']).stdout
-  for (const line of ['主人面的操作 ledger held restore', '放入 doc.first.md', '放入 dropped.md（带进来的，主人给的）', '放入 summary.md（做出来的）', '认了 notes.md 的直接改动', '主人面的操作 plugin add', '主人面的操作 plugin remove']) {
+  for (const line of ['主人面的操作 ledger copies restore', '放入 doc.first.md', '放入 dropped.md（带进来的，主人给的）', '放入 summary.md（做出来的）', '认了 notes.md 的直接改动', '主人面的操作 plugin enable', '主人面的操作 plugin disable']) {
     expect(news).toContain(line)
   }
-  for (const quiet of ['grant issue', 'grant revoke', 'skill install']) expect(news).not.toContain(quiet)
+  for (const quiet of ['grant create', 'grant revoke', 'skill install']) expect(news).not.toContain(quiet)
 })
 
 test('removing a plugin that refuses offers 仍然卸下, which asks with the plugin’s sentence and removes it anyway', async ({ page, pb }) => {
   const lib = join(tempDir(), 'lib')
   const www = tempDir('pb-e2e-www-')
   pb.run(['init', lib])
-  pb.run(['plugin', 'add', 'deploy', '--library', lib])
+  pb.run(['plugin', 'enable', 'deploy', '--library', lib])
   pb.run(['deploy', 'target', 'set', '--kind', 'dir', '--to', www, '--library', lib])
-  pb.run(['--library', lib, '--as', 'claude-code', 'put', '-', '--to', 'site.html', '--made'], { input: '<h1>hi</h1>\n' })
+  pb.run(['--library', lib, '--as', 'claude-code', 'put', '-', '--to', 'site.html', '--generated'], { input: '<h1>hi</h1>\n' })
   pb.run(['--library', lib, '--as', 'claude-code', 'say', 'deployable', 'site.html'])
   pb.run(['deploy', 'on', 'site.html', '--library', lib])
 

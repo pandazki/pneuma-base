@@ -56,7 +56,7 @@ function prepare(name, lib, fill) {
   const env = machine(name)
   const owner = (...a) => execFileSync(process.execPath, [bin, '--library', lib, ...a], { env, stdio: 'pipe', encoding: 'utf8' })
   execFileSync(process.execPath, [bin, 'init', lib], { env, stdio: 'ignore' })
-  for (const p of PLUGINS) owner('plugin', 'add', p)
+  for (const p of PLUGINS) owner('plugin', 'enable', p)
   fill?.(lib, env)
   const outside = join(scratch, `outside-${name}`)
   mkdirSync(join(outside, 'sync'), { recursive: true })
@@ -71,19 +71,19 @@ async function bench(name, lib, env, owner) {
   const agent = (i, tag, args, input) => ({ env: { ...env, CLAUDE_CODE_SESSION_ID: `bench-${tag}-${i}` }, args: ['--library', lib, ...args], input, cwd: lib })
   const quiet = (args, input) => spawnSync(process.execPath, [bin, '--library', lib, ...args], { env: { ...env, CLAUDE_CODE_SESSION_ID: 'bench-setup' }, cwd: lib, input: input ?? '', stdio: ['pipe', 'ignore', 'ignore'] })
   const note = '# 一页笔记\n\n用来量放入、查找和版本。\n'
-  quiet(['put', '-', '--to', 'bench/known.md', '--made', '--note', '一页笔记'], note)
-  for (let i = 0; i <= runs; i++) quiet(['put', '-', '--to', `bench/versioned-${i}.md`, '--made'], `${note}${i}\n`)
+  quiet(['put', '-', '--to', 'bench/known.md', '--generated', '--note', '一页笔记'], note)
+  for (let i = 0; i <= runs; i++) quiet(['put', '-', '--to', `bench/versioned-${i}.md`, '--generated'], `${note}${i}\n`)
   const site = join(scratch, `site-${name}`)
   mkdirSync(site, { recursive: true })
   writeFileSync(join(site, 'index.html'), '<h1>一页</h1>\n')
-  quiet(['put', site, '--to', 'bench/site', '--made'])
+  quiet(['put', site, '--to', 'bench/site', '--generated'])
   quiet(['say', 'deployable', 'bench/site'])
   owner('deploy', 'on', 'bench/site')
   const t = performance.now()
   const once = spawnSync(process.execPath, [bin, '--library', lib, 'sync', 'now'], { env, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', maxBuffer: 1 << 26 })
   const first = { ms: performance.now() - t, files: filesUnder(join(scratch, `outside-${name}`, 'sync')), failed: once.status === 0 || once.status === 3 ? null : `exit ${once.status}: ${once.stdout.slice(0, 120)}` }
   const rows = {
-    'put one file': measure((i) => agent(i, 'put', ['put', '-', '--to', `bench/put-${i}-${Date.now()}.md`, '--made'], note)),
+    'put one file': measure((i) => agent(i, 'put', ['put', '-', '--to', `bench/put-${i}-${Date.now()}.md`, '--generated'], note)),
     find: measure((i) => agent(i, 'find', ['find', '笔记'])),
     inspect: measure((i) => agent(i, 'inspect', ['inspect', 'bench/known.md'])),
     check: measure((i) => agent(i, 'check', ['check'])),
@@ -113,12 +113,12 @@ function dirsWithFiles(lib, rel = '') {
 
 function synthetic(lib, env) {
   const cli = (...a) => execFileSync(process.execPath, [bin, '--library', lib, ...a], { env, stdio: 'ignore' })
-  for (const [grant, agent] of [['claude', 'claude-code'], ['codex', 'codex'], ['gemini', 'gemini']]) cli('grant', 'issue', grant, '--agent', agent)
+  for (const [grant, agent] of [['claude', 'claude-code'], ['codex', 'codex'], ['gemini', 'gemini']]) cli('grant', 'create', grant, '--agent', agent)
   const made = writeHistory(lib, { days: 760, sessions: 14, talk: 5.2, seed: 7 })
   const t = performance.now()
   const dirs = dirsWithFiles(lib)
   for (const dir of dirs) {
-    const put = spawnSync(process.execPath, [bin, '--library', lib, 'put', dir, '--made'], { env: { ...env, CLAUDE_CODE_SESSION_ID: 'bench-register' }, cwd: lib, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', maxBuffer: 1 << 26 })
+    const put = spawnSync(process.execPath, [bin, '--library', lib, 'put', dir, '--generated'], { env: { ...env, CLAUDE_CODE_SESSION_ID: 'bench-register' }, cwd: lib, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', maxBuffer: 1 << 26 })
     if (put.status !== 0 && put.status !== 3) throw new Error(`put ${dir} exited ${put.status}:\n${put.stdout.slice(-2000)}\n${put.stderr.slice(-4000)}`)
   }
   console.log(`synthetic: ${made.things} things, ${made.facts} facts; ${dirs.length} directories put in ${((performance.now() - t) / 1000).toFixed(1)} s`)

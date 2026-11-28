@@ -50,7 +50,7 @@ describe('「开始」 on the home page', () => {
     ])
     const [connect, first, say] = steps as [Step, Step, Step]
     expect(connect.blocks).toMatchObject([{ kind: 'list', items: [{ cell: { text: 'Claude Code', actor: { kind: 'agent', name: 'claude-code' } }, actions: [{ label: '接上', inputs: [], call: { face: 'owner', command: 'agent connect', args: { positional: ['claude-code'], flags: {} } } }] }] }])
-    expect(first.blocks).toEqual([{ kind: 'drop', to: 'inbox', command: `pneuma-base put <文件或文件夹> --to inbox/<名字> --brought --by owner --library ${lib}` }])
+    expect(first.blocks).toEqual([{ kind: 'drop', to: 'inbox', command: `pneuma-base put <文件或文件夹> --to inbox/<名字> --imported --by owner --library ${lib}` }])
     expect(say.blocks).toMatchObject([{ kind: 'list', items: [{ cell: { text: '看看我的 Pneuma Base 库里有什么。', copy: true } }] }])
   })
 
@@ -61,7 +61,7 @@ describe('「开始」 on the home page', () => {
     expect(stepsOf(home())?.[0]?.blocks).toMatchObject([{ kind: 'list', items: [{ cell: { text: 'Claude Code' }, note: '已接上 · 技能 · 授权 claude-code', actions: [] }] }])
 
     writeFileSync(join(work, 'paper.pdf'), '%PDF')
-    run(['--library', lib, 'put', join(work, 'paper.pdf'), '--to', 'inbox/paper.pdf', '--brought', '--by', 'owner'])
+    run(['--library', lib, 'put', join(work, 'paper.pdf'), '--to', 'inbox/paper.pdf', '--imported', '--by', 'owner'])
     expect(states(stepsOf(home()))).toEqual(['connect:已接上 Claude Code', 'first:库的根目录里有 1 样东西', 'say:todo'])
 
     run(['@claude-code', 'start', '看看库里有什么'])
@@ -70,7 +70,7 @@ describe('「开始」 on the home page', () => {
 
   it('counts a grant issued by hand as an agent connected, as the agents page lists it', () => {
     run(['init', lib])
-    run(['grant', 'issue', 'grok', '--library', lib, '--agent', 'grok-bot'])
+    run(['grant', 'create', 'grok', '--library', lib, '--agent', 'grok-bot'])
     expect(states(stepsOf(home()))).toEqual(['connect:已接上 grok-bot', 'first:todo', 'say:todo'])
   })
 
@@ -116,7 +116,7 @@ describe('「开始」 on the home page', () => {
     const text = run(['--library', lib, 'show', 'home']).stdout
     expect(text).toContain('## 开始\n1 / 3\n[✓] 接上你的 agent：已接上 Claude Code\n')
     expect(text).toContain('[ ] 放进第一样东西\n')
-    expect(text).toContain(`    $ pneuma-base put <文件或文件夹> --to inbox/<名字> --brought --by owner --library ${lib}\n`)
+    expect(text).toContain(`    $ pneuma-base put <文件或文件夹> --to inbox/<名字> --imported --by owner --library ${lib}\n`)
     expect(text).toContain('[ ] 对你的 agent 说一句\n    - 看看我的 Pneuma Base 库里有什么。\n')
   })
 })

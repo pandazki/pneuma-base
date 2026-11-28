@@ -20,9 +20,9 @@ beforeAll(() => {
   lib = join(tempDir(), 'lib')
   work = tempDir('pb-work-')
   expect(sb.run(['init', lib]).code).toBe(0)
-  expect(owner(['grant', 'issue', 'claude', '--agent', 'claude-code']).code).toBe(0)
-  expect(agent(['put', '-', '--to', 'notes/a.md', '--made', '--note', '第一版'], '# 笔记\n').code).toBe(0)
-  expect(agent(['put', '-', '--to', 'notes/old.md', '--made'], 'old\n').code).toBe(0)
+  expect(owner(['grant', 'create', 'claude', '--agent', 'claude-code']).code).toBe(0)
+  expect(agent(['put', '-', '--to', 'notes/a.md', '--generated', '--note', '第一版'], '# 笔记\n').code).toBe(0)
+  expect(agent(['put', '-', '--to', 'notes/old.md', '--generated'], 'old\n').code).toBe(0)
   expect(agent(['archive', 'notes/old.md']).code).toBe(0)
 })
 
@@ -33,14 +33,14 @@ describe('pneuma-base show', () => {
     const r = owner(['show'])
     expect(r.code, r.stderr).toBe(0)
     expect(r.stdout).toMatch(/^ {2}ledger\.items +库 +ledger/m)
-    expect(r.stdout).toMatch(/^ {2}config +配置 +kernel +只给主人$/m)
+    expect(r.stdout).toMatch(/^ {2}settings +配置 +kernel +只给主人$/m)
     expect(r.stdout).toMatch(/^ {2}item +一样东西 +kernel +从别的页的链接打开$/m)
     // A view that shares a navigation entry says with which.
-    expect(r.stdout).toMatch(/^ {2}ledger\.standing +状况 +ledger +.*和 ledger\.items 一个入口$/m)
+    expect(r.stdout).toMatch(/^ {2}ledger\.status +状况 +ledger +.*和 ledger\.items 一个入口$/m)
     expect(r.stdout).toMatch(/^ {2}archive +归档区 +kernel +和 files 一个入口$/m)
     const list = owner(['show', '--json']).json()
     expect(list.views.find((v: { id: string }) => v.id === 'ledger.scenes')).toMatchObject({ title: '场景', by: 'ledger', nav: true })
-    expect(list.views.find((v: { id: string }) => v.id === 'config')).toMatchObject({ by: 'kernel', ownerOnly: true })
+    expect(list.views.find((v: { id: string }) => v.id === 'settings')).toMatchObject({ by: 'kernel', ownerOnly: true })
   })
 
   // ARCHITECTURE.md「归档区（`archive`）」: the archive page lists one level at a time; a folder row opens the next level.
@@ -94,23 +94,23 @@ describe('pneuma-base show', () => {
 
   it('is open to an agent as inspect is and sends no event; config, the owner’s page, is refused in the words of an owner-only command', () => {
     const before = facts()
-    for (const view of ['ledger.items', 'ledger.standing', 'files', 'archive']) expect(agent(['show', view]).code, view).toBe(0)
+    for (const view of ['ledger.items', 'ledger.status', 'files', 'archive']) expect(agent(['show', view]).code, view).toBe(0)
     expect(facts()).toBe(before)
-    const page = agent(['show', 'config'])
+    const page = agent(['show', 'settings'])
     expect(page.code).toBe(2)
     // An owner-only command no agent may ask for: a page of management cannot be asked for either.
     const command = agent(['request', 'list'])
     expect(command.code).toBe(2)
     const words = (text: string, name: string) => text.trim().replace(`「${name}」`, '「…」')
-    expect(words(page.stdout, 'show config')).toBe(words(command.stdout, 'request list'))
-    expect(agent(['show', 'config', '--json']).json()).toMatchObject({ outcome: 'refused', reason: 'agent-session' })
-    expect(owner(['show', 'config']).code).toBe(0)
+    expect(words(page.stdout, 'show settings')).toBe(words(command.stdout, 'request list'))
+    expect(agent(['show', 'settings', '--json']).json()).toMatchObject({ outcome: 'refused', reason: 'agent-session' })
+    expect(owner(['show', 'settings']).code).toBe(0)
   })
 
   it('refuses a view the library does not have as a usage error', () => {
-    const r = owner(['show', 'version.things'])
+    const r = owner(['show', 'version.items'])
     expect(r.code).toBe(1)
-    expect(r.stderr).toContain('这个库没有这一页：version.things。pneuma-base show 列出这个库的页。')
+    expect(r.stderr).toContain('这个库没有这一页：version.items。pneuma-base show 列出这个库的页。')
   })
 })
 
@@ -120,7 +120,7 @@ describe('the words of each kind of block', () => {
     const lib2 = join(home, 'lib')
     const run = (args: string[]) => sb.runWithTestPlugins(args, { cwd: home })
     expect(run(['init', lib2, '--bare']).code).toBe(0)
-    expect(run(['plugin', 'add', 'pager', '--library', lib2]).code).toBe(0)
+    expect(run(['plugin', 'enable', 'pager', '--library', lib2]).code).toBe(0)
     const blocks = run(['show', 'pager.blocks', '--library', lib2])
     expect(blocks.code).toBe(3)
     expect(blocks.stdout.trimEnd().split('\n')).toEqual([
@@ -164,7 +164,7 @@ describe('the words of each kind of block', () => {
     const lib2 = join(home, 'lib')
     const run = (args: string[]) => sb.runWithTestPlugins(args, { cwd: home })
     expect(run(['init', lib2, '--bare']).code).toBe(0)
-    expect(run(['plugin', 'add', 'asker', '--library', lib2]).code).toBe(0)
+    expect(run(['plugin', 'enable', 'asker', '--library', lib2]).code).toBe(0)
     const story = run(['show', 'asker.story', '--library', lib2])
     expect(story.code, story.stderr).toBe(0)
     const at = (iso: string) => {
@@ -183,7 +183,7 @@ describe('the words of each kind of block', () => {
       '今天（2）  → show ledger.scene --scene s1',
       `  - ${at('2026-11-25T11:11:00.000Z')}  claude-code  归档 notes/old.md  [自己做的]  整理笔记 · 凭授权 claude  → show item --path _archive/old.md`,
       '      $ unarchive _archive/old.md  # 取回',
-      `  - ${at('2026-11-25T11:12:00.000Z')}  主人  主人面的操作 plugin add  [主人做的]  [已定]`,
+      `  - ${at('2026-11-25T11:12:00.000Z')}  主人  主人面的操作 plugin enable  [主人做的]  [已定]`,
       '空的一串。',
       '- 要上线吗？（claude-code）  关于 site → show item --path site',
       '    $ asker yes  # 上线（只给主人）（推荐）',
@@ -205,7 +205,7 @@ describe('the words of each kind of block', () => {
     const bare = run(['show', 'home', '--library', lib2])
     expect(bare.stdout).toContain('## 等你决定\n没有要你决定的事。')
     expect(bare.stdout).toContain('没装插件')
-    expect(run(['plugin', 'add', 'asker', '--library', lib2]).code).toBe(0)
+    expect(run(['plugin', 'enable', 'asker', '--library', lib2]).code).toBe(0)
     const r = run(['show', 'home', '--library', lib2])
     expect(r.code, r.stderr).toBe(0)
     // 开始 comes first while no agent is connected; start.test.ts has its words.
@@ -225,8 +225,8 @@ describe('the words of each kind of block', () => {
     const lib2 = join(home, 'lib')
     const run = (args: string[]) => sb.runWithTestPlugins(args, { cwd: home })
     expect(run(['init', lib2, '--bare']).code).toBe(0)
-    expect(run(['plugin', 'add', 'asker', '--library', lib2]).code).toBe(0)
-    expect(run(['grant', 'issue', 'helper', '--agent', 'codex', '--library', lib2]).code).toBe(0)
+    expect(run(['plugin', 'enable', 'asker', '--library', lib2]).code).toBe(0)
+    expect(run(['grant', 'create', 'helper', '--agent', 'codex', '--library', lib2]).code).toBe(0)
     const check = run(['@helper', 'check'])
     expect(check.code, check.stderr).toBe(0)
     expect(check.stdout.trimEnd().split('\n')).toEqual([

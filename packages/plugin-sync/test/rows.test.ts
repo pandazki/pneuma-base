@@ -15,7 +15,7 @@ let target: string
 
 const owner = (args: string[]) => m.run([...args, '--library', lib])
 const agent = (args: string[], input?: string) => ok(m.run(['--library', lib, '--as', 'claude-code', '--session', 's-rows', ...args], input === undefined ? {} : { input }))
-const put = (path: string, content: string) => agent(['put', '-', '--to', path, '--made'], content)
+const put = (path: string, content: string) => agent(['put', '-', '--to', path, '--generated'], content)
 const local = {
   write: (path: string, content: string) => write(lib, path, content),
   read: (path: string) => read(lib, path),
@@ -45,7 +45,7 @@ beforeAll(() => {
   lib = join(tempDir(), 'lib')
   target = join(tempDir(), 'target')
   ok(m.run(['init', lib, '--bare']))
-  ok(owner(['plugin', 'add', 'sync']))
+  ok(owner(['plugin', 'enable', 'sync']))
   ok(owner(['sync', 'target', 'set', '--kind', 'dir', '--to', target]))
   // Every content written here is its own, so that no row's content is already kept at another row's path.
   for (const name of ['push', 'pull', 'conflict', 'move']) put(`${name}.md`, `${name} base`)

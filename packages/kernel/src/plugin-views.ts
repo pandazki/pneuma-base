@@ -42,7 +42,7 @@ export async function pluginPage(plugin: Plugin, decl: ViewDecl, req: ViewReques
     const blocks: Block[] =
       behind === undefined
         ? checked.blocks
-        : [{ kind: 'section', title: '装上之前登记的', note: catchingUpCount(behind), count: null, blocks: [], actions: [kernelAction('plugin catch-up', '接着补', { fixed: { plugin: plugin.name } })] }, ...checked.blocks]
+        : [{ kind: 'section', title: '装上之前登记的', note: catchingUpCount(behind), count: null, blocks: [], actions: [kernelAction('plugin backfill', '接着补', { fixed: { plugin: plugin.name } })] }, ...checked.blocks]
     const { refresh, problems: refreshProblems } = checkRefresh((answer as ViewAnswer).refresh, plugin)
     const { filters, problems: filterProblems } = checkFilters((answer as ViewAnswer).filters, decl, plugin)
     const { open, problems: openProblems } = checkOpen((answer as ViewAnswer).open, plugin)

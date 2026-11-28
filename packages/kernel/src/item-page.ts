@@ -198,7 +198,7 @@ async function placePanel(ctx: Context, path: LibraryPath, params: Record<string
   if (at.failed === 'noise') {
     const rule = await noiseRule(store, path)
     const text = 'name' in rule ? `库的噪音：任何一层叫 ${rule.name} 的都不算库里的东西。` : `库的噪音：${rule.path} 和它里面的一切不算库里的东西。`
-    const remove = kernelAction('noise remove', '不再当作噪音', 'name' in rule ? { fixed: { name: rule.name, path: false } } : { fixed: { path: rule.path, name: false } })
+    const remove = kernelAction('ignore remove', '不再当作噪音', 'name' in rule ? { fixed: { name: rule.name, path: false } } : { fixed: { path: rule.path, name: false } })
     return { ...shown(title, path, [{ kind: 'text', tone: 'neutral', text }, { kind: 'actions', actions: [remove] }]), icon: 'folder' }
   }
   if (at.kind !== 'folder') return null

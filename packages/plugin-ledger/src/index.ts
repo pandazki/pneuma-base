@@ -36,8 +36,9 @@ import { pagesOf } from './rows.js'
 import { DEFAULT_PERIOD, isPeriod, statsFrom } from './stats.js'
 import { statsAnswer } from './stats-page.js'
 import { ACTIVITY_VIEW, heldAnswer, HELD_VIEW, HOME_VIEW, isStandingKind, itemSection, itemsAnswer, ITEMS_VIEW, LEDGER_VIEWS, partOfSection, SCENE_VIEW, SCENES_VIEW, STANDING_VIEW, standingAnswer, STATS_VIEW, unownedSection, type ItemsPage } from './ui.js'
-import { closedLooks, LEAVE, REGISTER, unownedAsks } from './unowned.js'
-import { ambiguousText, itemText, originLabel, sceneText, sceneView, sinceText, sinceViewOf, standingSections, when, type ItemView } from './views.js'
+import { closedLooks, DISMISS, REGISTER, unownedAsks } from './unowned.js'
+import { ambiguousText, itemText, originLabel, sceneText, sceneView, sinceText, sinceViewOf, spokenItem, spokenScene, standingSections, when, type ItemView } from './views.js'
+import { flavorOf, storedOrigin } from './words.js'
 
 /** A hook's writes: the facts it will append as one write, and the things it adopted on the way. */
 type Writing = { ctx: PluginContext; facts: Fact[]; adopted: Map<LibraryPath, ItemId> }
@@ -212,20 +213,21 @@ async function versionsOf(ctx: PluginContext, item: ItemId): Promise<Extract<His
 async function recordSay(w: Writing, req: SayRequest): Promise<{ answer: SayAnswer; rebase: LibraryPath[] }> {
   const { ctx } = w
   const just = (answer: SayAnswer) => ({ answer, rebase: [] })
-  if (req.kind === 'doing' || req.kind === 'decided' || req.kind === 'note') {
+  const flavor = flavorOf(req.kind)
+  if (flavor !== null) {
     if (!req.text) return just(refused(`要写一句话：say ${req.kind} "<一句话>"`))
     const about = req.about === null ? null : await target(w, req.about)
     if (req.about !== null && !about) return just(refused(`库里没有这个文件：${req.about}`))
-    w.facts.push(fact(ctx, 'reported', { kind: 'said', flavor: req.kind, text: req.text, about: about?.id ?? null }))
-    return just(heard(`${SAID[req.kind]}：${req.text}${req.about !== null ? `（关于 ${req.about}）` : ''}`))
+    w.facts.push(fact(ctx, 'reported', { kind: 'said', flavor, text: req.text, about: about?.id ?? null }))
+    return just(heard(`${SAID[flavor]}：${req.text}${req.about !== null ? `（关于 ${req.about}）` : ''}`))
   }
-  if (req.kind === 'from') {
+  if (req.kind === 'basis') {
     const input = req.about ?? req.text
     const subject = input === null ? null : await target(w, input)
-    if (!subject) return just(refused(input === null ? '要写是哪样东西：say from <库内路径> --from <库内路径…>' : `库里没有这个文件：${input}`))
-    const basis = await basisOf(w, req.args.from ?? [], req.args['from-outside'] ?? [])
+    if (!subject) return just(refused(input === null ? '要写是哪样东西：say basis <库内路径> --from <库内路径…>' : `库里没有这个文件：${input}`))
+    const basis = await basisOf(w, req.args.from ?? [], req.args['from-external'] ?? [])
     if ('missing' in basis) return just(refused(`库里没有这个文件：${basis.missing}`))
-    if (basis.items.length === 0 && basis.outside.length === 0) return just(refused('要写 --from <库内路径…> 或 --from-outside "<一句话>"'))
+    if (basis.items.length === 0 && basis.outside.length === 0) return just(refused('要写 --from <库内路径…> 或 --from-external "<一句话>"'))
     w.facts.push(fact(ctx, 'reported', { kind: 'item.basis', item: subject.id, fingerprint: subject.fingerprint, basis }))
     return just(heard(`已补上 ${input} 的依据${basisNote(basis)}`))
   }
@@ -240,7 +242,7 @@ async function recordSay(w: Writing, req: SayRequest): Promise<{ answer: SayAnsw
     const resolved = input === null ? null : await ctx.tools.resolve(input)
     const path = resolved === null || resolved.region === 'kernel' ? null : (resolved.bundle ?? resolved.path)
     const item = path === null ? undefined : await rowAt(ctx, path)
-    if (!item || path === null) return just(refused(`没人登记过这个文件：${input ?? '（没写）'}。要补来历，用 put <库内路径> --brought 或 --made。`))
+    if (!item || path === null) return just(refused(`没人登记过这个文件：${input ?? '（没写）'}。要补来历，用 put <库内路径> --imported 或 --generated。`))
     const [thing] = await ctx.tools.what([path])
     if (!thing || thing.entry === null || (thing.kind !== 'file' && thing.kind !== 'bundle')) return just(refused(`文件不在：${input}`))
     const token = thing.entry.token ?? ''
@@ -365,13 +367,15 @@ async function itemsPage(ctx: PluginContext, params: Record<string, string>, siz
   const { after } = pageAt(params)
   const c = await counters(recs)
   const n = (k: string) => c[`class:${k}`] ?? 0
-  const counts = { '': n('brought') + n('made') + n('adopted'), brought: n('brought'), made: n('made'), archived: n('archived') }
-  const inShow = (item: ItemRow) => (show === 'archived' ? archived(item) : !archived(item) && (show === '' || item.origin.kind === show))
+  const counts = { '': n('brought') + n('made') + n('adopted'), imported: n('brought'), generated: n('made'), archived: n('archived') }
+  // The class the rows keep the page's word under; null for a word that names none, which shows nothing.
+  const cls = show === '' || show === 'archived' ? show : storedOrigin(show)
+  const inShow = (item: ItemRow) => cls !== null && (cls === 'archived' ? archived(item) : !archived(item) && (cls === '' || item.origin.kind === cls))
   let items: ItemRow[] = []
   let next: string | null = null
   if (dir === '') {
     const opts = { limit: size, ...(after === undefined ? {} : { after }) }
-    const page = show === '' ? await recs.where<{ id: ItemId }>('bytime', 'live', 'y', opts) : await recs.where<{ id: ItemId }>('bytime', 'show', show, opts)
+    const page = cls === null ? { rows: [], more: null } : cls === '' ? await recs.where<{ id: ItemId }>('bytime', 'live', 'y', opts) : await recs.where<{ id: ItemId }>('bytime', 'show', cls, opts)
     const rows = await getAll<ItemRow>(recs, 'items', page.rows.map((r) => r.value.id))
     items = page.rows.flatMap((r) => rows.get(r.value.id) ?? [])
     next = page.more?.after ?? null
@@ -443,8 +447,8 @@ export const ledger: Plugin = {
     { dir: 'facts', kind: 'body' },
     { dir: 'held', kind: 'body' },
   ],
-  statements: ['doing', 'decided', 'note', 'from', 'revised'],
-  ownerCommands: [...heldCommands, REGISTER, LEAVE, LEDGER_STATS, LEDGER_EXPORT],
+  statements: ['task', 'decision', 'note', 'basis', 'revised'],
+  ownerCommands: [...heldCommands, REGISTER, DISMISS, LEDGER_STATS, LEDGER_EXPORT],
   views: LEDGER_VIEWS,
 
   async onPut(req, ctx) {
@@ -473,8 +477,8 @@ export const ledger: Plugin = {
   },
 
   async onSay(req, ctx) {
-    // A sentence about nothing in particular needs nothing read: start's `doing` costs one write.
-    const plain = req.about === null && (req.kind === 'doing' || req.kind === 'decided' || req.kind === 'note')
+    // A sentence about nothing in particular needs nothing read: start's `task` costs one write.
+    const plain = req.about === null && flavorOf(req.kind) !== null
     if (!plain) await stateOf(ctx)
     const w = writing(ctx)
     const { answer, rebase: paths } = await recordSay(w, req)
@@ -502,14 +506,14 @@ export const ledger: Plugin = {
     const card = async (scene: SceneRow) => {
       const lookup = await lookupOf(recs, [], { items: scene.items })
       const view = sceneView(lookup, scene, conversationOf(scene, ctx.session.machine))
-      return [{ title: '场景', body: sceneText(view), data: view }]
+      return [{ title: '场景', body: sceneText(view), data: spokenScene(view) }]
     }
     const scene = (await getAll<SceneRow>(recs, 'scenes', [req.target])).get(req.target)
     if (scene) return card(scene)
     const item = await itemNamed(ctx, req.target)
     if (item) {
       const view = await itemViewOf(recs, item)
-      return [{ title: '来历', body: itemText(view), data: view }]
+      return [{ title: '来历', body: itemText(view), data: spokenItem(view) }]
     }
     const resolved = await ctx.tools.resolve(req.target)
     if (resolved !== null && resolved.region !== 'kernel') {
@@ -519,7 +523,7 @@ export const ledger: Plugin = {
         return [{ title: '来历', body, data: { kind: 'part-of', path: resolved.path, bundle } }]
       }
       if (await thingAt(ctx, resolved.path)) {
-        const body = '没人登记过这个文件，来历不明。知道它从哪来，就用 put <库内路径> --brought 或 --made 补上。'
+        const body = '没人登记过这个文件，来历不明。知道它从哪来，就用 put <库内路径> --imported 或 --generated 补上。'
         return [{ title: '来历', body, data: { kind: 'unowned', path: resolved.path } }]
       }
     }

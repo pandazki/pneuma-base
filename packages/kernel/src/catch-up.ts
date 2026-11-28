@@ -88,7 +88,7 @@ export async function catchingUp(ctx: Context): Promise<Map<PluginName, Catching
   }))
 }
 
-const COMMAND = (name: string) => `pneuma-base plugin catch-up ${name}`
+const COMMAND = (name: string) => `pneuma-base plugin backfill ${name}`
 
 /** How far a plugin's catching up got, in words. */
 export const catchingUpCount = (c: CatchingUp): string => `装上之前登记的${c.total === null ? '东西' : ` ${c.total} 样`}补了 ${c.done} 样`

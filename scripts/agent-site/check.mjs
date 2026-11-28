@@ -37,7 +37,7 @@ const entry = site ? listed.find((s) => s.path === site.path) : undefined
 const revised = site ? by('codex').filter((f) => f.kind === 'item.revise' && f.item === site.item) : []
 const otherSites = by('codex').filter((f) => f.kind === 'item.enter' && f.bundle === true)
 const live = entry ? textOf(join(online, entry.site)) : ''
-const held = (pb('ledger', 'held', 'list').data?.copies ?? []).filter((c) => site && c.item === site.item)
+const held = (pb('ledger', 'copies', 'list').data?.copies ?? []).filter((c) => site && c.item === site.item)
 const heldText = held.map((c) => textOf(join(library, c.path))).join('\n')
 const versions = site ? (pb('version', 'list', site.path).data?.versions ?? []) : []
 

@@ -41,7 +41,7 @@ describe('the assembled description with every plugin installed', () => {
     return r
   }
   expect(sb.run(['init', lib]).code).toBe(0)
-  for (const name of PLUGINS.slice(1)) owner(['plugin', 'add', name])
+  for (const name of PLUGINS.slice(1)) owner(['plugin', 'enable', name])
   const text = readFileSync(join(lib, 'PNEUMA-BASE.md'), 'utf8')
 
   it('stays under 160 lines, and with only the ledger it is no longer than before the plugins came', () => {
@@ -71,10 +71,10 @@ describe('the assembled description with every plugin installed', () => {
 
   it('runs every command example as written, in order, and leaves what the examples promise', () => {
     const target = { deploy: join(tempDir('pb-www-'), 'www'), sync: tempDir('pb-sync-') }
-    owner(['grant', 'issue', 'claude', '--agent', 'claude-code'])
+    owner(['grant', 'create', 'claude', '--agent', 'claude-code'])
     owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', target.deploy])
     owner(['sync', 'target', 'set', '--kind', 'dir', '--to', target.sync])
-    owner(['search', 'embedder', 'set', '--kind', 'hash'])
+    owner(['search', 'embedding', 'set', '--kind', 'hash'])
 
     // What the examples build on: a pricing page brought in earlier, a site and a support note in the
     // library, and a comparison and the site's next version written next to the agent.
@@ -84,11 +84,11 @@ describe('the assembled description with every plugin installed', () => {
     for (const name of ['pneuma-base', 'curl']) chmodSync(join(shim, name), 0o755)
     const agentEnv = { PATH: `${shim}:${process.env.PATH ?? ''}`, CLAUDE_CODE_SESSION_ID: 'session-of-the-examples' }
     const agent = (args: string[], input?: string): Run => sb.run(['@claude', ...args], { cwd, env: agentEnv, ...(input === undefined ? {} : { input }) })
-    expect(agent(['put', '-', '--to', 'payments/sources/paddle-pricing.html', '--brought', '--source', 'https://www.paddle.com/pricing'], '<html>paddle</html>').code).toBe(0)
-    expect(agent(['put', '-', '--to', 'support/refunds.md', '--made'], '# 退款流程\n\n客户申请退款后，三天内原路退回。\n').code).toBe(0)
+    expect(agent(['put', '-', '--to', 'payments/sources/paddle-pricing.html', '--imported', '--source', 'https://www.paddle.com/pricing'], '<html>paddle</html>').code).toBe(0)
+    expect(agent(['put', '-', '--to', 'support/refunds.md', '--generated'], '# 退款流程\n\n客户申请退款后，三天内原路退回。\n').code).toBe(0)
     const V1 = '<h1>小店</h1>'
     write(join(cwd, 'shop-first/index.html'), V1)
-    expect(agent(['put', './shop-first', '--to', 'sites/shop', '--made']).code).toBe(0)
+    expect(agent(['put', './shop-first', '--to', 'sites/shop', '--generated']).code).toBe(0)
     write(join(cwd, 'shop/index.html'), '<h1>小店，换了配色</h1>')
     write(join(cwd, 'comparison.md'), '# 支付服务对比\n')
 
@@ -111,7 +111,7 @@ describe('the assembled description with every plugin installed', () => {
     expect(comparison.basis.map((b: any) => b.path)).toEqual(['payments/sources/stripe-pricing.html', 'payments/sources/paddle-pricing.html'])
     expect(comparison.outside).toEqual(['主人在对话里说：客户主要在欧洲'])
     expect(comparison.said.map((s: any) => s.text)).toContain('主人决定用 Paddle，因为它替他处理欧洲的税')
-    expect(inspect('payments/sources/stripe-pricing.html').find((s: any) => s.plugin === 'ledger').data.origin).toEqual({ kind: 'brought', source: 'https://stripe.com/pricing', by: null })
+    expect(inspect('payments/sources/stripe-pricing.html').find((s: any) => s.plugin === 'ledger').data.origin).toEqual({ kind: 'imported', source: 'https://stripe.com/pricing', by: null })
     const versions = agent(['version', 'list', 'sites/shop', '--json']).json().data.versions
     expect(versions.map((v: any) => [v.n, v.note, v.same])).toEqual([[1, '第一版', null], [2, '换了配色', null], [3, null, 1]])
     expect(readFileSync(join(cwd, 'shop-v1/index.html'), 'utf8')).toBe(V1)

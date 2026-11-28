@@ -158,8 +158,8 @@ describe('PLUGINS.md', () => {
       vendorSdk(join(marks, 'dist'))
       sh(marks, 'pneuma-base plugin install dist')
       sh(marks, 'pneuma-base init ../lib')
-      sh(marks, 'pneuma-base plugin add marks --library ../lib')
-      sh(marks, "echo '# 计划' | pneuma-base --library ../lib --as claude-code put - --to notes/plan.md --made")
+      sh(marks, 'pneuma-base plugin enable marks --library ../lib')
+      sh(marks, "echo '# 计划' | pneuma-base --library ../lib --as claude-code put - --to notes/plan.md --generated")
       sh(marks, 'pneuma-base --library ../lib --as claude-code say marks notes/plan.md "第三节的数字还没核对"')
     }, 120_000)
 

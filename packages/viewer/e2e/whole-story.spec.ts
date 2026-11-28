@@ -28,15 +28,15 @@ function storyLibrary(pb: Cli): { lib: string; www: string } {
   const syncTarget = join(root, 'sync-target')
   mkdirSync(syncTarget)
   pb.run(['init', lib])
-  for (const name of ['version', 'deploy', 'sync', 'search']) pb.run(['plugin', 'add', name, '--library', lib])
+  for (const name of ['version', 'deploy', 'sync', 'search']) pb.run(['plugin', 'enable', name, '--library', lib])
   pb.run(['deploy', 'target', 'set', '--kind', 'dir', '--to', www, '--library', lib])
   pb.run(['sync', 'target', 'set', '--kind', 'dir', '--to', syncTarget, '--library', lib])
-  pb.run(['search', 'embedder', 'set', '--kind', 'hash', '--library', lib])
+  pb.run(['search', 'embedding', 'set', '--kind', 'hash', '--library', lib])
   const agent = (as: string, args: string[]) => pb.run(['--library', lib, '--as', as, '--session', `${as}-1`, ...args], { cwd: root })
   agent('claude-code', ['start', '做十个小网站'])
   for (const [name, text] of Object.entries(SITES)) {
     write(root, `made/${name}/index.html`, `<!doctype html><title>${text}</title><h1>${text}</h1>\n`)
-    agent('claude-code', ['put', join(root, 'made', name), '--to', `sites/${name}`, '--made'])
+    agent('claude-code', ['put', join(root, 'made', name), '--to', `sites/${name}`, '--generated'])
     agent('claude-code', ['say', 'deployable', `sites/${name}`])
   }
   // The coffee site's panel shows its versions.
@@ -45,7 +45,7 @@ function storyLibrary(pb: Cli): { lib: string; www: string } {
   for (const name of ['plants', 'music', 'camping']) pb.run(['--library', lib, 'archive', `sites/${name}`])
   agent('codex', ['start', '把手冲咖啡那个网站的配色改一下'])
   write(root, 'codex/coffee/index.html', `<!doctype html><h1>${SITES.coffee}，换了深色配色</h1>\n`)
-  agent('codex', ['put', join(root, 'codex/coffee'), '--to', 'sites/coffee', '--made'])
+  agent('codex', ['put', join(root, 'codex/coffee'), '--to', 'sites/coffee', '--generated'])
   pb.run(['--library', lib, 'sync', 'now'])
   return { lib, www }
 }

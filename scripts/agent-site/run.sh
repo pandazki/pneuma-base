@@ -29,10 +29,10 @@ LIB="$ROOT/lib"
 limited() { perl -e 'alarm shift; exec @ARGV' "$LIMIT" "$@" < /dev/null; }
 
 pneuma-base init "$LIB" || exit 1
-for p in version deploy search; do pneuma-base plugin add $p --library "$LIB" || exit 1; done
+for p in version deploy search; do pneuma-base plugin enable $p --library "$LIB" || exit 1; done
 pneuma-base deploy target set --kind dir --to "$ROOT/online" --library "$LIB" || exit 1
-pneuma-base grant issue studio-claude --library "$LIB" --agent claude || exit 1
-pneuma-base grant issue studio-codex --library "$LIB" --agent codex || exit 1
+pneuma-base grant create studio-claude --library "$LIB" --agent claude || exit 1
+pneuma-base grant create studio-codex --library "$LIB" --agent codex || exit 1
 pneuma-base skill install studio-claude --agent claude --dir "$DIR_A/.claude/skills" || exit 1
 pneuma-base skill install studio-codex --agent codex --dir "$DIR_B/.agents/skills" || exit 1
 

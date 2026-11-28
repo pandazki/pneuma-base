@@ -59,12 +59,12 @@ async function rebuild(ctx: PluginContext): Promise<OwnerAnswer> {
   }
   const s = await statusOf(ctx)
   const built = `${stop === null ? '已重建索引' : '索引重建了一部分'}：${s.files} 个文件，其中文本 ${s.textFiles} 个，${s.chunks} 块。`
-  if (failure !== null) return refused('embedder-failed', `${built}按意思的向量没建完（${s.vectors} / ${s.chunks} 块）：${failure}`)
+  if (failure !== null) return refused('embedding-failed', `${built}按意思的向量没建完（${s.vectors} / ${s.chunks} 块）：${failure}`)
   return done(`${stop ?? ''}${built}${config ? `按意思：${s.vectors} / ${s.chunks} 块有向量。` : ''}`, { ...s, stopped: stop !== null })
 }
 
 export const SET_EMBEDDER = defineCommand({
-  name: 'search embedder set',
+  name: 'search embedding set',
   act: { kind: 'set', object: 'model', name: '嵌入模型' },
   summary: '设按意思找用的嵌入器：hash，或 OpenAI 兼容的 http 服务',
   params: {
@@ -98,14 +98,14 @@ export const SET_EMBEDDER = defineCommand({
       .catch((error: unknown) => messageOf(error))
     const tried = probe === null ? '试了一次，能用。下次 find 时给库里的文本补上向量。' : `不过试了一次没成：${probe}。find 照常按文字找，并报这个问题。`
     const secret = config.kind === 'http' && key === null ? `服务要密钥时，用 ${SET_KEY} 设，值从标准输入读；它只存在这台机器上，不进库。` : ''
-    return done(`已设好嵌入器：${embedderLabel(config, key !== null)}。${tried}${secret}`, { embedder: config, probe: probe ?? 'ok', key: key !== null })
+    return done(`已设好嵌入器：${embedderLabel(config, key !== null)}。${tried}${secret}`, { embedding: config, probe: probe ?? 'ok', key: key !== null })
   },
 })
 
 export const searchCommands: OwnerCommand[] = [
   SET_EMBEDDER,
   defineCommand({
-    name: 'search embedder clear',
+    name: 'search embedding clear',
     act: { kind: 'removed', name: '嵌入模型' },
     summary: '清除嵌入器，find 只按文字找',
     params: {},

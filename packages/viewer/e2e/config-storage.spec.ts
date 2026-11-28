@@ -48,7 +48,7 @@ test('storage on the configuration page: where the library is kept, installing a
     )
     const { url } = await pb.view(lib, { env: { PNEUMA_BASE_RELEASE_HOST: host.url } })
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
-    await page.goto(`${url}#view=config`)
+    await page.goto(`${url}#view=settings`)
     const storage = page.getByRole('main').getByRole('region', { name: '存储', exact: true })
     // One row: the library's folder by its name, the whole path on demand and to copy, and the provider in use.
     const kept = storage.getByRole('listitem').first()
@@ -103,7 +103,7 @@ test('storage on the configuration page: where the library is kept, installing a
       ;(window as unknown as { sent: unknown[] }).sent = sent
       ;(window as unknown as { webkit: unknown }).webkit = { messageHandlers: { shell: { postMessage: (m: unknown) => sent.push(m) } } }
     })
-    await page.goto(`${url}&shell=mac#view=config`)
+    await page.goto(`${url}&shell=mac#view=settings`)
     await kept.getByRole('button', { name: '在访达中显示' }).click()
     expect(await page.evaluate(() => (window as unknown as { sent: { type: string }[] }).sent.filter((m) => m.type === 'reveal-local'))).toEqual([{ type: 'reveal-local', path: lib }])
   } finally {

@@ -197,10 +197,10 @@ describe('the page of versioned things', () => {
     await agentFace.archive({ kind: 'archive', path: 'c.md' }, as())
     await import('node:fs/promises').then((fs) => fs.rm(join(root, 'd.md')))
     expect(existsSync(join(root, 'd.md'))).toBe(false)
-    expect(version.views?.map((v) => v.id)).toEqual(['version.things'])
+    expect(version.views?.map((v) => v.id)).toEqual(['version.items'])
 
     const rows = async (archived: string) => {
-      const page = await version.onView?.({ view: 'version.things', params: { archived } }, plugin())
+      const page = await version.onView?.({ view: 'version.items', params: { archived } }, plugin())
       const table = only(page?.blocks ?? [], 'table')
       // Each state, and whether it is the usual one the page leaves unsaid: every change written down.
       return table?.rows.map((r) => [r.cells.path?.text, r.cells.versions?.text, r.cells.state?.tag?.text ?? r.cells.state?.text, r.cells.state?.normal === true]).sort()
@@ -219,11 +219,11 @@ describe('the page of versioned things', () => {
       await put(name, name)
       await declare(name)
     }
-    const first = await version.onView?.({ view: 'version.things', params: {}, size: 2 }, plugin())
+    const first = await version.onView?.({ view: 'version.items', params: {}, size: 2 }, plugin())
     const table = only(first?.blocks ?? [], 'table')
     expect(table?.rows).toHaveLength(2)
     expect(table?.page).toMatchObject({ first: 1, shown: 2, total: 3 })
-    const rest = await version.onView?.({ view: 'version.things', params: table?.page?.next?.params ?? {}, size: 2 }, plugin())
+    const rest = await version.onView?.({ view: 'version.items', params: table?.page?.next?.params ?? {}, size: 2 }, plugin())
     expect(only(rest?.blocks ?? [], 'table')?.rows).toHaveLength(1)
   })
 })

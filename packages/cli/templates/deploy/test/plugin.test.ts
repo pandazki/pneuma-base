@@ -18,7 +18,7 @@ before(async () => {
   published = join(sb.work, 'published')
   await mkdir(join(sb.work, 'shop'), { recursive: true })
   await writeFile(join(sb.work, 'shop', 'index.html'), '<h1>小店</h1>\n')
-  const put = await sb.agent('claude-code', 'session-1', ['put', 'shop', '--to', 'sites/shop', '--made'])
+  const put = await sb.agent('claude-code', 'session-1', ['put', 'shop', '--to', 'sites/shop', '--generated'])
   assert.equal(put.code, 0, put.stderr)
 })
 after(() => sb.cleanup())

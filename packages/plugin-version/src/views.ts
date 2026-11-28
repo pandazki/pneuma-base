@@ -7,7 +7,7 @@ import { aboutVersion, archived, minute, whoText } from './text.js'
 import type { DiskState } from './versions.js'
 
 export const THINGS_VIEW: ViewDecl = {
-  id: 'version.things',
+  id: 'version.items',
   title: '有版本的东西',
   icon: 'git-branch',
   nav: true,

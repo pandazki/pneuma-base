@@ -1,6 +1,6 @@
-// The owner's side of noise: the names and paths declared at the library's root that storage never
-// reports or enters (ARCHITECTURE.md「噪音」). Answering 「不用管」 to a directory
-// nobody looked into adds it here.
+// The `ignore` commands, the owner's side of storage's noise: the names and paths declared at the
+// library's root that storage never reports or enters (ARCHITECTURE.md「噪音」). Answering 「不用管」 to a
+// directory nobody looked into adds it here.
 import { command, done, refused, type KernelCommand } from './kernel-command.js'
 import { parseLibraryPath, regionOf } from './paths.js'
 import { storageOf } from './storage.js'
@@ -19,9 +19,9 @@ function parsed(root: string, path: string | null, name: string | null): { paths
   return place === null || regionOf(place) !== 'content' ? `这不是库的内容里的路径：${path}` : { paths: [place] }
 }
 
-export const NOISE_COMMANDS: readonly KernelCommand[] = [
+export const IGNORE_COMMANDS: readonly KernelCommand[] = [
   command({
-    name: 'noise list',
+    name: 'ignore list',
     summary: '库根上声明的噪音：库不报告、不进入的名字和路径',
     params: {},
     destructive: false,
@@ -34,7 +34,7 @@ export const NOISE_COMMANDS: readonly KernelCommand[] = [
     },
   }),
   command({
-    name: 'noise add',
+    name: 'ignore add',
     act: { kind: 'hidden', object: 'path' },
     summary: '加一条噪音：一个库内路径，或用 --name 加一个名字；之后库不再报告、不再进入它',
     params: { positional: [PATH], flags: [NAME] },
@@ -45,11 +45,11 @@ export const NOISE_COMMANDS: readonly KernelCommand[] = [
       const what = parsed(call.ctx.library.root, path, name)
       if (typeof what === 'string') return refused('usage', what)
       const n = await storageOf(call.ctx.library.root).noise.add(what)
-      return done(`已记为噪音：${path ?? name}。库不再报告、不再进入它；要撤回：noise remove ${path ?? `--name ${name}`}。现在的${listed(n)}`, n)
+      return done(`已记为噪音：${path ?? name}。库不再报告、不再进入它；要撤回：ignore remove ${path ?? `--name ${name}`}。现在的${listed(n)}`, n)
     },
   }),
   command({
-    name: 'noise remove',
+    name: 'ignore remove',
     act: { kind: 'shown', object: 'path' },
     summary: '去掉一条噪音：一个库内路径，或用 --name 去掉一个名字',
     params: { positional: [PATH], flags: [NAME] },
@@ -65,19 +65,19 @@ export const NOISE_COMMANDS: readonly KernelCommand[] = [
   }),
 ]
 
-/** A button of the noise command `name`, with these of its values fixed. */
+/** A button of the ignore command `name`, with these of its values fixed. */
 const formFor = (name: string, label: string, fixed: Record<string, FixedValue>, tone: Action['tone'] = 'default'): Action => {
-  const c = NOISE_COMMANDS.find((x) => x.name === name) as KernelCommand
+  const c = IGNORE_COMMANDS.find((x) => x.name === name) as KernelCommand
   return { label, tone, confirm: null, ...formOf(c, { fixed }) }
 }
 
-/** The configuration page's part for noise, folded: each declared name and path a row with 去掉 in its 「···」, and 加一条 in its head. */
-export async function noiseSection(root: string): Promise<Block> {
+/** The settings page's part for the ignore rules, folded: each declared name and path a row with 去掉 in its 「···」, and 加一条 in its head. */
+export async function ignoreSection(root: string): Promise<Block> {
   const n = await storageOf(root).noise.list()
   const item = (value: string, fixed: Record<string, FixedValue>, note: string | null): ListItem => ({
     cell: { text: value },
     note,
-    actions: [{ ...formFor('noise remove', '去掉', fixed, 'danger'), icon: 'trash-2' }],
+    actions: [{ ...formFor('ignore remove', '去掉', fixed, 'danger'), icon: 'trash-2' }],
   })
   const items = [...n.names.map((v) => item(v, { name: v, path: false }, null)), ...n.paths.map((v) => item(v, { path: v, name: false }, '库内路径'))]
   return {
@@ -88,6 +88,6 @@ export async function noiseSection(root: string): Promise<Block> {
     count: items.length,
     collapse: 'closed',
     blocks: items.length > 0 ? [{ kind: 'list', items }] : [{ kind: 'text', tone: 'neutral', text: '没有噪音：库里的一切都会被报告。' }],
-    actions: [{ label: '加一条', tone: 'default', confirm: null, ...formOf(NOISE_COMMANDS.find((x) => x.name === 'noise add') as KernelCommand), as: 'icon', icon: 'plus' }],
+    actions: [{ label: '加一条', tone: 'default', confirm: null, ...formOf(IGNORE_COMMANDS.find((x) => x.name === 'ignore add') as KernelCommand), as: 'icon', icon: 'plus' }],
   }
 }

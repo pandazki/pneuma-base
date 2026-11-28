@@ -53,13 +53,13 @@ const originOf = async (path: string) => (await agent(['inspect', path])).sectio
 beforeAll(async () => {
   sb = await sandbox({ cli, builtins: ['version', 'deploy'] })
   await sb.owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', join(sb.work, 'www')])
-  await agent(['put', '-', '--to', 'notes/a.md', '--made'], '# a\n')
-  await agent(['put', '-', '--to', 'notes/plan.md', '--made'], '# 计划\n')
+  await agent(['put', '-', '--to', 'notes/a.md', '--generated'], '# a\n')
+  await agent(['put', '-', '--to', 'notes/plan.md', '--generated'], '# 计划\n')
   await agent(['say', 'versioned', 'notes/plan.md'])
-  await agent(['put', '-', '--to', 'notes/plan.md', '--made'], '# 计划 v2\n')
+  await agent(['put', '-', '--to', 'notes/plan.md', '--generated'], '# 计划 v2\n')
   mkdirSync(join(sb.work, 'shop'))
   writeFileSync(join(sb.work, 'shop/index.html'), '<h1>小店</h1>\n')
-  await agent(['put', 'shop', '--to', 'sites/shop', '--made'])
+  await agent(['put', 'shop', '--to', 'sites/shop', '--generated'])
   writeFileSync(join(sb.work, 'paper.txt'), '一篇论文\n')
   viewer = await sb.viewer()
 }, 60_000)
@@ -69,9 +69,9 @@ afterAll(() => sb.cleanup())
 describe('the buttons that give each verb and command a place', () => {
   it('the files page brings in a file of this machine as brought in, with where it came from, or none when left empty', async () => {
     await press(await viewer.view('files'), '从这台机器放进来', { from: join(sb.work, 'paper.txt'), to: 'sources/paper.txt', source: 'https://example.org/paper' })
-    expect(await originOf('sources/paper.txt')).toMatchObject({ kind: 'brought', source: 'https://example.org/paper' })
+    expect(await originOf('sources/paper.txt')).toMatchObject({ kind: 'imported', source: 'https://example.org/paper' })
     await press(await viewer.view('files'), '从这台机器放进来', { from: join(sb.work, 'paper.txt'), to: 'sources/copy.txt' })
-    expect(await originOf('sources/copy.txt')).toMatchObject({ kind: 'brought', source: null })
+    expect(await originOf('sources/copy.txt')).toMatchObject({ kind: 'imported', source: null })
   })
 
   it('the item panel moves a thing', async () => {
@@ -101,23 +101,23 @@ describe('the buttons that give each verb and command a place', () => {
   })
 
   it('the held page takes a held copy back to a new path, and drops them all', async () => {
-    const held = await viewer.view('ledger.held')
+    const held = await viewer.view('ledger.copies')
     expect(words(held)).toContain('notes/plan.md')
     const [restore] = held.outcome === 'shown' ? actionsIn(held.blocks).filter((a) => a.label === '取回到新路径') : []
     const to = restore?.inputs.find((i) => i.name === 'to')?.value as string
     await press(held, '取回到新路径')
     expect(existsSync(join(sb.library, to))).toBe(true)
     await press(held, '清掉全部留存')
-    expect(await viewer.view('ledger.held')).toMatchObject({ blocks: [{ kind: 'section', title: '换下的旧内容', count: 0 }] })
+    expect(await viewer.view('ledger.copies')).toMatchObject({ blocks: [{ kind: 'section', title: '换下的旧内容', count: 0 }] })
   })
 
   it('the config page installs a plugin on this machine from a directory, and uninstalls it', async () => {
     const dir = join(sb.work, 'extra')
     mkdirSync(dir)
     writeFileSync(join(dir, 'index.js'), "export default { contract: 2, name: 'extra', cognition: null, storage: [], statements: [], ownerCommands: [] }\n")
-    await press(await viewer.view('config'), '从目录装一个插件到这台机器', { dir })
+    await press(await viewer.view('settings'), '从目录装一个插件到这台机器', { dir })
     expect((await sb.run(['plugin', 'list'])).stdout).toContain('extra')
-    await press(await viewer.view('config'), '从这台机器卸掉')
+    await press(await viewer.view('settings'), '从这台机器卸掉')
     expect((await sb.run(['plugin', 'list'])).stdout).not.toContain('extra')
   })
 })

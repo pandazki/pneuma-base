@@ -35,21 +35,22 @@ import { archived, stateOfRow, type ItemRow, type MarkRow, type OriginLike, type
 import { DEFAULT_PERIOD, PERIODS } from './stats.js'
 import { closedActions } from './unowned.js'
 import { earlierText, heldKeyOf, keeps, LIST_LIMIT, MARK_LABEL, originLabel, SAID_LABEL, shortScene, STANDING_ORDER, standingTitle, STATE_LABEL, when, who, type ItemView, type Lookup, type StandingKind, type StandingList } from './views.js'
+import { commandNow } from './words.js'
 
 export const HOME_VIEW = 'ledger.home'
 export const ITEMS_VIEW = 'ledger.items'
 export const SCENES_VIEW = 'ledger.scenes'
 export const SCENE_VIEW = 'ledger.scene'
-export const STANDING_VIEW = 'ledger.standing'
+export const STANDING_VIEW = 'ledger.status'
 export const ACTIVITY_VIEW = 'ledger.activity'
-export const HELD_VIEW = 'ledger.held'
+export const HELD_VIEW = 'ledger.copies'
 export const STATS_VIEW = 'ledger.stats'
 
 /** What the library page shows: the things not archived, those brought in or made of them, or the archived ones. */
 export const SHOWS: { value: string; label: string }[] = [
   { value: '', label: '全部' },
-  { value: 'brought', label: '带进来的' },
-  { value: 'made', label: '做出来的' },
+  { value: 'imported', label: '带进来的' },
+  { value: 'generated', label: '做出来的' },
   { value: 'archived', label: '已归档' },
 ]
 
@@ -125,7 +126,7 @@ export function grantCell(a: FactActor, grants: readonly Grant[]): Cell | null {
 export function sceneDoing(scene: SceneRow): string | null {
   const doing = [...new Set(scene.said.filter((s) => s.flavor === 'doing').map((s) => s.text))]
   if (doing.length > 0) return doing.join('；')
-  const commands = [...new Set(scene.ops.map((op) => op.command))]
+  const commands = [...new Set(scene.ops.map((op) => commandNow(op.command)))]
   const prefix = scene.ops.every((op) => op.actor.kind === 'owner') ? '主人面的操作' : '执行命令'
   return commands.length > 0 ? `${prefix}：${commands.join('、')}` : null
 }
@@ -185,7 +186,7 @@ export const acceptAction = (path: string): Action => ({
   call: { face: 'agent', verb: 'say', request: { kind: 'revised', about: path, text: null, args: {} } },
 })
 
-/** Taking a held copy back to a new path: ledger held restore. The suggested path is the item's with the old version's key in its name. */
+/** Taking a held copy back to a new path: ledger copies restore. The suggested path is the item's with the old version's key in its name. */
 function restoreAction(item: string, path: LibraryPath, isArchived: boolean, key: string): Action {
   const base = isArchived ? (originalPath(path) ?? path) : path
   const form = formOf(HELD_RESTORE, { fixed: { item, fingerprint: key }, values: { to: withSuffix(base, key.slice(0, 8)) } })
@@ -193,7 +194,7 @@ function restoreAction(item: string, path: LibraryPath, isArchived: boolean, key
 }
 
 /** Saying something about a thing in one sentence: a note, written where its history is; a decision, from the menu. */
-const sayAction = (path: string, kind: 'decided' | 'note', label: string, placeholder: string): Action => ({
+const sayAction = (path: string, kind: 'decision' | 'note', label: string, placeholder: string): Action => ({
   label,
   tone: 'default',
   confirm: null,
@@ -203,7 +204,7 @@ const sayAction = (path: string, kind: 'decided' | 'note', label: string, placeh
   icon: kind === 'note' ? 'message-square-plus' : 'scale',
 })
 
-/** Adding to what a thing was made from: say from, with paths in the library and sentences about what is outside. */
+/** Adding to what a thing was made from: say basis, with paths in the library and sentences about what is outside. */
 const basisAction = (path: string): Action => ({
   label: '补上依据',
   tone: 'default',
@@ -214,7 +215,7 @@ const basisAction = (path: string): Action => ({
     input('from', '依据库里的哪些', { placeholder: '库内路径，一行一个', multiple: true }),
     input('outside', '库外的依据', { placeholder: '一行一句，比如：主人在对话里说的', multiple: true }),
   ],
-  call: { face: 'agent', verb: 'say', request: { kind: 'from', about: path, text: null, args: { from: ['{from}'], 'from-outside': ['{outside}'] } } },
+  call: { face: 'agent', verb: 'say', request: { kind: 'basis', about: path, text: null, args: { from: ['{from}'], 'from-external': ['{outside}'] } } },
 })
 
 // ---- states, quiet when normal ----
@@ -499,7 +500,7 @@ export function itemSection(v: ItemView, lookup: Lookup, grants: readonly Grant[
         ...(v.unknownOrigin ? provenanceActions(v.path).map((a, i) => (i === 0 && v.state.kind !== 'changed' ? { ...a, as: 'primary' as const } : a)) : []),
         ...(worthReading ? [readAction(v.path)] : []),
         basisAction(v.path),
-        sayAction(v.path, 'decided', '记一条决定', '比如：用 Paddle，因为它替我们处理欧洲的税'),
+        sayAction(v.path, 'decision', '记一条决定', '比如：用 Paddle，因为它替我们处理欧洲的税'),
       ]
   return { title: '来历', blocks, actions }
 }

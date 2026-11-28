@@ -18,10 +18,10 @@ const ok = (args: string[], input?: string) => {
 function library(): string {
   const lib = join(tempDir(), 'lib')
   ok(['init', lib])
-  for (const plugin of ['version', 'search']) ok(['--library', lib, 'plugin', 'add', plugin])
-  ok(['--library', lib, '--as', 'claude-code', 'put', '-', '--to', 'notes/opener.md', '--made'], 'the opener\n')
+  for (const plugin of ['version', 'search']) ok(['--library', lib, 'plugin', 'enable', plugin])
+  ok(['--library', lib, '--as', 'claude-code', 'put', '-', '--to', 'notes/opener.md', '--generated'], 'the opener\n')
   for (let i = 0; i < 299; i++) writeFileSync(join(lib, 'notes', `n${i}.md`), `note ${i} word${i}\n`)
-  for (let i = 0; i < 2; i++) ok(['--library', lib, '--as', 'claude-code', 'put', 'notes', '--made'])
+  for (let i = 0; i < 2; i++) ok(['--library', lib, '--as', 'claude-code', 'put', 'notes', '--generated'])
   ok(['--library', lib, '--as', 'claude-code', 'say', 'versioned', 'notes/opener.md'])
   return lib
 }

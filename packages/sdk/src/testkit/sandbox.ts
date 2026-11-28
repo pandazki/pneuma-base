@@ -146,7 +146,7 @@ export async function sandbox(options: SandboxOptions = {}): Promise<Sandbox> {
       installed.push(r.json.data.name)
     }
     await must('建库', run(['init', library, ...(options.bare ? ['--bare'] : []), '--json']))
-    for (const name of [...(options.builtins ?? []), ...installed]) await must(`在库里装上插件 ${name} `, owner(['plugin', 'add', name, '--json']))
+    for (const name of [...(options.builtins ?? []), ...installed]) await must(`在库里装上插件 ${name} `, owner(['plugin', 'enable', name, '--json']))
   } catch (error) {
     await sb.cleanup()
     throw error

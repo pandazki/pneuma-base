@@ -65,7 +65,7 @@ const done = (text: string, data?: unknown): OwnerAnswer => ({ outcome: 'done', 
 const refused = (reason: string, text: string): OwnerAnswer => ({ outcome: 'refused', reason, text })
 
 export const HELD_RESTORE = defineCommand({
-  name: 'ledger held restore',
+  name: 'ledger copies restore',
   act: { kind: 'restored', object: 'item' },
   summary: '把一份留存取回到一个新路径',
   params: {
@@ -87,7 +87,7 @@ export const HELD_RESTORE = defineCommand({
     const latest = [...copies].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))[0]
     const chosen = want === null ? (latest ? [latest] : []) : copies.filter((c) => c.key.startsWith(want))
     const copy = chosen[0]
-    if (!copy || chosen.length > 1) return refused('no-such-held', `${item.path} 没有${want === null ? '' : `指纹以 ${want} 开头的唯一一份`}留存`)
+    if (!copy || chosen.length > 1) return refused('no-such-copy', `${item.path} 没有${want === null ? '' : `指纹以 ${want} 开头的唯一一份`}留存`)
     const target = await ctx.tools.resolve(to)
     if (target === null || target.region !== 'content') return refused('outside-library', `${to} 不在库的内容里`)
     if (target.bundle !== null) return refused('inside-bundle', `${target.path} 在 ${target.bundle} 里面，${target.bundle} 是一样东西。换一个路径。`)
@@ -124,7 +124,7 @@ export const HELD_RESTORE = defineCommand({
 })
 
 export const HELD_DROP = defineCommand({
-  name: 'ledger held drop',
+  name: 'ledger copies drop',
   act: { kind: 'removed', name: '留住的旧版' },
   summary: '清掉全部留存',
   params: {},
@@ -143,10 +143,10 @@ export const HELD_DROP = defineCommand({
   },
 })
 
-/** How many held copies `ledger held list` and the held page name at most. */
+/** How many held copies `ledger copies list` and the held page name at most. */
 export const HELD_SHOWN = 200
 
-/** How many held copies `ledger held list` names before it gives the total and the command for the rest. */
+/** How many held copies `ledger copies list` names before it gives the total and the command for the rest. */
 const LISTED = 20
 
 /** The held copies, at most `limit` after `after`, with the items they are of, how many there are, and the cursor of the ones that follow. */
@@ -168,10 +168,10 @@ export async function heldCopies(ctx: PluginContext, limit = HELD_SHOWN, after?:
   return { copies: rows.slice(0, limit).map((r) => ({ ...r, current: items.get(r.item) })), total: (await counters(records)).held ?? rows.length, next }
 }
 
-/** `ledger held list`, `ledger held restore`, `ledger held drop`: the owner's commands over held copies. */
+/** `ledger copies list`, `ledger copies restore`, `ledger copies drop`: the owner's commands over held copies. */
 export const heldCommands: OwnerCommand[] = [
   defineCommand({
-    name: 'ledger held list',
+    name: 'ledger copies list',
     summary: '列出留存：被新内容换下来的旧内容',
     params: { flags: [{ name: 'all', hint: '全部列出，不只前 20 份', kind: 'boolean' }] },
     destructive: false,
@@ -183,7 +183,7 @@ export const heldCommands: OwnerCommand[] = [
       const data = copies.map((c) => ({ item: c.item, key: c.key, fingerprint: c.fingerprint, path: c.path, current: c.current?.path ?? null }))
       if (copies.length === 0) return done('没有留存。', { copies: data })
       const lines = copies.map((c) => `${c.current?.path ?? c.item}  留存 ${c.key.slice(0, 8)}  ${c.path}`)
-      const more = total > copies.length ? [`……共 ${total} 份，看全部：ledger held list --all`] : []
+      const more = total > copies.length ? [`……共 ${total} 份，看全部：ledger copies list --all`] : []
       return done([...lines, ...more].join('\n'), { copies: data, total })
     },
   }),

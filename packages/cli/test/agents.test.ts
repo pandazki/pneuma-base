@@ -136,7 +136,7 @@ describe('agent connect, list and disconnect', () => {
     const r = run(['agent', 'connect', 'cursor', '--library', lib, '--via', 'mcp'])
     expect(r.code, r.stdout).toBe(2)
     expect(r.stdout).toContain('"pneuma-base-cursor"')
-    expect(r.stdout).toContain(`grant issue cursor --agent cursor --library ${lib}`)
+    expect(r.stdout).toContain(`grant create cursor --agent cursor --library ${lib}`)
     expect(readFileSync(join(sb.home, '.cursor/mcp.json'), 'utf8')).toBe(text)
     expect(grants()).toEqual([])
     expect(existsSync(join(pbHome(), 'connections', 'cursor'))).toBe(false)
@@ -172,13 +172,13 @@ describe('agent connect, list and disconnect', () => {
 
   it('reuses a grant of the same name for the same product, refuses one that clashes, and takes another name', () => {
     put('.cursor/x', '')
-    ok(run(['--library', lib, 'grant', 'issue', 'cursor', '--agent', 'cursor']))
+    ok(run(['--library', lib, 'grant', 'create', 'cursor', '--agent', 'cursor']))
     ok(run(['agent', 'connect', 'cursor', '--library', lib]))
     ok(run(['agent', 'disconnect', 'cursor', '--keep-grant']))
     expect(grants().map((g) => g.name)).toEqual(['cursor'])
     ok(run(['--library', lib, 'grant', 'revoke', 'cursor']))
 
-    ok(run(['--library', lib, 'grant', 'issue', 'cursor', '--agent', 'someone-else']))
+    ok(run(['--library', lib, 'grant', 'create', 'cursor', '--agent', 'someone-else']))
     const before = tree(sb.home)
     const clash = run(['agent', 'connect', 'cursor', '--library', lib])
     expect(clash.code, clash.stdout).toBe(2)
@@ -187,7 +187,7 @@ describe('agent connect, list and disconnect', () => {
 
     const other = join(tempDir(), 'other')
     ok(run(['init', other]))
-    ok(run(['--library', other, 'grant', 'issue', 'cursor-2', '--agent', 'cursor']))
+    ok(run(['--library', other, 'grant', 'create', 'cursor-2', '--agent', 'cursor']))
     expect(run(['agent', 'connect', 'cursor', '--library', lib, '--name', 'cursor-2']).code).toBe(2)
 
     ok(run(['agent', 'connect', 'cursor', '--library', lib, '--name', 'cursor-3']))
@@ -296,7 +296,7 @@ describe('the agents page', () => {
     put('.claude/x', '')
     put('.cursor/x', '')
     // None connected yet: one quiet line, and the section's head issues a grant by hand.
-    expect(section('接上的 agent')).toMatchObject({ blocks: [{ kind: 'text', tone: 'neutral', text: '还没有接上任何 agent。' }], actions: [{ label: '发授权', call: { command: 'grant issue' } }] })
+    expect(section('接上的 agent')).toMatchObject({ blocks: [{ kind: 'text', tone: 'neutral', text: '还没有接上任何 agent。' }], actions: [{ label: '发授权', call: { command: 'grant create' } }] })
     expect(section('接上的 agent')?.about).toContain(`codex --add-dir ${lib}`)
     ok(run(['agent', 'connect', 'claude-code', '--library', lib, '--area', 'notes', '--read-only']))
     let shown = sections()
@@ -319,8 +319,8 @@ describe('the agents page', () => {
   })
 
   it('lists a grant no product connected with as an agent row: its mark and name, the grant when named otherwise, the area, read-only as a mark; skills and 撤回 in its 「···」', () => {
-    ok(run(['grant', 'issue', 'grok', '--agent', 'grok-bot', '--library', lib]))
-    ok(run(['grant', 'issue', 'helper', '--agent', 'helper', '--area', 'notes', '--read-only', '--library', lib]))
+    ok(run(['grant', 'create', 'grok', '--agent', 'grok-bot', '--library', lib]))
+    ok(run(['grant', 'create', 'helper', '--agent', 'helper', '--area', 'notes', '--read-only', '--library', lib]))
     const items = sections()['接上的 agent']?.[0]?.items ?? []
     expect(items.map((i) => [i.cell.text, i.cell.actor, i.cell.tag?.text, i.note])).toEqual([
       ['grok-bot', { kind: 'agent', name: 'grok-bot', grant: 'grok' }, undefined, '凭授权 grok · 还没在这里做过事'],

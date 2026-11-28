@@ -50,8 +50,8 @@ function library(name, large) {
   const target = join(home, `${name}-target`)
   cli('init', lib)
   // The generator writes facts of agents with these grants; grant names are this machine's, so only one library has them.
-  if (large) for (const [grant, agent] of [['claude', 'claude-code'], ['codex', 'codex'], ['gemini', 'gemini']]) cli('--library', lib, 'grant', 'issue', grant, '--agent', agent)
-  cli('plugin', 'add', 'sync', '--library', lib)
+  if (large) for (const [grant, agent] of [['claude', 'claude-code'], ['codex', 'codex'], ['gemini', 'gemini']]) cli('--library', lib, 'grant', 'create', grant, '--agent', agent)
+  cli('plugin', 'enable', 'sync', '--library', lib)
   cli('sync', 'target', 'set', '--kind', 'dir', '--to', target, '--library', lib)
   if (large) {
     const made = writeHistory(lib, { days, sessions, talk, seed: 7 })

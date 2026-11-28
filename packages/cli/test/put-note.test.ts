@@ -21,9 +21,9 @@ describe('put --note', () => {
       sb.run(['--library', lib, '--as', 'claude-code', '--session', 's1', ...args], { cwd: outside, ...(input === undefined ? {} : { input }) })
     const codex = (args: string[]) => sb.run(['--library', lib, '--as', 'codex', '--session', 's2', ...args], { cwd: outside })
 
-    ok(claude(['put', '-', '--to', 'quote.md', '--made', '--note', '拉丝铝初稿'], 'early bird 99'))
-    ok(claude(['put', '-', '--to', 'quote.md', '--made', '--note', '芯片涨价后重算早鸟价'], 'early bird 129'))
-    ok(claude(['put', '-', '--to', 'brief.md', '--brought', '--note', '主人给的需求'], 'brief'))
+    ok(claude(['put', '-', '--to', 'quote.md', '--generated', '--note', '拉丝铝初稿'], 'early bird 99'))
+    ok(claude(['put', '-', '--to', 'quote.md', '--generated', '--note', '芯片涨价后重算早鸟价'], 'early bird 129'))
+    ok(claude(['put', '-', '--to', 'brief.md', '--imported', '--note', '主人给的需求'], 'brief'))
 
     const since = ok(codex(['check', '--json'])).json().sections.find((s: any) => s.title === '自上次以来').data
     const scene = since.scenes.find((s: any) => s.scene === 's1')

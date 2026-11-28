@@ -485,7 +485,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   private func bringArgs(_ url: URL, to path: String, in library: URL) -> [String] {
     let source = downloadAddress(of: url) ?? url.deletingLastPathComponent().lastPathComponent
     return ["--library", library.path, "--session", config.session, "put", url.path, "--to", path,
-            "--brought", "--by", "owner", "--source", source, "--note", "拖进来的", "--json"]
+            "--imported", "--by", "owner", "--source", source, "--note", "拖进来的", "--json"]
   }
 
   /// `<folder>/<name>`, or `<folder>/<name> 2.<ext>` and so on when that is taken, as Finder names copies:

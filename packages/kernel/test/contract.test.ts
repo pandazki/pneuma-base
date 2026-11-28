@@ -93,9 +93,9 @@ describe('the loader of a plugin outside the repository', () => {
   it('refuses a command name the kernel uses', async () => {
     const home = tempDir('pb-k-home-')
     mkdirSync(join(home, 'plugins', 'plugin'), { recursive: true })
-    const command = '{ name: "plugin add", summary: "", destructive: false, ownerOnly: false, run: async () => ({ outcome: "done", text: "" }) }'
+    const command = '{ name: "plugin enable", summary: "", destructive: false, ownerOnly: false, run: async () => ({ outcome: "done", text: "" }) }'
     writeFileSync(join(home, 'plugins', 'plugin', 'index.js'), `export default { contract: 2, name: 'plugin', cognition: null, storage: [], statements: [], ownerCommands: [${command}] }\n`)
-    expect(await kernel.whyNotLoaded(home, 'plugin')).toMatch(/主人命令「plugin add」是内核自己的/)
+    expect(await kernel.whyNotLoaded(home, 'plugin')).toMatch(/主人命令「plugin enable」是内核自己的/)
   })
 })
 
@@ -271,10 +271,10 @@ describe('a name a plugin claims', () => {
   }))
   const owners = (f: Awaited<ReturnType<typeof fixture>>, table: Map<string, sdk.Plugin>): kernel.OwnerCall => ({ ctx: f.ctx, table, env: {}, viaGrant: false, confirm: async () => true })
 
-  it('cannot be taken by a plugin added later: plugin add refuses it and says which plugin holds it', async () => {
+  it('cannot be taken by a plugin added later: plugin enable refuses it and says which plugin holds it', async () => {
     const f = await fixture([first])
     const table = new Map<string, sdk.Plugin>([['first', first], ['second', second]])
-    const r = await kernel.ownerFace.dispatch(owners(f, table), 'plugin add', { positional: ['second'], flags: {} })
+    const r = await kernel.ownerFace.dispatch(owners(f, table), 'plugin enable', { positional: ['second'], flags: {} })
     expect(r).toMatchObject({ outcome: 'refused', reason: 'name-taken' })
     if (r.outcome !== 'refused') return
     expect(r.text).toContain('「说」的种类「deployable」已归插件 first')
@@ -283,7 +283,7 @@ describe('a name a plugin claims', () => {
     expect(JSON.parse(f.read('.pneuma-base/config.json')).plugins).toEqual(['first'])
   })
 
-  it('cannot be taken at init either: init with two plugins that claim one name refuses, as plugin add would, and makes no library', async () => {
+  it('cannot be taken at init either: init with two plugins that claim one name refuses, as plugin enable would, and makes no library', async () => {
     const root = join(tempDir(), 'lib')
     const table = new Map<string, sdk.Plugin>([['first', first], ['second', second]])
     const r = await kernel.initLibrary(root, { plugins: ['first', 'second'], table, actor: owner, session, home: tempDir('pb-k-home-') })
@@ -329,7 +329,7 @@ describe('a plugin’s own lifecycle', () => {
     expect(heard).toEqual([['_archive/a.md', '_archive/site']])
   })
 
-  it('hears its own plugin add once through onAdd; what it reports shows in the answer, which still succeeds', async () => {
+  it('hears its own plugin enable once through onAdd; what it reports shows in the answer, which still succeeds', async () => {
     const f = await fixture()
     const seen: string[] = []
     const reporter = plugin('reporter', {
@@ -340,7 +340,7 @@ describe('a plugin’s own lifecycle', () => {
     })
     const thrower = plugin('thrower', { onAdd: async () => { throw new Error('add broke') } })
     const table = new Map<string, sdk.Plugin>([['reporter', reporter], ['thrower', thrower]])
-    const add = (name: string) => kernel.ownerFace.dispatch(calls(f, table), 'plugin add', { positional: [name], flags: {} })
+    const add = (name: string) => kernel.ownerFace.dispatch(calls(f, table), 'plugin enable', { positional: [name], flags: {} })
     expect(await add('reporter')).toMatchObject({ outcome: 'done', problems: [{ plugin: 'reporter', message: '目标还没设：运行 reporter target set' }] })
     expect(seen).toEqual(['reporter'])
     f.ctx = { ...f.ctx, library: (await kernel.openLibrary(f.root, table)) as sdk.Library }
@@ -350,25 +350,25 @@ describe('a plugin’s own lifecycle', () => {
     expect(configured(f)).toEqual(['reporter', 'thrower'])
   })
 
-  it('may refuse plugin remove through onRemove, saying why; --anyway removes it and repeats the warning', async () => {
+  it('may refuse plugin disable through onRemove, saying why; --force removes it and repeats the warning', async () => {
     const warning = '还有 3 个网站在线；先运行 holder off，网站才会下线。'
     const holder = plugin('holder', { onRemove: async () => ({ refuse: warning }) })
     const thrower = plugin('thrower', { onRemove: async () => { throw new Error('remove broke') } })
     const f = await fixture([holder, thrower])
     const table = new Map<string, sdk.Plugin>([['holder', holder], ['thrower', thrower]])
-    const remove = (name: string, flags: sdk.OwnerArgs['flags'] = {}) => kernel.ownerFace.dispatch(calls(f, table), 'plugin remove', { positional: [name], flags })
+    const remove = (name: string, flags: sdk.OwnerArgs['flags'] = {}) => kernel.ownerFace.dispatch(calls(f, table), 'plugin disable', { positional: [name], flags })
     const refused = await remove('holder')
     expect(refused).toMatchObject({ outcome: 'refused', reason: 'plugin-refused' })
     expect(refused.text).toContain(warning)
-    expect(refused.text).toContain('--anyway')
-    // What the page offers beside the refusal: the same command with --anyway, asking first with the plugin's sentence.
+    expect(refused.text).toContain('--force')
+    // What the page offers beside the refusal: the same command with --force, asking first with the plugin's sentence.
     if (refused.outcome !== 'refused') return
     expect(refused.offer).toEqual({
       label: '仍然卸下',
       tone: 'danger',
       confirm: `插件 holder 说：${warning}\n仍然卸下吗？`,
       inputs: [],
-      call: { face: 'owner', command: 'plugin remove', args: { positional: ['holder'], flags: { anyway: true } } },
+      call: { face: 'owner', command: 'plugin disable', args: { positional: ['holder'], flags: { force: true } } },
     })
     expect(configured(f)).toEqual(['holder', 'thrower'])
     const offered = refused.offer?.call

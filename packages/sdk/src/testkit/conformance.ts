@@ -244,7 +244,7 @@ async function checkLibrary(p: Plugin, install: Install, options: ConformanceOpt
     const watch = boundedWatch(sb.toolLog, p.name, fail)
 
     // On the empty library: being added and removed, and every hook that needs no content.
-    hooksOn('plugin add（onAdd）', await expectDone(owner(['plugin', 'add', p.name]), 'plugin add', fail))
+    hooksOn('plugin enable（onAdd）', await expectDone(owner(['plugin', 'enable', p.name]), 'plugin enable', fail))
     const viewer = await sb.viewer()
     const empty: Step[] = [
       { what: '空库上的 find', touches: [], run: () => agent(['find', '符合性']) },
@@ -257,8 +257,8 @@ async function checkLibrary(p: Plugin, install: Install, options: ConformanceOpt
     ]
     await runSteps(sb.library, empty, own, p, options, fail, hooksOn, watch)
     await checkViews(p, viewer, ['conformance/nothing.md'], '空库上', fail, watch)
-    hooksOn('空库上的 plugin remove（onRemove）', await removeIt(owner, p.name, fail))
-    hooksOn('空库上再 plugin add（onAdd）', await expectDone(owner(['plugin', 'add', p.name]), 'plugin add', fail))
+    hooksOn('空库上的 plugin disable（onRemove）', await removeIt(owner, p.name, fail))
+    hooksOn('空库上再 plugin enable（onAdd）', await expectDone(owner(['plugin', 'enable', p.name]), 'plugin enable', fail))
 
     await options.setup?.({ sandbox: sb, cwd: sb.work, bin: join(sb.work, '.bin') })
     await addOpener(sb, owner, fail)
@@ -281,14 +281,14 @@ async function checkLibrary(p: Plugin, install: Install, options: ConformanceOpt
       return (await viewer.act(action)).result
     }
     const script: Step[] = [
-      { what: 'put 一个文件', touches: ['conformance/note.md'], run: () => agent(['put', '-', '--to', 'conformance/note.md', '--made', '--note', '符合性检查'], '# 符合性检查\n\n一段文字。\n') },
-      { what: 'put 一个目录', touches: ['conformance/site'], run: () => agent(['put', 'site', '--to', 'conformance/site', '--made']) },
+      { what: 'put 一个文件', touches: ['conformance/note.md'], run: () => agent(['put', '-', '--to', 'conformance/note.md', '--generated', '--note', '符合性检查'], '# 符合性检查\n\n一段文字。\n') },
+      { what: 'put 一个目录', touches: ['conformance/site'], run: () => agent(['put', 'site', '--to', 'conformance/site', '--generated']) },
       {
         what: 'put 登记一个已在库里的文件',
         touches: ['conformance/written.md'],
         run: async () => {
           await written('conformance/written.md', '# 写在库里\n')
-          return agent(['put', 'conformance/written.md', '--made'])
+          return agent(['put', 'conformance/written.md', '--generated'])
         },
       },
       {
@@ -297,14 +297,14 @@ async function checkLibrary(p: Plugin, install: Install, options: ConformanceOpt
         run: async () => {
           await written(`${OPEN_DIR}/loose-a.md`, '散文件 a\n')
           await written(`${OPEN_DIR}/loose-b.md`, '散文件 b\n')
-          return agent(['put', OPEN_DIR, '--made'])
+          return agent(['put', OPEN_DIR, '--generated'])
         },
       },
       { what: 'find', touches: [], run: () => agent(['find', '符合性']) },
       { what: 'inspect', touches: [], run: () => agent(['inspect', 'conformance/note.md']) },
       ...p.statements.map((kind): Step => ({ what: `say ${kind}`, touches: [], run: () => agent(['say', kind, 'conformance/site', '符合性检查']) })),
       { what: 'check', touches: [], run: () => agent(['check', '--since', t0]) },
-      { what: '在同一路径 put 不同的内容', touches: ['conformance/note.md'], run: () => agent(['put', '-', '--to', 'conformance/note.md', '--made'], '# 符合性检查\n\n改过的一段文字。\n') },
+      { what: '在同一路径 put 不同的内容', touches: ['conformance/note.md'], run: () => agent(['put', '-', '--to', 'conformance/note.md', '--generated'], '# 符合性检查\n\n改过的一段文字。\n') },
       { what: 'put 挪位置', touches: ['conformance/note.md', 'conformance/moved.md'], run: () => agent(['put', 'conformance/note.md', '--to', 'conformance/moved.md']) },
       { what: 'archive', touches: ['conformance/moved.md', '_archive/conformance/moved.md'], run: () => agent(['archive', 'conformance/moved.md']) },
       { what: 'unarchive', touches: ['conformance/moved.md', '_archive/conformance/moved.md'], run: () => agent(['unarchive', 'conformance/moved.md']) },
@@ -390,7 +390,7 @@ async function addOpener(sb: Sandbox, owner: (args: string[]) => Promise<unknown
   await writeFile(join(dir, 'index.js'), `export default { ...${JSON.stringify(plugin)}, openDirs: async () => [${JSON.stringify(OPEN_DIR)}] }\n`)
   const installed = await sb.run(['plugin', 'install', dir, '--json'])
   if (installed.json?.outcome !== 'done') return fail('loads', `检查自己用的插件 ${OPENER} 没装上：${installed.json?.text ?? installed.stderr}`)
-  await expectDone(owner(['plugin', 'add', OPENER]), `plugin add ${OPENER}`, fail)
+  await expectDone(owner(['plugin', 'enable', OPENER]), `plugin enable ${OPENER}`, fail)
 }
 
 /** An owner command every argument of which may be left out, so the check can run it as it is. */
@@ -418,12 +418,12 @@ async function expectDone(call: Promise<any>, what: string, fail: (c: CheckName,
   return r
 }
 
-/** `plugin remove`, and with `--anyway` when the plugin refuses, as the owner can. */
+/** `plugin disable`, and with `--force` when the plugin refuses, as the owner can. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- as above
 async function removeIt(owner: (args: string[]) => Promise<any>, name: string, fail: (c: CheckName, what: string) => void) {
-  const first = await owner(['plugin', 'remove', name])
-  const r = first.outcome === 'refused' && first.reason === 'plugin-refused' ? await owner(['plugin', 'remove', name, '--anyway']) : first
-  if (r.outcome !== 'done') fail('remove', `plugin remove 没有做成：${r.text ?? r.reason}`)
+  const first = await owner(['plugin', 'disable', name])
+  const r = first.outcome === 'refused' && first.reason === 'plugin-refused' ? await owner(['plugin', 'disable', name, '--force']) : first
+  if (r.outcome !== 'done') fail('remove', `plugin disable 没有做成：${r.text ?? r.reason}`)
   return r
 }
 
@@ -591,7 +591,7 @@ async function checkRemove(
     ['find', () => agent(['find', '符合性'])],
     ['check', () => agent(['check'])],
     ['inspect', () => agent(['inspect', 'conformance/moved.md'])],
-    ['put', () => agent(['put', '-', '--to', 'conformance/after.md', '--made'], '卸下之后放进来的。\n')],
+    ['put', () => agent(['put', '-', '--to', 'conformance/after.md', '--generated'], '卸下之后放进来的。\n')],
   ]
   for (const [what, ask] of asks) {
     const r = await ask()
@@ -618,7 +618,7 @@ const comparable = (answer: unknown) =>
 async function putEarly(sb: Sandbox): Promise<void> {
   await mkdir(join(sb.work, 'early-site'), { recursive: true })
   await writeFile(join(sb.work, 'early-site', 'index.html'), `<h1>${EARLY_WORDS}</h1>\n`)
-  for (const args of [['put', '-', '--to', EARLY_FILE, '--made'], ['put', join(sb.work, 'early-site'), '--to', EARLY_SITE, '--made']]) {
+  for (const args of [['put', '-', '--to', EARLY_FILE, '--generated'], ['put', join(sb.work, 'early-site'), '--to', EARLY_SITE, '--generated']]) {
     const r = await sb.agent(AGENT, SESSION, args, { input: `# ${EARLY_WORDS}\n\n一段文字。\n` })
     if (r.code !== 0) throw new Error(`放进 ${args[3]} 没有做成：${r.stderr || r.stdout}`)
   }
@@ -662,9 +662,9 @@ async function checkCatchUp(p: Plugin, install: Install, options: ConformanceOpt
       const r = await late.run(['plugin', 'install', install.plugins[0] as string, '--json'])
       if (r.json?.outcome !== 'done') return fail('catchup', `plugin install 没有装上：${r.json?.text ?? r.stderr}`)
     }
-    const added = jsonOf(await late.owner(['plugin', 'add', p.name, '--json']))
-    if (added?.outcome !== 'done') return fail('catchup', `plugin add 没有做成：${added?.text ?? ''}`)
-    for (const x of added.problems ?? []) if (x.plugin === p.name) fail('catchup', `plugin add 补上时：${x.message}`)
+    const added = jsonOf(await late.owner(['plugin', 'enable', p.name, '--json']))
+    if (added?.outcome !== 'done') return fail('catchup', `plugin enable 没有做成：${added?.text ?? ''}`)
+    for (const x of added.problems ?? []) if (x.plugin === p.name) fail('catchup', `plugin enable 补上时：${x.message}`)
     await options.setup?.({ sandbox: late, cwd: late.work, bin: join(late.work, '.bin') })
     const after = await answersAbout(p, late)
     for (const [i, [what, answer]] of first.entries()) {
@@ -695,7 +695,7 @@ async function checkExamples(p: Plugin, install: Install, options: ConformanceOp
     const shim = join(bin, 'pneuma-base')
     await writeFile(shim, `#!/bin/sh\nexec "${process.execPath}" "${sb.cli}" "$@"\n`)
     await chmod(shim, 0o755)
-    const issued = await sb.owner(['grant', 'issue', GRANT, '--agent', AGENT, '--json'])
+    const issued = await sb.owner(['grant', 'create', GRANT, '--agent', AGENT, '--json'])
     if (issued.json?.outcome !== 'done') throw new Error(`发授权没有做成：${issued.stdout}${issued.stderr}`)
     await options.setup?.({ sandbox: sb, cwd, bin })
     const env = { ...sb.env, PATH: `${bin}:${sb.env.PATH ?? ''}`, PNEUMA_BASE_SESSION: 'conformance-examples' }

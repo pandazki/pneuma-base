@@ -126,15 +126,15 @@ async function benchCommands(name, lib) {
   const source = join(scratch, `source-${name}.md`)
   writeFileSync(source, '# 一页笔记\n\n用来量放入。\n')
   const quiet = (args) => spawnSync(process.execPath, [bin, '--library', lib, ...args], { env: { ...env, CLAUDE_CODE_SESSION_ID: 'bench-setup' }, stdio: 'ignore' })
-  quiet(['put', source, '--to', 'bench/known.md', '--brought', '--note', '一页笔记'])
-  for (let i = 0; i <= runs; i++) quiet(['put', source, '--to', `bench/old-${i}.md`, '--brought'])
+  quiet(['put', source, '--to', 'bench/known.md', '--imported', '--note', '一页笔记'])
+  for (let i = 0; i <= runs; i++) quiet(['put', source, '--to', `bench/old-${i}.md`, '--imported'])
   const rows = {
     start: measure((i) => agent(i, 'start')),
     check: measure((i) => agent(i, 'check')),
     'show home': measure(() => ({ env, args: ['--library', lib, 'show', 'home'] })),
     inspect: measure((i) => as(i, 'inspect', ['inspect', 'bench/known.md'])),
     find: measure((i) => as(i, 'find', ['find', '笔记'])),
-    'put one file': measure((i) => as(i, 'put', ['put', source, '--to', `bench/put-${i}-${Date.now()}.md`, '--brought'])),
+    'put one file': measure((i) => as(i, 'put', ['put', source, '--to', `bench/put-${i}-${Date.now()}.md`, '--imported'])),
     archive: measure((i) => as(i, 'archive', ['archive', `bench/old-${i}.md`])),
   }
   const home = await homeRequest(env, lib)
@@ -154,7 +154,7 @@ function syntheticLibrary() {
   const env = machine('init-synthetic')
   const cli = (...a) => execFileSync(process.execPath, [bin, ...a], { env, stdio: 'ignore' })
   cli('init', lib)
-  for (const [grant, agent] of [['claude', 'claude-code'], ['codex', 'codex'], ['gemini', 'gemini']]) cli('--library', lib, 'grant', 'issue', grant, '--agent', agent)
+  for (const [grant, agent] of [['claude', 'claude-code'], ['codex', 'codex'], ['gemini', 'gemini']]) cli('--library', lib, 'grant', 'create', grant, '--agent', agent)
   const made = writeHistory(lib, { days: 760, sessions: 14, talk: 5.2, seed: 7 })
   // A folder nobody registered, too large to walk and closed to everyone: nothing may open it.
   const closed = join(lib, 'exports')

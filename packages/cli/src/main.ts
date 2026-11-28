@@ -154,8 +154,8 @@ export function processIo(): Io {
 const USAGE = `用法：
   pneuma-base @<授权名> <动词> …
   pneuma-base --library <库的目录> [--as <agent 名>] <动词> …
-动词：start "<一句话>" | find <文字> [--include-archived] [--scene <场景号>] [--origin brought|made] | inspect <库内路径|条目号|场景号>
-      put <文件|目录|-|库内路径> [--to <库内路径>] (--brought [--source <出处>] [--by owner] | --made [--from <库内路径…>] [--from-outside <一句话…>]) [--note "<一句话>"]
+动词：start "<一句话>" | find <文字> [--include-archived] [--scene <场景号>] [--origin imported|generated] | inspect <库内路径|条目号|场景号>
+      put <文件|目录|-|库内路径> [--to <库内路径>] (--imported [--source <出处>] [--by owner] | --generated [--from <库内路径…>] [--from-external <一句话…>]) [--note "<一句话>"]
       say <种类> [<关于>] [<内容>] | check [--since <时间>|last] [--include-archived]
       archive <库内路径> | unarchive <库内路径>
 看管理界面的一页：show [<页的编号> [--<参数> <值>…]]（不写编号列出这个库的页；条目面板是 show item --path <库内路径>）
@@ -385,7 +385,7 @@ const SPECS: Spec[] = [
         return refusal(r.reason, r.text)
       }
       const where = r.packages === null ? ['没写 --packages，package.json 按包名依赖两个包，它们没有发布到 npm，npm install 装不上。换一个空目录，加 --packages <两个包文件所在的目录> 再生成。'] : []
-      const next = [`cd ${dir}`, 'npm install', 'npm test', 'npm run install-local', `npx -- pneuma-base plugin add ${r.name} --library <库的目录>`]
+      const next = [`cd ${dir}`, 'npm install', 'npm test', 'npm run install-local', `npx -- pneuma-base plugin enable ${r.name} --library <库的目录>`]
       const standard = `插件规范：${r.standard ?? 'npm install 之后在 node_modules/pneuma-base/PLUGINS.md'}`
       const lines = [`已在 ${dir} 生成插件 ${r.name}（${r.kind}），${r.files.length} 个文件，README.md 说每个是什么。`, standard, ...where, '接着：', ...next.map((l) => `  ${l}`)]
       return { json: { outcome: 'done', problems: [], ...r }, lines, exit: 0 }

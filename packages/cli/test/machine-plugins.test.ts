@@ -34,7 +34,7 @@ describe('plugin install', () => {
     expect(readFileSync(join(dir, 'lib', 'words.js'), 'utf8')).toContain('第一版')
     expect(existsSync(join(dir, 'ui', 'page.html'))).toBe(true)
     expect(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))).toEqual({ type: 'module' })
-    expect(sb.run(['plugin', 'add', 'pager', '--library', lib]).code).toBe(0)
+    expect(sb.run(['plugin', 'enable', 'pager', '--library', lib]).code).toBe(0)
 
     const again = install(source(pager('第二版', '0.2.0')))
     expect(again.code, again.stderr).toBe(0)
@@ -72,7 +72,7 @@ describe('plugin install', () => {
     expect(loose.json().text).toContain('主人命令「loose go」没有 params：每条命令都声明它的参数，什么都不带的写 params: {}')
     expect(existsSync(join(home, 'plugins', 'loose'))).toBe(false)
     writePlugin(join(home, 'plugins', 'loose'), LOOSE)
-    const added = sb.run(['plugin', 'add', 'loose', '--library', lib, '--json'])
+    const added = sb.run(['plugin', 'enable', 'loose', '--library', lib, '--json'])
     expect(added.json()).toMatchObject({ outcome: 'refused', reason: 'plugin-failed-to-load' })
     expect(added.json().text).toContain('主人命令「loose go」没有 params')
     expect(JSON.parse(readFileSync(join(lib, '.pneuma-base', 'config.json'), 'utf8')).plugins).toEqual(['ledger'])
@@ -87,11 +87,11 @@ describe('plugin list', () => {
     expect(machine.stdout).toContain('pager 0.1.0  契约 2 · 装上来的\n    一页字\n')
     expect(machine.stdout).toMatch(/ledger 0\.9\.0 {2}契约 2 · 自带\n {4}记账：[^\n]+\n {4}记下每样东西是哪次会话/)
     expect(machine.stdout).not.toContain('这个库装了')
-    sb.run(['plugin', 'add', 'pager', '--library', lib])
+    sb.run(['plugin', 'enable', 'pager', '--library', lib])
     const listed = sb.run(['plugin', 'list', '--library', lib, '--json']).json().data.plugins
-    expect(listed).toContainEqual({ name: 'pager', version: '0.1.0', contract: 2, title: null, summary: '一页字', about: null, origin: 'machine', installed: true, failed: null })
-    expect(listed).toContainEqual(expect.objectContaining({ name: 'ledger', origin: 'built-in', installed: true }))
-    expect(listed).toContainEqual(expect.objectContaining({ name: 'deploy', origin: 'built-in', installed: false }))
+    expect(listed).toContainEqual({ name: 'pager', version: '0.1.0', contract: 2, title: null, summary: '一页字', about: null, origin: 'machine', enabled: true, failed: null })
+    expect(listed).toContainEqual(expect.objectContaining({ name: 'ledger', origin: 'built-in', enabled: true }))
+    expect(listed).toContainEqual(expect.objectContaining({ name: 'deploy', origin: 'built-in', enabled: false }))
     // Each built-in plugin: a title, a short line of twenty characters at most, and its whole text in sentences.
     const titles = Object.fromEntries(listed.map((p: { name: string; title: string | null }) => [p.name, p.title]))
     expect([titles.ledger, titles.version, titles.sync, titles.deploy, titles.search]).toEqual(['记账', '版本', '同步', '部署', '查找'])
@@ -105,9 +105,9 @@ describe('plugin list', () => {
 describe('plugin uninstall', () => {
   it('refuses while the library given still has it, then removes it, and a library that has it reports it unavailable; refuses a built-in plugin and one this machine does not have', () => {
     install(source(pager('第一版', '0.1.0')))
-    sb.run(['plugin', 'add', 'pager', '--library', lib])
+    sb.run(['plugin', 'enable', 'pager', '--library', lib])
     const held = sb.run(['plugin', 'uninstall', 'pager', '--library', lib, '--json'])
-    expect(held.json()).toMatchObject({ outcome: 'refused', reason: 'still-installed' })
+    expect(held.json()).toMatchObject({ outcome: 'refused', reason: 'still-enabled' })
     const r = sb.run(['plugin', 'uninstall', 'pager', '--json'])
     expect(r.json()).toMatchObject({ outcome: 'done' })
     expect(r.json().text).toContain('别的库装着它的，会报它不可用')
@@ -151,7 +151,7 @@ const textOf = (view: any) => view.blocks.find((b: any) => b.kind === 'text')?.t
 describe('a running UI server', () => {
   it('uses a plugin’s changed files on its next request, without a restart', async () => {
     install(source(pager('第一版', '0.1.0')))
-    sb.run(['plugin', 'add', 'pager', '--library', lib])
+    sb.run(['plugin', 'enable', 'pager', '--library', lib])
     const server = await serve()
     expect(textOf(await api(server, '/api/view?view=pager.page'))).toBe('第一版')
     install(source(pager('第二版', '0.2.0')))
@@ -164,9 +164,9 @@ describe('a running UI server', () => {
 
   it('shows a plugin’s secrets on the configuration page and sets one from its form into the store the command line reads', async () => {
     writePlugin(join(home, 'plugins', 'vault'), VAULT)
-    sb.run(['plugin', 'add', 'vault', '--library', lib])
+    sb.run(['plugin', 'enable', 'vault', '--library', lib])
     const server = await serve()
-    const section = () => api(server, '/api/view?view=config').then((v) => v.blocks.find((b: any) => b.title === '密钥'))
+    const section = () => api(server, '/api/view?view=settings').then((v) => v.blocks.find((b: any) => b.title === '密钥'))
     const before = await section()
     const row = before.blocks[0].items[0]
     expect(row).toMatchObject({ cell: { text: 'token', tag: { text: '没设' } }, note: 'vault', about: '外面服务的令牌' })

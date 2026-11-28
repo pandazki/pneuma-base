@@ -1,6 +1,6 @@
 // Connecting an agent product to a library in one command, and undoing it in one: a grant, then a
 // skill in the folder the product loads skills from or an MCP server in its configuration, and a
-// record on this machine of exactly what was written. Built from `grant issue`, `grant revoke` and
+// record on this machine of exactly what was written. Built from `grant create`, `grant revoke` and
 // `skill install`. ARCHITECTURE.md「接上一个 agent」.
 import { readdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -124,7 +124,7 @@ function writeOver(call: LibraryCall, grant: string, file: string, text: string 
 
 /** A refusal for a file that cannot be edited safely, with what to paste by hand and the grant to issue first. */
 function pasteInstead(where: string, why: string, snippet: string, grant: string, product: AgentProduct, root: string): Plan {
-  const issue = `pneuma-base grant issue ${grant} --agent ${product.name} --library ${root}`
+  const issue = `pneuma-base grant create ${grant} --agent ${product.name} --library ${root}`
   return { kind: 'refused', outcome: refused('unreadable-config', `${where} ${why}，没有改它。\n要接上，先发授权：\n  ${issue}\n再把下面这段自己加进去：\n${snippet}`) }
 }
 
@@ -232,11 +232,11 @@ export async function connectionFacts(home: string, env: Env, table: PluginTable
 
 const accessText = (g: Pick<Grant, 'area' | 'readOnly'>) => `${g.area === null ? '整个库' : `区域 ${g.area}/`}，${g.readOnly ? '只读' : '读写'}`
 
-type Base = { grantIssue: KernelCommand; grantRevoke: KernelCommand; skillInstall: KernelCommand }
+type Base = { grantCreate: KernelCommand; grantRevoke: KernelCommand; skillInstall: KernelCommand }
 
-/** The four commands, built on the kernel's own `grant issue`, `grant revoke` and `skill install`. */
-export function agentCommands({ grantIssue, grantRevoke, skillInstall }: Base): KernelCommand[] {
-  const issue = grantIssue as Extract<KernelCommand, { scope: 'library' }>
+/** The four commands, built on the kernel's own `grant create`, `grant revoke` and `skill install`. */
+export function agentCommands({ grantCreate, grantRevoke, skillInstall }: Base): KernelCommand[] {
+  const issue = grantCreate as Extract<KernelCommand, { scope: 'library' }>
   const revoke = grantRevoke as Extract<KernelCommand, { scope: 'library' }>
   const install = skillInstall as Extract<KernelCommand, { scope: 'library' }>
   return [

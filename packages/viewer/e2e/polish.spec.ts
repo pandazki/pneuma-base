@@ -13,8 +13,8 @@ function notes(pb: Cli): string {
   const lib = relay(pb)
   const dir = tempDir('pb-e2e-notes-')
   write(dir, 'notes.md', '# 结账页的接入笔记\n')
-  pb.run(['@codex', 'put', 'notes.md', '--to', LONG_NAME, '--made', '--from', 'payments/recommendation.md'], { cwd: dir, ...B })
-  pb.run(['@codex', 'say', 'decided', LONG, '--about', 'payments/integration-notes.md'], B)
+  pb.run(['@codex', 'put', 'notes.md', '--to', LONG_NAME, '--generated', '--from', 'payments/recommendation.md'], { cwd: dir, ...B })
+  pb.run(['@codex', 'say', 'decision', LONG, '--about', 'payments/integration-notes.md'], B)
   return lib
 }
 

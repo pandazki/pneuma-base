@@ -16,7 +16,7 @@ const FRAME = 'iframe[title="插件 pager 的页"]'
 async function pagerLibrary(pb: Cli, env: Record<string, string> = {}): Promise<string> {
   const lib = join(tempDir(), 'lib')
   pb.run(['init', lib, '--bare'], { testPlugins: true })
-  pb.run(['plugin', 'add', 'pager', '--library', lib], { testPlugins: true })
+  pb.run(['plugin', 'enable', 'pager', '--library', lib], { testPlugins: true })
   write(lib, 'pager.md', 'pager 预览的内容')
   return (await pb.view(lib, { testPlugins: true, env })).url
 }

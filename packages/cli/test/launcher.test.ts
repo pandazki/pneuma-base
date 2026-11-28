@@ -85,7 +85,7 @@ describe('launcher install', () => {
     expect(statSync(launcher).mode & 0o111).not.toBe(0)
     const text = readFileSync(launcher, 'utf8')
 
-    ok(sb.run(['--library', lib, 'grant', 'issue', 'g', '--agent', 'someone']))
+    ok(sb.run(['--library', lib, 'grant', 'create', 'g', '--agent', 'someone']))
     const found = bare(`${launcher} @g find --json`)
     expect(found.code, `${found.stdout}${found.stderr}`).toBe(0)
     expect(found.json()).toMatchObject({ hits: [], problems: [] })

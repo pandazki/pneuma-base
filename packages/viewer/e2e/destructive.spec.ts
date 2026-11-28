@@ -9,7 +9,7 @@ import { expect, fromMenu, openShared, tempDir, test, type Cli } from './support
 function archivedLibrary(pb: Cli): string {
   const lib = join(tempDir(), 'lib')
   pb.run(['init', lib])
-  pb.run(['--library', lib, '--as', 'claude-code', 'put', '-', '--to', 'drafts/old.md', '--made'], { input: '一份不要了的草稿\n' })
+  pb.run(['--library', lib, '--as', 'claude-code', 'put', '-', '--to', 'drafts/old.md', '--generated'], { input: '一份不要了的草稿\n' })
   pb.run(['--library', lib, '--as', 'claude-code', 'archive', 'drafts/old.md'])
   return lib
 }

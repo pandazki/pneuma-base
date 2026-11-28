@@ -33,17 +33,17 @@ describe('looking is no act', () => {
     const sb = sandbox()
     const lib = join(tempDir(), 'lib')
     expect(sb.run(['init', lib]).code).toBe(0)
-    for (const look of [['storage', 'list'], ['plugin', 'list'], ['request', 'list'], ['agent', 'list'], ['ledger', 'held', 'list'], ['show', 'ledger.activity']]) {
+    for (const look of [['storage', 'list'], ['plugin', 'list'], ['request', 'list'], ['agent', 'list'], ['ledger', 'copies', 'list'], ['show', 'ledger.activity']]) {
       expect(sb.run(['--library', lib, ...look]).code).toBe(0)
     }
-    expect(sb.run(['--library', lib, 'plugin', 'add', 'version']).code).toBe(0)
+    expect(sb.run(['--library', lib, 'plugin', 'enable', 'version']).code).toBe(0)
     const ops = factsOf(lib).filter((f) => f.kind === 'owner.op')
-    expect(ops.map((f) => f.command)).toEqual(['init', 'plugin add'])
+    expect(ops.map((f) => f.command)).toEqual(['init', 'plugin enable'])
     expect(ops[0]).toMatchObject({ line: `init ${lib}`, act: 'created', object: 'lib' })
-    expect(ops[1]).toMatchObject({ line: 'plugin add version', act: 'on', object: 'version' })
+    expect(ops[1]).toMatchObject({ line: 'plugin enable version', act: 'on', object: 'version' })
     // The row says the command as given, not what it printed.
     const activity = sb.run(['--library', lib, 'show', 'ledger.activity']).stdout
-    expect(activity).toContain('pneuma-base plugin add version')
+    expect(activity).toContain('pneuma-base plugin enable version')
     expect(activity).not.toContain('已装上插件')
   })
 

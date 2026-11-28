@@ -61,13 +61,13 @@ describe('the search.status view', () => {
     const calls = actions(view?.blocks ?? []).map((a) => a.call)
     expect(calls).toEqual([
       { face: 'owner', command: 'search rebuild', args: { positional: [], flags: {} } },
-      { face: 'owner', command: 'search embedder set', args: { positional: [], flags: { kind: ['{kind}'], url: ['{url}'], model: ['{model}'] } } },
+      { face: 'owner', command: 'search embedding set', args: { positional: [], flags: { kind: ['{kind}'], url: ['{url}'], model: ['{model}'] } } },
     ])
     const set = actions(view?.blocks ?? [])[1]
     expect(set?.inputs.find((i) => i.name === 'kind')?.options?.map((o) => o.value)).toEqual(['hash', 'http'])
 
-    expect((await lib.owner('search embedder set', { kind: ['hash'] })).outcome).toBe('done')
-    expect(actions((await lib.status())?.blocks ?? []).map((a) => a.call)).toContainEqual({ face: 'owner', command: 'search embedder clear', args: { positional: [], flags: {} } })
+    expect((await lib.owner('search embedding set', { kind: ['hash'] })).outcome).toBe('done')
+    expect(actions((await lib.status())?.blocks ?? []).map((a) => a.call)).toContainEqual({ face: 'owner', command: 'search embedding clear', args: { positional: [], flags: {} } })
   })
 
   it('counts what is indexed, what is left to read, and the vectors of the embedder that is set', async () => {
@@ -81,7 +81,7 @@ describe('the search.status view', () => {
     expect(indexed).toMatchObject({ 文件: '2 个，其中文本 1 个', 块: '1' })
     expect(indexed).not.toHaveProperty('待读')
 
-    expect((await lib.owner('search embedder set', { kind: ['hash'] })).outcome).toBe('done')
+    expect((await lib.owner('search embedding set', { kind: ['hash'] })).outcome).toBe('done')
     await lib.find('退款')
     expect(fields((await lib.status())?.blocks ?? [])).toMatchObject({ 嵌入器: 'hash：特征哈希，不用模型', 向量: '1 / 1 块' })
   })
@@ -103,7 +103,7 @@ describe('the item section', () => {
     expect(fields((await lib.item('new.md'))?.blocks ?? [])).toMatchObject({ 正文: '没有索引：查找插件的记录里没有它' })
     expect(fields((await lib.item('sites/a'))?.blocks ?? [])).toMatchObject({ 正文: '已索引 2 个文件，2 块' })
 
-    await lib.owner('search embedder set', { kind: ['hash'] })
+    await lib.owner('search embedding set', { kind: ['hash'] })
     await lib.find('退款')
     expect(fields((await lib.item('a.md'))?.blocks ?? [])).toMatchObject({ 按意思: '1 / 1 块有向量' })
 

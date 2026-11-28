@@ -212,7 +212,7 @@ describe('registering', () => {
     write('notes/proj/node_modules/z.js', 'z')
     await check()
     reads.length = 0
-    const r = await run('ledger register', ['notes/proj'], { inside: true })
+    const r = await run('ledger register', ['notes/proj'], { recursive: true })
     expect(r).toMatchObject({ outcome: 'done', text: '已把 notes/proj/里的 5 个文件记为主人带进来的。', data: { registered: 5 } })
     expect(reads).toEqual([])
     const after = await check()

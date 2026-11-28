@@ -15,7 +15,7 @@ async function library(pb: Cli): Promise<{ url: string; lib: string }> {
   write(lib, 'inbox/a-report.pdf', `%PDF-1.4 ${'x'.repeat(4000)}`)
   write(lib, 'inbox/deeper/inner/z.md', 'deep\n')
   pb.run(['init', lib])
-  for (const f of ['b-notes.md', 'c-picture.png', 'a-report.pdf', 'deeper/inner/z.md']) pb.run(['--library', lib, 'put', `inbox/${f}`, '--brought'])
+  for (const f of ['b-notes.md', 'c-picture.png', 'a-report.pdf', 'deeper/inner/z.md']) pb.run(['--library', lib, 'put', `inbox/${f}`, '--imported'])
   const day = 86_400
   const now = Date.now() / 1000
   utimesSync(join(lib, 'inbox/a-report.pdf'), now - 3 * day, now - 3 * day)

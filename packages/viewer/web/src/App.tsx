@@ -655,7 +655,7 @@ export function App() {
             <div className="page-body">
               <Problems problems={data.problems} />
               <Shown key={current?.view} result={shown.data} failed={shown.failed} />
-              {current?.view === 'config' && shown.data?.outcome === 'shown' ? <MachineSettings /> : null}
+              {current?.view === 'settings' && shown.data?.outcome === 'shown' ? <MachineSettings /> : null}
             </div>
           </main>
           {hasTabs ? (

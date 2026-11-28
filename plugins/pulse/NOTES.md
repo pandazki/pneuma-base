@@ -3,7 +3,7 @@
 ## 结果
 
 - 插件项目：`pulse/`（`plugin new pulse --packages .` 生成，再改写）。`npm test` 通过：符合性检查 9 项全过（loads、names、cognition、examples、hooks、writes、cache、blocks、remove），另有插件自己的 6 个测试。
-- 真装过：`PNEUMA_BASE_HOME=work/.pneuma-home`，库是 `work/trial-lib`。做了这些：`plugin install`、`init`、`plugin add`，claude-code 和 codex 两个 agent 放入、归档、取回、挪动，开 `pneuma-base view` 看页面，`pulse clear` 分别以 agent、没有终端的主人、终端里输入 `no`、输入 `yes` 跑过。
+- 真装过：`PNEUMA_BASE_HOME=work/.pneuma-home`，库是 `work/trial-lib`。做了这些：`plugin install`、`init`、`plugin enable`，claude-code 和 codex 两个 agent 放入、归档、取回、挪动，开 `pneuma-base view` 看页面，`pulse clear` 分别以 agent、没有终端的主人、终端里输入 `no`、输入 `yes` 跑过。
 - `work/trial-demo-lib` 是另一个库，**活动记录是我手写的**（`activity/20261001000000000-handmade.jsonl`，110 条，日期往回排，格式照着 trial-lib 里插件真写出来的那几行），只是为了截一张有内容的格子图。命令行没法伪造时间，所以没别的办法。截图在 `work/trial-shots/light.png`、`dark.png`。
 - `work/trial-bin/` 是我写的辅助脚本：`owner`（去掉 agent 会话变量、用本地家目录）、`agent`、`shot.mjs`（经 CDP 驱动无头 Chrome 截图）。
 - 家目录没碰。命令行装在 `work/cli/`，没有用规范第 1 节的 `npm install --global`。npm 缓存用的是环境里已经设好的 `../npm-cache`，这个目录在 work 外面，不是我选的。有一次误操作，在 `/tmp/x` 建了一个空文件，已经删掉（见下面「卡住的地方」第 6 条）。
@@ -33,7 +33,7 @@
 
 1. **插件怎样「清空自己的记录」，规范没有答案，还和规则冲突。** 3.7 说「自己目录里已有的文件不得改写、不得删」，例外只有缓存目录和整份替换的配置文件。3.4 又列出「丢数据、不能撤回的」主人命令，要声明 `destructive`。可是一个插件要丢掉自己的数据，按 3.7 根本不许删文件。规范没说 `destructive` 的主人命令能不能破这个例，也没给「墓碑记录」这种做法。加上 `sync` 自带插件会「整份地复制文件，不丢内容」，在一台机器上删掉的文件，很可能又被同步回来。所以我选了追加清空记录。另外，**`writes` 检查只跑 `readOnly` 的命令，从不跑 `destructive` 的**，所以就算我直接删文件，`npm test` 也会全过。这条规则对破坏性命令既没说清，也没查。
 2. 第 8 节「装载时核对什么」里有 `keeps`（`every`、`some`），规范正文别处一个字都没提。我是从 sdk 的 `types.d.ts` 注释里才知道它跟 `revise` 有关。
-3. **规范里没有挪动（move）的命令行写法。** 3.2 说一次放可以是「登记、放入、挪」，可从来没给挪动的命令。我是从 `pneuma-base --help` 的 `put <文件|目录|-|库内路径> [--to <库内路径>]` 猜出 `put notes/b.md --to notes/b2.md`，看到输出「已挪到」才确认的。`--made`、`--brought` 是什么、为什么必填，规范也只在例子里出现，没有解释。
+3. **规范里没有挪动（move）的命令行写法。** 3.2 说一次放可以是「登记、放入、挪」，可从来没给挪动的命令。我是从 `pneuma-base --help` 的 `put <文件|目录|-|库内路径> [--to <库内路径>]` 猜出 `put notes/b.md --to notes/b2.md`，看到输出「已挪到」才确认的。`--generated`、`--imported` 是什么、为什么必填，规范也只在例子里出现，没有解释。
 4. 规范第 1 节说要 `npm install --global`；没说装在本地也行。它还提到两个包文件「在 Pneuma Base 仓库的 `dist-packages/` 里」，`plugin new --help` 也说不写 `--packages` 时会去「构建这个命令行的仓库」里找。对只拿到包文件的人，这两处会把人往源码仓库引。
 5. 3.5 说主人的 `actor` 是 `{ kind: 'owner' }`，没有名字；sdk 的 `RecordActor` 却要求 `name: string`。主人写的记录里 `name` 是什么，规范没说。
 6. 规范没说视图代码按哪个时区算时间，也没说 `custom` 页里能不能拿到看的人的时区（`Cell` 的 `at` 倒是写明「按看的人的本地时间显示」）。按天统计的插件只能自己猜。

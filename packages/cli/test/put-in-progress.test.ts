@@ -35,7 +35,7 @@ it('check never reports a path being put as nobody’s or as changed directly', 
       const r =
         i % 4 === 2
           ? await agent(`race/${i - 1}.txt`, '--to', `race/moved/${i - 1}.txt`)
-          : (writeFileSync(from, body(i, 1)), await agent(from, '--to', `race/${i % 4 === 3 ? `moved/${i - 2}` : i}.txt`, '--made'))
+          : (writeFileSync(from, body(i, 1)), await agent(from, '--to', `race/${i % 4 === 3 ? `moved/${i - 2}` : i}.txt`, '--generated'))
       expect(r.code, r.stdout).toBe(0)
     }
     putting = false

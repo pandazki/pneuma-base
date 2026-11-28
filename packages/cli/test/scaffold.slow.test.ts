@@ -65,10 +65,10 @@ describe('a plugin project from plugin new', () => {
       const pb = (args: string[], input = '') => JSON.parse(run(home, process.execPath, [bin, ...args, '--json'], input))
       const agent = (args: string[], input = '') => pb(['--library', lib, '--as', 'claude-code', ...args], input)
       expect(pb(['init', lib]).outcome).toBe('done')
-      expect(pb(['plugin', 'add', name, '--library', lib]).outcome).toBe('done')
+      expect(pb(['plugin', 'enable', name, '--library', lib]).outcome).toBe('done')
       let view: string
       if (kind === 'blank') {
-        expect(agent(['put', '-', '--to', 'notes/plan.md', '--made'], '# 计划\n').outcome).toBe('accepted')
+        expect(agent(['put', '-', '--to', 'notes/plan.md', '--generated'], '# 计划\n').outcome).toBe('accepted')
         expect(agent(['say', name, 'notes/plan.md', '第三节的数字还没核对']).outcome).toBe('heard')
         expect(pb([name, 'list', '--library', lib]).data.marks.map((m: any) => m.text)).toEqual(['第三节的数字还没核对'])
         view = `${name}.marks`
@@ -76,7 +76,7 @@ describe('a plugin project from plugin new', () => {
         const site = join(home, 'shop')
         mkdirSync(site, { recursive: true })
         writeFileSync(join(site, 'index.html'), '<h1>小店</h1>\n')
-        expect(agent(['put', site, '--to', 'sites/shop', '--made']).outcome).toBe('accepted')
+        expect(agent(['put', site, '--to', 'sites/shop', '--generated']).outcome).toBe('accepted')
         expect(agent(['say', 'deployable', 'sites/shop']).outcome).toBe('heard')
         const published = join(home, 'published')
         expect(pb([name, 'target', 'set', '--to', published, '--library', lib]).outcome).toBe('done')

@@ -4,6 +4,7 @@ import { regionOf, shortDir, type Fingerprint, type Instant, type LibraryPath, t
 import { ADHOC_SCENE, type Fact, type FactActor, type How, type ItemId, type SceneId } from './facts.js'
 import type { Conversation } from './conversation.js'
 import { archived, heldKey, type HistoryRow, type ItemRow, type ItemState, type MarkKind, type MarkRow, type OriginLike, type OriginLine, type Ref, type SaidRow, type SceneRow } from './model.js'
+import { commandNow, lineNow, saidKind, spokenOrigin } from './words.js'
 
 export const when = (at: Instant) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`
 export const who = (a: FactActor) => (a.kind === 'owner' ? '主人' : a.name)
@@ -174,6 +175,17 @@ export function sceneView(lookup: Lookup, scene: SceneRow, conversation: Convers
   }
 }
 
+// ---- what the faces get: origins and sentences in the faces' words (words.ts) ----
+
+const spokenLine = (l: OriginLine) => ({ ...l, origin: spokenOrigin(l.origin) })
+const spokenSaid = (s: SaidView) => ({ ...s, flavor: saidKind(s.flavor) })
+
+/** An item's view as a section's data gives it. */
+export const spokenItem = (v: ItemView) => ({ ...v, origin: spokenOrigin(v.origin), entered: spokenLine(v.entered), earlier: v.earlier.map(spokenLine), said: v.said.map(spokenSaid) })
+
+/** A scene's view as a section's data gives it. */
+export const spokenScene = (v: SceneView) => ({ ...v, said: v.said.map(spokenSaid), items: v.items.map((i) => ({ ...i, origin: spokenOrigin(i.origin) })) })
+
 export function sceneText(v: SceneView): string {
   const lines = [`场景 ${shortScene(v.id)}`, `${actorNames(v.actors)} · ${when(v.first)} 到 ${when(v.last)}${v.cwds.length ? ` · 在 ${v.cwds.map((d) => shortDir(d)).join('、')}` : ''}`]
   if (v.conversation) {
@@ -256,10 +268,10 @@ export function factLine(lookup: Lookup, f: Fact, quiet = false): string {
     case 'item.remove':
       return `${pathOf(lookup, f.item)} 随归档区一起清掉了`
     case 'owner.op':
-      if (f.request) return `批准了 ${f.request.by.name} 的请求，执行 ${f.command}${f.refused === undefined ? '' : ` 被拒绝（${f.refused}）`}：${f.summary}`
-      return f.actor.kind === 'owner' ? `主人面的操作 ${f.command}：${f.summary}` : `执行 ${f.command}：${f.summary}`
+      if (f.request) return `批准了 ${f.request.by.name} 的请求，执行 ${commandNow(f.command)}${f.refused === undefined ? '' : ` 被拒绝（${f.refused}）`}：${f.summary}`
+      return f.actor.kind === 'owner' ? `主人面的操作 ${commandNow(f.command)}：${f.summary}` : `执行 ${commandNow(f.command)}：${f.summary}`
     case 'request':
-      return f.act === 'asked' ? `请主人做 ${f.line}：${f.why ?? ''}` : `撤回了请求 ${f.request}：${f.line}`
+      return f.act === 'asked' ? `请主人做 ${lineNow(f.line)}：${f.why ?? ''}` : `撤回了请求 ${f.request}：${lineNow(f.line)}`
     case 'checked':
       return '看过了库的变化'
     case 'unowned.left':
@@ -317,7 +329,7 @@ export function standingLine(kind: StandingKind, m: MarkRow): string {
 
 const TITLES: Record<StandingKind, string> = { stale: '可能过期', gone: '来源不在', upstream: '上游有标记', unowned: '没人登记过的', closed: '没登记的目录', changed: '被直接改过的', missing: '不在了的', moved: '挪过的' }
 const AFTER: Partial<Record<StandingKind, string>> = {
-  unowned: '它们不是经 put 放进来的。要留着用的，知道来历就用 put <库内路径> --brought 或 --made 补上；不要的归档。',
+  unowned: '它们不是经 put 放进来的。要留着用的，知道来历就用 put <库内路径> --imported 或 --generated 补上；不要的归档。',
   changed: '是你改的，就用 say revised <库内路径> 认下；主人说是自己改的，加 --by owner。',
 }
 
@@ -331,7 +343,7 @@ function rowData(kind: StandingKind, m: MarkRow) {
     case 'upstream':
       return { ...ref, via: m.sources ?? [] }
     case 'unowned':
-      return m.adopted ? { ...ref, adopted: true } : { path: m.path, adopted: false }
+      return m.adopted ? { ...ref, registered: true } : { path: m.path, registered: false }
     case 'closed':
       return { path: m.path }
     case 'changed':
@@ -354,7 +366,7 @@ export function standingSections(lists: readonly StandingList[], partial: readon
     .map((l) => {
       const shown = l.rows.slice(0, limit)
       const total = `${l.atLeast ? '至少 ' : ''}${l.count}`
-      const all = `show ledger.standing --kind ${l.kind}`
+      const all = `show ledger.status --kind ${l.kind}`
       const rest = l.count > shown.length ? [`  ……共 ${total} 样，看全部：${all}`] : []
       const after = [...(l.kind === 'unowned' ? more : []), ...(AFTER[l.kind] ? [AFTER[l.kind] as string] : [])]
       const data = { count: l.count, shown: shown.map((m) => rowData(l.kind, m)), ...(rest.length > 0 ? { more: all } : {}) }

@@ -27,7 +27,7 @@ const HISTORY: Fact[] = [
   f(12, { kind: 'item.remove', item: id('i_r2') }, { scene: 's3' }),
   f(13, { kind: 'item.move', item: id('i_r1'), from: p('inbox/r1.md'), to: p('_archive/inbox/r1.md'), archive: 'in' }, { scene: 's3' }),
   f(14, { kind: 'unowned.left', paths: [p('stray.md')] }, { scene: 's3' }),
-  f(15, { kind: 'owner.op', command: 'grant issue', summary: '已发', destructive: false }, { scene: 's3' }),
+  f(15, { kind: 'owner.op', command: 'grant create', summary: '已发', destructive: false }, { scene: 's3' }),
 ]
 
 /** What the rows say about each item: where it is, whether it counts, what it holds and was made from. */
@@ -82,7 +82,7 @@ describe('the rows however the facts arrive', () => {
     const rows = await folded(HISTORY)
     expect([...rows.all('scenes').keys()]).toEqual(['s1', 's2', 's3'])
     expect(rows.scene('s1')?.said.map((s) => s.text)).toEqual(['整理支付资料'])
-    expect(rows.scene('s3')?.ops.map((o) => o.command)).toEqual(['grant issue'])
+    expect(rows.scene('s3')?.ops.map((o) => o.command)).toEqual(['grant create'])
     // Storage gives rows in key order, so the news read from the first key are the latest first.
     const news = HISTORY.filter(mayBeNews)
     const keys = [...rows.records.tables.get('log')!.values()].filter((r) => r.fields?.news === 'y').map((r) => r.key).sort()

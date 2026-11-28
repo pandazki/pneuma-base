@@ -31,7 +31,7 @@ const REFUSAL: Record<string, (subject: string) => string> = {
   'no-such-file': (s) => `没有这个文件：${s}`,
   'would-overwrite': (s) => `${s} 已有内容不同的东西，没有动它。换一个名字。`,
   'original-path-taken': (s) => `原路径 ${s} 已有文件，什么都没动。`,
-  'agent-session': (s) => `${s}：--observed 只给主人用，记的是主人这边自动看到的东西。你知道它从哪来，就直接写 --brought 或 --made，不加 --observed。`,
+  'agent-session': (s) => `${s}：--observed 只给主人用，记的是主人这边自动看到的东西。你知道它从哪来，就直接写 --imported 或 --generated，不加 --observed。`,
   'inside-bundle': (s) => `${s} 是一样东西（带 .pneuma-item 标记的目录），它里面的文件不单独放、挪或归档。要改它，把整个目录重新放进来。`,
 }
 
@@ -117,7 +117,7 @@ function levelText(dir: string, level: Level): string[] {
   return [`第一层，${count}：`, ...named, ...rest]
 }
 
-/** A directory that is no thing, or noise. */
+/** A directory that is no thing, or an ignored place. */
 function placeText(p: PlaceFacts): string[] {
   switch (p.kind) {
     case 'open':
@@ -127,7 +127,7 @@ function placeText(p: PlaceFacts): string[] {
       const marks = p.markers.length === 0 ? '' : `，顶上有 ${p.markers.join('、')}`
       return [`${p.path}/ · 目录，没有登记，${files}${marks}`]
     }
-    case 'noise':
+    case 'ignored':
       return [`${p.path} 是噪音，${'name' in p.by ? `按名字 ${p.by.name}` : `按路径 ${p.by.path}`}；找、查和登记都不涉及它。`]
   }
 }
@@ -248,7 +248,7 @@ function fitted<J>(parts: number, shape: (kept: number) => Shaped<J>): Shaped<J>
   return best
 }
 
-const STANDING_REST = '状况的全部：show ledger.standing；要主人做的：首页上的「等你决定」。'
+const STANDING_REST = '状况的全部：show ledger.status；要主人做的：首页上的「等你决定」。'
 
 /** check's parts in the order its text prints them: each section, the caller's requests, each ask. */
 function checkParts(r: CheckResult): Part<unknown>[] {

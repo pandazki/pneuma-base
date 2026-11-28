@@ -39,7 +39,7 @@ test('开始 walks the owner from a new library to an agent at work, each step f
   const second = start.getByRole('listitem', { name: /第 2 步，放进第一样东西，还没做/ })
   await expect(second).not.toContainText('pneuma-base put')
   await second.getByRole('button', { name: /放进第一样东西/ }).click()
-  await expect(second).toContainText(`pneuma-base put <文件或文件夹> --to inbox/<名字> --brought --by owner --library '${lib}'`)
+  await expect(second).toContainText(`pneuma-base put <文件或文件夹> --to inbox/<名字> --imported --by owner --library '${lib}'`)
   const third = start.getByRole('listitem', { name: /第 3 步，对你的 agent 说一句/ })
   await third.getByRole('button', { name: /对你的 agent 说一句/ }).click()
   await expect(third).toContainText('看看我的 Pneuma Base 库里有什么。')
@@ -57,7 +57,7 @@ test('开始 walks the owner from a new library to an agent at work, each step f
 
   const paper = join(tempDir('pb-e2e-out-'), 'paper.pdf')
   writeFileSync(paper, '%PDF')
-  pb.run(['--library', lib, 'put', paper, '--to', 'inbox/paper.pdf', '--brought', '--by', 'owner'], { env: noAgentPath() })
+  pb.run(['--library', lib, 'put', paper, '--to', 'inbox/paper.pdf', '--imported', '--by', 'owner'], { env: noAgentPath() })
   await expect(start.getByRole('listitem', { name: /第 2 步，放进第一样东西，做完了/ })).toContainText('库的根目录里有 1 样东西')
   await expect(start).toContainText('2 / 3')
 
@@ -96,16 +96,16 @@ test('in the app, the page shows what the app says it did and opens the links th
 
 test('the menu bar panel: the library, what waits for the owner decided right there, the latest rows one line each, the window and the app’s menu as icons', async ({ page, pb }) => {
   const lib = newLibrary(pb)
-  pb.run(['--library', lib, 'plugin', 'add', 'deploy'], { env: noAgentPath() })
+  pb.run(['--library', lib, 'plugin', 'enable', 'deploy'], { env: noAgentPath() })
   pb.run(['--library', lib, 'deploy', 'target', 'set', '--kind', 'dir', '--to', join(tempDir('pb-e2e-www-'), 'www')], { env: noAgentPath() })
   pb.run(['--library', lib, 'agent', 'connect', 'claude-code'], { env: noAgentPath() })
   const site = tempDir('pb-e2e-site-')
   for (const name of ['shop', 'blog', 'docs', 'notes']) write(site, `${name}/index.html`, `<h1>${name}</h1>`)
   for (const name of ['shop', 'blog', 'docs', 'notes']) {
-    pb.run(['@claude-code', 'put', name, '--to', `sites/${name}`, '--made'], { cwd: site, env: { ...noAgentPath(), PNEUMA_BASE_SESSION: 'sites' } })
+    pb.run(['@claude-code', 'put', name, '--to', `sites/${name}`, '--generated'], { cwd: site, env: { ...noAgentPath(), PNEUMA_BASE_SESSION: 'sites' } })
     pb.run(['@claude-code', 'say', 'deployable', `sites/${name}`], { cwd: site, env: { ...noAgentPath(), PNEUMA_BASE_SESSION: 'sites' } })
   }
-  for (const name of ['a', 'b']) pb.run(['@claude-code', 'put', '-', '--to', `notes/${name}.md`, '--made'], { input: `# ${name}\n`, env: { ...noAgentPath(), PNEUMA_BASE_SESSION: 'notes' } })
+  for (const name of ['a', 'b']) pb.run(['@claude-code', 'put', '-', '--to', `notes/${name}.md`, '--generated'], { input: `# ${name}\n`, env: { ...noAgentPath(), PNEUMA_BASE_SESSION: 'notes' } })
   const { url } = await pb.view(lib, { env: noAgentPath() })
   const sent = await catchShell(page)
   await page.setViewportSize({ width: 340, height: 640 })

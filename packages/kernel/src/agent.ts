@@ -170,7 +170,7 @@ async function factsOf(store: Storage, at: At, fingerprint: boolean): Promise<Fi
 /**
  * What a target names, by the kind of place (ARCHITECTURE.md「找、看、说、查、归档」, 看): a thing, the main
  * one before its archived copy (`_archive/…` names the archived copy); else a directory, open (its first
- * level) or closed (a probe within its budget); else noise, by which name or path.
+ * level) or closed (a probe within its budget); else ignored (storage's noise), by which name or path.
  */
 async function namedBy(ctx: Context, store: Storage, target: string, fingerprint: boolean): Promise<{ file: FileFacts | null; place?: PlaceFacts }> {
   const path = parseLibraryPath(ctx.library.root, target)
@@ -180,7 +180,7 @@ async function namedBy(ctx: Context, store: Storage, target: string, fingerprint
   const thing = ats.find((at) => at.kind === 'file' || at.kind === 'bundle')
   if (thing !== undefined) return { file: await factsOf(store, thing, fingerprint) }
   const [at] = ats as [At]
-  if (at.failed === 'noise') return { file: null, place: { kind: 'noise', path, by: await noiseRule(store, path) } }
+  if (at.failed === 'noise') return { file: null, place: { kind: 'ignored', path, by: await noiseRule(store, path) } }
   if (at.kind !== 'folder') return { file: null }
   if ((await openDirectories(ctx)).includes(path)) {
     const level = await levelOf(store, path)

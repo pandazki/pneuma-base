@@ -1,7 +1,7 @@
 // The ledger's pages that tell what happened, each a feed of facts read from the log a page at a
 // time: the home page's part (since the owner last looked, and what needs looking at), the activity
 // page, the scenes and one scene.
-import { FIRST_WORDS, pageAt, pagingOf, PAGE_ROWS, shortDir, type Action, type Block, type Cell, type FeedAct, type FeedGroup, type FeedRow, type Grant, type Instant, type LibraryPath, type Reopen, type Stat, type ViewAnswer } from '@pneuma-base/kernel'
+import { FIRST_WORDS, pageAt, pagingOf, PAGE_ROWS, shortDir, type Action, type Block, type Cell, type FeedGroup, type FeedRow, type Grant, type Instant, type LibraryPath, type Reopen, type Stat, type ViewAnswer } from '@pneuma-base/kernel'
 import { reopenFor, type Conversation } from './conversation.js'
 import { isAct, type Fact, type FactActor, type SceneId } from './facts.js'
 import { archived, type SceneRow } from './model.js'
@@ -9,6 +9,7 @@ import { counters, lookupOf } from './queries.js'
 import type { Records } from './rows.js'
 import { ACTIVITY_VIEW, actorMark, grantCell, itemLink, SCENE_VIEW, SCENES_VIEW, sceneCell, sceneDoing, sceneLink, standingCounts, STANDING_VIEW, WHO_OPTIONS } from './ui.js'
 import { actorNames, factLine, shortScene, when, whereConversation, type Lookup, type StandingList } from './views.js'
+import { actNow, commandNow, lineNow, saidKind } from './words.js'
 
 type Read = Pick<Records, 'get' | 'under' | 'where' | 'count'>
 
@@ -78,7 +79,6 @@ function askedBy(f: Fact, grants: readonly Grant[]): Cell[] {
   return [{ text: `应 ${f.request.by.name} 的请求 ${f.request.id}`, ...(typeof mark === 'string' ? {} : { actor: mark }) }]
 }
 
-const SAID_ACT: Record<Extract<Fact, { kind: 'said' }>['flavor'], FeedAct> = { doing: 'doing', decided: 'decision', note: 'note' }
 const where = (lookup: Lookup, id: Fact & { item: unknown }) => lookup.items.get(id.item as never)?.path ?? null
 
 /**
@@ -93,9 +93,9 @@ function partsOf(lookup: Lookup, f: Fact): Pick<FeedRow, 'act' | 'path' | 'note'
   const at = (path: string | null) => (path === null ? {} : { path: path as LibraryPath })
   switch (f.kind) {
     case 'said':
-      return { act: SAID_ACT[f.flavor], ...at(f.about === null ? null : (lookup.items.get(f.about)?.path ?? null)), note: f.text }
+      return { act: saidKind(f.flavor), ...at(f.about === null ? null : (lookup.items.get(f.about)?.path ?? null)), note: f.text }
     case 'item.enter':
-      return { act: f.origin.kind === 'made' ? 'made' : 'brought', ...at(where(lookup, f) ?? f.path), ...note(f.note) }
+      return { act: f.origin.kind === 'made' ? 'generated' : 'imported', ...at(where(lookup, f) ?? f.path), ...note(f.note) }
     case 'item.revise':
       return { act: 'changed', ...at(where(lookup, f)), ...note(f.note) }
     case 'item.move':
@@ -106,7 +106,7 @@ function partsOf(lookup: Lookup, f: Fact): Pick<FeedRow, 'act' | 'path' | 'note'
       return { act: 'removed', ...at(where(lookup, f)) }
     case 'owner.op':
       if (f.refused !== undefined) return {}
-      return f.act === undefined ? { act: 'command', ...at(f.command) } : { act: f.act, ...at(f.object ?? null) }
+      return f.act === undefined ? { act: 'command', ...at(commandNow(f.command)) } : { act: actNow(f.act), ...at(f.object ?? null) }
     default:
       return {}
   }
@@ -114,7 +114,7 @@ function partsOf(lookup: Lookup, f: Fact): Pick<FeedRow, 'act' | 'path' | 'note'
 
 /** An owner command as a row says it whole: the command as given, never what it printed. */
 function commandText(f: Extract<Fact, { kind: 'owner.op' }>): string {
-  const line = `pneuma-base ${f.line ?? f.command}${f.refused === undefined ? '' : `（被拒绝：${f.refused}）`}`
+  const line = `pneuma-base ${f.line === undefined ? commandNow(f.command) : lineNow(f.line)}${f.refused === undefined ? '' : `（被拒绝：${f.refused}）`}`
   return f.request ? `批准了 ${f.request.by.name} 的请求：${line}` : line
 }
 

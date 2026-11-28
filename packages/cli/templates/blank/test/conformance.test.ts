@@ -11,7 +11,7 @@ test('the plugin follows the standard', async () => {
   const report = await conformance(dist, {
     // What the examples in src/cognition.md stand on: they mark notes/plan.md, so it is in the library.
     async setup({ sandbox }) {
-      const put = await sandbox.agent('setup', 'setup', ['put', '-', '--to', 'notes/plan.md', '--made'], { input: '# 计划\n' })
+      const put = await sandbox.agent('setup', 'setup', ['put', '-', '--to', 'notes/plan.md', '--generated'], { input: '# 计划\n' })
       assert.equal(put.code, 0, put.stderr)
     },
     // Files in its own directory it replaces whole, as configuration: none, marks are only ever added.

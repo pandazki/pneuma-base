@@ -8,7 +8,7 @@ it('a verb’s own flags may come before the verb', () => {
   const lib = join(tempDir(), 'lib')
   const as = (args: string[], input?: string) => sb.run(['--library', lib, '--as', 'codex', '--session', 's1', ...args], input === undefined ? {} : { input })
   expect(sb.run(['init', lib]).code).toBe(0)
-  const put = as(['--to', 'notes/a.md', '--made', 'put', '-'], 'hello\n')
+  const put = as(['--to', 'notes/a.md', '--generated', 'put', '-'], 'hello\n')
   expect(put.code, put.stderr).toBe(0)
   expect(as(['archive', 'notes/a.md']).code).toBe(0)
   const found = as(['--include-archived', 'find', 'a.md'])

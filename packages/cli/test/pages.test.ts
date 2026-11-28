@@ -20,26 +20,26 @@ type Page = { link: Link; json: Shown; text: string }
 /** What a business verb or command reads, where a page shows the same: it has no button because the page is the reading. */
 const READS: Record<string, string> = {
   inspect: 'item',
-  'plugin list': 'config',
-  'secret list': 'config',
-  'ledger held list': 'ledger.held',
+  'plugin list': 'settings',
+  'secret list': 'settings',
+  'ledger copies list': 'ledger.copies',
   'ledger stats': 'ledger.stats',
-  'version list': 'version.things',
+  'version list': 'version.items',
   'sync status': 'sync.status',
   'deploy list': 'deploy.sites',
   'search status': 'search.status',
   'agent list': 'agents',
   'agent detect': 'agents',
   'request list': 'home',
-  'noise list': 'config',
+  'ignore list': 'settings',
   'pair list': 'home',
-  'storage list': 'config',
+  'storage list': 'settings',
 }
 
 /** What has no button on any page, and why. */
 const NO_PLACE: Record<string, string> = {
   find: '一个搜索框要一个人自己打字的页面参数，界面的页现在只从筛选的选项和链接拿参数；要等界面能问一个自由的输入。找按名字时，人翻「文件」和「库」',
-  'say doing': '说的是 agent 这次会话在做什么；人在界面里的操作自成一个主人的场景，场景里记的就是做了哪些操作',
+  'say task': '说的是 agent 这次会话在做什么；人在界面里的操作自成一个主人的场景，场景里记的就是做了哪些操作',
   ask: '请是 agent 请主人做一条主人命令；主人在界面里直接按那条命令的按钮，用不着请谁',
   'launcher install': '没有要主人决定的：应用每次启动时写它，接上 agent 时缺了也写；从包装的，主人在终端里跑',
   'ledger export': '它写一个库外的文件，页交不出文件，也不替主人选位置；活动页的「导出」给出这条命令，复制到终端里跑',
@@ -172,30 +172,30 @@ beforeAll(async () => {
     expect(r.code, `${args.join(' ')}\n${r.stdout}${r.stderr}`).toBe(0)
   }
   expect(sb.run(['init', lib]).code).toBe(0)
-  for (const p of ['version', 'deploy', 'sync', 'search']) owner(['plugin', 'add', p])
-  owner(['grant', 'issue', 'claude', '--agent', 'claude-code'])
+  for (const p of ['version', 'deploy', 'sync', 'search']) owner(['plugin', 'enable', p])
+  owner(['grant', 'create', 'claude', '--agent', 'claude-code'])
   // One agent product connected and one found and not connected, so the agents page has 断开 and 接上.
   await write(join(sb.home, '.claude/settings.json'), '{}\n')
   await write(join(sb.home, '.cursor/argv.json'), '{}\n')
   owner(['agent', 'connect', 'claude-code'])
   owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', join(tempDir('pb-www-'), 'www')])
   owner(['sync', 'target', 'set', '--kind', 'dir', '--to', tempDir('pb-sync-')])
-  owner(['search', 'embedder', 'set', '--kind', 'hash'])
+  owner(['search', 'embedding', 'set', '--kind', 'hash'])
   await write(join(work, 'shop/index.html'), '<h1>小店</h1>\n')
   await write(join(work, 'blog/index.html'), '<h1>博客</h1>\n')
-  agent(['say', 'doing', '整理小店的资料'])
-  agent(['put', 'shop', '--to', 'sites/shop', '--made'])
-  agent(['put', 'blog', '--to', 'sites/blog', '--made'])
+  agent(['say', 'task', '整理小店的资料'])
+  agent(['put', 'shop', '--to', 'sites/shop', '--generated'])
+  agent(['put', 'blog', '--to', 'sites/blog', '--generated'])
   agent(['say', 'deployable', 'sites/shop'])
   agent(['say', 'deployable', 'sites/blog'])
   owner(['deploy', 'on', 'sites/shop'])
-  agent(['put', '-', '--to', 'sources/pricing.html', '--brought', '--source', 'https://example.com/pricing'], '<p>价格</p>\n')
-  agent(['put', '-', '--to', 'notes/plan.md', '--made', '--from', 'sources/pricing.html', '--note', '第一版'], '# 计划\n')
+  agent(['put', '-', '--to', 'sources/pricing.html', '--imported', '--source', 'https://example.com/pricing'], '<p>价格</p>\n')
+  agent(['put', '-', '--to', 'notes/plan.md', '--generated', '--from', 'sources/pricing.html', '--note', '第一版'], '# 计划\n')
   agent(['say', 'versioned', 'notes/plan.md', '开始记版本'])
-  agent(['put', '-', '--to', 'notes/plan.md', '--made', '--note', '改了'], '# 计划 v2\n')
-  agent(['put', '-', '--to', 'notes/draft.md', '--made'], '草稿\n')
+  agent(['put', '-', '--to', 'notes/plan.md', '--generated', '--note', '改了'], '# 计划 v2\n')
+  agent(['put', '-', '--to', 'notes/draft.md', '--generated'], '草稿\n')
   agent(['put', 'notes/draft.md', '--to', 'notes/draft-moved.md'])
-  agent(['put', '-', '--to', 'notes/old.md', '--made'], '旧的\n')
+  agent(['put', '-', '--to', 'notes/old.md', '--generated'], '旧的\n')
   agent(['archive', 'notes/old.md'])
   // A request waiting on the owner, so the home page has 批准 and 拒绝.
   agent(['ask', '要给博客也设一个部署目标', 'deploy', 'target', 'set', '--kind', 'dir', '--to', join(tempDir('pb-www2-'), 'www')])
@@ -217,7 +217,7 @@ beforeAll(async () => {
   // More things in one folder than a page of show holds, so the library's table comes in pages; and a
   // directory nobody registered anything in, so the files page and home have its three answers.
   for (let i = 1; i <= 25; i++) await write(join(lib, `inbox/scan-${String(i).padStart(2, '0')}.pdf`), `scan ${i}\n`)
-  owner(['ledger', 'register', 'inbox', '--inside'])
+  owner(['ledger', 'register', 'inbox', '--recursive'])
   await write(join(lib, 'scans/receipt.pdf'), '收据\n')
 
   // Every view in the list with its filters' defaults, then every page a link on one of them opens, a few
@@ -247,7 +247,7 @@ beforeAll(async () => {
 describe('every page of a library with every built-in plugin', () => {
   it('is reached: each view in the list, the item panel of a file, a bundle, a file inside one and an archived file, and a scene card', () => {
     const views = new Set(pages.map((p) => p.link.view))
-    for (const id of ['home', 'ledger.items', 'ledger.stats', 'ledger.scenes', 'ledger.standing', 'ledger.activity', 'ledger.held', 'ledger.scene', 'version.things', 'deploy.sites', 'sync.status', 'search.status', 'files', 'archive', 'agents', 'config', 'item']) expect(views, id).toContain(id)
+    for (const id of ['home', 'ledger.items', 'ledger.stats', 'ledger.scenes', 'ledger.status', 'ledger.activity', 'ledger.copies', 'ledger.scene', 'version.items', 'deploy.sites', 'sync.status', 'search.status', 'files', 'archive', 'agents', 'settings', 'item']) expect(views, id).toContain(id)
     const items = pages.filter((p) => p.link.view === 'item').map((p) => p.link.params.path)
     expect(items).toEqual(expect.arrayContaining(['notes/plan.md', 'sites/shop', 'sites/shop/index.html', '_archive/notes/old.md']))
   })
@@ -308,7 +308,7 @@ describe('every page of a library with every built-in plugin', () => {
     const scans = allBlocks(files.json.blocks).flatMap((b) => (b.kind === 'table' ? b.rows : [])).find((r) => r.key === 'scans')
     expect(scans).toMatchObject({ cells: { name: { tag: { text: '没登记' } }, size: { text: '1 个文件' } } })
     expect(scans?.actions.map((a) => a.label)).toEqual(['登记成一样东西', '登记里面的文件', '不用管'])
-    expect(files.text).toContain('$ ledger register scans --inside  # 登记里面的文件（只给主人）；先问：要登记 scans/ 里任意深处的全部文件：1 个，不含噪音。')
+    expect(files.text).toContain('$ ledger register scans --recursive  # 登记里面的文件（只给主人）；先问：要登记 scans/ 里任意深处的全部文件：1 个，不含噪音。')
   })
 
   it('has buttons that each call a verb, or an owner command the library runs with arguments its params take, and no problem', async () => {

@@ -26,8 +26,8 @@ function chartOr(s: Stats, sentence: string, form: 'stacked' | 'line', unit: str
 // ---- 1. is it used ----
 
 function used(s: Stats): Block {
-  const { brought, made } = s.put
-  const put = brought + made === 0 ? `${span(s)}没有放进新东西。` : `${span(s)}放进 ${brought + made} 样东西：带进来 ${brought} 样，做出来 ${made} 样。`
+  const { imported, generated } = s.put
+  const put = imported + generated === 0 ? `${span(s)}没有放进新东西。` : `${span(s)}放进 ${imported + generated} 样东西：带进来 ${imported} 样，做出来 ${generated} 样。`
   const agents = s.sessions.byAgent
   const visits = agents.length === 0 ? `${span(s)}没有 agent 来过。` : `${agents.length} 个 agent 来过 ${s.sessions.total} 次会话：${agents.map((a) => `${a.agent} ${a.total} 次`).join('，')}。`
   const top = agents.length > SESSION_SERIES + 1 ? agents.slice(0, SESSION_SERIES) : agents
@@ -38,8 +38,8 @@ function used(s: Stats): Block {
   ]
   return section('用起来了吗', null, [
     chartOr(s, put, 'stacked', '样', [
-      { label: '带进来的', values: s.put.byBucket.brought },
-      { label: '做出来的', values: s.put.byBucket.made },
+      { label: '带进来的', values: s.put.byBucket.imported },
+      { label: '做出来的', values: s.put.byBucket.generated },
     ]),
     agents.length === 0 ? text(visits) : chartOr(s, visits, 'stacked', '次', series),
   ])
@@ -49,8 +49,8 @@ function used(s: Stats): Block {
 
 function builtOn(s: Stats): Block {
   const r = s.reuse
-  if (r.made === 0) return section('以前的东西被接着用了吗', null, [text(`${span(s)}没有做出来新东西。`)])
-  const sentence = `${span(s)}做出来的 ${r.made} 样里，${r.fromLibrary} 样依据了库里已有的东西；${r.otherSession} 样用了别的会话留下的（${percent(r.otherSession, r.made)}），${r.otherAgent} 样用了别的 agent 带来或做出的（${percent(r.otherAgent, r.made)}）。`
+  if (r.generated === 0) return section('以前的东西被接着用了吗', null, [text(`${span(s)}没有做出来新东西。`)])
+  const sentence = `${span(s)}做出来的 ${r.generated} 样里，${r.fromLibrary} 样依据了库里已有的东西；${r.otherSession} 样用了别的会话留下的（${percent(r.otherSession, r.generated)}），${r.otherAgent} 样用了别的 agent 带来或做出的（${percent(r.otherAgent, r.generated)}）。`
   const chart = chartOr(s, sentence, 'stacked', '样', [
     { label: '用了别的会话留下的', values: r.byBucket.otherSession },
     { label: '其余做出来的', values: r.byBucket.rest },
@@ -93,9 +93,9 @@ function agentLine(a: AgentRow): string {
           ]).join('，')}`,
         ]
   const did = parts([
-    [a.brought, `带进来 ${a.brought} 样`],
-    [a.made, `做出来 ${a.made} 样`],
-    [a.decided, `决定 ${a.decided} 条`],
+    [a.imported, `带进来 ${a.imported} 样`],
+    [a.generated, `做出来 ${a.generated} 样`],
+    [a.decisions, `决定 ${a.decisions} 条`],
     [a.notes, `备注 ${a.notes} 条`],
   ])
   return [`${a.sessions} 次会话`, ...did, ...asked].join(' · ')
@@ -109,7 +109,7 @@ function ownerLine(s: Stats): string | null {
   ])
   const line = parts([
     [o.commands, `做了 ${o.commands} 次操作${decided.length > 0 ? `，其中${decided.join('、')}` : ''}`],
-    [o.brought + o.made, `放进 ${o.brought + o.made} 样`],
+    [o.imported + o.generated, `放进 ${o.imported + o.generated} 样`],
     [o.said, `记了 ${o.said} 条决定和备注`],
     [o.registered, `一次登记了原有的 ${o.registered} 样`],
   ])

@@ -89,18 +89,18 @@ function verb<const P extends VerbParams>(v: Omit<Verb, 'params' | 'run'> & { re
 }
 
 const ORIGIN_HELP =
-  '要说明来历：带进来的用 --brought（可加 --source <出处>、--by owner），做出来的用 --made（可加 --from <库内路径…>、--from-outside "<一句话…>"）。两个只能选一个。'
+  '要说明来历：带进来的用 --imported（可加 --source <出处>、--by owner），做出来的用 --generated（可加 --from <库内路径…>、--from-external "<一句话…>"）。两个只能选一个。'
 
-const OBSERVED_HELP = '--observed 只用来登记库里已有的东西，和 --brought --by owner 一起写：主人这边自动看到、没人说过来历的，比如应用登记主人复制进库的文件。'
+const OBSERVED_HELP = '--observed 只用来登记库里已有的东西，和 --imported --by owner 一起写：主人这边自动看到、没人说过来历的，比如应用登记主人复制进库的文件。'
 
-type OriginValues = { brought: boolean; made: boolean; source: string | null; by: string | null; from: readonly string[]; 'from-outside': readonly string[] }
+type OriginValues = { imported: boolean; generated: boolean; source: string | null; by: string | null; from: readonly string[]; 'from-external': readonly string[] }
 
 function originOf(v: OriginValues): Origin<string> | null {
-  if (v.brought && v.made) throw new UsageError(ORIGIN_HELP)
-  if (!v.brought && (v.source !== null || v.by !== null)) throw new UsageError('--source 和 --by 只跟 --brought 一起用。')
-  if (!v.made && (v.from.length > 0 || v['from-outside'].length > 0)) throw new UsageError('--from 和 --from-outside 只跟 --made 一起用。')
-  if (v.brought) return { kind: 'brought', source: v.source, by: v.by }
-  if (v.made) return { kind: 'made', from: [...v.from], outside: [...v['from-outside']] }
+  if (v.imported && v.generated) throw new UsageError(ORIGIN_HELP)
+  if (!v.imported && (v.source !== null || v.by !== null)) throw new UsageError('--source 和 --by 只跟 --imported 一起用。')
+  if (!v.generated && (v.from.length > 0 || v['from-external'].length > 0)) throw new UsageError('--from 和 --from-external 只跟 --generated 一起用。')
+  if (v.imported) return { kind: 'brought', source: v.source, by: v.by }
+  if (v.generated) return { kind: 'made', from: [...v.from], outside: [...v['from-external']] }
   return null
 }
 
@@ -131,7 +131,7 @@ async function putRequest(v: OriginValues & { what: string; to: string | null; n
   }
   const path = onDisk ? local : first
   if (to === null) return { kind: 'register', path, origin: requireOrigin(origin), note, ...(observed ? { observed: true as const } : {}) }
-  if (origin || note !== null) throw new UsageError('在库里挪位置不需要 --brought、--made 或 --note。')
+  if (origin || note !== null) throw new UsageError('在库里挪位置不需要 --imported、--generated 或 --note。')
   return { kind: 'move', from: path, to }
 }
 
@@ -174,7 +174,7 @@ export const VERBS: readonly Verb[] = [
     readOnly: false,
     params: { positional: [{ name: 'sentence', hint: '一句话，说要做什么', required: true, words: true }] },
     run: async ({ sentence }, { bound: { library, ctx } }) => {
-      const say = await agentFace.say({ kind: 'doing', about: null, text: sentence, args: {} }, ctx)
+      const say = await agentFace.say({ kind: 'task', about: null, text: sentence, args: {} }, ctx)
       const check = await agentFace.check({ since: 'last', includeArchived: false }, ctx)
       const find = await agentFace.find({ text: sentence, match: 'words', filters: {}, includeArchived: false, skipOwnSession: true }, ctx)
       return { ...startAnswer(say, check, find, sentence, ownerFace.commands(library.plugins), library.root), exit: exitOf(say, check, find) }
@@ -189,7 +189,7 @@ export const VERBS: readonly Verb[] = [
       flags: [
         INCLUDE_ARCHIVED,
         { name: 'scene', hint: '场景号：只要这个场景的', kind: 'value' },
-        { name: 'origin', hint: 'brought 或 made：只要带进来的或做出来的', kind: 'value' },
+        { name: 'origin', hint: 'imported 或 generated：只要带进来的或做出来的', kind: 'value' },
         { name: 'page', hint: `第几页，每页 ${FIND_ROWS} 样；不写是第 1 页`, kind: 'value', pattern: '[1-9][0-9]{0,5}' },
       ],
     },
@@ -229,14 +229,14 @@ export const VERBS: readonly Verb[] = [
       positional: [{ name: 'what', hint: '这台机器上库外的文件或目录（写绝对路径），或库内路径；- 是标准输入', required: true }],
       flags: [
         { name: 'to', hint: '放到的库内路径；在库里挪位置时是新路径', kind: 'value' },
-        { name: 'brought', hint: '带进来的：网页、文档、主人给的文件', kind: 'boolean' },
-        { name: 'made', hint: '做出来的', kind: 'boolean' },
-        { name: 'source', hint: '出处，跟 brought 一起写', kind: 'value' },
-        { name: 'by', hint: '谁带进来的，只能写 owner，跟 brought 一起写', kind: 'value' },
-        { name: 'from', hint: '依据库里的哪些，库内路径，跟 made 一起写', kind: 'list' },
-        { name: 'from-outside', hint: '依据库外的什么，各一句话，跟 made 一起写', kind: 'list' },
+        { name: 'imported', hint: '带进来的：网页、文档、主人给的文件', kind: 'boolean' },
+        { name: 'generated', hint: '做出来的', kind: 'boolean' },
+        { name: 'source', hint: '出处，跟 imported 一起写', kind: 'value' },
+        { name: 'by', hint: '谁带进来的，只能写 owner，跟 imported 一起写', kind: 'value' },
+        { name: 'from', hint: '依据库里的哪些，库内路径，跟 generated 一起写', kind: 'list' },
+        { name: 'from-external', hint: '依据库外的什么，各一句话，跟 generated 一起写', kind: 'list' },
         { name: 'note', hint: '一句话，说这次放入改了什么', kind: 'value' },
-        { name: 'observed', hint: '来历是主人这边自动看到的，不是谁说的；只给主人，跟 brought 和 by owner 一起写', kind: 'boolean' },
+        { name: 'observed', hint: '来历是主人这边自动看到的，不是谁说的；只给主人，跟 imported 和 by owner 一起写', kind: 'boolean' },
       ],
       stdin: 'what',
     },
@@ -252,7 +252,7 @@ export const VERBS: readonly Verb[] = [
     readOnly: false,
     params: {
       positional: [
-        { name: 'kind', hint: '种类，比如 doing、note', required: true },
+        { name: 'kind', hint: '种类，比如 task、note', required: true },
         { name: 'about', hint: '关于什么：库内路径或别的标识' },
         { name: 'text', hint: '内容' },
       ],
@@ -293,7 +293,7 @@ export const VERBS: readonly Verb[] = [
     params: {
       positional: [
         { name: 'why', hint: '为什么：一句话，主人据它决定批不批' },
-        { name: 'command', hint: '主人的命令和它的参数，照命令行的写法，比如 plugin add version', many: true },
+        { name: 'command', hint: '主人的命令和它的参数，照命令行的写法，比如 plugin enable version', many: true },
       ],
       flags: [{ name: 'withdraw', hint: '撤回自己提的、还在等的一个请求：请求号', kind: 'value' }],
       raw: 'command',

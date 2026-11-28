@@ -4,7 +4,7 @@ import { formOf, TEXT_ROWS, type Action, type Block, type ItemSection, type Libr
 import { TARGET_SET } from './commands.js'
 import { conflictCopies, countsText, notReadyText, pendingOf, status, when, type Prepared } from './sync.js'
 
-export const STATUS_VIEW: ViewDecl = { id: 'sync.status', title: '同步', icon: 'refresh-cw', nav: true, filters: [], with: 'config' }
+export const STATUS_VIEW: ViewDecl = { id: 'sync.status', title: '同步', icon: 'refresh-cw', nav: true, filters: [], with: 'settings' }
 
 const owner = (command: string) => ({ face: 'owner' as const, command, args: { positional: [], flags: {} } })
 

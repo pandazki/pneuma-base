@@ -18,7 +18,7 @@ import type { OwnerCall } from './owner.js'
 import { ARCHIVE_DIR, parseLibraryPath, regionOf } from './paths.js'
 import { eachPlugin, messageOf, pluginContext } from './pipeline.js'
 import { codexHint } from './products.js'
-import { NOISE_COMMANDS } from './noise-commands.js'
+import { IGNORE_COMMANDS } from './ignore-commands.js'
 import { PAIR_COMMANDS } from './pair-commands.js'
 import { REQUEST_COMMANDS } from './request-commands.js'
 import { STORAGE_COMMANDS } from './storage-commands.js'
@@ -45,12 +45,12 @@ import {
 const typedDir = (dir: string, cwd: string) => resolve(cwd, dir === '~' || dir.startsWith('~/') ? join(homedir(), dir.slice(1)) : dir)
 
 const PLUGIN = { name: 'plugin', hint: '插件名', required: true } as const
-const REMOVE = { positional: [PLUGIN], flags: [{ name: 'anyway', hint: '插件不肯也卸', kind: 'boolean' }] } as const
+const DISABLE = { positional: [PLUGIN], flags: [{ name: 'force', hint: '插件不肯也卸', kind: 'boolean' }] } as const
 
 export type { KernelCommand, Outcome } from './kernel-command.js'
 
-const grantIssue = command({
-  name: 'grant issue',
+const grantCreate = command({
+  name: 'grant create',
   act: { kind: 'granted', object: 'name' },
   summary: '发一份授权：给谁、哪个区域、只读还是读写',
   params: {
@@ -137,10 +137,10 @@ const skillInstall = command({
 })
 
 export const KERNEL_COMMANDS: readonly KernelCommand[] = [
-  grantIssue,
+  grantCreate,
   grantRevoke,
   command({
-    name: 'plugin add',
+    name: 'plugin enable',
     act: { kind: 'on', object: 'plugin' },
     summary: '在这个库里装上一个插件',
     params: { positional: [PLUGIN] },
@@ -175,24 +175,24 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
     },
   }),
   command({
-    name: 'plugin remove',
+    name: 'plugin disable',
     act: { kind: 'off', object: 'plugin' },
     summary: '在这个库里卸下一个插件；它名下的目录原样留着',
-    params: REMOVE,
+    params: DISABLE,
     destructive: false,
     ownerOnly: true,
     setup: true,
     scope: 'library',
-    /** Asks the plugin first; it may refuse, saying why. `--anyway` removes it all the same: the owner may always drop a plugin. */
-    async run({ plugin: name, anyway }, call) {
+    /** Asks the plugin first; it may refuse, saying why. `--force` disables it all the same: the owner may always drop a plugin. */
+    async run({ plugin: name, force }, call) {
       const { library } = call.ctx
-      if (!library.config.plugins.includes(name as PluginName)) return refused('not-installed', `这个库没装插件 ${name}`)
+      if (!library.config.plugins.includes(name as PluginName)) return refused('not-enabled', `这个库没装插件 ${name}`)
       const heard = await hear(library.plugins.find((p) => p.name === name), (p, pctx) => p.onRemove?.(pctx), call.ctx)
       const warning = heard.answer ? heard.answer.refuse : null
-      if (warning !== null && !anyway) {
-        const text = `插件 ${name} 没有卸下，它说：${warning}\n照样要卸，用 plugin remove ${name} --anyway。`
-        const { call: removeAnyway } = formOf({ name: 'plugin remove', params: REMOVE }, { fixed: { plugin: name, anyway: true } })
-        const offer: Action = { label: '仍然卸下', tone: 'danger', confirm: `插件 ${name} 说：${warning}\n仍然卸下吗？`, inputs: [], call: removeAnyway }
+      if (warning !== null && !force) {
+        const text = `插件 ${name} 没有卸下，它说：${warning}\n照样要卸，用 plugin disable ${name} --force。`
+        const { call: forced } = formOf({ name: 'plugin disable', params: DISABLE }, { fixed: { plugin: name, force: true } })
+        const offer: Action = { label: '仍然卸下', tone: 'danger', confirm: `插件 ${name} 说：${warning}\n仍然卸下吗？`, inputs: [], call: forced }
         return { answer: { outcome: 'refused', reason: 'plugin-refused', text, offer }, problems: heard.problems }
       }
       const updated = await saveConfig(library.root, { ...library.config, plugins: library.config.plugins.filter((p) => p !== name) }, call.table)
@@ -201,7 +201,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
     },
   }),
   command({
-    name: 'plugin catch-up',
+    name: 'plugin backfill',
     act: { kind: 'synced', object: 'plugin' },
     summary: '让插件补上装上之前库里登记过的东西；停下过的接着补',
     params: { positional: [PLUGIN] },
@@ -210,8 +210,8 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
     scope: 'library',
     async run({ plugin: name }, call) {
       const plugin = call.ctx.library.plugins.find((p) => p.name === name)
-      if (!plugin) return refused('not-installed', `这个库没装插件 ${name}`)
-      if (!plugin.catchUp) return refused('nothing-to-catch-up', `插件 ${name} 不从放里学库里登记了什么，没有要补的。`)
+      if (!plugin) return refused('not-enabled', `这个库没装插件 ${name}`)
+      if (!plugin.catchUp) return refused('nothing-to-backfill', `插件 ${name} 不从放里学库里登记了什么，没有要补的。`)
       const caught = await caughtUp(call.ctx, plugin, 'resume')
       return done(caught.text ?? '', caught.data, undefined, caught.problems)
     },
@@ -262,7 +262,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       const broken = !current && (await exists(join(machinePluginsDir(call.ctx.home), name)))
       await installDir(call.ctx.home, from, name)
       const replaced = current ? `，换掉了原来的 ${current.version ?? '（没写版本）'}` : broken ? '，换掉了原来那份没能加载的' : ''
-      const use = `要在一个库里用它：pneuma-base plugin add ${name} --library <库的目录>。`
+      const use = `要在一个库里用它：pneuma-base plugin enable ${name} --library <库的目录>。`
       return done(`已把插件 ${named(loaded)} 装到这台机器上${replaced}。${use}`, { name, version: loaded.version ?? null, replaced: current?.version ?? null, dir: join(machinePluginsDir(call.ctx.home), name) })
     },
   }),
@@ -277,14 +277,14 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
     scope: 'machine',
     async run({ plugin: name }, call) {
       const current = call.table.get(name)
-      if (current && machineDirOf(current) === null) return refused('built-in', `${name} 是自带的插件，卸不掉。不想在一个库里用它：pneuma-base plugin remove ${name} --library <库的目录>。`)
+      if (current && machineDirOf(current) === null) return refused('built-in', `${name} 是自带的插件，卸不掉。不想在一个库里用它：pneuma-base plugin disable ${name} --library <库的目录>。`)
       if (!(await machinePlugins(call.ctx.home)).includes(name)) {
         const installed = (await machinePlugins(call.ctx.home)).join('、') || '无'
         return refused('not-on-machine', `这台机器没装插件 ${name}。装上来的：${installed}`)
       }
       const library = call.ctx.library
       if (library?.config.plugins.includes(name as PluginName)) {
-        return refused('still-installed', `库 ${library.root} 还装着插件 ${name}。先 pneuma-base plugin remove ${name} --library ${library.root}，再卸。`)
+        return refused('still-enabled', `库 ${library.root} 还装着插件 ${name}。先 pneuma-base plugin disable ${name} --library ${library.root}，再卸。`)
       }
       await uninstallDir(call.ctx.home, name)
       return done(`已从这台机器卸掉插件 ${current ? named(current) : name}。这台机器上别的库装着它的，会报它不可用；它在库里名下的目录和它在这台机器上的密钥都原样留着。`, { name })
@@ -301,7 +301,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
     async run(_values, call) {
       const plugins = await machineListing(call.ctx.home, call.table, call.ctx.library)
       const lines = plugins.map((p) => {
-        const state = p.failed !== null ? `没能加载：${p.failed}` : [`契约 ${p.contract}`, p.origin === 'built-in' ? '自带' : '装上来的', ...(p.installed ? ['这个库装了'] : [])].join(' · ')
+        const state = p.failed !== null ? `没能加载：${p.failed}` : [`契约 ${p.contract}`, p.origin === 'built-in' ? '自带' : '装上来的', ...(p.enabled ? ['这个库装了'] : [])].join(' · ')
         const line = p.title === null ? p.summary : `${p.title}${p.summary === null ? '' : `：${p.summary}`}`
         return [`${p.name} ${p.version ?? '—'}  ${state}`, ...[line, p.about].flatMap((l) => (l === null ? [] : [`    ${l}`]))].join('\n')
       })
@@ -368,11 +368,11 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       return done(had ? `已删掉插件 ${plugin} 的密钥 ${name}。` : `插件 ${plugin} 在这台机器上本来就没设密钥 ${name}。`, { plugin, name, removed: had })
     },
   }),
-  ...agentCommands({ grantIssue, grantRevoke, skillInstall }),
+  ...agentCommands({ grantCreate, grantRevoke, skillInstall }),
   launcherInstall,
   ...REQUEST_COMMANDS,
   ...PAIR_COMMANDS,
-  ...NOISE_COMMANDS,
+  ...IGNORE_COMMANDS,
   ...STORAGE_COMMANDS,
 ]
 
@@ -396,8 +396,8 @@ export type MachinePlugin = {
   summary: string | null
   about: string | null
   origin: 'built-in' | 'machine'
-  /** Whether the library given has it installed; null when none was given. */
-  installed: boolean | null
+  /** Whether the library given has it enabled; null when none was given. */
+  enabled: boolean | null
   /** Why a plugin in this machine's plugin directory did not load; null when it did. */
   failed: string | null
 }
@@ -408,13 +408,13 @@ async function machineListing(home: string, table: PluginTable, library: Library
   const out: MachinePlugin[] = []
   for (const name of names) {
     const p = table.get(name)
-    const installed = library === null ? null : library.config.plugins.includes(name as PluginName)
+    const enabled = library === null ? null : library.config.plugins.includes(name as PluginName)
     if (!p) {
-      out.push({ name, version: null, contract: null, title: null, summary: null, about: null, origin: 'machine', installed, failed: (await whyNotLoaded(home, name)) ?? '没能加载' })
+      out.push({ name, version: null, contract: null, title: null, summary: null, about: null, origin: 'machine', enabled, failed: (await whyNotLoaded(home, name)) ?? '没能加载' })
       continue
     }
     const summary = p.summary ?? p.cognition?.title ?? null
-    out.push({ name, version: p.version ?? null, contract: p.contract, title: p.title ?? null, summary, about: p.about ?? null, origin: machineDirOf(p) === null ? 'built-in' : 'machine', installed, failed: null })
+    out.push({ name, version: p.version ?? null, contract: p.contract, title: p.title ?? null, summary, about: p.about ?? null, origin: machineDirOf(p) === null ? 'built-in' : 'machine', enabled, failed: null })
   }
   return out
 }
@@ -428,7 +428,7 @@ async function caughtUp(ctx: Context, plugin: Plugin | undefined, how: 'fresh' |
     if (r === null || (how === 'fresh' && r.nothing)) return { text: null, problems: [] }
     return { text: caughtUpText(plugin.name, r, r.keeper), data: { catchUp: { done: r.done, total: r.total, finished: r.finished } }, problems: [] }
   } catch (error) {
-    return { text: `${plugin.name} 补上装上之前登记的东西时出错；接着补：pneuma-base plugin catch-up ${plugin.name}`, problems: [{ plugin: plugin.name, message: messageOf(error) }] }
+    return { text: `${plugin.name} 补上装上之前登记的东西时出错；接着补：pneuma-base plugin backfill ${plugin.name}`, problems: [{ plugin: plugin.name, message: messageOf(error) }] }
   }
 }
 

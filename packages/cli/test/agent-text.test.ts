@@ -35,22 +35,22 @@ beforeAll(() => {
   mkdirSync(dirA, { recursive: true })
   mkdirSync(dirB, { recursive: true })
   ok(sb.run(['init', lib]))
-  ok(sb.run(['grant', 'issue', 'claude', '--library', lib, '--agent', 'claude-code']))
-  ok(sb.run(['grant', 'issue', 'codex', '--library', lib, '--agent', 'codex']))
+  ok(sb.run(['grant', 'create', 'claude', '--library', lib, '--agent', 'claude-code']))
+  ok(sb.run(['grant', 'create', 'codex', '--library', lib, '--agent', 'codex']))
   ok(sb.run(['skill', 'install', 'codex', '--agent', 'codex', '--dir', join(dirB, '.agents', 'skills')]))
 
   writeFileSync(join(dirA, 'fast.txt'), '速印通印刷厂：5 个工作日，10500 元\n')
   writeFileSync(join(dirA, 'solid.txt'), '恒雅彩印印刷厂：7 个工作日，9900 元\n')
   writeFileSync(join(dirA, 'comparison.md'), '# 三家印刷厂的报价比较\n\n首选恒雅彩印。\n')
   A(['start', DOING_A])
-  A(['put', 'fast.txt', '--to', 'print/quotes/fast.txt', '--brought', '--by', 'owner'])
-  A(['put', 'solid.txt', '--to', 'print/quotes/solid.txt', '--brought', '--by', 'owner'])
-  A(['put', 'comparison.md', '--to', 'print/comparison.md', '--made', '--from', 'print/quotes/fast.txt', 'print/quotes/solid.txt'])
+  A(['put', 'fast.txt', '--to', 'print/quotes/fast.txt', '--imported', '--by', 'owner'])
+  A(['put', 'solid.txt', '--to', 'print/quotes/solid.txt', '--imported', '--by', 'owner'])
+  A(['put', 'comparison.md', '--to', 'print/comparison.md', '--generated', '--from', 'print/quotes/fast.txt', 'print/quotes/solid.txt'])
 
   // A second library, with nothing in it, for an agent that finds nothing related.
   fresh = join(tempDir(), 'fresh')
   ok(sb.run(['init', fresh]))
-  ok(sb.run(['grant', 'issue', 'helper', '--library', fresh, '--agent', 'codex']))
+  ok(sb.run(['grant', 'create', 'helper', '--library', fresh, '--agent', 'codex']))
 })
 
 describe('start, for the agent that comes next', () => {
@@ -60,7 +60,7 @@ describe('start, for the agent that comes next', () => {
     for (const heading of ['【库的变化与状况】', '【库里可能相关的】']) expect(text).toContain(heading)
     expect(text).toContain('场景 3f9a2c7e · claude-code · 在 ~/work/print-job')
     expect(text).not.toContain(SA)
-    expect(text).not.toContain('主人面的操作') // init, grant issue and skill install change neither content nor capabilities
+    expect(text).not.toContain('主人面的操作') // init, grant create and skill install change neither content nor capabilities
 
     // start was a look, so this check asks from before anything happened.
     const since = B(['check', '--json', '--since', '2000-01-01T00:00:00Z']).json().sections.find((s: any) => s.title === '自上次以来')
@@ -85,7 +85,7 @@ describe('find', () => {
     expect(hits.filter((h: any) => h.by === 'kernel').every((h: any) => h.group === null)).toBe(true)
 
     writeFileSync(join(dirB, 'draft.md'), '下单邮件草稿：恒雅彩印\n')
-    B(['put', 'draft.md', '--to', 'print/order-mail.md', '--made', '--from', 'print/comparison.md'])
+    B(['put', 'draft.md', '--to', 'print/order-mail.md', '--generated', '--from', 'print/comparison.md'])
 
     const found = B(['find', '下单邮件']).stdout
     expect(found).toMatch(/^场景 9b1d4e2a · codex · /m)

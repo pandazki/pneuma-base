@@ -97,7 +97,7 @@ function contentFiles(dir, rel = '') {
 }
 
 spawnSync(process.execPath, [bin, 'init', lib], { env, stdio: 'ignore' })
-for (const [grant, agent] of [['claude', 'claude-code'], ['codex', 'codex'], ['gemini', 'gemini']]) cli(['grant', 'issue', grant, '--agent', agent])
+for (const [grant, agent] of [['claude', 'claude-code'], ['codex', 'codex'], ['gemini', 'gemini']]) cli(['grant', 'create', grant, '--agent', agent])
 const made = writeHistory(lib, { days: 760, sessions: 14, talk: 5.2, seed: 7 })
 const files = contentFiles(lib)
 console.log(`library: ${made.things} things, ${made.facts} facts, ${files.length} files in the content`)

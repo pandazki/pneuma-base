@@ -116,7 +116,7 @@ export async function initLibrary(
   if (await isLibrary(address, provider)) return refuse('already-a-library', `${address} 已经是一个库了`)
   const unknown = opts.plugins.filter((name) => !opts.table.has(name))
   if (unknown.length > 0) return refuse('unknown-plugin', `没有这个插件：${unknown.join('、')}`)
-  // As `plugin add` would refuse each plugin after the first that claims a name an earlier one holds.
+  // As `plugin enable` would refuse each plugin after the first that claims a name an earlier one holds.
   const chosen = [...new Set(opts.plugins)].map((name) => opts.table.get(name) as Plugin)
   const clashes = chosen.flatMap((p, i) => takenBy(p, chosen.slice(0, i)).map((t) => ({ plugin: p.name, ...t })))
   if (clashes.length > 0) {

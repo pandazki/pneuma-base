@@ -69,7 +69,7 @@ async function firstThingStep({ ctx }: ViewerCall): Promise<Step> {
   const page = await storageOf(root).overview('', { limit: FIRST_LOOK })
   const things = isFailure(page) ? [] : page.entries.filter((e) => !KERNEL_ENTRIES.has(e.place) && !e.place.startsWith('.'))
   const atLeast = !isFailure(page) && page.more !== null ? '至少 ' : ' '
-  const command = `pneuma-base put <文件或文件夹> --to ${INBOX}/<名字> --brought --by owner --library ${shellWord(root)}`
+  const command = `pneuma-base put <文件或文件夹> --to ${INBOX}/<名字> --imported --by owner --library ${shellWord(root)}`
   return {
     key: 'first',
     title: '放进第一样东西',

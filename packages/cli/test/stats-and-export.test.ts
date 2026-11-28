@@ -27,21 +27,21 @@ beforeAll(() => {
   work = tempDir('pb-work-')
   lib = join(tempDir(), 'lib')
   ok(sb.run(['init', lib]))
-  ok(sb.run(['--library', lib, 'grant', 'issue', 'claude', '--agent', 'claude-code']))
-  ok(sb.run(['--library', lib, 'grant', 'issue', 'codex', '--agent', 'codex']))
+  ok(sb.run(['--library', lib, 'grant', 'create', 'claude', '--agent', 'claude-code']))
+  ok(sb.run(['--library', lib, 'grant', 'create', 'codex', '--agent', 'codex']))
   // claude-code brings a source and makes a comparison from it; codex, in its own session, builds on that.
   const a = as('claude', 'session-a')
   writeFileSync(join(work, 'stripe.html'), '<html>Stripe 2.9%</html>')
   writeFileSync(join(work, 'comparison.md'), '# 比较')
   writeFileSync(join(work, 'integration.md'), '# 接入')
   ok(a(['start', '给小店选支付服务']))
-  ok(a(['put', 'stripe.html', '--to', 'pay/stripe.html', '--brought', '--source', 'https://stripe.com/pricing']))
-  ok(a(['put', 'comparison.md', '--to', 'pay/comparison.md', '--made', '--from', 'pay/stripe.html']))
-  ok(a(['say', 'decided', '用 Paddle']))
+  ok(a(['put', 'stripe.html', '--to', 'pay/stripe.html', '--imported', '--source', 'https://stripe.com/pricing']))
+  ok(a(['put', 'comparison.md', '--to', 'pay/comparison.md', '--generated', '--from', 'pay/stripe.html']))
+  ok(a(['say', 'decision', '用 Paddle']))
   ok(a(['say', 'note', NOTE]))
-  ok(a(['ask', '要留住每一版', 'plugin', 'add', 'version']))
+  ok(a(['ask', '要留住每一版', 'plugin', 'enable', 'version']))
   const b = as('codex', 'session-b')
-  ok(b(['put', 'integration.md', '--to', 'pay/integration.md', '--made', '--from', 'pay/comparison.md']))
+  ok(b(['put', 'integration.md', '--to', 'pay/integration.md', '--generated', '--from', 'pay/comparison.md']))
   const id = /r-[0-9a-f]{8}/.exec(ok(owner(['request', 'list'])).stdout)?.[0] as string
   ok(owner(['request', 'decline', id, '先不装']))
 })
@@ -54,12 +54,12 @@ describe('ledger stats', () => {
     const r = ok(owner(['ledger', 'stats', '--json']))
     expect(r.json().data).toMatchObject({
       period: '30d',
-      put: { brought: 1, made: 2 },
+      put: { imported: 1, generated: 2 },
       sessions: { total: 2 },
-      reuse: { made: 2, fromLibrary: 2, otherSession: 1, otherAgent: 1, top: [{ path: 'pay/comparison.md', uses: 1, by: ['codex'] }, { path: 'pay/stripe.html', uses: 1, by: ['claude-code'] }] },
+      reuse: { generated: 2, fromLibrary: 2, otherSession: 1, otherAgent: 1, top: [{ path: 'pay/comparison.md', uses: 1, by: ['codex'] }, { path: 'pay/stripe.html', uses: 1, by: ['claude-code'] }] },
       agents: [
-        { name: 'claude-code', sessions: 1, brought: 1, made: 1, decided: 1, notes: 1, asked: 1, declined: 1, pending: 0 },
-        { name: 'codex', sessions: 1, made: 1 },
+        { name: 'claude-code', sessions: 1, imported: 1, generated: 1, decisions: 1, notes: 1, asked: 1, declined: 1, pending: 0 },
+        { name: 'codex', sessions: 1, generated: 1 },
       ],
       owner: { declined: 1 },
       order: { now: { stale: 0, changed: 0, unknown: 0, archived: 0 } },

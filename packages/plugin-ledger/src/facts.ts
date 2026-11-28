@@ -4,6 +4,7 @@
 // content passed through the kernel or somebody read it. Facts written before tokens existed have none.
 import { randomBytes } from 'node:crypto'
 import type { Actor, Context, FeedAct, Fingerprint, Instant, LibraryPath, PluginContext, Transcript } from '@pneuma-base/kernel'
+import { commandNow } from './words.js'
 
 export type ItemId = string & { readonly __brand: 'ItemId' }
 export type SceneId = string & { readonly __brand: 'SceneId' }
@@ -33,7 +34,7 @@ export type FactBody =
   | (Seen & { kind: 'item.move'; item: ItemId; from: LibraryPath; to: LibraryPath; archive: 'in' | 'out' | null })
   | { kind: 'item.basis'; item: ItemId; fingerprint: Fingerprint | null; basis: Basis }
   | { kind: 'item.remove'; item: ItemId }
-  | { kind: 'owner.op'; command: string; summary: string; destructive: boolean; readOnly?: true; setup?: true; request?: { id: string; by: FactActor }; refused?: string; declined?: { id: string; by: FactActor | null }; line?: string; act?: FeedAct; object?: string } // request: the owner approved it at an agent's request; refused: the command's reason when it then refused; declined: the request a `request decline` turned down, and who had asked; line: the command as given, its name and arguments; act and object: what it did and to what, as the command declares (readOnly: one an older ledger wrote; looking is no longer recorded)
+  | { kind: 'owner.op'; command: string; summary: string; destructive: boolean; readOnly?: true; setup?: true; request?: { id: string; by: FactActor }; refused?: string; declined?: { id: string; by: FactActor | null }; line?: string; act?: FeedAct | 'brought'; object?: string } // request: the owner approved it at an agent's request; refused: the command's reason when it then refused; declined: the request a `request decline` turned down, and who had asked; line: the command as given, its name and arguments, under the name it had then (words.ts reads it as now); act and object: what it did and to what, as the command declares (`brought`: what `ledger register` declared before it was `imported`) (readOnly: one an older ledger wrote; looking is no longer recorded)
   | { kind: 'request'; act: 'asked' | 'withdrawn'; request: string; line: string; why?: string } // an agent asked the owner to run a command, or took the request back
   | { kind: 'checked' } // the actor looked at what changed: its check, or the owner's 都看过了 on the home page
   | { kind: 'unowned.left'; paths: LibraryPath[] } // the owner left these things unregistered, not to be asked about them again
@@ -113,7 +114,7 @@ export const inOrder = (input: readonly Fact[]): Fact[] => [...input].sort(byTim
 export const toldByItsCommand = (f: Fact) => f.kind === 'items.enter' || f.kind === 'unowned.left'
 
 /** Owner commands that change neither the content nor the capabilities: recorded as facts, but no news to an agent. */
-export const QUIET_OWNER_COMMANDS: ReadonlySet<string> = new Set(['init', 'grant issue', 'grant revoke', 'skill install'])
+export const QUIET_OWNER_COMMANDS: ReadonlySet<string> = new Set(['init', 'grant create', 'grant revoke', 'skill install'])
 
 /** Whether a feed tells a fact: every one but the looks, which are no news, and what the row of an owner command tells. */
 export const isTold = (f: Fact) => f.kind !== 'checked' && !toldByItsCommand(f)
@@ -122,7 +123,7 @@ export const isTold = (f: Fact) => f.kind !== 'checked' && !toldByItsCommand(f)
 export const isAct = (f: Fact) => isTold(f) && !(f.kind === 'said' && f.flavor === 'doing') && !(f.kind === 'owner.op' && f.readOnly === true)
 
 /** Whether a fact can be news to anyone: setup commands are judged against each reader when asked; an export takes data out and changes nothing anyone works on. */
-export const mayBeNews = (f: Fact) => isTold(f) && !(f.kind === 'owner.op' && (QUIET_OWNER_COMMANDS.has(f.command) || f.readOnly || f.act === 'exported'))
+export const mayBeNews = (f: Fact) => isTold(f) && !(f.kind === 'owner.op' && (QUIET_OWNER_COMMANDS.has(commandNow(f.command)) || f.readOnly || f.act === 'exported'))
 
 export function isFact(raw: unknown): raw is Fact {
   const f = raw as Partial<Fact> | null

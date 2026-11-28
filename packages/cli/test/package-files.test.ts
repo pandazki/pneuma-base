@@ -41,7 +41,7 @@ describe('the package files', () => {
 
   it('give npx pneuma-base, which makes a library, puts into it and serves its UI', async () => {
     expect(run('npx', ['--no', '--', 'pneuma-base', 'init', 'lib'])).toContain('建成库')
-    expect(run('npx', ['--no', '--', 'pneuma-base', '--library', 'lib', 'put', '-', '--to', 'notes/a.md', '--made'], '# 一页\n')).toContain('已放入 notes/a.md')
+    expect(run('npx', ['--no', '--', 'pneuma-base', '--library', 'lib', 'put', '-', '--to', 'notes/a.md', '--generated'], '# 一页\n')).toContain('已放入 notes/a.md')
     const viewer = spawn('npx', ['--no', '--', 'pneuma-base', 'view', 'lib', '--no-open', '--port', '0'], { cwd: project, env })
     try {
       const url = await new Promise<string>((resolve, reject) => {

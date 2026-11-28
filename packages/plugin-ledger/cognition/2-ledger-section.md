@@ -24,20 +24,20 @@ pneuma-base @{{授权的名字}} inspect payments/comparison.md
 ```sh
 # 带进来的：你把内容给它，它不会自己去抓。放进来的时间会自动记下。
 curl -s https://stripe.com/pricing | pneuma-base @{{授权的名字}} put - \
-  --to payments/sources/stripe-pricing.html --brought --source https://stripe.com/pricing
+  --to payments/sources/stripe-pricing.html --imported --source https://stripe.com/pricing
 
-# 做出来的：写明结论真正依据的那些，不是所有看过的。库里的用 --from，库外的用 --from-outside 写一句。
-pneuma-base @{{授权的名字}} put ./comparison.md --to payments/comparison.md --made \
+# 做出来的：写明结论真正依据的那些，不是所有看过的。库里的用 --from，库外的用 --from-external 写一句。
+pneuma-base @{{授权的名字}} put ./comparison.md --to payments/comparison.md --generated \
   --from payments/sources/stripe-pricing.html payments/sources/paddle-pricing.html \
-  --from-outside "主人在对话里说：客户主要在欧洲"
+  --from-external "主人在对话里说：客户主要在欧洲"
 ```
 
 放的时候可以加 `--note "<一句话>"`，写这次放入改了什么。
 
-主人给你的文件，用 `--brought --by owner`。主人拍板了，记一句：
+主人给你的文件，用 `--imported --by owner`。主人拍板了，记一句：
 
 ```sh
-pneuma-base @{{授权的名字}} say decided "主人决定用 Paddle，因为它替他处理欧洲的税"
+pneuma-base @{{授权的名字}} say decision "主人决定用 Paddle，因为它替他处理欧洲的税"
 ```
 
 一样东西被新内容换掉时，旧内容进**留存**。留存是给主人的保险，只有主人取得回，你不用管它。
@@ -47,6 +47,6 @@ pneuma-base @{{授权的名字}} say decided "主人决定用 Paddle，因为它
 | 用法 | 意思 |
 | --- | --- |
 | `say note "<一句话>"` 或 `say note <库内路径> "<备注>"` | 给这次会话或一样东西留一句备注 |
-| `say from <库内路径> --from <库内路径…>` | 事后补上：这样东西依据了那些 |
-| `put <库内路径> --brought …` 或 `--made …` | 给一个没人登记过的文件补上来历；标着「自动登记」的来历不对，也这样更正 |
+| `say basis <库内路径> --from <库内路径…>` | 事后补上：这样东西依据了那些 |
+| `put <库内路径> --imported …` 或 `--generated …` | 给一个没人登记过的文件补上来历；标着「自动登记」的来历不对，也这样更正 |
 | `say revised <库内路径>`（主人说是自己改的，加 `--by owner`） | 补救：这个文件已经被直接改过了，认下这次改动；标着「自动登记」的改动是你做的，也这样认下 |

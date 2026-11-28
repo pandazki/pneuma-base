@@ -29,7 +29,7 @@ describe('the sandbox', () => {
     try {
       mkdirSync(join(sb.work, 'shop'))
       writeFileSync(join(sb.work, 'shop', 'index.html'), '<h1>小店</h1>\n')
-      expect((await sb.agent('claude-code', 's1', ['put', 'shop', '--to', 'sites/shop', '--made'])).code).toBe(0)
+      expect((await sb.agent('claude-code', 's1', ['put', 'shop', '--to', 'sites/shop', '--generated'])).code).toBe(0)
       expect((await sb.agent('claude-code', 's1', ['say', 'deployable', 'sites/shop'])).code).toBe(0)
       const viewer = await sb.viewer()
 

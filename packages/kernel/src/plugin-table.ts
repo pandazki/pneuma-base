@@ -234,7 +234,7 @@ function eachOf(items: unknown, what: string, wrong: string[], entry: (v: unknow
  * shape, each `say` kind, command name, view id and secret name given once, command names starting
  * with `<name> ` and none of them the kernel's own, each command's `params`, view ids starting with
  * `<name>.`, and every hook given being a function. The kernel hears no `say` kind itself, so a kind can clash only with
- * another plugin's, which `plugin add` refuses. Left to call time: what a hook or a command's `run`
+ * another plugin's, which `plugin enable` refuses. Left to call time: what a hook or a command's `run`
  * answers and whether it throws (K8), and where the plugin writes.
  */
 function whatIsWrong(p: unknown, name: string | null): string[] {

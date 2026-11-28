@@ -37,7 +37,7 @@ describe('the tool list', () => {
 
   it('refuses a management command called by name with the reason and words of the command line: the kernel’s, a plugin’s, a destructive one', async () => {
     const commands = ownerFace.commands([...builtinPlugins.values()])
-    const management = ['grant issue', 'deploy on', 'archive purge'].map((name) => commands.find((c) => c.name === name && (c.destructive || c.ownerOnly)))
+    const management = ['grant create', 'deploy on', 'archive purge'].map((name) => commands.find((c) => c.name === name && (c.destructive || c.ownerOnly)))
     for (const c of management) {
       if (c === undefined) throw new Error('a sample is no longer a management command')
       const r = await call(client, c.name.replaceAll(' ', '_'))
@@ -63,7 +63,7 @@ describe('the tool list', () => {
     })
     const put = (await client.listTools()).tools.find((t) => t.name === 'put')
     expect(put?.inputSchema.required).toBeUndefined()
-    expect(Object.keys(put?.inputSchema.properties ?? {})).toEqual(['what', 'to', 'brought', 'made', 'source', 'by', 'from', 'from-outside', 'note', 'observed', 'text', 'base64'])
+    expect(Object.keys(put?.inputSchema.properties ?? {})).toEqual(['what', 'to', 'imported', 'generated', 'source', 'by', 'from', 'from-external', 'note', 'observed', 'text', 'base64'])
     const inspect = (await client.listTools()).tools.find((t) => t.name === 'inspect')
     expect(inspect?.inputSchema).toMatchObject({ properties: { target: { type: 'string' }, file: { type: 'string' }, content: { type: 'boolean' } }, required: ['target'] })
     const ask = (await client.listTools()).tools.find((t) => t.name === 'ask')
@@ -92,7 +92,7 @@ describe('a tool and the command line with the same arguments', () => {
   it('a usage error is the command line’s, as a refusal', async () => {
     for (const [tool, args, argv] of [
       ['version_list', {}, ['version', 'list']],
-      ['put', { text: 'x' }, ['put', '-', '--made']],
+      ['put', { text: 'x' }, ['put', '-', '--generated']],
       ['show', { view: 'no-such-page' }, ['show', 'no-such-page']],
     ] as const) {
       const cli = sb.run(['@g', ...argv], { input: 'x' })
@@ -105,8 +105,8 @@ describe('a tool and the command line with the same arguments', () => {
   })
 
   it('a read-only grant is refused a put as on the command line', async () => {
-    const cli = sb.run(['@ro', 'put', '-', '--to', 'r.md', '--made', '--json'], { input: 'r' })
-    const r = await call(reader, 'put', { text: 'r', to: 'r.md', made: true })
+    const cli = sb.run(['@ro', 'put', '-', '--to', 'r.md', '--generated', '--json'], { input: 'r' })
+    const r = await call(reader, 'put', { text: 'r', to: 'r.md', generated: true })
     expect(cli.json()).toMatchObject({ outcome: 'refused', reason: 'outside-grant' })
     expect(r.isError).toBe(true)
     expect(r.structuredContent).toEqual(cli.json())
@@ -131,10 +131,10 @@ describe.each(['legacy', 'modern'] as const)('a whole task through a real MCP cl
     expect(client.getProtocolEra()).toBe(era)
 
     expect(textOf(await call(client, 'start', { sentence: '写一份下单流程的说明' }))).toContain('【记下】')
-    const put = await call(client, 'put', { text: '# 下单流程说明\n', to: 'docs/flow.md', made: true, from: ['notes/a.md'] })
+    const put = await call(client, 'put', { text: '# 下单流程说明\n', to: 'docs/flow.md', generated: true, from: ['notes/a.md'] })
     expect(put.structuredContent).toMatchObject({ outcome: 'accepted', path: 'docs/flow.md', copied: true })
     expect(readFileSync(join(lib, 'docs/flow.md'), 'utf8')).toBe('# 下单流程说明\n')
-    const bytes = await call(client, 'put', { base64: Buffer.from([0, 1, 2, 255]).toString('base64'), to: 'docs/blob.bin', made: true })
+    const bytes = await call(client, 'put', { base64: Buffer.from([0, 1, 2, 255]).toString('base64'), to: 'docs/blob.bin', generated: true })
     expect(bytes.isError).toBe(false)
     expect([...readFileSync(join(lib, 'docs/blob.bin'))]).toEqual([0, 1, 2, 255])
     expect(textOf(await call(client, 'find', { text: 'flow' }))).toContain('docs/flow.md')
@@ -143,7 +143,7 @@ describe.each(['legacy', 'modern'] as const)('a whole task through a real MCP cl
     expect((await call(client, 'check')).isError).toBe(false)
     expect(textOf(await call(client, 'show', { view: 'files', params: { dir: 'docs' } }))).toContain('flow.md')
     expect(await call(client, 'search_status')).toMatchObject({ isError: false, structuredContent: { outcome: 'done' } })
-    expect(await call(client, 'grant_issue', { name: 'x', agent: 'y' })).toMatchObject({ isError: true, structuredContent: { reason: 'agent-session' } })
+    expect(await call(client, 'grant_create', { name: 'x', agent: 'y' })).toMatchObject({ isError: true, structuredContent: { reason: 'agent-session' } })
 
     const claude = sceneRows(sb, lib).filter((row) => row.actor.name === 'claude')
     expect(claude).toHaveLength(1)
@@ -167,7 +167,7 @@ describe.each(['legacy', 'modern'] as const)('a whole task through a real MCP cl
       const resources = (await client.listResources()).resources
       expect(resources.map((r) => r.uri)).toContain('pneuma-base://library/description')
       expect(resources.map((r) => r.uri)).toContain('pneuma-base://library/show/files')
-      expect(resources.map((r) => r.uri)).not.toContain('pneuma-base://library/show/config')
+      expect(resources.map((r) => r.uri)).not.toContain('pneuma-base://library/show/settings')
       const description = await client.readResource({ uri: 'pneuma-base://library/description' })
       expect(description.contents[0]).toMatchObject({ text: client.getInstructions() })
       const files = await client.readResource({ uri: 'pneuma-base://library/show/files' })
@@ -184,7 +184,7 @@ describe.each(['legacy', 'modern'] as const)('a plugin added while connected (%s
     sb = sandbox()
     lib = join(tempDir(), 'lib')
     ok(sb.run(['init', lib]))
-    ok(sb.run(['--library', lib, 'grant', 'issue', 'g', '--agent', 'claude']))
+    ok(sb.run(['--library', lib, 'grant', 'create', 'g', '--agent', 'claude']))
     client = await connect(sb, 'g', era)
   })
   afterAll(() => client?.close())
@@ -199,7 +199,7 @@ describe.each(['legacy', 'modern'] as const)('a plugin added while connected (%s
     else await client.subscribeResource({ uri: 'pneuma-base://library/description' })
     expect((await client.listTools()).tools.map((t) => t.name)).not.toContain('version_list')
 
-    ok(sb.run(['--library', lib, 'plugin', 'add', 'version']))
+    ok(sb.run(['--library', lib, 'plugin', 'enable', 'version']))
     await expect.poll(() => [...new Set(heard)].sort(), { timeout: 15_000, interval: 200 }).toEqual(['description', 'resources', 'tools'])
     expect((await client.listTools()).tools.map((t) => t.name)).toContain('version_list')
     const description = await client.readResource({ uri: 'pneuma-base://library/description' })

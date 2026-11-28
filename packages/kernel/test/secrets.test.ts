@@ -103,7 +103,7 @@ describe('an optional secret', () => {
     const call = { ...machine(f.home), table: new Map([['meter', meter]]) }
     const listed = await ownerFace.dispatch(call, 'secret list', { positional: ['meter'], flags: {} })
     expect(listed).toMatchObject({ outcome: 'done', text: '插件 meter 在这台机器上没设密钥。\n可以不设、还没设的：token' })
-    const config = await viewerFace.show({ view: 'config', params: {} }, { ctx: f.ctx, table: call.table, env: {}, viaGrant: false })
+    const config = await viewerFace.show({ view: 'settings', params: {} }, { ctx: f.ctx, table: call.table, env: {}, viaGrant: false })
     const secrets = config.outcome === 'shown' ? config.blocks.find((b) => b.kind === 'section' && b.title === '密钥') : undefined
     const items = secrets?.kind === 'section' && secrets.blocks[0]?.kind === 'list' ? secrets.blocks[0].items : []
     expect(items.map((i) => [i.cell.text, i.cell.tag, i.about])).toEqual([['token', { text: '没设（可选）', tone: 'neutral' }, '服务要求登录时的令牌']])

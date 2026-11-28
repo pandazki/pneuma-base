@@ -43,11 +43,11 @@ const byHand = (path: string, content: string) => {
 
 describe('changes made outside the tool (C4)', () => {
   beforeAll(() => {
-    for (const name of ['kept', 'edited', 'moved', 'deleted']) ok(agent(['put', '-', '--to', `${name}.md`, '--brought'], `${name} content`))
+    for (const name of ['kept', 'edited', 'moved', 'deleted']) ok(agent(['put', '-', '--to', `${name}.md`, '--imported'], `${name} content`))
     byHand('dropped.md', 'nobody registered me')
     byHand('edited.md', 'edited by hand')
     // elsewhere/ holds a registered thing, so it is an open directory, the one kind check lists.
-    ok(agent(['put', '-', '--to', 'elsewhere/anchor.md', '--brought'], 'anchor'))
+    ok(agent(['put', '-', '--to', 'elsewhere/anchor.md', '--imported'], 'anchor'))
     renameSync(join(lib, 'moved.md'), join(lib, 'elsewhere/moved.md'))
     rmSync(join(lib, 'deleted.md'))
   })
@@ -71,7 +71,7 @@ describe('changes made outside the tool (C4)', () => {
   it('the remedies clear the reports: put gives an unowned file its origin, say revised claims an edit, as the agent’s or, with --by owner, as the owner’s; what they cannot fix is answered plainly', () => {
     expect(agent(['say', 'revised', 'dropped.md', '--json']).json()).toMatchObject({ outcome: 'not-heard', reason: 'refused' })
     expect(ok(agent(['say', 'revised', 'kept.md'])).stdout).toContain('一致')
-    ok(agent(['put', 'dropped.md', '--brought', '--by', 'owner']))
+    ok(agent(['put', 'dropped.md', '--imported', '--by', 'owner']))
     expect(ok(agent(['say', 'revised', 'edited.md', '--json'])).json()).toMatchObject({ outcome: 'heard', by: 'ledger' })
     const sections = check()
     expect(section(sections, '没人登记过的')).toBeUndefined()
@@ -101,9 +101,9 @@ describe('staleness (C5)', () => {
   const ORIGINAL = 'source, first version'
 
   beforeAll(() => {
-    ok(agent(['put', '-', '--to', 'sources/s.md', '--brought', '--source', 'https://example.com/s'], ORIGINAL))
-    ok(agent(['put', '-', '--to', 'made/a.md', '--made', '--from', 'sources/s.md'], 'made from s'))
-    ok(agent(['put', '-', '--to', 'made/b.md', '--made', '--from', 'made/a.md'], 'made from a'))
+    ok(agent(['put', '-', '--to', 'sources/s.md', '--imported', '--source', 'https://example.com/s'], ORIGINAL))
+    ok(agent(['put', '-', '--to', 'made/a.md', '--generated', '--from', 'sources/s.md'], 'made from s'))
+    ok(agent(['put', '-', '--to', 'made/b.md', '--generated', '--from', 'made/a.md'], 'made from a'))
   })
 
   it('S changed: A is maybe stale, B upstream-flagged; S deleted: source gone; S back as it was: no mark', () => {

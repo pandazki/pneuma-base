@@ -81,7 +81,7 @@ async function queryVector(index: SearchIndex, embedder: Embedder, text: string)
 export const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 /**
- * Brings the index up to date, then finds by the text's words (bm25) and, with an embedder set, by
+ * Brings the index up to date, then finds by the text's words (bm25) and, with an embedding set, by
  * its meaning. An embedder that fails costs only the hits by meaning; its failure is a problem.
  * A request with filters gets nothing: they belong to another plugin's vocabulary.
  */

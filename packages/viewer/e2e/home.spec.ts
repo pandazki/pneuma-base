@@ -9,19 +9,19 @@ import { DOING, expect, navTitles, relay, tempDir, test, write, type Cli } from 
 function twoGrants(pb: Cli): string {
   const lib = join(tempDir(), 'lib')
   pb.run(['init', lib])
-  pb.run(['grant', 'issue', 'claude', '--library', lib, '--agent', 'claude-code'])
-  pb.run(['grant', 'issue', 'codex', '--library', lib, '--agent', 'codex'])
+  pb.run(['grant', 'create', 'claude', '--library', lib, '--agent', 'claude-code'])
+  pb.run(['grant', 'create', 'codex', '--library', lib, '--agent', 'codex'])
   return lib
 }
 
 /** The relay library, with deploy installed and a site codex declared deployable that nobody switched yet. */
 function withAsk(pb: Cli): string {
   const lib = relay(pb)
-  pb.run(['plugin', 'add', 'deploy', '--library', lib])
+  pb.run(['plugin', 'enable', 'deploy', '--library', lib])
   pb.run(['deploy', 'target', 'set', '--kind', 'dir', '--to', join(tempDir('pb-e2e-www-'), 'www'), '--library', lib])
   const dir = tempDir('pb-e2e-site-')
   write(dir, 'shop/index.html', '<h1>小店</h1>')
-  pb.run(['@codex', 'put', 'shop', '--to', 'sites/shop', '--made'], { cwd: dir, env: { PNEUMA_BASE_SESSION: 'sess-b' } })
+  pb.run(['@codex', 'put', 'shop', '--to', 'sites/shop', '--generated'], { cwd: dir, env: { PNEUMA_BASE_SESSION: 'sess-b' } })
   pb.run(['@codex', 'say', 'deployable', 'sites/shop'], { cwd: dir, env: { PNEUMA_BASE_SESSION: 'sess-b' } })
   return lib
 }
@@ -59,20 +59,20 @@ test('the app opens on the home page: what waits on the owner, what agents did s
 
 test('an agent’s request: its reason with the command under it; approving or declining in the browser folds it, and the command line then shows it decided', async ({ page, pb }) => {
   const lib = twoGrants(pb)
-  pb.run(['@codex', 'ask', '要给支付方案留住每一版', 'plugin', 'add', 'version'], { env: { PNEUMA_BASE_SESSION: 'sess-b' } })
+  pb.run(['@codex', 'ask', '要给支付方案留住每一版', 'plugin', 'enable', 'version'], { env: { PNEUMA_BASE_SESSION: 'sess-b' } })
   const { url } = await pb.view(lib)
   await page.goto(url)
   const decide = page.getByRole('main').getByRole('region', { name: '等你决定' })
   await expect(decide).toContainText('要给支付方案留住每一版')
-  await expect(decide.getByText('plugin add version', { exact: true })).toBeVisible()
+  await expect(decide.getByText('plugin enable version', { exact: true })).toBeVisible()
   await expect(decide).toContainText('codex')
   await expect(decide.getByRole('button', { name: '批准', exact: true })).toHaveClass(/btn-primary/)
   await decide.getByRole('button', { name: '批准', exact: true }).click()
   const receipt = decide.getByRole('status')
   await expect(receipt).toContainText('批准')
   await expect(receipt).toContainText('已装上插件 version')
-  expect(pb.run(['request', 'list', '--all', '--library', lib]).stdout).toMatch(/plugin add version · 已批准/)
-  expect(pb.run(['@codex', 'check'], { env: { PNEUMA_BASE_SESSION: 'sess-later' } }).stdout).toContain('plugin add version：已批准')
+  expect(pb.run(['request', 'list', '--all', '--library', lib]).stdout).toMatch(/plugin enable version · 已批准/)
+  expect(pb.run(['@codex', 'check'], { env: { PNEUMA_BASE_SESSION: 'sess-later' } }).stdout).toContain('plugin enable version：已批准')
 
   // A request asked while the page is open shows up on its own; declining asks for a reason first.
   pb.run(['@claude', 'ask', '支付接好了，codex 用不着写了', 'grant', 'revoke', 'codex'], { env: { PNEUMA_BASE_SESSION: 'sess-a2' } })
@@ -93,7 +93,7 @@ test('都看过了 empties 自上次以来, says when the owner last looked and 
   const dir = tempDir('pb-e2e-c-')
   writeFileSync(join(dir, 'first.md'), '# 先前的\n')
   writeFileSync(join(dir, 'later.md'), '# 后来的\n')
-  pb.run(['@claude', 'put', 'first.md', '--to', 'notes/first.md', '--made'], { cwd: dir, env: { PNEUMA_BASE_SESSION: 'sess-a' } })
+  pb.run(['@claude', 'put', 'first.md', '--to', 'notes/first.md', '--generated'], { cwd: dir, env: { PNEUMA_BASE_SESSION: 'sess-a' } })
   const { url } = await pb.view(lib)
   await page.goto(url)
   const main = page.getByRole('main')
@@ -108,7 +108,7 @@ test('都看过了 empties 自上次以来, says when the owner last looked and 
   await expect(main.getByRole('heading', { level: 1, name: '活动' })).toBeVisible()
   await page.goBack()
 
-  pb.run(['@claude', 'put', 'later.md', '--to', 'notes/later.md', '--made'], { cwd: dir, env: { PNEUMA_BASE_SESSION: 'sess-c' } })
+  pb.run(['@claude', 'put', 'later.md', '--to', 'notes/later.md', '--generated'], { cwd: dir, env: { PNEUMA_BASE_SESSION: 'sess-c' } })
   await expect(since.getByRole('listitem').filter({ hasText: 'later.md' })).toBeVisible()
 })
 

@@ -22,15 +22,15 @@ const owner = (lib: string, args: string[]) => {
 function library(files: number): string {
   const lib = join(tempDir(), 'lib')
   expect(sb.run(['init', lib]).code).toBe(0)
-  run(lib, ['put', '-', '--to', 'notes/opener.md', '--made'], 'the opener\n')
+  run(lib, ['put', '-', '--to', 'notes/opener.md', '--generated'], 'the opener\n')
   for (let i = 0; i < files - 1; i++) writeFileSync(join(lib, 'notes', `n${i}.md`), `note ${i} word${i}\n`)
   // A put of an open directory registers its loose files, a page at a time.
-  for (let i = 0; i < Math.ceil(files / 200); i++) run(lib, ['put', 'notes', '--made'])
+  for (let i = 0; i < Math.ceil(files / 200); i++) run(lib, ['put', 'notes', '--generated'])
   const site = join(tempDir(), 'site')
   mkdirSync(join(site, 'a/b'), { recursive: true })
   writeFileSync(join(site, 'index.html'), '<h1>site</h1>\n')
   writeFileSync(join(site, 'a/b/deep.txt'), 'deepword inside the site\n')
-  run(lib, ['put', site, '--to', 'web/site', '--made'])
+  run(lib, ['put', site, '--to', 'web/site', '--generated'])
   return lib
 }
 
@@ -41,15 +41,15 @@ beforeAll(() => {
 describe('a plugin added to a library already in use', () => {
   it('sync carries what was put before it', () => {
     const lib = library(300)
-    owner(lib, ['plugin', 'add', 'sync'])
+    owner(lib, ['plugin', 'enable', 'sync'])
     owner(lib, ['sync', 'target', 'set', '--kind', 'dir', '--to', tempDir()])
     const now = owner(lib, ['sync', 'now', '--json']).stdout
     expect(JSON.parse(now).data.counts.pushed).toBeGreaterThanOrEqual(301)
   })
 
-  it('search learns it a page at a time, stops when asked, says how far it got in its answers, and goes on with plugin catch-up', async () => {
+  it('search learns it a page at a time, stops when asked, says how far it got in its answers, and goes on with plugin backfill', async () => {
     const lib = library(2000)
-    const child = sb.start(['--library', lib, 'plugin', 'add', 'search'])
+    const child = sb.start(['--library', lib, 'plugin', 'enable', 'search'])
     let stderr = ''
     let stdout = ''
     child.stdout.on('data', (b: Buffer) => (stdout += b.toString()))
@@ -61,29 +61,29 @@ describe('a plugin added to a library already in use', () => {
       })
       child.on('close', () => done())
     })
-    expect(stdout).toMatch(/search 补了装上之前登记的 \d+ \/ 2001 样；接着补：pneuma-base plugin catch-up search/)
+    expect(stdout).toMatch(/search 补了装上之前登记的 \d+ \/ 2001 样；接着补：pneuma-base plugin backfill search/)
     const found = run(lib, ['find', 'word1998']).stdout
-    expect(found).toMatch(/装上之前登记的 2001 样补了 \d+ 样；接着补：pneuma-base plugin catch-up search/)
+    expect(found).toMatch(/装上之前登记的 2001 样补了 \d+ 样；接着补：pneuma-base plugin backfill search/)
 
     const page = run(lib, ['show', 'search.status']).stdout
     expect(page).toMatch(/装上之前登记的 2001 样补了 \d+ 样/)
-    expect(page).toContain('plugin catch-up search')
+    expect(page).toContain('plugin backfill search')
 
-    const resumed = owner(lib, ['plugin', 'catch-up', 'search'])
+    const resumed = owner(lib, ['plugin', 'backfill', 'search'])
     expect(resumed.stdout).toContain('search 补上了装上之前登记的 2001 样。')
     const after = run(lib, ['find', 'word1998']).stdout
     expect(after).toContain('notes/n1998.md')
     expect(after).not.toContain('接着补')
     expect(run(lib, ['find', 'deepword']).stdout).toContain('web/site')
     // Catching up again changes nothing it knows.
-    expect(owner(lib, ['plugin', 'catch-up', 'search']).stdout).toContain('search 补上了装上之前登记的 2001 样。')
+    expect(owner(lib, ['plugin', 'backfill', 'search']).stdout).toContain('search 补上了装上之前登记的 2001 样。')
     expect(run(lib, ['find', 'word1998']).stdout.match(/notes\/n1998\.md/g)).toHaveLength(1)
   })
 
-  it('refuses plugin catch-up for a plugin that does not learn from the register', () => {
+  it('refuses plugin backfill for a plugin that does not learn from the register', () => {
     const lib = library(1)
-    owner(lib, ['plugin', 'add', 'version'])
-    const r = sb.run(['--library', lib, 'plugin', 'catch-up', 'version'])
+    owner(lib, ['plugin', 'enable', 'version'])
+    const r = sb.run(['--library', lib, 'plugin', 'backfill', 'version'])
     expect(r.code).toBe(2)
     expect(r.stdout + r.stderr).toContain('插件 version 不从放里学库里登记了什么，没有要补的。')
   })

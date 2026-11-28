@@ -38,7 +38,7 @@ export function entryOf(views: readonly ListedView[], view: string | null): List
 export function navGroups(views: ListedView[]): { groups: NavGroup[]; foot: ListedView[] } {
   const shown = views.filter((v) => v.nav && rootOf(views, v) === null)
   const kernel = (id: string) => (v: ListedView) => v.by === 'kernel' && v.id === id
-  const foot = shown.filter(kernel('config'))
+  const foot = shown.filter(kernel('settings'))
   const home = shown.filter(kernel('home'))
   const rest = shown.filter((v) => !foot.includes(v) && !home.includes(v))
   const first = rest.find((v) => v.by !== 'kernel')?.by

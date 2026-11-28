@@ -33,7 +33,7 @@ const ok = (r: Run): Run => {
 
 describe('a scene’s conversation', () => {
   it('is recorded as a pointer and shown with whether it is here and how to resume it', () => {
-    ok(sb.run(['--library', lib, 'put', '-', '--to', 'a.md', '--made'], { cwd: project, env: { CLAUDE_CODE_SESSION_ID: id }, input: 'a' }))
+    ok(sb.run(['--library', lib, 'put', '-', '--to', 'a.md', '--generated'], { cwd: project, env: { CLAUDE_CODE_SESSION_ID: id }, input: 'a' }))
     const resume = `cd ~/shop && claude --resume ${id}`
 
     const text = ok(sb.run(['--library', lib, 'inspect', id])).stdout
@@ -54,7 +54,7 @@ describe('a scene’s conversation', () => {
   })
 
   it('is not there for a session no product gave', () => {
-    ok(sb.run(['--library', lib, 'put', '-', '--to', 'a.md', '--made', '--session', id], { cwd: project, input: 'a' }))
+    ok(sb.run(['--library', lib, 'put', '-', '--to', 'a.md', '--generated', '--session', id], { cwd: project, input: 'a' }))
     expect(ok(sb.run(['--library', lib, 'inspect', id])).stdout).not.toContain('对话')
     expect(ok(sb.run(['--library', lib, 'inspect', id, '--json'])).json().sections[0].data.conversation).toBeNull()
   })

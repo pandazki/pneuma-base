@@ -55,27 +55,27 @@ describe('a bundle with the ledger', () => {
   let l: ReturnType<typeof library>
   beforeAll(() => {
     l = library()
-    ok(l.agent(['put', '-', '--to', 'sources/brief.md', '--brought', '--source', 'https://example.com/brief'], 's1', 'brief'))
+    ok(l.agent(['put', '-', '--to', 'sources/brief.md', '--imported', '--source', 'https://example.com/brief'], 's1', 'brief'))
     write(l.outside, Object.fromEntries(Object.entries(OLD).map(([p, c]) => [`site/${p}`, c])))
-    ok(l.agent(['put', 'site', '--to', 'sites/a', '--made', '--from', 'sources/brief.md']))
+    ok(l.agent(['put', 'site', '--to', 'sites/a', '--generated', '--from', 'sources/brief.md']))
   })
 
   it('has provenance and a basis, its enter fact says it is a bundle, and it is the basis of what is made from a file inside it', () => {
     const r = ok(l.agent(['inspect', 'sites/a', '--json']))
     expect(r.json().file).toMatchObject({ kind: 'bundle', size: null, level: { entries: [{ name: 'css' }, { name: 'img' }, { name: 'index.html' }], more: 0 } })
-    expect(ledgerData(r)).toMatchObject({ path: 'sites/a', origin: { kind: 'made' }, basis: [{ path: 'sources/brief.md', state: 'consistent' }] })
+    expect(ledgerData(r)).toMatchObject({ path: 'sites/a', origin: { kind: 'generated' }, basis: [{ path: 'sources/brief.md', state: 'consistent' }] })
     const facts = factsOf(l.lib).filter((f) => f.scene === 's1')
     expect(facts.filter((f) => f.kind === 'item.enter').map((f) => [f.path, f.bundle ?? false])).toEqual([['sources/brief.md', false], ['sites/a', true]])
 
-    ok(l.agent(['put', '-', '--to', 'review.md', '--made', '--from', 'sites/a/index.html'], 's1', 'review'))
+    ok(l.agent(['put', '-', '--to', 'review.md', '--generated', '--from', 'sites/a/index.html'], 's1', 'review'))
     expect(ledgerData(ok(l.agent(['inspect', 'review.md', '--json']))).basis).toMatchObject([{ path: 'sites/a' }])
   })
 
-  it('a new tree over it keeps the old tree, marked as the version kept; ledger held restore gives it back byte for byte', () => {
+  it('a new tree over it keeps the old tree, marked as the version kept; ledger copies restore gives it back byte for byte', () => {
     const old = filesOf(join(l.lib, 'sites/a'))
     write(l.outside, { 'site/index.html': '<h1>v2</h1>', 'site/about.html': 'about' })
     rmSync(join(l.outside, 'site/img'), { recursive: true })
-    const r = ok(l.agent(['put', 'site', '--to', 'sites/a', '--made', '--json']))
+    const r = ok(l.agent(['put', 'site', '--to', 'sites/a', '--generated', '--json']))
     expect(r.json()).toMatchObject({ outcome: 'accepted', copied: true })
     expect(r.json().notes.map((n: any) => n.text).join('\n')).toContain('留存')
     expect(Object.keys(filesOf(join(l.lib, 'sites/a'))).sort()).toEqual(['.pneuma-item', 'about.html', 'css/site.css', 'index.html'])
@@ -87,12 +87,12 @@ describe('a bundle with the ledger', () => {
     expect(row(versions[0])).toContain('留存')
     expect(row(versions[1])).not.toContain('留存')
 
-    expect(ok(l.owner(['ledger', 'held', 'list'])).stdout).toContain('sites/a')
-    ok(l.owner(['ledger', 'held', 'restore', 'sites/a', '--to', 'restored/a']))
+    expect(ok(l.owner(['ledger', 'copies', 'list'])).stdout).toContain('sites/a')
+    ok(l.owner(['ledger', 'copies', 'restore', 'sites/a', '--to', 'restored/a']))
     expect(filesOf(join(l.lib, 'restored/a'))).toEqual(old)
     const restored = ok(l.agent(['inspect', 'restored/a', '--json']))
     expect(restored.json().file).toMatchObject({ kind: 'bundle', level: { entries: [{ name: 'css' }, { name: 'img' }, { name: 'index.html' }], more: 0 } })
-    expect(ledgerData(restored)).toMatchObject({ origin: { kind: 'brought', by: 'owner' } })
+    expect(ledgerData(restored)).toMatchObject({ origin: { kind: 'imported', by: 'owner' } })
   })
 
   // ARCHITECTURE.md「找、看、说、查、归档」: the ledger finds by its records (the path, what was said), not by the text
@@ -100,7 +100,7 @@ describe('a bundle with the ledger', () => {
   it('find matches a bundle by its record with the ledger, under its scene with its origin, and not by the text inside', () => {
     ok(l.agent(['start', '做早鸟预订页'], 's3'))
     write(l.outside, { 'landing/index.html': '<h1>桌上只留一块铝</h1>', 'landing/style.css': 'body { color: #222; }' })
-    ok(l.agent(['put', 'landing', '--to', 'sites/landing', '--made'], 's3'))
+    ok(l.agent(['put', 'landing', '--to', 'sites/landing', '--generated'], 's3'))
     expect(ok(l.agent(['find', '一块铝'], 's2')).stdout).toBe('没有找到。\n')
     const found = ok(l.agent(['find', 'landing'], 's2')).stdout
     expect(found).toContain('在做：做早鸟预订页')
@@ -126,11 +126,11 @@ describe('registering a folder whose files are on record, with the marker writte
   let l: ReturnType<typeof library>
   beforeAll(() => {
     l = library()
-    ok(l.agent(['put', '-', '--to', 'notes/a.md', '--made'], 's1', 'a'))
-    ok(l.agent(['put', '-', '--to', 'notes/deep/b.md', '--brought'], 's1', 'b'))
-    ok(l.agent(['put', '-', '--to', 'summary.md', '--made', '--from', 'notes/a.md'], 's1', 'summary of a'))
+    ok(l.agent(['put', '-', '--to', 'notes/a.md', '--generated'], 's1', 'a'))
+    ok(l.agent(['put', '-', '--to', 'notes/deep/b.md', '--imported'], 's1', 'b'))
+    ok(l.agent(['put', '-', '--to', 'summary.md', '--generated', '--from', 'notes/a.md'], 's1', 'summary of a'))
     write(l.lib, { 'notes/.pneuma-item': '{"format":1}\n' })
-    ok(l.agent(['put', 'notes', '--brought']))
+    ok(l.agent(['put', 'notes', '--imported']))
   })
 
   it('absorbs them: check reports none of them missing or unowned, nothing stale; inspecting one says which bundle absorbed it, and a file never on record is part of it', () => {

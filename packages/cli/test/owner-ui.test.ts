@@ -16,7 +16,7 @@ describe('the owner’s operations from the page (C5)', () => {
     expect(sb.run(['init', lib]).code).toBe(0)
     const server = await startServer({ dir: lib, builtins: builtinPlugins, home: join(sb.home, '.pneuma-base'), env: {}, port: 0 })
     try {
-      const call = { face: 'owner', command: 'ledger held restore', args: { positional: ['nothing.md'], flags: { to: ['x.md'] } } }
+      const call = { face: 'owner', command: 'ledger copies restore', args: { positional: ['nothing.md'], flags: { to: ['x.md'] } } }
       const res = await fetch(`http://127.0.0.1:${server.port}/api/call`, { method: 'POST', headers: { 'x-pneuma-token': server.token, 'content-type': 'application/json' }, body: JSON.stringify({ call, confirmed: false }) })
       expect(res.status).toBe(200)
       expect(await res.json()).toMatchObject({ tone: 'bad', result: { outcome: 'refused', reason: 'no-such-item' } })
@@ -29,6 +29,6 @@ describe('the owner’s operations from the page (C5)', () => {
       .flatMap((name) => readFileSync(join(dir, name), 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line)))
       .filter((f) => f.kind === 'owner.op')
       .map((f) => f.command)
-    expect(commands).not.toContain('ledger held restore')
+    expect(commands).not.toContain('ledger copies restore')
   })
 })

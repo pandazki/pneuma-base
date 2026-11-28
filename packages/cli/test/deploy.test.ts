@@ -64,9 +64,9 @@ beforeAll(() => {
   lib = join(tempDir(), 'lib')
   outside = tempDir('pb-outside-')
   expect(sb.run(['init', lib]).code).toBe(0)
-  ok(owner(['plugin', 'add', 'deploy']))
+  ok(owner(['plugin', 'enable', 'deploy']))
   for (let i = 0; i < 10; i++) {
-    ok(agent(['put', site(`site-${i}`), '--to', `sites/s${i}`, '--made']))
+    ok(agent(['put', site(`site-${i}`), '--to', `sites/s${i}`, '--generated']))
     expect(ok(agent(['say', 'deployable', `sites/s${i}`]))).toMatchObject({ outcome: 'heard', by: 'deploy' })
   }
   target = join(tempDir('pb-target-'), 'www')
@@ -84,7 +84,7 @@ describe('ten sites, four switched on, to a dir target', () => {
   })
 
   it('a changed site goes online with its new content; the put says so', () => {
-    const put = ok(agent(['put', site('site-0-new', 'brand new'), '--to', 'sites/s0', '--made']))
+    const put = ok(agent(['put', site('site-0-new', 'brand new'), '--to', 'sites/s0', '--generated']))
     expect(put.notes.find((n: any) => n.plugin === 'deploy')?.text).toContain('重新发布')
     expect(tree(join(target, 'sites-s0'))).toEqual(tree(join(lib, 'sites/s0')))
     expect(readFileSync(join(target, 'sites-s0/index.html'), 'utf8')).toBe('<h1>brand new</h1>')
@@ -111,7 +111,7 @@ describe('ten sites, four switched on, to a dir target', () => {
   })
 
   it('the switch is refused for an agent, by name, by grant, or by its session variable, and nothing goes online; an agent may still run deploy sync and deploy list', () => {
-    ok(owner(['grant', 'issue', 'claude', '--agent', 'claude-code']))
+    ok(owner(['grant', 'create', 'claude', '--agent', 'claude-code']))
     const attempts = [
       agent(['deploy', 'on', 'sites/s5']),
       sb.run(['@claude', 'deploy', 'on', 'sites/s5', '--json'], { cwd: outside }),
@@ -186,7 +186,7 @@ describe('a command target', () => {
     expect(on.json()).toMatchObject({ outcome: 'refused', reason: 'publish-failed' })
     expect(on.json().text).toContain('target is down')
 
-    const put = agent(['put', site('site-7-new', 'newer'), '--to', 'sites/s7', '--made'])
+    const put = agent(['put', site('site-7-new', 'newer'), '--to', 'sites/s7', '--generated'])
     expect(put.code, put.stderr).toBe(3)
     expect(put.json()).toMatchObject({ outcome: 'accepted', path: 'sites/s7' })
     expect(put.json().problems).toEqual([expect.objectContaining({ plugin: 'deploy', message: expect.stringContaining('target is down') })])

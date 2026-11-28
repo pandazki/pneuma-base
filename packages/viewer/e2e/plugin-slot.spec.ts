@@ -19,7 +19,7 @@ test('a plugin’s page appears when installed, renders each kind of block, and 
   expect(await navTitles(page)).toEqual(['首页', '文件', 'Agent', '配置'])
 
   // Installed from outside the UI: the page shows up by itself, after the home page and before the kernel's other pages.
-  pb.run(['plugin', 'add', 'pager', '--library', lib], { testPlugins: true })
+  pb.run(['plugin', 'enable', 'pager', '--library', lib], { testPlugins: true })
   const nav = page.getByRole('navigation', { name: '导航' })
   await expect(nav.getByRole('button', { name: '块的样例' })).toBeVisible({ timeout: 5_000 })
   expect(await navTitles(page)).toEqual(['首页', '块的样例', '新的块', '文件', 'Agent', '配置'])

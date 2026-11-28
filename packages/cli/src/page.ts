@@ -78,8 +78,8 @@ function agentWords({ verb, request }: AgentCall, action: Action): string[] {
       const o = request.origin
       const origin =
         o.kind === 'brought'
-          ? ['--brought', ...(o.source === null ? [] : optionalFlag('source', o.source, action)), ...(o.by === null ? [] : optionalFlag('by', o.by, action))]
-          : ['--made', ...listFlag('from', o.from, action), ...listFlag('from-outside', o.outside, action)]
+          ? ['--imported', ...(o.source === null ? [] : optionalFlag('source', o.source, action)), ...(o.by === null ? [] : optionalFlag('by', o.by, action))]
+          : ['--generated', ...listFlag('from', o.from, action), ...listFlag('from-external', o.outside, action)]
       const note = request.note === undefined || request.note === null ? [] : optionalFlag('note', request.note, action)
       return ['put', ...what, ...origin, ...note]
     }

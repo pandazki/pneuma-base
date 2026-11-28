@@ -56,10 +56,10 @@ const served = () => (existsSync(www) ? readdirSync(www).filter((n) => !n.starts
 describe('the whole story, with every plugin installed', () => {
   it('the owner makes a library, adds the plugins, and sets a deploy target, a sync target and an embedder', () => {
     expect(ok(sb.run(['init', lib], { cwd: root })).stdout).toContain('已把')
-    for (const name of PLUGINS) expect(ok(owner(lib, ['plugin', 'add', name])).stdout).toBe(`已装上插件 ${name}，说明已重新生成。\n`)
+    for (const name of PLUGINS) expect(ok(owner(lib, ['plugin', 'enable', name])).stdout).toBe(`已装上插件 ${name}，说明已重新生成。\n`)
     ok(owner(lib, ['deploy', 'target', 'set', '--kind', 'dir', '--to', www]))
     ok(owner(lib, ['sync', 'target', 'set', '--kind', 'dir', '--to', syncTarget]))
-    expect(ok(owner(lib, ['search', 'embedder', 'set', '--kind', 'hash'])).stdout).toContain('能用')
+    expect(ok(owner(lib, ['search', 'embedding', 'set', '--kind', 'hash'])).stdout).toContain('能用')
     const description = readFileSync(join(lib, 'PNEUMA-BASE.md'), 'utf8')
     for (const name of ['ledger', ...PLUGINS]) expect(description).toContain(`- \`${name}\`：`)
   })
@@ -67,7 +67,7 @@ describe('the whole story, with every plugin installed', () => {
   it('an agent starts, puts ten sites in as made things, and declares each deployable and versioned', () => {
     expect(lines(ok(claude(['start', '做十个小网站'])))).toContain('已记下（ledger）：在做：做十个小网站')
     for (const [name, text] of Object.entries(SITES)) {
-      const put = ok(claude(['put', site(join(claudeDir, name), text), '--to', `sites/${name}`, '--made']))
+      const put = ok(claude(['put', site(join(claudeDir, name), text), '--to', `sites/${name}`, '--generated']))
       // Five plugins, one put: the answer stays a head line and one line per plugin that had something to say.
       expect(lines(put)[0]).toBe(`已放入 sites/${name}`)
       expect(lines(put).length).toBeLessThanOrEqual(4)
@@ -94,7 +94,7 @@ describe('the whole story, with every plugin installed', () => {
 
   it('it puts a new directory over that site; the target follows, two versions are listed, version 1 exports the old bytes', () => {
     const before = readFileSync(join(lib, 'sites/coffee/index.html'))
-    const put = ok(codex(['put', site(join(codexDir, 'coffee'), '手冲咖啡：豆子、水温和研磨度，换了深色配色'), '--to', 'sites/coffee', '--made']))
+    const put = ok(codex(['put', site(join(codexDir, 'coffee'), '手冲咖啡：豆子、水温和研磨度，换了深色配色'), '--to', 'sites/coffee', '--generated']))
     expect(lines(put)).toEqual([
       '已放入 sites/coffee',
       expect.stringMatching(/^ {2}ledger：已记下换了新内容，旧内容进了留存，主人取得回 · 条目 i_/),
@@ -110,7 +110,7 @@ describe('the whole story, with every plugin installed', () => {
   it('the library syncs; a second library with the same plugins syncs from the same target and shows the same provenance', () => {
     expect(ok(owner(lib, ['sync', 'now'])).stdout).toMatch(/推上去 \d+ · 拉下来 0 ·.* 冲突 0/)
     ok(sb.run(['init', lib2], { cwd: root }))
-    for (const name of PLUGINS) ok(owner(lib2, ['plugin', 'add', name]))
+    for (const name of PLUGINS) ok(owner(lib2, ['plugin', 'enable', name]))
     ok(owner(lib2, ['sync', 'target', 'set', '--kind', 'dir', '--to', syncTarget]))
     expect(ok(owner(lib2, ['sync', 'now'])).stdout).toMatch(/拉下来 \d+ ·.* 冲突 0/)
     const provenance = (library: string) => {

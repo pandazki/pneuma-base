@@ -53,7 +53,7 @@ if (mode === 'read') {
   // One reader of the marks experiment: reads the standing page until told to stop.
   while (!existsSync(stopFile)) {
     const t0 = now()
-    const out = pb('show', 'ledger.standing', '--json').stdout
+    const out = pb('show', 'ledger.status', '--json').stdout
     appendFileSync(outFile, JSON.stringify({ t0, t1: now(), nobodys: listed(out, '没人登记过的') }) + '\n')
   }
   process.exit(0)
@@ -73,7 +73,7 @@ if (mode === 'window') {
     if (kind === 'small') writeFileSync(from, `small ${i}\n`)
     const to = `race/${kind}-${process.pid}-${i}${kind === 'big' ? '.bin' : '.txt'}`
     const before = factFiles()
-    const child = spawn(process.execPath, [CLI, '--library', library, '--as', 'race-agent', 'put', from, '--to', to, '--made'], { env, stdio: 'ignore' })
+    const child = spawn(process.execPath, [CLI, '--library', library, '--as', 'race-agent', 'put', from, '--to', to, '--generated'], { env, stdio: 'ignore' })
     const started = performance.now()
     let appeared = null
     let recorded = null
@@ -113,7 +113,7 @@ if (mode === 'window') {
     if (kind === 'small') writeFileSync(from, `small ${i}\n`)
     const to = `race-marks/${kind}-${process.pid}-${i}${kind === 'big' ? '.bin' : '.txt'}`
     const before = factFiles()
-    const child = spawn(process.execPath, [CLI, '--library', library, '--as', 'race-agent', 'put', from, '--to', to, '--made'], { env, stdio: 'ignore' })
+    const child = spawn(process.execPath, [CLI, '--library', library, '--as', 'race-agent', 'put', from, '--to', to, '--generated'], { env, stdio: 'ignore' })
     const started = now()
     let appeared = null
     let recorded = null
@@ -158,7 +158,7 @@ if (mode === 'window') {
     if (kind === 'small') writeFileSync(from, `placed ${i} ${Date.now()}\n`)
     const to = `race-app/${kind}-${process.pid}-${i}${kind === 'big' ? '.bin' : '.txt'}`
     const started = now()
-    await run(['--as', 'race-agent', 'put', from, '--to', to, '--made', '--json'])
+    await run(['--as', 'race-agent', 'put', from, '--to', to, '--generated', '--json'])
     puts.push([started, now()])
     placed.push(to)
   }
@@ -171,7 +171,7 @@ if (mode === 'window') {
     execFileSync('/bin/mkdir', ['-p', join(library, 'race-app')])
     writeFileSync(join(library, to), `written in place, registered after ${delay}s\n`)
     await new Promise((ok) => setTimeout(ok, delay * 1000))
-    pb('--as', 'race-agent', 'put', to, '--made', '--json')
+    pb('--as', 'race-agent', 'put', to, '--generated', '--json')
     inPlace.push({ to, delay })
   }
   await new Promise((ok) => setTimeout(ok, 8_000))

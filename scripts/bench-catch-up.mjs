@@ -1,11 +1,11 @@
 // What each built-in plugin knows of a library it is added to after 2,000 things were registered, and
 // what catching up costs: a library with only the ledger gets 1,990 notes and 10 sites registered, then
-// version, sync, deploy and search are added one after another. For each: the time `plugin add` takes,
+// version, sync, deploy and search are added one after another. For each: the time `plugin enable` takes,
 // what it said, how many storage calls the plugin made in it (PNEUMA_BASE_TOOL_LOG) and per page of the
 // register, then whether it knows an old thing: search finds one by a word in it, sync carries the old
 // things to its target, a version is taken of an old note, an old site is deployed. Last, on a fresh
 // copy, search's catching up is stopped after its first page (SIGINT, as Ctrl-C) and goes on with
-// `plugin catch-up search`. Run after `pnpm build`:
+// `plugin backfill search`. Run after `pnpm build`:
 //   node scripts/bench-catch-up.mjs [--bin <path to bin.js>] [--keep]
 // `--bin` runs another build, such as one from before catching up existed, to see what plugins knew then.
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
@@ -50,15 +50,15 @@ const logLength = (env) => {
 /** A library with only the ledger: 1,990 notes, each with its own word, registered a page at a time, and 10 sites, each with a file three levels down. */
 function library(env, lib) {
   execFileSync(process.execPath, [bin, 'init', lib], { env, stdio: 'ignore' })
-  call(env, lib, ['put', '-', '--to', 'notes/n0000.md', '--made'], { agent: true, input: 'note 0 word0\n' })
+  call(env, lib, ['put', '-', '--to', 'notes/n0000.md', '--generated'], { agent: true, input: 'note 0 word0\n' })
   for (let i = 1; i < NOTES; i++) writeFileSync(join(lib, 'notes', `n${String(i).padStart(4, '0')}.md`), `note ${i} word${i}\n`)
-  for (let i = 0; i < Math.ceil(NOTES / 200); i++) call(env, lib, ['put', 'notes', '--made'], { agent: true })
+  for (let i = 0; i < Math.ceil(NOTES / 200); i++) call(env, lib, ['put', 'notes', '--generated'], { agent: true })
   for (let s = 0; s < SITES; s++) {
     const site = join(scratch, `site-${s}`)
     mkdirSync(join(site, 'a/b'), { recursive: true })
     writeFileSync(join(site, 'index.html'), `<h1>site ${s}</h1>\n`)
     writeFileSync(join(site, 'a/b/deep.txt'), `deep ${s} sitedeep${s}\n`)
-    call(env, lib, ['put', site, '--to', `sites/s${s}`, '--made'], { agent: true })
+    call(env, lib, ['put', site, '--to', `sites/s${s}`, '--generated'], { agent: true })
   }
 }
 
@@ -80,7 +80,7 @@ mkdirSync(join(outside, 'sites'), { recursive: true })
 const rows = []
 for (const plugin of ['version', 'sync', 'deploy', 'search']) {
   const from = logLength(env)
-  const added = call(env, lib, ['plugin', 'add', plugin])
+  const added = call(env, lib, ['plugin', 'enable', plugin])
   const calls = callsOf(env, plugin, from)
   const keeper = callsOf(env, 'ledger', from)
   // One report before the first page, one after each; storage's progress joins a report with ' · '.
@@ -106,14 +106,14 @@ for (const plugin of ['version', 'sync', 'deploy', 'search']) {
   }
   rows.push({ plugin, ms: added.ms, said: saidLine(added.out), calls: calls.length, keeper: keeper.length, pages, knows })
 }
-console.log('| plugin | plugin add | what it said | its storage calls (the ledger\'s) | pages | per page | what it knows of the old things |\n| --- | --- | --- | --- | --- | --- | --- |')
+console.log('| plugin | plugin enable | what it said | its storage calls (the ledger\'s) | pages | per page | what it knows of the old things |\n| --- | --- | --- | --- | --- | --- | --- |')
 for (const r of rows) console.log(`| ${r.plugin} | ${r.ms.toFixed(0)} ms | ${r.said} | ${r.calls} (${r.keeper}) | ${r.pages} | ${r.pages > 0 ? `${(r.ms / r.pages).toFixed(0)} ms, ${((r.calls + r.keeper) / r.pages).toFixed(1)} calls` : ''} | ${r.knows} |`)
 
 // Stopped after the first page, then gone on with.
 {
   const env2 = machine('copy')
   const t = performance.now()
-  const child = spawn(process.execPath, [bin, '--library', copy, 'plugin', 'add', 'search'], { env: env2, stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(process.execPath, [bin, '--library', copy, 'plugin', 'enable', 'search'], { env: env2, stdio: ['ignore', 'pipe', 'pipe'] })
   let out = ''
   let err = ''
   child.stdout.on('data', (b) => (out += b))
@@ -127,11 +127,11 @@ for (const r of rows) console.log(`| ${r.plugin} | ${r.ms.toFixed(0)} ms | ${r.s
   })
   const stopped = performance.now() - t
   const line = call(env2, copy, ['find', 'word1234'], { agent: true }).out.trim().split('\n').at(-1)
-  const resumed = call(env2, copy, ['plugin', 'catch-up', 'search'])
+  const resumed = call(env2, copy, ['plugin', 'backfill', 'search'])
   const after = call(env2, copy, ['find', 'word1234'], { agent: true }).out
-  console.log(`stopped: plugin add search ${stopped.toFixed(0)} ms: ${out.trim().split('\n').find((l) => l.includes('补')) ?? out.trim()}`)
+  console.log(`stopped: plugin enable search ${stopped.toFixed(0)} ms: ${out.trim().split('\n').find((l) => l.includes('补')) ?? out.trim()}`)
   console.log(`meanwhile find's last line: ${line}`)
-  console.log(`plugin catch-up search ${resumed.ms.toFixed(0)} ms: ${resumed.out.trim() || resumed.err.trim()}`)
+  console.log(`plugin backfill search ${resumed.ms.toFixed(0)} ms: ${resumed.out.trim() || resumed.err.trim()}`)
   console.log(`then find word1234 ${after.includes('notes/n1234.md') ? 'finds notes/n1234.md' : 'finds nothing'}${after.includes('接着补') ? ', still with the line' : ''}`)
 }
 

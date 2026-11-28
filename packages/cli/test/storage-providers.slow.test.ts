@@ -55,7 +55,7 @@ describe('storage providers, installed and used', () => {
     writeFileSync(log, '')
     expect((await run(['init', testLib, '--bare', '--json'])).json().data).toEqual({ root: testLib, provider: 'test-folder' })
     writeFileSync(join(home, 'note.md'), '# 放进 testfs 的库\n')
-    const put = await run(['--library', testLib, 'put', join(home, 'note.md'), '--to', 'notes/note.md', '--brought'])
+    const put = await run(['--library', testLib, 'put', join(home, 'note.md'), '--to', 'notes/note.md', '--imported'])
     expect(put.code, put.stdout + put.stderr).toBe(0)
     expect((await run(['--library', testLib, 'inspect', 'notes/note.md'])).stdout).toContain('notes/note.md')
     expect(readFileSync(join(home, 'served-by-test-folder/notes/note.md'), 'utf8')).toBe('# 放进 testfs 的库\n')
@@ -63,7 +63,7 @@ describe('storage providers, installed and used', () => {
 
     writeFileSync(log, '')
     expect((await run(['init', pathLib, '--bare', '--json'])).json().data).toEqual({ root: pathLib, provider: 'local-folder' })
-    expect((await run(['--library', pathLib, 'put', join(home, 'note.md'), '--to', 'note.md', '--brought'])).code).toBe(0)
+    expect((await run(['--library', pathLib, 'put', join(home, 'note.md'), '--to', 'note.md', '--imported'])).code).toBe(0)
     expect(readFileSync(log, 'utf8')).toBe('')
   })
 

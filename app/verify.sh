@@ -111,7 +111,7 @@ if [ "${1:-}" = pictures ]; then
   picture() { mark; hook "$1:$out/$2.png"; logged "capture: wrote $2.png" 5 || echo "     (no picture $2)"; }
   for look in light dark; do
     hook "$look"; sleep 1
-    for page in "home=" "activity=view=ledger.activity" "config=view=config" "agents=view=agents"; do
+    for page in "home=" "activity=view=ledger.activity" "settings=view=settings" "agents=view=agents"; do
       hook "route:${page#*=}"; sleep 2
       picture capture "window-${page%%=*}-$look"
     done
@@ -197,7 +197,7 @@ open(sys.argv[1], 'wb').write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack(
 " "$work/pic.png"
 sips -s format pdf "$work/pic.png" --out "$work/doc.pdf" >/dev/null
 mkdir -p "$work/many" && for i in $(seq -w 1 53); do echo "note $i" > "$work/many/n$i.txt"; done
-for f in pic.png doc.pdf many; do pb --library "$lib" put "$work/$f" --to "$f" --brought --by owner >/dev/null; done
+for f in pic.png doc.pdf many; do pb --library "$lib" put "$work/$f" --to "$f" --imported --by owner >/dev/null; done
 listen
 mark; shell_post '{ type: "preview", paths: ["inbox/dropped.txt"], at: 0 }'
 logged "preview: $lib/inbox/dropped.txt at 0" && ok "preview: Quick Look on the file at its path on this machine" || fail "preview of one: $(since_mark | grep 'preview:\|files:')"
@@ -293,7 +293,7 @@ pb --library "$lib" agent connect claude-desktop >/dev/null
 desktop="$fake_home/Library/Application Support/Claude/claude_desktop_config.json"
 entry() { plutil -extract "mcpServers.pneuma-base-claude-desktop.$1" raw -o - "$desktop"; }
 [ "$(entry command)" = "$launcher" ] && [ "$(entry args.0) $(entry args.1)" = "@claude-desktop mcp" ] && ! entry env >/dev/null 2>&1 && ok "the MCP entry: $(entry command) @claude-desktop mcp, no env" || fail "the MCP entry: $(cat "$desktop")"
-{ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"verify","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"put","arguments":{"to":"notes/desktop.md","made":true,"text":"# 桌面\n"}}}'; sleep 4; } \
+{ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"verify","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"put","arguments":{"to":"notes/desktop.md","generated":true,"text":"# 桌面\n"}}}'; sleep 4; } \
   | env -i HOME="$fake_home" PATH=/usr/bin:/bin "$(entry command)" "$(entry args.0)" "$(entry args.1)" > "$work/mcp.out" 2> "$work/mcp.err"
 tools=$(grep '"id":2' "$work/mcp.out" | grep -o '"name":"[a-z_]*"' | sed 's/"name":"\(.*\)"/\1/' | tr '\n' ' ')
 echo "$tools" | grep -q "start find inspect put" && ok "with env -i: the MCP entry starts and lists its tools: $tools" || fail "the MCP entry's tools: $(head -c 400 "$work/mcp.out") $(head -c 300 "$work/mcp.err")"
@@ -301,7 +301,7 @@ pb --library "$lib" inspect notes/desktop.md | grep -q "做出来的 · claude-d
 
 for i in 1 2 3 4 5; do
   echo "made by an agent $i" > "$work/made-$i.md"
-  pb --library "$lib" --as verify-agent put "$work/made-$i.md" --to "notes/made-$i.md" --made >/dev/null
+  pb --library "$lib" --as verify-agent put "$work/made-$i.md" --to "notes/made-$i.md" --generated >/dev/null
 done
 sleep 8
 taken=0
@@ -309,10 +309,10 @@ for i in 1 2 3 4 5; do pb --library "$lib" inspect "notes/made-$i.md" | grep -q 
 [ $taken -eq 0 ] && ok "agent puts: 5 of 5 stay the agent's" || fail "agent puts: $taken of 5 taken for the owner's"
 grep -q "watcher: registered.*notes/" "$log" && fail "the watcher registered an agent's file" || ok "the watcher registered none of them"
 
-pb --library "$lib" plugin add deploy >/dev/null
+pb --library "$lib" plugin enable deploy >/dev/null
 pb --library "$lib" deploy target set --kind dir --to "$work/www" >/dev/null
 mkdir -p "$work/site" && echo "<h1>shop</h1>" > "$work/site/index.html"
-pb --library "$lib" --as claude-code put "$work/site" --to sites/shop --made >/dev/null
+pb --library "$lib" --as claude-code put "$work/site" --to sites/shop --generated >/dev/null
 pb --library "$lib" --as claude-code say deployable sites/shop >/dev/null
 wait_for "dot: 1 waiting" 20 && ok "an ask puts the dot on the icon" || fail "the dot on the icon"
 page_shows home-4.txt "等你决定" 10 && ! grep -q "接上你的 agent" "$work/home-4.txt" && ok "an agent has worked here: 开始 is gone" || fail "开始 is gone: $(head -c 300 "$work/home-4.txt")"
@@ -341,7 +341,7 @@ mark; hook panel-menu
 logged "panel-menu: 外观 | 跟随系统 | 浅色 | 深色 | 库 | 我的库 | 新建或打开一个库… | 设置… | 退出 Pneuma Base" && ok "the panel's 「···」: 外观, the libraries, 设置…, 退出" || fail "the panel's menu: $(since_mark | grep 'panel-menu:')"
 hook "menu-pick:深色"; sleep 1
 [ "$(appearance look-1.txt)" = "choice: dark kept: dark app: dark window: dark tray: dark page: dark tray page: dark " ] && ok "深色 from the panel's menu: the window, the panel and both pages are dark, and it is kept" || fail "深色: $(appearance look-1.txt)"
-hook "route:view=config"; sleep 2
+hook "route:view=settings"; sleep 2
 page_eval '[...document.querySelectorAll("main [aria-label=这台机器] [role=radio]")].find((b) => b.textContent === "浅色")?.click(), "clicked"' >/dev/null; sleep 1
 [ "$(appearance look-2.txt)" = "choice: light kept: light app: light window: light tray: light page: light tray page: light " ] && ok "浅色 from the configuration page's row: all light at once, kept" || fail "浅色 from the page: $(appearance look-2.txt)"
 hook panel-menu; hook "menu-pick:跟随系统"; sleep 1
@@ -412,7 +412,7 @@ pb --library "$lib" pair allow "$pair_id" >/dev/null && curl -s "$endpoint/pair/
 init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"verify","version":"0"}}}'
 sid=$(curl -s -D - -o /dev/null -X POST -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d "$init" "$endpoint/mcp/verify-app" | tr -d '\r' | sed -n 's/^[Mm]cp-[Ss]ession-[Ii]d: //p')
 curl -s -o /dev/null -X POST -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -H "mcp-session-id: $sid" -d '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$endpoint/mcp/verify-app"
-curl -s -X POST -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -H "mcp-session-id: $sid" -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"put","arguments":{"to":"notes/over-http.md","made":true,"text":"# HTTP\n"}}}' "$endpoint/mcp/verify-app" > "$work/mcp-http.out"
+curl -s -X POST -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -H "mcp-session-id: $sid" -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"put","arguments":{"to":"notes/over-http.md","generated":true,"text":"# HTTP\n"}}}' "$endpoint/mcp/verify-app" > "$work/mcp-http.out"
 [ -n "$sid" ] && pb --library "$lib" inspect notes/over-http.md | grep -q "做出来的 · verify-app" && ok "MCP over HTTP at /mcp/verify-app: a put is verify-app's" || fail "MCP over HTTP: session '$sid', $(head -c 300 "$work/mcp-http.out")"
 
 # Files on the page as in Finder: the page's own rows and tiles, clicked, keyed, dragged and
@@ -460,7 +460,7 @@ i=0; while [ ! -f "$lib/direct-renamed.txt" ] && [ $i -lt 100 ]; do sleep 0.1; i
 
 # The icons, from the 显示 menu's command: each tile in view gets the system's thumbnail or its type's icon.
 mkdir -p "$work/day" && echo "# 日报" > "$work/day/index.md" && echo "<h1>日报</h1>" > "$work/day/index.html"
-for d in 2026-11-25 2026-11-26 2026-11-27; do pb --library "$lib" --as grok-bot put "$work/day" --to "daily/$d" --made >/dev/null; done
+for d in 2026-11-25 2026-11-26 2026-11-27; do pb --library "$lib" --as grok-bot put "$work/day" --to "daily/$d" --generated >/dev/null; done
 # A window the system counts as hidden runs no transitions: the pictures are taken without them, so they show where each one ends.
 [ -z "$shots" ] || page_eval '(() => { const s = document.createElement("style"); s.textContent = "*, *::before, *::after { transition: none !important }"; document.head.append(s); return "still" })()' >/dev/null
 mark; look icons
@@ -480,7 +480,7 @@ look list
 # directory it ran in, Codex by its link or, with nothing to handle it, its resume command; a product
 # with no rule, or a conversation whose file is gone, offers nothing.
 # Puts a made thing at $2 from the directory $1 as an agent product runs, its session in the variable $3.
-as_product() { (cd "$1" && printf '# 对话里做的\n' | env -i HOME="$fake_home" PATH=/usr/bin:/bin PNEUMA_BASE_HOME="$pb_home" "$3" "$app/Contents/MacOS/node" "$app/Contents/Resources/cli/dist/bin.js" --library "$lib" put - --to "$2" --made >/dev/null); }
+as_product() { (cd "$1" && printf '# 对话里做的\n' | env -i HOME="$fake_home" PATH=/usr/bin:/bin PNEUMA_BASE_HOME="$pb_home" "$3" "$app/Contents/MacOS/node" "$app/Contents/Resources/cli/dist/bin.js" --library "$lib" put - --to "$2" --generated >/dev/null); }
 claude_id=11111111-2222-4333-8444-555555555555; codex_id=01a2106d-fcb1-72c3-9aef-583c6bd555a2; gone_id=22222222-3333-4444-8555-666666666666
 mkdir -p "$work/proj-claude" "$work/proj-codex"
 folder=$(echo "$work/proj-claude" | sed 's/[^a-zA-Z0-9]/-/g')

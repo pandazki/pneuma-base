@@ -35,5 +35,5 @@ pnpm build && pnpm pack:dist && pnpm pack:plugins
 
 ```sh
 pneuma-base plugin install dist-packages/plugins/space
-pneuma-base plugin add space --library ~/base
+pneuma-base plugin enable space --library ~/base
 ```

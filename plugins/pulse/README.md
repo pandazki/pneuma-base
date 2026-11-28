@@ -27,7 +27,7 @@ Pneuma Base 插件。每次有东西被放进库（登记、放入、换新内�
 npm install
 npm test                 # 构建，跑符合性检查和 test/plugin.test.ts
 npm run install-local    # 装到 $PNEUMA_BASE_HOME/plugins/pulse/（只有主人能做）
-pneuma-base plugin add pulse --library <库的目录>
+pneuma-base plugin enable pulse --library <库的目录>
 ```
 
 规范在 `node_modules/pneuma-base/PLUGINS.md`。

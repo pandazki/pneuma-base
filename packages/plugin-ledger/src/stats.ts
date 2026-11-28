@@ -25,9 +25,9 @@ export type Open = { stale: number; changed: number; unknown: number; archived: 
 export type AgentRow = {
   name: string
   sessions: number
-  brought: number
-  made: number
-  decided: number
+  imported: number
+  generated: number
+  decisions: number
   notes: number
   asked: number
   approved: number // approved, and the command did it
@@ -37,7 +37,7 @@ export type AgentRow = {
   pending: number
 }
 
-export type OwnerRow = { commands: number; approved: number; declined: number; brought: number; made: number; said: number; registered: number }
+export type OwnerRow = { commands: number; approved: number; declined: number; imported: number; generated: number; said: number; registered: number }
 
 export type Stats = {
   period: Period
@@ -46,10 +46,10 @@ export type Stats = {
   grain: Grain
   buckets: string[] // each bucket's label, in order
   facts: number // facts the library has, any time
-  put: { brought: number; made: number; byBucket: { brought: number[]; made: number[] } }
+  put: { imported: number; generated: number; byBucket: { imported: number[]; generated: number[] } }
   sessions: { total: number; byAgent: { agent: string; total: number; byBucket: number[] }[] }
   reuse: {
-    made: number
+    generated: number
     fromLibrary: number
     otherSession: number
     otherAgent: number
@@ -61,16 +61,17 @@ export type Stats = {
   order: { now: Open; start: Open; byBucket: Open[]; archived: number; takenBack: number; purged: number; changes: number }
 }
 
-// ---- what the fold keeps ----
+// ---- what the fold keeps, under the records' words (words.ts) ----
 
-export type AgentCounts = Omit<AgentRow, 'name' | 'sessions' | 'pending'>
+export type AgentCounts = { brought: number; made: number; decided: number; notes: number; asked: number; approved: number; refused: number; declined: number; withdrawn: number }
+export type OwnerCounts = { commands: number; approved: number; declined: number; brought: number; made: number; said: number; registered: number }
 /** One hour's counts: what was put and by whom, the sessions begun, who did what, what was kept in order, what was built on what. */
 export type HourRow = {
   hour: string
   put: { brought: number; made: number }
   sessions: Record<string, number>
   agents: Record<string, AgentCounts>
-  owner: OwnerRow
+  owner: OwnerCounts
   order: { archived: number; takenBack: number; purged: number; changes: number }
   reuse: { fromLibrary: number; otherSession: number; otherAgent: number }
   uses: Record<string, { n: number; by: Record<string, number> }>
@@ -85,7 +86,7 @@ export const OPEN_COUNTERS = { stale: 'open:stale', changed: 'open:changed', unk
 export const hourOf = (at: string) => at.slice(0, 13)
 const hourKey = (hour: string) => `h:${hour}`
 const emptyAgent = (): AgentCounts => ({ brought: 0, made: 0, decided: 0, notes: 0, asked: 0, approved: 0, refused: 0, declined: 0, withdrawn: 0 })
-const emptyOwner = (): OwnerRow => ({ commands: 0, approved: 0, declined: 0, brought: 0, made: 0, said: 0, registered: 0 })
+const emptyOwner = (): OwnerCounts => ({ commands: 0, approved: 0, declined: 0, brought: 0, made: 0, said: 0, registered: 0 })
 
 /** The row of an hour as this change has it, made when there is none; write it back with `putHour`. */
 export async function hourRow(tx: Tx, at: string): Promise<HourRow> {
@@ -239,7 +240,7 @@ export async function statsFrom(records: Pick<Records, 'get' | 'under'>, period:
         agents.set(name, into)
         for (const key of Object.keys(c) as (keyof AgentCounts)[]) into[key] += c[key]
       }
-      for (const key of Object.keys(owner) as (keyof OwnerRow)[]) owner[key] += row.owner[key]
+      for (const key of Object.keys(owner) as (keyof OwnerCounts)[]) owner[key] += row.owner[key]
       for (const key of Object.keys(order) as (keyof typeof order)[]) order[key] += row.order[key]
       for (const [id, u] of Object.entries(row.uses)) {
         const into = uses.get(id) ?? { n: 0, by: new Set<string>() }
@@ -272,9 +273,9 @@ export async function statsFrom(records: Pick<Records, 'get' | 'under'>, period:
 
   const names = new Set([...sessions.keys(), ...agents.keys()])
   const agentRows: AgentRow[] = [...names].map((name) => {
-    const c = agents.get(name) ?? emptyAgent()
+    const { brought, made, decided, ...c } = agents.get(name) ?? emptyAgent()
     const s = sum(sessions.get(name) ?? [])
-    return { name, sessions: s, ...c, pending: c.asked - c.approved - c.refused - c.declined - c.withdrawn }
+    return { name, sessions: s, imported: brought, generated: made, decisions: decided, ...c, pending: c.asked - c.approved - c.refused - c.declined - c.withdrawn }
   })
   const byAgent = [...sessions].map(([agent, list]) => ({ agent, total: sum(list), byBucket: list })).sort((a, b) => b.total - a.total || (a.agent < b.agent ? -1 : 1))
   const made = sum(put.made)
@@ -285,18 +286,18 @@ export async function statsFrom(records: Pick<Records, 'get' | 'under'>, period:
     grain,
     buckets: buckets.map((b) => b.label),
     facts: counts.facts ?? 0,
-    put: { brought: sum(put.brought), made, byBucket: put },
+    put: { imported: sum(put.brought), generated: made, byBucket: { imported: put.brought, generated: put.made } },
     sessions: { total: sum(byAgent.map((a) => a.total)), byAgent },
     reuse: {
-      made,
+      generated: made,
       fromLibrary: reuse.fromLibrary,
       otherSession: reuse.otherSession,
       otherAgent: reuse.otherAgent,
       byBucket: { otherSession: reuse.byBucket.otherSession, rest: reuse.byBucket.made.map((m, i) => m - (reuse.byBucket.otherSession[i] ?? 0)) },
       top: top.slice(0, TOP),
     },
-    agents: agentRows.sort((a, b) => b.sessions - a.sessions || b.brought + b.made - (a.brought + a.made) || (a.name < b.name ? -1 : 1)),
-    owner,
+    agents: agentRows.sort((a, b) => b.sessions - a.sessions || b.imported + b.generated - (a.imported + a.generated) || (a.name < b.name ? -1 : 1)),
+    owner: { commands: owner.commands, approved: owner.approved, declined: owner.declined, imported: owner.brought, generated: owner.made, said: owner.said, registered: owner.registered },
     order: { now: final, start, byBucket, ...order },
   }
 }

@@ -121,7 +121,7 @@ test('in a table the arrow keys move between rows, one row in the Tab order, and
 async function pagerLibrary(pb: Cli): Promise<string> {
   const lib = join(tempDir(), 'lib')
   pb.run(['init', lib, '--bare'], { testPlugins: true })
-  pb.run(['plugin', 'add', 'pager', '--library', lib], { testPlugins: true })
+  pb.run(['plugin', 'enable', 'pager', '--library', lib], { testPlugins: true })
   write(lib, 'pager.md', 'pager 预览的内容')
   return (await pb.view(lib, { testPlugins: true })).url
 }
@@ -203,7 +203,7 @@ test('in a browser the configuration page chooses 浅色, 深色 or 跟随系统
   pb.run(['init', lib, '--bare'])
   const { url } = await pb.view(lib)
   await page.emulateMedia({ colorScheme: 'light' })
-  await page.goto(`${url}#view=config`)
+  await page.goto(`${url}#view=settings`)
   const ground = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor)
   const choice = page.getByRole('region', { name: '这个浏览器' }).getByRole('radiogroup', { name: '外观' })
   await expect(choice.getByRole('radio', { name: '跟随系统' })).toHaveAttribute('aria-checked', 'true')

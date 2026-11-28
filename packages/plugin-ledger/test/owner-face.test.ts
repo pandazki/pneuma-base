@@ -79,20 +79,20 @@ describe('new content made from the old', () => {
 })
 
 describe('confirmed destructive owner commands', () => {
-  it('ledger held drop deletes the held copies, and an agent sees it in check, where a read-only owner command is no news', async () => {
+  it('ledger copies drop deletes the held copies, and an agent sees it in check, where a read-only owner command is no news', async () => {
     const { lib, as, call } = await library()
     await agentFace.put({ kind: 'place', from: text('old'), to: 'a.md', origin: { kind: 'made', from: [], outside: [] } }, as(claude, 's1'))
     const replaced = await agentFace.put({ kind: 'place', from: text('new'), to: 'a.md', origin: { kind: 'made', from: [], outside: [] } }, as(claude, 's1'))
     expect(replaced).toMatchObject({ outcome: 'accepted', copied: true })
     expect(existsSync(join(lib.root, '.pneuma-base/ledger/held'))).toBe(true)
 
-    expect(await ownerFace.dispatch(call(), 'ledger held list', { positional: [], flags: {} })).toMatchObject({ outcome: 'done' })
-    expect(await ownerFace.dispatch(call(), 'ledger held drop', { positional: [], flags: {} })).toMatchObject({ outcome: 'done', text: '已清掉 1 份留存。' })
+    expect(await ownerFace.dispatch(call(), 'ledger copies list', { positional: [], flags: {} })).toMatchObject({ outcome: 'done' })
+    expect(await ownerFace.dispatch(call(), 'ledger copies drop', { positional: [], flags: {} })).toMatchObject({ outcome: 'done', text: '已清掉 1 份留存。' })
     expect(existsSync(join(lib.root, '.pneuma-base/ledger/held'))).toBe(false)
 
     const { lines } = await sinceLines(as(claude, 's2'))
-    expect(lines).toContain('  主人面的操作 ledger held drop：已清掉 1 份留存。')
-    expect(lines.some((l) => l.includes('ledger held list'))).toBe(false)
+    expect(lines).toContain('  主人面的操作 ledger copies drop：已清掉 1 份留存。')
+    expect(lines.some((l) => l.includes('ledger copies list'))).toBe(false)
   })
 
   it('archive purge removes the purged items; what was made from them shows its source gone', async () => {
