@@ -320,7 +320,7 @@ describe('bundles in the views', () => {
 
   it('a plugin’s section of the panel of a file inside a bundle is asked about that file, not the bundle', async () => {
     const asked: string[] = []
-    const f = await fixture([plugin('knower', { onItemView: async (path) => (asked.push(path), { title: '知道的', blocks: [] }) })])
+    const f = await fixture([plugin('knower', { onItemView: async (path) => (asked.push(path), { title: '知道的', blocks: [{ kind: 'text', text: path, tone: 'neutral' }] }) })])
     site(f)
     const r = shown(await show(f, 'item', { path: 'site/css/main.css' }))
     expect(asked).toEqual(['site/css/main.css'])

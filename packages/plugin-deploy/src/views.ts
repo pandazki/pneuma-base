@@ -172,6 +172,7 @@ function boardBlock(plane: Plane, all: readonly Look<Seen>[], plugin: string): B
 /** The views of a target on `plane`, for the plugin `plugin`. */
 export function viewOf(plane: Plane, plugin: string): TargetView<Seen> {
   return {
+    mark: (l) => (l.detail?.takenBy ? { text: '名字被占用', tone: 'bad', tip: l.detail.takenBy } : null),
     fields: (l) => fields(plane, l.detail),
     item: (l) => itemBlocks(plane, l, l.detail),
     pages: { board: (all) => [boardBlock(plane, all, plugin)] },

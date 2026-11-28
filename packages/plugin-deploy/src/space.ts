@@ -123,6 +123,12 @@ export class Space {
     await this.#call('POST', `/api/apps/${name}/remove`)
   }
 
+  /** Whether the admin address answers as PneumaSpace does: one request, refused in one sentence when it does not. */
+  async health(): Promise<void> {
+    const { status } = await this.#call('GET', '/api/health')
+    if (status === 404) throw new SpaceError(`${this.admin} 不是 PneumaSpace 的管理地址`)
+  }
+
   /** The origin of the ingress in path mode: the admin's host on the port `/api/health` names. */
   async ingress(): Promise<string> {
     this.#health ??= this.#call('GET', '/api/health').then(({ data }) => {

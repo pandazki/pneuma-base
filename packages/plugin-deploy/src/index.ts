@@ -10,7 +10,7 @@ import { commandTarget, dirTarget } from './targets.js'
 export const deploy = deployPlugin(PLUGIN, [cloudflareTarget, machineTarget, dirTarget, commandTarget], {
   icon: 'cloud-upload',
   version: PNEUMA_BASE_VERSION,
-  summary: '让可以部署的东西上线、下线',
-  about: '声明了可以部署的东西由主人开关上线，线上跟着库里现在的内容，部署到 PneumaSpace、本地目录或主人自己的命令。',
+  summary: '把网站放到线上',
+  about: '主人把库里的网站目录放到 PneumaSpace、本地文件夹或自己的命令上，线上跟着库里现在的内容，一个开关下线。agent 只能声明一样东西可以部署，上不上线由主人决定。',
   ui: fileURLToPath(new URL('../ui/', import.meta.url)),
 })

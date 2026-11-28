@@ -2,32 +2,49 @@
 // content id is the digest of the package (package.ts), which the control API reports for the release
 // online, so content already there or already in an earlier release is never uploaded again: each app
 // takes 200 uploads in its lifetime. Taking down removes, never purges; switching on again resumes the
-// app. The account key comes from the plugin's secret `key`, else from the credentials file the owner
-// named; it is never stored in the library.
-import { readFile } from 'node:fs/promises'
+// app. The account key is read, at each run, from the one place the connection names: the owner.json
+// PneumaSpace's command line wrote on this machine for its host, the credentials file the owner named,
+// or the key typed when connecting, kept as the plugin's secret `key`. It is never stored in the library.
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { resolve } from 'node:path'
-import { defineTarget, type ContentId, type Served, type SiteName, type Target, type TargetConfig } from '@pneuma-base/sdk/kit'
+import { join, resolve } from 'node:path'
+import { defineTarget, type ContentId, type Found, type Served, type SiteName, type Target, type TargetConfig } from '@pneuma-base/sdk/kit'
+import { CLOUDFLARE_COGNITION } from './cognition.js'
 import { Control, ControlError, type AppSummary, type Manager } from './control.js'
-import { appName, MANAGER, ORIGIN, PLUGIN, PREFIX_PARAM } from './name.js'
+import { appName, defaultPrefix, hostOf, MANAGER, ORIGIN, PREFIX_PARAM, prefixSetting } from './name.js'
 import { packageOf, refusal } from './package.js'
 import { viewOf, type Plane, type Seen } from './views.js'
 
-type Config = { origin: string; account: string; prefix: string; credentials: string | null; tenant: string | null }
+type Config = { host: string | null; origin: string; account: string; prefix: string; credentials: string | null; tenant: string | null }
 
 const text = (v: unknown) => (typeof v === 'string' ? v : null)
+const optional = (v: unknown) => v === undefined || v === null || typeof v === 'string'
 
 function parseConfig(raw: TargetConfig): Config {
   const { origin, account, prefix } = raw
-  const credentials = raw.credentials ?? null
-  const tenant = raw.tenant ?? null
-  if (typeof origin !== 'string' || typeof account !== 'string' || typeof prefix !== 'string' || (credentials !== null && typeof credentials !== 'string') || (tenant !== null && typeof tenant !== 'string')) {
-    throw new Error('Cloudflare 上的 PneumaSpace 的配置要写 origin、account、prefix，可以有 credentials、tenant')
+  if (typeof origin !== 'string' || typeof account !== 'string' || typeof prefix !== 'string' || !optional(raw.host) || !optional(raw.credentials) || !optional(raw.tenant)) {
+    throw new Error('Cloudflare 上的 PneumaSpace 的配置要写 origin、account、prefix，可以有 host、credentials、tenant')
   }
-  return { origin, account, prefix, credentials, tenant }
+  return { host: text(raw.host), origin, account, prefix, credentials: text(raw.credentials), tenant: text(raw.tenant) }
 }
 
 type Credentials = { origin: string | null; account: string | null; tenant: string | null; key: string | null }
+
+const HOST = '[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?'
+/** Where PneumaSpace's command line keeps, for each host it installed from this machine, the owner's account. */
+const hostsDir = () => join(homedir(), '.pneuma-space', 'hosts')
+const ownerFile = (host: string) => join(hostsDir(), host, 'owner.json')
+
+/**
+ * The PneumaSpace installations made from this machine: one level of the hosts folder, each folder
+ * holding owner.json, by name. Only that file is looked at, and only that it is there.
+ */
+async function installed(): Promise<Found[]> {
+  const entries = await readdir(hostsDir(), { withFileTypes: true }).catch(() => [])
+  const hosts = entries.filter((e) => e.isDirectory() && !e.name.startsWith('.') && new RegExp(`^${HOST}$`).test(e.name)).map((e) => e.name)
+  const there = await Promise.all(hosts.map((host) => stat(ownerFile(host)).then((s) => s.isFile(), () => false)))
+  return hosts.filter((_, i) => there[i]).sort().map((host) => ({ label: host, values: { host } }))
+}
 
 /** A PneumaSpace credentials file (JSON with origin, account, key), or why it cannot be read, in words that quote nothing of it. */
 async function credentialsAt(path: string): Promise<Credentials | string> {
@@ -58,8 +75,7 @@ const originOf = (input: string) => {
   }
 }
 
-const SET_KEY = `pneuma-base secret set ${PLUGIN} key`
-const NO_KEY = `还没有 Cloudflare 上的 PneumaSpace 的账户密钥：运行 ${SET_KEY} 设它（值从标准输入读），或者重设目标时用 --credentials 给 PneumaSpace 的凭据文件`
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 /** Where the library is named in the apps it makes: the manager's address. `.invalid` never resolves; it only tells libraries apart. */
 const managerOf = (libraryId: string): Manager => ({ name: MANAGER, url: `https://pneuma-base.invalid/library/${libraryId}` })
@@ -83,42 +99,66 @@ const planeOf = (origin: string): Plane => ({
 
 export const cloudflareTarget = defineTarget({
   kind: 'cloudflare',
-  label: '跑在 Cloudflare 上的 PneumaSpace',
+  label: 'Cloudflare 上的 PneumaSpace',
+  icon: 'cloud',
+  group: { name: 'PneumaSpace', choice: 'Cloudflare 上的' },
+  form: ['origin', 'account'],
   params: [
+    { name: 'host', hint: '这台机器上装的 PneumaSpace', kind: 'value', pattern: HOST },
     { name: 'credentials', hint: 'PneumaSpace 的凭据文件', kind: 'value' },
-    { name: 'origin', hint: '控制地址', kind: 'value', pattern: ORIGIN },
+    { name: 'origin', hint: '地址', kind: 'value', pattern: ORIGIN },
     { name: 'account', hint: '账户', kind: 'value', pattern: '[A-Za-z0-9_-]{1,40}' },
     PREFIX_PARAM,
   ],
-  secrets: [{ name: 'key', description: 'Cloudflare 上的 PneumaSpace 的账户密钥；设了就不读凭据文件里的', optional: true }],
+  secrets: [{ name: 'key', description: 'Cloudflare 上的 PneumaSpace 的账户密钥，连上时填的', optional: true }],
+  asked: { name: 'key', hint: '账户密钥' },
+  cognition: CLOUDFLARE_COGNITION,
+  found: installed,
 
-  async configure({ credentials, origin, account, prefix }, ctx) {
-    const file = credentials === null ? null : pathOf(credentials)
+  /**
+   * What it will connect to, from the one place given: the host installed from this machine, a
+   * credentials file, or the address and account with the key typed (or the one kept from before).
+   * It signs in once with the key it will use and signs out; nothing is stored when that fails.
+   */
+  async configure({ host, credentials, origin, account, prefix }, ctx, typed) {
+    if (host !== null && credentials !== null) return { ok: false, reason: 'usage', text: '--host 和 --credentials 只写一个。' }
+    const file = host !== null ? ownerFile(host) : credentials === null ? null : pathOf(credentials)
     const read = file === null ? null : await credentialsAt(file)
-    if (typeof read === 'string') return { ok: false, reason: 'credentials', text: `用不了凭据文件 ${file}：${read}。` }
-    const at = originOf(origin ?? read?.origin ?? '')
-    const who = account ?? read?.account ?? null
+    if (typeof read === 'string') return { ok: false, reason: 'credentials', text: host !== null ? `这台机器上的 PneumaSpace ${host} 用不了：${read}。` : `用不了凭据文件 ${file}：${read}。` }
+    const at = originOf((host === null ? origin : null) ?? read?.origin ?? '')
+    const who = (host === null ? account : null) ?? read?.account ?? null
     if (at === null || who === null) {
-      const missing = file === null ? '要写 --origin 和 --account，或者用 --credentials 给 PneumaSpace 的凭据文件。' : `凭据文件 ${file} 里没有可用的 origin 和 account；用 --origin、--account 写出来。`
+      const missing = host !== null ? `这台机器上的 PneumaSpace ${host} 的 owner.json 里没有可用的 origin 和 account。` : file === null ? '要写 --host，或 --origin 和 --account，或 --credentials。' : `凭据文件 ${file} 里没有可用的 origin 和 account；用 --origin、--account 写出来。`
       return { ok: false, reason: 'usage', text: missing }
     }
-    const note =
-      (await ctx.secrets.get('key')) !== null
-        ? '账户密钥用这台机器上设的密钥 key。'
-        : read?.key
-          ? `账户密钥从凭据文件 ${file} 读，不存进库。`
-          : `${NO_KEY}。`
-    return { ok: true, config: { origin: at, account: who, prefix, credentials: file, tenant: read?.tenant ?? null }, note }
+    const key = read !== null ? read.key : ((await typed()) ?? (await ctx.secrets.get('key')))
+    if (key === null) return { ok: false, reason: 'no-key', text: read !== null ? `${host !== null ? `这台机器上的 PneumaSpace ${host} 的 owner.json` : `凭据文件 ${file}`} 里没有密钥。` : '没有账户密钥。' }
+    const tenant = read?.tenant ?? null
+    const control = new Control(at, who, async () => key, tenant)
+    try {
+      await control.user()
+    } catch (error) {
+      return { ok: false, reason: 'unreachable', text: `${messageOf(error)}。` }
+    } finally {
+      await control.close().catch(() => undefined)
+    }
+    const where = host !== null ? { host } : { credentials: file }
+    return { ok: true, config: { ...where, origin: at, account: who, prefix: prefix ?? defaultPrefix(ctx.library.root), tenant } }
   },
 
   open(config, env): Target<Seen> {
     const c = parseConfig(config)
+    /** The key, read again at each sign-in from the place the connection names. */
     const key = async () => {
-      const set = await env.secret('key')
-      if (set !== null) return set
-      const read = c.credentials === null ? null : await credentialsAt(c.credentials)
-      if (read !== null && typeof read !== 'string' && read.key !== null) return read.key
-      throw new ControlError(typeof read === 'string' ? `用不了凭据文件 ${c.credentials}：${read}；${NO_KEY}` : NO_KEY)
+      const file = c.host !== null ? ownerFile(c.host) : c.credentials
+      if (file === null) {
+        const kept = await env.secret('key')
+        if (kept !== null) return kept
+        throw new ControlError(`这台机器上没有 ${c.origin} 的账户密钥`)
+      }
+      const read = await credentialsAt(file)
+      if (typeof read !== 'string' && read.key !== null) return read.key
+      throw new ControlError(`${c.host !== null ? `这台机器上的 PneumaSpace ${c.host}` : `凭据文件 ${file}`} 用不了：${typeof read === 'string' ? read : '里面没有密钥'}`)
     }
     const control = new Control(c.origin, c.account, key, c.tenant)
     const mine = managerOf(env.ctx.library.config.id)
@@ -132,8 +172,9 @@ export const cloudflareTarget = defineTarget({
     }
 
     return {
-      key: `pneuma-space-cf:${c.origin}#${c.prefix}`,
-      label: `Cloudflare 上的 PneumaSpace ${c.origin}，账户 ${c.account}，应用名前缀 ${c.prefix}`,
+      key: `pneuma-space-cf:${c.origin}`,
+      label: c.host ?? hostOf(c.origin),
+      settings: prefixSetting(c.prefix),
       siteName: (path) => appName(c.prefix, path),
       identify: async (files) => (await packageOf(files)).digest as string as ContentId,
 

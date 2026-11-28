@@ -2,7 +2,9 @@
 // sha256 of the bundle tar PneumaSpace is given, and `serving` answers from what PneumaSpace really has,
 // so `deploy sync` repairs a publish that died halfway or an app removed from PneumaSpace's console.
 import { defineTarget, type ContentId, type Served, type SiteName, type Target, type TargetConfig } from '@pneuma-base/sdk/kit'
-import { appName, ORIGIN, PREFIX_PARAM } from './name.js'
+import { MACHINE_COGNITION } from './cognition.js'
+import { NO_INDEX } from './package.js'
+import { appName, defaultPrefix, hostOf, ORIGIN, PREFIX_PARAM, prefixSetting } from './name.js'
 import { bundleOf, ownerOf, Space, SpaceError, type AppDetail, type AppSummary } from './space.js'
 import { viewOf, type Plane, type Seen } from './views.js'
 
@@ -33,9 +35,13 @@ function seen(summary: AppSummary, detail: AppDetail | null, mine: boolean, spar
 
 export const machineTarget = defineTarget({
   kind: 'machine',
-  label: '跑在一台机器上的 PneumaSpace',
+  label: '一台机器上的 PneumaSpace',
+  icon: 'server',
+  group: { name: 'PneumaSpace', choice: '一台机器上的' },
+  form: ['admin'],
+  cognition: MACHINE_COGNITION,
   params: [
-    { name: 'admin', hint: '管理地址', kind: 'value', required: true, pattern: `${ORIGIN}(?:/\\S*)?` },
+    { name: 'admin', hint: '地址', kind: 'value', required: true, pattern: `${ORIGIN}(?:/\\S*)?` },
     PREFIX_PARAM,
     { name: 'public', hint: '站点的公开地址', kind: 'value', pattern: ORIGIN },
   ],
@@ -43,8 +49,15 @@ export const machineTarget = defineTarget({
   // The board is the plugin's page for both kinds; a page is declared once, here, and each kind draws it.
   views: [{ name: 'board', title: '看板', icon: 'layout-grid' }],
 
-  async configure({ admin, prefix, public: origin }) {
-    return { ok: true, config: { admin: admin.replace(/\/+$/, ''), prefix, public: origin?.replace(/\/+$/, '') ?? null } }
+  /** Asks the admin address once whether it is PneumaSpace; nothing is stored when it does not answer as one. */
+  async configure({ admin, prefix, public: origin }, ctx) {
+    const at = admin.replace(/\/+$/, '')
+    try {
+      await new Space(at, () => ctx.secrets.get('token')).health()
+    } catch (error) {
+      return { ok: false, reason: 'unreachable', text: `${error instanceof Error ? error.message : String(error)}。` }
+    }
+    return { ok: true, config: { admin: at, prefix: prefix ?? defaultPrefix(ctx.library.root), public: origin?.replace(/\/+$/, '') ?? null } }
   },
 
   open(config, env): Target<Seen> {
@@ -55,12 +68,14 @@ export const machineTarget = defineTarget({
     const taken = (site: string, by: string) => new SpaceError(`应用名 ${site} 在 PneumaSpace 上属于 ${by}，不是这个库，所以不动它；换一个前缀，或在 PneumaSpace 上处理那个应用`)
 
     return {
-      key: `pneuma-space:${c.admin}#${c.prefix}`,
-      label: `一台机器上的 PneumaSpace ${c.admin}，应用名前缀 ${c.prefix}`,
+      key: `pneuma-space:${c.admin}`,
+      label: hostOf(c.admin),
+      settings: prefixSetting(c.prefix),
       siteName: (path) => appName(c.prefix, path),
       identify: async (files) => (await bundleOf(files)).bundle as string as ContentId,
 
       async publish(site, _dir, meta) {
+        if (!meta.files.some((f) => f.path === 'index.html')) throw new SpaceError(NO_INDEX)
         const { tar, bundle } = await bundleOf(meta.files)
         if (bundle !== (meta.content as string)) throw new SpaceError(`复制出来的内容和决定发布的不同：${bundle} 不是 ${meta.content}`)
         const detail = await space.app(site)

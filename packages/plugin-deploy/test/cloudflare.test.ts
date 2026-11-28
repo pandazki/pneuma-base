@@ -1,15 +1,15 @@
 // The Cloudflare kind through the real command line, against PneumaSpace on Cloudflare stood in for in
 // memory (fake-cloudflare.ts): publishing, what is and is not uploaded, taking down and switching on
-// again, the refusals made before any upload, a name someone else holds, a missing key, a publish
-// whose upload failed, the sign-in of each run, the pages, and that the account key never lands in the
-// library or in an answer.
+// again, the refusals made before any upload, a name someone else holds, a publish whose upload
+// failed, the sign-in of each run, the pages, and that the account key never lands in the library or in
+// an answer. Connecting is connect.test.ts.
 import assert from 'node:assert/strict'
 import { readdir, readFile, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Block, ViewResult } from '@pneuma-base/sdk'
 import { sandbox, type Sandbox } from '@pneuma-base/sdk/testkit'
-import { afterAll, beforeAll, describe, it, onTestFinished } from 'vitest'
+import { afterAll, beforeAll, describe, it } from 'vitest'
 import type { BoardData } from '../src/views.js'
 import { fakeCloudflare } from './fake-cloudflare.js'
 
@@ -62,12 +62,14 @@ describe('the Cloudflare kind against a stand-in', () => {
   const live = () => fake.app(app)?.current
   let url = ''
 
-  it('target set with a credentials file says the key comes from it, signs in nowhere and stores no key', async () => {
+  it('target set with a credentials file signs in once to check it and signs out', async () => {
     await writeFile(join(sb.work, 'credentials.json'), JSON.stringify({ origin, account: fake.account, key: fake.key, tenantId: fake.tenant }))
-    const set = await owner('deploy', 'target', 'set', '--kind', 'cloudflare', '--credentials', join(sb.work, 'credentials.json'), '--prefix', 'pbs-cf')
-    assert.equal(set.json.outcome, 'done', set.stdout)
-    assert.match(set.json.text, /部署目标已设为 Cloudflare 上的 PneumaSpace http:\/\/127\.0\.0\.1:\d+，账户 demo，应用名前缀 pbs-cf。账户密钥从凭据文件 .*credentials\.json 读，不存进库。$/)
-    assert.equal(fake.state.logins, 0)
+    const n = await signIns(async () => {
+      const set = await owner('deploy', 'target', 'set', '--kind', 'cloudflare', '--credentials', join(sb.work, 'credentials.json'), '--prefix', 'pbs-cf')
+      assert.equal(set.json.outcome, 'done', set.stdout)
+      assert.equal(set.json.text, `已连上 ${new URL(origin).host}。`)
+    })
+    assert.equal(n, 1)
   })
 
   it('on: release 1 at the app’s address, each file served with its type, managed by pneuma-base for this library', async () => {
@@ -204,29 +206,4 @@ describe('the Cloudflare kind against a stand-in', () => {
     assert.ok(!said.join('\n').includes(fake.key))
     assert.ok(!(await everything(sb.library)).includes(fake.key))
   })
-})
-
-it('a missing key: target set says what to run, on refuses saying it, and the secret makes it work', async () => {
-  const fake = fakeCloudflare()
-  const sb = await sandbox({ builtins: ['deploy'], cli })
-  onTestFinished(() => sb.cleanup())
-  const origin = await sb.serve(fake.handler)
-  const set = await sb.owner(['deploy', 'target', 'set', '--kind', 'cloudflare', '--origin', origin, '--account', 'demo', '--prefix', 'pbs-key', '--json'])
-  assert.match(set.json.text, /还没有 Cloudflare 上的 PneumaSpace 的账户密钥：运行 pneuma-base secret set deploy key 设它（值从标准输入读），或者重设目标时用 --credentials 给 PneumaSpace 的凭据文件。$/, set.stdout)
-  await mkdir(join(sb.work, 'shop'))
-  await writeFile(join(sb.work, 'shop', 'index.html'), '<h1>店</h1>')
-  await sb.agent('claude-code', 's1', ['put', 'shop', '--to', 'sites/shop', '--made'])
-  await sb.agent('claude-code', 's1', ['say', 'deployable', 'sites/shop'])
-  const on = await sb.owner(['deploy', 'on', 'sites/shop', '--json'])
-  assert.equal(on.json.reason, 'publish-failed', on.stdout)
-  assert.match(on.json.text, /pneuma-base secret set deploy key/)
-  assert.equal(fake.state.logins, 0)
-  assert.equal((await sb.run(['secret', 'set', 'deploy', 'key'], { input: fake.key })).code, 0)
-  const again = await sb.owner(['deploy', 'on', 'sites/shop', '--json'])
-  assert.equal(again.json.outcome, 'done', again.stdout)
-  assert.equal((await fake.browse(again.json.data.url)).text, '<h1>店</h1>')
-  const reset = await sb.owner(['deploy', 'target', 'set', '--kind', 'cloudflare', '--origin', origin, '--account', 'demo', '--prefix', 'pbs-key', '--json'])
-  assert.match(reset.json.text, /账户密钥用这台机器上设的密钥 key。$/)
-  assert.ok(![set, on, again, reset].some((r) => (r.stdout + r.stderr).includes(fake.key)))
-  assert.ok(!(await everything(sb.library)).includes(fake.key))
 })

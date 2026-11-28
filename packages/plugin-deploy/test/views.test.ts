@@ -60,7 +60,7 @@ describe('the deploy.sites view', () => {
     expect(deploy.views).toEqual([expect.objectContaining({ id: 'deploy.sites', nav: true }), expect.objectContaining({ id: 'deploy.board', with: 'deploy.sites' })])
     const view = await deploy.onView?.({ view: 'deploy.sites', params: {} }, pctx)
     const [where, things] = lists(view?.blocks ?? [])
-    expect(where?.items[0]?.cell.text).toMatch(/\/www$/)
+    expect(where?.items[0]?.cell).toMatchObject({ text: expect.stringMatching(/\/www$/), icon: 'folder', local: true })
     const byName = Object.fromEntries((things?.items ?? []).map((i) => [i.cell.text, i]))
     // The archived one is offline, so it is not on the page.
     expect(Object.keys(byName)).toEqual(['s1', 's3'])

@@ -78,6 +78,9 @@ function badPath(path: string): string | null {
   return null
 }
 
+/** What both kinds of PneumaSpace refuse: a site served from its top needs a page there. */
+export const NO_INDEX = '站点顶上没有 index.html'
+
 /** What PneumaSpace on Cloudflare would refuse in this site, in words for the owner, with the number and the limit; null when it takes it. */
 export function refusal(files: readonly SiteFile[], pkg: Package): string | null {
   if (files.length === 0) return '站点里没有文件'
@@ -87,5 +90,5 @@ export function refusal(files: readonly SiteFile[], pkg: Package): string | null
     const why = badPath(f.path)
     if (why !== null) return `文件路径 ${JSON.stringify(f.path)} ${why}，Cloudflare 上的 PneumaSpace 不收`
   }
-  return null
+  return files.some((f) => f.path === 'index.html') ? null : NO_INDEX
 }

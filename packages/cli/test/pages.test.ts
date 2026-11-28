@@ -27,6 +27,7 @@ const READS: Record<string, string> = {
   'version list': 'version.things',
   'sync status': 'sync.status',
   'deploy list': 'deploy.sites',
+  'deploy target list': 'deploy.sites',
   'search status': 'search.status',
   'agent list': 'agents',
   'agent detect': 'agents',
@@ -43,6 +44,7 @@ const NO_PLACE: Record<string, string> = {
   ask: '请是 agent 请主人做一条主人命令；主人在界面里直接按那条命令的按钮，用不着请谁',
   'launcher install': '没有要主人决定的：应用每次启动时写它，接上 agent 时缺了也写；从包装的，主人在终端里跑',
   'ledger export': '它写一个库外的文件，页交不出文件，也不替主人选位置；活动页的「导出」给出这条命令，复制到终端里跑',
+  'say deployable': '声明是 agent 的话；主人在部署页按「上线一样东西」，声明和上线是同一下',
 }
 
 let sb: Sandbox
@@ -189,6 +191,8 @@ beforeAll(async () => {
   agent(['say', 'deployable', 'sites/shop'])
   agent(['say', 'deployable', 'sites/blog'])
   owner(['deploy', 'on', 'sites/shop'])
+  // Another folder: the shop, switched on, is not there yet, so the deploy page offers 重试.
+  owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', join(tempDir('pb-www3-'), 'www')])
   agent(['put', '-', '--to', 'sources/pricing.html', '--brought', '--source', 'https://example.com/pricing'], '<p>价格</p>\n')
   agent(['put', '-', '--to', 'notes/plan.md', '--made', '--from', 'sources/pricing.html', '--note', '第一版'], '# 计划\n')
   agent(['say', 'versioned', 'notes/plan.md', '开始记版本'])
@@ -261,7 +265,7 @@ describe('every page of a library with every built-in plugin', () => {
         for (const cell of cellsOf(block)) {
           const words = cell.at === undefined ? cell.text : minute(cell.at)
           expect(text, `${where}: ${words}`).toContain(words)
-          if (cell.tag) expect(text, `${where}: ${cell.tag.text}`).toContain(`[${cell.tag.text}]`)
+          if (cell.tag) expect(text, `${where}: ${cell.tag.text}`).toContain(`[${cell.tag.text}${cell.tag.tip === undefined ? '' : `（${cell.tag.tip}）`}]`)
           if (cell.href) expect(text, `${where}: ${cell.href}`).toContain(cell.href)
         }
         if (block.kind === 'custom') expect(text, where).toContain(block.text)

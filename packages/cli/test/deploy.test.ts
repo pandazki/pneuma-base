@@ -71,7 +71,7 @@ beforeAll(() => {
   }
   target = join(tempDir('pb-target-'), 'www')
   ok(owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', target]))
-  for (let i = 0; i < 4; i++) expect(ok(owner(['deploy', 'on', `sites/s${i}`])).text).toContain('在线')
+  for (let i = 0; i < 4; i++) expect(ok(owner(['deploy', 'on', `sites/s${i}`])).text).toContain(`已上线 sites/s${i}`)
 })
 
 describe('ten sites, four switched on, to a dir target', () => {

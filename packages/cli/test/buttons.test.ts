@@ -87,9 +87,9 @@ describe('the buttons that give each verb and command a place', () => {
     for (const said of ['用 Paddle', '下周再看', 'sources/paper.txt', '主人在对话里说的']) expect(panel).toContain(said)
   })
 
-  it('the deploy section declares a thing deployable', async () => {
-    await press(await viewer.item('sites/shop', { plugin: 'deploy' }), '声明可以部署')
-    expect(words(await viewer.item('sites/shop', { plugin: 'deploy' }))).toContain('离线')
+  it('the panel of a directory thing nobody declared puts it online', async () => {
+    await press(await viewer.item('sites/shop'), '上线…')
+    expect(words(await viewer.item('sites/shop', { plugin: 'deploy' }))).toContain('在线')
   })
 
   it('the version section notes the current version and keeps only the latest few', async () => {
