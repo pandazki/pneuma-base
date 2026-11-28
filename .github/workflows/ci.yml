@@ -1,7 +1,7 @@
-# A change is checked by the tests of what it touches: the packages it changed, a few tests that
-# cross the layers when it is below the command line, the browser tests when it changes what a
-# person sees, the slow tests when it changes what a plugin author gets. Everything runs in the
-# Full workflow, for a release.
+# A change is checked by the tests of what it touches: the packages it changed and a few tests that
+# cross the layers when it is below the command line; the browser tests, in a job beside them, when
+# it changes what a person sees. The slow tests and everything else run in the Full workflow, for a
+# release.
 name: CI
 
 on:
@@ -37,18 +37,38 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - name: Tests of what changed
+        run: node scripts/affected-tests.mjs --base "origin/${{ github.base_ref }}" --run
+
+  browser:
+    name: Browser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Does the change reach what a person sees
         id: affected
-        run: node scripts/affected-tests.mjs --base "origin/${{ github.base_ref }}" --run --github
-      - name: Install Chrome and CJK fonts
+        run: node scripts/affected-tests.mjs --base "origin/${{ github.base_ref }}" --github
+      - uses: pnpm/action-setup@v4
+        if: steps.affected.outputs.e2e == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.affected.outputs.e2e == 'true'
+        with:
+          node-version: '22.18'
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.affected.outputs.e2e == 'true'
+      - uses: Swatinem/rust-cache@v2
+        if: steps.affected.outputs.e2e == 'true'
+        with:
+          workspaces: core
+      - name: Install, Chrome and CJK fonts
         if: steps.affected.outputs.e2e == 'true'
         run: |
+          pnpm install --frozen-lockfile
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends fonts-noto-cjk
           pnpm exec playwright install --with-deps chrome
       - name: Browser tests
         if: steps.affected.outputs.e2e == 'true'
         run: pnpm test:e2e
-      - name: Slow tests and the example plugins
-        if: steps.affected.outputs.slow == 'true'
-        run: pnpm test:slow && pnpm pack:dist && sh scripts/test-example-plugins.sh
-        timeout-minutes: 25

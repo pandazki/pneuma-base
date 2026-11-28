@@ -2,8 +2,9 @@
 // the layers when the change is below the command line. The whole suite runs for a release (the Full
 // workflow, or `pnpm test`), not for every change.
 //   node scripts/affected-tests.mjs [--base <ref>] [--run] [--github]
-// Prints the test paths and whether the browser tests and the slow tests are needed. --run runs
-// vitest on the paths (nothing to run is a success). --github writes e2e= and slow= to $GITHUB_OUTPUT.
+// Prints the test paths and whether the browser tests are needed. --run runs vitest on the paths
+// (nothing to run is a success). --github writes e2e= to $GITHUB_OUTPUT. The slow tests (whole
+// projects built from the registry, every plugin through the conformance checks) are the release's.
 import { execFileSync, spawnSync } from 'node:child_process'
 import { appendFileSync, existsSync, readdirSync } from 'node:fs'
 
@@ -24,7 +25,6 @@ const UNIT = readdirSync('packages').map((pkg) => `packages/${pkg}/test`).filter
 
 const paths = new Set()
 let e2e = false
-let slow = false
 for (const file of changed) {
   const pkg = /^packages\/([^/]+)\//.exec(file)?.[1]
   if (pkg !== undefined && existsSync(`packages/${pkg}/test`)) paths.add(`packages/${pkg}/test`)
@@ -37,20 +37,18 @@ for (const file of changed) {
   // The workspace's dependencies and test configuration reach every test.
   if (/^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig\.base\.json|vitest\.[\w.-]+\.ts)$/.test(file)) {
     for (const dir of UNIT) paths.add(dir)
-    e2e = slow = true
+    e2e = true
   }
   if (file === 'PLUGINS.md') paths.add('packages/cli/test/plugins-doc.test.ts')
   // What a person sees: the pages, and whatever gives them their blocks.
   if (/^packages\/viewer\//.test(file) || /\/src\/(ui|views|viewer|blocks|home|[a-z-]*page[a-z-]*)\.ts$/.test(file) || file === 'packages/sdk/src/types.ts') e2e = true
-  // What a plugin author gets: the sdk, the scaffold, the example plugins, the packages.
-  if (/^(packages\/sdk\/|plugins\/|packages\/cli\/src\/scaffold|scripts\/(pack|test-example-plugins))/.test(file)) slow = true
 }
 
 const list = [...paths].filter((path) => existsSync(path)).sort()
 console.log(`changed since ${base}: ${changed.length} files`)
 console.log(`tests: ${list.length === 0 ? 'none' : list.join(' ')}`)
-console.log(`browser tests: ${e2e ? 'yes' : 'no'}; slow tests: ${slow ? 'yes' : 'no'}`)
-if (flag('--github') && process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `e2e=${e2e}\nslow=${slow}\n`)
+console.log(`browser tests: ${e2e ? 'yes' : 'no'}`)
+if (flag('--github') && process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `e2e=${e2e}\n`)
 if (flag('--run') && list.length > 0) {
   const run = spawnSync('pnpm', ['exec', 'vitest', 'run', ...list], { stdio: 'inherit' })
   process.exit(run.status ?? 1)

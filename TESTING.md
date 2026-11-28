@@ -7,7 +7,7 @@
 | 套 | 命令 | 在哪 | 管什么 |
 | --- | --- | --- | --- |
 | 单元 | `pnpm test` | `packages/*/test/*.test.ts`（vitest） | 每个包的行为。内核的全化表和门、插件的规则表在进程内调；命令行、HTTP、MCP 各面只说它们自己才有的：退出码、印出的字、请求和回答。跑命令行的测试用建好的 `dist/` |
-| 慢 | `pnpm test:slow` | `packages/*/test/*.slow.test.ts` | 要从 registry 装依赖、建整个项目的：脚手架的两种项目、`PLUGINS.md` 里从 registry 装的块、`plugins/` 下外面写的插件得到 MCP 工具、真的安装存储提供者（每次跑整套契约测试） |
+| 慢 | `pnpm test:slow` | `packages/*/test/*.slow.test.ts` | 要从 registry 装依赖、建整个项目的：脚手架的两种项目、`PLUGINS.md` 里从 registry 装的块、`plugins/` 下外面写的插件得到 MCP 工具、真的安装存储提供者（每次跑整套契约测试）；自带的每个插件过一遍符合性检查，和每条检查对故意违规的插件会变红（`conformance*.slow.test.ts`）。只在发版时跑 |
 | 浏览器 | `pnpm test:e2e` | `packages/viewer/e2e/*.spec.ts`（Playwright，本机的 Chrome；本机用一半的核，CI 上两个） | 只有浏览器看得见的：键盘、标签页、对话框、重载和地址、配色、刷新、菜单栏面板、拖放区、每种块怎么画、插件自己画的页，文件的选中、列表和图标、排序、路径栏、右键菜单（`files.spec.ts`），和整个故事在界面上走一遍。等时间的地方用页面的假时钟 |
 | 存储的契约 | `cargo test`（`core/`） | `core/contract` | `STORAGE.md` 一句一个检查，对自带的存储跑；`storage install` 对每个已安装的跑。它审第三方的提供者，结构不改 |
 | 应用 | `app/verify.sh` | `app/` | 建好的 Mac 应用，沿新所有者走的路，不要人；文件的快速查看、打开、缩略图、拖出、右键菜单和再打开对话由测试钩子驱动，往应用外伸手的只记进日志，什么都不真的打开 |
@@ -16,7 +16,7 @@
 
 ## 什么时候跑什么
 
-- **改动时**：`pnpm test:changed`，CI 的 Check 也跑它。`scripts/affected-tests.mjs` 按改了的文件选：改了的包的测试；改动在命令行之下（`core/`、内核、sdk、插件的源码）时，加几个穿过各层的测试（`ACROSS`）；改了界面的服务时，加命令行里经过它的几个测试（`THROUGH_SERVER`）；改了 sdk 的部署库时加部署插件的测试；改了工作区的依赖或测试配置时全跑。改了人看见的东西时加浏览器测试；改了插件作者拿到的东西时加慢测试。`node scripts/affected-tests.mjs` 不加 `--run` 只印出选了什么。
+- **改动时**：`pnpm test:changed`，CI 的 Check 也跑它。`scripts/affected-tests.mjs` 按改了的文件选：改了的包的测试；改动在命令行之下（`core/`、内核、sdk、插件的源码）时，加几个穿过各层的测试（`ACROSS`）；改了界面的服务时，加命令行里经过它的几个测试（`THROUGH_SERVER`）；改了 sdk 的部署库时加部署插件的测试；改了工作区的依赖或测试配置时全跑。改了人看见的东西时加浏览器测试，CI 上它是并排的另一个任务。慢测试不随改动跑。`node scripts/affected-tests.mjs` 不加 `--run` 只印出选了什么。
 - **`core/` 改了**：Core 工作流跑 `cargo fmt --check`、clippy 和 `cargo test`，含契约测试。
 - **发版**（打 `v*` 标签）或手动：Full 工作流跑全部，在三个 Node 版本上。
 
