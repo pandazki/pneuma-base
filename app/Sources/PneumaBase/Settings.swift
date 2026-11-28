@@ -4,7 +4,7 @@ import SwiftUI
 
 /// This machine's settings, in the settings window (⌘,), and as rows of the configuration page in the
 /// app. The two conveniences are off until the owner turns them on: `pneuma-base` on the PATH of the
-/// owner's own terminal, and opening at login. 外观 and 直接放进来的文件算主人的 are here too, and in the menus.
+/// owner's own terminal, and opening at login. 外观 and 直接拷入的文件记为我添加 are here too, and in the menus.
 @MainActor
 final class MachineSettings: ObservableObject {
   let launcher: URL
@@ -54,7 +54,7 @@ final class MachineSettings: ObservableObject {
     switch (ProcessInfo.processInfo.environment["SHELL"].map { ($0 as NSString).lastPathComponent }) ?? "zsh" {
     case "bash": "~/.bash_profile"
     case "zsh": "~/.zshrc"
-    default: "你的 shell 的配置文件"
+    default: "shell 配置文件"
     }
   }
 
@@ -64,11 +64,11 @@ final class MachineSettings: ObservableObject {
     let path = (dir as NSString).appendingPathComponent("pneuma-base")
     let fm = FileManager.default
     if let to = try? fm.destinationOfSymbolicLink(atPath: path) {
-      guard to == launcher.path else { return refuse("\(path) 已经有一个指向别处的 pneuma-base，没有动它。") }
+      guard to == launcher.path else { return refuse("\(path) 已存在指向其他位置的 pneuma-base，未修改。") }
     } else if fm.fileExists(atPath: path) {
-      return refuse("\(path) 已经有一个 pneuma-base，不是这里放的，没有动它。")
+      return refuse("\(path) 已存在非本应用创建的 pneuma-base，未修改。")
     } else {
-      do { try fm.createSymbolicLink(atPath: path, withDestinationPath: launcher.path) } catch { return refuse("没能在 \(dir) 里放链接：\(error.localizedDescription)") }
+      do { try fm.createSymbolicLink(atPath: path, withDestinationPath: launcher.path) } catch { return refuse("无法在 \(dir) 中创建链接：\(error.localizedDescription)") }
     }
     link = path
     pathNote = nil
@@ -100,18 +100,18 @@ final class MachineSettings: ObservableObject {
       if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
       loginNote = nil
     } catch {
-      loginNote = "系统没有答应：\(error.localizedDescription)"
+      loginNote = "无法设置：\(error.localizedDescription)"
     }
     login = SMAppService.mainApp.status
-    if login == .requiresApproval { loginNote = "要在「系统设置 › 通用 › 登录项」里允许 Pneuma Base。" }
+    if login == .requiresApproval { loginNote = "请在「系统设置 › 通用 › 登录项」中允许 Pneuma Base。" }
     Log.line("settings: login item \(login.rawValue)\(loginNote.map { " (\($0))" } ?? "")")
   }
 
   var loginWord: String {
     switch login {
-    case .enabled: "开着"
-    case .requiresApproval: "等你在系统设置里允许"
-    default: "关着"
+    case .enabled: "已启用"
+    case .requiresApproval: "需在系统设置中允许"
+    default: "已停用"
     }
   }
 
@@ -157,11 +157,11 @@ final class MachineSettings: ObservableObject {
   var text: String {
     [
       "外观：\(appearance.word)",
-      "直接放进来的文件算主人的：\(ownerFiles ? "开着" : "关着")",
-      "在终端里用 pneuma-base：\(link.map { "开着，\($0)" } ?? "关着")",
-      "PATH 上能放的文件夹：\((folders ?? []).joined(separator: "、"))",
-      "登录时打开：\(loginWord)",
-      "本机的命令：\(launcher.path)",
+      "直接拷入的文件记为我添加：\(ownerFiles ? "已启用" : "已停用")",
+      "安装命令行工具：\(link.map { "已启用，\($0)" } ?? "已停用")",
+      "PATH 中可写入的文件夹：\((folders ?? []).joined(separator: "、"))",
+      "登录时启动：\(loginWord)",
+      "命令路径：\(launcher.path)",
     ].joined(separator: "\n") + "\n"
   }
 }
@@ -180,29 +180,29 @@ struct SettingsView: View {
         .pickerStyle(.segmented)
       }
       Section {
-        Toggle("直接放进来的文件算主人的", isOn: $model.ownerFiles)
-        note("开着时，在访达里拷进库、或直接改了的文件，会记成你带进来的、你改的（看到的，不是谁说的）。")
+        Toggle("直接拷入的文件记为我添加", isOn: $model.ownerFiles)
+        note("启用后，在访达中拷入资料库或直接修改的文件，记为我导入或我修改（检测到）。")
       }
       Section {
-        Toggle("在终端里用 pneuma-base", isOn: Binding(get: { model.link != nil }, set: { on in
+        Toggle("安装命令行工具", isOn: Binding(get: { model.link != nil }, set: { on in
           if on { model.link(in: model.folder) } else { model.unlink() }
         }))
         .disabled(model.link == nil && (model.folders ?? []).isEmpty)
         if let link = model.link {
-          note("在 \(tilde(link)) 放了一个链接，指向本机的命令。关掉就拿走它。")
+          note("已在 \(tilde(link)) 创建指向本机命令的链接。停用后移除该链接。")
         } else if model.launcherOnPath {
-          note("\(tilde(model.launcher.deletingLastPathComponent().path)) 已经在你的 PATH 上，终端里直接用 pneuma-base。")
+          note("\(tilde(model.launcher.deletingLastPathComponent().path)) 已在 PATH 中，可在终端中直接运行 pneuma-base。")
         } else if let folders = model.folders, !folders.isEmpty {
-          Picker("放进", selection: $model.folder) {
+          Picker("安装位置", selection: $model.folder) {
             ForEach(folders, id: \.self) { Text(tilde($0)).tag($0) }
           }
-          note("在你选的文件夹里放一个叫 pneuma-base 的链接，指向本机的命令。这些是你 PATH 上你能写的文件夹。")
+          note("在所选文件夹中创建名为 pneuma-base 的链接，指向本机命令。可选文件夹为 PATH 中可写入的文件夹。")
         } else if model.folders != nil {
-          note("你的 PATH 上没有你能写的文件夹。要在终端里用，把这一行加进 \(model.profileFile)，再开一个终端：")
+          note("PATH 中没有可写入的文件夹。请将以下一行添加到 \(model.profileFile)，然后打开新的终端窗口：")
           HStack {
             Text(model.profileLine).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
             Spacer()
-            Button("拷贝") {
+            Button("复制") {
               NSPasteboard.general.clearContents()
               NSPasteboard.general.setString(model.profileLine, forType: .string)
             }
@@ -211,12 +211,12 @@ struct SettingsView: View {
         if let problem = model.pathNote { note(problem).foregroundStyle(.red) }
       }
       Section {
-        Toggle("登录时打开", isOn: Binding(get: { model.login == .enabled || model.login == .requiresApproval }, set: { model.setLogin($0) }))
+        Toggle("登录时启动", isOn: Binding(get: { model.login == .enabled || model.login == .requiresApproval }, set: { model.setLogin($0) }))
         if let problem = model.loginNote { note(problem) }
       }
       Section {
-        LabeledContent("本机的命令") { Text(tilde(model.launcher.path)).font(.system(.callout, design: .monospaced)).textSelection(.enabled) }
-        note("接上的 agent 按这个路径运行 pneuma-base。应用每次启动时让它指向自己带的 Node 和命令行，所以挪动或更新应用之后再打开一次就好。")
+        LabeledContent("命令路径") { Text(tilde(model.launcher.path)).font(.system(.callout, design: .monospaced)).textSelection(.enabled) }
+        note("已连接的 Agent 通过此路径运行 pneuma-base。应用每次启动时将其指向内置的 Node 与命令行工具，移动或更新应用后重新打开一次即可。")
       }
     }
     .formStyle(.grouped)

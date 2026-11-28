@@ -69,7 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     countTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.countWaiting() } }
     revTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.askRev() } }
     if Config.hooksName != nil { listenForTestCommands() }
-    guard config.complete else { return alert("这份 Pneuma Base 不完整", detail: "应用里缺少它自带的 Node 或命令行，什么都做不了。重新下载一份，或用 app/build.sh 重新构建。") }
+    guard config.complete else { return alert("Pneuma Base 不完整", detail: "应用缺少内置的 Node 或命令行工具，无法运行。请重新下载，或运行 app/build.sh 重新构建。") }
     if Config.translocated { warnTranslocated() }
     Task { await installLauncher() }
     Task {
@@ -92,10 +92,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     Log.line("app: translocated, at \(Bundle.main.bundlePath)")
     NSApp.activate()
     let alert = NSAlert()
-    alert.messageText = "先把 Pneuma Base 拖进「应用程序」文件夹，再从那里打开"
-    alert.informativeText = "它现在是在解压出来的地方直接打开的，macOS 让它在一个临时的位置运行。接上的 agent 按一个固定的路径找它，应用退出后那个临时位置就没了，agent 会找不到它。"
+    alert.messageText = "请将 Pneuma Base 移动到「应用程序」文件夹后再打开"
+    alert.informativeText = "应用当前从解压位置直接打开，macOS 在临时位置运行它。已连接的 Agent 按固定路径调用应用；应用退出后临时位置失效，Agent 将无法调用。"
     alert.addButton(withTitle: "退出")
-    alert.addButton(withTitle: "先这样用")
+    alert.addButton(withTitle: "暂不设置")
     if alert.runModal() == .alertFirstButtonReturn { NSApp.terminate(nil) }
   }
 
@@ -191,7 +191,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   }
 
   private func librariesItem() -> NSMenuItem {
-    let item = NSMenuItem(title: "库", action: nil, keyEquivalent: "")
+    let item = NSMenuItem(title: "资料库", action: nil, keyEquivalent: "")
     let menu = NSMenu()
     for path in prefs.libraries {
       let entry = NSMenuItem(title: (path as NSString).lastPathComponent, action: #selector(selectLibrary(_:)), keyEquivalent: "")
@@ -202,7 +202,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
       menu.addItem(entry)
     }
     if !prefs.libraries.isEmpty { menu.addItem(.separator()) }
-    menu.addItem(withTitle: "新建或打开一个库…", action: #selector(chooseLibrary), keyEquivalent: "").target = self
+    menu.addItem(withTitle: "新建或打开资料库…", action: #selector(chooseLibrary), keyEquivalent: "").target = self
     item.submenu = menu
     return item
   }
@@ -350,10 +350,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   private func chooseFolder(in choice: StorageChoice?) {
     Task {
       if let repository = choice?.install {
-        welcome.say("正在装 \(repository)")
+        welcome.say("正在安装 \(repository)…")
         let r = await runCli(["storage", "install", repository, "--json"], in: config.home, config: config)
         welcome.say("")
-        guard r.json?["outcome"] as? String == "done" else { return alert("没有装上 \(repository)", detail: (r.json?["text"] as? String) ?? r.err) }
+        guard r.json?["outcome"] as? String == "done" else { return alert("无法安装 \(repository)", detail: (r.json?["text"] as? String) ?? r.err) }
         await refreshChoices()
       }
       NSApp.activate()
@@ -361,8 +361,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
       panel.canChooseDirectories = true
       panel.canChooseFiles = false
       panel.canCreateDirectories = true
-      panel.prompt = "就用这个文件夹"
-      panel.message = "选一个库，或一个要建成库的文件夹。"
+      panel.prompt = "使用此文件夹"
+      panel.message = "选择资料库，或选择要初始化为资料库的文件夹。"
       guard panel.runModal() == .OK, let dir = panel.url else { return }
       await open(dir, provider: choice?.name)
     }
@@ -390,13 +390,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     welcome.show()
   }
 
-  /// 安装别的存储…: a provider from a GitHub repository. The command line says what a provider is and
+  /// 安装其他存储…: a provider from a GitHub repository. The command line says what a provider is and
   /// names the version and checksum; the owner accepts it here, and the install runs with that checksum.
   private func installOther() {
     NSApp.activate()
     let ask = NSAlert()
-    ask.messageText = "安装别的存储"
-    ask.informativeText = "填一个 GitHub 仓库：owner/repo，或 owner/repo@版本。"
+    ask.messageText = "安装其他存储"
+    ask.informativeText = "输入 GitHub 仓库：owner/repo 或 owner/repo@版本。"
     let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
     field.placeholderString = "owner/repo"
     ask.accessoryView = field
@@ -411,7 +411,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
   /// Runs an install; a refusal that carries an offer (the trust statement, and the call that accepts it) is asked of the owner, and the offer run when accepted.
   private func install(_ args: [String], naming repository: String) async {
-    welcome.say("正在装 \(repository)")
+    welcome.say("正在安装 \(repository)…")
     let r = await runCli(args, in: config.home, config: config)
     welcome.say("")
     let text = (r.json?["text"] as? String) ?? r.err
@@ -421,7 +421,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
       return
     }
     guard let offer = r.json?["offer"] as? [String: Any], let call = offer["call"] as? [String: Any], let command = call["command"] as? String else {
-      return alert("没有装上 \(repository)", detail: text)
+      return alert("无法安装 \(repository)", detail: text)
     }
     NSApp.activate()
     let confirm = NSAlert()
@@ -443,7 +443,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   private func open(_ dir: URL, provider: String? = nil) async {
     if !(await isLibrary(dir, config: config)) {
       let r = await runCli(["init", dir.path, "--json"] + (provider.map { ["--provider", $0] } ?? []), in: dir.deletingLastPathComponent(), config: config)
-      guard r.json?["outcome"] as? String == "done" else { return alert("没能把这个文件夹建成库", detail: (r.json?["text"] as? String) ?? r.err) }
+      guard r.json?["outcome"] as? String == "done" else { return alert("无法初始化资料库", detail: (r.json?["text"] as? String) ?? r.err) }
       Log.line("app: made \(dir.lastPathComponent) a library with \((r.json?["data"] as? [String: Any])?["provider"] as? String ?? "?")")
     }
     if window.isOpen, current != dir { window.close() }
@@ -476,7 +476,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
       }
       Log.line("drop (\(place)): placed \(placed)")
       guard !placed.isEmpty else { return }
-      let text = placed.count == 1 ? "已放进 \(placed[0])，记成你带进来的" : "已放进 \(folder)/：\(placed.count) 样东西，记成你带进来的"
+      let text = placed.count == 1 ? "已添加 \(placed[0])，标记为我导入" : "已添加到 \(folder)/：\(placed.count) 个条目，标记为我导入"
       if window.isOpen { window.notice(tone: "good", text: text) } else { notify(text) }
       countWaiting()
     }
@@ -485,7 +485,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   private func bringArgs(_ url: URL, to path: String, in library: URL) -> [String] {
     let source = downloadAddress(of: url) ?? url.deletingLastPathComponent().lastPathComponent
     return ["--library", library.path, "--session", config.session, "put", url.path, "--to", path,
-            "--imported", "--by", "owner", "--source", source, "--note", "拖进来的", "--json"]
+            "--imported", "--by", "owner", "--source", source, "--note", "拖入的文件", "--json"]
   }
 
   /// `<folder>/<name>`, or `<folder>/<name> 2.<ext>` and so on when that is taken, as Finder names copies:
@@ -530,8 +530,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     panel.canChooseFiles = true
     panel.canChooseDirectories = true
     panel.allowsMultipleSelection = true
-    panel.prompt = "放进库里"
-    panel.message = "选的文件和文件夹会放进 \(folder)/，记成你带进来的。"
+    panel.prompt = "添加到资料库"
+    panel.message = "所选文件和文件夹将添加到 \(folder)/，标记为我导入。"
     guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
     bring(panel.urls, into: folder, from: "选择")
   }
@@ -592,8 +592,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
       menu.addItem(item)
     }
     if !prefs.libraries.isEmpty { menu.addItem(.separator()) }
-    menu.addItem(withTitle: "新建或打开一个库…", action: #selector(chooseLibrary), keyEquivalent: "").target = self
-    menu.addItem(withTitle: "打开窗口", action: #selector(openWindow), keyEquivalent: "").target = self
+    menu.addItem(withTitle: "新建或打开资料库…", action: #selector(chooseLibrary), keyEquivalent: "").target = self
+    menu.addItem(withTitle: "打开主窗口", action: #selector(openWindow), keyEquivalent: "").target = self
     menu.addItem(.separator())
     menu.addItem(appearanceItem())
     menu.addItem(ownerFilesItem())
@@ -609,7 +609,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   /// The icon, with a dot when something waits for the owner. A template, so it follows the menu bar.
   private static func icon(dot: Bool) -> NSImage? {
     let image = NSImage(named: dot ? "TrayWaiting" : "Tray")
-    image?.accessibilityDescription = dot ? "Pneuma Base：有事等你" : "Pneuma Base"
+    image?.accessibilityDescription = dot ? "Pneuma Base：有待处理事项" : "Pneuma Base"
     return image
   }
 
@@ -617,7 +617,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     guard count != waiting else { return }
     waiting = count
     statusItem?.button?.image = Self.icon(dot: count > 0)
-    statusItem?.button?.toolTip = count > 0 ? "\(count) 件事等你决定" : nil
+    statusItem?.button?.toolTip = count > 0 ? "\(count) 项待处理" : nil
     Log.line("dot: \(count) waiting")
   }
 
@@ -669,9 +669,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   // MARK: Machine settings
 
   private func ownerFilesItem() -> NSMenuItem {
-    let item = NSMenuItem(title: "直接放进来的文件算主人的", action: #selector(toggleOwnerFiles), keyEquivalent: "")
+    let item = NSMenuItem(title: "直接拷入的文件记为我添加", action: #selector(toggleOwnerFiles), keyEquivalent: "")
     item.target = self
-    item.toolTip = "开着时，在访达里拷进库、或直接改了的文件，会记成你带进来的、你改的（看到的，不是谁说的）。"
+    item.toolTip = "启用后，在访达中拷入资料库或直接修改的文件，记为我导入或我修改（检测到）。"
     return item
   }
 
@@ -693,8 +693,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   /// What the watcher recorded of the owner's own doing: said in the window if it is open, else as a notification.
   private func recorded(_ registered: [String], _ seen: [String]) {
     var parts: [String] = []
-    if !registered.isEmpty { parts.append("已登记 \(registered.count) 个直接放进来的文件，记成你带进来的") }
-    if !seen.isEmpty { parts.append("记下 \(seen.count) 处你直接做的改动") }
+    if !registered.isEmpty { parts.append("已登记 \(registered.count) 个直接拷入的文件，标记为我导入") }
+    if !seen.isEmpty { parts.append("已记录 \(seen.count) 处直接修改，标记为我修改") }
     guard !parts.isEmpty else { return }
     if window.isOpen { window.notice(tone: "good", text: parts.joined(separator: "；")) } else { notify(parts.joined(separator: "；")) }
   }
@@ -762,13 +762,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
     let up = String(Character(UnicodeScalar(NSUpArrowFunctionKey)!))
     submenu("文件", [
-      item("新建或打开一个库…", #selector(chooseLibrary), "o", [.command, .shift], target: self),
+      item("新建或打开资料库…", #selector(chooseLibrary), "o", [.command, .shift], target: self),
       .separator(),
       command("打开", "open", #selector(selectionCommand(_:)), "o"),
       command("快速查看", "preview", #selector(selectionCommand(_:)), "y"),
       command("在访达中显示", "reveal", #selector(selectionCommand(_:)), "r"),
-      command("拷贝路径", "copy-path", #selector(selectionCommand(_:)), "c", [.command, .option]),
-      command("重新命名", "rename", #selector(selectionCommand(_:))),
+      command("复制路径", "copy-path", #selector(selectionCommand(_:)), "c", [.command, .option]),
+      command("重命名", "rename", #selector(selectionCommand(_:))),
       .separator(),
       item("关闭窗口", #selector(NSWindow.performClose(_:)), "w"),
     ])
@@ -814,7 +814,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   @objc private func goBack() { window.back() }
   @objc private func goForward() { window.forward() }
   @objc private func reloadPage() { window.reload() }
-  /// 打开, 快速查看, 在访达中显示, 拷贝路径, 重新命名: for the page's selection.
+  /// 打开, 快速查看, 在访达中显示, 复制路径, 重命名: for the page's selection.
   @objc private func selectionCommand(_ item: NSMenuItem) { item.identifier.map { files.command($0.rawValue) } }
   /// 列表, 图标, 上一级: for the page the window shows.
   @objc private func viewCommand(_ item: NSMenuItem) { item.identifier.map { files.command($0.rawValue) } }
@@ -826,7 +826,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   /// almost off the screen, still visible to WebKit), `dark`, `light` or `system` (外观, as the menu
   /// chooses it, kept), `text-appearance:<file>` (the appearance as chosen, kept and seen by the app, the
   /// window, the panel and both pages), `hit:<x>,<y>`, `find:<text>`,
-  /// `library:<folder>` (as if chosen in the first-launch window or 新建或打开一个库…), `drop:<path>`
+  /// `library:<folder>` (as if chosen in the first-launch window or 新建或打开资料库…), `drop:<path>`
   /// and `drop-window:<path>` (through the same code as a file dropped on the menu bar item or the
   /// window), `route:<fragment>` (the page's address fragment), `tray` (a click on the icon), `text:<file>` and `text-tray:<file>` (the page's text),
   /// `snap:<file>`, `snap-tray:<file>`, `snap-welcome:<file>` and `snap-settings:<file>` (a picture of it), `text-welcome:<file>` (what the first-launch window offers),
@@ -835,13 +835,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
   /// kept for `menu-pick:` as the context menu is), `tray-room:<points>` (the room under the menu bar,
   /// as a small display gives it), `tray-fit:<file>` (whether every row of the panel can be seen),
   /// `sheet:<n>` (a click on the sheet's n-th button),
-  /// `settings` (the settings window), `path-link:<folder>` and `path-unlink` (as the 在终端里用
-  /// pneuma-base switch does), `text-settings:<file>` (the settings in words), `eval:<js>` (runs it in the
+  /// `settings` (the settings window), `path-link:<folder>` and `path-unlink` (as the 安装命令行工具
+  /// switch does), `text-settings:<file>` (the settings in words), `eval:<js>` (runs it in the
   /// window's page and logs `eval: <the result as text>`; the checks post the page's messages with it),
   /// `menu-pick:<title>` (with hooks the context menu is not popped up, being modal: its entries are
   /// logged and kept, and this performs the one with that title, a page entry by its label),
   /// `fake-placeholder:<library path>` (from now on the app's glance answers for that place carry a
-  /// `placeholder` facet), `owner-files:on` and `owner-files:off` (as the 直接放进来的文件算主人的 item does).
+  /// `placeholder` facet), `owner-files:on` and `owner-files:off` (as the 直接拷入的文件记为我添加 item does).
   /// With hooks, acts that reach outside the app (opening, revealing, the pasteboard, a terminal) are
   /// only logged, as `opener: …`.
   private func listenForTestCommands() {

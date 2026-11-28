@@ -15,7 +15,7 @@ export function hueOf(name: string): number {
 }
 
 /** What a mark stands for, in words: the name, and the grant an agent acted by. */
-export const markWords = (actor: ActorMark | string) => (typeof actor === 'string' ? actor : actor.grant ? `${actor.name} · 凭授权 ${actor.grant}` : actor.name)
+export const markWords = (actor: ActorMark | string) => (typeof actor === 'string' ? actor : actor.grant ? `${actor.name} · 授权 ${actor.grant}` : actor.name)
 
 function Mark({ kind, letters, size, style, tip }: { kind: 'agent' | 'owner' | 'named'; letters: string; size: Size; style?: CSSProperties; tip?: string }) {
   return tip ? (

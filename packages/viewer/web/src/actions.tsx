@@ -198,7 +198,7 @@ export function InlineAction({ action }: { action: Action }) {
         onKeyDown={onKeyDown}
       />
       {value.trim() !== '' ? (
-        <button type="button" className="icon-btn inline-send" aria-label={`${action.label}：记下`} data-tip="记下 ↵" onClick={() => void send()}>
+        <button type="button" className="icon-btn inline-send" aria-label={`${action.label}：提交`} data-tip="提交 ↵" onClick={() => void send()}>
           <ArrowUp strokeWidth={2} aria-hidden />
         </button>
       ) : null}

@@ -212,7 +212,7 @@ async function staticFile(res: ServerResponse, webRoot: string, pathname: string
   if (!s?.isFile()) {
     if (pathname === '/') {
       res.writeHead(503, { 'content-type': 'text/plain; charset=utf-8' })
-      return void res.end('管理界面还没有构建。在 pneuma-base 的仓库里运行 pnpm build。')
+      return void res.end('管理界面未构建。请在 pneuma-base 仓库中运行 pnpm build。')
     }
     return sendJson(res, { status: 404, json: { error: 'not found' } })
   }

@@ -71,7 +71,7 @@ export function DetailPanel({ tabs, active, labelOf, iconOf, result, actions, ch
   return (
     <aside ref={panel} aria-label="详情" className="detail">
       <div className="detail-head" data-drag data-chrome>
-        <div ref={strip} role="tablist" aria-label="打开的详情" className="tabs" onKeyDown={onKeyDown}>
+        <div ref={strip} role="tablist" aria-label="详情" className="tabs" onKeyDown={onKeyDown}>
           {tabs.map((tab, i) => {
             const label = i === active && shown ? shown.title : labelOf(topOf(tab))
             return (

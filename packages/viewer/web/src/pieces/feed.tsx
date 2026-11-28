@@ -53,38 +53,38 @@ import { Pager, turns } from './pager'
 type Feed = Extract<Block, { kind: 'feed' }>
 
 /** The words for whose act a row was; an agent's own and the owner's own say nothing more than the mark. */
-const WHOSE: Record<NonNullable<FeedRow['whose']>, string | null> = { agent: null, owner: null, approved: '主人批准的', observed: '看到的' }
+const WHOSE: Record<NonNullable<FeedRow['whose']>, string | null> = { agent: null, owner: null, approved: '所有者批准', observed: '检测到' }
 
 /** Each kind of act as the icon a row shows, and its word for a screen reader. */
 const ACTS: Record<FeedAct, { icon: LucideIcon; word: string }> = {
-  created: { icon: FolderPlus, word: '建库' },
-  on: { icon: ToggleRight, word: '打开' },
-  off: { icon: ToggleLeft, word: '关上' },
-  connected: { icon: Plug, word: '接上' },
-  disconnected: { icon: Unplug, word: '断开' },
-  granted: { icon: KeyRound, word: '发授权' },
-  revoked: { icon: Ban, word: '撤回' },
-  installed: { icon: PackagePlus, word: '装上' },
-  uninstalled: { icon: PackageMinus, word: '卸掉' },
-  set: { icon: SlidersHorizontal, word: '设成' },
+  created: { icon: FolderPlus, word: '初始化' },
+  on: { icon: ToggleRight, word: '启用' },
+  off: { icon: ToggleLeft, word: '停用' },
+  connected: { icon: Plug, word: '连接' },
+  disconnected: { icon: Unplug, word: '断开连接' },
+  granted: { icon: KeyRound, word: '新建授权' },
+  revoked: { icon: Ban, word: '撤销' },
+  installed: { icon: PackagePlus, word: '安装' },
+  uninstalled: { icon: PackageMinus, word: '卸载' },
+  set: { icon: SlidersHorizontal, word: '设为' },
   synced: { icon: RefreshCw, word: '同步' },
   exported: { icon: ArrowUpFromLine, word: '导出' },
   declined: { icon: CircleX, word: '拒绝' },
-  hidden: { icon: EyeOff, word: '不再管' },
-  shown: { icon: Eye, word: '又管起来' },
-  generated: { icon: Sparkles, word: '放入' },
-  imported: { icon: ArrowDownToLine, word: '带进来' },
-  changed: { icon: Pencil, word: '改了' },
-  moved: { icon: FolderInput, word: '挪到' },
+  hidden: { icon: EyeOff, word: '忽略' },
+  shown: { icon: Eye, word: '取消忽略' },
+  generated: { icon: Sparkles, word: '生成' },
+  imported: { icon: ArrowDownToLine, word: '导入' },
+  changed: { icon: Pencil, word: '修改' },
+  moved: { icon: FolderInput, word: '移动' },
   archived: { icon: Archive, word: '归档' },
-  restored: { icon: ArchiveRestore, word: '取回' },
+  restored: { icon: ArchiveRestore, word: '取消归档' },
   note: { icon: MessageSquareText, word: '备注' },
-  decision: { icon: Flag, word: '决定' },
-  task: { icon: Play, word: '在做' },
-  basis: { icon: Link2, word: '补上依据' },
-  removed: { icon: Trash2, word: '清掉' },
+  decision: { icon: Flag, word: '决策' },
+  task: { icon: Play, word: '任务' },
+  basis: { icon: Link2, word: '补充依据' },
+  removed: { icon: Trash2, word: '清除' },
   command: { icon: Terminal, word: '执行' },
-  request: { icon: MessageCircleQuestion, word: '请你做' },
+  request: { icon: MessageCircleQuestion, word: '请求' },
 }
 
 /** What following a link takes from a click or a key: a tab of its own with ⌘ or Ctrl, or the middle button. */

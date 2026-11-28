@@ -112,7 +112,7 @@ export function Palette({ leaving, views, groupOf, actions, onClose, onPage, onO
       .map((a, i) => ({ id: `action-${i}`, icon: a.icon ? <ViewIcon name={a.icon} /> : <Play />, name: a.label, hint: a.key?.toUpperCase(), choose: close(() => onAction(a)) }))
     const local: Group[] = [
       { label: '前往', about: [], entries: pages },
-      { label: '这一页的动作', about: [], entries: own },
+      { label: '本页操作', about: [], entries: own },
     ]
     if (query === '' || found?.text !== query || found.result === null) return local.filter((g) => g.entries.length > 0)
     const hits = groupFound(found.result.hits).map(
@@ -129,8 +129,8 @@ export function Palette({ leaving, views, groupOf, actions, onClose, onPage, onO
         })),
       }),
     )
-    const problems = found.result.problems.map((p) => `插件 ${p.plugin} 出了问题：${p.message}`)
-    return [...local, ...hits, ...(problems.length > 0 ? [{ label: '没能找的', about: problems, entries: [] }] : [])].filter((g) => g.entries.length > 0 || g.about.length > 0)
+    const problems = found.result.problems.map((p) => `插件 ${p.plugin} 出错：${p.message}`)
+    return [...local, ...hits, ...(problems.length > 0 ? [{ label: '未检索', about: problems, entries: [] }] : [])].filter((g) => g.entries.length > 0 || g.about.length > 0)
   }, [query, found, views, actions, groupOf, onClose, onPage, onAction, onOpen])
 
   const flat = groups.flatMap((g) => g.entries)
@@ -188,7 +188,7 @@ export function Palette({ leaving, views, groupOf, actions, onClose, onPage, onO
             aria-activedescendant={flat.length > 0 ? `${ids}-${current}` : undefined}
             aria-autocomplete="list"
             aria-label="搜索或前往"
-            placeholder="找库里的东西，或前往一页…"
+            placeholder="搜索资料库或前往页面…"
             value={text}
             spellCheck={false}
             autoComplete="off"
@@ -234,9 +234,9 @@ export function Palette({ leaving, views, groupOf, actions, onClose, onPage, onO
                 })}
               </div>
             ))}
-            {answered && found?.failed ? <p className="palette-none">没能问到库。</p> : null}
-            {answered && !found?.failed && flat.length === 0 && groups.length === 0 ? <p className="palette-none">没有找到。</p> : null}
-            {waiting && flat.length === 0 ? <p className="palette-none">正在找…</p> : null}
+            {answered && found?.failed ? <p className="palette-none">无法查询资料库。</p> : null}
+            {answered && !found?.failed && flat.length === 0 && groups.length === 0 ? <p className="palette-none">无结果</p> : null}
+            {waiting && flat.length === 0 ? <p className="palette-none">正在搜索…</p> : null}
           </div>
         </div>
         <div className="palette-foot" aria-hidden>
@@ -246,7 +246,7 @@ export function Palette({ leaving, views, groupOf, actions, onClose, onPage, onO
           <Kbd keys={['↵']} />
           <span>打开</span>
           <span className="spacer" />
-          <span>找到的东西在详情里打开</span>
+          <span>结果在详情面板中打开</span>
         </div>
       </div>
     </Layer>

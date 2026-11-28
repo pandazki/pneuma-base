@@ -38,7 +38,7 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
   } catch {
-    throw new Unreachable('连不上服务')
+    throw new Unreachable('无法连接服务')
   }
   const json = (await res.json().catch(() => null)) as { error?: string } | null
   if (!res.ok) throw new ApiError(res.status, json?.error ?? res.statusText)
@@ -54,7 +54,7 @@ async function streamed(call: Call, confirmed: boolean, pass: string, onProgress
   try {
     res = await fetch('/api/call', { method: 'POST', headers: { 'x-pneuma-token': TOKEN, 'content-type': 'application/json' }, body: JSON.stringify({ call, confirmed, pass }) })
   } catch {
-    throw new Unreachable('连不上服务')
+    throw new Unreachable('无法连接服务')
   }
   if (!res.ok || res.body === null) {
     const json = (await res.json().catch(() => null)) as { error?: string } | null
@@ -64,7 +64,7 @@ async function streamed(call: Call, confirmed: boolean, pass: string, onProgress
   let buffered = ''
   for (;;) {
     const { value, done } = await reader.read().catch(() => {
-      throw new Unreachable('连不上服务')
+      throw new Unreachable('无法连接服务')
     })
     if (done) break
     buffered += value
@@ -80,7 +80,7 @@ async function streamed(call: Call, confirmed: boolean, pass: string, onProgress
       }
     }
   }
-  throw new Unreachable('连不上服务')
+  throw new Unreachable('无法连接服务')
 }
 
 const passId = () => (typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`)
