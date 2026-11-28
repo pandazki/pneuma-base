@@ -114,7 +114,7 @@ export function CellView({ cell, line = false, first = false, room }: { cell: Ce
   const fit = (text: string) => (middle ? fitMiddle(text, cellFont(cell, first), room) : text)
   const fitted = fit(cell.text)
   // In a table a cell that says who is the mark alone, its name in the tooltip: the marks tell the agents apart.
-  const markOnly = line && cell.actor !== undefined && (cell.text === '' || cell.text === cell.actor.name)
+  const markOnly = line && cell.actor !== undefined
   const words = markOnly ? '' : cell.text === '' && cell.actor ? cell.actor.name : cell.text
   // On one line, a path-like text is cut in its folders, so its last part stays readable, unless it is cut in the middle.
   const cut = line && cell.mono && !middle ? words.lastIndexOf('/') : -1
