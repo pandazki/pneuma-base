@@ -114,7 +114,7 @@ describe('the assembled description with every plugin installed', () => {
     expect(comparison.said.map((s: any) => s.text)).toContain('所有者决定使用 Paddle，因为它代为处理欧洲的税务')
     expect(inspect('payments/sources/stripe-pricing.html').find((s: any) => s.plugin === 'ledger').data.origin).toEqual({ kind: 'imported', source: 'https://stripe.com/pricing', by: null })
     const versions = agent(['version', 'list', 'sites/shop', '--json']).json().data.versions
-    expect(versions.map((v: any) => [v.n, v.note, v.same])).toEqual([[1, '第一版', null], [2, '换了配色', null], [3, null, 1]])
+    expect(versions.map((v: any) => [v.n, v.note, v.same])).toEqual([[1, '第一版', null], [2, '更换配色', null], [3, null, 1]])
     expect(readFileSync(join(cwd, 'shop-v1/index.html'), 'utf8')).toBe(V1)
     expect(readFileSync(join(lib, 'sites/shop/index.html'), 'utf8')).toBe(V1)
     expect(inspect('sites/shop').find((s: any) => s.plugin === 'deploy').data).toMatchObject({ status: 'offline', on: false })
