@@ -6,6 +6,7 @@
 import { randomBytes } from 'node:crypto'
 import type { OwnerCommandInfo } from './owner.js'
 import { checkArgs } from './params.js'
+import { argsNow, commandNow } from './renamed.js'
 import { storageOf } from './storage.js'
 import {
   formOf,
@@ -113,7 +114,9 @@ function folded(id: RequestId, lines: readonly Line[]): OwnerRequest | null {
       : withdrawn !== undefined
         ? { kind: 'withdrawn', at: withdrawn.at }
         : { kind: 'pending' }
-  const { by, at, why, command: name, args } = asked
+  const { by, at, why } = asked
+  const name = commandNow(asked.command)
+  const args = argsNow(name, asked.args)
   return { id, by, at, why, command: name, args, line: commandLine(name, args), status, seen: status.kind !== 'pending' && sorted.some((l) => l.kind === 'seen') }
 }
 
@@ -156,7 +159,7 @@ async function caughtUp(root: string): Promise<void> {
         const waiting = (await records.where<RequestRow>('requests', 'asker', askerKey(line.by), { limit: 10_000 })).rows.map((r) => touched.get(r.value.id) ?? r.value)
         for (const t of touched.values()) if (!waiting.some((w) => w.id === t.id) && fieldsOf(t).asker === askerKey(line.by)) waiting.push(t)
         const pending = waiting.filter((w) => w.id !== id && fieldsOf(w).pending === '1')
-        const same = pending.find((w) => folded(w.id, w.lines)?.line === commandLine(line.command, line.args))
+        const same = pending.find((w) => folded(w.id, w.lines)?.line === commandLine(commandNow(line.command), argsNow(commandNow(line.command), line.args)))
         if (same !== undefined) row.same = same.id
         else if (pending.length >= MAX_PENDING) row.over = true
       }

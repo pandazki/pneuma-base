@@ -39,3 +39,21 @@ describe('a fact written under an old command name', () => {
     for (const before of ['plugin add', 'grant issue', 'plugin remove']) expect(exported).not.toContain(before)
   })
 })
+
+describe('a request pending under an old command name', () => {
+  it('lists and runs under the new name and its renamed flags', () => {
+    const sb = sandbox()
+    const lib = join(tempDir(), 'lib')
+    expect(sb.run(['init', lib]).code).toBe(0)
+    expect(sb.run(['--library', lib, 'plugin', 'enable', 'version']).code).toBe(0)
+    // Asked before the rename, arriving by sync: the command and its flag under the names they had then.
+    const asked = { request: 'r-0ed0ed01', kind: 'asked', at: new Date().toISOString(), by: { name: 'claude', grant: null }, session: 's1', why: '不用了', command: 'plugin remove', args: { positional: ['version'], flags: { anyway: true } } }
+    const day = join(lib, '.pneuma-base/requests/facts', asked.at.slice(0, 10))
+    mkdirSync(day, { recursive: true })
+    writeFileSync(join(day, `${asked.at.replace(/[^0-9]/g, '').slice(0, 17)}-othermachine-000001.jsonl`), `${JSON.stringify(asked)}\n`)
+    expect(sb.run(['--library', lib, 'request', 'list']).stdout).toContain('plugin disable version --force')
+    const approved = sb.run(['--library', lib, 'request', 'approve', asked.request])
+    expect(approved.code, approved.stdout + approved.stderr).toBe(0)
+    expect(JSON.parse(readFileSync(join(lib, '.pneuma-base/config.json'), 'utf8')).plugins).not.toContain('version')
+  })
+})

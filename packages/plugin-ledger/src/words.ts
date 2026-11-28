@@ -46,36 +46,4 @@ const OBJECT_NOW: Readonly<Record<string, string>> = {
 }
 export const objectNow = (name: string): string => OBJECT_NOW[name] ?? name
 
-/** The commands as facts recorded them before they were renamed, and their names now. */
-const RENAMED: Readonly<Record<string, string>> = {
-  'grant issue': 'grant create',
-  'plugin add': 'plugin enable',
-  'plugin remove': 'plugin disable',
-  'plugin catch-up': 'plugin backfill',
-  'noise list': 'ignore list',
-  'noise add': 'ignore add',
-  'noise remove': 'ignore remove',
-  'search embedder set': 'search embedding set',
-  'search embedder clear': 'search embedding clear',
-  'ledger held list': 'ledger copies list',
-  'ledger held restore': 'ledger copies restore',
-  'ledger held drop': 'ledger copies drop',
-  'ledger leave': 'ledger dismiss',
-}
-
-/** Flags renamed with their command, by the command's name now. */
-const FLAGS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  'plugin disable': { '--anyway': '--force' },
-  'ledger register': { '--inside': '--recursive' },
-}
-
-/** A command's name as it is now. */
-export const commandNow = (name: string): string => RENAMED[name] ?? name
-
-/** A command line as recorded, with its command and its flags as they are now. */
-export function lineNow(line: string): string {
-  const old = Object.keys(RENAMED).find((name) => line === name || line.startsWith(`${name} `))
-  const named = old === undefined ? line : `${RENAMED[old]}${line.slice(old.length)}`
-  const flags = Object.entries(FLAGS).find(([name]) => named === name || named.startsWith(`${name} `))?.[1]
-  return flags === undefined ? named : named.split(' ').map((word) => flags[word] ?? word).join(' ')
-}
+export { commandNow, lineNow } from '@pneuma-base/kernel'
