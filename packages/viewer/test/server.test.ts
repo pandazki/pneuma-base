@@ -66,6 +66,17 @@ function http(server: RunningServer, path: string, opts: { token?: string | null
   })
 }
 
+describe('the description at the root', () => {
+  it('is brought to what the product says now when the server begins serving the library', async () => {
+    const lib = await library()
+    const today = readFileSync(join(lib.root, 'PNEUMA-BASE.md'), 'utf8')
+    lib.write('PNEUMA-BASE.md', 'written by an earlier version\n')
+    const server = await serve(lib.root, { home: lib.home })
+    await http(server, '/api/view?view=files')
+    await expect.poll(() => readFileSync(join(lib.root, 'PNEUMA-BASE.md'), 'utf8')).toBe(today)
+  })
+})
+
 describe('who reaches the server (C8)', () => {
   it('refuses /api without the token or with a wrong one; takes it as a query parameter or a header', async () => {
     const lib = await library()
