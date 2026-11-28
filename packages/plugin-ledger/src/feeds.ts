@@ -90,6 +90,9 @@ const where = (lookup: Lookup, id: Fact & { item: unknown }) => lookup.items.get
  * ledger recorded without that is the command by its name. A fact a sentence says better, such as a
  * request or a command refused, has no parts.
  */
+/** The acts whose object is a plugin, named on a page by its title. */
+const PLUGIN_ACTS: ReadonlySet<string> = new Set(['on', 'off', 'synced', 'uninstalled'])
+
 function partsOf(lookup: Lookup, f: Fact): Pick<FeedRow, 'act' | 'path' | 'note'> {
   const note = (text: string | undefined) => (text ? { note: text } : {})
   const at = (path: string | null) => (path === null ? {} : { path: path as LibraryPath })
@@ -108,7 +111,7 @@ function partsOf(lookup: Lookup, f: Fact): Pick<FeedRow, 'act' | 'path' | 'note'
       return { act: 'removed', ...at(where(lookup, f)) }
     case 'owner.op':
       if (f.refused !== undefined) return {}
-      return f.act === undefined ? { act: 'command', ...at(commandNow(f.command)) } : { act: actNow(f.act), ...at(f.object === undefined ? null : objectNow(f.object)) }
+      return f.act === undefined ? { act: 'command', ...at(commandNow(f.command)) } : { act: actNow(f.act), ...at(f.object === undefined ? null : ((PLUGIN_ACTS.has(actNow(f.act)) ? lookup.titles?.get(f.object) : undefined) ?? objectNow(f.object))) }
     default:
       return {}
   }
@@ -166,10 +169,10 @@ const SEEN_ALL: Action = { label: '全部标为已读', tone: 'default', confirm
  * scene of one act is that one row, naming its scene, and scenes of one act next to each other share
  * one list without a heading.
  */
-export async function homeAnswer(records: Read, lists: readonly StandingList[], news: { since: Instant | null; facts: readonly Fact[] }, agents: readonly FactActor[], grants: readonly Grant[]): Promise<ViewAnswer> {
+export async function homeAnswer(records: Read, lists: readonly StandingList[], news: { since: Instant | null; facts: readonly Fact[] }, agents: readonly FactActor[], grants: readonly Grant[], titles: ReadonlyMap<string, string>): Promise<ViewAnswer> {
   const { since } = news
   const facts = news.facts.filter(isAct)
-  const lookup = await lookupOf(records, facts)
+  const lookup = await lookupOf(records, facts, { titles })
   const groups = sceneGroups(lookup, facts, grants)
   const done = groups.reduce((n, g) => n + g.rows.length, 0)
   // Nothing new since the last look: when that was, and the way to everything that ever happened.
@@ -220,7 +223,7 @@ function sayStep(agents: readonly FactActor[]): Block {
  * saying what it is doing is no act: it heads its acts or is their second line. Each filter's options
  * carry how many acts each would show, from the counts the rows keep, so they count the rows.
  */
-export async function activityAnswer(records: Read, params: Record<string, string>, grants: readonly Grant[], now: Instant, size = PAGE_ROWS): Promise<ViewAnswer> {
+export async function activityAnswer(records: Read, params: Record<string, string>, grants: readonly Grant[], titles: ReadonlyMap<string, string>, now: Instant, size = PAGE_ROWS): Promise<ViewAnswer> {
   const who = params.who ?? ''
   const agent = params.agent ?? ''
   const { after } = pageAt(params)
@@ -241,7 +244,7 @@ export async function activityAnswer(records: Read, params: Record<string, strin
   const opts = { limit: size, ...(after === undefined ? {} : { after }) }
   const page = agent !== '' ? (who === 'owner' ? { rows: [], more: null } : await records.where<Fact>('acts', 'agent', agent, opts)) : who !== '' ? await records.where<Fact>('acts', 'who', who, opts) : await records.under<Fact>('acts', '', opts)
   const facts = page.rows.map((r) => r.value)
-  const lookup = await lookupOf(records, facts)
+  const lookup = await lookupOf(records, facts, { titles })
   const groups = grouped(facts, (f) => dayTitle(f.at, now)).map(({ title, members }) => ({ title, count: members.length, rows: [], groups: sceneGroups(lookup, members, grants) }))
   const shown = n(who, agent)
   const paging = pagingOf({ view: ACTIVITY_VIEW, params, rows: size, shown: facts.length, next: page.more?.after ?? null, total: shown })
@@ -315,7 +318,7 @@ function conversationFields(c: Conversation | null, reopen: Reopen | null): { la
  * rest on, how many decisions), as figures when there are a few, else one line; its conversation; what
  * happened in it, newest first, a page at a time; then, folded, where it worked and its id.
  */
-export async function sceneAnswer(records: Read, scene: SceneRow, conversation: Conversation | null, grants: readonly Grant[], params: Record<string, string> = {}, size = PAGE_ROWS): Promise<ViewAnswer> {
+export async function sceneAnswer(records: Read, scene: SceneRow, conversation: Conversation | null, grants: readonly Grant[], titles: ReadonlyMap<string, string>, params: Record<string, string> = {}, size = PAGE_ROWS): Promise<ViewAnswer> {
   const { after } = pageAt(params)
   const long = Date.parse(scene.last) - Date.parse(scene.first)
   const stats: Stat[] = [
@@ -329,7 +332,7 @@ export async function sceneAnswer(records: Read, scene: SceneRow, conversation: 
     stats.length >= 3 ? [{ kind: 'stats', stats }] : stats.length > 0 ? [{ kind: 'fields', line: true, fields: stats.map((s) => ({ label: s.label, value: { text: `${s.label} ${s.value}${s.note === null ? '' : `（${s.note}）`}`, muted: true } })) }] : []
   const page = await records.where<Fact>('acts', 'scene', scene.id, { limit: size, ...(after === undefined ? {} : { after }) })
   const facts = page.rows.map((r) => r.value)
-  const lookup = await lookupOf(records, facts, { scenes: [scene.id] })
+  const lookup = await lookupOf(records, facts, { scenes: [scene.id], titles })
   const count = page.more === null && after === undefined ? facts.length : await records.count('acts', 'scene', scene.id)
   const paging = pagingOf({ view: SCENE_VIEW, params: { ...params, scene: scene.id }, rows: size, shown: facts.length, next: page.more?.after ?? null, total: count, target: 'panel' })
   // The page is the scene: its rows need no heading of their own.

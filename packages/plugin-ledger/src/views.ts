@@ -20,7 +20,8 @@ export const actorNames = (actors: readonly FactActor[], owner = OWNER) => [...n
 export const shortScene = (id: SceneId) => (id.startsWith(ADHOC_SCENE) ? id : id.slice(0, 8))
 
 /** What the views need of the rows: the items and the scenes they name, read for the view. */
-export type Lookup = { items: ReadonlyMap<ItemId, ItemRow>; scenes: ReadonlyMap<SceneId, SceneRow> }
+/** `titles`: each enabled plugin's name and the title a page shows for it. */
+export type Lookup = { items: ReadonlyMap<ItemId, ItemRow>; scenes: ReadonlyMap<SceneId, SceneRow>; titles?: ReadonlyMap<string, string> }
 
 /** Who was in a scene, when it began, what it was doing. */
 function sceneParts(scene: SceneRow): string[] {

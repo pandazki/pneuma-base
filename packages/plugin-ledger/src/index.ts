@@ -40,6 +40,9 @@ import { closedLooks, DISMISS, REGISTER, unownedAsks } from './unowned.js'
 import { ambiguousText, itemText, originLabel, sceneText, sceneView, sinceText, sinceViewOf, spokenItem, spokenScene, standingSections, when, type ItemView } from './views.js'
 import { flavorOf, storedOrigin } from './words.js'
 
+/** Each enabled plugin's name and the title a page shows for it, so a feed names a plugin as people read it. */
+const titlesOf = (ctx: PluginContext): ReadonlyMap<string, string> => new Map(ctx.library.plugins.map((p) => [p.name, p.title ?? p.cognition?.title ?? p.name]))
+
 /** A hook's writes: the facts it will append as one write, and the things it adopted on the way. */
 type Writing = { ctx: PluginContext; facts: Fact[]; adopted: Map<LibraryPath, ItemId> }
 
@@ -607,7 +610,7 @@ export const ledger: Plugin = {
       case HOME_VIEW: {
         await refresh(ctx)
         const news = await newsSince(recs, factActor(ctx.actor), sceneOf(ctx), 'last')
-        return homeAnswer(recs, await standingLists(recs, false, 1), news, await agentsOf(recs), grants)
+        return homeAnswer(recs, await standingLists(recs, false, 1), news, await agentsOf(recs), grants, titlesOf(ctx))
       }
       case ITEMS_VIEW:
         await refresh(ctx)
@@ -628,11 +631,11 @@ export const ledger: Plugin = {
         const input = req.params.scene ?? ''
         const { scenes, more } = await scenesNamed(recs, input)
         const scene = scenes.length === 1 && !more ? scenes[0] : undefined
-        return scene ? sceneAnswer(recs, scene, conversationOf(scene, ctx.session.machine), grants, req.params, rowsOf(req)) : noSuchScene(input, scenes.length, more)
+        return scene ? sceneAnswer(recs, scene, conversationOf(scene, ctx.session.machine), grants, titlesOf(ctx), req.params, rowsOf(req)) : noSuchScene(input, scenes.length, more)
       }
       case ACTIVITY_VIEW:
         await stateOf(ctx)
-        return activityAnswer(recs, req.params, grants, ctx.now, rowsOf(req))
+        return activityAnswer(recs, req.params, grants, titlesOf(ctx), ctx.now, rowsOf(req))
       case STATS_VIEW: {
         // From the hours' rows alone: no file is read, so the page costs the same however large the library is.
         await stateOf(ctx)
