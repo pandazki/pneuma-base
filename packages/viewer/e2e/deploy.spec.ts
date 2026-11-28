@@ -120,7 +120,8 @@ test('another PneumaSpace, connected with its key typed: the key is then in no f
     expect(files.some((e) => e.parentPath.includes(join('.pneuma-base', 'deploy', 'facts')) || e.parentPath.includes(join('.pneuma-base', 'ledger')))).toBe(true)
     const activity = pb.run(['--library', lib, 'show', 'ledger.activity', '--json']).stdout
     expect(activity).toContain('target set')
-    for (const [what, text] of [...files.map((e) => [join(e.parentPath, e.name), readFileSync(join(e.parentPath, e.name), 'utf8')]), ['the activity', activity], ...pages.map((p, i) => [`page ${i}`, p])]) {
+    const texts: [string, string][] = [...files.map((e): [string, string] => [join(e.parentPath, e.name), readFileSync(join(e.parentPath, e.name), 'utf8')]), ['the activity', activity], ...pages.map((p, i): [string, string] => [`page ${i}`, p])]
+    for (const [what, text] of texts) {
       expect(text.includes(fake.key), `${what}: ${text.slice(Math.max(0, text.indexOf(fake.key) - 300), text.indexOf(fake.key) + 80)}`).toBe(false)
     }
   } finally {

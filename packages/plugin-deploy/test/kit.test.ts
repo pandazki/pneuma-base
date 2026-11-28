@@ -103,7 +103,7 @@ async function library(plugin: Plugin, noTarget = false) {
   const as = (actor: Actor) => makeContext(lib as NonNullable<typeof lib>, actor, session, home, new Date().toISOString() as Instant)
   /** An owner command; `typed`: what it reads hidden, as a terminal or the page gives it. */
   const cmd = async (name: string, positional: string[] = [], flags: Record<string, string[] | true> = {}, typed: string | null = null): Promise<OwnerResult> => {
-    const r = await ownerFace.dispatch({ ctx: as(owner), table, home, env: {}, viaGrant: false, confirm: async () => true, readSecret: async () => typed }, `${name}`, { positional, flags })
+    const r = await ownerFace.dispatch({ ctx: as(owner), table, env: {}, viaGrant: false, confirm: async () => true, readSecret: async () => typed }, `${name}`, { positional, flags })
     lib = (await openLibrary(root, table)) ?? lib
     return r
   }
@@ -650,7 +650,7 @@ const KEY = 'k-typed-3f9a51'
 async function press(l: Lib, action: Action | undefined, values: Record<string, string> = {}): Promise<OwnerResult> {
   if (action?.call.face !== 'owner') throw new Error(`not an owner command: ${JSON.stringify(action)}`)
   const fill = (w: string) => w.replace(/\{(\w+)\}/g, (_, name: string) => values[name] ?? action.inputs.find((i) => i.name === name)?.value ?? '')
-  const flags = Object.fromEntries(Object.entries(action.call.args.flags).map(([k, v]) => [k, v === true ? true : v.map(fill)]))
+  const flags: Record<string, string[] | true> = Object.fromEntries(Object.entries(action.call.args.flags).map(([k, v]) => [k, v === true ? (true as const) : v.map(fill)]))
   const stdin = action.call.stdin === undefined ? null : fill(action.call.stdin)
   return l.cmd(action.call.command, action.call.args.positional.map(fill), flags, stdin)
 }
