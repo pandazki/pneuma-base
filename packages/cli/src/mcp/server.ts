@@ -60,7 +60,7 @@ const isId = (v: unknown): v is Id => typeof v === 'string' || typeof v === 'num
 
 function text(params: Params, key: string): string {
   const v = params[key]
-  if (typeof v !== 'string') throw new ProtocolError(-32602, `参数 ${key} 要是文字`)
+  if (typeof v !== 'string') throw new ProtocolError(-32602, `参数 ${key} 应为字符串`)
   return v
 }
 
@@ -137,9 +137,9 @@ export async function serve(transport: Transport, face: Face, { every = 2000 }: 
       case 'tools/call': {
         const name = text(params, 'name')
         const args = params.arguments ?? {}
-        if (!isObject(args)) throw new ProtocolError(-32602, '参数 arguments 要是一个对象')
+        if (!isObject(args)) throw new ProtocolError(-32602, '参数 arguments 应为对象')
         const result = await face.call(name, args)
-        if (result === null) throw new ProtocolError(-32602, `没有这个工具：${name}`)
+        if (result === null) throw new ProtocolError(-32602, `工具不存在：${name}`)
         return result
       }
       case 'resources/list':
@@ -150,7 +150,7 @@ export async function serve(transport: Transport, face: Face, { every = 2000 }: 
         const uri = text(params, 'uri')
         const contents = await face.read(uri)
         // Earlier revisions named a missing resource -32002; 2026-07-28 names it -32602.
-        if (contents === null) throw new ProtocolError(modern ? -32602 : -32002, `没有这个资源：${uri}`, { uri })
+        if (contents === null) throw new ProtocolError(modern ? -32602 : -32002, `资源不存在：${uri}`, { uri })
         return { contents: [contents] }
       }
       case 'resources/subscribe': {
@@ -190,7 +190,7 @@ export async function serve(transport: Transport, face: Face, { every = 2000 }: 
       if (modern && (typeof version !== 'string' || !MODERN_VERSIONS.includes(version))) {
         throw new ProtocolError(-32022, 'Unsupported protocol version', { supported: MODERN_VERSIONS, requested: version })
       }
-      if (modern && !isObject(meta[CLIENT_CAPABILITIES])) throw new ProtocolError(-32602, `请求的 _meta 里少了 ${CLIENT_CAPABILITIES}`)
+      if (modern && !isObject(meta[CLIENT_CAPABILITIES])) throw new ProtocolError(-32602, `请求的 _meta 中缺少 ${CLIENT_CAPABILITIES}`)
       const result = await answer(method, params, id, modern)
       if (result === LISTENING || cancelled.has(id)) return
       send({ id, result: modern ? { ...result, ...(CACHEABLE.has(method) ? NOT_CACHED : {}), resultType: 'complete', _meta: { [SERVER_INFO]: SERVER } } : result })

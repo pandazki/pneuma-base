@@ -48,11 +48,11 @@ function templateFiles(kind: Kind): Map<string, string> {
  */
 export function scaffold(opts: { dir: string; kind: Kind; name: string | null; packages: string | null }): Scaffolded {
   const name = opts.name ?? basename(opts.dir)
-  if (!PLUGIN_NAME.test(name)) return { ok: false, reason: 'usage', text: `插件名 ${name} 不行：小写字母开头，只用小写字母、数字和连字符。用 --name 给一个。` }
-  if (RESERVED_PLUGIN_NAMES.includes(name)) return { ok: false, reason: 'usage', text: `插件名 ${name} 是命令行或内核自己用的词。用 --name 换一个。` }
-  if (existsSync(opts.dir) && readdirSync(opts.dir).length > 0) return { ok: false, reason: 'not-empty', text: `${opts.dir} 不是空的，什么都没写。换一个目录。` }
+  if (!PLUGIN_NAME.test(name)) return { ok: false, reason: 'usage', text: `插件名称 ${name} 无效：需以小写字母开头，仅含小写字母、数字和连字符。可用 --name 指定。` }
+  if (RESERVED_PLUGIN_NAMES.includes(name)) return { ok: false, reason: 'usage', text: `插件名称 ${name} 为命令行或内核保留。可用 --name 指定其他名称。` }
+  if (existsSync(opts.dir) && readdirSync(opts.dir).length > 0) return { ok: false, reason: 'not-empty', text: `${opts.dir} 不是空目录，未写入任何文件。请更换目录。` }
   if (opts.packages !== null && !hasPackageFiles(opts.packages)) {
-    return { ok: false, reason: 'no-package-files', text: `${opts.packages} 里没有 ${Object.values(PACKAGE_FILES).join(' 和 ')}。--packages 要写这两个包文件所在的目录。` }
+    return { ok: false, reason: 'no-package-files', text: `${opts.packages} 中没有 ${Object.values(PACKAGE_FILES).join(' 和 ')}。--packages 应为这两个包文件所在的目录。` }
   }
   const { packages } = opts
   // By absolute path, so the project can move; the package files stay where they are.

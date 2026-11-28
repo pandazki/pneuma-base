@@ -15,7 +15,7 @@ export type Mark = { path: string; text: string }
 
 /** A stored line as a mark, or why it is not one. Records are read through this, at the boundary. */
 export function parseMark(raw: Record<string, unknown>): Mark | string {
-  return typeof raw.path === 'string' && typeof raw.text === 'string' ? { path: raw.path, text: raw.text } : '不是一条标记'
+  return typeof raw.path === 'string' && typeof raw.text === 'string' ? { path: raw.path, text: raw.text } : '不是有效的标记'
 }
 
 /** The marks, a store of the plugin's record place: each write appended, nothing ever changed. */
@@ -30,14 +30,14 @@ const refused = (note: string): SayAnswer => ({ outcome: 'not-heard', reason: 'r
 
 const list = defineCommand({
   name: `${NAME} list`,
-  summary: '列出 agent 留下的标记，可以只看一样东西的',
+  summary: '列出 Agent 留下的标记，可只列出某个条目的标记',
   params: { flags: [{ name: 'path', hint: '库内路径', kind: 'value' }] },
   destructive: false,
   ownerOnly: false,
   readOnly: true,
   async run({ path }, ctx) {
     const shown = (await marks(ctx).read()).records.filter((m) => path === null || m.path === path)
-    const text = shown.length === 0 ? '还没有标记。' : shown.map((m) => `${m.path}：${m.text}（${m.actor.name}）`).join('\n')
+    const text = shown.length === 0 ? '暂无标记。' : shown.map((m) => `${m.path}：${m.text}（${m.actor.name}）`).join('\n')
     return { outcome: 'done', text, data: { marks: shown.map((m) => ({ path: m.path, text: m.text, by: m.actor.name, at: m.at })) } }
   },
 })
@@ -53,16 +53,16 @@ function page(all: readonly (Envelope & Mark)[]): Block[] {
       entry: 'panel.html',
       height: 72,
       // What the panel shows, in words: the command line prints it, and screen readers read it.
-      text: `${all.length} 条标记，${latest === undefined ? '还没有' : `最近一条：${latest.text}（${latest.path}）`}`,
+      text: `${all.length} 条标记${latest === undefined ? '' : `，最近一条：${latest.text}（${latest.path}）`}`,
       data: { count: all.length, latest: latest === undefined ? null : { text: latest.text, path: latest.path } },
       actions: { list: LIST },
     },
     {
       kind: 'table',
       columns: [
-        { key: 'path', label: '东西' },
+        { key: 'path', label: '条目' },
         { key: 'text', label: '标记' },
-        { key: 'by', label: '谁', optional: true },
+        { key: 'by', label: '执行者', optional: true },
         { key: 'at', label: '时间', optional: true },
       ],
       rows: all.map((m) => ({
@@ -71,7 +71,7 @@ function page(all: readonly (Envelope & Mark)[]): Block[] {
         link: { view: 'item', params: { path: m.path }, target: 'panel' },
         actions: [],
       })),
-      empty: `还没有标记。agent 用 say ${NAME} <库内路径> "<一句话>" 留下一条。`,
+      empty: `暂无标记。Agent 用 say ${NAME} <库内路径> "<说明>" 添加标记。`,
     },
   ]
 }
@@ -80,7 +80,7 @@ export default definePlugin({
   contract: CONTRACT,
   name: NAME,
   version: '0.1.0',
-  summary: 'agent 给库里的东西留一句标记，主人在一页里看全部。',
+  summary: 'Agent 为条目添加标记，在插件页面中集中查看。',
   cognition: { title: '标记', text: cognition },
   storage: [{ dir: 'facts', kind: 'body' }],
   statements: [NAME],
@@ -88,20 +88,20 @@ export default definePlugin({
   views: [{ id: PAGE, title: '标记', icon: 'bookmark', nav: true, filters: [] }],
   ui: fileURLToPath(new URL('./ui/', import.meta.url)),
 
-  /** `say {{name}} <库内路径> "<一句话>"`: the thing must be in the library. */
+  /** `say {{name}} <库内路径> "<说明>"`: the thing must be in the library. */
   async onSay(req, ctx) {
-    if (req.about === null || req.text === null) return refused(`要写是哪样东西和一句话：say ${NAME} <库内路径> "<一句话>"`)
+    if (req.about === null || req.text === null) return refused(`需指定条目和说明：say ${NAME} <库内路径> "<说明>"`)
     const at = await ctx.tools.resolve(req.about)
     const [thing] = at === null || at.region !== 'content' ? [] : await ctx.tools.what([at.path])
-    if (at === null || (thing?.kind !== 'file' && thing?.kind !== 'bundle')) return refused(`库里没有这样东西：${req.about}`)
+    if (at === null || (thing?.kind !== 'file' && thing?.kind !== 'bundle')) return refused(`资料库中不存在该条目：${req.about}`)
     const store = marks(ctx)
     await store.append([store.stamp(ctx, { path: at.path, text: req.text })])
-    return { outcome: 'heard', note: `已给 ${at.path} 留下标记。` }
+    return { outcome: 'heard', note: `已为 ${at.path} 添加标记。` }
   },
 
   /** Views read and never write: the page is drawn from the records as they are. */
   async onView(req, ctx) {
-    if (req.view !== PAGE) return { title: '标记', subtitle: null, blocks: [{ kind: 'empty', title: '没有这一页', hint: req.view }] }
+    if (req.view !== PAGE) return { title: '标记', subtitle: null, blocks: [{ kind: 'empty', title: '页面不存在', hint: req.view }] }
     const all = (await marks(ctx).read()).records
     return { title: '标记', subtitle: `${all.length} 条`, blocks: page(all) }
   },

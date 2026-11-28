@@ -14,10 +14,10 @@ const cognition = readFileSync(new URL('./cognition.md', import.meta.url), 'utf8
 
 export default deployPlugin('{{name}}', localTarget, {
   title: '发布',
-  heading: '上线：主人开关',
+  heading: '上线：所有者开关',
   cognition,
   icon: 'globe',
   version: '0.1.0',
-  summary: '声明了可以部署的东西由主人开关上线，发布到一个本地目录。',
+  summary: '已声明可部署的条目由所有者开关上线，发布到本地目录。',
   ui: fileURLToPath(new URL('./ui/', import.meta.url)),
 })

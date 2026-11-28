@@ -10,8 +10,8 @@ type BrokenLink = {
   target: string
 }
 
-const title = '坏链接'
-const empty = '没有发现坏链接。'
+const title = '失效链接'
+const empty = '暂无失效链接'
 
 function report(broken: BrokenLink[]) {
   if (broken.length === 0) return empty
@@ -27,7 +27,7 @@ function table(broken: BrokenLink[], showSource: boolean): Block {
       ...(showSource ? [{ key: 'source', label: '来源文件' }] : []),
       { key: 'position', label: '行:列' },
       { key: 'href', label: '链接' },
-      { key: 'target', label: '缺少的文件', optional: true },
+      { key: 'target', label: '缺失的目标', optional: true },
     ],
     rows: broken.map(({ source, line, column, href, target }, index) => ({
       key: JSON.stringify([source, line, column, index]),
@@ -46,7 +46,7 @@ function table(broken: BrokenLink[], showSource: boolean): Block {
 
 const list = defineCommand({
   name: 'links list',
-  summary: '列出全库的坏链接，含归档文件',
+  summary: '列出整个资料库的失效链接，包含已归档文件',
   params: {},
   destructive: false,
   ownerOnly: false,
@@ -91,7 +91,7 @@ export default definePlugin({
   },
   async onView(_req, ctx) {
     const broken = await scanLibrary(ctx, { includeArchived: true })
-    return { title, subtitle: `全库共 ${broken.length} 处，含归档文件`, blocks: [table(broken, true)] }
+    return { title, subtitle: `整个资料库共 ${broken.length} 处，包含已归档文件`, blocks: [table(broken, true)] }
   },
   async onItemView(path, ctx) {
     const broken = await scanItem(ctx, path)

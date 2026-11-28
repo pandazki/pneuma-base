@@ -169,7 +169,7 @@ export function recordStore<B extends object>(ctx: PluginContext, name: string, 
         const page: RecordPage<B> | null = await store.since(cursor)
         if (page === null) {
           // The facts were rewritten under the cursor while reading: read them all again.
-          if (cursor === null) throw new Error(`${name} 的记录读不出来`)
+          if (cursor === null) throw new Error(`无法读取 ${name} 的记录`)
           all.records.length = 0
           all.skipped.length = 0
           cursor = null

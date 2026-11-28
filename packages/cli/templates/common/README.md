@@ -1,36 +1,36 @@
-# {{name}}：一个 Pneuma Base 插件
+# {{name}}：Pneuma Base 插件
 
-由 `pneuma-base plugin new` 生成，不改一行就能构建、通过自己的测试、装进本机。把示例换成你的插件要做的事，测试跟着改。
+由 `pneuma-base plugin new` 生成，无需修改即可构建、通过自带的测试并安装到本机。将示例替换为插件的实际功能，并相应修改测试。
 
-## 每个文件是什么
+## 文件
 
-| 文件 | 是什么 |
+| 文件 | 用途 |
 | --- | --- |
-| `package.json` | 依赖两个包：`pneuma-base`（命令行，测试和安装时用）和 `@pneuma-base/sdk`（契约的类型、开发包、测试工具）；脚本 `build`、`test`、`install-local` |
-| `tsconfig.json` | 只做类型检查。测试直接导入 `src/` 的源码：Node 22.18 起载入时去掉类型，所以相对导入写 `.ts`，只用能去掉的语法 |
-| `scripts/build.mjs` | 用 esbuild 把插件打成一个 `dist/index.js`，依赖都打进去，旁边放 `cognition.md` 和 `ui/`。`dist/` 就是装到本机的插件目录 |
+| `package.json` | 依赖两个包：`pneuma-base`（命令行，测试和安装时使用）和 `@pneuma-base/sdk`（契约的类型、开发包、测试工具）；脚本 `build`、`test`、`install-local` |
+| `tsconfig.json` | 仅用于类型检查。测试直接导入 `src/` 的源码：Node 22.18 起在载入时去除类型，因此相对导入写 `.ts`，且只使用可去除的语法 |
+| `scripts/build.mjs` | 用 esbuild 将插件打包为单个 `dist/index.js`，依赖全部打包在内，并在旁边放置 `cognition.md` 和 `ui/`。`dist/` 即安装到本机的插件目录 |
 {{kindFiles}}
-| `test/conformance.test.ts` | 符合性检查：标准里行为上的规矩，跑在构建好的 `dist/` 上；不通过时用中文说哪里不对、规矩是什么 |
-| `test/plugin.test.ts` | 插件自己的测试：临时的家目录和库、真的命令行、界面的服务 |
+| `test/conformance.test.ts` | 符合性检查：在构建好的 `dist/` 上运行标准中的行为规则；不通过时以中文说明问题和对应的规则 |
+| `test/plugin.test.ts` | 插件自身的测试：临时的家目录和资料库、真实的命令行、界面的服务 |
 
-## 五步
+## 五个步骤
 
 ```sh
-npx -- pneuma-base plugin new {{name}} --packages <两个包文件所在的目录>   # 1. 生成（已经做了）
+npx -- pneuma-base plugin new {{name}} --packages <包文件目录>   # 1. 生成（已完成）
 npm install
-npm run build                                                         # 2. 构建：类型检查，再打包到 dist/
-npm test                                                              # 3. 测试：先构建，再跑 test/ 下的测试
-npm run install-local                                                 # 4. 装到这台机器：构建，再 pneuma-base plugin install dist
-npx -- pneuma-base plugin enable {{name}} --library <库的目录>              # 5. 在一个库里启用
+npm run build                                                   # 2. 构建：类型检查，再打包到 dist/
+npm test                                                        # 3. 测试：先构建，再运行 test/ 下的测试
+npm run install-local                                           # 4. 安装到本机：构建，再执行 pneuma-base plugin install dist
+npx -- pneuma-base plugin enable {{name}} --library <资料库目录>     # 5. 在资料库中启用
 ```
 
-- 装到这台机器和在库里启用都只给主人：在 agent 的会话里会被拒绝。
-- 插件装在 `$PNEUMA_BASE_HOME/plugins/{{name}}/`（缺省 `~/.pneuma-base`）。改了代码再 `npm run install-local`，开着的管理界面下一次请求就用新的。
-- `npx` 后面的 `--` 让 `--library` 这样的开关交给 `pneuma-base`，不被 npm 自己读走。
+- 安装到本机和在资料库中启用均仅限所有者：在 Agent 会话中执行会被拒绝。
+- 插件安装在 `$PNEUMA_BASE_HOME/plugins/{{name}}/`（默认为 `~/.pneuma-base`）。修改代码后再次运行 `npm run install-local`，已打开的管理界面在下一次请求时使用新版本。
+- `npx` 后的 `--` 使 `--library` 等选项传给 `pneuma-base`，而不被 npm 读取。
 
-## 测试里替掉库外的服务
+## 在测试中替换外部服务
 
-插件连一个网络服务（比如部署目标）时，测试不连真的：`sandbox.serve(handler)` 在本机起一个替身，交回它的地址；每个请求作为 `Request` 交给 `handler`，它答的 `Response` 发回去；沙箱收尾时替身也停。符合性检查的 `setup` 拿到的 `sandbox` 一样能用：
+插件连接网络服务（例如部署目标）时，测试不连接真实服务：`sandbox.serve(handler)` 在本机启动一个替身服务并返回其地址；每个请求以 `Request` 交给 `handler`，`handler` 返回的 `Response` 发回给请求方；沙箱清理时替身服务一并停止。符合性检查的 `setup` 收到的 `sandbox` 同样可用：
 
 ```ts
 async setup({ sandbox }) {
@@ -39,6 +39,6 @@ async setup({ sandbox }) {
 }
 ```
 
-## 标准在哪
+## 标准
 
-插件规范是命令行包里的 `PLUGINS.md`：`npm install` 之后在 `node_modules/pneuma-base/PLUGINS.md`。它说插件必须做什么、可以依赖什么，每件能做的事都有一个能跑的例子。能跑的规矩在 `test/conformance.test.ts` 里跑成检查，不通过时报告说哪里不对、规则是什么；查不了的列在报告最后，要自己看。
+插件规范是命令行包中的 `PLUGINS.md`：`npm install` 后位于 `node_modules/pneuma-base/PLUGINS.md`。它规定插件必须做什么、可以依赖什么，每项功能都附有可运行的示例。可自动检查的规则在 `test/conformance.test.ts` 中作为检查运行，不通过时报告问题和对应的规则；无法自动检查的规则列在报告末尾，需人工检查。

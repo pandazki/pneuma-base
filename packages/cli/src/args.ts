@@ -62,18 +62,18 @@ function readFlag(tokens: readonly string[], i: number, kindOf: (name: string) =
   const kind = kindOf(name)
   if (kind === undefined) return null
   const values: string[] = eq === -1 ? [] : [token.slice(eq + 1)]
-  if (kind === 'boolean' && values.length > 0) throw new UsageError(`--${name} 不带值`)
+  if (kind === 'boolean' && values.length > 0) throw new UsageError(`--${name} 不接受值`)
   if (kind === 'value' && values.length === 0) {
     const next = tokens[i + 1]
-    if (next === undefined || isFlag(next)) throw new UsageError(`--${name} 后面要跟一个值`)
+    if (next === undefined || isFlag(next)) throw new UsageError(`--${name} 需要一个值`)
     values.push(next)
     i++
   } else if ((kind === 'list' || kind === 'greedy') && values.length === 0) {
     while (tokens[i + 1] !== undefined && !isFlag(tokens[i + 1])) values.push(tokens[++i] as string)
-    if (kind === 'list' && values.length === 0) throw new UsageError(`--${name} 后面至少要跟一个值`)
+    if (kind === 'list' && values.length === 0) throw new UsageError(`--${name} 至少需要一个值`)
   }
   const before = flags.get(name)
-  if (before !== undefined && kind !== 'list') throw new UsageError(`--${name} 只能写一次`)
+  if (before !== undefined && kind !== 'list') throw new UsageError(`--${name} 只能出现一次`)
   flags.set(name, values.length === 0 ? true : [...(Array.isArray(before) ? before : []), ...values])
   return i
 }
@@ -131,7 +131,7 @@ export function parseCommand(line: Line, words: number, kinds: Readonly<Record<s
   const kindOf = (name: string): Kind => {
     const declared = Object.hasOwn(kinds, name) ? kinds[name] : undefined
     if (declared !== undefined) return declared
-    if (undeclared === 'error') throw new UsageError(`${command} 不认识 --${name}`)
+    if (undeclared === 'error') throw new UsageError(`${command} 不支持 --${name}`)
     if (undeclared === 'switch') return 'boolean'
     if (undeclared === 'value') return 'value'
     return UNDECLARED_FLAGS[name] ?? 'greedy'

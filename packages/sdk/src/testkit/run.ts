@@ -41,7 +41,7 @@ export function findCli(cli?: string): string {
     const entry = typeof bin === 'string' ? bin : bin?.['pneuma-base']
     if (entry !== undefined) return join(dirname(manifest), entry)
   }
-  throw new Error('找不到 pneuma-base 命令行。把它装进插件项目（npm install <pneuma-base 的包文件>），或把 PNEUMA_BASE_CLI 设成它的 bin.js。')
+  throw new Error('找不到 pneuma-base 命令行。可将其安装到插件项目（npm install <pneuma-base 包文件>），或将 PNEUMA_BASE_CLI 设为其 bin.js 的路径。')
 }
 
 /** A new empty directory under `$PNEUMA_BASE_TEST_TMP` or the system's temporary directory, by its real path. */
@@ -75,7 +75,7 @@ export function runProcess(command: string, args: readonly string[], opts: RunOp
     child.stderr.on('data', (chunk: Buffer) => err.push(chunk))
     const timer = setTimeout(() => {
       child.kill('SIGKILL')
-      fail(new Error(`${command === process.execPath ? 'pneuma-base' : command} ${args.slice(command === process.execPath ? 1 : 0).join(' ')} 过了 ${opts.timeout / 1000} 秒还没结束，已经停掉。`))
+      fail(new Error(`${command === process.execPath ? 'pneuma-base' : command} ${args.slice(command === process.execPath ? 1 : 0).join(' ')} 运行超过 ${opts.timeout / 1000} 秒未结束，已终止。`))
     }, opts.timeout)
     child.on('error', (error) => {
       clearTimeout(timer)
