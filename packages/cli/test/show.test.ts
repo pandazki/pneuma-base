@@ -157,6 +157,10 @@ describe('the words of each kind of block', () => {
     expect(fresh.stdout).toContain('  $ pager restore --release 1  # 放回这一版；先问：把线上换回第 1 版？')
     expect(fresh.stdout).toContain('$ pager prefix [<前缀>]  # 设前缀')
     expect(fresh.stdout).toContain('计数：{"count":0,"note":"插件自己画的一页"}\n$ pager bump  # 加一；先问：把计数加一？')
+    const marks = run(['show', 'pager.marks', '--library', lib2])
+    expect(marks.code, marks.stderr).toBe(0)
+    expect(marks.stdout).toContain('\n- shop  https://space.example.com/apps/pb-shop-with-a-rather-long-application-name/\n  sites\n')
+    expect(marks.stdout).toContain('\n- blog [读不到（连不上 space.example.com）]  https://space.example.com/apps/pb-blog/\n')
   })
 
   it('a feed by its groups and rows, each row with who, what, whose, its meta and what it opens or does; stats; a tree with its parameter; asks with their commands, the suggested marked; a chart as its sentence and its numbers; counted filter options', () => {

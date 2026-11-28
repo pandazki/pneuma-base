@@ -80,9 +80,9 @@ const grantIssue = command({
     }
     // Issuing the same grant again keeps its id and rewrites the local copy.
     const grant: Grant = existing ?? { id: randomUUID() as GrantId, name, agent, area, readOnly }
-    const updated = existing ? library : await saveConfig(library.root, { ...library.config, grants: [...library.config.grants, grant] }, call.table)
+    const saved = existing ? { library, problems: [] } : await saveConfig(library.root, { ...library.config, grants: [...library.config.grants, grant] }, call.table, call.ctx)
     const file = await writeGrantFile(call.ctx.home, { name: grant.name, library: library.root, grant: grant.id })
-    return done(`已发授权 ${grant.name} 给 ${grant.agent}。本机副本：${file}`, { grant, file }, updated)
+    return done(`已发授权 ${grant.name} 给 ${grant.agent}。本机副本：${file}`, { grant, file }, saved.library, saved.problems)
   },
 })
 
@@ -98,10 +98,10 @@ const grantRevoke = command({
     const { library } = call.ctx
     const grant = library.config.grants.find((g) => g.name === name)
     if (!grant) return refused('no-such-grant', `这个库没有叫 ${name} 的授权`)
-    const updated = await saveConfig(library.root, { ...library.config, grants: library.config.grants.filter((g) => g.id !== grant.id) }, call.table)
+    const saved = await saveConfig(library.root, { ...library.config, grants: library.config.grants.filter((g) => g.id !== grant.id) }, call.table, call.ctx)
     const local = await readGrantFile(call.ctx.home, name)
     if (local?.library === library.root) await removeGrantFile(call.ctx.home, name)
-    return done(`已撤回授权 ${name}。`, { grant }, updated)
+    return done(`已撤回授权 ${name}。`, { grant }, saved.library, saved.problems)
   },
 })
 
@@ -163,7 +163,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
         const what = taken.map((t) => `${said(t.claim)}已归插件 ${t.holder}`).join('；')
         return refused('name-taken', `没有装上插件 ${name}：${what}。一个名字只归一个插件；要换用 ${name}，先卸下 ${holders}。`)
       }
-      const updated = await saveConfig(library.root, { ...library.config, plugins: [...library.config.plugins, name as PluginName] }, call.table)
+      const { library: updated, problems: described } = await saveConfig(library.root, { ...library.config, plugins: [...library.config.plugins, name as PluginName] }, call.table, call.ctx)
       const added = updated.plugins.find((p) => p.name === name)
       const ctx = { ...call.ctx, library: updated }
       const heard = await hear(added, (p, pctx) => p.onAdd?.(pctx), ctx)
@@ -171,7 +171,7 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
       // A library in use: the plugin catches up on what was registered before it, from the first page.
       const caught = await caughtUp(ctx, added, 'fresh')
       const text = [`已装上插件 ${name}，说明已重新生成。`, ...(caught.text === null ? [] : [caught.text])].join('\n')
-      return done(text, caught.data, updated, [...problems, ...caught.problems])
+      return done(text, caught.data, updated, [...described, ...problems, ...caught.problems])
     },
   }),
   command({
@@ -195,9 +195,9 @@ export const KERNEL_COMMANDS: readonly KernelCommand[] = [
         const offer: Action = { label: '仍然卸下', tone: 'danger', confirm: `插件 ${name} 说：${warning}\n仍然卸下吗？`, inputs: [], call: removeAnyway }
         return { answer: { outcome: 'refused', reason: 'plugin-refused', text, offer }, problems: heard.problems }
       }
-      const updated = await saveConfig(library.root, { ...library.config, plugins: library.config.plugins.filter((p) => p !== name) }, call.table)
+      const { library: updated, problems: described } = await saveConfig(library.root, { ...library.config, plugins: library.config.plugins.filter((p) => p !== name) }, call.table, call.ctx)
       const text = `已卸下插件 ${name}，说明已重新生成。它名下的目录 .pneuma-base/${name}/ 原样留着。${warning === null ? '' : `\n它卸下前提醒过：${warning}`}`
-      return done(text, undefined, updated, heard.problems)
+      return done(text, undefined, updated, [...heard.problems, ...described])
     },
   }),
   command({

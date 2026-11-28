@@ -3,7 +3,7 @@
 // pages as resources. Management is not listed, and a call to it by name meets the owner face's gate.
 // ARCHITECTURE.md「MCP 服务」.
 import {
-  assembleDescription,
+  describeLibrary,
   identifyActor,
   loadPlugins,
   makeContext,
@@ -189,7 +189,7 @@ export function libraryFace({ grant, home, builtins, env, cwd, session }: Librar
 
   async function instructions(): Promise<string> {
     const at = await now()
-    return `${PREAMBLE}\n\n${'exit' in at ? at.lines.join('\n') : assembleDescription(at.bound.library)}`
+    return `${PREAMBLE}\n\n${'exit' in at ? at.lines.join('\n') : (await describeLibrary(at.bound.ctx)).text}`
   }
 
   return {

@@ -67,10 +67,17 @@ export function notesOf(heard: Collected<PluginNoteAnswer>): { notes: Note[]; pr
   return { notes, problems }
 }
 
-export function pluginContext(ctx: Context, name: PluginName): PluginContext {
+/** The context of the plugin `name`'s hook, or with `command` of its owner command, which alone may keep a secret. */
+export function pluginContext(ctx: Context, name: PluginName, opts: { command?: true } = {}): PluginContext {
   const relayed = ctx.pass === undefined ? null : relayedPass(ctx.pass)
   const own = relayed === null ? ctx : { ...ctx, pass: relayed.pass }
-  return { ...own, cacheDir: join(ctx.home, 'cache', ctx.library.config.id, name), tools: pluginTools(own, name, relayed?.heard), secrets: pluginSecrets(ctx.home, name) }
+  const declares = (ctx.library.plugins.find((p) => p.name === name)?.secrets ?? []).map((s) => s.name)
+  return {
+    ...own,
+    cacheDir: join(ctx.home, 'cache', ctx.library.config.id, name),
+    tools: pluginTools(own, name, relayed?.heard),
+    secrets: pluginSecrets(ctx.home, name, declares, opts.command === true),
+  }
 }
 
 type RequestOf<V extends Verb> = Parameters<AgentFace[V]>[0]
