@@ -170,7 +170,7 @@ Agent 自行连接：guide [<产品>] [--library <资料库目录>] [--url]（�
 /** `plugin new --help`: the scaffold's own usage. */
 const PLUGIN_NEW_USAGE = `用法：pneuma-base plugin new <目录> [--kind blank|deploy] [--name <插件名称>] [--packages <包文件目录>]
 在空目录或不存在的目录中生成插件项目，无需修改即可构建、通过自带的测试并安装到本机。不涉及任何资料库。
-  --kind      blank（默认）：一种 say 类型、一条带参数表的所有者命令、一个视图和一个自绘块；deploy：开发包中的部署库加一个发布到本地目录的目标
+  --kind      blank（默认）：一种记录类型、一条带参数表的所有者命令、一个视图和一个自绘块；deploy：开发包中的部署库加一个发布到本地目录的目标
   --name      插件名称：以小写字母开头，仅含小写字母、数字和连字符；默认为目录名
   --packages  pneuma-base 和 @pneuma-base/sdk 两个包文件（pneuma-base-${PNEUMA_BASE_VERSION}.tgz、pneuma-base-sdk-${PNEUMA_BASE_VERSION}.tgz）所在的目录。项目按绝对路径依赖这两个包，移动项目后仍可安装；包文件需保留在原位置。不指定时按包名依赖，而这两个包未发布到 npm，npm install 将失败
 生成后：cd <目录>，npm install，npm test，npm run install-local；README.md 说明每个文件的用途。`
@@ -428,7 +428,7 @@ async function bind(inv: Invocation): Promise<Bound | Answer> {
   }
   if (dir === null) throw new UsageError('需用 @<授权名称> 或 --library <资料库目录> 指定资料库。')
   const library = await openLibrary(typedAddress(dir, io.cwd), table)
-  return library ? contextFor(inv, library, null) : refusal('not-a-library', `${dir} 不是资料库。可用 pneuma-base init <地址> 新建资料库。`)
+  return library ? contextFor(inv, library, null) : refusal('not-a-library', `${dir} 不是资料库。可用 pneuma-base init <地址> 初始化资料库。`)
 }
 
 function contextFor({ parsed, io, home }: Invocation, library: Library, grant: Grant | null): Bound {

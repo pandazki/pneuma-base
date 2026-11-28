@@ -4,11 +4,11 @@ import { elsewhereWords, type ArchiveResult, type AskResult, type InspectResult,
 export type Summary = { tone: 'good' | 'warn' | 'bad'; text: string }
 
 const REFUSAL: Record<string, (subject: string) => string> = {
-  'outside-library': (s) => `${s} 不在资料库中。`,
-  'outside-grant': (s) => `${s} 不在授权范围内。`,
+  'outside-library': (s) => `${s} 不在资料库内容范围内。`,
+  'outside-grant': (s) => `${s} 超出当前授权范围。`,
   'no-such-file': (s) => `文件不存在：${s}`,
-  'would-overwrite': (s) => `${s} 已存在内容不同的文件，未修改。`,
-  'original-path-taken': (s) => `原路径 ${s} 已存在文件，未做任何修改。`,
+  'would-overwrite': (s) => `${s} 已存在内容不同的条目，未作修改。`,
+  'original-path-taken': (s) => `原路径 ${s} 已存在文件，未作修改。`,
 }
 
 const refusal = (reason: string, subject: string) => REFUSAL[reason]?.(subject) ?? `未执行（${reason}）：${subject}`
@@ -42,7 +42,7 @@ export function saySummary(r: SayResult): Summary {
 
 export function askSummary(r: AskResult): Summary {
   if (r.outcome === 'refused') return withProblems({ tone: 'bad', text: r.text }, r.problems)
-  return withProblems({ tone: 'good', text: `${r.outcome === 'withdrawn' ? '已撤销' : '已提交请求'}：${r.request.line}` }, r.problems)
+  return withProblems({ tone: 'good', text: `${r.outcome === 'withdrawn' ? '已撤回请求' : '已提交请求'}：${r.request.line}` }, r.problems)
 }
 
 /** For a verb that only reads: nothing to say unless a plugin failed. */

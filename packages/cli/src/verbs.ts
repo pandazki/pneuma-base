@@ -144,7 +144,7 @@ function sinceOf(value: string | null): Instant | 'last' | null {
 
 const INCLUDE_ARCHIVED = { name: 'include-archived', hint: '包含已归档', kind: 'boolean' } as const
 
-const ASK_HELP = 'ask 需写明原因，后接所有者命令及其参数：ask "<原因>" <所有者命令…>；撤销自己提交的请求：ask --withdraw <请求编号>。'
+const ASK_HELP = 'ask 需写明原因，后接所有者命令及其参数：ask "<原因>" <所有者命令…>；撤回自己提交的请求：ask --withdraw <请求编号>。'
 
 /** The owner command the words name, and its arguments read by its params; words that name none are left for the kernel to refuse. */
 function askedCommand(words: readonly string[], library: Library): { command: string; args: OwnerArgs } {
@@ -248,7 +248,7 @@ export const VERBS: readonly Verb[] = [
   }),
   verb({
     name: 'say',
-    summary: '提交一条陈述，由处理该类型的插件记录',
+    summary: '记录一条信息，由声明该类型的插件保存',
     readOnly: false,
     params: {
       positional: [
@@ -295,11 +295,11 @@ export const VERBS: readonly Verb[] = [
         { name: 'why', hint: '原因：所有者据此决定是否批准' },
         { name: 'command', hint: '所有者命令及其参数，按命令行写法，例如 plugin enable version', many: true },
       ],
-      flags: [{ name: 'withdraw', hint: '撤销自己提交的待处理请求：请求编号', kind: 'value' }],
+      flags: [{ name: 'withdraw', hint: '撤回自己提交的待处理请求：请求编号', kind: 'value' }],
       raw: 'command',
     },
     run: async ({ why, command, withdraw }, { bound: { library, ctx } }) => {
-      if (withdraw !== null && (why !== null || command.length > 0)) throw new UsageError('撤销请求的写法为 ask --withdraw <请求编号>。')
+      if (withdraw !== null && (why !== null || command.length > 0)) throw new UsageError('撤回请求的写法为 ask --withdraw <请求编号>。')
       if (withdraw === null && (why === null || command.length === 0)) throw new UsageError(ASK_HELP)
       const req: AskRequest = withdraw !== null ? { kind: 'withdraw', id: withdraw } : { kind: 'ask', why: why as string, ...askedCommand(command, library) }
       const r = await agentFace.ask(req, ctx)

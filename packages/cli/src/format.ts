@@ -30,7 +30,7 @@ const REFUSAL: Record<string, (subject: string) => string> = {
   'outside-grant': (s) => `${s} 超出当前授权范围。`,
   'no-such-file': (s) => `文件不存在：${s}`,
   'would-overwrite': (s) => `${s} 已存在内容不同的条目，未作修改。请更换名称。`,
-  'original-path-taken': (s) => `原路径 ${s} 已有文件，未作修改。`,
+  'original-path-taken': (s) => `原路径 ${s} 已存在文件，未作修改。`,
   'agent-session': (s) => `${s}：--observed 仅限所有者使用，用于记录所有者一侧自动检测到的条目。来源已知时直接使用 --imported 或 --generated，不加 --observed。`,
   'inside-bundle': (s) => `${s} 是一个条目（带 .pneuma-item 标记的目录），其中的文件不能单独添加、移动或归档。修改时重新添加整个目录。`,
 }
@@ -140,9 +140,9 @@ function requestText(q: OwnerRequest): string[] {
 export function askText(r: AskResult): string[] {
   if (r.outcome === 'refused') return [`拒绝（${r.reason}）：${r.text}`, ...tail([], r.problems)]
   const q = r.request
-  if (r.outcome === 'withdrawn') return [`已撤销请求 ${q.id}：${q.line}`, ...tail([], r.problems)]
+  if (r.outcome === 'withdrawn') return [`已撤回请求 ${q.id}：${q.line}`, ...tail([], r.problems)]
   const head = r.again ? `该请求已提交，待处理：${q.line}（请求 ${q.id}，提交于 ${minute(q.at)}），无需重复提交。` : `已请求所有者执行：${q.line}（请求 ${q.id}）`
-  const next = `该请求显示在管理界面首页和 request list 中，所有者批准后以所有者身份按原样运行。结果见下次 check 的「已提交的请求」；不再需要时用 ask --withdraw ${q.id} 撤销。`
+  const next = `该请求显示在管理界面首页和 request list 中，所有者批准后以所有者身份按原样运行。结果见下次 check 的「已提交的请求」；不再需要时用 ask --withdraw ${q.id} 撤回。`
   return [head, ...(r.again ? [] : [next]), ...tail([], r.problems)]
 }
 
