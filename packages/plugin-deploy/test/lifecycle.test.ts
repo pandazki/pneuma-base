@@ -72,15 +72,15 @@ describe.skipIf(down !== null)('the lifecycle against PneumaSpace', () => {
   let url = ''
 
   it('an agent declares a site, and cannot switch it on', async () => {
-    assert.equal((await agent('put', await site(sb, 'v1', 'one'), '--to', 'sites/demo', '--made')).code, 0)
+    assert.equal((await agent('put', await site(sb, 'v1', 'one'), '--to', 'sites/demo', '--generated')).code, 0)
     assert.equal((await agent('say', 'deployable', 'sites/demo')).json.outcome, 'heard')
-    assert.equal((await agent('deploy', 'on', 'sites/demo')).json.outcome, 'refused')
-    assert.equal((await owner('deploy', 'target', 'set', '--kind', 'machine', '--admin', front.url, '--prefix', prefix)).json.outcome, 'done')
+    assert.equal((await agent('deploy', 'publish', 'sites/demo')).json.outcome, 'refused')
+    assert.equal((await owner('deploy', 'target', 'set', '--kind', 'self-hosted', '--admin', front.url, '--prefix', prefix)).json.outcome, 'done')
   })
 
   it('on: release 1, managed by pneuma-base, owned by this library, with the token as a bearer', async () => {
     assert.equal((await sb.run(['secret', 'set', 'deploy', 'token'], { input: 't0ken' })).code, 0)
-    const on = await owner('deploy', 'on', 'sites/demo')
+    const on = await owner('deploy', 'publish', 'sites/demo')
     assert.equal(on.json.outcome, 'done', on.stdout)
     url = on.json.data.url
     assert.equal(await served(url), '200 <h1>one</h1>')
@@ -94,23 +94,23 @@ describe.skipIf(down !== null)('the lifecycle against PneumaSpace', () => {
   })
 
   it('changed content gives release 2', async () => {
-    assert.equal((await agent('put', await site(sb, 'v2', 'two'), '--to', 'sites/demo', '--made')).json.outcome, 'accepted')
+    assert.equal((await agent('put', await site(sb, 'v2', 'two'), '--to', 'sites/demo', '--generated')).json.outcome, 'accepted')
     assert.equal(await served(url), '200 <h1>two</h1>')
     assert.equal((await detail()).app.current, 2)
   })
 
   it('off gives 404, and on again restores release 2', async () => {
-    assert.equal((await owner('deploy', 'off', 'sites/demo')).json.outcome, 'done')
+    assert.equal((await owner('deploy', 'unpublish', 'sites/demo')).json.outcome, 'done')
     assert.match(await served(url), /^404/)
     assert.equal((await detail()).app.status, 'removed')
-    assert.equal((await owner('deploy', 'on', 'sites/demo')).json.outcome, 'done')
+    assert.equal((await owner('deploy', 'publish', 'sites/demo')).json.outcome, 'done')
     assert.equal(await served(url), '200 <h1>two</h1>')
     assert.equal((await detail()).app.current, 2)
   })
 
   it('a publish cut after the upload is pending until deploy sync', async () => {
     front.cutNextRelease = true
-    const put = await agent('put', await site(sb, 'v3', 'three'), '--to', 'sites/demo', '--made')
+    const put = await agent('put', await site(sb, 'v3', 'three'), '--to', 'sites/demo', '--generated')
     assert.equal(put.json.outcome, 'accepted', put.stdout)
     assert.ok(put.json.problems.some((p: { message: string }) => p.message.includes('deploy sync')), put.stdout)
     assert.equal(await served(url), '200 <h1>two</h1>')
@@ -143,16 +143,16 @@ describe.skipIf(down !== null)('the lifecycle against PneumaSpace', () => {
   it('a name another library owns is refused, online or removed', async () => {
     const taken = `${prefix}-sites-shared`
     for (const [box, text] of [[other, 'theirs'], [sb, 'mine']] as const) {
-      assert.equal((await box.agent('claude-code', 's1', ['put', await site(box, 'shared', text), '--to', 'sites/shared', '--made'])).code, 0)
+      assert.equal((await box.agent('claude-code', 's1', ['put', await site(box, 'shared', text), '--to', 'sites/shared', '--generated'])).code, 0)
       await box.agent('claude-code', 's1', ['say', 'deployable', 'sites/shared'])
-      await box.owner(['deploy', 'target', 'set', '--kind', 'machine', '--admin', ADMIN, '--prefix', prefix])
+      await box.owner(['deploy', 'target', 'set', '--kind', 'self-hosted', '--admin', ADMIN, '--prefix', prefix])
     }
-    assert.equal((await other.owner(['deploy', 'on', 'sites/shared', '--json'])).json.outcome, 'done')
+    assert.equal((await other.owner(['deploy', 'publish', 'sites/shared', '--json'])).json.outcome, 'done')
     const theirs = (await api('GET', `/api/apps/${taken}`)).body.app
-    const mine = await owner('deploy', 'on', 'sites/shared')
+    const mine = await owner('deploy', 'publish', 'sites/shared')
     assert.match(JSON.stringify(mine.json), /属于 service:pneuma-base\./, mine.stdout)
     assert.deepEqual((await api('GET', `/api/apps/${taken}`)).body.app, theirs)
-    assert.equal((await other.owner(['deploy', 'off', 'sites/shared', '--json'])).json.outcome, 'done')
+    assert.equal((await other.owner(['deploy', 'unpublish', 'sites/shared', '--json'])).json.outcome, 'done')
     await owner('deploy', 'sync')
     const after = (await api('GET', `/api/apps/${taken}`)).body.app
     assert.equal(after.status, 'removed')

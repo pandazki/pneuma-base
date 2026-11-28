@@ -25,10 +25,10 @@ async function check(target: (sandbox: Sandbox) => Promise<string[]>) {
       const agent = (...args: string[]) => sandbox.agent('setup', 'setup', args)
       const owner = (...args: string[]) => sandbox.owner(args)
       for (const r of [
-        await agent('put', join(sandbox.work, 'shop'), '--to', 'sites/shop', '--made'),
+        await agent('put', join(sandbox.work, 'shop'), '--to', 'sites/shop', '--generated'),
         await agent('say', 'deployable', 'sites/shop'),
         await owner('deploy', 'target', 'set', ...(await target(sandbox))),
-        await owner('deploy', 'on', 'sites/shop'),
+        await owner('deploy', 'publish', 'sites/shop'),
       ]) {
         assert.equal(r.code, 0, r.stdout + r.stderr)
       }
@@ -39,7 +39,7 @@ async function check(target: (sandbox: Sandbox) => Promise<string[]>) {
 }
 
 it('the plugin follows the standard, publishing to PneumaSpace on a machine', () =>
-  check(async (sandbox) => ['--kind', 'machine', '--admin', await sandbox.serve(fakeSpace()), '--prefix', 'pbs-conf']))
+  check(async (sandbox) => ['--kind', 'self-hosted', '--admin', await sandbox.serve(fakeSpace()), '--prefix', 'pbs-conf']))
 
 it('the plugin follows the standard, publishing to PneumaSpace on Cloudflare', () =>
   check(async (sandbox) => {

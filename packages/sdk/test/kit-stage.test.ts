@@ -53,7 +53,7 @@ describe('staging a bundle', () => {
       ['the manifest', storage({ 'a.html': 'a', 'b.html': 'b' }, { page: 1, fingerprints: ['first', 'second'] })],
     ]
     for (const [what, store] of changing) {
-      await expect(withStaged(store, 'site' as LibraryPath, 'bundle', stageRoot(), async () => 'published'), what).rejects.toThrow(new NotStaged('site 正在被改动，没有发布'))
+      await expect(withStaged(store, 'site' as LibraryPath, 'bundle', stageRoot(), async () => 'published'), what).rejects.toThrow(new NotStaged('site 正在修改，未发布'))
     }
   })
 })

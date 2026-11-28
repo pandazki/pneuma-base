@@ -18,7 +18,7 @@ function twoGrants(pb: Cli): string {
 function withAsk(pb: Cli): string {
   const lib = relay(pb)
   pb.run(['plugin', 'enable', 'deploy', '--library', lib])
-  pb.run(['deploy', 'target', 'set', '--kind', 'dir', '--to', join(tempDir('pb-e2e-www-'), 'www'), '--library', lib])
+  pb.run(['deploy', 'target', 'set', '--kind', 'folder', '--to', join(tempDir('pb-e2e-www-'), 'www'), '--library', lib])
   const dir = tempDir('pb-e2e-site-')
   write(dir, 'shop/index.html', '<h1>小店</h1>')
   pb.run(['@codex', 'put', 'shop', '--to', 'sites/shop', '--generated'], { cwd: dir, env: { PNEUMA_BASE_SESSION: 'sess-b' } })
@@ -36,8 +36,8 @@ test('the app opens on the home page: what waits on the owner, what agents did s
   await expect(main.getByRole('heading', { level: 1, name: '首页' })).toBeVisible()
 
   const decide = main.getByRole('region', { name: '待处理' })
-  await expect(decide).toContainText('codex 说 sites/shop 可以部署，还没上线。要上线吗？')
-  await expect(decide.getByRole('button', { name: '上线', exact: true })).toHaveClass(/btn-primary/)
+  await expect(decide).toContainText('codex 声明 sites/shop 可部署，未发布。是否发布？')
+  await expect(decide.getByRole('button', { name: '发布', exact: true })).toHaveClass(/btn-primary/)
 
   const since = main.getByRole('region', { name: '最近动态' })
   await expect(since.getByRole('button', { name: DOING })).toBeVisible()

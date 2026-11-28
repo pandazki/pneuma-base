@@ -33,11 +33,11 @@ describe.skipIf(down !== null)('the page, the item section and the board page', 
     for (const name of ['live', 'idle']) {
       await mkdir(join(sb.work, name), { recursive: true })
       await writeFile(join(sb.work, name, 'index.html'), `<h1>${name}</h1>\n`)
-      assert.equal((await sb.agent('claude-code', 's1', ['put', name, '--to', `sites/${name}`, '--made'])).code, 0)
+      assert.equal((await sb.agent('claude-code', 's1', ['put', name, '--to', `sites/${name}`, '--generated'])).code, 0)
       await sb.agent('claude-code', 's1', ['say', 'deployable', `sites/${name}`])
     }
-    await sb.owner(['deploy', 'target', 'set', '--kind', 'machine', '--admin', ADMIN, '--prefix', prefix])
-    url = (await sb.owner(['deploy', 'on', 'sites/live', '--json'])).json.data.url
+    await sb.owner(['deploy', 'target', 'set', '--kind', 'self-hosted', '--admin', ADMIN, '--prefix', prefix])
+    url = (await sb.owner(['deploy', 'publish', 'sites/live', '--json'])).json.data.url
     await fetch(url)
     viewer = await sb.viewer()
     page = await viewer.view('deploy.sites')
@@ -63,7 +63,7 @@ describe.skipIf(down !== null)('the page, the item section and the board page', 
     const table = tableOf()
     assert.deepEqual(table.columns.map((c) => c.key).slice(3), ['release', 'requests', 'lastAccess'])
     const liveRow = table.rows.find((r) => r.cells.path?.text === 'sites/live')
-    assert.equal(liveRow?.cells.release?.text, '第 1 版')
+    assert.equal(liveRow?.cells.release?.text, '版本 1')
   })
 
   it('the item section has the fields, a live preview and the release history', async () => {
@@ -75,7 +75,7 @@ describe.skipIf(down !== null)('the page, the item section and the board page', 
     assert.ok(embed?.kind === 'embed' && embed.url === url)
     const timeline = blocks(item).find((b) => b.kind === 'timeline')
     assert.ok(timeline?.kind === 'timeline')
-    assert.deepEqual(timeline.entries.map((e) => [e.title.text, e.tag?.text ?? null, e.actions ?? []]), [['第 1 版', '线上', []]])
+    assert.deepEqual(timeline.entries.map((e) => [e.title.text, e.tag?.text ?? null, e.actions ?? []]), [['版本 1', '当前', []]])
   })
 
   it('the board page is a page of its own', async () => {
@@ -92,9 +92,9 @@ describe.skipIf(down !== null)('the page, the item section and the board page', 
     assert.deepEqual(data.off.map((o) => o.path), ['sites/idle'])
     // The same board in words, for the command line and screen readers: each card, then what is switched off.
     const lines = board.text.split('\n')
-    assert.ok(lines[0]?.startsWith(`sites/live：在线 · ${url} · 第 1 版 · `), board.text)
-    assert.match(lines[0] as string, /过去 24 小时每小时的请求 (\d+ ){23}\d+$/)
-    assert.equal(lines.at(-1), '开关关着的：sites/idle（离线）')
+    assert.ok(lines[0]?.startsWith(`sites/live：已发布 · ${url} · 版本 1 · `), board.text)
+    assert.match(lines[0] as string, /过去 24 小时每小时请求数 (\d+ ){23}\d+$/)
+    assert.equal(lines.at(-1), '开关已关闭：sites/idle（未发布）')
     const rowAction = (path: string) => tableOf().rows.find((r) => r.cells.path?.text === path)?.actions[0]
     assert.deepEqual(board.actions[data.cards[0]!.key], rowAction('sites/live'), 'the board’s switch is the page’s')
     assert.deepEqual(board.actions[data.off[0]!.key], rowAction('sites/idle'))

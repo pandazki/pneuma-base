@@ -103,7 +103,7 @@ test('in the app, the page shows what the app says it did and opens the links th
 test('the menu bar panel: the library, what waits for the owner decided right there, the latest rows one line each, the window and the app’s menu as icons', async ({ page, pb }) => {
   const lib = newLibrary(pb)
   pb.run(['--library', lib, 'plugin', 'enable', 'deploy'], { env: noAgentPath() })
-  pb.run(['--library', lib, 'deploy', 'target', 'set', '--kind', 'dir', '--to', join(tempDir('pb-e2e-www-'), 'www')], { env: noAgentPath() })
+  pb.run(['--library', lib, 'deploy', 'target', 'set', '--kind', 'folder', '--to', join(tempDir('pb-e2e-www-'), 'www')], { env: noAgentPath() })
   pb.run(['--library', lib, 'agent', 'connect', 'claude-code'], { env: noAgentPath() })
   const site = tempDir('pb-e2e-site-')
   for (const name of ['shop', 'blog', 'docs', 'notes']) write(site, `${name}/index.html`, `<h1>${name}</h1>`)
@@ -131,8 +131,8 @@ test('the menu bar panel: the library, what waits for the owner decided right th
   expect(Math.max(...(await latest.getByRole('listitem').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height))))).toBeLessThanOrEqual(34)
   await expect.poll(sent).toContainEqual({ type: 'waiting', count: 4 })
 
-  await decide.getByRole('button', { name: '上线', exact: true }).first().click()
-  await expect(decide.getByRole('status')).toContainText('上线')
+  await decide.getByRole('button', { name: '发布', exact: true }).first().click()
+  await expect(decide.getByRole('status')).toContainText('已发布')
   await expect.poll(sent).toContainEqual({ type: 'waiting', count: 3 })
   await panel.getByRole('button', { name: '打开主窗口' }).click()
   await panel.getByRole('button', { name: '更多' }).click()

@@ -287,10 +287,10 @@ describe('a request standing in for a plugin’s ask about the same command', ()
 
   it('is the one row while it waits: the agent’s reason stands, the plugin’s ask about sites/shop is not raised beside it, on the home page or in check', () => {
     expect(homeAsks().map((a) => a.about)).toEqual(['sites/shop'])
-    waiting = claude(['ask', SHOP, 'deploy', 'on', 'sites/shop', '--json']).json().request.id as string
-    expect(homeAsks()).toEqual([expect.objectContaining({ key: `request:${waiting}`, text: SHOP, command: 'deploy on sites/shop' })])
+    waiting = claude(['ask', SHOP, 'deploy', 'publish', 'sites/shop', '--json']).json().request.id as string
+    expect(homeAsks()).toEqual([expect.objectContaining({ key: `request:${waiting}`, text: SHOP, command: 'deploy publish sites/shop' })])
     expect(ok(as('codex')(['check', '--json'])).json().asks).toEqual([])
-    expect(ok(owner(['show', 'home'])).stdout).not.toContain('可以部署，还没上线')
+    expect(ok(owner(['show', 'home'])).stdout).not.toContain('可部署，未发布')
   })
 
   it('settles both once decided: declined, or approved', () => {
@@ -298,15 +298,15 @@ describe('a request standing in for a plugin’s ask about the same command', ()
     expect(homeAsks()).toEqual([])
 
     deployable('shop2')
-    ok(owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', join(tempDir('pb-target-'), 'www')]))
-    const id = claude(['ask', SHOP, 'deploy', 'on', 'sites/shop2', '--json']).json().request.id as string
+    ok(owner(['deploy', 'target', 'set', '--kind', 'folder', '--to', join(tempDir('pb-target-'), 'www')]))
+    const id = claude(['ask', SHOP, 'deploy', 'publish', 'sites/shop2', '--json']).json().request.id as string
     ok(owner(['request', 'approve', id]))
     expect(homeAsks()).toEqual([])
   })
 
   it('stands in for nothing when it asks for another command or other arguments', () => {
     deployable('shop3')
-    claude(['ask', SHOP, 'deploy', 'on', 'sites/other'])
-    expect(homeAsks().map((a) => a.about ?? a.command)).toEqual(['deploy on sites/other', 'sites/shop3'])
+    claude(['ask', SHOP, 'deploy', 'publish', 'sites/other'])
+    expect(homeAsks().map((a) => a.about ?? a.command)).toEqual(['deploy publish sites/other', 'sites/shop3'])
   })
 })

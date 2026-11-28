@@ -67,18 +67,18 @@ describe('the Cloudflare kind against a stand-in', () => {
     const n = await signIns(async () => {
       const set = await owner('deploy', 'target', 'set', '--kind', 'cloudflare', '--credentials', join(sb.work, 'credentials.json'), '--prefix', 'pbs-cf')
       assert.equal(set.json.outcome, 'done', set.stdout)
-      assert.equal(set.json.text, `已连上 ${new URL(origin).host}。`)
+      assert.equal(set.json.text, `已连接 ${new URL(origin).host}。`)
     })
     assert.equal(n, 1)
   })
 
   it('on: release 1 at the app’s address, each file served with its type, managed by pneuma-base for this library', async () => {
     const files = { 'index.html': '<h1>one</h1>\n', 'style.css': 'h1{color:red}', 'font.woff2': Buffer.from([0x77, 0x4f, 0x46, 0x32]), 'photo.jpg': Buffer.from([0xff, 0xd8, 0xff]) }
-    assert.equal((await agent('put', await site(sb, 'v1', files), '--to', 'sites/demo', '--made')).json.outcome, 'accepted')
+    assert.equal((await agent('put', await site(sb, 'v1', files), '--to', 'sites/demo', '--generated')).json.outcome, 'accepted')
     assert.equal((await agent('say', 'deployable', 'sites/demo')).json.outcome, 'heard')
-    assert.equal((await agent('deploy', 'on', 'sites/demo')).json.outcome, 'refused')
+    assert.equal((await agent('deploy', 'publish', 'sites/demo')).json.outcome, 'refused')
     const n = await signIns(async () => {
-      const on = await owner('deploy', 'on', 'sites/demo')
+      const on = await owner('deploy', 'publish', 'sites/demo')
       assert.equal(on.json.outcome, 'done', on.stdout)
       url = on.json.data.url
     })
@@ -97,74 +97,74 @@ describe('the Cloudflare kind against a stand-in', () => {
 
   it('unchanged content uploads nothing, through sync or the switch', async () => {
     assert.equal((await owner('deploy', 'sync')).json.data.changed, 0)
-    assert.equal((await owner('deploy', 'on', 'sites/demo')).json.outcome, 'done')
+    assert.equal((await owner('deploy', 'publish', 'sites/demo')).json.outcome, 'done')
     assert.deepEqual([live(), tickets(), fake.app(app)?.releases.length], [1, 1, 1])
   })
 
   it('changed content makes release 2 with one upload', async () => {
-    assert.equal((await agent('put', await site(sb, 'v2', { 'index.html': '<h1>two</h1>\n' }), '--to', 'sites/demo', '--made')).json.outcome, 'accepted')
+    assert.equal((await agent('put', await site(sb, 'v2', { 'index.html': '<h1>two</h1>\n' }), '--to', 'sites/demo', '--generated')).json.outcome, 'accepted')
     assert.equal((await fake.browse(url)).text, '<h1>two</h1>')
     assert.deepEqual([live(), tickets()], [2, 2])
   })
 
   it('off removes the app and never purges it; on again resumes it with no upload', async () => {
-    assert.equal((await owner('deploy', 'off', 'sites/demo')).json.outcome, 'done')
+    assert.equal((await owner('deploy', 'unpublish', 'sites/demo')).json.outcome, 'done')
     assert.equal(fake.app(app)?.status, 'removed')
     assert.equal((await fake.browse(url)).status, 409)
-    assert.equal((await owner('deploy', 'list')).json.data[0].status, 'offline')
-    assert.equal((await owner('deploy', 'on', 'sites/demo')).json.outcome, 'done')
+    assert.equal((await owner('deploy', 'list')).json.data[0].status, 'unpublished')
+    assert.equal((await owner('deploy', 'publish', 'sites/demo')).json.outcome, 'done')
     assert.equal((await fake.browse(url)).text, '<h1>two</h1>')
     assert.deepEqual([fake.app(app)?.status, live(), tickets()], ['registered', 2, 2])
   })
 
   it('content put back to what an earlier release had comes back as a new release with no upload', async () => {
-    assert.equal((await agent('put', await site(sb, 'v1b', { 'index.html': '<h1>one</h1>\n', 'style.css': 'h1{color:red}', 'font.woff2': Buffer.from([0x77, 0x4f, 0x46, 0x32]), 'photo.jpg': Buffer.from([0xff, 0xd8, 0xff]) }), '--to', 'sites/demo', '--made')).json.outcome, 'accepted')
+    assert.equal((await agent('put', await site(sb, 'v1b', { 'index.html': '<h1>one</h1>\n', 'style.css': 'h1{color:red}', 'font.woff2': Buffer.from([0x77, 0x4f, 0x46, 0x32]), 'photo.jpg': Buffer.from([0xff, 0xd8, 0xff]) }), '--to', 'sites/demo', '--generated')).json.outcome, 'accepted')
     assert.equal((await fake.browse(url)).text, '<h1>one</h1>')
     assert.deepEqual([live(), tickets()], [3, 2])
   })
 
   it('more than 256 files or more than 4 MiB is refused before anything is sent, with the number and the limit', async () => {
     const many = Object.fromEntries(Array.from({ length: 257 }, (_, i) => [`p${i}.html`, `<p>${i}</p>`]))
-    assert.equal((await agent('put', await site(sb, 'many', { 'index.html': '<h1>many</h1>', ...many }), '--to', 'sites/many', '--made')).json.outcome, 'accepted')
+    assert.equal((await agent('put', await site(sb, 'many', { 'index.html': '<h1>many</h1>', ...many }), '--to', 'sites/many', '--generated')).json.outcome, 'accepted')
     await agent('say', 'deployable', 'sites/many')
-    const tooMany = await owner('deploy', 'on', 'sites/many')
+    const tooMany = await owner('deploy', 'publish', 'sites/many')
     assert.equal(tooMany.json.reason, 'publish-failed', tooMany.stdout)
-    assert.match(tooMany.json.text, /站点有 258 个文件，Cloudflare 上的 PneumaSpace 一个应用最多收 256 个/)
+    assert.match(tooMany.json.text, /站点有 258 个文件，Cloudflare 上的 PneumaSpace 每个应用最多 256 个/)
     assert.equal(fake.app('pbs-cf-sites-many'), undefined)
-    assert.equal((await agent('put', await site(sb, 'big', { 'index.html': '<h1>big</h1>', 'video.mp4': Buffer.alloc(3.5 * 1024 * 1024, 1) }), '--to', 'sites/big', '--made')).json.outcome, 'accepted')
+    assert.equal((await agent('put', await site(sb, 'big', { 'index.html': '<h1>big</h1>', 'video.mp4': Buffer.alloc(3.5 * 1024 * 1024, 1) }), '--to', 'sites/big', '--generated')).json.outcome, 'accepted')
     await agent('say', 'deployable', 'sites/big')
-    const tooBig = await owner('deploy', 'on', 'sites/big')
-    assert.match(tooBig.json.text, /站点打包后 4\.67 MiB，Cloudflare 上的 PneumaSpace 一个包最多 4 MiB/, tooBig.stdout)
+    const tooBig = await owner('deploy', 'publish', 'sites/big')
+    assert.match(tooBig.json.text, /站点打包后 4\.67 MiB，Cloudflare 上的 PneumaSpace 每个包最多 4 MiB/, tooBig.stdout)
     assert.equal(fake.app('pbs-cf-sites-big'), undefined)
-    await owner('deploy', 'off', 'sites/many')
-    await owner('deploy', 'off', 'sites/big')
+    await owner('deploy', 'unpublish', 'sites/many')
+    await owner('deploy', 'unpublish', 'sites/big')
   })
 
   it('a name another manager or another space holds is refused in any state, and its details are never read', async () => {
     const theirs = fake.seed('pbs-cf-sites-shared', { manager: { name: 'another-deployer', url: 'https://deployer.example.com/' } })
     fake.seed('pbs-cf-sites-elsewhere', { manager: null, tenant: 't_other' })
     for (const path of ['sites/shared', 'sites/elsewhere']) {
-      await agent('put', await site(sb, path.slice(6), { 'index.html': '<h1>mine</h1>' }), '--to', path, '--made')
+      await agent('put', await site(sb, path.slice(6), { 'index.html': '<h1>mine</h1>' }), '--to', path, '--generated')
       await agent('say', 'deployable', path)
     }
-    const shared = await owner('deploy', 'on', 'sites/shared')
-    assert.match(shared.json.text, /应用名 pbs-cf-sites-shared 在 PneumaSpace 上已经有了：它归 another-deployer 管理，不是这个库的，所以不动它/, shared.stdout)
+    const shared = await owner('deploy', 'publish', 'sites/shared')
+    assert.match(shared.json.text, /应用名称 pbs-cf-sites-shared 在 PneumaSpace 上已存在：由 another-deployer 管理。不属于此资料库，未做改动/, shared.stdout)
     theirs.status = 'removed'
-    assert.match((await owner('deploy', 'on', 'sites/shared')).json.text, /它归 another-deployer 管理/)
-    assert.equal((await owner('deploy', 'off', 'sites/shared')).json.outcome, 'done')
+    assert.match((await owner('deploy', 'publish', 'sites/shared')).json.text, /由 another-deployer 管理/)
+    assert.equal((await owner('deploy', 'unpublish', 'sites/shared')).json.outcome, 'done')
     assert.equal(theirs.status, 'removed')
-    assert.match((await owner('deploy', 'on', 'sites/elsewhere')).json.text, /这个名字被这个 PneumaSpace 上别的空间的应用占着/)
+    assert.match((await owner('deploy', 'publish', 'sites/elsewhere')).json.text, /该名称已被此 PneumaSpace 上其他空间的应用占用/)
     assert.equal(fake.state.detailsRead.get('pbs-cf-sites-shared'), undefined)
     const item = await (await sb.viewer()).item('sites/shared', { plugin: 'deploy' })
-    assert.ok(blocks(item).some((b) => b.kind === 'text' && b.tone === 'bad' && b.text.includes('它归 another-deployer 管理')))
-    await owner('deploy', 'off', 'sites/elsewhere')
+    assert.ok(blocks(item).some((b) => b.kind === 'text' && b.tone === 'bad' && b.text.includes('由 another-deployer 管理')))
+    await owner('deploy', 'unpublish', 'sites/elsewhere')
   })
 
   it('a publish whose upload failed leaves the site as it was, pending until deploy sync', async () => {
     fake.state.failNextPut = true
-    const put = await agent('put', await site(sb, 'v4', { 'index.html': '<h1>four</h1>\n' }), '--to', 'sites/demo', '--made')
+    const put = await agent('put', await site(sb, 'v4', { 'index.html': '<h1>four</h1>\n' }), '--to', 'sites/demo', '--generated')
     assert.equal(put.json.outcome, 'accepted', put.stdout)
-    assert.ok(put.json.problems.some((p: { message: string }) => p.message.includes('上传 pbs-cf-sites-demo 的包被拒绝：503')), put.stdout)
+    assert.ok(put.json.problems.some((p: { message: string }) => p.message.includes('pbs-cf-sites-demo 的包上传被拒绝：503')), put.stdout)
     assert.equal((await fake.browse(url)).text, '<h1>one</h1>')
     assert.equal(live(), 3)
     assert.match((await agent('inspect', 'sites/demo')).stdout, /待发布/)
@@ -181,18 +181,18 @@ describe('the Cloudflare kind against a stand-in', () => {
     const item = await viewer.item('sites/demo', { plugin: 'deploy' })
     assert.deepEqual(item.outcome === 'shown' && item.problems, [])
     assert.equal(blocks(item).some((b) => b.kind === 'embed'), false)
-    assert.ok(blocks(item).some((b) => b.kind === 'text' && b.text === `登录了 ${new URL(origin).host} 的账户才看得到。`))
+    assert.ok(blocks(item).some((b) => b.kind === 'text' && b.text === `仅登录 ${new URL(origin).host} 的账户可以访问。`))
     const fields = blocks(item).flatMap((b) => (b.kind === 'fields' ? b.fields : []))
     assert.equal(fields.find((f) => f.label === '地址')?.value.href, url)
     // Four of 200 tickets used: release 1, release 2, the upload that failed, and its retry.
-    assert.equal(fields.find((f) => f.label === '上传额度'), undefined)
-    const releases = blocks(item).find((b) => b.kind === 'section' && b.title === '发布记录')
+    assert.equal(fields.find((f) => f.label === '上传配额'), undefined)
+    const releases = blocks(item).find((b) => b.kind === 'section' && b.title === '发布历史')
     const timeline = releases?.kind === 'section' ? releases.blocks.find((b) => b.kind === 'timeline') : undefined
-    assert.deepEqual(timeline?.kind === 'timeline' && timeline.entries.filter((e) => e.tag?.text === '线上').map((e) => e.title.text), ['第 4 版'])
+    assert.deepEqual(timeline?.kind === 'timeline' && timeline.entries.filter((e) => e.tag?.text === '当前').map((e) => e.title.text), ['版本 4'])
     const board = blocks(await viewer.view('deploy.board')).find((b) => b.kind === 'custom')
     assert.ok(board?.kind === 'custom')
     const data = board.data as BoardData
-    assert.match(data.visible ?? '', /账户才看得到/)
+    assert.match(data.visible ?? '', /账户可以访问/)
     assert.deepEqual(data.cards.map((c) => [c.path, c.url, c.release]), [['sites/demo', url, 4]])
     await viewer.stop()
   })

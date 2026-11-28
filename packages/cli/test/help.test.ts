@@ -20,10 +20,10 @@ describe('--help', () => {
 
   it('with a library lists its plugins’ commands, and follows plugin enable', () => {
     expect(sb.run(['--help', '--library', lib]).stdout).toMatch(/ {2}ledger copies restore <库内路径或条目编号> \[--fingerprint <内容哈希>\] --to <新路径>\n {6}将一个历史副本恢复到新路径；仅所有者可执行（ledger）/)
-    expect(sb.run(['--help', '--library', lib]).stdout).not.toContain('deploy on')
+    expect(sb.run(['--help', '--library', lib]).stdout).not.toContain('deploy publish')
     expect(sb.run(['plugin', 'enable', 'deploy', '--library', lib]).code).toBe(0)
     const r = sb.run(['--library', lib, '--help'])
-    expect(r.stdout).toMatch(/ {2}deploy on <库内路径>\n {6}[^\n]*；仅所有者可执行（deploy）/)
-    expect(r.stdout).toMatch(/ {2}deploy sync\n {6}[^\n]*跑几遍结果都一样（deploy）/)
+    expect(r.stdout).toMatch(/ {2}deploy publish <库内路径>\n {6}[^\n]*；仅所有者可执行（deploy）/)
+    expect(r.stdout).toMatch(/ {2}deploy sync\n {6}[^\n]*重复执行结果相同（deploy）/)
   })
 })

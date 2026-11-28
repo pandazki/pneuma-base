@@ -141,29 +141,29 @@ describe('owner operations (C7)', () => {
     const setup = ['plugin enable', 'deploy target set']
     const target = () => join(tempDir('pb-www-'), 'www')
     ok(owner(['plugin', 'enable', 'deploy']))
-    ok(owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', target()]))
+    ok(owner(['deploy', 'target', 'set', '--kind', 'folder', '--to', target()]))
 
     writeFileSync(join(outside, 'brief.md'), 'brief\n')
     ok(agent(['put', 'brief.md', '--to', 'brief.md', '--imported'], undefined, 'claude-1'))
     ok(agent(['say', 'deployable', 'brief.md'], undefined, 'claude-1'))
-    ok(owner(['deploy', 'on', 'brief.md']))
+    ok(owner(['deploy', 'publish', 'brief.md']))
 
-    // A brand-new agent arriving via start or check sees the put, say and deploy on, not the prior setup noise.
+    // A brand-new agent arriving via start or check sees the put, say and deploy publish, not the prior setup noise.
     const started = ok(sb.run(['--library', lib, '--as', 'codex', '--session', 'codex-1', 'start', '接着做'], { cwd: outside })).stdout
     for (const setupOp of setup) expect(started).not.toContain(setupOp)
     expect(started).toContain('导入 brief.md')
-    expect(started).toContain('pneuma-base deploy on')
+    expect(started).toContain('pneuma-base deploy publish')
 
     const firstCheck = ok(sb.run(['--library', lib, '--as', 'antigravity', '--session', 'agy-1', 'check'], { cwd: outside })).stdout
     for (const setupOp of setup) expect(firstCheck).not.toContain(setupOp)
-    expect(firstCheck).toContain('pneuma-base deploy on')
+    expect(firstCheck).toContain('pneuma-base deploy publish')
 
     // Explicit --since asks for everything since that moment, including setup operations.
     const explicit = ok(sb.run(['--library', lib, '--as', 'antigravity', '--session', 'agy-1', 'check', '--since', '2000-01-01T00:00:00Z'], { cwd: outside })).stdout
     for (const setupOp of setup) expect(explicit).toContain(`pneuma-base ${setupOp}`)
 
     // Once codex has visited, a later setup change by the owner IS news on codex's next visit.
-    ok(owner(['deploy', 'target', 'set', '--kind', 'dir', '--to', target()]))
+    ok(owner(['deploy', 'target', 'set', '--kind', 'folder', '--to', target()]))
     const returning = ok(sb.run(['--library', lib, '--as', 'codex', '--session', 'codex-2', 'check'], { cwd: outside })).stdout
     expect(returning).toContain('pneuma-base deploy target set')
   })

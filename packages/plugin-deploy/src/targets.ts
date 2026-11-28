@@ -1,5 +1,5 @@
-// The built-in deploy plugin's two kinds of target: a local directory, and the owner's own pair of
-// commands. Everything else a deploy plugin does is the kit's. Neither reads the library: the dir
+// The built-in deploy plugin's two kinds of target: a local folder, and the owner's own pair of
+// commands. Everything else a deploy plugin does is the kit's. Neither reads the library: the folder
 // target writes only its directory outside it, and the commands run in the copy of the content the
 // kit staged (or in an empty directory to take a site down).
 import { execFile } from 'node:child_process'
@@ -15,9 +15,9 @@ export const DEFAULT_TIMEOUT = 120
 /** A malformed call; the command line shows it as a usage error. */
 const usage = (text: string): Configured => ({ ok: false, reason: 'usage', text })
 
-// ---- dir ----
+// ---- folder ----
 
-/** What a dir target's index says of each site: the content's fingerprint and library path. */
+/** What a folder target's index says of each site: the content's fingerprint and library path. */
 type Entry = { fingerprint: ContentId; path: LibraryPath; at: Instant }
 type Index = { format: 1; sites: ({ name: SiteName } & Entry)[] }
 
@@ -31,24 +31,28 @@ async function overlaps(ctx: PluginContext, dir: string): Promise<boolean> {
   return within(dir, root) || within(root, dir) || (await ctx.tools.resolve(dir)) !== null
 }
 
-/** `<to>/<site>/…` and `<to>/index.json`. A site is copied to a dot-named temporary name and swapped in. */
-export const dirTarget: TargetAdapter = defineTarget({
-  kind: 'dir',
+/**
+ * `<to>/<site>/…` and `<to>/index.json`. A site is copied to a dot-named temporary name and swapped in.
+ * Its kind was `dir`; its key still is, so the records of a folder connected before count.
+ */
+export const folderTarget: TargetAdapter = defineTarget({
+  kind: 'folder',
+  formerly: ['dir'],
   label: '本地文件夹',
   icon: 'folder',
   params: [{ name: 'to', hint: '目录', kind: 'value', required: true }],
   async configure({ to }, ctx) {
     const dir = resolve(ctx.session.cwd, to)
-    if (await overlaps(ctx, dir)) return { ok: false, reason: 'inside-library', text: `部署目标不能在库里，也不能包含库：${dir}` }
+    if (await overlaps(ctx, dir)) return { ok: false, reason: 'inside-library', text: `部署目标不能位于资料库中，也不能包含资料库：${dir}` }
     return { ok: true, config: { to: dir } }
   },
   open(config) {
-    if (typeof config.to !== 'string') throw new Error('a dir target names its directory')
-    return dirAt(config.to)
+    if (typeof config.to !== 'string') throw new Error('a folder target names its directory')
+    return folderAt(config.to)
   },
 })
 
-function dirAt(to: string): Target {
+function folderAt(to: string): Target {
   const scratchName = (site: SiteName, kind: 'tmp' | 'old') => join(to, `.${kind}-${site}-${randomBytes(4).toString('hex')}`)
   const takeDown = async (site: SiteName) => {
     const aside = scratchName(site, 'old')
@@ -109,12 +113,12 @@ const strings = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 
  */
 export const commandTarget: TargetAdapter = defineTarget({
   kind: 'command',
-  label: '自己的命令',
+  label: '自定义命令',
   icon: 'terminal',
   form: ['publish', 'unpublish', 'url', 'timeout'],
   params: [
     { name: 'publish', hint: '发布命令，可用 {dir} {name}', kind: 'list', required: true },
-    { name: 'unpublish', hint: '下线命令，可用 {name}', kind: 'list', required: true },
+    { name: 'unpublish', hint: '取消发布命令，可用 {name}', kind: 'list', required: true },
     { name: 'url', hint: '地址模板，可用 {name}', kind: 'value' },
     { name: 'timeout', hint: '超时秒数', kind: 'value', pattern: '[1-9][0-9]*' },
   ],
@@ -137,7 +141,7 @@ function commandsAt(config: CommandConfig, env: TargetEnv): Target {
   const run = (argv: string[], dir: string, site: SiteName) => runCommand(argv.map((w) => w.replaceAll('{dir}', dir).replaceAll('{name}', site)), dir, config.timeout)
   return {
     key: `command:${JSON.stringify(config.publish)}`,
-    label: '自己的命令',
+    label: '自定义命令',
     async publish(site, dir) {
       await run(config.publish, dir, site)
       return { url: config.url === null ? null : config.url.replaceAll('{name}', site) }
@@ -161,8 +165,8 @@ function runCommand(argv: string[], cwd: string, timeout: number): Promise<void>
       if (!error) return resolve()
       const said = stderr.trim().split('\n').slice(-3).join(' / ')
       const code = (error as NodeJS.ErrnoException).code
-      if (error.killed) reject(new Error(`命令超时（${timeout} 秒），已停下：${file}`))
-      else if (code === 'ENOENT') reject(new Error(`找不到命令：${file}`))
+      if (error.killed) reject(new Error(`命令超时（${timeout} 秒），已停止：${file}`))
+      else if (code === 'ENOENT') reject(new Error(`命令不存在：${file}`))
       else reject(new Error(`命令以退出码 ${String(code)} 结束：${file}${said ? `：${said}` : ''}`))
     })
   })
@@ -197,8 +201,8 @@ export function words(command: string): string[] {
       started = true
     }
   }
-  if (quote !== null) throw new Error(`命令里的引号没有配对：${command}`)
+  if (quote !== null) throw new Error(`命令中的引号未配对：${command}`)
   if (started) out.push(word)
-  if (out.length === 0) throw new Error('命令是空的')
+  if (out.length === 0) throw new Error('命令为空')
   return out
 }

@@ -71,24 +71,24 @@ const MiB = 1024 * 1024
 
 /** Why a site path is one the contract refuses, or null: at most 300 characters in the package, no control characters, no backslash, no empty, `.` or `..` part. */
 function badPath(path: string): string | null {
-  if (`${DIR}/${path}`.length > MAX_PATH) return '太长（包里的路径最多 300 个字符）'
-  if ([...path].some((c) => c.charCodeAt(0) < 0x20)) return '带控制字符'
-  if (path.includes('\\')) return '带反斜杠'
-  if (path.split('/').some((p) => p === '' || p === '.' || p === '..')) return '有空的、. 或 .. 的一段'
+  if (`${DIR}/${path}`.length > MAX_PATH) return '过长（包中的路径最多 300 个字符）'
+  if ([...path].some((c) => c.charCodeAt(0) < 0x20)) return '含控制字符'
+  if (path.includes('\\')) return '含反斜杠'
+  if (path.split('/').some((p) => p === '' || p === '.' || p === '..')) return '含空段、. 或 ..'
   return null
 }
 
 /** What both kinds of PneumaSpace refuse: a site served from its top needs a page there. */
-export const NO_INDEX = '站点顶上没有 index.html'
+export const NO_INDEX = '站点根目录缺少 index.html'
 
 /** What PneumaSpace on Cloudflare would refuse in this site, in words for the owner, with the number and the limit; null when it takes it. */
 export function refusal(files: readonly SiteFile[], pkg: Package): string | null {
-  if (files.length === 0) return '站点里没有文件'
-  if (files.length > MAX_FILES) return `站点有 ${files.length} 个文件，Cloudflare 上的 PneumaSpace 一个应用最多收 ${MAX_FILES} 个`
-  if (pkg.bytes.length > MAX_BYTES) return `站点打包后 ${(pkg.bytes.length / MiB).toFixed(2)} MiB，Cloudflare 上的 PneumaSpace 一个包最多 4 MiB（文件按 base64 打进包里，比原来大三分之一）`
+  if (files.length === 0) return '站点中没有文件'
+  if (files.length > MAX_FILES) return `站点有 ${files.length} 个文件，Cloudflare 上的 PneumaSpace 每个应用最多 ${MAX_FILES} 个`
+  if (pkg.bytes.length > MAX_BYTES) return `站点打包后 ${(pkg.bytes.length / MiB).toFixed(2)} MiB，Cloudflare 上的 PneumaSpace 每个包最多 4 MiB（文件以 base64 编码写入包中，体积增大约三分之一）`
   for (const f of files) {
     const why = badPath(f.path)
-    if (why !== null) return `文件路径 ${JSON.stringify(f.path)} ${why}，Cloudflare 上的 PneumaSpace 不收`
+    if (why !== null) return `文件路径 ${JSON.stringify(f.path)} ${why}，Cloudflare 上的 PneumaSpace 不接受`
   }
   return files.some((f) => f.path === 'index.html') ? null : NO_INDEX
 }

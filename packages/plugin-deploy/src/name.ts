@@ -12,7 +12,7 @@ export const PLUGIN = 'deploy'
 export const MANAGER = 'pneuma-base'
 
 /** `--prefix`, the same flag on both kinds, as the kit requires of a flag two kinds share. Left out, the library's folder gives it. */
-export const PREFIX_PARAM = { name: 'prefix', hint: '应用名前缀', kind: 'value', pattern: '[a-z](?:[a-z0-9-]{0,14}[a-z0-9])?' } as const satisfies FlagParam
+export const PREFIX_PARAM = { name: 'prefix', hint: '应用名称前缀', kind: 'value', pattern: '[a-z](?:[a-z0-9-]{0,14}[a-z0-9])?' } as const satisfies FlagParam
 export const ORIGIN = 'https?://[^\\s/]+'
 
 /**
@@ -26,7 +26,7 @@ export function defaultPrefix(root: string): string {
 }
 
 /** The settings a PneumaSpace connection can change: its prefix. */
-export const prefixSetting = (prefix: string) => [{ flag: 'prefix', hint: '应用名前缀', value: prefix }]
+export const prefixSetting = (prefix: string) => [{ flag: 'prefix', hint: '应用名称前缀', value: prefix }]
 
 /** The host of an address, as the destination row names it. */
 export const hostOf = (address: string) => new URL(address).host

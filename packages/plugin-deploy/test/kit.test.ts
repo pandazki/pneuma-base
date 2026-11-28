@@ -161,27 +161,27 @@ type Fake = ReturnType<typeof fakeTarget>['fake']
 
 /** Each starting state of the table, reached through the plugin's own operations. */
 const STATES: Record<string, (l: Lib, f: Fake) => Promise<unknown>> = {
-  离线: async () => {},
-  在线: (l) => l.cmd('fake on', [P]),
-  '已归档（开关开）': async (l) => {
-    await l.cmd('fake on', [P])
+  未发布: async () => {},
+  已发布: (l) => l.cmd('fake publish', [P]),
+  '已归档（开关已开启）': async (l) => {
+    await l.cmd('fake publish', [P])
     await l.archive(P)
   },
-  '待下线（开关关）': async (l, f) => {
-    await l.cmd('fake on', [P])
+  '待取消发布（开关已关闭）': async (l, f) => {
+    await l.cmd('fake publish', [P])
     f.fail = true
     await l.put(P, 'v2')
-    await l.cmd('fake off', [P])
+    await l.cmd('fake unpublish', [P])
   },
 }
 
 const OPS: Record<string, (l: Lib) => Promise<unknown>> = {
-  开: (l) => l.cmd('fake on', [P]),
-  关: (l) => l.cmd('fake off', [P]),
-  内容变了: (l) => l.put(P, 'v3'),
+  发布: (l) => l.cmd('fake publish', [P]),
+  取消发布: (l) => l.cmd('fake unpublish', [P]),
+  内容修改: (l) => l.put(P, 'v3'),
   归档: (l) => l.archive(P),
-  取回: (l) => l.archive(P, 'unarchive'),
-  挪: (l) => l.move(P, Q),
+  取消归档: (l) => l.archive(P, 'unarchive'),
+  移动: (l) => l.move(P, Q),
 }
 
 type Cell = [state: string, op: string, ok: string, failed: string]
@@ -189,13 +189,13 @@ type Cell = [state: string, op: string, ok: string, failed: string]
 // One cell per operation, and one whose starting state only a failing target leaves behind; every
 // cell is in test/kit-model.test.ts in the sdk.
 const CELLS: Cell[] = [
-  ['离线', '开', 'online', 'pending'],
-  ['在线', '关', 'offline', 'retiring'],
-  ['在线', '内容变了', 'online', 'pending'],
-  ['在线', '归档', 'archived', 'retiring'],
-  ['已归档（开关开）', '取回', 'online', 'pending'],
-  ['在线', '挪', 'online', 'pending'],
-  ['待下线（开关关）', '开', 'online', 'pending'],
+  ['未发布', '发布', 'published', 'pending'],
+  ['已发布', '取消发布', 'unpublished', 'pending-unpublish'],
+  ['已发布', '内容修改', 'published', 'pending'],
+  ['已发布', '归档', 'archived', 'pending-unpublish'],
+  ['已归档（开关已开启）', '取消归档', 'published', 'pending'],
+  ['已发布', '移动', 'published', 'pending'],
+  ['待取消发布（开关已关闭）', '发布', 'published', 'pending'],
 ]
 
 /** A fresh library at the starting state, the target answering again, and what the target holds then. */
@@ -217,7 +217,7 @@ describe('the state × operation table, one cell per operation, through the plug
     await OPS[op]?.(done.l)
     const [thing] = await done.l.list()
     expect(thing?.status).toBe(ok)
-    expect(holds(done.fake)).toEqual(ok === 'online' ? new Map([[siteName(thing?.path as LibraryPath), await done.l.fingerprint(thing?.path as string)]]) : new Map())
+    expect(holds(done.fake)).toEqual(ok === 'published' ? new Map([[siteName(thing?.path as LibraryPath), await done.l.fingerprint(thing?.path as string)]]) : new Map())
 
     const stuck = await at(state)
     const before = holds(stuck.fake)
@@ -237,9 +237,9 @@ describe('a target that reports what it serves', () => {
       const l = await library(deployPlugin('fake', adapter))
       await l.put(P, 'v1')
       await l.say(P)
-      await l.cmd('fake on', [P])
+      await l.cmd('fake publish', [P])
       fake.served.clear()
-      expect((await l.list())[0]?.status).toBe(reports ? 'pending' : 'online')
+      expect((await l.list())[0]?.status).toBe(reports ? 'pending' : 'published')
       const sync = await l.cmd('fake sync')
       expect(sync).toMatchObject({ outcome: 'done', data: { changed: reports ? 1 : 0 } })
       expect(fake.served.has(siteName(P))).toBe(reports)
@@ -252,30 +252,30 @@ describe('a target that reports what it serves', () => {
     await l.put(P, 'v1')
     await l.say(P)
     fake.crash = true
-    expect(await l.cmd('fake on', [P])).toMatchObject({ outcome: 'refused', reason: 'publish-failed' })
+    expect(await l.cmd('fake publish', [P])).toMatchObject({ outcome: 'refused', reason: 'publish-failed' })
     fake.crash = false
     const published = fake.calls.length
 
-    expect(await l.cmd('fake sync')).toMatchObject({ outcome: 'done', data: { changed: 0, things: [{ path: P, status: 'online', url: url(siteName(P)) }] } })
+    expect(await l.cmd('fake sync')).toMatchObject({ outcome: 'done', data: { changed: 0, things: [{ path: P, status: 'published', url: url(siteName(P)) }] } })
     expect(fake.calls).toHaveLength(published)
 
     await l.move(P, Q)
     expect([...fake.served.keys()]).toEqual([siteName(Q)])
   })
 
-  it('that cannot be read: the state is 不知道, nothing is published or taken down, and sync says why', async () => {
+  it('that cannot be read: the state is 状态未知, nothing is published or taken down, and sync says why', async () => {
     const { fake, adapter } = fakeTarget({ reports: true })
     const l = await library(deployPlugin('fake', adapter))
     await l.put(P, 'v1')
     await l.say(P)
-    await l.cmd('fake on', [P])
+    await l.cmd('fake publish', [P])
     fake.down = true
     const calls = fake.calls.length
     expect(await l.list()).toEqual([expect.objectContaining({ path: P, status: 'unknown' })])
     const sync = await l.cmd('fake sync')
     expect(sync).toMatchObject({ outcome: 'refused', reason: 'publish-failed' })
     expect((sync as { text: string }).text).toContain('连不上')
-    expect((await l.check()).sections.find((s) => s.plugin === 'fake')?.body).toContain('不知道，读不到目标：连不上')
+    expect((await l.check()).sections.find((s) => s.plugin === 'fake')?.body).toContain('状态未知，无法读取部署目标：连不上')
     await l.put(P, 'v2')
     expect(fake.calls).toHaveLength(calls)
   })
@@ -285,13 +285,13 @@ describe('a target that reports what it serves', () => {
     const l = await library(deployPlugin('fake', adapter))
     await l.site('sites/shop', { 'index.html': '<h1>shop</h1>', 'css/a.css': 'h1{}', 'B.txt': 'b' })
     await l.say('sites/shop')
-    await l.cmd('fake on', ['sites/shop'])
+    await l.cmd('fake publish', ['sites/shop'])
     const site = `f-${siteName('sites/shop' as LibraryPath)}`
     const held = fake.served.get(site)
     expect(held?.files).toEqual(['B.txt', 'css/a.css', 'index.html'])
     const expected = `id-${createHash('sha256').update('B.txt:b\ncss/a.css:h1{}\nindex.html:<h1>shop</h1>').digest('hex')}`
     expect(held?.content).toBe(expected)
-    expect(await l.list()).toEqual([expect.objectContaining({ status: 'online', site, url: url(site) })])
+    expect(await l.list()).toEqual([expect.objectContaining({ status: 'published', site, url: url(site) })])
     expect(await l.cmd('fake sync')).toMatchObject({ data: { changed: 0 } })
   })
 })
@@ -310,11 +310,11 @@ describe('what the kit reads of the library', () => {
       l.write('sites/shop/keep/local.env', 'kept')
       symlinkSync('index.html', join(l.root, 'sites/shop/home.html'))
       await l.say('sites/shop')
-      expect(await l.cmd('fake on', ['sites/shop'])).toMatchObject({ outcome: 'done' })
+      expect(await l.cmd('fake publish', ['sites/shop'])).toMatchObject({ outcome: 'done' })
       const held = fake.served.get(siteName('sites/shop' as LibraryPath))
       expect(held?.files, `identify: ${identify}`).toEqual(['.gitignore', 'index.html', 'keep/.gitignore', 'keep/local.env'])
       if (!identify) expect(held?.content).toBe(await l.fingerprint('sites/shop'))
-      expect(await l.list()).toEqual([expect.objectContaining({ status: 'online' })])
+      expect(await l.list()).toEqual([expect.objectContaining({ status: 'published' })])
     }
   })
 
@@ -324,12 +324,12 @@ describe('what the kit reads of the library', () => {
       const l = await library(deployPlugin('fake', adapter))
       await l.site('sites/big', { 'index.html': 'v1' })
       await l.say('sites/big')
-      expect(await l.cmd('fake on', ['sites/big'])).toMatchObject({ outcome: 'done' })
+      expect(await l.cmd('fake publish', ['sites/big'])).toMatchObject({ outcome: 'done' })
       for (let i = 0; i < 5000; i++) l.write(`sites/big/pages/${i}.html`, String(i))
       fake.calls.length = 0
       const synced = await l.cmd('fake sync')
       expect(synced, `identify: ${identify}`).toMatchObject({ outcome: 'refused', reason: 'publish-failed' })
-      expect(synced.text).toContain('sites/big 至少有 5001 个文件，超过一样东西能有的 5000 个，没有发布')
+      expect(synced.text).toContain('sites/big 至少有 5001 个文件，超过单个条目的上限 5000 个，未发布')
       expect(fake.calls).toEqual([])
       expect(await l.list()).toEqual([expect.objectContaining({ path: 'sites/big', status: 'pending' })])
     }
@@ -342,12 +342,12 @@ describe('what the kit reads of the library', () => {
     for (const path of [P, Q]) {
       await l.put(path, 'v1')
       await l.say(path)
-      await l.cmd('fake on', [path])
+      await l.cmd('fake publish', [path])
       l.write(path, 'v2')
     }
     l.write('c/loose.md', 'new')
     const put = await agentFace.put({ kind: 'register', path: 'c', origin: { kind: 'generated', from: [], outside: [] } }, l.as(claude))
-    expect(put).toMatchObject({ outcome: 'accepted', notes: [{ plugin: 'fake', text: `${P} 在线，已重新发布：${url(siteName(P))}；${Q} 在线，已重新发布：${url(siteName(Q))}` }] })
+    expect(put).toMatchObject({ outcome: 'accepted', notes: [{ plugin: 'fake', text: `${P} 已重新发布：${url(siteName(P))}；${Q} 已重新发布：${url(siteName(Q))}` }] })
     for (const path of [P, Q]) expect(fake.served.get(siteName(path))?.content).toBe(await l.fingerprint(path))
   })
 })
@@ -357,27 +357,27 @@ describe('what the kit reads of the library', () => {
 describe('the plugin the kit makes', () => {
   it('names its commands, its page and its cognition after itself, and with one kind of target needs no --kind', async () => {
     const { adapter } = fakeTarget()
-    const plugin = deployPlugin('fake', adapter, { title: '假部署', heading: '上线到假的地方：主人开关', cognition: '网站里的链接要写相对路径。' })
-    expect(plugin.ownerCommands.map((c) => c.name)).toEqual(['fake on', 'fake off', 'fake sync', 'fake list', 'fake target set', 'fake target list', 'fake target remove'])
+    const plugin = deployPlugin('fake', adapter, { title: '假部署', heading: '发布到假的地方：由所有者决定', cognition: '网站里的链接要写相对路径。' })
+    expect(plugin.ownerCommands.map((c) => c.name)).toEqual(['fake publish', 'fake unpublish', 'fake sync', 'fake list', 'fake target set', 'fake target list', 'fake target remove'])
     expect(plugin.ownerCommands.find((c) => c.name === 'fake target set')).toMatchObject({
       params: { flags: [{ name: 'kind', kind: 'value', options: [{ value: 'fake', label: '一个假的目标' }] }, { name: 'where', hint: '名字', kind: 'value', required: true }] },
-      summary: '连上部署目标：一个假的目标',
+      summary: '连接部署目标：一个假的目标',
       ownerOnly: true,
       setup: true,
     })
     expect(plugin.views).toEqual([expect.objectContaining({ id: 'fake.sites', title: '假部署' })])
     expect(plugin.statements).toEqual(['deployable'])
-    expect(plugin.cognition?.text).toMatch(/^## 上线到假的地方：主人开关\n\n这个库装了\*\*假部署\*\*插件。/)
+    expect(plugin.cognition?.text).toMatch(/^## 发布到假的地方：由所有者决定\n\n此资料库已启用\*\*假部署\*\*插件。/)
     expect(plugin.cognition?.text).toContain('pneuma-base @{{授权的名字}} fake sync')
     expect(plugin.cognition?.text).toContain('\n\n网站里的链接要写相对路径。\n')
 
     const l = await library(plugin, true)
-    expect(await l.cmd('fake list')).toMatchObject({ text: expect.stringContaining('还没配部署目标：fake target set --where <名字>') })
-    expect(await l.cmd('fake target set', [], { where: ['x'] })).toMatchObject({ outcome: 'done', text: '已连上 假的 x。' })
-    expect(await l.cmd('fake target set', [], {})).toMatchObject({ outcome: 'refused', reason: 'usage', text: '要写 --where <名字>。\n用法：fake target set [--kind fake] --where <名字>' })
+    expect(await l.cmd('fake list')).toMatchObject({ text: expect.stringContaining('未连接部署目标：fake target set --where <名字>') })
+    expect(await l.cmd('fake target set', [], { where: ['x'] })).toMatchObject({ outcome: 'done', text: '已连接 假的 x。' })
+    expect(await l.cmd('fake target set', [], {})).toMatchObject({ outcome: 'refused', reason: 'usage', text: '缺少 --where <名字>。\n用法：fake target set [--kind fake] --where <名字>' })
   })
 
-  it('asks the owner about each declared thing whose switch was never set, 上线 suggested; either answer settles it, and an archived thing is not asked about', async () => {
+  it('asks the owner about each declared thing whose switch was never set, 发布 suggested; either answer settles it, and an archived thing is not asked about', async () => {
     const { adapter } = fakeTarget()
     const l = await library(deployPlugin('fake', adapter))
     await l.put(P, 'v1')
@@ -390,36 +390,36 @@ describe('the plugin the kit makes', () => {
       {
         key: expect.stringMatching(/^fake:/),
         by: 'fake',
-        text: `claude-code 说 ${P} 可以部署，还没上线。要上线吗？`,
+        text: `claude-code 声明 ${P} 可部署，未发布。是否发布？`,
         about: P,
         actions: [
-          expect.objectContaining({ label: '上线', call: { face: 'owner', command: 'fake on', args: { positional: [P], flags: {} } } }),
-          expect.objectContaining({ label: '不上线', call: { face: 'owner', command: 'fake off', args: { positional: [P], flags: {} } } }),
+          expect.objectContaining({ label: '发布', call: { face: 'owner', command: 'fake publish', args: { positional: [P], flags: {} } } }),
+          expect.objectContaining({ label: '不发布', call: { face: 'owner', command: 'fake unpublish', args: { positional: [P], flags: {} } } }),
         ],
         suggested: 0,
       },
       expect.objectContaining({ about: Q }),
     ])
     // Keeping it off is an answer too, though the switch was off already.
-    await l.cmd('fake off', [P])
+    await l.cmd('fake unpublish', [P])
     expect((await asks()).map((a) => a.about)).toEqual([Q])
     await l.archive(Q)
     expect(await asks()).toEqual([])
     await l.archive(`_archive/${Q}`, 'unarchive')
-    await l.cmd('fake on', [Q])
+    await l.cmd('fake publish', [Q])
     expect(await asks()).toEqual([])
   })
 
-  it('tells an agent whose put the target refused that the put is in and going online waits for the owner, as a problem beside the answer', async () => {
+  it('tells an agent whose put the target refused that the put is in and publishing waits for the owner, as a problem beside the answer', async () => {
     const { fake, adapter } = fakeTarget()
     const l = await library(deployPlugin('fake', adapter))
     await l.put(P, 'v1')
     await l.say(P)
-    await l.cmd('fake on', [P])
+    await l.cmd('fake publish', [P])
     fake.fail = true
     const put = await l.put(P, 'v2')
     expect(put).toMatchObject({ outcome: 'accepted', path: P })
-    expect(put.problems).toEqual([{ plugin: 'fake', message: expect.stringContaining('这不是你的放入出了问题，你不用重做；上线要等主人在自己的终端里运行 fake sync') }])
+    expect(put.problems).toEqual([{ plugin: 'fake', message: expect.stringContaining('无需重做添加；发布需等待所有者在终端中运行 fake sync') }])
   })
 
   it('takes down what the archive purge removed, and forgets its declaration', async () => {
@@ -427,38 +427,38 @@ describe('the plugin the kit makes', () => {
     const l = await library(deployPlugin('fake', adapter))
     await l.put(P, 'v1')
     await l.say(P)
-    await l.cmd('fake on', [P])
+    await l.cmd('fake publish', [P])
     fake.fail = true
     await l.archive(P)
-    expect((await l.list())[0]?.status).toBe('retiring')
+    expect((await l.list())[0]?.status).toBe('pending-unpublish')
     fake.fail = false
     expect(await l.cmd('archive purge')).toMatchObject({ outcome: 'done', problems: [] })
     expect(fake.served.size).toBe(0)
     expect(await l.list()).toEqual([])
   })
 
-  it('refuses to be removed while sites are online, saying how many; removed anyway, the answer lists what stays online; with nothing online, removed without a word', async () => {
+  it('refuses to be disabled while sites are published, saying how many; disabled anyway, the answer lists what stays published; with nothing published, disabled without a word', async () => {
     const { adapter } = fakeTarget()
     const quiet = await library(deployPlugin('fake', adapter))
     await quiet.put(P, 'v1')
     await quiet.say(P)
-    expect(await quiet.cmd('plugin remove', ['fake'])).toMatchObject({ outcome: 'done' })
+    expect(await quiet.cmd('plugin disable', ['fake'])).toMatchObject({ outcome: 'done' })
 
     const l = await library(deployPlugin('fake', adapter))
     for (const path of ['a.html', 'b.html', 'c.html']) {
       await l.put(path, path)
       await l.say(path)
     }
-    await l.cmd('fake on', ['a.html'])
-    await l.cmd('fake on', ['b.html'])
-    const refused = await l.cmd('plugin remove', ['fake'])
+    await l.cmd('fake publish', ['a.html'])
+    await l.cmd('fake publish', ['b.html'])
+    const refused = await l.cmd('plugin disable', ['fake'])
     expect(refused).toMatchObject({ outcome: 'refused', reason: 'plugin-refused' })
-    expect((refused as { text: string }).text).toContain('还有 2 样在线')
-    expect((refused as { text: string }).text).toContain('先用 fake off 关上')
+    expect((refused as { text: string }).text).toContain('仍有 2 个已发布')
+    expect((refused as { text: string }).text).toContain('先运行 fake unpublish')
 
-    const anyway = await l.cmd('plugin remove', ['fake'], { anyway: true })
+    const anyway = await l.cmd('plugin disable', ['fake'], { force: true })
     expect(anyway).toMatchObject({ outcome: 'done' })
-    expect((anyway as { text: string }).text).toMatch(/它卸下前提醒过：还有 2 样在线：a\.html（https:\/\/.*）、b\.html（https:\/\/.*）/)
+    expect((anyway as { text: string }).text).toMatch(/停用前的插件提示：仍有 2 个已发布：a\.html（https:\/\/.*）、b\.html（https:\/\/.*）/)
   })
 
   it('lists the facts it cannot read in check, one an earlier version wrote and one in its record place, and reads the rest', async () => {
@@ -469,8 +469,8 @@ describe('the plugin the kit makes', () => {
     // A line that is not JSON is no fact: storage leaves it out.
     appendFileSync(join(l.root, '.pneuma-base/fake/facts/broken.jsonl'), '{"half\n{"id":"f_9","kind":"switch"}\n')
     const [order] = await l.pctx().tools.storage.records.append([{ store: 'facts', id: 'f_10', kind: 'switch' }])
-    expect(await l.list()).toEqual([expect.objectContaining({ path: P, status: 'offline' })])
-    const section = (await l.check()).sections.find((s) => s.title === '部署记录里读不懂的行')
+    expect(await l.list()).toEqual([expect.objectContaining({ path: P, status: 'unpublished' })])
+    const section = (await l.check()).sections.find((s) => s.title === '部署记录中无法解析的行')
     expect(section?.body.split('\n')).toEqual([expect.stringMatching(/^fake 的记录 \S*broken\.jsonl#2：缺 id、at、actor 或 session$/), `fake 的记录 ${order}：缺 id、at、actor 或 session`])
   })
 
@@ -483,19 +483,19 @@ describe('the plugin the kit makes', () => {
     await l.site('sites/one', { 'index.html': '<h1>one</h1>' })
     await l.put('top.html', 'top')
     for (const path of ['sites/shop', 'sites/one', 'top.html']) await l.say(path)
-    await l.cmd('fake on', ['sites/shop'])
-    await l.cmd('fake on', ['sites/one'])
+    await l.cmd('fake publish', ['sites/shop'])
+    await l.cmd('fake publish', ['sites/one'])
     const page = await plugin.onView?.({ view: 'fake.sites', params: {} }, l.pctx())
-    expect(page?.subtitle).toBe('2 样在线')
+    expect(page?.subtitle).toBe('2 个已发布')
     const [head, where, things, own] = page?.blocks ?? []
-    expect(head).toMatchObject({ kind: 'actions', head: true, actions: [{ label: '上线一样东西', icon: 'plus', as: 'primary', call: { command: 'fake on' } }] })
-    expect(where).toMatchObject({ kind: 'list', items: [{ cell: { text: '假的 w' }, actions: [{ label: '换一个…', as: 'menu' }, { label: '断开', as: 'menu', confirm: '断开 假的 w？线上的东西不撤下，开关都留着。' }] }] })
+    expect(head).toMatchObject({ kind: 'actions', head: true, actions: [{ label: '发布条目', icon: 'plus', as: 'primary', call: { command: 'fake publish' } }] })
+    expect(where).toMatchObject({ kind: 'list', items: [{ cell: { text: '假的 w' }, actions: [{ label: '更换部署目标…', as: 'menu' }, { label: '断开连接', as: 'menu', confirm: '断开连接 假的 w？已发布的条目不取消发布，开关保留。' }] }] })
     const shop = url(siteName('sites/shop' as LibraryPath))
     const items = things?.kind === 'list' ? things.items : []
     expect(items.map((i) => [i.cell.text, i.note, i.cell.tag?.text ?? null, i.aside ?? null, i.toggle?.on, i.toggle?.action.label])).toEqual([
-      ['one', 'sites', '只有一个文件', expect.objectContaining({ text: url(siteName('sites/one' as LibraryPath)) }), true, '下线'],
-      ['shop', 'sites', null, { text: shop, mono: true, href: shop, copy: true }, true, '下线'],
-      ['top.html', null, null, null, false, '上线'],
+      ['one', 'sites', '只有一个文件', expect.objectContaining({ text: url(siteName('sites/one' as LibraryPath)) }), true, '取消发布'],
+      ['shop', 'sites', null, { text: shop, mono: true, href: shop, copy: true }, true, '取消发布'],
+      ['top.html', null, null, null, false, '发布'],
     ])
     expect(items[0]?.cell.tag?.tip).toBe('假的目标的说明')
     expect(items[1]?.cell.link).toEqual({ view: 'item', params: { path: 'sites/shop' }, target: 'panel' })
@@ -515,18 +515,18 @@ describe('the plugin the kit makes', () => {
     const plugin = deployPlugin('fake', adapter)
     const l = await library(plugin)
     const page = async () => (await plugin.onView?.({ view: 'fake.sites', params: {} }, l.pctx()))?.blocks ?? []
-    expect((await page()).at(-1)).toEqual({ kind: 'empty', title: '还没有上线的东西', hint: null })
+    expect((await page()).at(-1)).toEqual({ kind: 'empty', title: '暂无可部署的条目', hint: null })
     await l.put(P, 'v1')
     await l.say(P)
-    await l.cmd('fake on', [P])
+    await l.cmd('fake publish', [P])
     fake.fail = true
     await l.put(P, 'v2')
     const [head, , things] = await page()
     expect(head?.kind === 'actions' && head.actions.map((a) => [a.label, a.as])).toEqual([
-      ['上线一样东西', 'primary'],
+      ['发布条目', 'primary'],
       ['重试', 'icon'],
     ])
-    expect(things?.kind === 'list' && things.items[0]?.cell.tag).toEqual({ text: '待发布', tone: 'warn', tip: '开关开着，线上不是当前的内容' })
+    expect(things?.kind === 'list' && things.items[0]?.cell.tag).toEqual({ text: '待发布', tone: 'warn', tip: '开关已开启，部署目标上不是当前内容' })
     // The panel says the mark, its reason and the address in one line.
     const panel = await plugin.onItemView?.(P, l.pctx())
     expect(panel?.blocks[0]).toEqual({
@@ -534,14 +534,14 @@ describe('the plugin the kit makes', () => {
       line: true,
       fields: [
         { label: '状态', value: { text: '', tag: { text: '待发布', tone: 'warn' } } },
-        { label: '为什么', value: { text: '开关开着，线上不是当前的内容' } },
+        { label: '原因', value: { text: '开关已开启，部署目标上不是当前内容' } },
         { label: '地址', value: expect.objectContaining({ text: url(siteName(P)) }) },
       ],
     })
     fake.fail = false
     await l.cmd('fake sync')
     const [settled] = await page()
-    expect(settled?.kind === 'actions' && settled.actions.map((a) => a.label)).toEqual(['上线一样东西'])
+    expect(settled?.kind === 'actions' && settled.actions.map((a) => a.label)).toEqual(['发布条目'])
   })
 
   it('declares the secrets its target reads; one not set refuses, naming the command that sets it, and one set reaches the target', async () => {
@@ -568,16 +568,16 @@ describe('the plugin the kit makes', () => {
     expect(plugin.secrets).toEqual([{ name: 'token', description: '目标的令牌' }])
     expect(plugin.ownerCommands.find((c) => c.name === 'vault target set')?.params).toEqual({ flags: [expect.objectContaining({ name: 'kind' })] })
     const l = await library(plugin, true)
-    expect(await l.cmd('vault target set')).toMatchObject({ outcome: 'done', text: expect.stringContaining('还没设：pneuma-base secret set vault token') })
+    expect(await l.cmd('vault target set')).toMatchObject({ outcome: 'done', text: expect.stringContaining('未设置：pneuma-base secret set vault token') })
     await l.put(P, 'v1')
     await l.say(P)
-    const on = await l.cmd('vault on', [P])
-    expect(on).toMatchObject({ outcome: 'refused', reason: 'publish-failed', text: expect.stringContaining('还没设密钥 token：用 pneuma-base secret set vault token 设') })
+    const on = await l.cmd('vault publish', [P])
+    expect(on).toMatchObject({ outcome: 'refused', reason: 'publish-failed', text: expect.stringContaining('未设置密钥 token：用 pneuma-base secret set vault token 设置') })
     expect(tokens).toEqual([])
     expect(await l.secret('token', 'tok-1')).toMatchObject({ outcome: 'done' })
     expect(await l.cmd('vault sync')).toMatchObject({ outcome: 'done' })
     expect(tokens).toEqual(['tok-1'])
-    expect(await l.list()).toMatchObject([{ path: P, status: 'online' }])
+    expect(await l.list()).toMatchObject([{ path: P, status: 'published' }])
   })
 })
 
@@ -665,12 +665,12 @@ describe('connecting a destination', () => {
     const page = async () => (await plugin.onView?.({ view: 'fake.sites', params: {} }, l.pctx()))?.blocks ?? []
     const [where, ...rest] = await page()
     expect(rest).toEqual([])
-    expect(where).toMatchObject({ kind: 'section', title: '发到哪里', note: null, count: null, actions: [{ label: '丙种…', as: 'menu' }] })
+    expect(where).toMatchObject({ kind: 'section', title: '部署目标', note: null, count: null, actions: [{ label: '丙种…', as: 'menu' }] })
     const items = listsOf([where as Block])[0]?.items ?? []
     expect(items.map((i) => [i.cell.text, i.cell.icon ?? null, i.actions.map((a) => [a.label, a.as ?? null])])).toEqual([
-      ['one.example.com', 'cloud', [['连上', 'primary']]],
-      ['two.example.com', 'cloud', [['连上', 'primary']]],
-      ['别的 假的地方', 'cloud', [['连上…', null]]],
+      ['one.example.com', 'cloud', [['连接', 'primary']]],
+      ['two.example.com', 'cloud', [['连接', 'primary']]],
+      ['其他 假的地方', 'cloud', [['连接…', null]]],
     ])
     // The group's dialog: the kind by its choice, then the fields of the kind chosen, the key last, sent as what is read hidden.
     const other = items[2]?.actions[0]
@@ -682,22 +682,22 @@ describe('connecting a destination', () => {
     ])
     expect(other?.call).toMatchObject({ args: { flags: { kind: ['{kind}'], at: ['{at}'], admin: ['{admin}'] } }, stdin: '{key}' })
 
-    expect(await press(l, items[0]?.actions[0])).toMatchObject({ outcome: 'done', text: '已连上 one.example.com。' })
+    expect(await press(l, items[0]?.actions[0])).toMatchObject({ outcome: 'done', text: '已连接 one.example.com。' })
     const [head, row, empty] = await page()
     expect(head).toMatchObject({ kind: 'actions', head: true })
-    expect(row).toMatchObject({ kind: 'list', items: [{ cell: { text: 'one.example.com', icon: 'cloud' }, actions: [{ label: '换一个…' }, { label: '前缀…' }, { label: '断开' }] }] })
+    expect(row).toMatchObject({ kind: 'list', items: [{ cell: { text: 'one.example.com', icon: 'cloud' }, actions: [{ label: '更换部署目标…' }, { label: '前缀…' }, { label: '断开连接' }] }] })
     expect(empty).toMatchObject({ kind: 'empty' })
-    // Changing kind: all of them by their labels, the one connected chosen; a found one or 别的 and its fields.
+    // Changing kind: all of them by their labels, the one connected chosen; a found one or 其他 and its fields.
     const change = listsOf([row as Block])[0]?.items[0]?.actions[0]
     expect(change?.inputs.map((i) => [i.name, i.value, i.options?.map((o) => o.label) ?? null, i.when ?? null])).toEqual([
       ['kind', 'alpha', ['甲种', '乙种', '丙种'], null],
-      ['host', 'one.example.com', ['one.example.com', 'two.example.com', '别的'], [{ input: 'kind', is: ['alpha'] }]],
+      ['host', 'one.example.com', ['one.example.com', 'two.example.com', '其他'], [{ input: 'kind', is: ['alpha'] }]],
       ['at', null, null, [{ input: 'kind', is: ['alpha'] }, { input: 'host', is: [''] }]],
       ['admin', null, null, [{ input: 'kind', is: ['beta'] }]],
       ['to', null, null, [{ input: 'kind', is: ['gamma'] }]],
       ['key', null, null, [{ input: 'kind', is: ['alpha'] }, { input: 'host', is: [''] }]],
     ])
-    expect(await press(l, change, { kind: 'gamma', host: '', to: '/srv/www' })).toMatchObject({ outcome: 'done', text: '已连上 /srv/www。' })
+    expect(await press(l, change, { kind: 'gamma', host: '', to: '/srv/www' })).toMatchObject({ outcome: 'done', text: '已连接 /srv/www。' })
     expect(listsOf(await page())[0]?.items[0]?.cell).toEqual({ text: '/srv/www', icon: 'folder', local: true })
     // The connected kind's paragraph is the plugin's to add while it is connected.
     expect(await plugin.onDescribe?.(l.pctx())).toBeNull()
@@ -714,7 +714,7 @@ describe('connecting a destination', () => {
     expect(await l.pctx().secrets.get('key')).toBeNull()
     expect(() => configFile()).toThrow()
 
-    expect(await l.cmd('fake target set', [], { kind: ['alpha'], at: ['far.example.com'] }, `${KEY}\n`)).toMatchObject({ outcome: 'done', text: '已连上 far.example.com。' })
+    expect(await l.cmd('fake target set', [], { kind: ['alpha'], at: ['far.example.com'] }, `${KEY}\n`)).toMatchObject({ outcome: 'done', text: '已连接 far.example.com。' })
     expect(typed).toEqual(['not-the-key', KEY])
     expect(await l.pctx().secrets.get('key')).toBe(KEY)
     expect(JSON.parse(configFile())).toEqual({ format: 1, target: { kind: 'alpha', where: 'far.example.com', prefix: 'lib' }, given: { at: 'far.example.com' } })
@@ -735,23 +735,23 @@ describe('connecting a destination', () => {
     const l = await library(plugin, true)
     expect(await l.cmd('fake target list')).toMatchObject({
       outcome: 'done',
-      text: '还没有部署目标。\n这台机器上有 one.example.com：fake target set --kind alpha --host one.example.com\n这台机器上有 two.example.com：fake target set --kind alpha --host two.example.com',
+      text: '未连接部署目标。\n本机检测到 one.example.com：fake target set --kind alpha --host one.example.com\n本机检测到 two.example.com：fake target set --kind alpha --host two.example.com',
       data: { connected: null, found: [{ kind: 'alpha', label: 'one.example.com', values: { host: 'one.example.com' } }, expect.objectContaining({ label: 'two.example.com' })] },
     })
     await l.cmd('fake target set', [], { kind: ['gamma'], to: ['/srv/my www'] })
-    expect(await l.cmd('fake target list')).toMatchObject({ text: expect.stringMatching(/^连着 \/srv\/my www：fake target set --kind gamma --to '\/srv\/my www'\n/), data: { connected: { kind: 'gamma', label: '/srv/my www' } } })
+    expect(await l.cmd('fake target list')).toMatchObject({ text: expect.stringMatching(/^已连接 \/srv\/my www：fake target set --kind gamma --to '\/srv\/my www'\n/), data: { connected: { kind: 'gamma', label: '/srv/my www' } } })
     await l.put(P, 'v1')
     await l.say(P)
-    await l.cmd('fake on', [P])
-    expect(await l.cmd('fake target remove')).toMatchObject({ outcome: 'done', text: '已断开 /srv/my www。线上的 1 样没有撤下。' })
+    await l.cmd('fake publish', [P])
+    expect(await l.cmd('fake target remove')).toMatchObject({ outcome: 'done', text: '已断开连接 /srv/my www。1 个已发布的条目未取消发布。' })
     expect(await l.list()).toEqual([expect.objectContaining({ path: P, on: true })])
-    expect((await plugin.onView?.({ view: 'fake.sites', params: {} }, l.pctx()))?.blocks[0]).toMatchObject({ kind: 'section', title: '发到哪里' })
+    expect((await plugin.onView?.({ view: 'fake.sites', params: {} }, l.pctx()))?.blocks[0]).toMatchObject({ kind: 'section', title: '部署目标' })
     expect(await l.cmd('fake target remove')).toMatchObject({ outcome: 'refused', reason: 'no-target' })
   })
 })
 
-describe('the owner putting a thing online', () => {
-  it('declares a thing nobody declared and switches it on in one act; an agent’s declaration stays off; the panel offers 上线… for a directory thing while connected', async () => {
+describe('the owner publishing a thing', () => {
+  it('declares a thing nobody declared and switches it on in one act; an agent’s declaration stays off; the panel offers 发布… for a directory thing while connected', async () => {
     const { fake, adapter } = fakeTarget()
     const plugin = deployPlugin('fake', adapter)
     const l = await library(plugin, true)
@@ -761,15 +761,15 @@ describe('the owner putting a thing online', () => {
     expect(await plugin.onItemView?.('sites/shop' as LibraryPath, l.pctx())).toBeNull()
     await l.cmd('fake target set', [], { where: ['w'] })
     const panel = await plugin.onItemView?.('sites/shop' as LibraryPath, l.pctx())
-    expect(panel).toEqual({ title: '部署', blocks: [], actions: [expect.objectContaining({ label: '上线…', as: 'menu', confirm: '把 shop 发到 假的 w？', call: expect.objectContaining({ command: 'fake on', args: { positional: ['sites/shop'], flags: {} } }) })] })
+    expect(panel).toEqual({ title: '部署', blocks: [], actions: [expect.objectContaining({ label: '发布…', as: 'menu', confirm: '发布 shop 到 假的 w？', call: expect.objectContaining({ command: 'fake publish', args: { positional: ['sites/shop'], flags: {} } }) })] })
     expect(await plugin.onItemView?.(P, l.pctx())).toBeNull()
 
-    expect(await press(l, panel?.actions?.[0])).toMatchObject({ outcome: 'done', text: `已上线 sites/shop → ${url(siteName('sites/shop' as LibraryPath))}` })
+    expect(await press(l, panel?.actions?.[0])).toMatchObject({ outcome: 'done', text: `已发布 sites/shop → ${url(siteName('sites/shop' as LibraryPath))}` })
     expect(fake.served.has(siteName('sites/shop' as LibraryPath))).toBe(true)
     await l.say('sites/blog')
-    expect(await l.list()).toEqual([expect.objectContaining({ path: 'sites/blog', on: false, status: 'offline' }), expect.objectContaining({ path: 'sites/shop', on: true, status: 'online' })])
-    expect(await l.cmd('fake on', ['sites/nothing'])).toMatchObject({ outcome: 'refused', reason: 'not-declared' })
-    expect(await l.cmd('fake off', [Q])).toMatchObject({ outcome: 'refused', reason: 'not-declared' })
+    expect(await l.list()).toEqual([expect.objectContaining({ path: 'sites/blog', on: false, status: 'unpublished' }), expect.objectContaining({ path: 'sites/shop', on: true, status: 'published' })])
+    expect(await l.cmd('fake publish', ['sites/nothing'])).toMatchObject({ outcome: 'refused', reason: 'not-declared' })
+    expect(await l.cmd('fake unpublish', [Q])).toMatchObject({ outcome: 'refused', reason: 'not-declared' })
   })
 })
 
@@ -843,7 +843,7 @@ describe('what a target shows', () => {
     for (const path of [P, R]) {
       await l.put(path, path)
       await l.say(path)
-      await l.cmd('fake on', [path])
+      await l.cmd('fake publish', [path])
     }
     await l.archive(R)
     const [a, r] = [siteName(P), siteName(R)]
@@ -893,22 +893,22 @@ describe('what a target shows', () => {
 
     const l = await library(plugin, true)
     const unset = await plugin.onView?.({ view: 'fake.board', params: {} }, l.pctx())
-    expect(unset?.blocks).toEqual([{ kind: 'text', tone: 'warn', text: expect.stringContaining('还没配部署目标') }])
+    expect(unset?.blocks).toEqual([{ kind: 'text', tone: 'warn', text: expect.stringContaining('未连接部署目标') }])
 
     expect(await l.cmd('fake target set', [], { where: ['w'] })).toMatchObject({ outcome: 'done' })
     for (const path of [P, Q]) {
       await l.put(path, path)
       await l.say(path)
     }
-    await l.cmd('fake on', [P])
+    await l.cmd('fake publish', [P])
     const board = await plugin.onView?.({ view: 'fake.board', params: {} }, l.pctx())
-    expect(board).toMatchObject({ title: '看板', subtitle: '1 样在线' })
+    expect(board).toMatchObject({ title: '看板', subtitle: '1 个已发布' })
     const custom = board?.blocks[0]
     expect(custom?.kind).toBe('custom')
     if (custom?.kind !== 'custom') return
     expect(custom.data).toEqual([
-      { path: P, state: { text: '在线', tone: 'good' }, note: `在服务 ${siteName(P)}` },
-      { path: Q, state: { text: '离线', tone: 'neutral' }, note: null },
+      { path: P, state: { text: '已发布', tone: 'good' }, note: `在服务 ${siteName(P)}` },
+      { path: Q, state: { text: '未发布', tone: 'neutral' }, note: null },
     ])
 
     const page = await plugin.onView?.({ view: 'fake.sites', params: {} }, l.pctx())
@@ -955,10 +955,10 @@ describe('what a target shows', () => {
     expect(plugin.secrets).toEqual([{ name: 'token', description: '服务要求登录时的令牌', optional: true }])
     const l = await library(plugin, true)
     // An optional secret not set goes unsaid.
-    expect(await l.cmd('open target set')).toMatchObject({ outcome: 'done', text: '已连上 令牌可有可无的目标。' })
+    expect(await l.cmd('open target set')).toMatchObject({ outcome: 'done', text: '已连接 令牌可有可无的目标。' })
     await l.put(P, 'v1')
     await l.say(P)
-    expect(await l.cmd('open on', [P])).toMatchObject({ outcome: 'done' })
+    expect(await l.cmd('open publish', [P])).toMatchObject({ outcome: 'done' })
     expect(await l.secret('token', 'tok-1')).toMatchObject({ outcome: 'done' })
     await l.put(P, 'v2')
     expect(tokens).toEqual([null, 'tok-1'])
@@ -973,7 +973,7 @@ describe('what a target shows', () => {
       open: () => ({ key: 'keyed', label: '要钥匙的目标', publish: async (site) => ({ url: url(site) }), remove: async () => {} }),
     })
     const k = await library(deployPlugin('keyed', keyed), true)
-    expect(await k.cmd('keyed target set')).toMatchObject({ outcome: 'done', text: '已连上 要钥匙的目标。钥匙从凭据文件读。' })
+    expect(await k.cmd('keyed target set')).toMatchObject({ outcome: 'done', text: '已连接 要钥匙的目标。钥匙从凭据文件读。' })
   })
 })
 
@@ -1016,8 +1016,8 @@ describe('a target opened for a run', () => {
     await l.put(P, 'v1')
     await l.say(P)
     balanced('put, say')
-    expect(await l.cmd('counted on', [P])).toMatchObject({ outcome: 'done' })
-    balanced('on')
+    expect(await l.cmd('counted publish', [P])).toMatchObject({ outcome: 'done' })
+    balanced('publish')
     n.fail = true
     expect(await l.put(P, 'v2')).toMatchObject({ outcome: 'accepted' })
     balanced('a put whose publish failed')

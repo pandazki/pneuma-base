@@ -38,7 +38,7 @@ export const newThingId = () => `d_${randomBytes(5).toString('hex')}` as ThingId
 
 /** A line's body, or why it is not a deploy record. Kinds this version does not know are kept and ignored by the fold. */
 export function parseFact(raw: Record<string, unknown>): FactBody | string {
-  return typeof raw.kind === 'string' && typeof raw.thing === 'string' ? (raw as unknown as FactBody) : '缺 kind 或 thing'
+  return typeof raw.kind === 'string' && typeof raw.thing === 'string' ? (raw as unknown as FactBody) : '缺少 kind 或 thing'
 }
 
 function sitesOn(d: Deployments, target: TargetKey): Map<SiteName, OnTarget> {

@@ -50,14 +50,14 @@ function site(dir: string, text: string): string {
   return dir
 }
 
-/** The sites a dir deploy target serves: its entries besides index.json and dot-named scratch. */
+/** The sites a folder deploy target serves: its entries besides index.json and dot-named scratch. */
 const served = () => (existsSync(www) ? readdirSync(www).filter((n) => !n.startsWith('.') && n !== 'index.json').sort() : [])
 
 describe('the whole story, with every plugin installed', () => {
   it('the owner makes a library, adds the plugins, and sets a deploy target, a sync target and an embedder', () => {
     ok(sb.run(['init', lib], { cwd: root }))
     for (const name of PLUGINS) ok(owner(lib, ['plugin', 'enable', name]))
-    ok(owner(lib, ['deploy', 'target', 'set', '--kind', 'dir', '--to', www]))
+    ok(owner(lib, ['deploy', 'target', 'set', '--kind', 'folder', '--to', www]))
     ok(owner(lib, ['sync', 'target', 'set', '--kind', 'folder', '--to', syncTarget]))
     ok(owner(lib, ['search', 'embedding', 'set', '--kind', 'hash']))
     const description = readFileSync(join(lib, 'PNEUMA-BASE.md'), 'utf8')
@@ -71,15 +71,15 @@ describe('the whole story, with every plugin installed', () => {
       // Five plugins, one put: the answer stays a head line and one line per plugin that had something to say.
       expect(lines(put)[0]).toMatch(new RegExp(` sites/${name}$`))
       expect(lines(put).length).toBeLessThanOrEqual(4)
-      expect(ok(claude(['say', 'deployable', `sites/${name}`])).stdout).toContain('它现在不在线；上不上线由主人决定')
+      expect(ok(claude(['say', 'deployable', `sites/${name}`])).stdout).toContain('当前未发布，由所有者决定是否发布')
       ok(claude(['say', 'versioned', `sites/${name}`]))
     }
-    expect(claude(['deploy', 'on', 'sites/coffee']).code).toBe(2)
+    expect(claude(['deploy', 'publish', 'sites/coffee']).code).toBe(2)
     expect(served()).toEqual([])
   })
 
   it('the owner turns four on and archives three of the others; the deploy target holds exactly the four', () => {
-    for (const name of ONLINE) expect(ok(owner(lib, ['deploy', 'on', `sites/${name}`])).stdout).toMatch(new RegExp(`^已上线 sites/${name} → `))
+    for (const name of ONLINE) expect(ok(owner(lib, ['deploy', 'publish', `sites/${name}`])).stdout).toMatch(new RegExp(`^已发布 sites/${name} → `))
     for (const name of ARCHIVED) expect(lines(ok(owner(lib, ['archive', `sites/${name}`])))[0]).toBe(`已归档：sites/${name} → _archive/sites/${name}`)
     expect(served()).toEqual(ONLINE.map((name) => `sites-${name}`).sort())
     for (const name of ONLINE) expect(readFileSync(join(www, `sites-${name}`, 'index.html'), 'utf8')).toContain(SITES[name])
@@ -99,7 +99,7 @@ describe('the whole story, with every plugin installed', () => {
       expect.stringMatching(/ sites\/coffee$/),
       expect.stringMatching(/^ {2}ledger：.* · 条目 i_/),
       expect.stringMatching(/^ {2}version：.*sites\/coffee.*2/),
-      expect.stringMatching(/^ {2}deploy：sites\/coffee 在线，已重新发布/),
+      expect.stringMatching(/^ {2}deploy：sites\/coffee 已重新发布/),
     ])
     expect(readFileSync(join(www, 'sites-coffee/index.html'), 'utf8')).toContain('换了深色配色')
     expect(ok(codex(['version', 'list', 'sites/coffee', '--json'])).json().data.versions.map((v: { n: number; by: string }) => [v.n, v.by])).toEqual([[1, 'claude-code'], [2, 'codex']])
@@ -143,6 +143,6 @@ describe('the whole story, with every plugin installed', () => {
     // (What only the owner can settle comes after, each answer as the owner's command for this library.)
     const told = text.split('## 需所有者处理')[0] ?? ''
     expect(told.split('\n').filter((line) => line.startsWith('  ')).join('\n')).not.toContain(root)
-    expect(text).toContain(`pneuma-base deploy on sites/cycling --library ${lib}  # 上线（推荐）`)
+    expect(text).toContain(`pneuma-base deploy publish sites/cycling --library ${lib}  # 发布（推荐）`)
   })
 })
