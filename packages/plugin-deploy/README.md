@@ -53,10 +53,10 @@
 
 ## 存放
 
-都在 `.pneuma-base/deploy/` 下：`config.json` 是已连接的部署目标和所有者给的开关（`{ "format": 1, "target": { "kind": …, … }, "given": { … } }`，`cloudflare` 存 `host` 或 `credentials`、`origin`、`account`、`prefix`、`tenant`，`self-hosted` 存 `admin`、`prefix`、`public`，`folder` 存 `to`，`command` 存它的命令，从不存密钥）；`facts/` 是部署库的记录。记录按部署目标区分：`pneuma-space-cf:<地址>`、`pneuma-space:<管理地址>`、`dir:<目录>`、`command:<发布命令的参数表>`。改名之前存下的 `kind`（`machine`、`dir`）照样读作 `self-hosted`、`folder`，文件不改写；`dir:` 的键也没有改，所以以前的记录照样算数。
+都在 `.pneuma-base/deploy/` 下：`config.json` 是已连接的部署目标和所有者给的开关（`{ "format": 1, "target": { "kind": …, … }, "given": { … } }`，`cloudflare` 存 `host` 或 `credentials`、`origin`、`account`、`prefix`、`tenant`，`self-hosted` 存 `admin`、`prefix`、`public`，`folder` 存 `to`，`command` 存它的命令，从不存密钥）；`facts/` 是部署库的记录。记录按部署目标区分：`pneuma-space-cf:<地址>`、`pneuma-space:<管理地址>`、`dir:<目录>`、`command:<发布命令的参数表>`。`config.json` 里的 `kind` 为 `machine` 时读作 `self-hosted`，为 `dir` 时读作 `folder`，读时不改写文件。
 
 插件是 sdk 的部署库加四种目标：`deployPlugin('deploy', [cloudflareTarget, selfHostedTarget, folderTarget, commandTarget])`（`src/index.ts`）。决定、状态、状态 × 操作的表、站点名、记录、命令和页面是部署库的，见 `packages/sdk/src/kit/deploy/README.md`。
 
 ## 测试
 
-`test/` 里的测试用替身（`fake-cloudflare.ts`、`fake-space.ts`）和临时家目录，不连真的服务；本地文件夹的符合性检查在 `packages/cli/test/conformance-deploy.test.ts`，页上的整条路在 `packages/viewer/e2e/deploy.spec.ts`。要真服务的只在设了环境变量时跑：`SPACE_ADMIN=<管理地址>` 跑自托管的生命周期和页面测试（`lifecycle.test.ts`、`viewer.test.ts`），`PNEUMA_SPACE_CF_CREDENTIALS=<凭据文件>` 跑 Cloudflare 上的真实生命周期（`cloudflare-live.test.ts`）。它们建的应用都叫 `pbs-…`，结束时撤下并清除。
+`test/` 里的测试用替身（`fake-cloudflare.ts`、`fake-space.ts`）和临时家目录，不连真的服务。要真服务的只在设了环境变量时跑：`SPACE_ADMIN=<管理地址>` 跑自托管的生命周期和页面测试（`lifecycle.test.ts`、`viewer.test.ts`），`PNEUMA_SPACE_CF_CREDENTIALS=<凭据文件>` 跑 Cloudflare 上的真实生命周期（`cloudflare-live.test.ts`）。它们建的应用都叫 `pbs-…`，结束时撤下并清除。

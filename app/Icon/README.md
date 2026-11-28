@@ -14,4 +14,4 @@ From the repository root, run `sh app/Icon/compile.sh --refresh` with Xcode conf
 
 `Compiled.tar.xz` contains the resulting `Assets.car` and the ten-size `AppIcon.icns`. The app build uses that archive when the sources match `sources.sha256`, and recompiles changed sources before packaging. In the bundle, `CFBundleIconName` selects the layered asset named `AppIcon` and `CFBundleIconFile` identifies its standalone fallback.
 
-The checked-in compilation uses the asset catalog. On the build host, Icon Composer’s `ictool --export-image` and the `actool` document path both failed to open an `.icon` package, including Xcode’s stock template. Foundation reported that Launch Services document-type information was unavailable. The catalog compiled with native Aqua, Dark Aqua and tintable stack records.
+The checked-in compilation uses the asset catalog, because on the build host neither Icon Composer’s `ictool --export-image` nor the `actool` document path opens an `.icon` package, Xcode’s stock template included: Foundation reports that Launch Services document-type information is unavailable. The catalog compiles with native Aqua, Dark Aqua and tintable stack records.

@@ -1,6 +1,6 @@
 // Plugins' credentials on this machine: `$PNEUMA_BASE_HOME/secrets/<plugin>/<name>`, one file per
 // secret holding its value, readable only by the user. Outside every library, so no sync carries
-// them. ARCHITECTURE "库外的插件与缓存".
+// them. ARCHITECTURE.md「资料库外的插件与缓存」.
 import { randomBytes } from 'node:crypto'
 import { chmod, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'

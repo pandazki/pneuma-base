@@ -146,7 +146,7 @@ export async function initLibrary(
   const root = await makeAddress(address)
   bindProvider(root, provider)
   await recordLibrary(opts.home, root, provider.name)
-  // Storage's part first (ARCHITECTURE.md「库」): its cache area, and the noise declared at the root with the default names.
+  // Storage's part first (ARCHITECTURE.md「资料库」): its cache area, and the noise declared at the root with the default names.
   await storageOf(root).init()
   const at = { actor: opts.actor, session: opts.session, home: opts.home, now: new Date().toISOString() as Instant }
   const { library, problems } = await saveConfig(root, newConfig(opts.plugins as PluginName[]), opts.table, at)
