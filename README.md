@@ -33,7 +33,7 @@ Agent 带着自己的授权调用，比如 `pneuma-base @claude-code start "<任
 
 ## 从源码构建
 
-要 Apple 芯片的 Mac、pnpm、Rust 工具链（`pnpm build` 用 `cargo` 构建存储的程序）和 Node 22.18 以上。
+要 Node 22.18 以上、pnpm 和 Rust 工具链（`pnpm build` 用 `cargo` 构建存储的程序），在 Apple 芯片的 Mac 上构建。
 
 ```sh
 pnpm install
