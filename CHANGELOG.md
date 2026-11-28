@@ -30,7 +30,7 @@
 - MCP 工具的名字跟着命令改，比如 `ignore_list`、`plugin_backfill`、`ledger_copies_list`、`deploy_sync`。
 - `--json` 的答复里，来源的种类是 `imported`、`generated`、`unknown`，动态里的动作是 `imported`、`generated`、`task`。
 - 旧的「说」的种类（`doing`、`decided`、`from`）不报错，但没有插件记它们，答复是「未记录」。
-- 旧资料库根目录的 `PNEUMA-BASE.md` 写着旧的命令名，直到下一次改配置（启用或停用插件，新建或撤销授权）时重写。升级后改一次配置，比如新建再撤销一份授权（`grant create`、`grant revoke`），Agent 读到的就是新名字。
+- 旧资料库根目录的 `PNEUMA-BASE.md` 写着旧的命令名。在应用里或用 `pneuma-base view` 打开资料库时，它被重写为当前版本的内容；只用命令行时，下一次改配置（启用或停用插件，新建或撤销授权）时重写。
 
 ### 改了名的页面
 
