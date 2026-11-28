@@ -384,7 +384,7 @@ const SPECS: Spec[] = [
         if (r.reason === 'usage') throw new UsageError(r.text)
         return refusal(r.reason, r.text)
       }
-      const where = r.packages === null ? ['未指定 --packages：package.json 按包名依赖两个包，而这两个包未发布到 npm，npm install 将失败。请换一个空目录，加 --packages <包文件目录> 重新生成。'] : []
+      const where = r.packages === null ? ['未指定 --packages：package.json 按包名依赖两个包，而这两个包未发布到 npm，npm install 将失败。请改用空目录，加 --packages <包文件目录> 重新生成。'] : []
       const next = [`cd ${dir}`, 'npm install', 'npm test', 'npm run install-local', `npx -- pneuma-base plugin enable ${r.name} --library <资料库目录>`]
       const standard = `插件规范：${r.standard ?? 'npm install 后位于 node_modules/pneuma-base/PLUGINS.md'}`
       const lines = [`已在 ${dir} 生成插件 ${r.name}（${r.kind}），共 ${r.files.length} 个文件，README.md 说明每个文件的用途。`, standard, ...where, '下一步：', ...next.map((l) => `  ${l}`)]
