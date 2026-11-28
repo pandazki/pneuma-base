@@ -1,6 +1,6 @@
 # Self-describing folder formats and local-first storage: precedents for Pneuma Base
 
-Scope: how existing "folder is the product" formats handle layout and self-description, item identity, metadata placement, concurrent writers and sync, nested units, detection of outside changes, and hand-writable record formats. Research date 2026-11-25. Every claim has an inline source. Claims I could not verify from a primary page are marked **unverified** or **secondary**. Lines marked **measured** come from a benchmark I ran on this Mac during this research. The script is at `/private/tmp/claude-501/-Users-yizhe-pneuma-base/c6cfc772-0580-49cf-bc96-8cfa52972cde/scratchpad/scanbench/scripts/bench.py`.
+Scope: how existing "folder is the product" formats handle layout and self-description, item identity, metadata placement, concurrent writers and sync, nested units, detection of outside changes, and hand-writable record formats. Research date 2026-11-25. Every claim has an inline source. Claims I could not verify from a primary page are marked **unverified** or **secondary**. Lines marked **measured** come from a benchmark run on one Apple-silicon Mac during this research.
 
 ---
 
@@ -259,12 +259,12 @@ Every system that nests self-contained units records the child as an opaque poin
 ## 6. Detecting changes made outside the tool, and the cost of scanning about 100,000 files
 
 ### Takeaway
-Every tool surveyed detects outside changes by comparing a cached snapshot of (path, size, mtime, sometimes inode or mode) against a fresh walk, and hashes only the candidates. Some add OS file events to skip the walk. On this Mac, a full metadata walk of 100,000 files takes about a quarter of a second warm, so periodic full scans are cheap at that size. Hashing everything is about 15 times slower. Events are an optimization that must fall back to a full rescan on overflow or token mismatch.
+Every tool surveyed detects outside changes by comparing a cached snapshot of (path, size, mtime, sometimes inode or mode) against a fresh walk, and hashes only the candidates. Some add OS file events to skip the walk. On one Mac, a full metadata walk of 100,000 files takes about a quarter of a second warm, so periodic full scans are cheap at that size. Hashing everything is about 15 times slower. Events are an optimization that must fall back to a full rescan on overflow or token mismatch.
 
 ### Cited Findings
 - **git status without fsmonitor**: git must "`lstat()` every tracked file," and the untracked search enumerates every directory. Numbers from GitHub: Chromium (393K files) 17.6 s total, synthetic 1M files 41.1 s, 2M files 85.1 s. The untracked cache alone gives "roughly a 2X speed up." With the builtin FSMonitor plus the untracked cache, totals are 0.83 s, 0.59 s and 0.75 s. Builtin `fsmonitor--daemon` arrived in git 2.37.0 on macOS and Windows. If the daemon token does not match, the daemon returns "assume everything changed" and git falls back to a full scan. — [GitHub blog: FSMonitor](https://github.blog/engineering/improve-git-monorepo-performance-with-a-file-system-monitor/)
-- **Measured on this Mac (Apple M4 Max, macOS 26.7.2, boot volume, warm page cache, 100,000 files of 4 KiB in 1,000 directories):**
-  - Python `os.scandir` walk plus `lstat` of every file: 0.247 s, 0.230 s, 0.227 s over three passes. — measured, script above
+- **Measured on one Apple-silicon Mac (boot volume, warm page cache, 100,000 files of 4 KiB in 1,000 directories):**
+  - Python `os.scandir` walk plus `lstat` of every file: 0.247 s, 0.230 s, 0.227 s over three passes. — measured
   - `git status --porcelain` (git 2.54.0, fsmonitor and untracked cache off): 0.18–0.22 s real; 0.18 s after touching 100 files. — measured
   - Reading and SHA-256 hashing all files (410 MB), single-threaded Python: 3.35 s. — measured
   - Creating the 100,000 files: 7.68 s. — measured
