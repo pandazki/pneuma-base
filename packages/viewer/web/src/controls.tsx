@@ -89,7 +89,7 @@ const LISTED = 20
  * first matches, one of them chosen. The arrow keys move the choice; Enter submits the form it is in.
  * Nothing matching, nothing is chosen.
  */
-export function FilterChoice({ id, label, options, value, onChange }: ChoiceProps & { id: string }) {
+export function FilterChoice({ id, label, options, value, onChange, placeholder }: ChoiceProps & { id: string; placeholder?: string }) {
   const [typed, setTyped] = useState('')
   const list = useRef<HTMLUListElement | null>(null)
   const matching = (text: string) => options.filter((o) => o.label.toLowerCase().includes(text.trim().toLowerCase())).slice(0, LISTED)
@@ -120,6 +120,8 @@ export function FilterChoice({ id, label, options, value, onChange }: ChoiceProp
         aria-autocomplete="list"
         aria-activedescendant={at >= 0 ? optionId(at) : undefined}
         autoComplete="off"
+        aria-label={label}
+        placeholder={placeholder}
         value={typed}
         onChange={(e) => {
           setTyped(e.target.value)

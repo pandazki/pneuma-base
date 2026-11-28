@@ -321,17 +321,21 @@ export function ActionDialog({ action, preset = {}, leaving, onCancel, onSubmit 
             {shown.map((input) => {
               const hint = wrong.has(input.name) && !input.hint ? '格式不对。' : input.hint
               const hintId = hint ? `hint-${input.name}` : undefined
+              // An input whose label is empty says itself, as a choice of named kinds does: no label is drawn, and the dialog's title names it.
+              const label = input.label || name
               return input.options && input.options.length > FEW ? (
                 <div key={input.name} className="form-field">
-                  <label className="form-label" htmlFor={`input-${input.name}`}>
-                    {input.label}
-                  </label>
-                  <FilterChoice id={`input-${input.name}`} label={input.label} options={input.options} value={values[input.name] ?? ''} onChange={(v) => set(input.name, v)} />
+                  {input.label ? (
+                    <label className="form-label" htmlFor={`input-${input.name}`}>
+                      {input.label}
+                    </label>
+                  ) : null}
+                  <FilterChoice id={`input-${input.name}`} label={label} placeholder={input.placeholder ?? undefined} options={input.options} value={values[input.name] ?? ''} onChange={(v) => set(input.name, v)} />
                 </div>
               ) : input.options ? (
                 <div key={input.name} className="form-field">
-                  <span className="form-label">{input.label}</span>
-                  <Segmented label={input.label} options={input.options} value={values[input.name] ?? ''} onChange={(v) => set(input.name, v)} />
+                  {input.label ? <span className="form-label">{input.label}</span> : null}
+                  <Segmented label={label} options={input.options} value={values[input.name] ?? ''} onChange={(v) => set(input.name, v)} />
                 </div>
               ) : (
                 <div key={input.name} className="form-field">

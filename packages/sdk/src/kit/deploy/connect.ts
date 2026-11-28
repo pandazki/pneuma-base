@@ -60,7 +60,7 @@ export function connectAction(kit: Kit, kinds: readonly TargetAdapter[], label: 
   const flags: Record<string, string[]> = {}
   const start = kinds.find((t) => t.kind === opts.start) ?? kinds[0]
   if (several) {
-    inputs.push({ name: 'kind', label: '种类', placeholder: null, value: start?.kind ?? null, options: kinds.map((t) => ({ value: t.kind, label: opts.choose?.(t) ?? t.label })) })
+    inputs.push({ name: 'kind', label: '', placeholder: null, value: start?.kind ?? null, options: kinds.map((t) => ({ value: t.kind, label: opts.choose?.(t) ?? t.label })) })
     flags.kind = ['{kind}']
   } else if (start) flags.kind = [start.kind]
   // Each field once, shown while the kind chosen is one that asks it and no destination found is chosen.

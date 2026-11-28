@@ -137,7 +137,9 @@ async function undeclaredDirs(run: Run): Promise<{ value: string; label: string 
 async function putOnline(run: Run): Promise<Action> {
   const options = await undeclaredDirs(run)
   const { inputs, call } = formOf({ name: switchName(run.kit.name, true), params: SWITCH_PARAMS }, options.length === 0 ? {} : { choices: { path: options }, values: { path: options[0]?.value ?? '' } })
-  return { ...action('上线一样东西', call, inputs), icon: 'plus', as: 'primary' }
+  // The paths say what they are: the choice has no label, its filter field a word for what it finds by.
+  const chosen = options.length === 0 ? inputs : inputs.map((i) => ({ ...i, label: '', placeholder: '名字' }))
+  return { ...action('上线一样东西', call, chosen), icon: 'plus', as: 'primary' }
 }
 
 /** A thing as a row: its name, its folder in grey, its mark, its address at the end, and its switch. */
