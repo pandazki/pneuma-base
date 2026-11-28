@@ -418,7 +418,7 @@ async function closedIn(ctx: PluginContext, dir: string): Promise<ItemsPage['clo
 function deepSection(d: Deep): PluginSection {
   const where = d.dir === null ? '整个资料库' : `${d.dir} `
   const list = (title: string, l: Listed, after: string) => (l.count === 0 ? [] : [`${title}（${l.count} 个）：`, ...l.first.map((p) => `  ${p}`), ...(l.count > l.first.length ? [`  ……共 ${l.count} 个`] : []), ...(after ? [after] : [])])
-  const head = d.stopped ? `已停止：${where}已检索 ${d.done} / ${d.scope} 个已登记条目。` : `内容检索完成：${where}共 ${d.done} 个已登记条目。`
+  const head = d.stopped ? `已停止：${where}已检查 ${d.done} / ${d.scope} 个已登记条目。` : `深度检查完成：${where}共 ${d.done} 个已登记条目。`
   const body = [
     head,
     ...list('内容已变更', d.changed, 'Agent 自己的修改，用 say revised <库内路径> 确认。'),
@@ -426,7 +426,7 @@ function deepSection(d: Deep): PluginSection {
     ...list('无法读取', d.failed, ''),
     ...(d.changed.count + d.touched.count + d.failed.count === 0 ? ['内容均与记录一致。'] : []),
   ]
-  return { title: '内容检索', body: body.join('\n'), data: d }
+  return { title: '深度检查', body: body.join('\n'), data: d }
 }
 
 /** The named whole pass of `check --deep`: how much it reads first, then how far, on the operation's pass; it stops after the page under way when asked. */

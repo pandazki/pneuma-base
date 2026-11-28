@@ -574,7 +574,7 @@ export const STANDING_NOTES: Record<StandingKind, string> = {
   unowned: '来源未知的文件。已知来源时可补充。',
   closed: '',
   changed: '文件被绕过资料库直接修改，内容与记录不一致。可确认此修改。',
-  missing: '记录中存在，存储中找不到：可能已被删除，或移动到无法识别的位置。',
+  missing: '记录中存在，存储中不存在：可能已被删除，或已移动到无法识别的位置。',
   moved: '条目已移动到新位置。Agent 下次执行 check 时，溯源插件记录新位置。',
 }
 
@@ -635,7 +635,7 @@ export function standingAnswer(
         ? { kind: 'list', items }
         : { kind: 'list', items, page: pagingOf({ view: STANDING_VIEW, params: { ...params, kind: l.kind }, rows: size, shown: items.length, next: l.after, total: l.count, atLeast: l.atLeast }) }
     const all: Block[] = only === null && l.after !== null ? [{ kind: 'list', items: [{ cell: { text: `查看全部 ${l.atLeast ? '至少 ' : ''}${l.count} 个`, icon: 'list', link: { view: STANDING_VIEW, params: { kind: l.kind }, target: 'main' } }, note: null, actions: [] }] }] : []
-    return { kind: 'section', title: standingTitle(l.kind), note: null, about: STANDING_NOTES[l.kind], count: l.count, blocks: [list, ...all], actions: [] }
+    return { kind: 'section', title: standingTitle(l.kind), note: null, ...(STANDING_NOTES[l.kind] === '' ? {} : { about: STANDING_NOTES[l.kind] }), count: l.count, blocks: [list, ...all], actions: [] }
   })
   // Each section counts its own; the head says the sum only when there is more than one.
   return { title, subtitle: shown.length > 1 ? `${shown.some((l) => l.atLeast) ? '至少 ' : ''}${total} 个待处理` : null, blocks: [...read, ...blocks] }
@@ -643,7 +643,7 @@ export function standingAnswer(
 
 /** The named whole pass over the library: `check --deep`, reading the content of each of `scope` registered things. */
 export const deepAction = (scope: number): Action => ({
-  label: '内容检索',
+  label: '深度检查',
   tone: 'default',
   as: 'icon',
   icon: 'scan-search',

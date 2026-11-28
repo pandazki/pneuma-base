@@ -41,7 +41,7 @@ export function findCli(cli?: string): string {
     const entry = typeof bin === 'string' ? bin : bin?.['pneuma-base']
     if (entry !== undefined) return join(dirname(manifest), entry)
   }
-  throw new Error('找不到 pneuma-base 命令行。可将其安装到插件项目（npm install <pneuma-base 包文件>），或将 PNEUMA_BASE_CLI 设为其 bin.js 的路径。')
+  throw new Error('未找到 pneuma-base 命令行。可将其安装到插件项目（npm install <pneuma-base 包文件>），或将 PNEUMA_BASE_CLI 设为其 bin.js 的路径。')
 }
 
 /** A new empty directory under `$PNEUMA_BASE_TEST_TMP` or the system's temporary directory, by its real path. */
