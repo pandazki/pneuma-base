@@ -37,9 +37,11 @@ test('快速开始 walks the owner from a new library to an agent at work, each 
   await expect(connect.getByRole('listitem').filter({ hasText: 'Claude Code' }).getByRole('button', { name: '连接' })).toBeVisible()
   // Only the current step shows what to do; the others are one line each and open on a click.
   const second = start.getByRole('listitem', { name: /第 2 步，添加第一个条目，未完成/ })
-  await expect(second).not.toContainText('pneuma-base put')
+  await expect(second.getByRole('button', { name: '从本机添加…' })).toHaveCount(0)
   await second.getByRole('button', { name: /添加第一个条目/ }).click()
-  await expect(second).toContainText(`pneuma-base put <文件或文件夹> --to inbox/<名称> --imported --by owner --library '${lib}'`)
+  // In a browser the page cannot take a dropped file: it puts one of this machine by its path, and names no command.
+  await expect(second.getByRole('button', { name: '从本机添加…' })).toBeVisible()
+  await expect(second).not.toContainText('pneuma-base put')
   const third = start.getByRole('listitem', { name: /第 3 步，向 Agent 发出第一条指令/ })
   await third.getByRole('button', { name: /向 Agent 发出第一条指令/ }).click()
   await expect(third).toContainText('查看我的 Pneuma Base 资料库中有哪些内容。')
@@ -57,7 +59,11 @@ test('快速开始 walks the owner from a new library to an agent at work, each 
 
   const paper = join(tempDir('pb-e2e-out-'), 'paper.pdf')
   writeFileSync(paper, '%PDF')
-  pb.run(['--library', lib, 'put', paper, '--to', 'inbox/paper.pdf', '--imported', '--by', 'owner'], { env: noAgentPath() })
+  await start.getByRole('button', { name: '从本机添加…' }).click()
+  const dialog = page.getByRole('dialog', { name: '从本机添加' })
+  await dialog.getByLabel('本机文件').fill(paper)
+  await dialog.getByLabel('路径').fill('inbox/paper.pdf')
+  await dialog.getByRole('button', { name: '从本机添加', exact: true }).click()
   await expect(start.getByRole('listitem', { name: /第 2 步，添加第一个条目，已完成/ })).toContainText('资料库根目录中有 1 个条目')
   await expect(start).toContainText('2 / 3')
 
@@ -67,7 +73,7 @@ test('快速开始 walks the owner from a new library to an agent at work, each 
   await expect(page.getByRole('main').getByRole('region', { name: '最近动态' })).toBeVisible()
 })
 
-test('in the app the drop area chooses files for the app to put into inbox/; in a browser it shows the command', async ({ page, pb }) => {
+test('in the app the drop area chooses files for the app to put into inbox/', async ({ page, pb }) => {
   const lib = newLibrary(pb)
   const { url } = await pb.view(lib, { env: noAgentPath() })
   const sent = await catchShell(page)
