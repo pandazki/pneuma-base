@@ -82,7 +82,7 @@ agent 带着自己的授权调用，`pneuma-base @<授权名称> <命令>`；经
 | [`STORAGE.md`](STORAGE.md)、[`PROVIDERS.md`](PROVIDERS.md) | 写存储提供者的人：存储的契约，和提供者怎么登记、安装、运行 |
 | [`core/README.md`](core/README.md) | 本机文件夹提供者 `pneuma-base-core` 的线上形式 |
 | [`app/README.md`](app/README.md) | Mac 应用：构建、里面有什么、测过什么 |
-| [`plugins/README.md`](plugins/README.md) | 三个照插件规范在仓库外写的插件 |
+| [`plugins/README.md`](plugins/README.md) | 两个照插件规范在仓库外写的插件 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 用过早先版本的人：这一版变了什么 |
 
 ## 开发者怎么跑检查

@@ -1,6 +1,6 @@
 // Requests: an agent asks for what only the owner may do, with its reason and the exact command; the
 // owner approves or declines with one act; the agent sees the outcome at its next check; the audit
-// names who asked and who decided. ARCHITECTURE.md「请主人做」. The kernel's tests own a plugin's
+// names who asked and who decided. ARCHITECTURE.md「请所有者做」. The kernel's tests own a plugin's
 // askable commands and an approval the gate now refuses (packages/kernel/test/requests.test.ts).
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'

@@ -66,7 +66,7 @@ exec '/Applications/Pneuma Base.app/Contents/MacOS/node' '/Applications/Pneuma B
 
 连接 agent 时写进去的（技能里的命令行、MCP 条目的 `command`）都按绝对路径写这个脚本，所以 agent 的 PATH 上什么都不用有，也找得到授权所在的家目录。应用移动了位置或换了新版，下次启动时脚本跟着改，已连接的 agent 不用重新连接。内容没变就不写。不要管理员权限，不改 PATH。
 
-macOS 把从解压出来的地方直接打开的下载应用放在一个临时的位置运行（App Translocation），退出后那个位置就没了，脚本指向那里就会断。应用看到自己在这样的位置上，会先说「请将 Pneuma Base 移动到「应用程序」文件夹后再打开」，按钮是「退出」和「暂不设置」。
+macOS 把从解压出来的地方直接打开的下载应用放在一个临时的位置运行（App Translocation），退出后那个位置就没了，脚本指向那里就会断。应用看到自己在这样的位置上，会先说「请将 Pneuma Base 移动到「应用程序」文件夹后再打开」，按钮是「退出」和「暂不移动」。
 
 ### 设置
 

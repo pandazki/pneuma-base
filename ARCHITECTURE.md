@@ -213,8 +213,8 @@ interface AgentFace {
 
 ```ts
 type Origin =
-  | { kind: 'brought'; source: string | null; by: string | null }   // 导入的：原始来源，谁导入的；面上说 imported（put --imported）
-  | { kind: 'made'; from: LibraryPath[]; outside: string[] }        // 生成的：依据资料库里的哪些，资料库外的各写一句；面上说 generated
+  | { kind: 'imported'; source: string | null; by: string | null }    // 导入的：原始来源，谁导入的（put --imported）
+  | { kind: 'generated'; from: LibraryPath[]; outside: string[] }    // 生成的：依据资料库里的哪些，资料库外的各写一句（put --generated）
 
 type PlaceSource = { kind: 'file'; path: string } | { kind: 'directory'; path: string } | { kind: 'stdin'; content: Uint8Array }
 
@@ -436,7 +436,7 @@ type AskResult = { outcome: 'asked'; request; again: boolean } | { outcome: 'wit
 3. 内核的规矩（`3-kernel-rules.md`）：不要覆盖或删除已有的条目，不用了就归档；要所有者做管理的事时怎么用 `ask`，带一个例子。其中同名时的那句话按已启用插件的 `keeps` 三选一：没有插件有 `revise`，添加内容不同的同名条目被拒绝；有 `revise` 的都只留一部分，有插件留住时才换上；有一个留住全部，换下的旧内容由插件留着。
 4. 当前的配置：启用了哪些插件，各自的说明在哪。
 
-说明里许诺的能力不超出已启用插件提供的（K6）：未启用溯源插件，说明里就没有「每个条目都能回到它出现的场景」这句话。五个插件都启用时说明不到 160 行；只启用溯源插件时不比启用插件之前长。`packages/cli/test/description-commands.test.ts` 读拼好的说明，把其中每个命令示例照原样在 agent 的会话里跑一遍，所以哪一段都不会和命令走样。
+说明里许诺的能力不超出已启用插件提供的（K6）：未启用溯源插件，说明里就不许诺条目能回到它出现的场景。五个插件都启用时说明不到 160 行；只启用溯源插件时不比启用插件之前长。`packages/cli/test/description-commands.test.ts` 读拼好的说明，把其中每个命令示例照原样在 agent 的会话里跑一遍，所以哪一段都不会和命令走样。
 
 **技能**是一个指向说明的短文件（`packages/kernel/cognition/SKILL.md`），带着资料库的位置、授权的名字和这台机器上的命令，为每个 agent 产品各放一份。`skill install <授权名称> --dir <目录>` 写它，`agent connect` 也写它。技能是这台机器的文件，说明是资料库的，跟着资料库走，仍写 `pneuma-base`。
 
@@ -682,7 +682,7 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 
 规则：
 
-- 事实和行用写下时的词，新写的也一样：来源是 `brought`、`made`、`adopted`，`said` 的 `flavor` 是 `doing`、`decided`、`note`。面上说 `imported`、`generated`、`unknown` 和 `task`、`decision`、`note`。命令改名前的事实（`owner.op` 的 `command`、`line`，`request` 的 `line`）读出来是命令现在的名字和开关。这张对照表只在 `words.ts`。
+- 事实和行用写下时的词，新写的也一样：来源是 `brought`、`made`、`adopted`，`said` 的 `flavor` 是 `doing`、`decided`、`note`。面上和插件接口（sdk 的 `Origin`）说 `imported`、`generated`、`unknown` 和 `task`、`decision`、`note`。命令改名前的事实（`owner.op` 的 `command`、`line`，`request` 的 `line`）读出来是命令现在的名字、开关和值；改名前提交、还在等的请求按现在的名字批准。词的对照表在 `words.ts`，命令名的在内核的 `renamed.ts`。
 - 一个条目的身份是令牌；指纹只在内容经过内核（复制添加）或有人读过时才有。两份是不是同一份（`sameVersion`）：两边都有指纹比指纹，否则都有令牌比令牌，都说不出就当不同。依据记下来源当时的令牌和指纹，可能过期按同样的规则判。
 - 带标记的目录登记后，路径在它下面的已登记条目「已合并到」它（`fold` 推出，没有新的事实种类）：跟着它移动、归档、被清掉，不进 `find` 和 `check` 的清单。依据并入条目的条目照记着的那份判；那个目录变了算「不知道」，也标可能过期。`say` 写的路径在带标记的目录里面时，说的是那个目录。
 - 换下的旧内容进**历史副本**，是给所有者的保险，只有所有者能恢复。溯源的说明、答复和界面说历史副本，不说版本：版本归版本管理插件。
@@ -889,7 +889,7 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 
 | 命令 | 谁能用 | 做什么 |
 | --- | --- | --- |
-| `sync target set --kind dir --to <目录>` | 只有所有者 | 设置这台机器的同步目标 |
+| `sync target set --kind folder --to <目录>` | 只有所有者 | 设置这台机器的同步目标 |
 | `sync now` | 所有者和 agent | 立即同步 |
 | `sync status` | 所有者和 agent，只读 | 目标、上次同步、待同步的数目、冲突副本 |
 
@@ -1233,7 +1233,7 @@ viewerFace.show(req: ViewRequest, call: { ctx; table; env; viaGrant }): Promise<
 - 时刻按看的人的本地时间写：一小时内「刚刚」「N 分钟前」，今天「今天 15:34」，昨天「昨天 15:34」，今年更早的「11月5日 15:34」，更早的年份只写日期；悬停给到秒的完整时间，每半分钟自己走一次。插件写在字里的 `YYYY-MM-DD HH:MMZ` 在副标题、节的说明、一段文字、列表的说明、时间线的行、数的说明和命令面板里也换成这样。
 - 网页的图标表按 sdk 的类型 `IconName` 写，所以 `ICON_NAMES` 和画得出的一样；别的名字画成拼图。
 - `href` 只有 http 和 https 算链接，在新标签页打开（`rel="noopener noreferrer"`），别的照文字显示；表格里放不下时从中间截短，悬停给全文。
-- 执行者的标记：已知产品的 Agent 显示产品自己的图标（`packages/viewer/web/src/agents/`，名称和简称的表是内核 `products.ts` 里的 `AGENT_MARKS`，随页面状态下发，先整名匹配，再匹配第一个词）；其他 Agent 显示两个字母，规则在 `marks.ts`（PLUGINS.md 第 4.4 节的 `ActorMark`），只看屏上同时有的名字，底色由名字定；所有者是灰色圆形里的「我」。
+- 执行者的标记：已知产品的 Agent 显示产品自己的图标（`packages/viewer/web/src/agents/`，名称和简称的表是内核 `products.ts` 里的 `AGENT_MARKS`，随页面状态下发，先整名匹配，再匹配第一个词）；已知产品的 Agent 也以产品名称示人（Claude Code，不写 claude-code）：溯源插件的执行者格写产品名称（内核的 `agentProduct`），标记的提示写产品名称和授权名称；其他 Agent 显示两个字母，规则在 `marks.ts`（PLUGINS.md 第 4.4 节的 `ActorMark`），只看屏上同时有的名字，底色由名字定；所有者是灰色圆形里的「我」。
 - 表格的每一列先量出自然宽度。放得下就都不截短，多出的宽度给最宽的一列。放不下时，可让的列（`optional`）从后往前让开，再截短文字，最后截短路径，路径截掉的是前面的文件夹；各列都截到最短一档还放不下时，表格横着滚。窄的地方要让路径完整，用列表，不用表格。
 - 没有行的表格只显示它的 `empty`，画成空状态：第一句是标题，其余是说明。
 - 一页的块以 `tree` 开头、后面还有块时，树在左边一栏，其余的在右边；地方不够时树在上面。
@@ -1289,6 +1289,7 @@ viewerFace.show(req: ViewRequest, call: { ctx; table; env; viaGrant }): Promise<
 - `GET /api/state`：`{ dir, library, views, problems, available }`。`library` 是 `null` 时这个目录还不是资料库；否则是资料库的位置（另有一份把家目录写成 `~` 的，给人看）和标识。另有视图清单和问题、这台机器上可用的插件。
 - `GET /api/view?view=<编号>&<参数>=…`：`viewerFace.show` 的答复。
 - `POST /api/call`：`{ call, confirmed }`，答复是 `{ tone, text, result }`，一句给人看的话和结果。`call` 不合是 400。`confirmed` 是网页的确认框，就是当面确认。从页上添加只能给一个文件的路径，标准输入归命令行。
+- `POST /api/save`：`{ call, save, name, confirmed }`，给带 `save` 的动作（PLUGINS.md 的 `Action`）。`call` 是写文件的主人命令，参数里正好是 `{<save>}` 的那一个换成系统临时目录里一个新目录下名为 `name` 的文件；命令做完，答复是这个文件的字节（`application/octet-stream`），网页把它交给人下载，临时目录随即删掉；别的答复和 `/api/call` 一样。Mac 应用的窗口把下载经存储面板保存到人选的位置。
 - 请求另带 `pass`（网页每次给一个新的号）时，答复是一行一个 JSON 的流（`application/x-ndjson`）：做的一方经 `ctx.pass` 每报一次进度是一行 `{ progress }`，最后一行 `{ reply }` 是平常的答复。连接在答复之前断了，就当请了停下。`POST /api/stop { pass }` 请那一趟在手上那一步做完后停下，答 `{ running }`，说它还在不在跑。
 - `GET /api/file?path=<库内路径>`：内容区和归档区的文件原样给出，经内核从存储读（`content.ts` 的 `libraryFile`）。路径经内核解析；内核的文件、资料库外的、读不成一个文件的（目录、指向资料库外的链接）都是 404。请求带 `Range` 时只给那一段（206，越界 416），否则整个给；每次向存储读 1 MB，读到一半文件变了就断开。同步服务只留了占位的文件答 409 和它的大小，带 `fetch=1` 才让存储下载。
 - `/api/file` 的类型：图片按扩展名，UTF-8 文字是 `text/plain`，别的是 `application/octet-stream`，所以 HTML 也当文字给。答复带 `sandbox` 的 CSP 和 `nosniff`，浏览器不会运行资料库里的文件。

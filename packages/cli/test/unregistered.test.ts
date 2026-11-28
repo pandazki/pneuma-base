@@ -1,5 +1,5 @@
 // A folder that already had files when it became a library: the ledger asks the owner about each place
-// (ARCHITECTURE.md「问主人」): a directory nobody looked into is one question with three
+// (ARCHITECTURE.md「问所有者」): a directory nobody looked into is one question with three
 // answers, and registering everything in it is a named act over all of it, in one run of one process,
 // a fact for every few hundred so an interrupted run keeps what it did.
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'

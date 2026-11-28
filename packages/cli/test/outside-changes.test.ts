@@ -119,7 +119,7 @@ describe('staleness (C5)', () => {
     expect(section(gone, '可能已过期')).toBeUndefined()
     expect(section(gone, '来源缺失')).toMatchObject([{ path: 'made/a.md', sources: [{ path: 'sources/s.md' }] }])
 
-    // ARCHITECTURE.md「没经过库的改动」: a file whose row has a fingerprint, written back as it was, is taken as the new
+    // ARCHITECTURE.md「没经过资料库的改动」: a file whose row has a fingerprint, written back as it was, is taken as the new
     // baseline silently: not changed directly, and no mark comes from it.
     byHand('sources/s.md', ORIGINAL)
     const back = check()

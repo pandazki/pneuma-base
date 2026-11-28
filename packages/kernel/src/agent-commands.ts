@@ -1,7 +1,7 @@
 // Connecting an agent product to a library in one command, and undoing it in one: a grant, then a
 // skill in the folder the product loads skills from or an MCP server in its configuration, and a
 // record on this machine of exactly what was written. Built from `grant create`, `grant revoke` and
-// `skill install`. ARCHITECTURE.md「接上一个 agent」.
+// `skill install`. ARCHITECTURE.md「连接一个 agent」.
 import { readdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { skillText } from './cognition.js'

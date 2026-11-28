@@ -1,4 +1,4 @@
-// How the library stands, on the sparse rules (ARCHITECTURE.md「怎么看库」): what
+// How the library stands, on the sparse rules (ARCHITECTURE.md「怎么看资料库」): what
 // changed is learned from storage's cursor, and only the registered things at or in those places and
 // those open directories are looked at; when storage cannot say, storage compares every registered
 // place and every open directory with what the rows expect there (`lookRows` over `tokens` and `seen`)

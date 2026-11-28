@@ -2,7 +2,7 @@
 // named node program with a named entry file and exports the home it lives in. Whoever provides the
 // command line keeps it current: the app at each launch, `launcher install` from the package. What
 // agent connect writes names it by absolute path, so its path never changes, only its content.
-// ARCHITECTURE.md「接上一个 agent」 and 「这台机器」.
+// ARCHITECTURE.md「连接一个 agent」 and 「这台机器」.
 import { realpathSync } from 'node:fs'
 import { chmod, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { delimiter, dirname, join, resolve } from 'node:path'
