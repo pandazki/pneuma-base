@@ -55,8 +55,8 @@ describe('the tool list', () => {
       type: 'object',
       properties: {
         path: { type: 'string', description: '库内路径' },
-        version: { type: 'string', description: '第几版', pattern: '^(?:[1-9][0-9]*)$' },
-        to: { type: 'string', description: '库外的目录或文件' },
+        version: { type: 'string', description: '版本号', pattern: '^(?:[1-9][0-9]*)$' },
+        to: { type: 'string', description: '外部目录或文件' },
       },
       required: ['path', 'version', 'to'],
       additionalProperties: false,
@@ -126,11 +126,11 @@ describe.each(['legacy', 'modern'] as const)('a whole task through a real MCP cl
 
   it('reads the instructions, works the library, is refused management, and is one scene of the grant’s agent', async () => {
     const instructions = client.getInstructions() ?? ''
-    expect(instructions.startsWith('你经 MCP 连着一个 Pneuma Base 库')).toBe(true)
+    expect(instructions.startsWith('此 MCP 连接对应一个 Pneuma Base 资料库')).toBe(true)
     expect(instructions.endsWith(readFileSync(join(lib, 'PNEUMA-BASE.md'), 'utf8'))).toBe(true)
     expect(client.getProtocolEra()).toBe(era)
 
-    expect(textOf(await call(client, 'start', { sentence: '写一份下单流程的说明' }))).toContain('【记下】')
+    expect(textOf(await call(client, 'start', { sentence: '写一份下单流程的说明' }))).toContain('【已记录】')
     const put = await call(client, 'put', { text: '# 下单流程说明\n', to: 'docs/flow.md', generated: true, from: ['notes/a.md'] })
     expect(put.structuredContent).toMatchObject({ outcome: 'accepted', path: 'docs/flow.md', copied: true })
     expect(readFileSync(join(lib, 'docs/flow.md'), 'utf8')).toBe('# 下单流程说明\n')
@@ -138,7 +138,7 @@ describe.each(['legacy', 'modern'] as const)('a whole task through a real MCP cl
     expect(bytes.isError).toBe(false)
     expect([...readFileSync(join(lib, 'docs/blob.bin'))]).toEqual([0, 1, 2, 255])
     expect(textOf(await call(client, 'find', { text: 'flow' }))).toContain('docs/flow.md')
-    expect(textOf(await call(client, 'inspect', { target: 'docs/flow.md' }))).toContain('做出来的 · claude')
+    expect(textOf(await call(client, 'inspect', { target: 'docs/flow.md' }))).toContain('生成 · claude')
     expect(await call(client, 'say', { kind: 'note', about: 'docs/flow.md', text: '初稿' })).toMatchObject({ isError: false, structuredContent: { outcome: 'heard' } })
     expect((await call(client, 'check')).isError).toBe(false)
     expect(textOf(await call(client, 'show', { view: 'files', params: { dir: 'docs' } }))).toContain('flow.md')
@@ -148,7 +148,7 @@ describe.each(['legacy', 'modern'] as const)('a whole task through a real MCP cl
     const claude = sceneRows(sb, lib).filter((row) => row.actor.name === 'claude')
     expect(claude).toHaveLength(1)
     expect(claude[0].text).toBe('写一份下单流程的说明')
-    expect(claude[0].meta[0].text).toBe('放入 2 样')
+    expect(claude[0].meta[0].text).toBe('添加 2 个条目')
   })
 
   // What does not depend on the era, once: the plugin added below reads a resource in the modern era.
@@ -156,7 +156,7 @@ describe.each(['legacy', 'modern'] as const)('a whole task through a real MCP cl
     it('a second connection on the same day is a scene of its own', async () => {
       const other = await connect(sb, 'g', era)
       try {
-        expect(textOf(await call(other, 'start', { sentence: '另一件事' }))).toContain('【记下】')
+        expect(textOf(await call(other, 'start', { sentence: '另一件事' }))).toContain('【已记录】')
       } finally {
         await other.close()
       }
@@ -203,6 +203,6 @@ describe.each(['legacy', 'modern'] as const)('a plugin added while connected (%s
     await expect.poll(() => [...new Set(heard)].sort(), { timeout: 15_000, interval: 200 }).toEqual(['description', 'resources', 'tools'])
     expect((await client.listTools()).tools.map((t) => t.name)).toContain('version_list')
     const description = await client.readResource({ uri: 'pneuma-base://library/description' })
-    expect((description.contents[0] as { text: string }).text).toContain('这个库装了**版本**插件')
+    expect((description.contents[0] as { text: string }).text).toContain('此资料库已启用**版本管理**插件')
   })
 })

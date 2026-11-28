@@ -120,14 +120,14 @@ describe('a legacy connection', () => {
 
   it('is one scene of the grant’s agent for all its calls', async () => {
     const { client } = await connectHttp(server, 'g', 'legacy')
-    expect(textOf(await call(client, 'start', { sentence: '整理下单流程' }))).toContain('【记下】')
+    expect(textOf(await call(client, 'start', { sentence: '整理下单流程' }))).toContain('【已记录】')
     expect(await call(client, 'put', { text: '# 流程\n', to: 'docs/flow.md', generated: true })).toMatchObject({ isError: false })
     expect(await call(client, 'say', { kind: 'note', about: 'docs/flow.md', text: '初稿' })).toMatchObject({ isError: false })
     await client.close()
     const claude = sceneRows(sb, lib).filter((row) => row.actor.name === 'claude')
     expect(claude).toHaveLength(1)
     expect(claude[0].text).toBe('整理下单流程')
-    expect(claude[0].meta[0].text).toBe('放入 1 样')
+    expect(claude[0].meta[0].text).toBe('添加 1 个条目')
   })
 
   it('lives by its session id: needed after initialize, 404 when unknown or ended by DELETE, 400 with an era it does not serve', async () => {
@@ -211,7 +211,7 @@ describe('a 2026-07-28 request', () => {
 
   it('works in the scene `?session=` names; with none, each call is the agent’s scene of the day', async () => {
     const { client } = await connectHttp(server, 'g', 'modern', 'named-scene')
-    expect(textOf(await call(client, 'start', { sentence: '整理支付服务' }))).toContain('【记下】')
+    expect(textOf(await call(client, 'start', { sentence: '整理支付服务' }))).toContain('【已记录】')
     expect(await call(client, 'put', { text: '# 支付\n', to: 'docs/pay.md', generated: true })).toMatchObject({ isError: false })
     await client.close()
     const anonymous = await connectHttp(server, 'g', 'modern')

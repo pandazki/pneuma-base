@@ -23,7 +23,7 @@ describe('a fact written under an old command name', () => {
     writeFileSync(join(day, '20260101000000000-aaaaaaaaaaaa-000000.jsonl'), facts.map((f) => `${JSON.stringify(f)}\n`).join(''))
 
     const activity = sb.run(['--library', lib, 'show', 'ledger.activity']).stdout
-    for (const now of ['pneuma-base plugin enable version', 'pneuma-base ledger register notes --recursive', 'pneuma-base grant create', '请主人做 plugin disable deploy --force']) expect(activity).toContain(now)
+    for (const now of ['pneuma-base plugin enable version', 'pneuma-base ledger register notes --recursive', 'pneuma-base grant create', 'plugin disable deploy --force']) expect(activity).toContain(now)
     for (const before of ['plugin add', '--inside', 'grant issue', 'plugin remove', '--anyway']) expect(activity).not.toContain(before)
     const rows = feedRowsIn(sb.run(['--library', lib, 'show', 'ledger.activity', '--json']).json().blocks.find((b: any) => b.kind === 'feed').groups)
     expect(rows.find((r: any) => r.path === 'notes')).toMatchObject({ act: 'imported' })

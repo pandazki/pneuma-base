@@ -34,7 +34,7 @@ function age(id: string): void {
 
 const home = () => ok(owner(['show', 'home', '--json'])).json() as { blocks: Block[] }
 const asksOf = (blocks: Block[]): Ask[] => {
-  const decide = blocks.find((b) => b.kind === 'section' && b.title === '等你决定')
+  const decide = blocks.find((b) => b.kind === 'section' && b.title === '待处理')
   const asks = decide?.kind === 'section' ? decide.blocks[0] : undefined
   return asks?.kind === 'asks' ? asks.asks : []
 }
@@ -126,7 +126,7 @@ describe('the owner allows or declines', () => {
     const { id } = requested('codex')
     ok(owner(['pair', 'decline', id, '不认识这个']))
     expect(status(id)).toMatchObject({ state: 'declined', declined: { reason: '不认识这个' }, connected: null })
-    expect(status(id).text).toContain('不要再请求')
+    expect(status(id).text).toContain('不要再次请求')
     expect(owner(['pair', 'decline', id]).stdout).toContain('not-pending')
     expect(owner(['pair', 'allow', id]).stdout).toContain('not-pending')
     expect(grants()).toEqual([])
@@ -153,7 +153,7 @@ describe('on the pages', () => {
     expect(second?.key).toMatch(/^request:/)
     expect(ask).toMatchObject({ key: `pairing:${id}`, by: { kind: 'agent', name: 'claude-code' }, command: 'agent connect claude-code --name claude-code --via skill', about: null })
     expect(ask?.suggested).toBeUndefined()
-    expect(ask?.text).toContain('Claude Code 想接入这个库：允许吗？')
+    expect(ask?.text).toContain('Claude Code 请求接入此资料库，是否允许？')
     expect(ask?.text).toContain(code)
     expect(ask?.text).toContain(WHY)
     expect(ask?.text).toContain('~/.claude/skills/pneuma-base-claude-code/SKILL.md')
@@ -173,15 +173,15 @@ describe('on the pages', () => {
     age(expired.id)
     expect(asksOf(home().blocks).map((a) => a.key)).toEqual([`pairing:${waiting.id}`])
     const page = ok(owner(['show', 'agents', '--json'])).json() as { blocks: { kind: string; title: string; blocks: Block[] }[] }
-    const section = page.blocks.find((b) => b.title === '让 agent 自己接上')
+    const section = page.blocks.find((b) => b.title === '配对')
     const list = section?.blocks.find((b) => b.kind === 'list')
     const items = list?.kind === 'list' ? list.items : []
     // Only the waiting one is marked; a settled one says how it ended first in its line.
     expect(items.map((i) => [i.cell.actor?.name, i.cell.tag?.text ?? i.note?.split(' · ')[0]])).toEqual([
-      ['other-agent', '等你决定'],
+      ['other-agent', '待处理'],
       ['my-agent', '已过期'],
       ['codex', '已拒绝'],
-      ['claude-code', '已接上'],
+      ['claude-code', '已连接'],
     ])
     expect(items.slice(1).map((i) => i.cell.tag)).toEqual([undefined, undefined, undefined])
     expect(items[0]?.note).toContain(waiting.code)

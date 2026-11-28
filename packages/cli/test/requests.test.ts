@@ -76,8 +76,8 @@ describe('asking, and the owner deciding', () => {
   it('an agent refused an owner command is told the exact ask line, flags quoted for the shell; the line asks, and the owner sees the request in request list and on the home page, in the same lines', () => {
     const refused = claude(['plugin', 'enable', 'version'])
     expect(refused.code).toBe(2)
-    expect(lastLine(refused)).toBe('pneuma-base @claude ask "<为什么>" plugin enable version')
-    expect(lastLine(claude(['grant', 'create', 'helper', '--agent', 'my helper', '--read-only']))).toBe(`pneuma-base @claude ask "<为什么>" grant create helper --agent 'my helper' --read-only`)
+    expect(lastLine(refused)).toBe('pneuma-base @claude ask "<原因>" plugin enable version')
+    expect(lastLine(claude(['grant', 'create', 'helper', '--agent', 'my helper', '--read-only']))).toBe(`pneuma-base @claude ask "<原因>" grant create helper --agent 'my helper' --read-only`)
 
     const asked = claude(['ask', WHY, 'plugin', 'enable', 'version', '--json'])
     expect(asked.code).toBe(0)
@@ -91,7 +91,7 @@ describe('asking, and the owner deciding', () => {
     expect(list).toContain(WHY)
     expect(list).toContain('plugin enable version')
     expect(list).toContain(`$ request approve ${id}  # 批准`)
-    expect(list).toContain(`$ request decline ${id} [<理由>]  # 拒绝`)
+    expect(list).toContain(`$ request decline ${id} [<原因>]  # 拒绝`)
     const home = ok(owner(['show', 'home'])).stdout
     for (const line of list.split('\n').slice(1).filter((l) => l.trim() !== '')) expect(home, line).toContain(line)
     const ask = (ok(owner(['show', 'home', '--json'])).json().blocks as any[]).flatMap((b) => b.blocks ?? []).find((b: any) => b.kind === 'asks').asks[0]
@@ -101,19 +101,19 @@ describe('asking, and the owner deciding', () => {
 
   it('approve runs the command as the owner; the agent sees the outcome at its next check, once; inspect shows it in full', () => {
     const id = decided.approved
-    expect(ok(owner(['request', 'approve', id])).stdout).toContain('已装上插件 version')
+    expect(ok(owner(['request', 'approve', id])).stdout).toContain('已启用插件 version')
     expect(installed()).toContain('version')
-    expect(ok(owner(['request', 'list'])).stdout).toContain('没有等你决定的请求')
+    expect(ok(owner(['request', 'list'])).stdout).toContain('暂无待处理的请求')
 
     const check = ok(claude(['check'])).stdout
-    expect(check).toContain('## 你提的请求')
+    expect(check).toContain('## 已提交的请求')
     expect(check).toContain(`${id} plugin enable version：已批准`)
-    expect(check).toContain('已装上插件 version')
-    expect(ok(claude(['check'])).stdout).not.toContain('你提的请求')
+    expect(check).toContain('已启用插件 version')
+    expect(ok(claude(['check'])).stdout).not.toContain('已提交的请求')
 
     const inspect = ok(claude(['inspect', id])).stdout
-    for (const words of ['claude', WHY, 'plugin enable version', '已批准', '已装上插件 version']) expect(inspect).toContain(words)
-    expect(inspect).not.toContain('库里没有这个文件')
+    for (const words of ['claude', WHY, 'plugin enable version', '已批准', '已启用插件 version']) expect(inspect).toContain(words)
+    expect(inspect).not.toContain('资料库中不存在该文件')
   })
 
   it('decline with a reason: nothing runs, the agent reads the reason at its next check, and it cannot be approved after', () => {
@@ -133,7 +133,7 @@ describe('asking, and the owner deciding', () => {
     decided.withdrawn = id
     expect(as('codex')(['ask', '--withdraw', id, '--json']).json()).toMatchObject({ outcome: 'refused', reason: 'not-yours' })
     expect(ok(claude(['ask', '--withdraw', id, '--json'])).json()).toMatchObject({ outcome: 'withdrawn', request: { id, status: { kind: 'withdrawn' } } })
-    expect(ok(owner(['request', 'list'])).stdout).toContain('没有等你决定的请求')
+    expect(ok(owner(['request', 'list'])).stdout).toContain('暂无待处理的请求')
     expect(owner(['request', 'approve', id, '--json']).json()).toMatchObject({ outcome: 'refused', reason: 'not-pending' })
     expect(claude(['ask', '--withdraw', id, '--json']).json()).toMatchObject({ outcome: 'refused', reason: 'not-pending' })
     expect(claude(['ask', '--withdraw', 'r-ffffffff', '--json']).json()).toMatchObject({ outcome: 'refused', reason: 'no-such-request' })
@@ -141,17 +141,17 @@ describe('asking, and the owner deciding', () => {
     expect(ask()).not.toBe(id)
   })
 
-  it('the activity has a row for asking, one for the approved command with both names and 主人批准的, and rows for withdrawing and declining', () => {
+  it('the activity has a row for asking, one for the approved command with both names and 所有者批准, and rows for withdrawing and declining', () => {
     const rows = feedRowsIn((ok(owner(['show', 'ledger.activity', '--json'])).json().blocks as any[]).find((b) => b.kind === 'feed').groups)
     const approved = rows.find((r) => r.whose === 'approved')
     expect(approved).toMatchObject({ actor: { kind: 'owner' }, text: expect.stringContaining('plugin enable') })
     expect(approved.meta).toEqual(expect.arrayContaining([expect.objectContaining({ actor: { kind: 'agent', name: 'claude', grant: 'claude' }, text: expect.stringContaining(decided.approved) })]))
-    expect(rows.filter((r) => r.text.startsWith('主人面的操作 request approve'))).toEqual([])
+    expect(rows.filter((r) => r.text.startsWith('pneuma-base request approve'))).toEqual([])
     // The owner's request list names the ask too; the row of asking is the agent's.
-    expect(rows.find((r) => r.text.includes(WHY) && !r.text.startsWith('主人面的操作'))).toMatchObject({ actor: { name: 'claude' }, whose: 'agent', text: expect.stringContaining('plugin enable version') })
+    expect(rows.find((r) => r.text.includes(WHY) && !r.text.startsWith('pneuma-base '))).toMatchObject({ actor: { name: 'claude' }, whose: 'agent', text: expect.stringContaining('plugin enable version') })
     expect(rows.find((r) => r.act === 'declined' && r.text.includes(decided.declined))).toMatchObject({ actor: { kind: 'owner' }, whose: 'owner', text: expect.stringMatching(/^pneuma-base request decline /) })
     expect(rows.find((r) => r.text.includes('撤回') && r.text.includes(decided.withdrawn))).toMatchObject({ actor: { name: 'claude' } })
-    expect(ok(owner(['show', 'ledger.activity'])).stdout).toContain('[主人批准的]')
+    expect(ok(owner(['show', 'ledger.activity'])).stdout).toContain('[所有者批准]')
   })
 
   it('what cannot be asked for is refused with its own reason, and nothing is recorded', () => {
@@ -164,7 +164,7 @@ describe('asking, and the owner deciding', () => {
     expect(refusal(['secret', 'set', 'search', 'key'])).toMatchObject({ code: 2, reason: 'not-askable' })
     expect(refusal(['plugin', 'list'])).toMatchObject({ code: 2, reason: 'run-it-yourself', text: expect.stringContaining('pneuma-base @claude plugin list') })
     expect(refusal(['nothing', 'here'])).toMatchObject({ code: 2, reason: 'unknown-command', text: expect.stringContaining('nothing here') })
-    expect(refusal(['grant', 'create', 'helper'])).toMatchObject({ code: 1, stderr: expect.stringContaining('要写 --agent <给谁>') })
+    expect(refusal(['grant', 'create', 'helper'])).toMatchObject({ code: 1, stderr: expect.stringContaining('--agent') })
     expect(claude(['ask', '想要']).code).toBe(1)
     // The owner has nobody to ask.
     expect(owner(['ask', '我自己要', 'plugin', 'enable', 'deploy', '--json']).json()).toMatchObject({ outcome: 'refused', reason: 'not-an-agent' })
@@ -236,7 +236,7 @@ describe('the store', () => {
     expect(all).toContain('grant revoke g54')
     expect(all).toContain('grant revoke g5 ')
     expect(all).not.toContain('grant revoke g4 ')
-    expect(all).toContain('更早的 5 个没有列出')
+    expect(all).toContain('更早的 5 个未列出')
     expect(all).toContain('--older')
     const data = ok(owner(['request', 'list', '--all', '--json'])).json().data
     expect(data).toMatchObject({ requests: expect.any(Array), older: 5 })

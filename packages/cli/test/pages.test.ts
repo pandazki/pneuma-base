@@ -306,9 +306,9 @@ describe('every page of a library with every built-in plugin', () => {
     const files = pages.find((p) => p.link.view === 'files' && Object.keys(p.link.params).length === 0)
     if (!files) throw new Error('no files page')
     const scans = allBlocks(files.json.blocks).flatMap((b) => (b.kind === 'table' ? b.rows : [])).find((r) => r.key === 'scans')
-    expect(scans).toMatchObject({ cells: { name: { tag: { text: '没登记' } }, size: { text: '1 个文件' } } })
-    expect(scans?.actions.map((a) => a.label)).toEqual(['登记成一样东西', '登记里面的文件', '不用管'])
-    expect(files.text).toContain('$ ledger register scans --recursive  # 登记里面的文件（只给主人）；先问：要登记 scans/ 里任意深处的全部文件：1 个，不含噪音。')
+    expect(scans).toMatchObject({ cells: { name: { tag: { text: '未登记' } }, size: { text: '1 个文件' } } })
+    expect(scans?.actions.map((a) => a.label)).toEqual(['登记为条目', '登记目录内的文件', '忽略'])
+    expect(files.text).toContain('$ ledger register scans --recursive  # 登记目录内的文件（仅所有者）；需确认：将登记 scans/ 中所有层级的全部文件：1 个，不含已忽略的。')
   })
 
   it('has buttons that each call a verb, or an owner command the library runs with arguments its params take, and no problem', async () => {
