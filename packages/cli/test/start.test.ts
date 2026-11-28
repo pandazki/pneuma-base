@@ -50,7 +50,7 @@ describe('「快速开始」 on the home page', () => {
     ])
     const [connect, first, say] = steps as [Step, Step, Step]
     expect(connect.blocks).toMatchObject([{ kind: 'list', items: [{ cell: { text: 'Claude Code', actor: { kind: 'agent', name: 'claude-code' } }, actions: [{ label: '连接', inputs: [], call: { face: 'owner', command: 'agent connect', args: { positional: ['claude-code'], flags: {} } } }] }] }])
-    expect(first.blocks).toEqual([{ kind: 'drop', to: 'inbox', command: `pneuma-base put <文件或文件夹> --to inbox/<名称> --imported --by owner --library ${lib}` }])
+    expect(first.blocks).toMatchObject([{ kind: 'drop', to: 'inbox', command: `pneuma-base put <文件或文件夹> --to inbox/<名称> --imported --by owner --library ${lib}`, action: { label: '从本机添加…', call: { face: 'agent', verb: 'put' } } }])
     expect(say.blocks).toMatchObject([{ kind: 'list', items: [{ cell: { text: '查看我的 Pneuma Base 资料库中有哪些内容。', copy: true } }] }])
   })
 

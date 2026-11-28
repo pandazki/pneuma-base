@@ -29,7 +29,7 @@ async function shop({ sandbox, cwd }: SetupContext) {
 }
 
 const target = (plugin: string) => async ({ sandbox }: SetupContext) => {
-  expect((await sandbox.owner([plugin, 'target', 'set', '--kind', 'dir', '--to', await tempDir(`pb-${plugin}-`)])).code).toBe(0)
+  expect((await sandbox.owner([plugin, 'target', 'set', '--kind', 'folder', '--to', await tempDir(`pb-${plugin}-`)])).code).toBe(0)
 }
 
 /** What each built-in's examples stand on. The ledger's bring a page with curl, which here prints instead of fetching. */
