@@ -567,7 +567,7 @@ type PluginContext = Context & { cacheDir: string; tools: PluginTools; secrets: 
 **写一个仓库外的插件**要的都在仓库里，`PLUGINS.md` 从五分钟走通讲到完整的参考：
 
 - 两个包文件，`pnpm pack:dist` 打进 `dist-packages/`（不进 git）：`pneuma-base-<版本>.tgz` 是命令行，内核、五个自带插件、界面的服务和网页都作为捆绑的依赖在里面，内核的 `bin/` 里是这台机器上构建的存储程序和契约测试的程序，另带 `PLUGINS.md`；`pneuma-base-sdk-<版本>.tgz` 是 `@pneuma-base/sdk`，不依赖这个仓库的别的包。两个的版本都是 sdk 的 `PNEUMA_BASE_VERSION`，每个工作区包的 `package.json` 和它不一样时打包拒绝（`scripts/pack-dist.mjs`）。
-- 测试工具 `@pneuma-base/sdk/testkit` 跑真的命令行，不另造一个假的内核。`conformance` 把规范里行为上的规矩跑成检查（`PLUGINS.md` 第 7 节），仓库自己的测试拿它查自带的五个插件（`packages/cli/test/conformance-<插件>.test.ts`，一个插件一个文件），也拿故意违规的插件看每条检查都会变红（`conformance.test.ts`）。
+- 测试工具 `@pneuma-base/sdk/testkit` 跑真的命令行，不另造一个假的内核。`conformance` 把规范里行为上的规矩跑成检查（`PLUGINS.md` 第 7 节），仓库自己的测试拿它查自带的五个插件（`packages/cli/test/conformance-<插件>.slow.test.ts`，一个插件一个文件，发版时跑），也拿故意违规的插件看每条检查都会变红（`conformance.slow.test.ts`）。
 - 脚手架 `pneuma-base plugin new <目录> [--kind blank|deploy]` 是命令行的命令，不是内核的：它只从命令行包里的 `templates/` 写一个项目目录，不碰资料库，不碰 `$PNEUMA_BASE_HOME`，不发事件。两种项目都不改一行就通过自己的测试（`packages/cli/test/scaffold.slow.test.ts`，在 `pnpm test:slow` 里，要联网）。
 - `plugins/` 下有三个照第三方的做法、只依赖两个包文件写的插件：`space`（发布到 PneumaSpace）、`links`、`pulse`。它们也是契约的回归测试（`plugins/README.md`）。
 
