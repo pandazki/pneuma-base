@@ -1,10 +1,10 @@
 // PneumaSpace on a machine (its Docker plane): apps through its admin HTTP API. The content id is the
 // sha256 of the bundle tar PneumaSpace is given, and `serving` answers from what PneumaSpace really has,
-// so `space sync` repairs a publish that died halfway or an app removed from PneumaSpace's console.
+// so `deploy sync` repairs a publish that died halfway or an app removed from PneumaSpace's console.
 import { defineTarget, type ContentId, type Served, type SiteName, type Target, type TargetConfig } from '@pneuma-base/sdk/kit'
-import { appName, ORIGIN, PREFIX_PARAM } from './name.ts'
-import { bundleOf, ownerOf, Space, SpaceError, type AppDetail, type AppSummary } from './space.ts'
-import { viewOf, type Plane, type Seen } from './views.ts'
+import { appName, ORIGIN, PREFIX_PARAM } from './name.js'
+import { bundleOf, ownerOf, Space, SpaceError, type AppDetail, type AppSummary } from './space.js'
+import { viewOf, type Plane, type Seen } from './views.js'
 
 type Config = { admin: string; prefix: string; public: string | null }
 

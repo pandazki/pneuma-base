@@ -6,7 +6,7 @@ import { siteName, type SiteName } from '@pneuma-base/sdk/kit'
 const MAX_NAME = 40
 
 /** The plugin's name: its commands begin with it. */
-export const PLUGIN = 'space'
+export const PLUGIN = 'deploy'
 /** Who manages the apps the plugin makes; PneumaSpace answers 409 to a write that does not name it. */
 export const MANAGER = 'pneuma-base'
 

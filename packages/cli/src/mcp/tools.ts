@@ -25,7 +25,7 @@ import type { Face, JsonSchema, Resource, ResourceText, Tool, ToolResult } from 
 /** Written for this face, ahead of the library's description: how its command lines become tools, how put takes content, where management is. */
 const PREAMBLE = [
   '你经 MCP 连着一个 Pneuma Base 库，下面是这个库的说明。',
-  '说明里的每一条命令行 `pneuma-base @<你的授权名> <命令> …` 就是同名的工具，参数相同：位置参数和开关都写成同名的属性（`--include-archived` 写成 `include-archived`），主人命令名里的空格换成 `_`（`space list` 是工具 `space_list`）；`@<你的授权名>` 已由这次连接定下，不用写。',
+  '说明里的每一条命令行 `pneuma-base @<你的授权名> <命令> …` 就是同名的工具，参数相同：位置参数和开关都写成同名的属性（`--include-archived` 写成 `include-archived`），主人命令名里的空格换成 `_`（`deploy list` 是工具 `deploy_list`）；`@<你的授权名>` 已由这次连接定下，不用写。',
   '`put` 放这台机器上库外的文件或目录时，`what` 写它的绝对路径；把一段内容直接放进来时不写 `what`，文字写在 `text`，字节用 base64 写在 `base64`，再写 `to`。',
   '库里的文件你读不到磁盘，要看内容就用 `inspect` 加 `content: true`；带标记的目录先给出文件清单，再写 `file` 读其中一个。',
   '这次连接是一次会话，你做的事都记在你的授权名下；发授权、装卸插件、设密钥、清空归档区这些管理的事由主人在管理界面上做，这里没有它们的工具。',
@@ -35,7 +35,7 @@ const PREAMBLE = [
 const DESCRIPTION_URI = 'pneuma-base://library/description'
 const PAGE_URI = 'pneuma-base://library/show/'
 
-/** An owner command's tool name: its words joined with `_`, as `space list` is `space_list`. */
+/** An owner command's tool name: its words joined with `_`, as `deploy list` is `deploy_list`. */
 const toolName = (command: string) => command.replaceAll(' ', '_')
 
 /** What an agent's session may run: neither destructive nor only the owner's. */

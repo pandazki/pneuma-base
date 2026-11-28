@@ -72,7 +72,7 @@ const MiB = 1024 * 1024
 /** Why a site path is one the contract refuses, or null: at most 300 characters in the package, no control characters, no backslash, no empty, `.` or `..` part. */
 function badPath(path: string): string | null {
   if (`${DIR}/${path}`.length > MAX_PATH) return '太长（包里的路径最多 300 个字符）'
-  if (/[\u0000-\u001f]/.test(path)) return '带控制字符'
+  if ([...path].some((c) => c.charCodeAt(0) < 0x20)) return '带控制字符'
   if (path.includes('\\')) return '带反斜杠'
   if (path.split('/').some((p) => p === '' || p === '.' || p === '..')) return '有空的、. 或 .. 的一段'
   return null

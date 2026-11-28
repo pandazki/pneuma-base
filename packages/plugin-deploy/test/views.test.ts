@@ -59,7 +59,7 @@ const ownerCall = (action: Action | undefined) => (action?.call.face === 'owner'
 
 describe('the deploy.sites view', () => {
   it('is in the navigation, shows the target, lists each declared thing with its state, its address and a switch, and offers to reconcile', async () => {
-    expect(deploy.views).toEqual([expect.objectContaining({ id: 'deploy.sites', nav: true })])
+    expect(deploy.views).toEqual([expect.objectContaining({ id: 'deploy.sites', nav: true }), expect.objectContaining({ id: 'deploy.board', nav: true })])
     const view = await deploy.onView?.({ view: 'deploy.sites', params: {} }, pctx)
     const target = sections(view?.blocks ?? []).find((s) => s.title === '目标')
     expect(JSON.stringify(target?.blocks)).toContain('www')

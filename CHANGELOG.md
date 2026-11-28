@@ -16,6 +16,8 @@ Pneuma Base 从存储到界面按新的架构重做了一遍。库里有什么�
 
 **存储提供者。** 库建在一个存储上，存储的实现是一个可以安装的程序。安装包自带本机文件夹的那一个；`storage list`、`storage install <owner>/<repo>`、`storage remove`、`storage update` 管这台机器上的提供者，`init <地址> --provider <名字>` 选一个。见 `PROVIDERS.md`。
 
+**部署能发到 PneumaSpace。** 发到 PneumaSpace 的两种目标（Cloudflare 上的、一台机器上的）现在是自带的部署插件的一部分，和本地目录、主人自己的命令并列，用 `deploy target set --kind cloudflare` 或 `--kind machine` 选。没有插件 `space` 了；它没有发布过，所以没有要迁移的东西。
+
 **升级之后的第一次运行重建行。** 状态现在是由事实推出的行，放在库的缓存区 `.pneuma-base/cache/`。旧库没有这些行，所以第一次运行会从事实把它们推出来；事实多时，命令在标准错误上报进度。之后只折新的事实。缓存区随时可以删，删了只是下一次慢一点。
 
 **旧库里还读的和不读的。**

@@ -8,10 +8,10 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import { defineTarget, type ContentId, type Served, type SiteName, type Target, type TargetConfig } from '@pneuma-base/sdk/kit'
-import { Control, ControlError, type AppSummary, type Manager } from './control.ts'
-import { appName, MANAGER, ORIGIN, PLUGIN, PREFIX_PARAM } from './name.ts'
-import { packageOf, refusal } from './package.ts'
-import { viewOf, type Plane, type Seen } from './views.ts'
+import { Control, ControlError, type AppSummary, type Manager } from './control.js'
+import { appName, MANAGER, ORIGIN, PLUGIN, PREFIX_PARAM } from './name.js'
+import { packageOf, refusal } from './package.js'
+import { viewOf, type Plane, type Seen } from './views.js'
 
 type Config = { origin: string; account: string; prefix: string; credentials: string | null; tenant: string | null }
 

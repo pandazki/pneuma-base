@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import type { SiteFile } from '@pneuma-base/sdk/kit'
-import { MANAGER } from './name.ts'
+import { MANAGER } from './name.js'
 
 const MANAGER_HEADER = 'x-pneuma-space-manager'
 const MANIFEST = { contract: 1, capabilities: { static: { dir: 'site' } } }
@@ -54,7 +54,7 @@ export class Space {
       throw new SpaceError(`连不上 PneumaSpace ${this.admin}：${cause}`)
     }
     const text = await response.text()
-    let data: unknown = null
+    let data: unknown
     try {
       data = text ? JSON.parse(text) : null
     } catch {

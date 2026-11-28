@@ -161,9 +161,9 @@ const MAY_TOUCH_FILES = {
   'packages/plugin-sync/src/target.ts': 'the sync target, a folder outside the library (sync refuses one that overlaps it), and the copies staged in its .pneuma-sync/tmp',
   'packages/plugin-sync/src/baseline.ts': "what sync saw last on both sides, a file in the plugin's cache under $PNEUMA_BASE_HOME",
   'packages/plugin-deploy/src/targets.ts': 'the dir target writes the folder outside the library the owner names; the command target runs the commands the owner set',
-  'plugins/space/src/cloudflare.ts': 'the credentials file the owner names, outside the library',
-  'plugins/space/src/space.ts': "the staged site files the deploy kit read out into the plugin's cache",
-  'plugins/space/src/package.ts': "the staged site files the deploy kit read out into the plugin's cache",
+  'packages/plugin-deploy/src/cloudflare.ts': 'the credentials file the owner names, outside the library',
+  'packages/plugin-deploy/src/space.ts': "the staged site files the deploy kit read out into the plugin's cache",
+  'packages/plugin-deploy/src/package.ts': "the staged site files the deploy kit read out into the plugin's cache",
   'packages/cli/templates/deploy/src/target.ts': 'the folder outside the library the owner names as the target',
 }
 /** Projects of their own in this repository, which only the storage door covers. */
