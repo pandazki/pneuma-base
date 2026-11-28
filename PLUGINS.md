@@ -1013,30 +1013,30 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `configFile(ctx, 名字, parse)` | 整份替换的配置文件（3.7），在插件记录处的 `own` 里，`名字` 相对 `.pneuma-base/<插件名>/`。`read()` 没有文件时 `null`，不是 JSON 或 `parse` 抛错时抛错；`write(值)` 经 `own.write` 整份写，带着上次读到的令牌，中间别人写过就重新看一眼那里的令牌再写，最后一次写的算数；连着三次撞上别处的写就抛错。`remove()` 删掉它，没有时什么都不做 |
 | `deployPlugin(名字, 目标, 选项)` | 给一个插件名和一种或几种目标，交回一个完整的部署插件 |
 | `defineTarget(目标)` | 写一种目标，见下面 |
-| `STATUS`、`switchAction(插件名, look)` | 部署库的页上每种状态的标签，和一样东西的开关动作，目标自己画的块用它们说一样的状态、给一样的开关 |
+| `STATUS`、`switchAction(插件名, look)` | 部署库的页上每种状态的标签，和一个条目的开关动作，目标自己画的块用它们说一样的状态、给一样的开关 |
 | `Found`、`TargetGroup`、`Typed` | 目标的 `found` 答的一项，`group`，`configure` 第三个参数的类型 |
 | `siteName`、`want`、`plan`、`statusOf` | 部署库的决定，纯函数：缺省的站点名，目标上该有什么，要做的几步，状态 |
 
 ### 部署库
 
-部署库替你做和目标无关的一切：主人在它的页上连接一个部署目标，把一样东西发布、取消发布；agent 用 `say deployable <库内路径> [说明]` 声明一样东西可部署，声明不发布它；开着的东西，目标上跟着库里当前的内容，添加、移动、归档、取消归档之后都对一遍。记录、主人命令、页面、条目面板里的一节、认知段都是它的。一个部署插件只写它的目标。
+部署库替你做和目标无关的一切：所有者在它的页上连接一个部署目标，把一个条目发布、取消发布；agent 用 `say deployable <库内路径> [说明]` 声明一个条目可部署，声明不发布它；开关已开启的条目，目标上跟着资料库里当前的内容，添加、移动、归档、取消归档之后都对一遍。记录、所有者命令、页面、条目面板里的一节、认知段都是它的。一个部署插件只写它的目标。
 
-它给的主人命令，`<名字>` 是插件名：
+它给的所有者命令，`<名字>` 是插件名：
 
 | 命令 | 标志 | 做什么 |
 | --- | --- | --- |
-| `<名字> publish <库内路径>`、`<名字> unpublish <库内路径>` | `ownerOnly` | 打开或关上开关，并发布或取消发布；主人发布没声明的东西时先记声明 |
+| `<名字> publish <库内路径>`、`<名字> unpublish <库内路径>` | `ownerOnly` | 开启或关闭开关，并发布或取消发布；所有者发布没声明的条目时先记声明 |
 | `<名字> target set [--kind <kind>] <目标的开关>` | `ownerOnly`、`setup` | 连接目标；只有一种目标时可以不写 `--kind`。目标答不上来时什么都不存 |
-| `<名字> target list` | `readOnly` | 连着的目标，和这台机器上找到的 |
+| `<名字> target list` | `readOnly` | 已连接的目标，和这台机器上检测到的 |
 | `<名字> target remove` | `ownerOnly`、`setup` | 断开连接；已发布的不取消发布 |
-| `<名字> sync` | 谁都能用 | 把全部声明过的东西对一遍 |
-| `<名字> list` | `readOnly` | 列出声明过的东西、状态和地址 |
+| `<名字> sync` | 谁都能用 | 把全部声明过的条目对一遍 |
+| `<名字> list` | `readOnly` | 列出声明过的条目、状态和地址 |
 
-它的页是 `<名字>.sites`。没连目标时只有「部署目标」：这台机器上找到的目标一行一个「连接」，每组目标一行「其他 <组名>」和「连接…」，别的几种在菜单里。连着时页头是「发布条目」（有东西等着时另有「重试」），下面是目标那一行（菜单里「更换部署目标…」、设置、「断开连接」），再下面每样东西一行：名字、文件夹、标记、地址、开关。条目面板里是标记和地址、目标的字段和块，开关在面板的菜单里；没声明的目录东西在菜单里有「发布…」。全文在部署库的 `README.md`。
+它的页是 `<名字>.sites`。未连接目标时只有「部署目标」：这台机器上找到的目标一行一个「连接」，每组目标一行「其他 <组名>」和「连接…」，别的几种在菜单里。已连接时页头是「发布条目」（有条目等着时另有「重试」），下面是目标那一行（菜单里「更换部署目标…」、设置、「断开连接」），再下面每个条目一行：名字、文件夹、标记、地址、开关。条目面板里是标记和地址、目标的字段和块，开关在面板的菜单里；没声明的目录条目在菜单里有「发布…」。全文在部署库的 `README.md`。
 
-它问主人（`onAsks`）：声明了可以部署、主人从没动过开关、还在库里（不在归档区）的东西，每样一件「<谁> 声明 <路径> 可部署，未发布。是否发布？」，回答是「发布」（推荐，`<名字> publish`）和「不发布」（`<名字> unpublish`）。哪个回答都记一条开关，开关本来关着也记，之后不再问这一样。所以它们出现在首页的「待处理」和 agent 的 `check` 里，agent 告诉主人，主人点一下或在终端里跑一条命令。它在自己的记录处写 `config.json`（目标，用 `configFile` 整份替换）和记录库 `facts`（用 `recordStore`），都是本体；跑符合性检查时把 `config.json` 列进 `configuration`。
+它问所有者（`onAsks`）：声明了可以部署、所有者从没动过开关、还在资料库里（不在归档区）的条目，每个一件「<谁> 声明 <路径> 可部署，未发布。是否发布？」，回答是「发布」（推荐，`<名字> publish`）和「不发布」（`<名字> unpublish`）。哪个回答都记一条开关，开关本来已关闭也记，之后不再问这一个。所以它们出现在首页的「待处理」和 agent 的 `check` 里，agent 告诉所有者，所有者点一下或在终端里跑一条命令。它在自己的记录处写 `config.json`（目标，用 `configFile` 整份替换）和记录库 `facts`（用 `recordStore`），都是本体；跑符合性检查时把 `config.json` 列进 `configuration`。
 
-一个库只装得上一个部署插件。所有部署插件都认领 `say deployable`，第二个在 `plugin enable` 时以 `name-taken` 拒绝（3.3）。这是设计：一句「可以部署」只该有一个插件听，否则同一样东西会被两个插件各自发布。要发到几种地方，写一个部署插件带几种目标，主人用 `--kind` 选。
+一个资料库只能启用一个部署插件。所有部署插件都认领 `say deployable`，第二个在 `plugin enable` 时以 `name-taken` 拒绝（3.3）。这是设计：一句「可以部署」只该有一个插件听，否则同一个条目会被两个插件各自发布。要发到几种地方，写一个部署插件带几种目标，所有者用 `--kind` 选。
 
 `deployPlugin` 的选项：
 
@@ -1065,12 +1065,12 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `secrets` | 它读的密钥，可以标 `optional: true`。部署库把它们声明成插件的密钥，`secret set` 和设置页就认得 |
 | `asked` | 可选，`{ name, hint }`：`target set` 不显示地读一次的密钥（3.4 的 `params.secret`），对话框里放在最后。`configure` 读到了又答应了，部署库把它存成这台机器上的那个密钥（`ctx.secrets.set`）；它不进配置、记录和答复 |
 | `found(ctx)` | 可选，这台机器上找得到的这种目标，每个 `{ label, values }`，`values` 是连接它的开关。只读找它们要读的 |
-| `cognition` | 可选，连着这种目标时认知段后面多的一段（`onDescribe`） |
+| `cognition` | 可选，已连接这种目标时认知段后面多的一段（`onDescribe`） |
 | `views` | 可选，目标自己的页，每项 `{ name, title, icon }`。每页是导航里的一项，排在部署库的页之后，视图编号 `<插件名>.<name>`；`name` 用小写字母、数字、连字符，不得是 `sites` |
-| `configure(值, ctx, typed)` | 把核过的值变成要存的配置（一个 JSON 对象），或答 `{ ok: false, reason, text }`。连接前在这里问目标一次，答不上来就拒绝，什么都不存。`typed()` 读 `asked` 的密钥，没输入是 `null`。可以带 `note`：一句给主人的话，代替部署库对没设的必需密钥的提醒 |
+| `configure(值, ctx, typed)` | 把核过的值变成要存的配置（一个 JSON 对象），或答 `{ ok: false, reason, text }`。连接前在这里问目标一次，答不上来就拒绝，什么都不存。`typed()` 读 `asked` 的密钥，没输入是 `null`。可以带 `note`：一句给所有者的话，代替部署库对未设置的必需密钥的提醒 |
 | `open(配置, env)` | 在边界上解析存下的配置，交回这一次钩子或命令用的 `Target`；读不懂就抛错 |
 
-`env` 是 `{ ctx, scratch, plugin, secret }`：`ctx` 是这次的上下文，`scratch` 是库外给它用的临时目录，`plugin` 是插件名（它的命令以此开头），`secret(名字)` 读主人在这台机器上设的密钥。必需的密钥没设时 `secret` 以一句说明用哪条命令设的错误拒绝，开关的答复里是 `publish-failed` 带这句话；可选的没设时读出 `null`，类型是 `string | null`。要密钥的目标从不在开关里要它。
+`env` 是 `{ ctx, scratch, plugin, secret }`：`ctx` 是这次的上下文，`scratch` 是资料库外给它用的临时目录，`plugin` 是插件名（它的命令以此开头），`secret(名字)` 读所有者在这台机器上设置的密钥。必需的密钥未设置时 `secret` 以一句说明用哪条命令设置的错误拒绝，发布的答复里是 `publish-failed` 带这句话；可选的未设置时读出 `null`，类型是 `string | null`。要密钥的目标从不在开关里要它。
 
 | `Target` 的字段 | 是什么 |
 | --- | --- |
@@ -1081,42 +1081,42 @@ export default definePlugin({ contract: CONTRACT, name: pluginName('copy'), cogn
 | `publish(站点名, 目录, meta)` | 把目录发布成这个站点，换掉它原来的内容，答 `{ url }`。目录是部署库复制到缓存目录下的临时副本：文件是存储的清单（`content` 带 `manifest`，4.2）按内容规则算进的那些，不带标记文件、噪音、`.gitignore` 排除的和符号链接；每个文件用 `storage.read` 写过去，再对清单里的指纹。`meta` 有内容编号 `content`、库内路径、时刻，和按路径的 UTF-8 字节排好的 `files`（每项 `{ path, abs }`，`abs` 是复制件里的文件），就是复制件里的全部文件 |
 | `remove(站点名)` | 取消发布；取消发布一个它没在服务的站点不算错 |
 | `siteName(路径)` | 可选，换掉缺省的站点名：库内路径小写，别的字符换成 `-`，路径不干净或太长时加 sha256 的前 6 位，最长 58 个字符 |
-| `identify(文件)` | 可选，内容的编号；没有就用存储给的指纹。给它的文件是库外的一份复制件，所以每次要编号都把内容整个读一遍、复制一遍 |
+| `identify(文件)` | 可选，内容的编号；没有就用存储给的指纹。给它的文件是资料库外的一份复制件，所以每次要编号都把内容整个读一遍、复制一遍 |
 | `serving(站点名, ask)` | 可选，问的这些站点它现在真在服务什么：按站点答 `{ content, url, detail? }`，没在服务的 `content` 为 `null`，答复里没有的站点它既不服务也不知道。`detail` 是目标自己类型的其余信息，交给它的视图。有 `serving`，部署库按目标报的对账，`<名字> sync` 修得好断在一半的发布和在目标那边被删掉的站点；它抛错时状态是「状态未知」，什么都不做。没有它，按插件自己的记录对账 |
-| `view` | 可选，往部署库的页、目标自己的页和条目面板里加东西，见下表 |
+| `view` | 可选，往部署库的页、目标自己的页和条目面板里加内容，见下表 |
 | `close()` | 可选，这个 `Target` 为之打开的钩子、命令或视图结束时调一次，失败了也调。登录服务的目标在这里退出登录；它抛的错不影响答复 |
 
-部署库在两种情形下不调 `publish`，目标上的旧版照旧，状态停在待发布，开关和 `<名字> sync` 以 `publish-failed` 答出原因：带标记的目录超过单个条目的上限 5000 个文件，原因是「X 至少有 N 个文件，超过单个条目的上限 5000 个，未发布」；复制的时候有文件变了（复制件的 sha256 和清单的指纹不同），原因是「X 正在修改，未发布」。
+部署库在两种情形下不调 `publish`，目标上的旧版照旧，状态停在待发布，发布和 `<名字> sync` 以 `publish-failed` 答出原因：带标记的目录超过单个条目的上限 5000 个文件，原因是「X 至少有 N 个文件，超过单个条目的上限 5000 个，未发布」；复制的时候有文件变了（复制件的 sha256 和清单的指纹不同），原因是「X 正在修改，未发布」。
 
 `serving` 什么时候被问：
 
-- 一页（部署库的页或目标自己的页）先为全部声明过的东西的站点问一次，`ask.detail` 为 `true`，再调视图的函数。条目面板先为它那样东西的站点问，再调 `fields` 和 `item`。所以视图的函数从不在它要画的答复之前运行。
+- 一页（部署库的页或目标自己的页）先为全部声明过的条目的站点问一次，`ask.detail` 为 `true`，再调视图的函数。条目面板先为它那个条目的站点问，再调 `fields` 和 `item`。所以视图的函数从不在它要画的答复之前运行。
 - 钩子和命令问时 `ask.detail` 为 `false`，不调视图的函数。只有视图用的数据，比如请求数的曲线，在 `ask.detail` 为 `true` 时才取。
 - 部署库发布或取消发布之后会再问，所以记着答复的目标要忘掉变了的站点。
 
 | `view` 的字段 | 是什么 |
 | --- | --- |
-| `mark(look)` | 一行的标记（`Tag`，带 `tip`），部署库的状态说不出的，比如名字被别人占着；`null` 是没有 |
+| `mark(look)` | 一行的标记（`Tag`，带 `tip`），部署库的状态说不出的，比如名称已被占用；`null` 是没有 |
 | `fields(look)` | 条目面板里地址下面的字段；正常的值（`normal: true`）不画 |
 | `before(全部)`、`page(全部)` | 部署库的页上，在它的几节之前、之后的块；`custom` 块要插件的 `ui` |
 | `pages` | 按名字给目标的 `views` 里每页的块：`pages[name](全部)`。配的目标不画某一页时，那一页说明这一点 |
 | `item(look)` | 条目面板里这一节最后的块 |
 | `refresh` | 页面过多少秒重取，`null` 是不重取。目标有 `serving` 时缺省 30，没有时不重取 |
 
-视图的函数拿到的每个 look 是一样声明过的东西现在的样子：
+视图的函数拿到的每个 look 是一个声明过的条目现在的样子：
 
 | look 的字段 | 是什么 |
 | --- | --- |
-| `thing` | 声明：`id`、`path`、`on`（开关）、`decided`（主人动过开关没有）、`declaredAt`、`declaredBy`、`note` |
-| `standing`、`held` | 库里的情况，和目标上为它服务着的站点与内容 |
+| `thing` | 声明：`id`、`path`、`on`（开关）、`decided`（所有者动过开关没有）、`declaredAt`、`declaredBy`、`note` |
+| `standing`、`held` | 资料库里的情况，和目标上为它服务着的站点与内容 |
 | `status` | `published`、`pending`、`unpublished`、`pending-unpublish`、`archived`、`missing`，读不到目标时 `unknown`；`STATUS[status]` 是页上的标签：已发布、待发布、未发布、待取消发布、已归档、条目缺失、状态未知 |
 | `site`、`url` | 它有或会有的站点名，归档时是 `null`；目标在哪里服务它 |
 | `unreachable` | 读不到目标时的原因 |
-| `detail` | `serving` 对它的站点说的 `detail`：先取它正在其下服务的站点，再取它的路径有的、归档的东西曾有的站点名。所以归档了的、待取消发布的东西也有。在页和面板之外是 `null` |
+| `detail` | `serving` 对它的站点说的 `detail`：先取它正在其下服务的站点，再取它的路径有的、归档的条目曾有的站点名。所以归档了的、待取消发布的条目也有。在页和面板之外是 `null` |
 
-`switchAction(插件名, look)` 是一行的那个开关：`{ label: '发布' 或 '取消发布', tone: 'default', confirm: null, inputs: [], call: { face: 'owner', command: '<插件名> publish' 或 '<插件名> unpublish', args: { positional: [路径], flags: {} } }, as: 'icon', icon: 'power' }`；归档了又关着的东西没有开关，答 `null`。
+`switchAction(插件名, look)` 是一行的那个开关：`{ label: '发布' 或 '取消发布', tone: 'default', confirm: null, inputs: [], call: { face: 'owner', command: '<插件名> publish' 或 '<插件名> unpublish', args: { positional: [路径], flags: {} } }, as: 'icon', icon: 'power' }`；已归档且开关已关闭的条目没有开关，答 `null`。
 
-自带的部署插件 `deploy` 带四种目标，是一个完整的例子：Cloudflare 和自托管两种 PneumaSpace 一组（`group`），前一种的 `found` 读这台机器装过的、`asked` 读账户密钥、`configure` 登录一次核对、`close` 退出登录，两种都有 `serving`、`identify`、应用名称前缀的 `settings`、`mark`（名称已被占用）和 `cognition`；本地文件夹（`folder`，改名前是 `dir`，经 `formerly` 照样打开）和自定义命令不报告。第三方要写的只有下面这些：
+自带的部署插件 `deploy` 带四种目标，是一个完整的例子：Cloudflare 和自托管两种 PneumaSpace 一组（`group`），前一种的 `found` 读这台机器已安装的、`asked` 读账户密钥、`configure` 登录一次核对、`close` 退出登录，两种都有 `serving`、`identify`、应用名称前缀的 `settings`、`mark`（名称已被占用）和 `cognition`；本地文件夹（`folder`，改名前是 `dir`，经 `formerly` 照样打开）和自定义命令不报告。第三方要写的只有下面这些：
 
 ```ts
 import { defineTarget, deployPlugin, type Target } from '@pneuma-base/sdk/kit'
