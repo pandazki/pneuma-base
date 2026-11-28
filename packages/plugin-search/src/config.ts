@@ -62,6 +62,6 @@ export async function recordEmbedder(ctx: PluginContext, embedder: EmbedderConfi
     const name = `${ctx.now.replace(/[^0-9]/g, '')}-${randomBytes(4).toString('hex')}.json`
     const written = await ctx.tools.storage.own.write(`${DIR}/${name}`, { data: `${JSON.stringify(record)}\n` }, 'empty')
     if (!isFailure(written)) return
-    if (written.reason !== 'refused') throw new Error(`嵌入器的记录没写成：${written.reason}`)
+    if (written.reason !== 'refused') throw new Error(`embedding 配置写入失败：${written.reason}`)
   }
 }

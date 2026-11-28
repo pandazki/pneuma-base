@@ -1,7 +1,7 @@
-// 记账与对账: the ledger plugin, on storage (plugin contract 2). Facts are appended through
+// 溯源: the ledger plugin, on storage (plugin contract 2). Facts are appended through
 // `tools.storage.records`; every answer is read from the rows derived from them, a page at a time; a
 // thing is known by its state token, and its content is read only where a fingerprint decides
-// something or the owner names a whole pass. ARCHITECTURE.md「记账与对账」.
+// something or the owner names a whole pass. ARCHITECTURE.md「溯源与核对」.
 import {
   commandLine,
   CONTRACT,
@@ -110,14 +110,14 @@ async function basisOf(w: Writing, from: readonly string[], outside: readonly st
   return { items, outside: [...outside] }
 }
 
-const basisNote = (basis: Basis) => `，依据库里 ${basis.items.length} 样${basis.outside.length ? `、库外 ${basis.outside.length} 句` : ''}`
+const basisNote = (basis: Basis) => `，依据 ${basis.items.length} 个条目${basis.outside.length ? `、${basis.outside.length} 条外部依据` : ''}`
 
 /** The origin a put said, a made thing's sources as basis rows; the thing's own old content is no basis of itself. */
 async function originOf(w: Writing, origin: Extract<AcceptedPut, { origin: unknown }>['origin'], self: ItemId | undefined): Promise<LedgerOrigin> {
   if (origin.kind !== 'made') return origin
   const basis = await basisOf(w, origin.from, origin.outside)
   // The kernel accepted the put only when every --from file was there; one gone since is a failure to record.
-  if ('missing' in basis) throw new Error(`依据的文件不在了，没能记下来历：${basis.missing}`)
+  if ('missing' in basis) throw new Error(`依据的文件已缺失，无法记录来源：${basis.missing}`)
   return { kind: 'made', basis: { ...basis, items: basis.items.filter((row) => row.item !== self) } }
 }
 
@@ -142,12 +142,12 @@ async function recordFiles(w: Writing, req: Extract<AcceptedPut, { kind: 'regist
       const seen = seenOf(f.now)
       return { item: newItemId(), path: f.path, fingerprint: null, size: seen.size, ...seenFields(seen) }
     })
-  const dir = req.path === '' ? '库的根目录' : `${req.path}/`
-  if (items.length === 0) return { text: `${dir}这一页的 ${req.files.length} 个文件都已在册，没有新记`, data: { entered: 0 } }
+  const dir = req.path === '' ? '资料库根目录中' : `${req.path}/ 中`
+  if (items.length === 0) return { text: `${dir}的 ${req.files.length} 个文件均已登记，无新增记录`, data: { entered: 0 } }
   const origin = await originOf(w, req.origin, undefined)
   const how = req.observed ? 'observed' : 'tool'
   w.facts.push(fact(ctx, how, { kind: 'items.enter', items, origin }))
-  return { text: `已记下 ${dir}里的 ${items.length} 个文件：${originLabel(origin.kind === 'made' ? { kind: 'made' } : origin, how)}`, data: { entered: items.length, items: items.map((i) => i.item) } }
+  return { text: `${dir}的 ${items.length} 个文件已登记：${originLabel(origin.kind === 'made' ? { kind: 'made' } : origin, how)}`, data: { entered: items.length, items: items.map((i) => i.item) } }
 }
 
 async function recordPut(w: Writing, req: AcceptedPut): Promise<{ note: PluginNote; rebase: LibraryPath[] }> {
@@ -156,9 +156,9 @@ async function recordPut(w: Writing, req: AcceptedPut): Promise<{ note: PluginNo
   const seen = seenOf(req.now)
   if (req.kind === 'move') {
     const moved = await rowAt(ctx, req.from)
-    if (!moved) return { note: { text: `挪过来的东西没人登记过，已以来历不明入册 · 条目 ${adopt(w, req.path, seen, req.fingerprint)}` }, rebase: [] }
+    if (!moved) return { note: { text: `移动的文件未登记，已登记为来源未知 · 条目 ${adopt(w, req.path, seen, req.fingerprint)}` }, rebase: [] }
     w.facts.push(fact(ctx, 'tool', { kind: 'item.move', item: moved.id, from: req.from, to: req.path, archive: null, ...(seen.token === null ? {} : { token: seen.token }), ...(seen.modified === null ? {} : { modified: seen.modified }) }))
-    return { note: { text: `已记下挪动 · 条目 ${moved.id}`, data: { item: moved.id } }, rebase: [] }
+    return { note: { text: `已记录移动 · 条目 ${moved.id}`, data: { item: moved.id } }, rebase: [] }
   }
   const item = await rowAt(ctx, req.path)
   const origin = await originOf(w, req.origin, item?.id)
@@ -171,7 +171,7 @@ async function recordPut(w: Writing, req: AcceptedPut): Promise<{ note: PluginNo
     const id = newItemId()
     w.facts.push(fact(ctx, how, { kind: 'item.enter', item: id, path: req.path, fingerprint: req.fingerprint, size, ...seenFields(seen), origin, ...noted }))
     // A directory-thing's record is its token and its first level, taken now.
-    return { note: { text: `已记下：${originLabel(origin.kind === 'made' ? { kind: 'made' } : origin, how)}${made} · 条目 ${id}`, data: { item: id } }, rebase: seen.bundle ? [req.path] : [] }
+    return { note: { text: `已记录：${originLabel(origin.kind === 'made' ? { kind: 'made' } : origin, how)}${made} · 条目 ${id}`, data: { item: id } }, rebase: seen.bundle ? [req.path] : [] }
   }
   const { same, fingerprint } = await sameAsRecorded(ctx, item, req.now.token, req.fingerprint)
   if (same) {
@@ -179,15 +179,15 @@ async function recordPut(w: Writing, req: AcceptedPut): Promise<{ note: PluginNo
     const rebased = item.token === req.now.token ? [] : [req.path]
     const seenOnly = item.entered.how === 'observed'
     if (!item.unknownOrigin && !(seenOnly && how !== 'observed')) {
-      if (req.note === null) return { note: { text: `已在册：条目 ${item.id}，内容和记录一致，没有新记`, data: { item: item.id } }, rebase: rebased }
+      if (req.note === null) return { note: { text: `已登记：条目 ${item.id}，内容与记录一致，无新增记录`, data: { item: item.id } }, rebase: rebased }
       // No fact is written for this put, so its sentence is a note about the thing.
       w.facts.push(fact(ctx, 'reported', { kind: 'said', flavor: 'note', text: req.note, about: item.id }))
-      return { note: { text: `已在册：条目 ${item.id}，内容和记录一致，已记下备注：${req.note}`, data: { item: item.id } }, rebase: rebased }
+      return { note: { text: `已登记：条目 ${item.id}，内容与记录一致，已添加备注：${req.note}`, data: { item: item.id } }, rebase: rebased }
     }
     // An enter at a path an item holds is an alias of it; it gives the item the origin it lacked, or replaces one only seen.
     w.facts.push(fact(ctx, how, { kind: 'item.enter', item: newItemId(), path: req.path, fingerprint: fingerprint ?? item.fingerprint, size, ...seenFields(seen), origin, ...noted }))
     const label = `${originLabel(origin.kind === 'made' ? { kind: 'made' } : origin, how)}${made}`
-    const text = item.unknownOrigin ? `已补上来历：${label}` : `已更正来历：${label}；先前是自动登记的：${originLabel(item.origin, 'observed')}`
+    const text = item.unknownOrigin ? `已补充来源：${label}` : `已更正来源：${label}；之前为自动登记：${originLabel(item.origin, 'observed')}`
     return { note: { text: `${text} · 条目 ${item.id}`, data: { item: item.id } }, rebase: rebased }
   }
   const held = req.kind === 'place' && req.previous !== null ? heldPath(ctx, item.id, keyOf(item, req.previous.token, req.previous.fingerprint), req.path) : null
@@ -195,13 +195,13 @@ async function recordPut(w: Writing, req: AcceptedPut): Promise<{ note: PluginNo
   const basis = origin.kind === 'made' ? { basis: origin.basis } : {}
   const seenNow = { ...(seen.token === null ? {} : { token: seen.token }), ...(seen.modified === null ? {} : { modified: seen.modified }) }
   w.facts.push(fact(ctx, how === 'observed' ? how : claimed ? 'reported' : 'tool', { kind: 'item.revise', item: item.id, base: item.fingerprint, fingerprint, size, ...seenNow, ...basis, held, claimed, ...noted }))
-  const text = held ? '已记下换了新内容，旧内容进了留存，主人取得回' : how === 'observed' ? '已记下这次直接改动，自动登记' : claimed ? '已认下这次直接改动' : '已记下换了新内容'
+  const text = held ? '已记录内容更新，旧内容已存入历史副本，所有者可恢复' : how === 'observed' ? '已记录外部修改（自动登记）' : claimed ? '已确认外部修改' : '已记录内容更新'
   return { note: { text: `${text} · 条目 ${item.id}`, data: { item: item.id } }, rebase: [] }
 }
 
 const heard = (note: string): SayAnswer => ({ outcome: 'heard', note })
 const refused = (note: string): SayAnswer => ({ outcome: 'not-heard', reason: 'refused', note })
-const SAID = { doing: '在做', decided: '决定', note: '备注' } as const
+const SAID = { doing: '任务', decided: '决策', note: '备注' } as const
 
 /** The versions of an item, oldest first, from its history rows. */
 async function versionsOf(ctx: PluginContext, item: ItemId): Promise<Extract<HistoryRow, { kind: 'version' }>[]> {
@@ -215,53 +215,53 @@ async function recordSay(w: Writing, req: SayRequest): Promise<{ answer: SayAnsw
   const just = (answer: SayAnswer) => ({ answer, rebase: [] })
   const flavor = flavorOf(req.kind)
   if (flavor !== null) {
-    if (!req.text) return just(refused(`要写一句话：say ${req.kind} "<一句话>"`))
+    if (!req.text) return just(refused(`缺少说明：say ${req.kind} "<说明>"`))
     const about = req.about === null ? null : await target(w, req.about)
-    if (req.about !== null && !about) return just(refused(`库里没有这个文件：${req.about}`))
+    if (req.about !== null && !about) return just(refused(`文件不存在：${req.about}`))
     w.facts.push(fact(ctx, 'reported', { kind: 'said', flavor, text: req.text, about: about?.id ?? null }))
     return just(heard(`${SAID[flavor]}：${req.text}${req.about !== null ? `（关于 ${req.about}）` : ''}`))
   }
   if (req.kind === 'basis') {
     const input = req.about ?? req.text
     const subject = input === null ? null : await target(w, input)
-    if (!subject) return just(refused(input === null ? '要写是哪样东西：say basis <库内路径> --from <库内路径…>' : `库里没有这个文件：${input}`))
+    if (!subject) return just(refused(input === null ? '缺少条目：say basis <库内路径> --from <库内路径…>' : `文件不存在：${input}`))
     const basis = await basisOf(w, req.args.from ?? [], req.args['from-external'] ?? [])
-    if ('missing' in basis) return just(refused(`库里没有这个文件：${basis.missing}`))
-    if (basis.items.length === 0 && basis.outside.length === 0) return just(refused('要写 --from <库内路径…> 或 --from-external "<一句话>"'))
+    if ('missing' in basis) return just(refused(`文件不存在：${basis.missing}`))
+    if (basis.items.length === 0 && basis.outside.length === 0) return just(refused('缺少依据：--from <库内路径…> 或 --from-external "<说明>"'))
     w.facts.push(fact(ctx, 'reported', { kind: 'item.basis', item: subject.id, fingerprint: subject.fingerprint, basis }))
-    return just(heard(`已补上 ${input} 的依据${basisNote(basis)}`))
+    return just(heard(`已补充 ${input} 的依据${basisNote(basis)}`))
   }
   if (req.kind === 'revised') {
     const input = req.about ?? req.text
     const by = req.args.by?.[0]?.trim() || null
     const observed = req.args.observed !== undefined
-    if (by !== null && by !== 'owner') return just(refused('say revised 的 --by 只能写 owner：say revised <库内路径> [--by owner]'))
+    if (by !== null && by !== 'owner') return just(refused('say revised 的 --by 只接受 owner：say revised <库内路径> [--by owner]'))
     // What the owner's side saw is the owner's to record, and it cannot know who made the change.
-    if (observed && ctx.actor.kind !== 'owner') return just(refused('say revised 的 --observed 只给主人用，记的是主人这边自动看到的改动。是你改的，就不加 --observed。'))
-    if (observed && by !== null) return just(refused('say revised 的 --observed 记的是看到的改动，不知道是谁改的，不和 --by 一起写。'))
+    if (observed && ctx.actor.kind !== 'owner') return just(refused('say revised 的 --observed 仅所有者可用，记录所有者一侧自动检测到的修改。Agent 自己的修改不加 --observed。'))
+    if (observed && by !== null) return just(refused('say revised 的 --observed 记录检测到的修改，执行者未知，不能与 --by 同用。'))
     const resolved = input === null ? null : await ctx.tools.resolve(input)
     const path = resolved === null || resolved.region === 'kernel' ? null : (resolved.bundle ?? resolved.path)
     const item = path === null ? undefined : await rowAt(ctx, path)
-    if (!item || path === null) return just(refused(`没人登记过这个文件：${input ?? '（没写）'}。要补来历，用 put <库内路径> --imported 或 --generated。`))
+    if (!item || path === null) return just(refused(`文件未登记：${input ?? '（未指定）'}。补充来源请用 put <库内路径> --imported 或 --generated。`))
     const [thing] = await ctx.tools.what([path])
-    if (!thing || thing.entry === null || (thing.kind !== 'file' && thing.kind !== 'bundle')) return just(refused(`文件不在：${input}`))
+    if (!thing || thing.entry === null || (thing.kind !== 'file' && thing.kind !== 'bundle')) return just(refused(`文件不存在：${input}`))
     const token = thing.entry.token ?? ''
     const { same, fingerprint } = await sameAsRecorded(ctx, item, token, null)
     // A change only seen is replaced by the claim somebody makes for the same content.
     const seen = item.last.how === 'observed' && item.last.claimed
     const rebased = same && item.token !== token ? [path] : []
-    if (same && (observed || !seen)) return { answer: heard(`${input} 的内容和记录一致，没有要认的改动`), rebase: rebased }
+    if (same && (observed || !seen)) return { answer: heard(`${input} 的内容与记录一致，无需确认修改`), rebase: rebased }
     // The envelope's actor is who the library recognised; what the caller says goes in the body.
     const forOwner = by === 'owner' && ctx.actor.kind !== 'owner'
     const base = same ? ((await versionsOf(ctx, item.id)).at(-2)?.fingerprint ?? null) : item.fingerprint
     const size = thing.kind === 'file' ? (thing.entry.size ?? item.size) : item.size
     const modified = thing.entry.modified === undefined ? {} : { modified: thing.entry.modified }
     w.facts.push(fact(ctx, observed ? 'observed' : 'reported', { kind: 'item.revise', item: item.id, base, fingerprint: same ? (fingerprint ?? item.fingerprint) : fingerprint, size, token, ...modified, held: null, claimed: true, ...(forOwner ? { by: 'owner' as const } : {}) }))
-    const replaced = same ? '，替下了自动登记的那条' : ''
-    if (observed) return { answer: heard(`已记下 ${input} 被直接改了，自动登记，没说是谁改的`), rebase: rebased }
-    return { answer: heard(forOwner ? `已记下 ${input} 的这次直接改动是主人做的${replaced}` : `已认下 ${input} 的直接改动${replaced}`), rebase: rebased }
+    const replaced = same ? '，已替换自动登记的记录' : ''
+    if (observed) return { answer: heard(`已记录 ${input} 的外部修改（自动登记，执行者未知）`), rebase: rebased }
+    return { answer: heard(forOwner ? `已记录 ${input} 的外部修改为所有者直接修改${replaced}` : `已确认 ${input} 的外部修改${replaced}`), rebase: rebased }
   }
-  return just(refused(`记账插件不认识这个种类：${req.kind}`))
+  return just(refused(`溯源插件不支持此类型：${req.kind}`))
 }
 
 const archiveSide = (from: LibraryPath, to: LibraryPath) => {
@@ -338,8 +338,8 @@ async function agentSections(ctx: PluginContext, name: string, grants: readonly 
   const last = rows.reduce<string | null>((at, r) => (at === null || r.last.at > at ? r.last.at : at), null)
   const scenes = rows.reduce((n, r) => n + r.scenes, 0)
   const put = rows.reduce((n, r) => n + r.put, 0)
-  const body = last === null ? '还没在这里做过事' : `最近来过：${when(last as never)}；${scenes} 次会话，放进 ${put} 样东西`
-  return [{ title: '来过', body, data: { kind: 'agent', grant: name, last, scenes, put } }]
+  const body = last === null ? '暂无活动' : `最近访问：${when(last as never)}；${scenes} 次会话，添加 ${put} 个条目`
+  return [{ title: '访问过', body, data: { kind: 'agent', grant: name, last, scenes, put } }]
 }
 
 /** The item panel's view of the thing at `path`: the one recorded there, or the one the look found moved there. */
@@ -413,35 +413,35 @@ async function closedIn(ctx: PluginContext, dir: string): Promise<ItemsPage['clo
 
 /** The text of the named whole pass, its lists at most 20 long. */
 function deepSection(d: Deep): PluginSection {
-  const where = d.dir === null ? '整个库' : ` ${d.dir}`
-  const list = (title: string, l: Listed, after: string) => (l.count === 0 ? [] : [`${title}（${l.count} 样）：`, ...l.first.map((p) => `  ${p}`), ...(l.count > l.first.length ? [`  ……共 ${l.count} 样`] : []), ...(after ? [after] : [])])
-  const head = d.stopped ? `停下了：按内容查了${where}的 ${d.done} / ${d.scope} 样。` : `按内容查了${where}：${d.done} 样登记过的东西。`
+  const where = d.dir === null ? '整个资料库' : `${d.dir} `
+  const list = (title: string, l: Listed, after: string) => (l.count === 0 ? [] : [`${title}（${l.count} 个）：`, ...l.first.map((p) => `  ${p}`), ...(l.count > l.first.length ? [`  ……共 ${l.count} 个`] : []), ...(after ? [after] : [])])
+  const head = d.stopped ? `已停止：${where}已检索 ${d.done} / ${d.scope} 个已登记条目。` : `内容检索完成：${where}共 ${d.done} 个已登记条目。`
   const body = [
     head,
-    ...list('内容变了', d.changed, '是你改的，就用 say revised <库内路径> 认下。'),
-    ...list('只是碰过，内容没变（已按现在的记下）', d.touched, ''),
-    ...list('读不了', d.failed, ''),
-    ...(d.changed.count + d.touched.count + d.failed.count === 0 ? ['内容都和记录的一样。'] : []),
+    ...list('内容已变更', d.changed, 'Agent 自己的修改，用 say revised <库内路径> 确认。'),
+    ...list('仅元数据变化，内容未变，已按当前状态记录', d.touched, ''),
+    ...list('无法读取', d.failed, ''),
+    ...(d.changed.count + d.touched.count + d.failed.count === 0 ? ['内容均与记录一致。'] : []),
   ]
-  return { title: '按内容查', body: body.join('\n'), data: d }
+  return { title: '内容检索', body: body.join('\n'), data: d }
 }
 
 /** The named whole pass of `check --deep`: how much it reads first, then how far, on the operation's pass; it stops after the page under way when asked. */
 async function deepCheck(ctx: PluginContext, dir: LibraryPath | null): Promise<Deep> {
-  const where = dir === null ? '整个库' : ` ${dir}`
-  const progress = (done: number, scope: number) => ctx.pass?.report({ done, total: scope, text: done === 0 ? `要按内容读${where}：${scope} 样登记过的东西。` : `已查 ${done} / ${scope} 样` })
+  const where = dir === null ? '整个资料库' : ` ${dir} `
+  const progress = (done: number, scope: number) => ctx.pass?.report({ done, total: scope, text: done === 0 ? `将读取${where}的内容：${scope} 个已登记条目。` : `已检索 ${done} / ${scope} 个` })
   return deepPass(ctx, dir, progress, () => ctx.pass?.stopped() ?? false)
 }
 
-/** 记账与对账. */
+/** 溯源. */
 export const ledger: Plugin = {
   contract: CONTRACT,
   name: pluginName('ledger'),
   version: PNEUMA_BASE_VERSION,
-  title: '记账',
-  summary: '记下每样东西从哪来、谁经手过',
-  about: '记下每样东西是哪次会话、哪个 agent 为了什么放进来的，依据了什么，谁读过、改过它。',
-  cognition: { title: '记账与对账', text: COGNITION },
+  title: '溯源',
+  summary: '记录每个条目的来源与经手者',
+  about: '记录每个条目由哪次会话、哪个 Agent、为什么任务添加，依据了哪些条目，以及读取和修改过它的执行者。',
+  cognition: { title: '溯源', text: COGNITION },
   keeps: 'every',
   storage: [
     { dir: 'facts', kind: 'body' },
@@ -471,7 +471,7 @@ export const ledger: Plugin = {
       id = adopt(w, req.path, { token: req.token, size: thing?.entry?.size ?? 0, modified: thing?.entry?.modified ?? null, bundle: thing?.kind === 'bundle' }, req.current)
     }
     const fingerprint = req.current ?? (item?.token === req.token ? item.fingerprint : null)
-    if ((await keep(ctx, id, req.path, keyOf(item, req.token, req.current), fingerprint)) === null) return { outcome: 'declined', reason: `${req.path} 正在被改动，没能留存旧内容；稍后再放。` }
+    if ((await keep(ctx, id, req.path, keyOf(item, req.token, req.current), fingerprint)) === null) return { outcome: 'declined', reason: `${req.path} 正在被修改，无法将旧内容存入历史副本；请稍后重试。` }
     await writeFacts(ctx, w.facts)
     return { outcome: 'held', note: null }
   },
@@ -513,18 +513,18 @@ export const ledger: Plugin = {
     const item = await itemNamed(ctx, req.target)
     if (item) {
       const view = await itemViewOf(recs, item)
-      return [{ title: '来历', body: itemText(view), data: spokenItem(view) }]
+      return [{ title: '溯源', body: itemText(view), data: spokenItem(view) }]
     }
     const resolved = await ctx.tools.resolve(req.target)
     if (resolved !== null && resolved.region !== 'kernel') {
       const bundle = resolved.bundle ?? (resolved.region === 'content' ? ((await ctx.tools.resolve(ctx.tools.archivedPath(resolved.path)))?.bundle ?? null) : null)
       if (bundle !== null) {
-        const body = `它是 ${bundle} 的一部分：${bundle} 是一样东西（带标记的目录），来历见 inspect ${bundle}。`
-        return [{ title: '来历', body, data: { kind: 'part-of', path: resolved.path, bundle } }]
+        const body = `该文件属于 ${bundle}：${bundle} 是一个条目（带标记的目录），来源见 inspect ${bundle}。`
+        return [{ title: '溯源', body, data: { kind: 'part-of', path: resolved.path, bundle } }]
       }
       if (await thingAt(ctx, resolved.path)) {
-        const body = '没人登记过这个文件，来历不明。知道它从哪来，就用 put <库内路径> --imported 或 --generated 补上。'
-        return [{ title: '来历', body, data: { kind: 'unowned', path: resolved.path } }]
+        const body = '文件未登记，来源未知。已知来源时，用 put <库内路径> --imported 或 --generated 补充。'
+        return [{ title: '溯源', body, data: { kind: 'unowned', path: resolved.path } }]
       }
     }
     const { scenes, more } = await scenesNamed(recs, req.target)
@@ -546,14 +546,14 @@ export const ledger: Plugin = {
       const moves = page.map((m) => fact(ctx, 'observed', { kind: 'item.move', item: m.item, from: m.from, to: m.to, archive: archiveSide(m.from, m.to), ...(m.token === null ? {} : { token: m.token }), ...(m.modified === null ? {} : { modified: m.modified }) }, LEDGER_ACTOR))
       await writeFacts(ctx, moves)
     }
-    // This look is what the next check counts since, for agents and for the owner's 都看过了 alike.
+    // This look is what the next check counts since, for agents and for the owner's 全部标为已读 alike.
     await writeFacts(ctx, [fact(ctx, 'tool', { kind: 'checked' })])
     await foldAll(ctx)
     const since = sinceViewOf(await lookupOf(recs, news.facts), news)
     const lists = (await standingLists(recs, req.includeArchived)).map((l) => (l.kind === 'moved' ? moved : l))
     return [
       ...(deep ? [deepSection(deep)] : []),
-      ...(since.scenes.length > 0 ? [{ title: '自上次以来', body: sinceText(since), data: since }] : []),
+      ...(since.scenes.length > 0 ? [{ title: '最近动态', body: sinceText(since), data: since }] : []),
       ...standingSections(lists, await partialDirs(recs)),
     ]
   },
@@ -595,8 +595,8 @@ export const ledger: Plugin = {
     if (id === undefined) return null
     w.facts.push(fact(ctx, 'tool', { kind: 'item.move', item: id, from: req.from, to: req.to, archive: req.kind === 'archive' ? 'in' : 'out', ...(seen.token === null ? {} : { token: seen.token }), ...(seen.modified === null ? {} : { modified: seen.modified }) }))
     await writeFacts(ctx, w.facts)
-    const what = req.kind === 'archive' ? '已记下归档' : '已记下取回'
-    return { text: `${what}${known ? '' : '；这个文件以前没人登记过，已以来历不明入册'} · 条目 ${id}`, data: { item: id } }
+    const what = req.kind === 'archive' ? '已记录归档' : '已记录取消归档'
+    return { text: `${what}${known ? '' : '；此文件之前未登记，已登记为来源未知'} · 条目 ${id}`, data: { item: id } }
   },
 
   /** The ledger's pages, each from the rows it shows. Writes no fact: a move a look sees stays for check to record. */

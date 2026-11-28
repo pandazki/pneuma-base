@@ -30,7 +30,7 @@ import {
   type SeenRow,
 } from './model.js'
 import type { Tx } from './rows.js'
-import { agentOf, countReuse, hourOf, hourRow, OPEN_COUNTERS, putHour, requestTo, snapshot, type RequestRow } from './stats.js'
+import { agentOf, countReuse, hourOf, hourRow, OPEN_COUNTERS, OWNER_KEY, putHour, requestTo, snapshot, type RequestRow } from './stats.js'
 
 /**
  * What a fold changed that the rows' other parts follow: marks to settle, open directories whose strays
@@ -52,7 +52,7 @@ const SAID_KEPT = 8
 const SCENE_ITEMS = 20
 const SCENE_SOURCES = 500
 
-const whoName = (a: FactActor) => (a.kind === 'owner' ? '主人' : a.name)
+const whoName = (a: FactActor) => (a.kind === 'owner' ? OWNER_KEY : a.name)
 const originLine = (f: Fact & { origin: LedgerOrigin }): OriginLine => ({ origin: lean(f.origin), how: f.how, at: f.at, scene: f.scene, actor: f.actor, where: f.where ?? null })
 const historyKey = (item: ItemId, f: Pick<Fact, 'at' | 'id'>) => `${item}|${f.at}|${f.id}`
 const basisOfOrigin = (origin: LedgerOrigin): Basis => (origin.kind === 'made' ? origin.basis : NO_BASIS)

@@ -152,8 +152,8 @@ describe('the conversation a scene came from', () => {
     const conversation = conversationOf(scene, 'mac-b')
     expect(conversation).toEqual({ path: '~/s1.jsonl', resume: 'claude --resume s1', machine: 'mac-a', status: 'elsewhere' })
     const text = sceneText(sceneView(lookupOf(rows), scene, conversation))
-    expect(text).toContain('对话：~/s1.jsonl（在 mac-a 上，不是这台机器）')
-    expect(text).not.toContain('接着聊')
+    expect(text).toContain('对话：~/s1.jsonl（在 mac-a，非本机）')
+    expect(text).not.toContain('继续对话')
   })
 })
 

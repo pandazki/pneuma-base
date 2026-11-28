@@ -90,12 +90,12 @@ describe('find matches content (C7)', () => {
   it('ranks things by relevance, gives each hit the context of the match and each path once, and keeps stderr clean', async () => {
     const found = (await lib.hits('退款')).filter((h) => h.by === 'search')
     expect(found.map((h) => h.path)).toEqual(['refunds/policy.md', 'refunds/faq.md'])
-    expect(found[1]?.detail).toMatch(/^正文：.*能退款吗？可以/)
+    expect(found[1]?.detail).toMatch(/^全文：.*能退款吗？可以/)
     const text = ok(await lib.agent(['find', '退款']))
     expect(text.stdout.split('\n')[0]).toBe('refunds/policy.md')
-    expect(text.stdout.split('\n')[1]).toMatch(/^ {2}正文：.*退款/)
+    expect(text.stdout.split('\n')[1]).toMatch(/^ {2}全文：.*退款/)
     // Found by its name and by its content: one hit, from the search plugin.
-    expect(await lib.hits('zebra')).toEqual([{ path: 'notes/zebra.md', title: 'zebra.md', by: 'search', group: null, detail: '正文：zebra crossings near the shop' }])
+    expect(await lib.hits('zebra')).toEqual([{ path: 'notes/zebra.md', title: 'zebra.md', by: 'search', group: null, detail: '全文：zebra crossings near the shop' }])
     // Only Node versions that still mark node:sqlite experimental (22, early 24 and 25) can fail this.
     expect([...putErrors, text.stderr].filter((e) => e !== '')).toEqual([])
   })
@@ -113,12 +113,12 @@ describe('find matches content (C7)', () => {
     expect(statSync(join(lib.dir, 'big.log')).size).toBeGreaterThan(1024 * 1024)
     const [hit] = (await lib.hits('alphaword')).filter((h) => h.by === 'search')
     expect(hit?.path).toBe('big.log')
-    expect(hit?.detail).toContain('只索引了前 1 MB')
+    expect(hit?.detail).toContain('仅索引前 1 MB')
     expect(await lib.paths('omegaword')).toEqual([])
   })
 
   it('is promised in the description by meaning only on the condition that the owner set an embedder (C8)', () => {
-    expect(readFileSync(join(lib.dir, 'PNEUMA-BASE.md'), 'utf8')).toMatch(/主人配了嵌入器时[^\n]*按意思/)
+    expect(readFileSync(join(lib.dir, 'PNEUMA-BASE.md'), 'utf8')).toMatch(/所有者配置 embedding 后[^\n]*语义/)
   })
 
   it('refuses an http embedder without an address or a model, and a key or key variable written in a flag', async () => {
@@ -163,8 +163,8 @@ describe('find matches content (C7)', () => {
     const before: Hit[][] = []
     for (const q of queries) before.push(await lib.hits(...q))
     const details = before.flat().map((h) => h.detail ?? '')
-    expect(details.some((d) => d.startsWith('正文：'))).toBe(true)
-    expect(details.some((d) => d.startsWith('按意思：'))).toBe(true)
+    expect(details.some((d) => d.startsWith('全文：'))).toBe(true)
+    expect(details.some((d) => d.startsWith('语义：'))).toBe(true)
     const same = async () => {
       for (const [i, q] of queries.entries()) expect(await lib.hits(...q)).toEqual(before[i])
     }
@@ -259,7 +259,7 @@ describe('how much find reads', () => {
     expect(await readsBy((opts) => lib.agent(['find', 'dingo'], opts))).toEqual([])
     expect(await lib.paths('dingo')).toEqual([])
     expect(await status()).toMatchObject({ pending: 0, tooMany: 1 })
-    expect(ok(await lib.owner(['show', 'item', '--path', 'huge'])).stdout).toContain('正文：目录里至少 5001 个文件，超过 5000 个，不索引')
+    expect(ok(await lib.owner(['show', 'item', '--path', 'huge'])).stdout).toContain('全文：目录内至少 5001 个文件，超过 5000 个，不索引')
   })
 })
 
@@ -355,7 +355,7 @@ describe('find by meaning (C7)', () => {
     expect(await lib.hits(sentence)).toEqual([])
     ok(await lib.owner(['search', 'embedding', 'set', '--kind', 'hash']))
     // The other shops share a character pair or two by chance: far less near, so left out.
-    expect(await lib.hits(sentence)).toEqual([{ path: 'shops/coffee.md', title: 'coffee.md', by: 'search', group: null, detail: '按意思：# 豆子与烘焙' }])
+    expect(await lib.hits(sentence)).toEqual([{ path: 'shops/coffee.md', title: 'coffee.md', by: 'search', group: null, detail: '语义：# 豆子与烘焙' }])
     const recordDir = join(lib.dir, '.pneuma-base', 'search', 'embedder')
     const records = readdirSync(recordDir)
     expect(records).toHaveLength(1)
@@ -372,11 +372,11 @@ describe('find by meaning (C7)', () => {
     ok(await lib.sb.run(['secret', 'set', 'search', 'key'], { input: 'test-key-123' }))
     const withKey = ok(await set()).stdout
     expect(withKey).toContain('concepts-1')
-    expect(withKey).toContain('密钥已设')
+    expect(withKey).toContain('密钥已设置')
     expect(withKey).not.toContain('test-key-123')
 
     const from = server.requests.length
-    expect(ok(await lib.agent(['find', '想喝点提神的饮料', '--json'])).json().hits[0]).toMatchObject({ path: 'shops/coffee.md', by: 'search', detail: '按意思：# 豆子与烘焙' })
+    expect(ok(await lib.agent(['find', '想喝点提神的饮料', '--json'])).json().hits[0]).toMatchObject({ path: 'shops/coffee.md', by: 'search', detail: '语义：# 豆子与烘焙' })
     const sent = server.requests.slice(from)
     expect(sent.every((q) => q.authorization === 'Bearer test-key-123' && q.model === 'concepts-1')).toBe(true)
     // The hash embedder's vectors are another embedder's: each of the three pieces goes to the server.
@@ -395,11 +395,11 @@ describe('find by meaning (C7)', () => {
     const r = await lib.agent(['find', '拿铁', '--json'])
     expect(r.code).toBe(3)
     expect(r.json().hits.map((h: Hit) => [h.path, h.by])).toEqual([['shops/coffee.md', 'search']])
-    expect(r.json().problems).toMatchObject([{ plugin: 'search', message: expect.stringContaining('嵌入') }])
+    expect(r.json().problems).toMatchObject([{ plugin: 'search', message: expect.stringContaining('embedding') }])
 
     const rebuilt = await lib.owner(['search', 'rebuild'])
     expect(rebuilt.code).toBe(2)
-    expect(rebuilt.stdout).toMatch(/^拒绝（embedding-failed）：已重建索引：3 个文件，其中文本 3 个，3 块。按意思的向量没建完（0 \/ 3 块）：嵌入服务连不上/)
+    expect(rebuilt.stdout).toMatch(/^拒绝（embedding-failed）：已重建索引：3 个文件，其中文本 3 个，3 个分块。语义检索的向量未建立完成（0 \/ 3 个分块）：无法连接 embedding 服务/)
   })
 })
 
@@ -415,7 +415,7 @@ describe('an embedder an earlier version recorded with a key variable', () => {
       writeFileSync(join(lib.dir, '.pneuma-base', 'search', 'embedder', '20261101000000000-aaaaaaaa.json'), `${JSON.stringify(record)}\n`)
       const env = { env: { [KEY_ENV]: 'from-the-environment' } }
       const before = ok(await lib.owner(['search', 'status'], env)).stdout
-      expect(before).toContain(`密钥原来取自环境变量 ${KEY_ENV}`)
+      expect(before).toContain(`密钥之前取自环境变量 ${KEY_ENV}`)
       expect(before).toContain('pneuma-base secret set search key')
       ok(await lib.agent(['find', '想喝点提神的饮料'], env))
       expect(server.requests.length).toBeGreaterThan(0)

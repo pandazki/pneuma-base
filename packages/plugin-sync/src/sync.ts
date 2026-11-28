@@ -201,18 +201,18 @@ export const pendingOf = (p: Plan) => ({ ...countsOf(p.steps, p.conflicts.length
 
 /** Deletions the owner made on purpose show only when there are some; a run recorded before they existed has none. */
 export function countsText(c: Omit<Counts, 'skipped'>): string {
-  const deleted = c.deleted > 0 ? ` · 删掉 ${c.deleted}（主人用会丢数据的命令删的）` : ''
-  return `推上去 ${c.pushed} · 拉下来 ${c.pulled} · 删掉 ${c.removed}（内容别处还有）${deleted} · 留下 ${c.kept} · 冲突 ${c.conflicts}`
+  const deleted = c.deleted > 0 ? ` · 删除 ${c.deleted}（所有者用破坏性命令删除）` : ''
+  return `上传 ${c.pushed} · 下载 ${c.pulled} · 删除 ${c.removed}（其他位置仍有内容）${deleted} · 保留 ${c.kept} · 冲突 ${c.conflicts}`
 }
 
 export const when = (at: string) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`
 
 /** Why a plan is not ready, for a person or an agent. */
 export function notReadyText(prepared: Exclude<Prepared, Ready>, machine: string): string {
-  if (prepared.kind === 'no-target') return '还没设同步目标。主人用 sync target set --kind dir --to <目录> 设一个。'
+  if (prepared.kind === 'no-target') return '未设置同步目标。所有者用 sync target set --kind dir --to <目录> 设置。'
   const { record } = prepared
-  if (prepared.kind === 'target-overlaps') return `同步目标 ${record.target.path} 和库的目录互相包含，不能同步。用 sync target set 换一个库外的目录。`
-  if (prepared.kind === 'target-failed') return `读同步目标 ${record.target.path} 时出错：${prepared.message}`
-  const elsewhere = record.machine === machine ? '接上那个目录，或用 sync target set 换一个。' : `它是在机器 ${record.machine} 上设的；用 sync target set --kind dir --to <目录> 设这台机器上的路径。`
-  return `同步目标 ${record.target.path} 在这台机器上不存在。${elsewhere}`
+  if (prepared.kind === 'target-overlaps') return `同步目标 ${record.target.path} 与资料库目录互相包含，无法同步。请用 sync target set 更换为资料库之外的目录。`
+  if (prepared.kind === 'target-failed') return `读取同步目标 ${record.target.path} 时出错：${prepared.message}`
+  const elsewhere = record.machine === machine ? '请挂载该目录所在的磁盘，或用 sync target set 更换。' : `该目标在机器 ${record.machine} 上设置；请用 sync target set --kind dir --to <目录> 设置本机路径。`
+  return `同步目标 ${record.target.path} 在本机不存在。${elsewhere}`
 }

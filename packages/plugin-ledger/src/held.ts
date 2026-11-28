@@ -67,12 +67,12 @@ const refused = (reason: string, text: string): OwnerAnswer => ({ outcome: 'refu
 export const HELD_RESTORE = defineCommand({
   name: 'ledger copies restore',
   act: { kind: 'restored', object: 'item' },
-  summary: '把一份留存取回到一个新路径',
+  summary: '将一个历史副本恢复到新路径',
   params: {
-    positional: [{ name: 'item', hint: '库内路径或条目号', required: true }],
+    positional: [{ name: 'item', hint: '库内路径或条目编号', required: true }],
     flags: [
-      { name: 'fingerprint', hint: '指纹', kind: 'value' },
-      { name: 'to', hint: '新的库内路径', kind: 'value', required: true },
+      { name: 'fingerprint', hint: '内容哈希', kind: 'value' },
+      { name: 'to', hint: '新路径', kind: 'value', required: true },
     ],
   },
   destructive: false,
@@ -81,29 +81,29 @@ export const HELD_RESTORE = defineCommand({
     await stateOf(ctx)
     const store = ctx.tools.storage
     const item = await itemNamed(ctx, input)
-    if (!item) return refused('no-such-item', `库里没有这样东西：${input}`)
+    if (!item) return refused('no-such-item', `条目不存在：${input}`)
     const copies = await heldOf(store.records, item.id)
     // Without --fingerprint, the content most recently replaced.
     const latest = [...copies].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))[0]
     const chosen = want === null ? (latest ? [latest] : []) : copies.filter((c) => c.key.startsWith(want))
     const copy = chosen[0]
-    if (!copy || chosen.length > 1) return refused('no-such-copy', `${item.path} 没有${want === null ? '' : `指纹以 ${want} 开头的唯一一份`}留存`)
+    if (!copy || chosen.length > 1) return refused('no-such-copy', `${item.path} 无${want === null ? '' : `内容哈希以 ${want} 开头的唯一`}历史副本`)
     const target = await ctx.tools.resolve(to)
-    if (target === null || target.region !== 'content') return refused('outside-library', `${to} 不在库的内容里`)
-    if (target.bundle !== null) return refused('inside-bundle', `${target.path} 在 ${target.bundle} 里面，${target.bundle} 是一样东西。换一个路径。`)
+    if (target === null || target.region !== 'content') return refused('outside-library', `${to} 不在资料库中`)
+    if (target.bundle !== null) return refused('inside-bundle', `${target.path} 位于 ${target.bundle} 内，${target.bundle} 是一个条目。请使用其他路径。`)
     const [there] = await store.glance([target.path])
     if (there && (!isDescribed(there) || there.kind !== 'none')) {
       const now = copy.fingerprint === null ? null : await store.content(target.path)
-      if (now !== null && !isFailure(now) && now.fingerprint === copy.fingerprint) return done(`${target.path} 已经是这份内容，没有复制。`)
-      return refused('would-overwrite', `${target.path} 已有东西，没有动它。换一个路径。`)
+      if (now !== null && !isFailure(now) && now.fingerprint === copy.fingerprint) return done(`${target.path} 已是此内容，未复制。`)
+      return refused('would-overwrite', `${target.path} 已存在，未修改。请使用其他路径。`)
     }
     const written = await store.write(target.path, { place: copy.place, own: true }, 'empty')
     if (isFailure(written)) {
-      if (written.reason === 'refused') return refused('would-overwrite', `${target.path} 已有东西，没有动它。换一个路径。`)
-      return refused(written.reason, `没能取回（${written.reason}）：${copy.place}`)
+      if (written.reason === 'refused') return refused('would-overwrite', `${target.path} 已存在，未修改。请使用其他路径。`)
+      return refused(written.reason, `恢复失败（${written.reason}）：${copy.place}`)
     }
     const short = copy.key.slice(0, 8)
-    const origin = { kind: 'brought' as const, source: `留存：${item.path} 换下的旧内容 ${short}`, by: 'owner' }
+    const origin = { kind: 'brought' as const, source: `历史副本：${item.path} 的旧内容 ${short}`, by: 'owner' }
     const bundle = written.entry.kind === 'dir'
     // A directory-thing's marker is no content, so the copy came without it: it is one thing again once marked.
     const entry = bundle ? await marked(ctx, target.path) : written.entry
@@ -119,14 +119,14 @@ export const HELD_RESTORE = defineCommand({
       ...(bundle ? { bundle: true as const } : {}),
     }
     await writeFacts(ctx, [fact(ctx, 'tool', enter)])
-    return done(`已把 ${item.path} 换下的旧内容 ${short} 从留存取回到 ${target.path}。`, { item: item.id, fingerprint: copy.fingerprint, key: copy.key, to: target.path })
+    return done(`已将 ${item.path} 的历史副本 ${short} 恢复到 ${target.path}。`, { item: item.id, fingerprint: copy.fingerprint, key: copy.key, to: target.path })
   },
 })
 
 export const HELD_DROP = defineCommand({
   name: 'ledger copies drop',
-  act: { kind: 'removed', name: '留住的旧版' },
-  summary: '清掉全部留存',
+  act: { kind: 'removed', name: '历史副本' },
+  summary: '清除全部历史副本',
   params: {},
   destructive: true,
   ownerOnly: true,
@@ -137,9 +137,9 @@ export const HELD_DROP = defineCommand({
     const [there] = await own.glance([HELD_DIR])
     if (there && isDescribed(there) && there.kind !== 'none') {
       const gone = await own.remove(HELD_DIR, there.token ?? '')
-      if (isFailure(gone)) return refused(gone.reason, `没能清掉留存（${gone.reason}），稍后再试。`)
+      if (isFailure(gone)) return refused(gone.reason, `清除历史副本失败（${gone.reason}），请稍后重试。`)
     }
-    return done(`已清掉 ${n} 份留存。`, { dropped: n })
+    return done(`已清除 ${n} 个历史副本。`, { dropped: n })
   },
 })
 
@@ -172,8 +172,8 @@ export async function heldCopies(ctx: PluginContext, limit = HELD_SHOWN, after?:
 export const heldCommands: OwnerCommand[] = [
   defineCommand({
     name: 'ledger copies list',
-    summary: '列出留存：被新内容换下来的旧内容',
-    params: { flags: [{ name: 'all', hint: '全部列出，不只前 20 份', kind: 'boolean' }] },
+    summary: '列出历史副本：条目内容被替换时保存的旧内容',
+    params: { flags: [{ name: 'all', hint: '列出全部，不限前 20 个', kind: 'boolean' }] },
     destructive: false,
     ownerOnly: false,
     readOnly: true,
@@ -181,9 +181,9 @@ export const heldCommands: OwnerCommand[] = [
       await stateOf(ctx)
       const { copies, total } = await heldCopies(ctx, all ? Number.MAX_SAFE_INTEGER : LISTED)
       const data = copies.map((c) => ({ item: c.item, key: c.key, fingerprint: c.fingerprint, path: c.path, current: c.current?.path ?? null }))
-      if (copies.length === 0) return done('没有留存。', { copies: data })
-      const lines = copies.map((c) => `${c.current?.path ?? c.item}  留存 ${c.key.slice(0, 8)}  ${c.path}`)
-      const more = total > copies.length ? [`……共 ${total} 份，看全部：ledger copies list --all`] : []
+      if (copies.length === 0) return done('暂无历史副本。', { copies: data })
+      const lines = copies.map((c) => `${c.current?.path ?? c.item}  历史副本 ${c.key.slice(0, 8)}  ${c.path}`)
+      const more = total > copies.length ? [`……共 ${total} 个，查看全部：ledger copies list --all`] : []
       return done([...lines, ...more].join('\n'), { copies: data, total })
     },
   }),

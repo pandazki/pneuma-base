@@ -18,7 +18,7 @@ const refused = (reason: string, text: string): OwnerAnswer => ({ outcome: 'refu
 
 export const LEDGER_STATS = defineCommand({
   name: 'ledger stats',
-  summary: '统计：用起来了吗，以前的东西被接着用了吗，谁做了什么，库收拾得怎么样',
+  summary: '统计：使用情况、复用情况、操作分布、资料库健康度',
   params: { flags: [{ name: 'period', hint: '时间', kind: 'value', options: PERIODS }] },
   destructive: false,
   ownerOnly: false,
@@ -106,19 +106,19 @@ function momentOf(input: string, end: boolean): number | null {
 }
 
 const FORMATS = [
-  { value: 'jsonl', label: 'JSON Lines，一行一条' },
-  { value: 'csv', label: 'CSV，表格能打开' },
+  { value: 'jsonl', label: 'JSON Lines（每行一条记录）' },
+  { value: 'csv', label: 'CSV（可用表格软件打开）' },
 ]
 
 export const LEDGER_EXPORT = defineCommand({
   name: 'ledger export',
   act: { kind: 'exported', object: 'to' },
-  summary: '把活动里的每一条记录导出到库外的一个文件，给审计用',
+  summary: '将活动中的全部记录导出到外部文件，用于审计',
   params: {
     flags: [
-      { name: 'to', hint: '库外的文件', kind: 'value', required: true },
-      { name: 'since', hint: '从哪个时刻起', kind: 'value' },
-      { name: 'until', hint: '到哪个时刻', kind: 'value' },
+      { name: 'to', hint: '外部文件', kind: 'value', required: true },
+      { name: 'since', hint: '开始时间', kind: 'value' },
+      { name: 'until', hint: '结束时间', kind: 'value' },
       { name: 'format', hint: '格式', kind: 'value', options: FORMATS },
     ],
   },
@@ -127,15 +127,15 @@ export const LEDGER_EXPORT = defineCommand({
   async run({ to, since, until, format }, ctx) {
     const from = since === null ? null : momentOf(since, false)
     const till = until === null ? null : momentOf(until, true)
-    if (from === null && since !== null) return refused('bad-moment', `--since 要写一天（2026-11-20）或一个时刻（2026-11-20T09:00）：${since}`)
-    if (till === null && until !== null) return refused('bad-moment', `--until 要写一天（2026-11-30）或一个时刻（2026-11-30T18:00）：${until}`)
+    if (from === null && since !== null) return refused('bad-moment', `--since 需为日期（2026-11-20）或时刻（2026-11-20T09:00）：${since}`)
+    if (till === null && until !== null) return refused('bad-moment', `--until 需为日期（2026-11-30）或时刻（2026-11-30T18:00）：${until}`)
     const path = resolve(ctx.session.cwd, to === '~' || to.startsWith('~/') ? `${homedir()}${to.slice(1)}` : to)
     const inside = relative(ctx.library.root, path)
-    if (!inside.startsWith('..') && !isAbsolute(inside)) return refused('inside-library', `导出的文件要放在库外，${to} 在库里。换一个库外的路径，比如 ~/Desktop/pneuma-base-活动.csv。`)
+    if (!inside.startsWith('..') && !isAbsolute(inside)) return refused('inside-library', `导出文件须位于资料库之外，${to} 在资料库中。请使用外部路径，例如 ~/Desktop/pneuma-base-活动.csv。`)
     const kind = format === 'csv' || format === 'jsonl' ? format : path.toLowerCase().endsWith('.csv') ? 'csv' : 'jsonl'
     await stateOf(ctx)
     const file = await createOutside(path)
-    if (file === null) return refused('would-overwrite', `${path} 已经有文件了，没有动它。换一个文件名。`)
+    if (file === null) return refused('would-overwrite', `${path} 已存在，未修改。请使用其他文件名。`)
     let n = 0
     try {
       await file.write(exportHead(kind))
@@ -146,6 +146,6 @@ export const LEDGER_EXPORT = defineCommand({
     } finally {
       await file.close()
     }
-    return done(`已把 ${n} 条记录导出到 ${path}（${kind === 'csv' ? 'CSV' : 'JSON Lines'}）。`, { to: path, format: kind, rows: n, columns: EXPORT_COLUMNS })
+    return done(`已将 ${n} 条记录导出到 ${path}（${kind === 'csv' ? 'CSV' : 'JSON Lines'}）。`, { to: path, format: kind, rows: n, columns: EXPORT_COLUMNS })
   },
 })

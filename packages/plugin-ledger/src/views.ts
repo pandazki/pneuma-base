@@ -7,12 +7,14 @@ import { archived, heldKey, type HistoryRow, type ItemRow, type ItemState, type 
 import { commandNow, lineNow, saidKind, spokenOrigin } from './words.js'
 
 export const when = (at: Instant) => `${at.slice(0, 10)} ${at.slice(11, 16)}Z`
-export const who = (a: FactActor) => (a.kind === 'owner' ? '主人' : a.name)
+/** The owner's name in text that agents and the command line read; pages say 我 (ui.ts ME). */
+export const OWNER = '所有者'
+export const who = (a: FactActor, owner = OWNER) => (a.kind === 'owner' ? owner : a.name)
 /**
  * The actors of a scene by name, each name once: one agent can act in a scene both with a grant and
  * without one, or under two grants, which are distinct actors with the same name.
  */
-export const actorNames = (actors: readonly FactActor[]) => [...new Set(actors.map(who))].join('、')
+export const actorNames = (actors: readonly FactActor[], owner = OWNER) => [...new Set(actors.map((a) => who(a, owner)))].join('、')
 
 /** A scene id as text shows it: its first 8 characters; an ad hoc scene's id whole. */
 export const shortScene = (id: SceneId) => (id.startsWith(ADHOC_SCENE) ? id : id.slice(0, 8))
@@ -23,7 +25,7 @@ export type Lookup = { items: ReadonlyMap<ItemId, ItemRow>; scenes: ReadonlyMap<
 /** Who was in a scene, when it began, what it was doing. */
 function sceneParts(scene: SceneRow): string[] {
   const doing = [...new Set(scene.said.filter((s) => s.flavor === 'doing').map((s) => s.text))]
-  return [actorNames(scene.actors), when(scene.first), ...(doing.length ? [`在做：${doing.join('；')}`] : [])]
+  return [actorNames(scene.actors), when(scene.first), ...(doing.length ? [`任务：${doing.join('；')}`] : [])]
 }
 
 /** The heading find puts a scene's hits under. */
@@ -31,16 +33,25 @@ export const sceneLine = (scene: SceneRow) => [`场景 ${shortScene(scene.id)}`,
 
 /** The answer to a scene id prefix that several scenes share: each with its whole id. */
 export function ambiguousText(prefix: string, scenes: SceneRow[], more: boolean): string {
-  return [`有${more ? '至少' : ''} ${scenes.length} 个场景的编号以 ${prefix} 开头，写长一点再看：`, ...scenes.map((s) => `  ${[s.id, ...sceneParts(s)].join(' · ')}`)].join('\n')
+  return [`${more ? '至少有' : '有'} ${scenes.length} 个场景的编号以 ${prefix} 开头，请输入更长的编号：`, ...scenes.map((s) => `  ${[s.id, ...sceneParts(s)].join(' · ')}`)].join('\n')
 }
 
 /** What an origin seen and not said carries wherever it is shown: the app registered it, and it may be wrong. */
-export const OBSERVED = '（自动登记）'
+const OBSERVED = '自动登记'
+
+/** An origin as its word and what qualifies it: who gave a thing brought in, and that the app only saw it. */
+function originParts(origin: OriginLike, how: How): { word: string; notes: string[] } {
+  const word = origin.kind === 'made' ? '生成' : origin.kind === 'adopted' ? '来源未知' : '导入'
+  const notes = [...(origin.kind === 'brought' && origin.by === 'owner' ? ['所有者提供'] : []), ...(how === 'observed' ? [OBSERVED] : [])]
+  return { word, notes }
+}
+
+const qualified = (notes: readonly string[]) => (notes.length === 0 ? '' : `（${notes.join('，')}）`)
 
 /** An origin in words; one only seen (`how` 'observed') says so. */
 export function originLabel(origin: OriginLike, how: How): string {
-  const label = origin.kind === 'made' ? '做出来的' : origin.kind === 'adopted' ? '来历不明' : origin.by === 'owner' ? '带进来的，主人给的' : '带进来的'
-  return how === 'observed' ? `${label}${OBSERVED}` : label
+  const { word, notes } = originParts(origin, how)
+  return `${word}${qualified(notes)}`
 }
 
 export type Version = Extract<HistoryRow, { kind: 'version' }>
@@ -48,16 +59,16 @@ export type Version = Extract<HistoryRow, { kind: 'version' }>
 /** How a version's content came, when it was a direct change: claimed, recorded for the owner, or only seen; null for a put. */
 export function claimText(ver: Version): string | null {
   if (!ver.claimed) return null
-  if (ver.how === 'observed') return '直接改的，自动登记'
-  const said = ver.by === 'owner' ? `主人直接改的，${who(ver.actor)} 代记` : '认了直接改动'
-  return ver.seen === null ? said : `${said}（先是自动登记）`
+  if (ver.how === 'observed') return `外部修改（${OBSERVED}）`
+  const said = ver.by === 'owner' ? `所有者直接修改，${who(ver.actor)} 代为记录` : '已确认外部修改'
+  return ver.seen === null ? said : `${said}（之前为${OBSERVED}）`
 }
 
 /** A version as one short word: its fingerprint's first 8, or a dash when its content was never read. */
 export const shortPrint = (ver: Pick<Version, 'fingerprint'>) => ver.fingerprint?.slice(0, 8) ?? '—'
 
-export const STATE_LABEL: Record<ItemState['kind'], string> = { consistent: '一致', changed: '已变', moved: '已搬', missing: '不在', removed: '已除', absorbed: '并入' }
-export const MARK_LABEL: Record<'stale' | 'source-gone', string> = { stale: '可能过期', 'source-gone': '来源不在' }
+export const STATE_LABEL: Record<ItemState['kind'], string> = { consistent: '一致', changed: '已修改', moved: '已移动', missing: '已缺失', removed: '已删除', absorbed: '已合并' }
+export const MARK_LABEL: Record<'stale' | 'source-gone', string> = { stale: '可能已过期', 'source-gone': '来源缺失' }
 
 const pathOf = (lookup: Lookup, id: ItemId) => lookup.items.get(id)?.path ?? id
 
@@ -103,37 +114,37 @@ export type ItemView = {
  */
 export type LastLook = { how: 'log' | 'level'; at: Instant }
 
-const LOOKED_TEXT: Record<LastLook['how'], string> = { log: '按变化日志，到任意深处', level: '到第一层' }
+const LOOKED_TEXT: Record<LastLook['how'], string> = { log: '按变更日志，检查全部层级', level: '仅检查第一层' }
 
-export const SAID_LABEL: Record<SaidRow['flavor'], string> = { doing: '在做', decided: '决定', note: '备注' }
+export const SAID_LABEL: Record<SaidRow['flavor'], string> = { doing: '任务', decided: '决策', note: '备注' }
 
 /** An origin a later one replaced, in one line: what it was, who said or saw it, when, in which scene. */
-export const earlierText = (e: OriginLine) => `${originLabel(e.origin, e.how)} · ${who(e.actor)} · ${when(e.at)} · 场景 ${shortScene(e.scene)}`
+export const earlierText = (e: OriginLine, owner = OWNER) => `${originLabel(e.origin, e.how)} · ${who(e.actor, owner)} · ${when(e.at)} · 场景 ${shortScene(e.scene)}`
 
 /** Whether a held copy keeps this version's content. */
 export const keeps = (held: readonly string[], ver: Version) => held.some((path) => heldKeyOf(path) === heldKey(ver.fingerprint, ver.token))
 
 export function itemText(v: ItemView): string {
-  const where = v.entered.where?.cwd ? ` · 在 ${shortDir(v.entered.where.cwd)}` : ''
+  const where = v.entered.where?.cwd ? ` · 位置 ${shortDir(v.entered.where.cwd)}` : ''
   const lines = [`${originLabel(v.origin, v.entered.how)} · ${who(v.entered.actor)} · ${when(v.entered.at)}${where} · 场景 ${shortScene(v.entered.scene)}`]
-  if (v.origin.kind === 'brought' && v.origin.source) lines.push(`出处：${v.origin.source}`)
-  for (const e of v.earlier) lines.push(`先前：${earlierText(e)}`)
-  if (v.doing) lines.push(`当时在做：${v.doing}`)
+  if (v.origin.kind === 'brought' && v.origin.source) lines.push(`原始来源：${v.origin.source}`)
+  for (const e of v.earlier) lines.push(`之前：${earlierText(e)}`)
+  if (v.doing) lines.push(`任务：${v.doing}`)
   if (v.basis.length > 0 || v.outside.length > 0) {
     lines.push('依据：')
     for (const b of v.basis) lines.push(`  ${b.path}  ${STATE_LABEL[b.state]}${b.mark ? ` ← ${MARK_LABEL[b.mark]}` : ''}`)
-    for (const o of v.outside) lines.push(`  库外：${o}`)
+    for (const o of v.outside) lines.push(`  外部：${o}`)
   }
-  if (v.dependents.length > 0) lines.push(`被依据：${v.dependents.map((d) => d.path).join('、')}`)
+  if (v.dependents.length > 0) lines.push(`被引用：${v.dependents.map((d) => d.path).join('、')}`)
   for (const s of v.said) lines.push(`${SAID_LABEL[s.flavor]}：${s.text}${s.about !== null && s.about !== v.path ? `（关于 ${s.about}）` : ''}`)
-  const state = v.state.kind === 'moved' ? `已搬到 ${v.state.to}` : v.absorbedInto !== null ? `并入了 ${v.absorbedInto}，是它的一部分` : STATE_LABEL[v.state.kind]
-  const changed = v.versions.length > 1 ? `内容换过 ${v.versions.length - 1} 次，` : ''
-  lines.push(`现状：${state}${v.archived ? ' · 已归档' : ''} · ${changed}${v.held.length} 份留存 · 条目 ${v.item}`)
-  if (v.looked !== null) lines.push(`上次看：${when(v.looked.at)}，${LOOKED_TEXT[v.looked.how]}`)
+  const state = v.state.kind === 'moved' ? `已移动到 ${v.state.to}` : v.absorbedInto !== null ? `已合并到 ${v.absorbedInto}，属于该条目` : STATE_LABEL[v.state.kind]
+  const changed = v.versions.length > 1 ? `内容更新 ${v.versions.length - 1} 次，` : ''
+  lines.push(`状态：${state}${v.archived ? ' · 已归档' : ''} · ${changed}${v.held.length} 个历史副本 · 条目 ${v.item}`)
+  if (v.looked !== null) lines.push(`上次检查：${when(v.looked.at)}，${LOOKED_TEXT[v.looked.how]}`)
   if (v.versions.length > 1 || v.versions.some((ver) => ver.note !== null)) {
     for (const ver of v.versions) {
       const claimed = claimText(ver)
-      const how = [...(claimed === null ? [] : [claimed]), ...(keeps(v.held, ver) ? ['被换下，在留存里'] : [])].join('，')
+      const how = [...(claimed === null ? [] : [claimed]), ...(keeps(v.held, ver) ? ['已被替换，见历史副本'] : [])].join('，')
       lines.push([`  ${shortPrint(ver)}`, when(ver.at), who(ver.actor), ...(how ? [how] : []), ...(ver.note === null ? [] : [`「${ver.note}」`])].join('  '))
     }
   }
@@ -187,21 +198,21 @@ export const spokenItem = (v: ItemView) => ({ ...v, origin: spokenOrigin(v.origi
 export const spokenScene = (v: SceneView) => ({ ...v, said: v.said.map(spokenSaid), items: v.items.map((i) => ({ ...i, origin: spokenOrigin(i.origin) })) })
 
 export function sceneText(v: SceneView): string {
-  const lines = [`场景 ${shortScene(v.id)}`, `${actorNames(v.actors)} · ${when(v.first)} 到 ${when(v.last)}${v.cwds.length ? ` · 在 ${v.cwds.map((d) => shortDir(d)).join('、')}` : ''}`]
+  const lines = [`场景 ${shortScene(v.id)}`, `${actorNames(v.actors)} · ${when(v.first)} 至 ${when(v.last)}${v.cwds.length ? ` · 位置 ${v.cwds.map((d) => shortDir(d)).join('、')}` : ''}`]
   if (v.conversation) {
     lines.push(`对话：${v.conversation.path}（${whereConversation(v.conversation)}）`)
-    if (v.conversation.status === 'here' && v.conversation.resume) lines.push(`接着聊：${v.conversation.resume}`)
+    if (v.conversation.status === 'here' && v.conversation.resume) lines.push(`继续对话：${v.conversation.resume}`)
   }
   for (const s of v.said) lines.push(`${SAID_LABEL[s.flavor]}：${s.text}${s.about !== null ? `（关于 ${s.about}）` : ''}`)
   if (v.items.length > 0) {
-    lines.push('条目：', ...v.items.map((i) => `  ${i.path}  ${i.enteredHere ? `在这里放入，${originLabel(i.origin, i.how)}` : '在这里改过或挪过'}`))
-    if (v.touched > v.items.length) lines.push(`  ……共 ${v.touched} 样，看全部：show ledger.scene --scene ${v.id}`)
+    lines.push('条目：', ...v.items.map((i) => `  ${i.path}  ${i.enteredHere ? `在此添加，${originLabel(i.origin, i.how)}` : '在此修改或移动过'}`))
+    if (v.touched > v.items.length) lines.push(`  ……共 ${v.touched} 个，查看全部：show ledger.scene --scene ${v.id}`)
   }
   return lines.join('\n')
 }
 
 export function whereConversation(c: Conversation): string {
-  return c.status === 'here' ? '在这台机器上' : c.status === 'gone' ? '这台机器上已经没有了' : `在 ${c.machine} 上，不是这台机器`
+  return c.status === 'here' ? '在本机' : c.status === 'gone' ? '已缺失' : `在 ${c.machine}，非本机`
 }
 
 // ---- check: since last time ----
@@ -229,60 +240,66 @@ const noteTail = (note: string | undefined) => (note ? `：${note}` : '')
 /** The items a fact names, to read their rows before telling it. */
 export const itemsOf = (f: Fact): ItemId[] => ('item' in f ? [f.item] : f.kind === 'said' && f.about !== null ? [f.about] : [])
 
-/**
- * One fact as one line of text, paths as they are now where they moved since. `quiet`, for a page:
- * a thing made and put by its maker, the usual way in, goes without saying how it came.
- */
-export function factLine(lookup: Lookup, f: Fact, quiet = false): string {
+/** An owner command as a line says it: the command as given, never what it printed. */
+export function commandText(f: Extract<Fact, { kind: 'owner.op' }>): string {
+  const line = `pneuma-base ${f.line === undefined ? commandNow(f.command) : lineNow(f.line)}${f.refused === undefined ? '' : `（被拒绝：${f.refused}）`}`
+  return f.request ? `批准 ${f.request.by.name} 的请求：${line}` : line
+}
+
+/** One fact as one line of text, paths as they are now where they moved since; a thing entered says how it came by its act. */
+export function factLine(lookup: Lookup, f: Fact): string {
   const now = (id: ItemId, then: LibraryPath) => {
     const path = pathOf(lookup, id)
-    return path === then ? then : `${then}（现在在 ${path}）`
+    return path === then ? then : `${then}（现位于 ${path}）`
   }
   switch (f.kind) {
     case 'said':
       return `${SAID_LABEL[f.flavor]}：${f.text}${f.about !== null ? `（关于 ${pathOf(lookup, f.about)}）` : ''}`
-    case 'item.enter':
-      if (quiet && f.origin.kind === 'made' && f.how !== 'observed') return `放入 ${now(f.item, f.path)}${noteTail(f.note)}`
-      return `放入 ${now(f.item, f.path)}（${originLabel(f.origin.kind === 'made' ? { kind: 'made' } : f.origin, f.how)}）${noteTail(f.note)}`
+    case 'item.enter': {
+      // The act is the origin's word: 导入, 生成, or 登记 of a thing whose origin nobody knew.
+      const { word, notes } = originParts(f.origin.kind === 'made' ? { kind: 'made' } : f.origin, f.how)
+      const act = f.origin.kind === 'adopted' ? '登记' : word
+      const more = f.origin.kind === 'adopted' ? [word, ...notes] : notes
+      return `${act} ${now(f.item, f.path)}${qualified(more)}${noteTail(f.note)}`
+    }
     case 'items.enter':
-      return `一次登记了 ${f.items.length} 样没人登记过的东西（${originLabel(f.origin.kind === 'made' ? { kind: 'made' } : f.origin, f.how)}）`
+      return `批量登记 ${f.items.length} 个未登记的文件：${originLabel(f.origin.kind === 'made' ? { kind: 'made' } : f.origin, f.how)}`
     case 'item.revise': {
       const path = pathOf(lookup, f.item)
       const what = !f.claimed
-        ? `${path} 换了新内容`
+        ? `${path} 内容已更新`
         : f.how === 'observed'
-          ? `看到 ${path} 被直接改了${OBSERVED}`
+          ? `检测到 ${path} 的外部修改（${OBSERVED}）`
           : f.by === 'owner'
-            ? `记下 ${path} 是主人直接改的`
-            : `认了 ${path} 的直接改动`
+            ? `记录 ${path} 为所有者直接修改`
+            : `确认 ${path} 的外部修改`
       return `${what}${noteTail(f.note)}`
     }
     case 'item.move': {
-      const seen = f.how === 'observed' ? '（看到的）' : ''
+      const seen = f.how === 'observed' ? '（检测到）' : ''
       if (f.archive === 'in') return `归档 ${f.from}${seen}`
-      if (f.archive === 'out') return `取回 ${f.to}${seen}`
-      return `挪 ${f.from} → ${f.to}${seen}`
+      if (f.archive === 'out') return `取消归档 ${f.to}${seen}`
+      return `移动 ${f.from} → ${f.to}${seen}`
     }
     case 'item.basis':
-      return `补上 ${pathOf(lookup, f.item)} 的依据`
+      return `补充 ${pathOf(lookup, f.item)} 的依据`
     case 'item.remove':
-      return `${pathOf(lookup, f.item)} 随归档区一起清掉了`
+      return `${pathOf(lookup, f.item)} 已随清空归档删除`
     case 'owner.op':
-      if (f.request) return `批准了 ${f.request.by.name} 的请求，执行 ${commandNow(f.command)}${f.refused === undefined ? '' : ` 被拒绝（${f.refused}）`}：${f.summary}`
-      return f.actor.kind === 'owner' ? `主人面的操作 ${commandNow(f.command)}：${f.summary}` : `执行 ${commandNow(f.command)}：${f.summary}`
+      return commandText(f)
     case 'request':
-      return f.act === 'asked' ? `请主人做 ${lineNow(f.line)}：${f.why ?? ''}` : `撤回了请求 ${f.request}：${lineNow(f.line)}`
+      return f.act === 'asked' ? `请求所有者执行 ${lineNow(f.line)}：${f.why ?? ''}` : `撤回请求 ${f.request}：${lineNow(f.line)}`
     case 'checked':
-      return '看过了库的变化'
+      return '已查看资料库变化'
     case 'unowned.left':
-      return `${f.paths.length} 样没人登记过的东西照原样留着，不再问`
+      return `忽略 ${f.paths.length} 个未登记的文件，不再提示`
   }
 }
 
 export function sinceText(v: SinceView): string {
-  const head = v.since === null ? '你第一次来，下面是最近的记录：' : `${when(v.since)} 以来：`
+  const head = v.since === null ? '首次访问，以下为最近的记录：' : `${when(v.since)} 以来：`
   const scenes = v.scenes.flatMap((s) => [
-    `场景 ${shortScene(s.scene)} · ${s.actors.join('、')}${s.cwds.length ? ` · 在 ${s.cwds.map((d) => shortDir(d)).join('、')}` : ''}`,
+    `场景 ${shortScene(s.scene)} · ${s.actors.join('、')}${s.cwds.length ? ` · 位置 ${s.cwds.map((d) => shortDir(d)).join('、')}` : ''}`,
     ...s.facts.map((f) => `  ${f.text}`),
   ])
   return [head, ...scenes].join('\n')
@@ -303,34 +320,34 @@ export const LIST_LIMIT = 20
 /** The sources a line names: the first three, then how many more. */
 const refsText = (refs: readonly Ref[] | undefined) => {
   const all = refs ?? []
-  return `${all.slice(0, 3).map((r) => r.path).join('、')}${all.length > 3 ? ` 等 ${all.length} 样` : ''}`
+  return `${all.slice(0, 3).map((r) => r.path).join('、')}${all.length > 3 ? ` 等 ${all.length} 个` : ''}`
 }
 
 /** One row of a kind as check's line says it. */
 export function standingLine(kind: StandingKind, m: MarkRow): string {
   switch (kind) {
     case 'stale':
-      return `  ${m.path} ← 依据 ${refsText(m.sources)} 变了`
+      return `  ${m.path} ← 依据 ${refsText(m.sources)} 已修改`
     case 'gone':
-      return `  ${m.path} ← 依据 ${refsText(m.sources)} 不在了`
+      return `  ${m.path} ← 依据 ${refsText(m.sources)} 已缺失`
     case 'upstream':
-      return `  ${m.path} ← 上游 ${refsText(m.sources)} 有标记`
+      return `  ${m.path} ← 上游 ${refsText(m.sources)} 已标记`
     case 'unowned':
-      return `  ${m.path}${m.adopted ? '（入了册，来历不明）' : ''}`
+      return `  ${m.path}${m.adopted ? '（已登记，来源未知）' : ''}`
     case 'closed':
       return `  ${m.path}/`
     case 'changed':
     case 'missing':
       return `  ${m.path}`
     case 'moved':
-      return `  ${m.path} → ${m.to ?? ''}，已接回`
+      return `  ${m.path} → ${m.to ?? ''}，已记录新路径`
   }
 }
 
-const TITLES: Record<StandingKind, string> = { stale: '可能过期', gone: '来源不在', upstream: '上游有标记', unowned: '没人登记过的', closed: '没登记的目录', changed: '被直接改过的', missing: '不在了的', moved: '挪过的' }
+const TITLES: Record<StandingKind, string> = { stale: '可能已过期', gone: '来源缺失', upstream: '上游已标记', unowned: '未登记', closed: '未登记的目录', changed: '外部修改', missing: '已缺失', moved: '已移动' }
 const AFTER: Partial<Record<StandingKind, string>> = {
-  unowned: '它们不是经 put 放进来的。要留着用的，知道来历就用 put <库内路径> --imported 或 --generated 补上；不要的归档。',
-  changed: '是你改的，就用 say revised <库内路径> 认下；主人说是自己改的，加 --by owner。',
+  unowned: '这些文件未经 put 添加。需要保留的，已知来源时用 put <库内路径> --imported 或 --generated 补充来源；不需要的归档。',
+  changed: 'Agent 自己的修改，用 say revised <库内路径> 确认；所有者说明是自己修改的，加 --by owner。',
 }
 
 /** The data a section of check carries for one row, by kind: the thing, and the sources, the upstream or the new place it names. */
@@ -360,14 +377,14 @@ function rowData(kind: StandingKind, m: MarkRow) {
  * when it names fewer than all. `partial`: open directories with more entries than one look lists.
  */
 export function standingSections(lists: readonly StandingList[], partial: readonly { dir: string; atLeast: number }[], limit = LIST_LIMIT): PluginSection[] {
-  const more = partial.map((m) => `${m.dir === '' ? '库的根目录' : `${m.dir}/`}的条目多，只看了前面的，至少还有 ${m.atLeast} 个没看。`)
+  const more = partial.map((m) => `${m.dir === '' ? '资料库根目录的' : `${m.dir}/ 的`}条目过多，仅检查了前一部分，至少还有 ${m.atLeast} 个未检查。`)
   return lists
     .filter((l) => l.count > 0)
     .map((l) => {
       const shown = l.rows.slice(0, limit)
       const total = `${l.atLeast ? '至少 ' : ''}${l.count}`
       const all = `show ledger.status --kind ${l.kind}`
-      const rest = l.count > shown.length ? [`  ……共 ${total} 样，看全部：${all}`] : []
+      const rest = l.count > shown.length ? [`  ……共 ${total} 个，查看全部：${all}`] : []
       const after = [...(l.kind === 'unowned' ? more : []), ...(AFTER[l.kind] ? [AFTER[l.kind] as string] : [])]
       const data = { count: l.count, shown: shown.map((m) => rowData(l.kind, m)), ...(rest.length > 0 ? { more: all } : {}) }
       return { title: TITLES[l.kind], body: [...shown.map((m) => standingLine(l.kind, m)), ...rest, ...after].join('\n'), data }

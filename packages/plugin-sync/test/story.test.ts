@@ -107,8 +107,8 @@ describe('two libraries, one target (C6)', () => {
     expect(ok(b.agent(['inspect', 'notes/summary.md'])).stdout).toContain('sources/s.md')
     const ledger = (lib: Library, path: string) => inspect(lib, path).find((x: any) => x.plugin === 'ledger')?.body
     for (const path of ['notes/n.md', 'sites/one', 'notes/moved.md', '_archive/notes/old.md', 'doc.md']) expect(ledger(b, path), path).toBe(ledger(a, path))
-    expect(ledger(b, 'sites/one')).toContain('现状：一致')
-    expect(ok(b.agent(['version', 'list', 'sites/one'])).stdout).toContain('第 1 版')
+    expect(ledger(b, 'sites/one')).toContain('状态：一致')
+    expect(ok(b.agent(['version', 'list', 'sites/one'])).stdout).toContain('版本 1')
   })
 
   it('never brings another library’s configuration', () => {
@@ -160,7 +160,7 @@ describe('two libraries, one target (C6)', () => {
     ok(a.owner(['sync', 'now']))
     ok(b.agent(['put', '-', '--to', 'plan.md', '--generated'], 'from b'))
     const r = ok(b.owner(['sync', 'now']))
-    expect(r.stdout).toMatch(/冲突（两份都在[^\n]*\n {2}plan\.md {2}另一份：plan\.conflict-[^\n]+\.md/)
+    expect(r.stdout).toMatch(/冲突（保留双方[^\n]*\n {2}plan\.md {2}另一侧版本：plan\.conflict-[^\n]+\.md/)
     const copy = readdirSync(b.dir).find((n) => n.startsWith('plan.conflict-')) as string
     expect(read(b.dir, 'plan.md')).toBe('from b')
     expect(read(b.dir, copy)).toBe('from a')
@@ -171,13 +171,13 @@ describe('two libraries, one target (C6)', () => {
 
     const check = ok(b.agent(['check', '--json'])).json().sections.find((s: any) => s.title === '同步冲突')
     expect(check.data.conflicts).toEqual([{ copy, original: 'plan.md' }])
-    expect(ok(b.agent(['check'])).stdout).toContain(`${copy}（plan.md 的另一份）`)
+    expect(ok(b.agent(['check'])).stdout).toContain(`${copy}（plan.md 的另一侧版本）`)
     // The ledger also lists the copy among files nobody registered; both sections end in archiving what is not wanted.
     const sections = ok(b.agent(['check', '--json'])).json().sections
-    const unowned = sections.find((s: any) => s.title === '没人登记过的')
+    const unowned = sections.find((s: any) => s.title === '未登记')
     expect(unowned.body).toContain(copy)
-    expect(unowned.body).toContain('不要的归档')
-    expect(check.body).toContain('再把冲突副本归档')
+    expect(unowned.body).toContain('不需要的归档')
+    expect(check.body).toContain('再归档冲突副本')
     ok(b.agent(['archive', copy]))
     expect(ok(b.agent(['check', '--json'])).json().sections.find((s: any) => s.title === '同步冲突')).toBeUndefined()
   })
@@ -300,12 +300,12 @@ describe('refusals', () => {
     mkdirSync(locked, { mode: 0o555 })
     const unreachable = owner(['sync', 'target', 'set', '--kind', 'dir', '--to', join(locked, 'disk', 'base')])
     expect(unreachable.code).toBe(2)
-    expect(unreachable.stdout).toContain('拒绝（target-unreachable）：建不了这个目录')
+    expect(unreachable.stdout).toContain('拒绝（target-unreachable）：无法创建目录')
 
     ok(owner(['sync', 'target', 'set', '--kind', 'dir', '--to', w.target]))
     const facts = () => factsOf(dir, 'sync')
     const n = facts().length
-    expect(ok(owner(['sync', 'target', 'set', '--kind', 'dir', '--to', w.target])).stdout).toContain('没有变')
+    expect(ok(owner(['sync', 'target', 'set', '--kind', 'dir', '--to', w.target])).stdout).toContain('未更改')
     expect(facts()).toHaveLength(n)
 
     ok(w.m.run(['--library', dir, '--as', 'claude-code', 'put', '-', '--to', 'x.md', '--generated'], { input: 'x' }))
@@ -317,6 +317,6 @@ describe('refusals', () => {
     expect(missing.stdout).toContain('拒绝（target-missing）')
     expect(existsSync(w.target)).toBe(false)
     expect(contents(dir)).toEqual(before)
-    expect(ok(owner(['sync', 'status'])).stdout).toContain('在这台机器上不存在')
+    expect(ok(owner(['sync', 'status'])).stdout).toContain('在本机不存在')
   })
 })

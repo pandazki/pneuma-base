@@ -51,9 +51,9 @@ describe('rows derived again from nothing', () => {
   it('say that they are being derived, from how many facts files, and when they are done; with few facts, not a word', async () => {
     const records = await appendedAlone(many(5000))
     const lines = await said(() => foldAll(recordsContext(records)))
-    expect(lines[0]).toBe('正在从事实重建记账的行：至少 5000 条。')
-    expect(lines.at(-1)).toMatch(/^记账的行已重建：5000 条事实，\d+\.\d 秒。$/)
-    expect(lines.slice(1, -1).every((l) => /^已推出 \d+ \/ 5000$/.test(l))).toBe(true)
+    expect(lines[0]).toBe('正在重建溯源索引：至少 5000 条记录。')
+    expect(lines.at(-1)).toMatch(/^溯源索引已重建：5000 条记录，\d+\.\d 秒。$/)
+    expect(lines.slice(1, -1).every((l) => /^已处理 \d+ \/ 5000$/.test(l))).toBe(true)
     const few = await appendedAlone(many(300))
     expect(await said(() => foldAll(recordsContext(few)))).toEqual([])
   })

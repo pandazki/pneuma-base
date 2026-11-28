@@ -31,7 +31,7 @@ function itemHit(scenes: ReadonlyMap<string, SceneRow>, row: Pick<ItemFind, 'pat
 
 function sceneHit(s: SceneRow): PluginHit {
   const decided = s.said.filter((x) => x.flavor === 'decided').map((x) => x.text)
-  const parts = [...(s.cwds.length ? [`在 ${s.cwds.map((d) => shortDir(d)).join('、')}`] : []), ...(decided.length ? [`决定：${decided.join('；')}`] : [])]
+  const parts = [...(s.cwds.length ? [`位置 ${s.cwds.map((d) => shortDir(d)).join('、')}`] : []), ...(decided.length ? [`决策：${decided.join('；')}`] : [])]
   return { path: null, title: `场景 ${s.id}`, group: sceneLine(s), detail: parts.length ? parts.join(' · ') : null }
 }
 

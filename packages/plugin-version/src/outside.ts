@@ -28,7 +28,7 @@ export async function exportTarget(cwd: string, to: string, thingPath: string): 
 async function copyOut(ctx: PluginContext, place: Place, fingerprint: Fingerprint, to: string): Promise<void> {
   await mkdir(dirname(to), { recursive: true })
   const read = await ctx.tools.storage.own.read(place, { to })
-  if (isFailure(read) || (await hashFile(to)) !== fingerprint) throw new Error(`存放里的内容 ${fingerprint.slice(0, 8)} 坏了`)
+  if (isFailure(read) || (await hashFile(to)) !== fingerprint) throw new Error(`存储中的内容 ${fingerprint.slice(0, 8)} 已损坏`)
 }
 
 /** How many files one page of a tree's manifest lists; a thing has at most 5000. */
@@ -40,7 +40,7 @@ async function treeOut(ctx: PluginContext, v: Version, to: string): Promise<void
   await mkdir(to, { recursive: true })
   for (let after: string | undefined; ; ) {
     const page = await ctx.tools.storage.own.content(tree, { manifest: { limit: MANIFEST_PAGE, ...(after === undefined ? {} : { after }) } })
-    if (isFailure(page) || page.kind !== 'dir' || page.fingerprint !== v.fingerprint) throw new Error(`存放里的内容 ${v.fingerprint.slice(0, 8)} 坏了`)
+    if (isFailure(page) || page.kind !== 'dir' || page.fingerprint !== v.fingerprint) throw new Error(`存储中的内容 ${v.fingerprint.slice(0, 8)} 已损坏`)
     for (const e of page.manifest?.entries ?? []) await copyOut(ctx, posix.join(tree, e.path), e.fingerprint, join(to, e.path))
     const more = page.manifest?.more ?? null
     if (more === null) return

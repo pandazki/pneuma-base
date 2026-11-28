@@ -35,6 +35,17 @@ export const flavorOf = (kind: string): Flavor | null => (Object.keys(SAID_KIND)
 const ACT_NOW: Readonly<Record<string, FeedAct>> = { brought: 'imported', made: 'generated', doing: 'task' }
 export const actNow = (act: string): FeedAct => ACT_NOW[act] ?? (act as FeedAct)
 
+/**
+ * The fixed names a command's act was done to, as facts recorded them before the names were the
+ * terms they are now (`OwnerAct.name`), and the names now.
+ */
+const OBJECT_NOW: Readonly<Record<string, string>> = {
+  留住的旧版: '历史副本',
+  没登记的散文件: '未登记的文件',
+  嵌入模型: 'embedding 配置',
+}
+export const objectNow = (name: string): string => OBJECT_NOW[name] ?? name
+
 /** The commands as facts recorded them before they were renamed, and their names now. */
 const RENAMED: Readonly<Record<string, string>> = {
   'grant issue': 'grant create',

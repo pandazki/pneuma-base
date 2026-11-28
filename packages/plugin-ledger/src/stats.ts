@@ -81,6 +81,12 @@ export type HourRow = {
 export type RequestRow = { by: FactActor; hour: string; outcome: Outcome }
 export type Outcome = 'pending' | 'withdrawn' | 'declined' | 'approved' | 'refused'
 
+/**
+ * The owner's name among the makers a thing built on was made by, in the hour rows: a key the rows keep,
+ * not text; the page names the owner as its face does (stats-page.ts).
+ */
+export const OWNER_KEY = '主人'
+
 export const OPEN_COUNTERS = { stale: 'open:stale', changed: 'open:changed', unknown: 'open:unknown', archived: 'open:archived' } as const
 
 export const hourOf = (at: string) => at.slice(0, 13)
@@ -176,7 +182,7 @@ function bucketsOf(from: number, end: number): { grain: Grain; buckets: Bucket[]
   const grain: Grain = days <= DAY_BARS ? 'day' : days <= WEEK_BARS * 7 ? 'week' : 'month'
   const first = grain === 'day' ? from : grain === 'week' ? mondayOf(from) : monthOf(from)
   const next = (t: number) => (grain === 'day' ? plusDays(t, 1) : grain === 'week' ? plusDays(t, 7) : plusMonths(t, 1))
-  const label = (t: number) => (grain === 'day' ? md(t) : grain === 'week' ? `${md(t)}那周` : `${new Date(t).getFullYear()}年${new Date(t).getMonth() + 1}月`)
+  const label = (t: number) => (grain === 'day' ? md(t) : grain === 'week' ? `${md(t)}当周` : `${new Date(t).getFullYear()}年${new Date(t).getMonth() + 1}月`)
   const buckets: Bucket[] = []
   for (let t = first; t < end; t = next(t)) buckets.push({ start: t, label: label(t) })
   return { grain, buckets }
